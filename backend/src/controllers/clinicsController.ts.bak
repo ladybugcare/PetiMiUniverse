@@ -1,0 +1,30 @@
+import type { Request, Response } from 'express'
+import { supabase } from '../config/supabase.ts'
+
+
+
+interface ClinicBody {
+  name: string
+  cnpj: string
+  address: string
+  email: string
+  password: string
+}
+
+export const createClinic = async (req: Request<{}, {}, ClinicBody>, res: Response) => {
+  const { name, cnpj, address, email, password } = req.body
+
+  const { data, error } = await supabase
+    .from('clinics')
+    .insert([{ name, cnpj, address, email, password }])
+    .select()
+
+  if (error) return res.status(400).json({ error })
+  res.status(201).json({ clinic: data[0] })
+}
+
+export const getClinics = async (_req: Request, res: Response) => {
+  const { data, error } = await supabase.from('clinics').select('*')
+  if (error) return res.status(400).json({ error })
+  res.json({ clinics: data })
+}

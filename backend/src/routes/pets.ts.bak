@@ -1,0 +1,24 @@
+import { Router } from 'express';
+
+const router = Router();
+
+// Mock de dados
+let pets = [
+  { id: 1, nome: 'Cacau', especie: 'Cachorro' },
+  { id: 2, nome: 'Catarina', especie: 'Cachorro' }
+];
+
+// GET /pets
+router.get('/', (req, res) => {
+  res.json(pets);
+});
+
+// POST /pets
+router.post('/', (req, res) => {
+  const pet = req.body;
+  pet.id = pets.length + 1;
+  pets.push(pet);
+  res.status(201).json(pet);
+});
+
+export default router;

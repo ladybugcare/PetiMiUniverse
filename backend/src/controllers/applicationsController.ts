@@ -1,0 +1,35 @@
+import type { Request, Response } from 'express'
+import { supabase } from '../config/supabase'
+
+interface ApplicationBody {
+  demand_id: string
+  vet_id: string
+}
+
+export const applyToDemand = async (req: Request<{}, {}, ApplicationBody>, res: Response) => {
+  const { demand_id, vet_id } = req.body
+
+  const { data, error } = await supabase
+    .from('applications')
+    .insert([{ demand_id, vet_id, status: 'applied' }])
+    .select()
+
+  if (error) return res.status(400).json({ error })
+  res.status(201).json({ application: data[0] })
+}
+
+// Tipando o param da rota
+export const getApplicationsByDemand = async (
+  req: Request<{ demand_id: string }>,
+  res: Response
+) => {
+  const { demand_id } = req.params
+
+  const { data, error } = await supabase
+    .from('applications')
+    .select('*')
+    .eq('demand_id', demand_id)
+
+  if (error) return res.status(400).json({ error })
+  res.json({ applications: data })
+}

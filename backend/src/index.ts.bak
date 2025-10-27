@@ -1,0 +1,32 @@
+import express from 'express';
+import cors from 'cors';
+import petRoutes from './routes/pets.ts'; // ⚠️ usar .js mesmo com ts-node e TypeScript
+import { supabase } from './config/supabase.ts';
+import clinicsRoutes from './routes/clinics.ts';
+import vetsRoutes from './routes/vets.ts';
+import demandsRoutes from './routes/demands.ts';
+import applicationsRoutes from './routes/applications.ts';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+// Rotas
+app.use('/pets', petRoutes);
+app.use('/clinics', clinicsRoutes)
+app.use('/vets', vetsRoutes)
+app.use('/demands', demandsRoutes)
+app.use('/applications', applicationsRoutes)
+
+app.get('/test-supabase', async (req, res) => {
+  const { data, error } = await supabase.from('test').select('*')
+  if (error) return res.status(400).json({ error })
+  res.json({ data })
+})
+
+app.listen(3000, () => console.log('Server running on port 3000'))
+
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`🐾 Server running on port ${PORT}`));
+
+

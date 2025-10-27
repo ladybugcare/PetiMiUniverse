@@ -1,0 +1,68 @@
+/* Importar o design system Lovable-inspired */
+@import './styles/lovable-inspired.css';
+
+/* Reset e configurações base */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background-color: var(--neutral-50);
+  color: var(--neutral-800);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.App {
+  min-height: 100vh;
+}
+
+/* Utilitários para line-clamp */
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Grid responsivo */
+.grid {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Animações suaves */
+.transition-colors {
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+.transition-shadow {
+  transition: box-shadow 0.2s ease-in-out;
+}
+
+.transition-all {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Estilos adicionais específicos do App */
