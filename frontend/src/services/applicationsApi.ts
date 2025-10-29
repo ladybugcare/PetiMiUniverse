@@ -44,4 +44,23 @@ export const applicationsApi = {
       body: JSON.stringify({ status }),
     });
   },
+
+  // Get applications by clinic
+  getByClinic: async (clinicId: string): Promise<{ applications: Application[] }> => {
+    return apiRequest(`/applications/clinic?clinic_id=${clinicId}`);
+  },
+
+  // Get applications by unit
+  getByUnit: async (unitId: string): Promise<{ applications: Application[] }> => {
+    return apiRequest(`/applications/unit/${unitId}`);
+  },
+
+  // Get pending applications count
+  getPendingCount: async (clinicId: string, unitId?: string): Promise<{ count: number }> => {
+    let url = `/applications/pending-count?clinic_id=${clinicId}`;
+    if (unitId) {
+      url += `&unit_id=${unitId}`;
+    }
+    return apiRequest(url);
+  },
 };

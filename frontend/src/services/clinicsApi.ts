@@ -38,4 +38,19 @@ export const clinicsApi = {
   getById: async (id: string): Promise<{ clinic: Clinic }> => {
     return apiRequest(`/clinics/${id}`);
   },
+
+  // Atualizar clínica
+  update: async (id: string, data: Partial<Clinic>): Promise<{ clinic: Clinic }> => {
+    return apiRequest(`/clinics/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Deletar clínica
+  delete: async (id: string): Promise<{ message: string; clinic: Clinic }> => {
+    return apiRequest(`/clinics/${id}`, {
+      method: 'DELETE',
+    });
+  },
 };

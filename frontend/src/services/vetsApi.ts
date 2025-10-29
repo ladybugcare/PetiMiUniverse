@@ -49,4 +49,27 @@ export const vetsApi = {
   getByClinic: async (clinicId: string): Promise<{ vets: Vet[] }> => {
     return apiRequest(`/vets/clinic/${clinicId}`);
   },
+
+  // Atualizar veterinário
+  update: async (id: string, data: Partial<Vet>): Promise<{ vet: Vet }> => {
+    return apiRequest(`/vets/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Atualizar status do veterinário
+  updateStatus: async (id: string, status: string): Promise<{ vet: Vet }> => {
+    return apiRequest(`/vets/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  // Deletar veterinário
+  delete: async (id: string): Promise<{ message: string; vet: Vet }> => {
+    return apiRequest(`/vets/${id}`, {
+      method: 'DELETE',
+    });
+  },
 };

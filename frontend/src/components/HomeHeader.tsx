@@ -1,0 +1,126 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+
+const HomeHeader: React.FC = () => {
+  const [signUpOpen, setSignUpOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const signUpRef = useRef<HTMLDivElement>(null);
+  const loginRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (signUpRef.current && !signUpRef.current.contains(event.target as Node)) {
+        setSignUpOpen(false);
+      }
+      if (loginRef.current && !loginRef.current.contains(event.target as Node)) {
+        setLoginOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <header className="home-header">
+      <div className="home-header-container">
+        {/* Logo */}
+        <Link to="/" className="home-header-logo">
+          <img 
+            src="/purple_logo.png" 
+            alt="PetiVet" 
+            style={{ height: '50px', width: 'auto' }}
+          />
+          <span className="home-header-logo-text">PETIVET</span>
+        </Link>
+
+        {/* Right side navigation */}
+        <div className="home-header-nav">
+          {/* Sign Up Dropdown */}
+          <div className="dropdown-wrapper" ref={signUpRef}>
+            <button
+              className="dropdown-button"
+              onClick={() => {
+                setSignUpOpen(!signUpOpen);
+                setLoginOpen(false);
+              }}
+            >
+              Sign Up
+              <svg 
+                className={`dropdown-arrow ${signUpOpen ? 'open' : ''}`}
+                width="12" 
+                height="12" 
+                viewBox="0 0 12 12" 
+                fill="none"
+              >
+                <path d="M2 4L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </button>
+            {signUpOpen && (
+              <div className="dropdown-menu">
+                <Link 
+                  to="/vet-signup" 
+                  className="dropdown-item"
+                  onClick={() => setSignUpOpen(false)}
+                >
+                  Cadastrar Veterinário
+                </Link>
+                <Link 
+                  to="/clinic-signup" 
+                  className="dropdown-item"
+                  onClick={() => setSignUpOpen(false)}
+                >
+                  Cadastrar Clínica
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* Login Dropdown */}
+          <div className="dropdown-wrapper" ref={loginRef}>
+            <button
+              className="dropdown-button-outline"
+              onClick={() => {
+                setLoginOpen(!loginOpen);
+                setSignUpOpen(false);
+              }}
+            >
+              Login
+              <svg 
+                className={`dropdown-arrow ${loginOpen ? 'open' : ''}`}
+                width="12" 
+                height="12" 
+                viewBox="0 0 12 12" 
+                fill="none"
+              >
+                <path d="M2 4L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </button>
+            {loginOpen && (
+              <div className="dropdown-menu">
+                <Link 
+                  to="/login?role=vet" 
+                  className="dropdown-item"
+                  onClick={() => setLoginOpen(false)}
+                >
+                  Login Veterinário
+                </Link>
+                <Link 
+                  to="/login?role=clinic" 
+                  className="dropdown-item"
+                  onClick={() => setLoginOpen(false)}
+                >
+                  Login Clínica
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+export default HomeHeader;
+

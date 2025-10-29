@@ -1,46 +1,108 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { vetsApi } from '../services/vetsApi';
+import ProgressBar from '../components/ProgressBar';
+import PasswordInput from '../components/PasswordInput';
+import HomeHeader from '../components/HomeHeader';
+import { validateEmail, validatePassword } from '../utils/validators';
 
 const VetSignUpPage: React.FC = () => {
-  const [name, setName] = useState('');
-  const [crmv, setCrmv] = useState('');
-  const [specialties, setSpecialties] = useState('');
-  const [experience, setExperience] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const navigate = useNavigate();
+  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  
+  const [formData, setFormData] = useState({
+    name: '',
+    crmv: '',
+    specialties: '',
+    experience: '',
+    email: '',
+    password: ''
+  });
+  
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!name || !crmv || !specialties || !experience || !email || !password) {
-      alert('Por favor, preencha todos os campos.');
-      return;
+  // Validar step atual
+  const isStepValid = (): boolean => {
+    switch(step) {
+      case 1: return formData.name.trim().length >= 3;
+      case 2: return formData.crmv.trim().length >= 5;
+      case 3: return formData.specialties.trim().length >= 3;
+      case 4: return formData.experience.trim().length > 0;
+      case 5: return validateEmail(formData.email) && !errors.email;
+      case 6: return validatePassword(formData.password).valid;
+      default: return false;
     }
+  };
 
+  // Handle campo change
+  const handleFieldChange = (field: keyof typeof formData, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Limpar erro quando usuário digita
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+    
+    // Validação em tempo real para email
+    if (field === 'email' && value.length > 0) {
+      if (!validateEmail(value)) {
+        setErrors(prev => ({ ...prev, email: 'Email inválido' }));
+      }
+    }
+  };
+
+  // Avançar para próximo step ou submit
+  const handleNext = async () => {
+    if (!isStepValid()) return;
+    
+    // Step 5: Verificar se email já existe
+    if (step === 5) {
+      try {
+        const response = await fetch(`http://localhost:3000/vets/check-email/${encodeURIComponent(formData.email)}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.exists) {
+            setErrors({ email: 'Email já cadastrado na plataforma' });
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao verificar email:', error);
+      }
+    }
+    
+    // Step 6: Submit final
+    if (step === 6) {
+      await handleSignUp();
+    } else {
+      setStep(step + 1);
+    }
+  };
+
+  // Voltar step
+  const handleBack = () => {
+    if (step > 1) {
+      setStep(step - 1);
+    }
+  };
+
+  // Enviar cadastro
+  const handleSignUp = async () => {
     try {
       setLoading(true);
 
-      const result = await vetsApi.create({
-        name,
-        crmv,
-        specialties: specialties.split(',').map(s => s.trim()),
-        experience,
-        email,
-        password,
+      await vetsApi.create({
+        name: formData.name,
+        crmv: formData.crmv,
+        specialties: formData.specialties.split(',').map(s => s.trim()),
+        experience: formData.experience,
+        email: formData.email,
+        password: formData.password,
       });
 
-      alert('Veterinário cadastrado com sucesso!');
-      console.log('Veterinário criado:', result.vet);
-      
-      // Limpar campos
-      setName('');
-      setCrmv('');
-      setSpecialties('');
-      setExperience('');
-      setEmail('');
-      setPassword('');
+      alert('Veterinário cadastrado com sucesso! ✓');
+      navigate('/demands');
     } catch (err: any) {
       alert('Erro ao cadastrar: ' + (err.message || 'Tente novamente.'));
     } finally {
@@ -48,128 +110,308 @@ const VetSignUpPage: React.FC = () => {
     }
   };
 
+  // Renderizar conteúdo do step atual
+  const renderStepContent = () => {
+    switch (step) {
+      case 1:
+        return (
+          <div className="step-content">
+            <h2 className="text-display text-2xl font-bold mb-2 text-neutral-800">
+              Qual é o seu nome completo?
+            </h2>
+            <p className="text-neutral-600 mb-6">
+              Digite seu nome completo como veterinário
+            </p>
+            <input
+              type="text"
+              placeholder="Ex: Dr. João Silva"
+              value={formData.name}
+              onChange={(e) => handleFieldChange('name', e.target.value)}
+              className="input"
+              autoFocus
+            />
+          </div>
+        );
+      
+      case 2:
+        return (
+          <div className="step-content">
+            <h2 className="text-display text-2xl font-bold mb-2 text-neutral-800">
+              Qual o seu número de CRMV?
+            </h2>
+            <p className="text-neutral-600 mb-6">
+              Conselho Regional de Medicina Veterinária
+            </p>
+            <input
+              type="text"
+              placeholder="Ex: 12345-SP"
+              value={formData.crmv}
+              onChange={(e) => handleFieldChange('crmv', e.target.value)}
+              className="input"
+              autoFocus
+            />
+            <p className="text-sm text-neutral-500 mt-2">
+              💡 Formato: número-UF (exemplo: 12345-SP)
+            </p>
+          </div>
+        );
+      
+      case 3:
+        return (
+          <div className="step-content">
+            <h2 className="text-display text-2xl font-bold mb-2 text-neutral-800">
+              Quais são suas especialidades?
+            </h2>
+            <p className="text-neutral-600 mb-6">
+              Liste suas áreas de atuação separadas por vírgula
+            </p>
+            <textarea
+              placeholder="Ex: Cirurgia, Clínica Geral, Cardiologia"
+              value={formData.specialties}
+              onChange={(e) => handleFieldChange('specialties', e.target.value)}
+              className="input"
+              rows={3}
+              autoFocus
+            />
+            <p className="text-sm text-neutral-500 mt-2">
+              💡 Separe múltiplas especialidades com vírgula
+            </p>
+          </div>
+        );
+      
+      case 4:
+        return (
+          <div className="step-content">
+            <h2 className="text-display text-2xl font-bold mb-2 text-neutral-800">
+              Quantos anos de experiência você tem?
+            </h2>
+            <p className="text-neutral-600 mb-6">
+              Conte-nos sobre sua trajetória profissional
+            </p>
+            <input
+              type="text"
+              placeholder="Ex: 5 anos"
+              value={formData.experience}
+              onChange={(e) => handleFieldChange('experience', e.target.value)}
+              className="input"
+              autoFocus
+            />
+          </div>
+        );
+      
+      case 5:
+        return (
+          <div className="step-content">
+            <h2 className="text-display text-2xl font-bold mb-2 text-neutral-800">
+              Qual o seu email profissional?
+            </h2>
+            <p className="text-neutral-600 mb-6">
+              Usaremos este email para comunicações e login
+            </p>
+            <div className="relative">
+              <input
+                type="email"
+                placeholder="dr.joao@email.com"
+                value={formData.email}
+                onChange={(e) => handleFieldChange('email', e.target.value)}
+                className={`input ${errors.email ? 'border-red-500' : validateEmail(formData.email) ? 'border-green-500' : ''}`}
+                autoFocus
+              />
+              {validateEmail(formData.email) && !errors.email && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 text-xl">
+                  ✓
+                </span>
+              )}
+            </div>
+            {errors.email && (
+              <p className="text-red-500 text-sm mt-2">{errors.email}</p>
+            )}
+          </div>
+        );
+      
+      case 6:
+        return (
+          <div className="step-content">
+            <h2 className="text-display text-2xl font-bold mb-2 text-neutral-800">
+              Crie uma senha segura
+            </h2>
+            <p className="text-neutral-600 mb-6">
+              A senha deve ter no mínimo 8 caracteres
+            </p>
+            <PasswordInput
+              value={formData.password}
+              onChange={(value) => handleFieldChange('password', value)}
+              placeholder="Digite sua senha"
+              showStrength={true}
+            />
+          </div>
+        );
+      
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="min-h-screen py-16 px-4" style={{background: 'linear-gradient(135deg, var(--accent-50) 0%, var(--primary-50) 100%)'}}>
-      <div className="container max-w-2xl">
-        <div className="text-center mb-12">
-          <h1 className="text-display text-5xl font-bold mb-4 text-neutral-800">
-            Cadastre-se como Veterinário 🩺
-          </h1>
-          <p className="text-xl text-neutral-600">Junte-se à nossa rede de profissionais veterinários</p>
+    <>
+      <HomeHeader />
+      <div className="clinic-signup-container">
+        <div className="clinic-signup-content">
+          {/* Coluna Esquerda - Formulário */}
+        <div className="signup-form-section">
+          <ProgressBar currentStep={step} totalSteps={6} />
+          
+          <p className="text-sm text-neutral-500 mb-6">
+            Passo {step} de 6
+          </p>
+          
+          <div className="mb-8">
+            {renderStepContent()}
+          </div>
+          
+          <div className="space-y-4">
+            {/* Botões principais */}
+            <div className="flex gap-4">
+              {step > 1 && (
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="btn btn-outline flex-1"
+                  disabled={loading}
+                >
+                  ← Voltar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={!isStepValid() || loading}
+                className={`btn btn-primary flex-1 ${loading ? 'loading' : ''}`}
+              >
+                {loading ? 'Cadastrando...' : step === 6 ? 'Criar Conta' : 'Próximo →'}
+              </button>
+            </div>
+          </div>
         </div>
-
-        <div className="modern-card p-8 animate-fade-in-up">
-          <form onSubmit={handleSignUp} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-2">
-                Nome Completo
-              </label>
-              <input
-                type="text"
-                placeholder="Dr. João Silva"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="input"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  CRMV
-                </label>
-                <input
-                  type="text"
-                  placeholder="12345-SP"
-                  value={crmv}
-                  onChange={(e) => setCrmv(e.target.value)}
-                  className="input"
-                  required
+        
+        {/* Coluna Direita - Imagens e Texto */}
+        <div className="signup-images-section">
+          <h2 className="text-display">
+            Conectando quem cuida, quem ama e quem precisa.
+          </h2>
+          <p>
+            Junte-se ao PetiVet e encontre as melhores oportunidades de trabalho 
+            em clínicas veterinárias. Candidate-se às demandas que mais combinam 
+            com seu perfil e construa uma carreira de sucesso.
+          </p>
+          
+          {/* Colagem de imagens circulares */}
+          <div className="hero-images-right">
+            <div style={{position: 'relative', width: '100%', maxWidth: '320px', height: '320px'}}>
+              {/* Imagem 1 */}
+              <div 
+                className="hero-image-circle animate-float" 
+                style={{
+                  position: 'absolute',
+                  top: '10px',
+                  left: '10px',
+                  width: '120px',
+                  height: '120px',
+                  zIndex: 3
+                }}
+              >
+                <img 
+                  src="/img1.png" 
+                  alt="Veterinário cuidando de pet" 
+                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  Anos de Experiência
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: 5 anos"
-                  value={experience}
-                  onChange={(e) => setExperience(e.target.value)}
-                  className="input"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-2">
-                Especialidades
-              </label>
-              <input
-                type="text"
-                placeholder="Cirurgia, Clínica Geral, Cardiologia (separadas por vírgula)"
-                value={specialties}
-                onChange={(e) => setSpecialties(e.target.value)}
-                className="input"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  placeholder="dr.joao@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="input"
-                  required
+              {/* Imagem 2 */}
+              <div 
+                className="hero-image-circle" 
+                style={{
+                  position: 'absolute',
+                  top: '40px',
+                  right: '30px',
+                  width: '110px',
+                  height: '110px',
+                  zIndex: 4,
+                  animationDelay: '0.3s'
+                }}
+              >
+                <img 
+                  src="/img2.jpg" 
+                  alt="Pet feliz" 
+                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  Senha
-                </label>
-                <input
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input"
-                  required
+              {/* Imagem 3 */}
+              <div 
+                className="hero-image-circle animate-float" 
+                style={{
+                  position: 'absolute',
+                  bottom: '60px',
+                  right: '40px',
+                  width: '140px',
+                  height: '140px',
+                  zIndex: 5,
+                  animationDelay: '0.15s'
+                }}
+              >
+                <img 
+                  src="/im3.jpg" 
+                  alt="Clínica veterinária" 
+                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
+                />
+              </div>
+
+              {/* Imagem 4 */}
+              <div 
+                className="hero-image-circle" 
+                style={{
+                  position: 'absolute',
+                  bottom: '30px',
+                  left: '0',
+                  width: '95px',
+                  height: '95px',
+                  zIndex: 2,
+                  animationDelay: '0.5s'
+                }}
+              >
+                <img 
+                  src="/img4.jpg" 
+                  alt="Profissional veterinário" 
+                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
+                />
+              </div>
+
+              {/* Imagem 5 */}
+              <div 
+                className="hero-image-circle animate-float" 
+                style={{
+                  position: 'absolute',
+                  bottom: '0',
+                  right: '15px',
+                  width: '85px',
+                  height: '85px',
+                  zIndex: 1,
+                  animationDelay: '0.7s'
+                }}
+              >
+                <img 
+                  src="/img5.jpg" 
+                  alt="Cuidado animal" 
+                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
                 />
               </div>
             </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className={`btn btn-accent w-full text-lg relative ${
-                loading ? 'loading' : ''
-              }`}
-            >
-              {loading ? 'Cadastrando...' : 'Criar conta de veterinário'}
-            </button>
-          </form>
-
-          <div className="mt-8 text-center">
-            <Link 
-              to="/" 
-              className="btn btn-outline w-full"
-            >
-              ← Voltar ao início
-            </Link>
           </div>
         </div>
       </div>
     </div>
+    </>
   );
 };
 
