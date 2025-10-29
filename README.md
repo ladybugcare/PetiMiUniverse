@@ -1,6 +1,8 @@
 # 🐾 PetiVet
 
-**PetiVet** is a platform that connects veterinary clinics with veterinary professionals, streamlining the process of posting job demands and managing applications.
+PetiVet connects veterinary clinics and professionals. This workspace provides:
+- **Backend** (Express + TypeScript) in `backend/`
+- **Universal Frontend** (Expo/React Native) in `frontend/` which runs on web, iOS, and Android
 
 ## 📋 Features
 
@@ -25,62 +27,20 @@
 - RESTful API architecture
 
 ### Frontend
-- **React** (Create React App) for web
+- **Expo** / **React Native** for universal apps (web, iOS, Android)
 - **TypeScript** for type safety
-- **React Router** for navigation
-- **Tailwind CSS** styling system
+- **React Navigation** for navigation
 - Responsive design (mobile & desktop)
 
-## 📁 Project Structure
+## Prerequisites
 
-```
-PetiVet/
-├── backend/                 # Express API server
-│   ├── src/
-│   │   ├── config/         # Supabase configuration
-│   │   ├── controllers/    # Business logic
-│   │   │   ├── authController.ts
-│   │   │   ├── clinicsController.ts
-│   │   │   ├── vetsController.ts
-│   │   │   ├── demandsController.ts
-│   │   │   └── applicationsController.ts
-│   │   ├── routes/         # API routes
-│   │   └── index.ts        # Server entry point
-│   └── package.json
-│
-├── frontend/               # React web application
-│   ├── src/
-│   │   ├── components/    # Reusable components
-│   │   │   └── Navigation.tsx
-│   │   ├── pages/         # Page components
-│   │   │   ├── HomePage.tsx
-│   │   │   ├── LoginPage.tsx
-│   │   │   ├── ClinicSignUpPage.tsx
-│   │   │   ├── VetSignUpPage.tsx
-│   │   │   ├── DemandsPage.tsx
-│   │   │   ├── CreateDemandPage.tsx
-│   │   │   └── MyApplicationsPage.tsx
-│   │   ├── services/      # API integration
-│   │   │   ├── api.ts
-│   │   │   ├── clinicsApi.ts
-│   │   │   ├── vetsApi.ts
-│   │   │   ├── demandsApi.ts
-│   │   │   └── applicationsApi.ts
-│   │   └── App.tsx
-│   └── package.json
-│
-└── README.md
-```
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Node.js** 18+ and **npm** 9+
+- Node.js 18+
+- npm 9+
 - **Supabase** account and project
-- macOS, Linux, or Windows with WSL
+- iOS builds: macOS + Xcode (for Simulator)
+- Android builds: Android Studio + SDK / Emulator or physical device (USB debugging enabled)
 
-### Installation
+## 🚀 Installation
 
 1. **Clone the repository**
    ```bash
@@ -88,19 +48,16 @@ PetiVet/
    cd PetiVet
    ```
 
-2. **Install backend dependencies**
+2. **Install dependencies**
    ```bash
-   cd backend
-   npm install
+   npm install           # root dependencies (if any shared)
+   cd backend && npm install
+   cd ../frontend && npm install
    ```
 
-3. **Install frontend dependencies**
-   ```bash
-   cd ../frontend
-   npm install
-   ```
+   > Frontend install upgrades TypeScript to 5.x so Expo + React Navigation compile correctly.
 
-4. **Configure Supabase**
+3. **Configure Supabase**
    
    Create a `.env` file in the `backend/` directory:
    ```env
@@ -109,7 +66,7 @@ PetiVet/
    PORT=3000
    ```
 
-5. **Set up Supabase Database**
+4. **Set up Supabase Database**
 
    Run the following SQL in your Supabase SQL Editor:
 
@@ -167,85 +124,78 @@ PetiVet/
    );
    ```
 
-6. **Configure Supabase Authentication**
+5. **Configure Supabase Authentication**
    
    In your Supabase Dashboard:
    - Go to **Authentication** → **Providers**
    - Enable **Email** provider
    - **Disable** "Confirm email" for development (optional)
-   - Set **Site URL** to `http://localhost:3001`
+
+---
 
 ## 🏃 Running the Application
 
-### Start the Backend Server
+### Backend (API)
 
 ```bash
 cd backend
-npm start
+npm run dev           # runs nodemon with ts-node
 ```
 
 The API will be available at **http://localhost:3000**
 
-### Start the Frontend (Web Only)
+### Frontend (Expo app)
 
 ```bash
 cd frontend
-PORT=3001 npm run web
+npm run start         # open Expo CLI, choose platform (press w/i/a)
+# or
+npm run start:web     # launch web build only
+npm run start:ios     # open iOS simulator (macOS + Xcode)
+npm run start:android # open Android emulator or connected device
 ```
-
-The web app will be available at **http://localhost:3001**
-
-> **Note:** We use `PORT=3001` to avoid conflicts with the backend on port 3000.
 
 ### Quick Start Commands
 
 ```bash
 # Terminal 1 - Backend
-cd backend && npm start
+cd backend && npm run dev
 
 # Terminal 2 - Frontend  
-cd frontend && PORT=3001 npm run web
+cd frontend && npm run start
 ```
 
-## 📱 Usage
+---
 
-### As a Clinic
+## 📁 Project Structure
 
-1. **Sign Up** at `/clinic-signup`
-   - Provide clinic name, CNPJ, address, email, and password
-   
-2. **Login** at `/login`
-   - Use your registered email and password
-   
-3. **Create a Demand** 
-   - Click "Nova Demanda" in the navigation
-   - Fill in job details (title, description, specialties, dates, workload, compensation)
-   
-4. **View Demands**
-   - See all posted demands at `/demands`
+```
+PetiVet/
+├── backend/           # Express API (TypeScript)
+│   ├── src/
+│   │   ├── config/         # Supabase configuration
+│   │   ├── controllers/    # Business logic
+│   │   ├── routes/         # API routes
+│   │   └── index.ts        # Server entry point
+│   └── package.json
+│
+├── frontend/          # Expo project (React Native + web)
+│   ├── App.tsx
+│   ├── navigation/
+│   ├── screens/
+│   └── src/           # shared utilities/services, web styles
+│
+├── babel.config.js
+├── tailwind.config.js
+└── README.md
+```
 
-### As a Veterinarian
-
-1. **Sign Up** at `/vet-signup`
-   - Provide name, CRMV, specialties, experience, email, and password
-   
-2. **Login** at `/login`
-   - Use your registered email and password
-   
-3. **Browse Demands** at `/demands`
-   - View all open opportunities from clinics
-   
-4. **Apply to Demands**
-   - Click "Candidatar-se" on any demand
-   - Optionally write a message to the clinic
-   
-5. **Track Applications** at `/my-applications`
-   - See all your applications and their status
+---
 
 ## 🔑 API Endpoints
 
 ### Authentication
-- `POST /auth/signup` - Create new user (used internally by clinics/vets routes)
+- `POST /auth/signup` - Create new user
 - `POST /auth/login` - Login user
 
 ### Clinics
@@ -271,48 +221,29 @@ cd frontend && PORT=3001 npm run web
 - `GET /applications/vet/:vetId` - Get applications by vet
 - `PATCH /applications/:id/status` - Update application status
 
-## 🔧 Configuration
+---
 
-### Frontend Configuration
+## 📱 Mobile Configuration
 
-The frontend uses environment variables that can be set in your shell or added to a `.env` file:
+### API Base URL for mobile
 
-```env
-FAST_REFRESH=false  # Disables React Fast Refresh (fixes compilation errors)
-PORT=3001           # Development server port
+`frontend/src/services/api.ts` currently points to `http://localhost:3000`.  
+When testing on a device/emulator, replace `localhost` with your machine's LAN IP (e.g. `http://192.168.0.10:3000`) so the app can reach the backend.
+
+### Building native binaries
+
+Expo Managed apps use EAS:
+```bash
+npx expo login
+npx expo install expo-cli
+npx eas build --platform ios
+npx eas build --platform android
 ```
+Requires linking an Expo account; follow CLI prompts to configure credentials and build profiles.
 
-### Backend Configuration
-
-Backend environment variables (`.env` file):
-
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_anon_key
-PORT=3000
-```
+---
 
 ## 🐛 Troubleshooting
-
-### Frontend Issues
-
-**Problem:** React-refresh compilation errors (14 errors)
-```
-Module not found: Error: You attempted to import .../react-refresh/runtime.js
-```
-
-**Solution:** Run with `FAST_REFRESH=false`:
-```bash
-cd frontend
-FAST_REFRESH=false PORT=3001 npm run web
-```
-
-**Problem:** Port 3000 already in use
-
-**Solution:** Use a different port:
-```bash
-PORT=3001 npm run web
-```
 
 ### Backend Issues
 
@@ -327,26 +258,40 @@ PORT=3001 npm run web
 
 **Solution:** Your database tables need to use `uuid` type for `id` columns, not `bigint`. Run the SQL schema provided in the Installation section.
 
-### Authentication Issues
+### Frontend Issues
 
-**Problem:** Email confirmation link expired
+- **TypeScript errors about React Navigation**  
+  Run `npm install` inside `frontend/` to ensure TypeScript ≥5.x is installed.
 
-**Solution:** In Supabase Dashboard:
-- Go to **Authentication** → **Providers** → **Email**
-- Disable "Confirm email" for development
+- **Mobile app cannot reach backend**  
+  Confirm both devices are on same network and update `API_BASE_URL` to your computer's IP.
+
+- **Expo CLI failing to open simulator**  
+  Make sure `xcode-select --install` (macOS) or Android Studio SDK tools are installed. Launch simulators manually if autodetect fails.
+
+---
 
 ## 📚 Development
 
 ### Code Style
 
 - TypeScript strict mode enabled
-- ESLint configuration via Create React App
+- ESLint configuration
 - Functional React components with hooks
+
+### Useful Scripts
+
+- `npm run dev` (backend) – hot reload API
+- `npm run start` (frontend) – Expo dev server
+- `npm run start:web` (frontend) – web build
+- `npm test` (frontend) – Jest/React Testing Library
 
 ### Adding New Features
 
 1. **Backend**: Add controller → Add route → Register in `index.ts`
-2. **Frontend**: Add service → Add page → Add route in `App.tsx`
+2. **Frontend**: Add screen → Add to navigation → Update API services
+
+---
 
 ## 🤝 Contributing
 
