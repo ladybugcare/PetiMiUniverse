@@ -15,171 +15,139 @@
 -- ========================================
 
 -- ========================================
--- MIGRATION 1: CREATE AUTH TRIGGERS
+-- MIGRATION 0: CREATE BASE TABLES
 -- ========================================
--- Auto-populate tables on user creation
+-- Tabelas que precisam existir antes dos triggers
 
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-DECLARE
-  user_role TEXT;
-BEGIN
-  -- Get the role from metadata
-  user_role := NEW.raw_user_meta_data->>'role';
-  
-  -- If no role, try user_metadata
-  IF user_role IS NULL THEN
-    user_role := NEW.user_metadata->>'role';
-  END IF;
-  
-  -- Create appropriate record based on role
-  IF user_role = 'clinic' THEN
-    -- Create clinic record
-    INSERT INTO public.clinics (
-      id,
-      name,
-      email,
-      cnpj,
-      phone,
-      address,
-      city,
-      state,
-      technical_manager,
-      created_at,
-      updated_at
-    ) VALUES (
-      NEW.id,
-      COALESCE(NEW.raw_user_meta_data->>'name', 'Clínica sem nome'),
-      NEW.email,
-      COALESCE(NEW.raw_user_meta_data->>'cnpj', NULL),
-      COALESCE(NEW.raw_user_meta_data->>'phone', NULL),
-      COALESCE(NEW.raw_user_meta_data->>'address', ''),
-      COALESCE(NEW.raw_user_meta_data->>'city', ''),
-      COALESCE(NEW.raw_user_meta_data->>'state', 'SP'),
-      COALESCE(NEW.raw_user_meta_data->>'technical_manager', NULL),
-      NOW(),
-      NOW()
-    );
-    
-    -- Create main unit for the clinic
-    INSERT INTO public.units (
-      clinic_id,
-      name,
-      cnpj,
-      address,
-      city,
-      state,
-      phone,
-      technical_manager,
-      is_main,
-      status
-    ) VALUES (
-      NEW.id,
-      COALESCE(NEW.raw_user_meta_data->>'name', 'Clínica sem nome') || ' - Unidade Principal',
-      COALESCE(NEW.raw_user_meta_data->>'cnpj', NULL),
-      COALESCE(NEW.raw_user_meta_data->>'address', 'Endereço não cadastrado'),
-      COALESCE(NEW.raw_user_meta_data->>'city', 'Cidade não cadastrada'),
-      COALESCE(NEW.raw_user_meta_data->>'state', 'SP'),
-      COALESCE(NEW.raw_user_meta_data->>'phone', NULL),
-      COALESCE(NEW.raw_user_meta_data->>'technical_manager', NULL),
-      true,
-      'active'
-    );
-    
-    -- Create CADMIN clinic_user entry for clinic owner
-    INSERT INTO public.clinic_users (
-      user_id,
-      clinic_id,
-      unit_id,
-      role,
-      status,
-      accepted_at
-    )
-    SELECT 
-      NEW.id,
-      NEW.id,
-      u.id,
-      'CADMIN',
-      'active',
-      NOW()
-    FROM public.units u
-    WHERE u.clinic_id = NEW.id AND u.is_main = true;
-    
-  ELSIF user_role = 'vet' THEN
-    -- Create vet record
-    INSERT INTO public.vets (
-      id,
-      name,
-      email,
-      crmv,
-      phone,
-      specialties,
-      city,
-      state,
-      created_at,
-      updated_at
-    ) VALUES (
-      NEW.id,
-      COALESCE(NEW.raw_user_meta_data->>'name', 'Veterinário sem nome'),
-      NEW.email,
-      COALESCE(NEW.raw_user_meta_data->>'crmv', NULL),
-      COALESCE(NEW.raw_user_meta_data->>'phone', NULL),
-      COALESCE((NEW.raw_user_meta_data->>'specialties')::text[], ARRAY[]::text[]),
-      COALESCE(NEW.raw_user_meta_data->>'city', ''),
-      COALESCE(NEW.raw_user_meta_data->>'state', 'SP'),
-      NOW(),
-      NOW()
-    );
-  END IF;
-  
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Tabela CLINICS
+CREATE TABLE IF NOT EXISTS clinics (
+  id uuid PRIMARY KEY,
+  name text NOT NULL,
+  email text UNIQUE NOT NULL,
+  cnpj text UNIQUE,
+  phone text,
+  address text,
+  city text,
+  state text,
+  technical_manager text,
+  description text,
+  photo_url text,
+  status text DEFAULT 'active',
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
 
--- Create trigger on auth.users
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE INDEX IF NOT EXISTS idx_clinics_email ON clinics(email);
+CREATE INDEX IF NOT EXISTS idx_clinics_cnpj ON clinics(cnpj);
+CREATE INDEX IF NOT EXISTS idx_clinics_status ON clinics(status);
 
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_new_user();
+-- Tabela VETS
+CREATE TABLE IF NOT EXISTS vets (
+  id uuid PRIMARY KEY,
+  name text NOT NULL,
+  email text UNIQUE NOT NULL,
+  crmv text UNIQUE,
+  phone text,
+  specialties text[] DEFAULT '{}',
+  city text,
+  state text,
+  bio text,
+  photo_url text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
 
--- Handle user deletion
-CREATE OR REPLACE FUNCTION public.handle_user_delete()
-RETURNS TRIGGER AS $$
-DECLARE
-  user_role TEXT;
-BEGIN
-  user_role := OLD.raw_user_meta_data->>'role';
-  
-  IF user_role IS NULL THEN
-    user_role := OLD.user_metadata->>'role';
-  END IF;
-  
-  IF user_role = 'clinic' THEN
-    UPDATE public.clinics 
-    SET updated_at = NOW()
-    WHERE id = OLD.id;
-    
-  ELSIF user_role = 'vet' THEN
-    UPDATE public.vets 
-    SET updated_at = NOW()
-    WHERE id = OLD.id;
-  END IF;
-  
-  RETURN OLD;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+CREATE INDEX IF NOT EXISTS idx_vets_email ON vets(email);
+CREATE INDEX IF NOT EXISTS idx_vets_crmv ON vets(crmv);
+CREATE INDEX IF NOT EXISTS idx_vets_specialties ON vets USING GIN (specialties);
 
-DROP TRIGGER IF EXISTS on_auth_user_deleted ON auth.users;
+-- Tabela DEMANDS (tabela base antes de alterações)
+CREATE TABLE IF NOT EXISTS demands (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  description text,
+  clinic_id uuid REFERENCES clinics(id) ON DELETE CASCADE,
+  unit_id uuid, -- FK será adicionada depois
+  category text NOT NULL DEFAULT 'vet',
+  required_specialties text[] DEFAULT '{}',
+  demand_date date NOT NULL,
+  start_time time NOT NULL,
+  end_time time,
+  is_composite boolean DEFAULT false,
+  status text DEFAULT 'open' CHECK (status IN ('open', 'filled', 'cancelled', 'completed')),
+  payment numeric(10,2),
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone
+);
 
-CREATE TRIGGER on_auth_user_deleted
-  BEFORE DELETE ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_user_delete();
+CREATE INDEX IF NOT EXISTS idx_demands_clinic_id ON demands(clinic_id);
+CREATE INDEX IF NOT EXISTS idx_demands_status ON demands(status);
+CREATE INDEX IF NOT EXISTS idx_demands_demand_date ON demands(demand_date);
+CREATE INDEX IF NOT EXISTS idx_demands_category ON demands(category);
+
+-- Tabela APPLICATIONS (candidaturas simples, antes do sistema de posições)
+CREATE TABLE IF NOT EXISTS applications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  demand_id uuid REFERENCES demands(id) ON DELETE CASCADE NOT NULL,
+  vet_id uuid REFERENCES vets(id) ON DELETE CASCADE NOT NULL,
+  message text,
+  status text DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  UNIQUE(demand_id, vet_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_applications_demand_id ON applications(demand_id);
+CREATE INDEX IF NOT EXISTS idx_applications_vet_id ON applications(vet_id);
+CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
+
+-- Tabela PETS
+CREATE TABLE IF NOT EXISTS pets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  species text NOT NULL,
+  breed text,
+  age integer,
+  clinic_id uuid REFERENCES clinics(id) ON DELETE CASCADE,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pets_clinic_id ON pets(clinic_id);
+
+-- Tabela MARKETPLACE_ITEMS (para futuros marketplaces)
+CREATE TABLE IF NOT EXISTS marketplace_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  clinic_id uuid REFERENCES clinics(id) ON DELETE CASCADE,
+  vet_id uuid REFERENCES vets(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  description text,
+  price numeric(10,2),
+  category text,
+  status text DEFAULT 'active',
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_items_clinic_id ON marketplace_items(clinic_id);
+CREATE INDEX IF NOT EXISTS idx_marketplace_items_vet_id ON marketplace_items(vet_id);
+CREATE INDEX IF NOT EXISTS idx_marketplace_items_status ON marketplace_items(status);
+
+-- Tabela MARKETPLACE_MESSAGES
+CREATE TABLE IF NOT EXISTS marketplace_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_id uuid REFERENCES marketplace_items(id) ON DELETE CASCADE NOT NULL,
+  sender_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  message text NOT NULL,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_messages_item_id ON marketplace_messages(item_id);
+CREATE INDEX IF NOT EXISTS idx_marketplace_messages_sender_id ON marketplace_messages(sender_id);
 
 -- ========================================
--- MIGRATION 2: ADD CATEGORY AND SPECIALTIES
+-- MIGRATION 1: ADD CATEGORY AND SPECIALTIES
 -- ========================================
 
 ALTER TABLE demands 
@@ -195,7 +163,6 @@ CREATE TABLE IF NOT EXISTS specialties (
 );
 
 CREATE INDEX IF NOT EXISTS idx_specialties_category ON specialties(category);
-CREATE INDEX IF NOT EXISTS idx_demands_category ON demands(category);
 
 -- Insert veterinary specialties
 INSERT INTO specialties (name, category, description) VALUES
@@ -229,13 +196,14 @@ INSERT INTO specialties (name, category, description) VALUES
 ON CONFLICT (name) DO NOTHING;
 
 -- ========================================
--- MIGRATION 3: UNITS AND PERMISSIONS SYSTEM
+-- MIGRATION 2: UNITS AND PERMISSIONS SYSTEM
 -- ========================================
 
 CREATE TABLE IF NOT EXISTS units (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   clinic_id uuid REFERENCES clinics(id) ON DELETE CASCADE NOT NULL,
   name text NOT NULL,
+  nickname text,
   cnpj text UNIQUE,
   address text NOT NULL,
   city text NOT NULL,
@@ -243,13 +211,17 @@ CREATE TABLE IF NOT EXISTS units (
   phone text,
   technical_manager text,
   is_main boolean DEFAULT false,
-  status text DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  status text DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'pending_review', 'approved', 'rejected')),
+  reviewed_by uuid REFERENCES auth.users(id),
+  reviewed_at timestamp with time zone,
+  rejection_reason text,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_units_clinic_id ON units(clinic_id);
 CREATE INDEX IF NOT EXISTS idx_units_status ON units(status);
+CREATE INDEX IF NOT EXISTS idx_units_status_pending ON units(status) WHERE status = 'pending_review';
 
 CREATE TABLE IF NOT EXISTS clinic_users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -257,7 +229,7 @@ CREATE TABLE IF NOT EXISTS clinic_users (
   clinic_id uuid REFERENCES clinics(id) ON DELETE CASCADE NOT NULL,
   unit_id uuid REFERENCES units(id) ON DELETE SET NULL,
   role text NOT NULL CHECK (role IN ('CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL')),
-  status text DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'pending')),
+  status text DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'pending', 'pending_activation')),
   invited_by uuid REFERENCES auth.users(id),
   invited_at timestamp with time zone,
   accepted_at timestamp with time zone,
@@ -308,19 +280,16 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_clinic_id ON audit_logs(clinic_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
 
+-- Adicionar FK para units em demands
 ALTER TABLE demands
-ADD COLUMN IF NOT EXISTS unit_id uuid REFERENCES units(id);
+ADD CONSTRAINT demands_unit_id_fkey 
+FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_demands_unit_id ON demands(unit_id);
 
 -- ========================================
--- MIGRATION 4: CLINIC APPROVAL SYSTEM
+-- MIGRATION 3: CLINIC APPROVAL SYSTEM
 -- ========================================
-
-ALTER TABLE clinics 
-ADD COLUMN IF NOT EXISTS status text DEFAULT 'active';
-
-UPDATE clinics SET status = 'active' WHERE status IS NULL;
 
 ALTER TABLE clinics 
 DROP CONSTRAINT IF EXISTS clinics_status_check;
@@ -329,41 +298,9 @@ ALTER TABLE clinics
 ADD CONSTRAINT clinics_status_check 
 CHECK (status IN ('pending_unit', 'pending_approval', 'active', 'suspended', 'rejected'));
 
-ALTER TABLE units 
-DROP CONSTRAINT IF EXISTS units_status_check;
-
-ALTER TABLE units 
-ADD CONSTRAINT units_status_check 
-CHECK (status IN ('active', 'inactive', 'pending_review', 'approved', 'rejected'));
-
-ALTER TABLE clinic_users 
-DROP CONSTRAINT IF EXISTS clinic_users_status_check;
-
-ALTER TABLE clinic_users 
-ADD CONSTRAINT clinic_users_status_check 
-CHECK (status IN ('active', 'inactive', 'pending', 'pending_activation'));
-
-ALTER TABLE units
-ADD COLUMN IF NOT EXISTS reviewed_by uuid REFERENCES auth.users(id),
-ADD COLUMN IF NOT EXISTS reviewed_at timestamp with time zone,
-ADD COLUMN IF NOT EXISTS rejection_reason text;
-
-CREATE INDEX IF NOT EXISTS idx_clinics_status ON clinics(status);
-CREATE INDEX IF NOT EXISTS idx_units_status_pending ON units(status) WHERE status = 'pending_review';
-
 -- ========================================
--- MIGRATION 5: DEMAND POSITIONS SYSTEM
+-- MIGRATION 4: DEMAND POSITIONS SYSTEM
 -- ========================================
-
-ALTER TABLE demands
-ADD COLUMN IF NOT EXISTS is_composite boolean DEFAULT false,
-ADD COLUMN IF NOT EXISTS end_time time;
-
-UPDATE demands 
-SET end_time = (start_time::time + (COALESCE(duration_hours, 8) || ' hours')::interval)::time
-WHERE end_time IS NULL;
-
-ALTER TABLE demands DROP COLUMN IF EXISTS duration_hours;
 
 CREATE TABLE IF NOT EXISTS demand_positions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -525,18 +462,20 @@ FOR EACH ROW
 EXECUTE FUNCTION handle_application_rejection();
 
 -- ========================================
--- MIGRATION 6: SUPPORT TICKETS
+-- MIGRATION 5: SUPPORT TICKETS
 -- ========================================
 
 CREATE TABLE IF NOT EXISTS support_tickets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   user_role text NOT NULL CHECK (user_role IN ('clinic', 'vet')),
-  message text NOT NULL,
+  message text,
   status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
   admin_reply text,
   admin_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
-  user_read boolean NOT NULL DEFAULT true,
+  user_read boolean DEFAULT true,
+  last_message_at timestamp with time zone,
+  last_message_by text CHECK (last_message_by IN ('user', 'admin')),
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   resolved_at timestamp with time zone
@@ -548,7 +487,7 @@ CREATE INDEX IF NOT EXISTS idx_support_tickets_created_at ON support_tickets(cre
 CREATE INDEX IF NOT EXISTS idx_support_tickets_admin_id ON support_tickets(admin_id);
 
 -- ========================================
--- MIGRATION 7: CONVERSATION AND EVALUATION
+-- MIGRATION 6: CONVERSATION AND EVALUATION
 -- ========================================
 
 CREATE TABLE IF NOT EXISTS ticket_messages (
@@ -576,13 +515,109 @@ CREATE TABLE IF NOT EXISTS ticket_evaluations (
 CREATE INDEX IF NOT EXISTS idx_ticket_evaluations_ticket_id ON ticket_evaluations(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_evaluations_rating ON ticket_evaluations(rating);
 
-ALTER TABLE support_tickets 
-  ADD COLUMN IF NOT EXISTS last_message_at timestamp with time zone,
-  ADD COLUMN IF NOT EXISTS last_message_by text CHECK (last_message_by IN ('user', 'admin'));
+-- ========================================
+-- MIGRATION 7: CREATE AUTH TRIGGERS
+-- ========================================
+-- IMPORTANTE: Triggers devem ser criados POR ÚLTIMO!
 
-ALTER TABLE support_tickets 
-  ALTER COLUMN message DROP NOT NULL,
-  ALTER COLUMN user_read DROP NOT NULL;
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  user_role TEXT;
+BEGIN
+  user_role := NEW.raw_user_meta_data->>'role';
+  
+  IF user_role IS NULL THEN
+    user_role := NEW.user_metadata->>'role';
+  END IF;
+  
+  IF user_role = 'clinic' THEN
+    INSERT INTO public.clinics (
+      id, name, email, cnpj, phone, address, city, state, technical_manager, created_at, updated_at
+    ) VALUES (
+      NEW.id,
+      COALESCE(NEW.raw_user_meta_data->>'name', 'Clínica sem nome'),
+      NEW.email,
+      COALESCE(NEW.raw_user_meta_data->>'cnpj', NULL),
+      COALESCE(NEW.raw_user_meta_data->>'phone', NULL),
+      COALESCE(NEW.raw_user_meta_data->>'address', ''),
+      COALESCE(NEW.raw_user_meta_data->>'city', ''),
+      COALESCE(NEW.raw_user_meta_data->>'state', 'SP'),
+      COALESCE(NEW.raw_user_meta_data->>'technical_manager', NULL),
+      NOW(), NOW()
+    );
+    
+    INSERT INTO public.units (
+      clinic_id, name, cnpj, address, city, state, phone, technical_manager, is_main, status
+    ) VALUES (
+      NEW.id,
+      COALESCE(NEW.raw_user_meta_data->>'name', 'Clínica sem nome') || ' - Unidade Principal',
+      COALESCE(NEW.raw_user_meta_data->>'cnpj', NULL),
+      COALESCE(NEW.raw_user_meta_data->>'address', 'Endereço não cadastrado'),
+      COALESCE(NEW.raw_user_meta_data->>'city', 'Cidade não cadastrada'),
+      COALESCE(NEW.raw_user_meta_data->>'state', 'SP'),
+      COALESCE(NEW.raw_user_meta_data->>'phone', NULL),
+      COALESCE(NEW.raw_user_meta_data->>'technical_manager', NULL),
+      true, 'active'
+    );
+    
+    INSERT INTO public.clinic_users (user_id, clinic_id, unit_id, role, status, accepted_at)
+    SELECT NEW.id, NEW.id, u.id, 'CADMIN', 'active', NOW()
+    FROM public.units u
+    WHERE u.clinic_id = NEW.id AND u.is_main = true;
+    
+  ELSIF user_role = 'vet' THEN
+    INSERT INTO public.vets (
+      id, name, email, crmv, phone, specialties, city, state, created_at, updated_at
+    ) VALUES (
+      NEW.id,
+      COALESCE(NEW.raw_user_meta_data->>'name', 'Veterinário sem nome'),
+      NEW.email,
+      COALESCE(NEW.raw_user_meta_data->>'crmv', NULL),
+      COALESCE(NEW.raw_user_meta_data->>'phone', NULL),
+      COALESCE((NEW.raw_user_meta_data->>'specialties')::text[], ARRAY[]::text[]),
+      COALESCE(NEW.raw_user_meta_data->>'city', ''),
+      COALESCE(NEW.raw_user_meta_data->>'state', 'SP'),
+      NOW(), NOW()
+    );
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user();
+
+CREATE OR REPLACE FUNCTION public.handle_user_delete()
+RETURNS TRIGGER AS $$
+DECLARE
+  user_role TEXT;
+BEGIN
+  user_role := OLD.raw_user_meta_data->>'role';
+  
+  IF user_role IS NULL THEN
+    user_role := OLD.user_metadata->>'role';
+  END IF;
+  
+  IF user_role = 'clinic' THEN
+    UPDATE public.clinics SET updated_at = NOW() WHERE id = OLD.id;
+  ELSIF user_role = 'vet' THEN
+    UPDATE public.vets SET updated_at = NOW() WHERE id = OLD.id;
+  END IF;
+  
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_deleted ON auth.users;
+CREATE TRIGGER on_auth_user_deleted
+  BEFORE DELETE ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_user_delete();
 
 -- ========================================
 -- FINALIZAÇÃO
@@ -603,5 +638,4 @@ SELECT 'Migrations consolidadas executadas com sucesso!' as status,
 -- SELECT COUNT(*) as total_specialties FROM specialties;
 
 -- SELECT trigger_name FROM information_schema.triggers 
--- WHERE event_object_schema = 'auth' OR event_object_schema = 'public';
-
+-- WHERE event_object_schema IN ('auth', 'public');
