@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express'
 import { supabase } from '../config/supabase'
+import { createNotification } from './notificationsController'
 
 interface ApplicationBody {
   demand_id: string
@@ -9,13 +10,48 @@ interface ApplicationBody {
 export const applyToDemand = async (req: Request<{}, {}, ApplicationBody>, res: Response) => {
   const { demand_id, vet_id } = req.body
 
-  const { data, error } = await supabase
-    .from('applications')
-    .insert([{ demand_id, vet_id, status: 'applied' }])
-    .select()
+  try {
+    // Create application
+    const { data, error } = await supabase
+      .from('applications')
+      .insert([{ demand_id, vet_id, status: 'applied' }])
+      .select()
 
-  if (error) return res.status(400).json({ error })
-  res.status(201).json({ application: data[0] })
+    if (error) return res.status(400).json({ error })
+
+    const application = data[0]
+
+    // Get demand and vet info for notification
+    const { data: demand } = await supabase
+      .from('demands')
+      .select('title, clinic_id')
+      .eq('id', demand_id)
+      .single()
+
+    const { data: vet } = await supabase
+      .from('vets')
+      .select('name')
+      .eq('id', vet_id)
+      .single()
+
+    // Create notification for clinic
+    if (demand && vet) {
+      await createNotification({
+        user_id: demand.clinic_id,
+        type: 'application_received',
+        title: 'Nova Candidatura',
+        message: `${vet.name} se candidatou à vaga "${demand.title}"`,
+        link: `/demands/${demand_id}`,
+        entity_type: 'application',
+        entity_id: application.id
+      })
+    }
+
+    res.status(201).json({ application })
+  } catch (error: any) {
+    console.error('Error applying to demand:', error)
+    res.status(500).json({ error: error.message || 'Failed to apply to demand' })
+  }
 }
 
 // Tipando o param da rota

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { supabase } from '../config/supabase';
+import { createNotification } from './notificationsController';
 
 // Tipos
 interface CreateTicketBody {
@@ -501,6 +502,19 @@ export const addMessage = async (
 
     if (updateError) {
       console.error('Error updating ticket:', updateError);
+    }
+
+    // Create notification if admin is replying to user
+    if (sender_role === 'admin') {
+      await createNotification({
+        user_id: ticket.user_id,
+        type: 'support_reply',
+        title: 'Resposta de Suporte',
+        message: 'Você recebeu uma resposta do suporte',
+        link: `/my-support-tickets`,
+        entity_type: 'ticket',
+        entity_id: ticket_id
+      });
     }
 
     res.status(201).json({ message: newMessage });

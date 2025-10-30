@@ -7,6 +7,7 @@ import ClinicStatusBanner from '../components/ClinicStatusBanner';
 import DashboardBlockedOverlay from '../components/DashboardBlockedOverlay';
 import { usePermissions } from '../hooks/usePermissions';
 import { useUnit } from '../contexts/UnitContext';
+import { API_BASE_URL } from '../services/api';
 import { BarChart2, Building2, Users, ClipboardList, ShoppingCart, Search, User, LogOut, MessageSquare, Stethoscope, Star, FileText, MessageCircle } from 'lucide-react';
 import colors from '../styles/colors';
 
@@ -46,7 +47,7 @@ const ClinicDashboardPage: React.FC = () => {
     // Check clinic status
     const checkClinicStatus = async () => {
       try {
-        const response = await fetch(`http://localhost:3000/clinics/${user.id}`, {
+        const response = await fetch(`${API_BASE_URL}/clinics/${user.id}`, {
           headers: {
             'Authorization': `Bearer ${user.access_token || user.token}`,
           },

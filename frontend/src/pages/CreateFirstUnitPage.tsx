@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BRAZILIAN_STATES } from '../utils/locationData';
+import { API_BASE_URL } from '../services/api';
 import WelcomeModal from '../components/WelcomeModal';
 import colors from '../styles/colors';
 import { Heart, Info, Lightbulb, Building2 } from 'lucide-react';
@@ -44,7 +45,7 @@ const CreateFirstUnitPage: React.FC = () => {
         const hideModal = localStorage.getItem('hideWelcomeModal');
         const isFirstAccess = localStorage.getItem('isFirstAccess');
         
-        const response = await fetch(`http://localhost:3000/clinics/${clinicId}`, {
+        const response = await fetch(`${API_BASE_URL}/clinics/${clinicId}`, {
           headers: {
             'Authorization': `Bearer ${user.access_token || user.token}`,
           },
@@ -158,7 +159,7 @@ const CreateFirstUnitPage: React.FC = () => {
     // Save partial clinic data if provided
     if (clinicData.name.trim()) {
       try {
-        await fetch('http://localhost:3000/clinics/register-with-unit', {
+        await fetch('${API_BASE_URL}/clinics/register-with-unit', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -203,7 +204,7 @@ const CreateFirstUnitPage: React.FC = () => {
         },
       };
 
-      const response = await fetch('http://localhost:3000/clinics/register-with-unit', {
+      const response = await fetch('${API_BASE_URL}/clinics/register-with-unit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

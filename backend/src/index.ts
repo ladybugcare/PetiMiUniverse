@@ -16,13 +16,16 @@ import statisticsRoutes from './routes/statistics';
 import demandPositionsRoutes from './routes/demandPositions';
 import adminRoutes from './routes/admin';
 import supportTicketsRoutes from './routes/supportTickets';
+import notificationsRoutes from './routes/notifications';
 
 const app = express();
 
 // CORS configuration for different environments
 const allowedOrigins: string[] = [
   'http://localhost:3000',
+  'http://localhost:3002', // React dev server
   'https://peti-vet-git-staging-petivet.vercel.app',
+  'https://peti-vet-petivet.vercel.app', // Vercel production URL
   process.env.FRONTEND_URL
 ].filter((origin): origin is string => Boolean(origin));
 
@@ -51,6 +54,7 @@ app.use('/statistics', statisticsRoutes);
 app.use('/demand-positions', demandPositionsRoutes);
 app.use('/admin', adminRoutes);
 app.use('/support', supportTicketsRoutes);
+app.use('/notifications', notificationsRoutes);
 
 // ... rest of the file
 

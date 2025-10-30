@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { login } from '../services/api';
+import { login, API_BASE_URL } from '../services/api';
 import HomeHeader from '../components/HomeHeader';
 import PasswordInput from '../components/PasswordInput';
 import { useAlert } from '../hooks/useAlert';
@@ -40,7 +40,7 @@ const LoginPage: React.FC = () => {
       } else if (userRole === 'clinic') {
         // Check clinic status to redirect appropriately
         try {
-          const response = await fetch(`http://localhost:3000/clinics/${result.user.id}`, {
+          const response = await fetch(`${API_BASE_URL}/clinics/${result.user.id}`, {
             headers: {
               'Authorization': `Bearer ${result.session.access_token}`,
             },

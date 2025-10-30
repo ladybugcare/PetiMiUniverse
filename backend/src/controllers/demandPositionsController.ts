@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { supabase } from '../config/supabase';
+import { createNotification } from './notificationsController';
 
 // Criar demanda composta com posições
 export const createCompositeDemand = async (req: Request, res: Response) => {
@@ -217,7 +218,7 @@ export const acceptApplication = async (req: Request, res: Response) => {
     // Verificar se candidatura existe
     const { data: existingApp } = await supabase
       .from('position_applications')
-      .select('*, demand_positions!inner(total_slots, filled_slots)')
+      .select('*, demand_positions!inner(total_slots, filled_slots, master_demand_id)')
       .eq('id', application_id)
       .single();
 
@@ -245,6 +246,26 @@ export const acceptApplication = async (req: Request, res: Response) => {
 
     if (error) throw error;
 
+    // Get demand info for notification
+    const { data: demand } = await supabase
+      .from('demands')
+      .select('title')
+      .eq('id', position.master_demand_id)
+      .single();
+
+    // Create notification for vet
+    if (demand) {
+      await createNotification({
+        user_id: existingApp.vet_id,
+        type: 'application_accepted',
+        title: 'Candidatura Aceita! 🎉',
+        message: `Sua candidatura para "${demand.title}" foi aceita`,
+        link: `/demands/${position.master_demand_id}`,
+        entity_type: 'application',
+        entity_id: application_id
+      });
+    }
+
     res.json({ 
       application: data,
       message: 'Candidato aceito com sucesso'
@@ -261,6 +282,13 @@ export const rejectApplication = async (req: Request, res: Response) => {
   const { reason } = req.body;
 
   try {
+    // Get application details before updating
+    const { data: existingApp } = await supabase
+      .from('position_applications')
+      .select('vet_id, position_id, demand_positions!inner(master_demand_id)')
+      .eq('id', application_id)
+      .single();
+
     const { data, error } = await supabase
       .from('position_applications')
       .update({
@@ -273,6 +301,29 @@ export const rejectApplication = async (req: Request, res: Response) => {
       .single();
 
     if (error) throw error;
+
+    // Get demand info for notification
+    if (existingApp) {
+      const position = existingApp.demand_positions as any;
+      const { data: demand } = await supabase
+        .from('demands')
+        .select('title')
+        .eq('id', position.master_demand_id)
+        .single();
+
+      // Create notification for vet
+      if (demand) {
+        await createNotification({
+          user_id: existingApp.vet_id,
+          type: 'application_rejected',
+          title: 'Candidatura Não Selecionada',
+          message: `Sua candidatura para "${demand.title}" não foi selecionada`,
+          link: `/vet-dashboard`,
+          entity_type: 'application',
+          entity_id: application_id
+        });
+      }
+    }
 
     res.json({ 
       application: data,

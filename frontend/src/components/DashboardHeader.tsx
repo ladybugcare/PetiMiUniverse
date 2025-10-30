@@ -3,18 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { HelpCircle } from 'lucide-react';
 import UnitSelector from './UnitSelector';
 import SupportModal from './SupportModal';
+import NotificationBell from './NotificationBell';
 import { supportTicketsApi } from '../services/supportTicketsApi';
 
 interface DashboardHeaderProps {
   onMenuClick: () => void;
   pageName: string;
-  notificationCount?: number;
 }
 
 const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   onMenuClick,
   pageName,
-  notificationCount = 0,
 }) => {
   const navigate = useNavigate();
   const [supportModalOpen, setSupportModalOpen] = useState(false);
@@ -133,29 +132,8 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             </button>
           )}
           
-          <button
-            style={styles.notificationButton}
-            aria-label="Notifications"
-          >
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-            {notificationCount > 0 && (
-              <span style={styles.notificationBadge}>
-                {notificationCount > 9 ? '9+' : notificationCount}
-              </span>
-            )}
-          </button>
+          {/* Notification Bell */}
+          <NotificationBell />
         </div>
       </div>
 
@@ -250,37 +228,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'background-color 0.2s ease',
   },
   supportBadge: {
-    position: 'absolute',
-    top: '6px',
-    right: '6px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: '18px',
-    height: '18px',
-    padding: '0 4px',
-    backgroundColor: '#ef4444',
-    color: '#ffffff',
-    fontSize: '10px',
-    fontWeight: '600',
-    borderRadius: '9999px',
-    border: '2px solid #ffffff',
-  },
-  notificationButton: {
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '40px',
-    height: '40px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: '#525252',
-    cursor: 'pointer',
-    borderRadius: '8px',
-    transition: 'background-color 0.2s ease',
-  },
-  notificationBadge: {
     position: 'absolute',
     top: '6px',
     right: '6px',
