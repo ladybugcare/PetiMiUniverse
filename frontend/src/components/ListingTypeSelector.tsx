@@ -1,4 +1,5 @@
 import React from 'react';
+import { ShoppingBag, Search } from 'lucide-react';
 
 type ListingType = 'sale' | 'wanted';
 
@@ -8,7 +9,7 @@ interface ListingTypeSelectorProps {
 
 interface TypeCardData {
   id: ListingType;
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   description: string;
   gradient: string;
@@ -17,14 +18,14 @@ interface TypeCardData {
 const listingTypes: TypeCardData[] = [
   {
     id: 'sale',
-    icon: '🛍️',
+    icon: <ShoppingBag size={48} />,
     title: 'VENDER',
     description: 'Tenho equipamentos, medicamentos ou suprimentos para vender',
     gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
   },
   {
     id: 'wanted',
-    icon: '🔍',
+    icon: <Search size={48} />,
     title: 'PROCURAR',
     description: 'Estou procurando comprar equipamentos ou produtos veterinários',
     gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',

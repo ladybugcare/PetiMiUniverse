@@ -8,6 +8,8 @@ import {
   Pressable,
   PressableStateCallbackType,
 } from 'react-native';
+import { Building2, Stethoscope, Heart } from 'lucide-react';
+import colors from '../styles/colors';
 
 // Extend PressableStateCallbackType to include hover state (React Native Web)
 type PressableStateWithHover = PressableStateCallbackType & {
@@ -16,7 +18,7 @@ type PressableStateWithHover = PressableStateCallbackType & {
 
 type AudienceCard = {
   id: string;
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   description: string;
   emphasis: string;
@@ -25,28 +27,28 @@ type AudienceCard = {
 const cards: AudienceCard[] = [
   {
     id: 'clinics',
-    icon: '🏥',
+    icon: <Building2 size={32} color={colors.primary} />,
     title: 'Para Clínicas',
     description: 'Publique demandas, visualize perfis de veterinários e freelancers, e contrate com segurança e agilidade.',
     emphasis: 'Encontre profissionais quando mais precisa.',
   },
   {
     id: 'vets',
-    icon: '🩺',
+    icon: <Stethoscope size={32} color={colors.primary} />,
     title: 'Para Veterinários',
     description: 'Candidata-se a demandas de clínicas, exiba suas especialidades e amplie sua rede de parceiros na área.',
     emphasis: 'Conecte-se a novas oportunidades.',
   },
   {
     id: 'freelancers',
-    icon: '🐾',
+    icon: <Heart size={32} color={colors.primary} fill={colors.primary} />,
     title: 'Para Freelancers',
     description: 'Groomers, adestradores, cuidadores e outros profissionais encontram aqui espaço para se destacar.',
     emphasis: 'Ofereça seus serviços ao mundo pet.',
   },
   {
     id: 'tutors',
-    icon: '💙',
+    icon: <Heart size={32} color={colors.primary} fill={colors.primary} />,
     title: 'Para Tutores',
     description: 'Agende consultas, acompanhe o histórico e receba atendimento de profissionais que realmente amam animais.',
     emphasis: 'Encontre o cuidado ideal para seu pet.',
@@ -60,9 +62,9 @@ const HowItWorks: React.FC = () => {
   return (
     <View style={styles.section}>
       <View style={styles.wrapper}>
-        <Text style={styles.title}>Como o PetiVet funciona 🐾</Text>
+        <Text style={styles.title}>Como o PetiVet funciona</Text>
         <Text style={styles.subtitle}>
-          Uma plataforma feita para unir quem oferece cuidado e quem precisa dele. Tudo em um só lugar — simples, rápido e cheio de amor pelos pets. 💜
+          Uma plataforma feita para unir quem oferece cuidado e quem precisa dele. Tudo em um só lugar — simples, rápido e cheio de amor pelos pets.
         </Text>
 
         {isMobile ? (

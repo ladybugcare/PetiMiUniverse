@@ -25,9 +25,11 @@ import AdminClinicsPage from './pages/AdminClinicsPage';
 import AdminVetsPage from './pages/AdminVetsPage';
 import AdminDemandsPage from './pages/AdminDemandsPage';
 import AdminUsersPage from './pages/AdminUsersPage';
+import AdminSupportTicketsPage from './pages/AdminSupportTicketsPage';
 import VetPositionsPage from './pages/VetPositionsPage';
 import VetProfilePage from './pages/VetProfilePage';
 import ClinicProfilePage from './pages/ClinicProfilePage';
+import MySupportTicketsPage from './pages/MySupportTicketsPage';
 import AdminProfilePage from './pages/AdminProfilePage';
 import CreateFirstUnitPage from './pages/CreateFirstUnitPage';
 import CreateUnitPage from './pages/CreateUnitPage';
@@ -52,6 +54,7 @@ function App() {
             <Route path="/admin/clinics" element={<AdminClinicsPage />} />
             <Route path="/admin/vets" element={<AdminVetsPage />} />
             <Route path="/admin/demands" element={<AdminDemandsPage />} />
+            <Route path="/admin/support-tickets" element={<AdminSupportTicketsPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/clinic-dashboard" element={<ClinicDashboardPage />} />
             <Route path="/vet-dashboard" element={<VetDashboardPage />} />
@@ -78,6 +81,7 @@ function App() {
             <Route path="/vet-profile" element={<VetProfilePage />} />
             <Route path="/clinic-profile" element={<ClinicProfilePage />} />
             <Route path="/admin-profile" element={<AdminProfilePage />} />
+            <Route path="/my-support-tickets" element={<MySupportTicketsPage />} />
             
             {/* Admin Routes */}
             <Route path="/admin/pending-units" element={<AdminPendingUnitsPage />} />

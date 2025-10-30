@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useUnit } from '../../../contexts/UnitContext';
 import { statisticsApi } from '../../../services/statisticsApi';
 import { clinicUsersApi } from '../../../services/clinicUsersApi';
+import { Building2, Users, ClipboardList, AlertCircle, BarChart2, UserPlus } from 'lucide-react';
+import colors from '../../../styles/colors';
 
 interface AdminDashboardProps {
   activeSection: string;
@@ -75,7 +77,9 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
         <div style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}>
-          <div style={styles.statIcon}>🏥</div>
+          <div style={styles.statIcon}>
+            <Building2 size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalUnits}</h3>
             <p style={styles.statLabel}>Unidades Ativas</p>
@@ -83,7 +87,9 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
         </div>
 
         <div style={{ ...styles.statCard, borderLeftColor: '#3b82f6' }}>
-          <div style={styles.statIcon}>👥</div>
+          <div style={styles.statIcon}>
+            <Users size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalUsers}</h3>
             <p style={styles.statLabel}>Usuários Ativos</p>
@@ -91,7 +97,9 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
         </div>
 
         <div style={{ ...styles.statCard, borderLeftColor: '#10b981' }}>
-          <div style={styles.statIcon}>📋</div>
+          <div style={styles.statIcon}>
+            <ClipboardList size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalDemands}</h3>
             <p style={styles.statLabel}>Demandas Abertas</p>
@@ -99,7 +107,9 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
         </div>
 
         <div style={{ ...styles.statCard, borderLeftColor: '#f59e0b' }}>
-          <div style={styles.statIcon}>⏳</div>
+          <div style={styles.statIcon}>
+            <AlertCircle size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.pendingApplications}</h3>
             <p style={styles.statLabel}>Candidaturas Pendentes</p>
@@ -129,19 +139,27 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
         <h3 style={styles.subsectionTitle}>Ações Rápidas</h3>
         <div style={styles.actionsGrid}>
           <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>🏥</span>
+            <span style={styles.actionIcon}>
+              <Building2 size={20} />
+            </span>
             <span style={styles.actionLabel}>Nova Unidade</span>
           </button>
           <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>👤</span>
+            <span style={styles.actionIcon}>
+              <UserPlus size={20} />
+            </span>
             <span style={styles.actionLabel}>Convidar Usuário</span>
           </button>
           <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>📋</span>
+            <span style={styles.actionIcon}>
+              <ClipboardList size={20} />
+            </span>
             <span style={styles.actionLabel}>Nova Demanda</span>
           </button>
           <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>📊</span>
+            <span style={styles.actionIcon}>
+              <BarChart2 size={20} />
+            </span>
             <span style={styles.actionLabel}>Relatórios</span>
           </button>
         </div>

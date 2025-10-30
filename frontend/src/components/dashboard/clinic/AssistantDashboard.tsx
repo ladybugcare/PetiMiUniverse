@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { demandsApi } from '../../../services/demandsApi';
 import { applicationsApi } from '../../../services/applicationsApi';
 import { useUnit } from '../../../contexts/UnitContext';
+import { ClipboardList, CheckCircle, MessageSquare, Calendar, Users, FileText, Eye } from 'lucide-react';
+import colors from '../../../styles/colors';
 
 interface AssistantDashboardProps {
   activeSection: string;
@@ -79,7 +81,9 @@ const ResumoSection: React.FC = () => {
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
         <div style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}>
-          <div style={styles.statIcon}>📋</div>
+          <div style={styles.statIcon}>
+            <ClipboardList size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalDemands}</h3>
             <p style={styles.statLabel}>Demandas Abertas</p>
@@ -87,7 +91,9 @@ const ResumoSection: React.FC = () => {
         </div>
 
         <div style={{ ...styles.statCard, borderLeftColor: '#10b981' }}>
-          <div style={styles.statIcon}>✅</div>
+          <div style={styles.statIcon}>
+            <CheckCircle size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalApplications}</h3>
             <p style={styles.statLabel}>Candidaturas Recebidas</p>
@@ -108,19 +114,27 @@ const ResumoSection: React.FC = () => {
         <h3 style={styles.subsectionTitle}>Ações Rápidas</h3>
         <div style={styles.actionsGrid}>
           <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>📋</span>
+            <span style={styles.actionIcon}>
+              <ClipboardList size={20} />
+            </span>
             <span style={styles.actionLabel}>Nova Demanda</span>
           </button>
           <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>👀</span>
+            <span style={styles.actionIcon}>
+              <Eye size={20} />
+            </span>
             <span style={styles.actionLabel}>Ver Candidaturas</span>
           </button>
           <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>📅</span>
+            <span style={styles.actionIcon}>
+              <Calendar size={20} />
+            </span>
             <span style={styles.actionLabel}>Agenda</span>
           </button>
           <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>💬</span>
+            <span style={styles.actionIcon}>
+              <MessageSquare size={20} />
+            </span>
             <span style={styles.actionLabel}>Mensagens</span>
           </button>
         </div>
@@ -156,7 +170,10 @@ const MensagensSection: React.FC = () => {
     <div style={styles.section}>
       <h2 style={styles.sectionTitle}>Mensagens</h2>
       <div style={styles.placeholder}>
-        <p style={styles.placeholderText}>💬 Suas mensagens aparecerão aqui</p>
+        <p style={styles.placeholderText}>
+          <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+          Suas mensagens aparecerão aqui
+        </p>
       </div>
     </div>
   );
@@ -179,8 +196,14 @@ const DemandCard: React.FC<{
         </span>
       </div>
       <div style={styles.demandInfo}>
-        <span style={styles.demandDate}>📅 {date}</span>
-        <span style={styles.demandCandidates}>👥 {candidates} candidatos</span>
+        <span style={styles.demandDate}>
+          <Calendar size={16} style={{ marginRight: '4px', display: 'inline-block', verticalAlign: 'middle' }} />
+          {date}
+        </span>
+        <span style={styles.demandCandidates}>
+          <Users size={16} style={{ marginRight: '4px', display: 'inline-block', verticalAlign: 'middle' }} />
+          {candidates} candidatos
+        </span>
       </div>
     </div>
   );

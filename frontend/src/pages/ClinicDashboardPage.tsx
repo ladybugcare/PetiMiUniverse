@@ -7,7 +7,7 @@ import ClinicStatusBanner from '../components/ClinicStatusBanner';
 import DashboardBlockedOverlay from '../components/DashboardBlockedOverlay';
 import { usePermissions } from '../hooks/usePermissions';
 import { useUnit } from '../contexts/UnitContext';
-import { BarChart2, Building2, Users, ClipboardList, ShoppingCart, Search, User, LogOut, MessageSquare, Stethoscope, Star, FileText } from 'lucide-react';
+import { BarChart2, Building2, Users, ClipboardList, ShoppingCart, Search, User, LogOut, MessageSquare, Stethoscope, Star, FileText, MessageCircle } from 'lucide-react';
 import colors from '../styles/colors';
 
 // Import role-specific dashboard components
@@ -157,6 +157,13 @@ const ClinicDashboardPage: React.FC = () => {
       sectionId: 'audit',
     },
     {
+      id: 'support',
+      label: 'Meus Tickets',
+      icon: <MessageSquare size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/my-support-tickets',
+    },
+    {
       id: 'perfil',
       label: 'Perfil',
       icon: <User size={20} color={colors.primary} />,
@@ -223,6 +230,13 @@ const ClinicDashboardPage: React.FC = () => {
       path: '/marketplace',
     },
     {
+      id: 'support',
+      label: 'Meus Tickets',
+      icon: <MessageCircle size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/my-support-tickets',
+    },
+    {
       id: 'perfil',
       label: 'Perfil',
       icon: <User size={20} color={colors.primary} />,
@@ -266,6 +280,13 @@ const ClinicDashboardPage: React.FC = () => {
       icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
+    },
+    {
+      id: 'support',
+      label: 'Meus Tickets',
+      icon: <MessageCircle size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/my-support-tickets',
     },
     {
       id: 'perfil',
@@ -318,6 +339,13 @@ const ClinicDashboardPage: React.FC = () => {
       icon: <Star size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'avaliacoes',
+    },
+    {
+      id: 'support',
+      label: 'Meus Tickets',
+      icon: <MessageCircle size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/my-support-tickets',
     },
     {
       id: 'perfil',

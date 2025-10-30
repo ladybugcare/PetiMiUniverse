@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle } from 'lucide-react';
+import colors from '../styles/colors';
 
 const AdminDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -60,42 +62,49 @@ const AdminDashboardPage: React.FC = () => {
     {
       id: 'overview',
       label: 'Dashboard',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'overview',
     },
     {
       id: 'clinics',
       label: 'Clínicas',
-      icon: '🏥',
+      icon: <Building2 size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/admin/clinics',
     },
     {
       id: 'vets',
       label: 'Veterinários',
-      icon: '👨‍⚕️',
+      icon: <Stethoscope size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/admin/vets',
     },
     {
       id: 'demands',
       label: 'Demandas',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/admin/demands',
     },
     {
+      id: 'support',
+      label: 'Tickets de Suporte',
+      icon: <MessageCircle size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/admin/support-tickets',
+    },
+    {
       id: 'users',
       label: 'Usuários',
-      icon: '👥',
+      icon: <Users size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/admin/users',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];
@@ -221,19 +230,19 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
         <h3 style={styles.subsectionTitle}>Atividade Recente</h3>
         <div style={styles.activityList}>
           <ActivityItem
-            icon="🏥"
+            icon={<Building2 size={20} color="#7c3aed" />}
             title="Nova clínica cadastrada"
             description="Vet Care Alphaville"
             time="Há 2 horas"
           />
           <ActivityItem
-            icon="👨‍⚕️"
+            icon={<Stethoscope size={20} color="#7c3aed" />}
             title="Novo veterinário registrado"
             description="Dr. João Silva - CRMV 12345"
             time="Há 5 horas"
           />
           <ActivityItem
-            icon="📋"
+            icon={<ClipboardList size={20} color="#7c3aed" />}
             title="Demanda criada"
             description="Plantão emergencial - Clínica São Paulo"
             time="Há 1 dia"
@@ -346,7 +355,7 @@ const HealthCard: React.FC<{
 };
 
 const ActivityItem: React.FC<{
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   description: string;
   time: string;

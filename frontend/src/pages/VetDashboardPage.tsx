@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import FloatingActionButton from '../components/FloatingActionButton';
-import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut, ShoppingCart, Clock, CheckCircle, Building2, Bell, Lock, Smartphone, Globe, MessageCircle } from 'lucide-react';
 import colors from '../styles/colors';
 
 const VetDashboardPage: React.FC = () => {
@@ -37,7 +37,7 @@ const VetDashboardPage: React.FC = () => {
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} />,
       path: '/marketplace/create',
       color: '#10b981',
     },
@@ -82,9 +82,16 @@ const VetDashboardPage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
+    },
+    {
+      id: 'support',
+      label: 'Meus Tickets',
+      icon: <MessageCircle size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/my-support-tickets',
     },
     {
       id: 'perfil',
@@ -187,21 +194,21 @@ const ResumoSection: React.FC = () => {
         <DashboardCard
           title="Candidaturas Ativas"
           value={stats.totalApplications.toString()}
-          icon="📝"
+          icon={<FileText size={32} />}
           color="#7c3aed"
           bgColor="#ede9fe"
         />
         <DashboardCard
           title="Trabalhos em Andamento"
           value={stats.activeJobs.toString()}
-          icon="⏳"
+          icon={<Clock size={32} />}
           color="#0ea5e9"
           bgColor="#e0f2fe"
         />
         <DashboardCard
           title="Trabalhos Concluídos"
           value={stats.completedJobs.toString()}
-          icon="✅"
+          icon={<CheckCircle size={32} />}
           color="#22c55e"
           bgColor="#dcfce7"
         />
@@ -223,7 +230,7 @@ const ResumoSection: React.FC = () => {
             opportunities.map((opportunity) => (
               <OpportunityItem
                 key={opportunity.id}
-                icon="🏥"
+                icon={<Building2 size={20} color="#7c3aed" />}
                 title={opportunity.title}
                 clinic={opportunity.clinic_id}
                 payment={opportunity.payment ? `R$ ${opportunity.payment}` : 'A combinar'}
@@ -312,22 +319,22 @@ const ConfiguracoesSection: React.FC = () => (
     <h2 style={styles.sectionTitle}>Configurações</h2>
     <div style={styles.settingsGrid}>
       <SettingCard
-        icon="🔔"
+        icon={<Bell size={28} color="#7c3aed" />}
         title="Notificações"
         description="Gerencie suas preferências de notificação"
       />
       <SettingCard
-        icon="🔒"
+        icon={<Lock size={28} color="#7c3aed" />}
         title="Privacidade"
         description="Controle quem pode ver seu perfil"
       />
       <SettingCard
-        icon="📱"
+        icon={<Smartphone size={28} color="#7c3aed" />}
         title="Preferências"
         description="Personalize sua experiência"
       />
       <SettingCard
-        icon="🌐"
+        icon={<Globe size={28} color="#7c3aed" />}
         title="Idioma"
         description="Português (Brasil)"
       />
@@ -339,7 +346,7 @@ const ConfiguracoesSection: React.FC = () => (
 interface DashboardCardProps {
   title: string;
   value: string;
-  icon: string;
+  icon: React.ReactNode;
   color: string;
   bgColor: string;
 }
@@ -357,7 +364,7 @@ const DashboardCard: React.FC<DashboardCardProps> = ({ title, value, icon, color
 );
 
 interface OpportunityItemProps {
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   clinic: string;
   payment: string;
@@ -418,7 +425,7 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ reviewer, rating, comment, date
 );
 
 interface SettingCardProps {
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   description: string;
 }

@@ -15,6 +15,7 @@ import clinicUsersRoutes from './routes/clinicUsers';
 import statisticsRoutes from './routes/statistics';
 import demandPositionsRoutes from './routes/demandPositions';
 import adminRoutes from './routes/admin';
+import supportTicketsRoutes from './routes/supportTickets';
 
 const app = express();
 app.use(cors());
@@ -37,6 +38,7 @@ app.use('/clinic-users', clinicUsersRoutes);
 app.use('/statistics', statisticsRoutes);
 app.use('/demand-positions', demandPositionsRoutes);
 app.use('/admin', adminRoutes);
+app.use('/support', supportTicketsRoutes);
 
 // ... rest of the file
 

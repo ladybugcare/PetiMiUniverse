@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clinicsApi } from '../services/clinicsApi';
+import { Construction, Clock, AlertTriangle } from 'lucide-react';
+import colors from '../styles/colors';
 
 const ClinicStatusBanner: React.FC = () => {
   const [status, setStatus] = useState<string | null>(null);
@@ -37,7 +39,9 @@ const ClinicStatusBanner: React.FC = () => {
     return (
       <div style={styles.bannerWarning}>
         <div style={styles.bannerContent}>
-          <span style={styles.bannerIcon}>🚧</span>
+          <span style={styles.bannerIcon}>
+            <Construction size={24} color="#f59e0b" />
+          </span>
           <div style={styles.bannerText}>
             <strong>Ação necessária:</strong> Crie sua primeira unidade para ativar sua conta.
           </div>
@@ -56,7 +60,9 @@ const ClinicStatusBanner: React.FC = () => {
     return (
       <div style={styles.bannerInfo}>
         <div style={styles.bannerContent}>
-          <span style={styles.bannerIcon}>⏳</span>
+          <span style={styles.bannerIcon}>
+            <Clock size={24} color="#f59e0b" />
+          </span>
           <div style={styles.bannerText}>
             <strong>Aguardando aprovação:</strong> Sua unidade está em análise pelo ADMIN. Você poderá criar demandas e anúncios após a aprovação.
           </div>

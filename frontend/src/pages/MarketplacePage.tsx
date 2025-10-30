@@ -5,6 +5,8 @@ import MarketplaceCard from '../components/MarketplaceCard';
 import FloatingActionButton from '../components/FloatingActionButton';
 import { marketplaceApi, MarketplaceItem, MarketplaceFilters } from '../services/marketplaceApi';
 import { BRAZILIAN_STATES } from '../utils/locationData';
+import { BarChart2, ShoppingCart, PlusCircle, Package, MessageSquare, User, LogOut, Search } from 'lucide-react';
+import colors from '../styles/colors';
 
 const MarketplacePage: React.FC = () => {
   const [items, setItems] = useState<MarketplaceItem[]>([]);
@@ -27,49 +29,49 @@ const MarketplacePage: React.FC = () => {
     {
       id: 'dashboard',
       label: 'Dashboard',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-dashboard',
     },
     {
       id: 'marketplace',
       label: 'Ver Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-      icon: '➕',
+      icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/create',
     },
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-      icon: '📦',
+      icon: <Package size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/my-listings',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      icon: '💬',
+      icon: <MessageSquare size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/messages',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];
@@ -117,7 +119,7 @@ const MarketplacePage: React.FC = () => {
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      icon: '➕',
+      icon: <PlusCircle size={20} />,
       path: '/marketplace/create',
       color: '#10b981',
     },
@@ -143,7 +145,10 @@ const MarketplacePage: React.FC = () => {
             onClick={() => setShowFilters(!showFilters)}
             style={styles.filterToggleButton}
           >
-            🔍 {showFilters ? 'Ocultar' : 'Mostrar'} Filtros
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Search size={18} />
+              <span>{showFilters ? 'Ocultar' : 'Mostrar'} Filtros</span>
+            </div>
           </button>
         </div>
 
@@ -296,7 +301,9 @@ const MarketplacePage: React.FC = () => {
           <div style={styles.loading}>Carregando anúncios...</div>
         ) : items.length === 0 ? (
           <div style={styles.emptyState}>
-            <p style={styles.emptyIcon}>📦</p>
+            <p style={styles.emptyIcon}>
+              <Package size={64} color="#a3a3a3" />
+            </p>
             <p style={styles.emptyText}>Nenhum item encontrado</p>
             <p style={styles.emptyHint}>Tente ajustar os filtros ou criar um novo anúncio</p>
           </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { CheckCircle, XCircle, AlertTriangle, Info } from 'lucide-react';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info';
 
@@ -30,14 +31,14 @@ const Alert: React.FC<AlertProps> = ({
   const getIconAndColor = () => {
     switch (type) {
       case 'success':
-        return { icon: '✓', color: '#10b981', bgColor: '#d1fae5' };
+        return { icon: <CheckCircle size={32} />, color: '#10b981', bgColor: '#d1fae5' };
       case 'error':
-        return { icon: '✕', color: '#ef4444', bgColor: '#fee2e2' };
+        return { icon: <XCircle size={32} />, color: '#ef4444', bgColor: '#fee2e2' };
       case 'warning':
-        return { icon: '⚠', color: '#f59e0b', bgColor: '#fef3c7' };
+        return { icon: <AlertTriangle size={32} />, color: '#f59e0b', bgColor: '#fef3c7' };
       case 'info':
       default:
-        return { icon: 'ℹ', color: '#7c3aed', bgColor: '#ede9fe' };
+        return { icon: <Info size={32} />, color: '#7c3aed', bgColor: '#ede9fe' };
     }
   };
 

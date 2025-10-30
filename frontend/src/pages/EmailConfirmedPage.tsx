@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
+import { CheckCircle, XCircle, PartyPopper } from 'lucide-react';
 
 const EmailConfirmedPage: React.FC = () => {
   const navigate = useNavigate();
@@ -63,8 +64,15 @@ const EmailConfirmedPage: React.FC = () => {
         
         {status === 'success' && (
           <>
-            <div style={styles.successIcon}>✓</div>
-            <h2 style={styles.title}>E-mail confirmado com sucesso! 🎉</h2>
+            <div style={styles.successIcon}>
+              <CheckCircle size={36} strokeWidth={3} />
+            </div>
+            <h2 style={styles.title}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <span>E-mail confirmado com sucesso!</span>
+                <PartyPopper size={28} />
+              </div>
+            </h2>
             <p style={styles.message}>
               Redirecionando você para cadastrar sua primeira unidade...
             </p>
@@ -73,7 +81,9 @@ const EmailConfirmedPage: React.FC = () => {
         
         {status === 'error' && (
           <>
-            <div style={styles.errorIcon}>✕</div>
+            <div style={styles.errorIcon}>
+              <XCircle size={36} strokeWidth={3} />
+            </div>
             <h2 style={styles.title}>Erro ao confirmar e-mail</h2>
             <p style={styles.message}>
               Não foi possível confirmar seu e-mail. Por favor, tente fazer login.

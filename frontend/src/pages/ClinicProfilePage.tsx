@@ -5,6 +5,8 @@ import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { clinicsApi, Clinic } from '../services/clinicsApi';
 import { useAlert } from '../hooks/useAlert';
+import { BarChart2, ClipboardList, ShoppingCart, User, LogOut } from 'lucide-react';
+import colors from '../styles/colors';
 
 const ClinicProfilePage: React.FC = () => {
   const navigate = useNavigate();
@@ -25,35 +27,35 @@ const ClinicProfilePage: React.FC = () => {
     {
       id: 'dashboard',
       label: 'Dashboard',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-dashboard',
     },
     {
       id: 'demandas',
       label: 'Demandas',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];

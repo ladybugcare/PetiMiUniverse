@@ -1,4 +1,5 @@
 import React from 'react';
+import { Microscope, Pill, Syringe, Package } from 'lucide-react';
 
 type CategoryType = 'equipment' | 'medicine' | 'vaccine' | 'supplies';
 
@@ -9,7 +10,7 @@ interface MarketplaceCategorySelectorProps {
 
 interface CategoryCardData {
   id: CategoryType;
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   description: string;
   color: string;
@@ -18,28 +19,28 @@ interface CategoryCardData {
 const categories: CategoryCardData[] = [
   {
     id: 'equipment',
-    icon: '🔬',
+    icon: <Microscope size={40} />,
     title: 'Equipamentos',
     description: 'Equipamentos cirúrgicos, diagnósticos, mobiliário clínico e laboratório',
     color: '#7c3aed',
   },
   {
     id: 'medicine',
-    icon: '💊',
+    icon: <Pill size={40} />,
     title: 'Medicamentos',
     description: 'Antibióticos, analgésicos, antiparasitários e outros medicamentos',
     color: '#ef4444',
   },
   {
     id: 'vaccine',
-    icon: '💉',
+    icon: <Syringe size={40} />,
     title: 'Vacinas',
     description: 'Vacinas para cães, gatos e outros animais',
     color: '#f59e0b',
   },
   {
     id: 'supplies',
-    icon: '📦',
+    icon: <Package size={40} />,
     title: 'Suprimentos',
     description: 'Material cirúrgico, limpeza, consumíveis e outros suprimentos',
     color: '#06b6d4',

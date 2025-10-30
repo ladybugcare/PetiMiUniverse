@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { statisticsApi } from '../../../services/statisticsApi';
 import { demandsApi } from '../../../services/demandsApi';
 import { applicationsApi } from '../../../services/applicationsApi';
+import { ClipboardList, CheckCircle, MessageSquare } from 'lucide-react';
+import colors from '../../../styles/colors';
 
 interface VetInternalDashboardProps {
   activeSection: string;
@@ -65,7 +67,9 @@ const ResumoSection: React.FC = () => {
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
         <div style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}>
-          <div style={styles.statIcon}>📋</div>
+          <div style={styles.statIcon}>
+            <ClipboardList size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.availableOpportunities}</h3>
             <p style={styles.statLabel}>Demandas Disponíveis</p>
@@ -81,7 +85,9 @@ const ResumoSection: React.FC = () => {
         </div>
 
         <div style={{ ...styles.statCard, borderLeftColor: '#10b981' }}>
-          <div style={styles.statIcon}>✅</div>
+          <div style={styles.statIcon}>
+            <CheckCircle size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.completedJobs}</h3>
             <p style={styles.statLabel}>Atendimentos Completos</p>
@@ -152,7 +158,10 @@ const MensagensSection: React.FC = () => {
     <div style={styles.section}>
       <h2 style={styles.sectionTitle}>Mensagens</h2>
       <div style={styles.placeholder}>
-        <p style={styles.placeholderText}>💬 Suas mensagens aparecerão aqui</p>
+        <p style={styles.placeholderText}>
+          <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+          Suas mensagens aparecerão aqui
+        </p>
       </div>
     </div>
   );

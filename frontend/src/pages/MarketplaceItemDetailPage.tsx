@@ -4,6 +4,8 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { marketplaceApi, MarketplaceItem } from '../services/marketplaceApi';
 import { marketplaceMessagesApi } from '../services/marketplaceMessagesApi';
+import { ShoppingCart, PlusCircle, Package } from 'lucide-react';
+import colors from '../styles/colors';
 
 const MarketplaceItemDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -19,21 +21,21 @@ const MarketplaceItemDetailPage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Voltar ao Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-      icon: '➕',
+      icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/create',
     },
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-      icon: '📦',
+      icon: <Package size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/my-listings',
     },

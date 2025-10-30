@@ -4,6 +4,8 @@ import { MenuItem } from '../components/DashboardSidebar';
 import ListingTypeSelector from '../components/ListingTypeSelector';
 import MarketplaceCategorySelector from '../components/MarketplaceCategorySelector';
 import MarketplaceFormStep from '../components/MarketplaceFormStep';
+import { BarChart2, ShoppingCart, PlusCircle, Package, MessageSquare, User, LogOut } from 'lucide-react';
+import colors from '../styles/colors';
 
 type ListingType = 'sale' | 'wanted';
 type CategoryType = 'equipment' | 'medicine' | 'vaccine' | 'supplies';
@@ -18,49 +20,49 @@ const CreateMarketplaceListingPage: React.FC = () => {
     {
       id: 'dashboard',
       label: 'Dashboard',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-dashboard',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-      icon: '➕',
+      icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/create',
     },
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-      icon: '📦',
+      icon: <Package size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/my-listings',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      icon: '💬',
+      icon: <MessageSquare size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/messages',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];

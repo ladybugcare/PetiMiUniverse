@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import colors from '../styles/colors';
+import { Lock, Lightbulb } from 'lucide-react';
 
 const DashboardBlockedOverlay: React.FC = () => {
   const navigate = useNavigate();
@@ -9,7 +10,9 @@ const DashboardBlockedOverlay: React.FC = () => {
     <div style={styles.overlay}>
       <div style={styles.card}>
         <div style={styles.iconContainer}>
-          <span style={styles.icon}>🔒</span>
+          <span style={styles.icon}>
+            <Lock size={48} color={colors.primary} />
+          </span>
         </div>
         
         <h2 style={styles.title}>Finalize seu cadastro</h2>
@@ -20,7 +23,9 @@ const DashboardBlockedOverlay: React.FC = () => {
         </p>
 
         <div style={styles.infoBox}>
-          <span style={styles.infoIcon}>💡</span>
+          <span style={styles.infoIcon}>
+            <Lightbulb size={20} color={colors.primary} />
+          </span>
           <p style={styles.infoText}>
             Não se preocupe! O processo é rápido e nossa equipe irá revisar 
             suas informações para garantir a segurança de todos.

@@ -4,6 +4,8 @@ import DashboardSidebar from '../components/DashboardSidebar';
 import PositionCard from '../components/PositionCard';
 import { demandPositionsApi, PositionWithAvailability } from '../services/demandPositionsApi';
 import { useAlert } from '../hooks/useAlert';
+import { BarChart2, Briefcase, ClipboardList, User, LogOut } from 'lucide-react';
+import colors from '../styles/colors';
 
 const VetPositionsPage: React.FC = () => {
   const { showSuccess, showError, showConfirm } = useAlert();
@@ -123,35 +125,35 @@ const VetPositionsPage: React.FC = () => {
     {
       id: 'dashboard',
       label: 'Dashboard',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'navigate' as const,
       path: '/vet-dashboard',
     },
     {
       id: 'positions',
       label: 'Posições Disponíveis',
-      icon: '💼',
+      icon: <Briefcase size={20} color={colors.primary} />,
       action: 'navigate' as const,
       path: '/vet-positions',
     },
     {
       id: 'applications',
       label: 'Minhas Candidaturas',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate' as const,
       path: '/vet-applications',
     },
     {
       id: 'profile',
       label: 'Meu Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate' as const,
       path: '/vet-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout' as const,
     },
   ];

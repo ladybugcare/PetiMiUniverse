@@ -4,6 +4,8 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { applicationsApi, Application } from '../services/applicationsApi';
 import { useAlert } from '../hooks/useAlert';
+import { BarChart2, ClipboardList, FileText, User, LogOut } from 'lucide-react';
+import colors from '../styles/colors';
 
 interface ApplicationWithDemand extends Application {
   demand?: {
@@ -25,35 +27,35 @@ const MyApplicationsPage: React.FC = () => {
     {
       id: 'dashboard',
       label: 'Dashboard',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/vet-dashboard',
     },
     {
       id: 'demandas',
       label: 'Demandas Disponíveis',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'candidaturas',
       label: 'Minhas Candidaturas',
-      icon: '📝',
+      icon: <FileText size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-applications',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/vet-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];

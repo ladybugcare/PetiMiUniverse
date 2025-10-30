@@ -3,6 +3,8 @@ import { useUnit } from '../../../contexts/UnitContext';
 import { unitsApi } from '../../../services/unitsApi';
 import { demandsApi } from '../../../services/demandsApi';
 import { applicationsApi } from '../../../services/applicationsApi';
+import { ClipboardList, Users, CheckCircle, MessageSquare, Stethoscope } from 'lucide-react';
+import colors from '../../../styles/colors';
 
 interface ManagerDashboardProps {
   activeSection: string;
@@ -84,7 +86,9 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
       {/* Unit Stats */}
       <div style={styles.statsGrid}>
         <div style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}>
-          <div style={styles.statIcon}>📋</div>
+          <div style={styles.statIcon}>
+            <ClipboardList size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.openDemands}</h3>
             <p style={styles.statLabel}>Demandas Abertas</p>
@@ -92,7 +96,9 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
         </div>
 
         <div style={{ ...styles.statCard, borderLeftColor: '#3b82f6' }}>
-          <div style={styles.statIcon}>👥</div>
+          <div style={styles.statIcon}>
+            <Users size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalApplications}</h3>
             <p style={styles.statLabel}>Profissionais Aplicados</p>
@@ -100,7 +106,9 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
         </div>
 
         <div style={{ ...styles.statCard, borderLeftColor: '#10b981' }}>
-          <div style={styles.statIcon}>✅</div>
+          <div style={styles.statIcon}>
+            <CheckCircle size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.pendingApplications}</h3>
             <p style={styles.statLabel}>Pendentes Aprovação</p>
@@ -124,7 +132,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
             recentDemands.map((demand) => (
               <ActivityItem
                 key={demand.id}
-                icon="📋"
+                icon={<ClipboardList size={20} color={colors.primary} />}
                 title={demand.title}
                 description={`Categoria: ${demand.category} - Status: ${demand.status}`}
                 time={new Date(demand.created_at).toLocaleDateString('pt-BR')}
@@ -170,7 +178,9 @@ const ProfissionaisSection: React.FC<{ unitId?: string }> = ({ unitId }) => {
         <div style={styles.activityList}>
           {applications.map((app) => (
             <div key={app.id} style={styles.activityItem}>
-              <div style={styles.activityIcon}>👨‍⚕️</div>
+              <div style={styles.activityIcon}>
+                <Stethoscope size={20} color={colors.primary} />
+              </div>
               <div style={styles.activityContent}>
                 <h4 style={styles.activityTitle}>Candidatura #{app.id.substring(0, 8)}</h4>
                 <p style={styles.activityDescription}>
@@ -183,7 +193,8 @@ const ProfissionaisSection: React.FC<{ unitId?: string }> = ({ unitId }) => {
       ) : (
         <div style={styles.placeholder}>
           <p style={styles.placeholderText}>
-            👩‍⚕️ Nenhuma candidatura recebida ainda
+            <Stethoscope size={20} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+            Nenhuma candidatura recebida ainda
           </p>
         </div>
       )}
@@ -196,14 +207,17 @@ const MensagensSection: React.FC = () => {
     <div style={styles.section}>
       <h2 style={styles.sectionTitle}>Mensagens Recentes</h2>
       <div style={styles.placeholder}>
-        <p style={styles.placeholderText}>💬 Suas mensagens aparecerão aqui</p>
+        <p style={styles.placeholderText}>
+          <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+          Suas mensagens aparecerão aqui
+        </p>
       </div>
     </div>
   );
 };
 
 const ActivityItem: React.FC<{
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   description: string;
   time: string;

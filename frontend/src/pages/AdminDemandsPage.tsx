@@ -7,6 +7,8 @@ import Pagination from '../components/Pagination';
 import { demandsApi, clinicsApi } from '../services';
 import { Demand } from '../services/demandsApi';
 import { useAlert } from '../hooks/useAlert';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle } from 'lucide-react';
+import colors from '../styles/colors';
 
 interface Application {
   id: string;
@@ -105,12 +107,13 @@ const AdminDemandsPage: React.FC = () => {
   const currentDemands = filteredDemands.slice(startIndex, endIndex);
 
   const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊', action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: '🏥', action: 'navigate', path: '/admin/clinics' },
-    { id: 'vets', label: 'Veterinários', icon: '👨‍⚕️', action: 'navigate', path: '/admin/vets' },
-    { id: 'demands', label: 'Demandas', icon: '📋', action: 'navigate', path: '/admin/demands' },
-    { id: 'users', label: 'Usuários', icon: '👥', action: 'navigate', path: '/admin/users' },
-    { id: 'logout', label: 'Sair', icon: '🚪', action: 'logout' },
+    { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
+    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
+    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
+    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
+    { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
+    { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
+    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
   ];
 
   const handleView = async (demand: Demand) => {

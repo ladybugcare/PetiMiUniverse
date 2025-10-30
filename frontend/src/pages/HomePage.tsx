@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import HomeHeader from '../components/HomeHeader';
 import HowItWorks from '../components/HowItWorks';
+import { Heart, Dog, Cat } from 'lucide-react';
 
 const HomePage: React.FC = () => {
   return (
@@ -21,7 +22,12 @@ const HomePage: React.FC = () => {
                 O PetiVet é a plataforma que une clínicas veterinárias, profissionais 
                 independentes, freelancers e tutores em um só lugar. Aqui, quem oferece 
                 cuidado encontra quem precisa dele — de forma simples, segura e com muito 
-                amor pelos animais. 💜🐶🐱
+                amor pelos animais.{' '}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <Heart size={20} fill="currentColor" />
+                  <Dog size={20} />
+                  <Cat size={20} />
+                </span>
               </p>
               
               <p className="text-base md:text-lg opacity-80 animate-fade-in-up animate-delay-200">

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { marketplaceMessagesApi, Conversation } from '../services/marketplaceMessagesApi';
+import { ShoppingCart, PlusCircle, Package, MessageSquare } from 'lucide-react';
+import colors from '../styles/colors';
 
 const MarketplaceMessagesPage: React.FC = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -11,28 +13,28 @@ const MarketplaceMessagesPage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-      icon: '➕',
+      icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/create',
     },
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-      icon: '📦',
+      icon: <Package size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/my-listings',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      icon: '💬',
+      icon: <MessageSquare size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/messages',
     },

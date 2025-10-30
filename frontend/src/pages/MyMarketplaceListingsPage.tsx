@@ -4,6 +4,8 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import MarketplaceCard from '../components/MarketplaceCard';
 import { marketplaceApi, MarketplaceItem } from '../services/marketplaceApi';
+import { ShoppingCart, PlusCircle, Package, MessageSquare } from 'lucide-react';
+import colors from '../styles/colors';
 
 const MyMarketplaceListingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -15,28 +17,28 @@ const MyMarketplaceListingsPage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Ver Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-      icon: '➕',
+      icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/create',
     },
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-      icon: '📦',
+      icon: <Package size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/my-listings',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      icon: '💬',
+      icon: <MessageSquare size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/messages',
     },

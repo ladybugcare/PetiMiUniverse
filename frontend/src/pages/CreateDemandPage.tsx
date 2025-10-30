@@ -3,6 +3,8 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import CategorySelectionStep from '../components/CategorySelectionStep';
 import DemandFormStep from '../components/DemandFormStep';
+import { BarChart2, ClipboardList, PlusCircle, User, LogOut } from 'lucide-react';
+import colors from '../styles/colors';
 
 type CategoryType = 'vet' | 'freelancer' | 'clinic' | 'other';
 type StepType = 'category' | 'form';
@@ -15,35 +17,35 @@ const CreateDemandPage: React.FC = () => {
     {
       id: 'dashboard',
       label: 'Dashboard',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-dashboard',
     },
     {
       id: 'demandas',
       label: 'Ver Todas Demandas',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'criar-demanda',
       label: 'Criar Nova Demanda',
-      icon: '➕',
+      icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/create-demand',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];

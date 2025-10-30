@@ -6,6 +6,8 @@ import CalendarView from '../components/CalendarView';
 import { demandsApi, clinicsApi, applicationsApi } from '../services';
 import { Demand } from '../services/demandsApi';
 import { useAlert } from '../hooks/useAlert';
+import { BarChart2, ClipboardList, PlusCircle, User, LogOut, FileText } from 'lucide-react';
+import colors from '../styles/colors';
 
 interface Clinic {
   id: string;
@@ -34,35 +36,35 @@ const DemandsPage: React.FC = () => {
         {
           id: 'dashboard',
           label: 'Dashboard',
-          icon: '📊',
+          icon: <BarChart2 size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/clinic-dashboard',
         },
         {
           id: 'demandas',
           label: 'Ver Todas Demandas',
-          icon: '📋',
+          icon: <ClipboardList size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/demands',
         },
         {
           id: 'criar-demanda',
           label: 'Criar Nova Demanda',
-          icon: '➕',
+          icon: <PlusCircle size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/create-demand',
         },
         {
           id: 'perfil',
           label: 'Perfil',
-          icon: '👤',
+          icon: <User size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/clinic-profile',
         },
         {
           id: 'logout',
           label: 'Sair',
-          icon: '🚪',
+          icon: <LogOut size={20} color={colors.primary} />,
           action: 'logout',
         },
       ];
@@ -72,35 +74,35 @@ const DemandsPage: React.FC = () => {
         {
           id: 'dashboard',
           label: 'Dashboard',
-          icon: '📊',
+          icon: <BarChart2 size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/vet-dashboard',
         },
         {
           id: 'demandas',
           label: 'Demandas Disponíveis',
-          icon: '📋',
+          icon: <ClipboardList size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/demands',
         },
         {
           id: 'candidaturas',
           label: 'Minhas Candidaturas',
-          icon: '📝',
+          icon: <FileText size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/my-applications',
         },
         {
           id: 'perfil',
           label: 'Meu Perfil',
-          icon: '👤',
+          icon: <User size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/vet-profile',
         },
         {
           id: 'logout',
           label: 'Sair',
-          icon: '🚪',
+          icon: <LogOut size={20} color={colors.primary} />,
           action: 'logout',
         },
       ];

@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { HelpCircle } from 'lucide-react';
 import UnitSelector from './UnitSelector';
+import SupportModal from './SupportModal';
+import { supportTicketsApi } from '../services/supportTicketsApi';
 
 interface DashboardHeaderProps {
   onMenuClick: () => void;
@@ -14,6 +17,35 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   notificationCount = 0,
 }) => {
   const navigate = useNavigate();
+  const [supportModalOpen, setSupportModalOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Verificar se é admin (admins não veem o botão de suporte)
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const userRole = user?.user_metadata?.role || user?.role;
+  const isAdmin = userRole === 'admin';
+  const userId = user?.id;
+
+  // Buscar contagem de tickets não lidos
+  useEffect(() => {
+    const loadUnreadCount = async () => {
+      if (userId && !isAdmin) {
+        try {
+          const result = await supportTicketsApi.getUnreadCount(userId);
+          setUnreadCount(result.unread_count);
+        } catch (error) {
+          console.error('Error loading unread count:', error);
+        }
+      }
+    };
+
+    loadUnreadCount();
+    
+    // Atualizar contagem a cada 30 segundos
+    const interval = setInterval(loadUnreadCount, 30000);
+    
+    return () => clearInterval(interval);
+  }, [userId, isAdmin]);
 
   const handleLogoClick = () => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -28,6 +60,16 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
       navigate('/vet-dashboard');
     } else {
       navigate('/');
+    }
+  };
+
+  const handleSupportClick = () => {
+    if (unreadCount > 0) {
+      // Se há tickets não lidos, navegar para página de tickets
+      navigate('/my-support-tickets');
+    } else {
+      // Se não há tickets não lidos, abrir modal para nova mensagem
+      setSupportModalOpen(true);
     }
   };
 
@@ -70,9 +112,27 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           />
         </div>
 
-        {/* Right: Unit Selector + Notification Bell */}
+        {/* Right: Unit Selector + Support Button + Notification Bell */}
         <div style={styles.rightSection}>
           <UnitSelector />
+          
+          {/* Support Button (apenas para clinic e vet) */}
+          {!isAdmin && (
+            <button
+              onClick={handleSupportClick}
+              style={styles.supportButton}
+              aria-label="Suporte"
+              title={unreadCount > 0 ? `Ver Respostas (${unreadCount} ${unreadCount === 1 ? 'nova' : 'novas'})` : 'Solicitar Suporte'}
+            >
+              <HelpCircle size={20} />
+              {unreadCount > 0 && (
+                <span style={styles.supportBadge}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+          )}
+          
           <button
             style={styles.notificationButton}
             aria-label="Notifications"
@@ -98,6 +158,12 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Support Modal */}
+      <SupportModal 
+        isOpen={supportModalOpen} 
+        onClose={() => setSupportModalOpen(false)} 
+      />
     </header>
   );
 };
@@ -166,7 +232,39 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'flex-end',
+    gap: '8px',
     flex: '1',
+  },
+  supportButton: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '40px',
+    height: '40px',
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#7c3aed',
+    cursor: 'pointer',
+    borderRadius: '8px',
+    transition: 'background-color 0.2s ease',
+  },
+  supportBadge: {
+    position: 'absolute',
+    top: '6px',
+    right: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: '18px',
+    height: '18px',
+    padding: '0 4px',
+    backgroundColor: '#ef4444',
+    color: '#ffffff',
+    fontSize: '10px',
+    fontWeight: '600',
+    borderRadius: '9999px',
+    border: '2px solid #ffffff',
   },
   notificationButton: {
     position: 'relative',
