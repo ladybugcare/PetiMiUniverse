@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { View, Text, ActivityIndicator, Pressable, StyleSheet } from 'react-native'
+import { View, Text, ActivityIndicator, Pressable, StyleSheet, Linking } from 'react-native'
 import { supabase } from '../src/services/supabase'
 import { useNavigation } from '@react-navigation/native'
 import { NativeStackNavigationProp } from '@react-navigation/native-stack'
@@ -15,6 +15,17 @@ const ConfirmEmailScreen = () => {
   useEffect(() => {
     const check = async () => {
       try {
+        // Try to exchange the authorization code from the deep link for a session.
+        try {
+          const url = await Linking.getInitialURL()
+          if (url) {
+            await supabase.auth.exchangeCodeForSession(url)
+          }
+        } catch (exchangeErr: any) {
+          // Proceed even if there's no URL/code; session might already be valid.
+          console.error('Error exchanging code for session (RN):', exchangeErr)
+        }
+
         const { data, error } = await supabase.auth.getSession()
         if (error) throw error
         if (data.session?.user?.email_confirmed_at) {
