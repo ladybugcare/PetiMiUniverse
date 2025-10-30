@@ -26,7 +26,7 @@ export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) =>
           name,
           role: 'vet'
         },
-        emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/confirm`
+        emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3002'}/email-confirmed`
       }
     });
 
