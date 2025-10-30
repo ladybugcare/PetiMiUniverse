@@ -82,7 +82,6 @@ const MyMarketplaceListingsPage: React.FC = () => {
     <DashboardLayout
       pageName="Meus Anúncios"
       menuItems={menuItems}
-      notificationCount={0}
     >
       <div style={styles.container}>
         {/* Header */}

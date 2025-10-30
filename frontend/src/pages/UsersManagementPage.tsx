@@ -156,7 +156,7 @@ const UsersManagementPage: React.FC = () => {
   };
 
   return (
-    <DashboardLayout pageName="Gerenciar Usuários" menuItems={getMenuItems()} notificationCount={0}>
+    <DashboardLayout pageName="Gerenciar Usuários" menuItems={getMenuItems()}>
       <div style={styles.container}>
         <div style={styles.header}>
           <div>

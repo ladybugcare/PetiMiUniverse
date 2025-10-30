@@ -101,7 +101,7 @@ const MarketplaceItemDetailPage: React.FC = () => {
 
   if (loading) {
     return (
-      <DashboardLayout pageName="Carregando..." menuItems={menuItems} notificationCount={0}>
+      <DashboardLayout pageName="Carregando..." menuItems={menuItems}>
         <div style={styles.loading}>Carregando item...</div>
       </DashboardLayout>
     );
@@ -109,7 +109,7 @@ const MarketplaceItemDetailPage: React.FC = () => {
 
   if (!item) {
     return (
-      <DashboardLayout pageName="Item não encontrado" menuItems={menuItems} notificationCount={0}>
+      <DashboardLayout pageName="Item não encontrado" menuItems={menuItems}>
         <div style={styles.notFound}>Item não encontrado</div>
       </DashboardLayout>
     );
@@ -123,7 +123,7 @@ const MarketplaceItemDetailPage: React.FC = () => {
   const isOwner = user.id === item.seller_id;
 
   return (
-    <DashboardLayout pageName={item.title} menuItems={menuItems} notificationCount={0}>
+    <DashboardLayout pageName={item.title} menuItems={menuItems}>
       <div style={styles.container}>
         <button onClick={() => navigate('/marketplace')} style={styles.backButton}>
           ← Voltar ao Marketplace

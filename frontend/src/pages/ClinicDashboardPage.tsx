@@ -520,7 +520,6 @@ const ClinicDashboardPage: React.FC = () => {
       <DashboardLayout 
         pageName={config.title}
         menuItems={config.menuItems}
-        notificationCount={0}
       >
         {config.component}
         <FloatingActionButton options={config.fabOptions} />

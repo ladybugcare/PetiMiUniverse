@@ -170,7 +170,6 @@ const DemandsPage: React.FC = () => {
     <DashboardLayout
       pageName="Demandas"
       menuItems={getMenuItems()}
-      notificationCount={0}
     >
       <div style={styles.container}>
         <div style={styles.header}>

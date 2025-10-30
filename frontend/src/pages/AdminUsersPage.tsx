@@ -213,7 +213,7 @@ const AdminUsersPage: React.FC = () => {
   const currentItems = currentData.slice(startIndex, endIndex);
 
   return (
-    <DashboardLayout pageName="Usuários" menuItems={menuItems} notificationCount={0}>
+    <DashboardLayout pageName="Usuários" menuItems={menuItems}>
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>

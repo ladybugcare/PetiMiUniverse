@@ -163,7 +163,6 @@ const VetPositionsPage: React.FC = () => {
       <DashboardHeader
         onMenuClick={() => setSidebarOpen(!sidebarOpen)}
         pageName="Posições Disponíveis"
-        notificationCount={0}
       />
 
       <div style={styles.mainContainer}>

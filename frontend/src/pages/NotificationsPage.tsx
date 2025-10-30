@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
+import { MenuItem } from '../components/DashboardSidebar';
 import { 
   Bell, 
   UserPlus, 
@@ -12,9 +13,15 @@ import {
   AlertCircle, 
   Briefcase,
   Trash2,
-  Check
+  Check,
+  BarChart2,
+  LogOut
 } from 'lucide-react';
 import { notificationsApi, Notification } from '../services/notificationsApi';
+
+const colors = {
+  primary: '#7c3aed',
+};
 
 const NotificationsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -26,6 +33,83 @@ const NotificationsPage: React.FC = () => {
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const userId = user?.id;
+  const userRole = user?.user_metadata?.role || user?.role;
+
+  // Menu items based on user role
+  const getMenuItems = (): MenuItem[] => {
+    if (userRole === 'admin') {
+      return [
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          icon: <BarChart2 size={20} color={colors.primary} />,
+          action: 'navigate',
+          path: '/admin-dashboard',
+        },
+        {
+          id: 'notifications',
+          label: 'Notificações',
+          icon: <Bell size={20} color={colors.primary} />,
+          action: 'navigate',
+          path: '/notifications',
+        },
+        {
+          id: 'logout',
+          label: 'Sair',
+          icon: <LogOut size={20} color="#ef4444" />,
+          action: 'logout',
+        },
+      ];
+    } else if (userRole === 'clinic') {
+      return [
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          icon: <BarChart2 size={20} color={colors.primary} />,
+          action: 'navigate',
+          path: '/clinic-dashboard',
+        },
+        {
+          id: 'notifications',
+          label: 'Notificações',
+          icon: <Bell size={20} color={colors.primary} />,
+          action: 'navigate',
+          path: '/notifications',
+        },
+        {
+          id: 'logout',
+          label: 'Sair',
+          icon: <LogOut size={20} color="#ef4444" />,
+          action: 'logout',
+        },
+      ];
+    } else {
+      return [
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          icon: <BarChart2 size={20} color={colors.primary} />,
+          action: 'navigate',
+          path: '/vet-dashboard',
+        },
+        {
+          id: 'notifications',
+          label: 'Notificações',
+          icon: <Bell size={20} color={colors.primary} />,
+          action: 'navigate',
+          path: '/notifications',
+        },
+        {
+          id: 'logout',
+          label: 'Sair',
+          icon: <LogOut size={20} color="#ef4444" />,
+          action: 'logout',
+        },
+      ];
+    }
+  };
+
+  const menuItems = getMenuItems();
 
   // Load notifications
   const loadNotifications = async (currentPage: number = 1) => {
@@ -156,7 +240,7 @@ const NotificationsPage: React.FC = () => {
   const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
-    <DashboardLayout pageName="Notificações">
+    <DashboardLayout pageName="Notificações" menuItems={menuItems}>
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>

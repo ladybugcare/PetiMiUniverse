@@ -92,7 +92,6 @@ const CreateMarketplaceListingPage: React.FC = () => {
     <DashboardLayout
       pageName="Criar Anúncio"
       menuItems={menuItems}
-      notificationCount={0}
     >
       {step === 'type' && <ListingTypeSelector onSelect={handleTypeSelect} />}
       

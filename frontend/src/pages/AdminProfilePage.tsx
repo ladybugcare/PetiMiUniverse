@@ -163,7 +163,7 @@ const AdminProfilePage: React.FC = () => {
 
   if (loading) {
     return (
-      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems} notificationCount={0}>
+      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
         <div style={styles.loading}>Carregando...</div>
       </DashboardLayout>
     );
@@ -171,14 +171,14 @@ const AdminProfilePage: React.FC = () => {
 
   if (!user) {
     return (
-      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems} notificationCount={0}>
+      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
         <div style={styles.error}>Erro ao carregar perfil</div>
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout pageName="Meu Perfil" menuItems={menuItems} notificationCount={0}>
+    <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
       <div style={styles.container}>
         <div style={styles.card}>
           {/* Header */}

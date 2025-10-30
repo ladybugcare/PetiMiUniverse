@@ -189,7 +189,7 @@ const AdminDemandsPage: React.FC = () => {
   };
 
   return (
-    <DashboardLayout pageName="Demandas" menuItems={menuItems} notificationCount={0}>
+    <DashboardLayout pageName="Demandas" menuItems={menuItems}>
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>

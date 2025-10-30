@@ -162,7 +162,7 @@ const AdminVetsPage: React.FC = () => {
   };
 
   return (
-    <DashboardLayout pageName="Veterinários Cadastrados" menuItems={menuItems} notificationCount={0}>
+    <DashboardLayout pageName="Veterinários Cadastrados" menuItems={menuItems}>
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>
