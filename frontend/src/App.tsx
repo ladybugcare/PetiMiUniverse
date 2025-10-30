@@ -35,6 +35,7 @@ import CreateFirstUnitPage from './pages/CreateFirstUnitPage';
 import CreateUnitPage from './pages/CreateUnitPage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
 import EmailConfirmedPage from './pages/EmailConfirmedPage';
+import AuthListener from './components/AuthListener';
 import './App.css';
 
 function App() {
@@ -42,6 +43,7 @@ function App() {
     <AlertProvider>
       <UnitProvider>
         <Router>
+          <AuthListener /> {/* Detecta confirmação de email automaticamente */}
           <div className="App">
             <Routes>
             <Route path="/" element={<HomePage />} />
