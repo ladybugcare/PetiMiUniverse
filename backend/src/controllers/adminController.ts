@@ -6,7 +6,7 @@ import { createAuditLog, extractRequestMetadata } from '../utils/auditLog';
 export const getPendingUnits = async (req: Request, res: Response) => {
   try {
     // Verificar se é ADMIN
-    const user = req.user!;
+    const user = req.user! as any;
     const userRole = user.user_metadata?.role || user.raw_user_meta_data?.role;
     
     if (userRole !== 'admin') {
@@ -39,7 +39,7 @@ export const reviewUnit = async (req: Request, res: Response) => {
   
   try {
     // Verificar se é ADMIN
-    const userRole = req.user!.user_metadata?.role || req.user!.raw_user_meta_data?.role;
+    const userRole = (req.user as any)?.user_metadata?.role || (req.user as any)?.raw_user_meta_data?.role;
     
     if (userRole !== 'admin') {
       return res.status(403).json({ error: 'Acesso negado' });

@@ -146,7 +146,7 @@ export const getVetStats = async (req: Request<{ vetId: string }>, res: Response
 
     if (acceptedError) throw acceptedError;
 
-    const acceptedDemandIds = acceptedApps?.map(a => a.demand_positions.master_demand_id) || [];
+    const acceptedDemandIds = acceptedApps?.map((a: any) => a.demand_positions.master_demand_id) || [];
     let completedJobs = 0;
 
     if (acceptedDemandIds.length > 0) {

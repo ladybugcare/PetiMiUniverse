@@ -13,7 +13,7 @@ export const sendMessage = async (
   res: Response
 ) => {
   const { item_id, receiver_id, message } = req.body;
-  const sender_id = req.body.sender_id; // Should come from auth middleware
+  const sender_id = req.user?.id; // Should come from auth middleware
 
   if (!item_id || !receiver_id || !message || !sender_id) {
     return res.status(400).json({ error: 'Missing required fields' });
