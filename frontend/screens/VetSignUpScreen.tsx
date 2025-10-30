@@ -72,7 +72,9 @@ const VetSignUpScreen = () => {
         visible: true,
         title: 'Verifique seu e‑mail',
         message:
-          'Enviamos um link de confirmação para o e‑mail informado. Confirme para acessar e iniciar o onboarding.',
+          'Enviamos um e-mail de confirmação para o endereço que você cadastrou.\n\n' +
+          'É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetiVet.\n\n' +
+          'Você pode fechar esta aba — o restante do processo é feito por e-mail.',
       });
       setForm(initialFormState);
     } catch (error: any) {
@@ -96,7 +98,7 @@ const VetSignUpScreen = () => {
         visible={modal.visible}
         title={modal.title}
         message={modal.message}
-        primaryLabel="Entendi"
+        primaryLabel="Fechar"
         onPrimary={() => setModal((m) => ({ ...m, visible: false }))}
       />
       <View style={styles.header}>

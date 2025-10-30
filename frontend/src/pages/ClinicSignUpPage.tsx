@@ -531,7 +531,7 @@ const ClinicSignUpPage: React.FC = () => {
               <h2 style={styles.successTitle}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
                   <Mail size={32} color={colors.primary} />
-                  <span>Tudo certo!</span>
+                  <span>!</span>
                 </div>
               </h2>
               <p style={styles.successMessage}>
