@@ -18,7 +18,19 @@ import adminRoutes from './routes/admin';
 import supportTicketsRoutes from './routes/supportTickets';
 
 const app = express();
-app.use(cors());
+
+// CORS configuration for different environments
+const allowedOrigins: string[] = [
+  'http://localhost:3000',
+  'https://staging.petivet.vercel.app',
+  process.env.FRONTEND_URL
+].filter((origin): origin is string => Boolean(origin));
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
+
 // Increase payload limit to support image uploads (base64 encoded)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
