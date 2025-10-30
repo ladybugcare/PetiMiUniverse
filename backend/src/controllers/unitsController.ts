@@ -6,6 +6,7 @@ import { createAuditLog, extractRequestMetadata } from '../utils/auditLog';
 interface UnitBody {
   clinic_id: string;
   name: string;
+  nickname?: string;
   cnpj?: string;
   address: string;
   city: string;
@@ -20,6 +21,7 @@ export const createUnit = async (req: Request<{}, {}, UnitBody>, res: Response) 
   const {
     clinic_id,
     name,
+    nickname,
     cnpj,
     address,
     city,
@@ -31,10 +33,38 @@ export const createUnit = async (req: Request<{}, {}, UnitBody>, res: Response) 
   const user_id = req.user!.id;
 
   try {
+    // Validar nickname obrigatório
+    if (!nickname || nickname.trim().length === 0) {
+      return res.status(400).json({ error: 'O apelido da unidade é obrigatório' });
+    }
+    
+    // Validar tamanho do nickname (máximo 100 caracteres)
+    if (nickname.length > 100) {
+      return res.status(400).json({ error: 'O apelido deve ter no máximo 100 caracteres' });
+    }
+    
     // Verify permission
     const hasPermission = await checkPermission(user_id, clinic_id, 'unit.create');
     if (!hasPermission) {
       return res.status(403).json({ error: 'Sem permissão para criar unidades' });
+    }
+
+    // Verificar se nickname é único para esta clínica
+    const { data: existingUnit, error: existingError } = await supabase
+      .from('units')
+      .select('id')
+      .eq('clinic_id', clinic_id)
+      .eq('nickname', nickname.trim())
+      .maybeSingle();
+    
+    if (existingError) {
+      console.error('Error checking nickname uniqueness:', existingError);
+    }
+    
+    if (existingUnit) {
+      return res.status(400).json({ 
+        error: 'Já existe uma unidade com este apelido nesta clínica' 
+      });
     }
 
     // Create unit
@@ -44,6 +74,7 @@ export const createUnit = async (req: Request<{}, {}, UnitBody>, res: Response) 
         {
           clinic_id,
           name,
+          nickname: nickname.trim(),
           cnpj,
           address,
           city,
@@ -337,6 +368,123 @@ export const getUnitStats = async (req: Request<{ unitId: string }>, res: Respon
   } catch (error: any) {
     console.error('Error getting unit stats:', error);
     res.status(500).json({ error: 'Erro ao buscar estatísticas da unidade' });
+  }
+};
+
+// Create first unit (for new clinics waiting approval)
+export const createFirstUnit = async (req: Request<{}, {}, UnitBody>, res: Response) => {
+  const { clinic_id, name, nickname, address, city, state, phone, cnpj, technical_manager } = req.body;
+  const user_id = req.user!.id;
+  
+  try {
+    // Validar nickname obrigatório
+    if (!nickname || nickname.trim().length === 0) {
+      return res.status(400).json({ error: 'O apelido da unidade é obrigatório' });
+    }
+    
+    // Validar tamanho do nickname (máximo 100 caracteres)
+    if (nickname.length > 100) {
+      return res.status(400).json({ error: 'O apelido deve ter no máximo 100 caracteres' });
+    }
+    
+    // Verificar se usuário é CADMIN desta clínica
+    const { data: clinicUser, error: clinicUserError } = await supabase
+      .from('clinic_users')
+      .select('role, clinic_id')
+      .eq('user_id', user_id)
+      .eq('clinic_id', clinic_id)
+      .eq('role', 'CADMIN')
+      .single();
+      
+    if (clinicUserError || !clinicUser) {
+      return res.status(403).json({ error: 'Apenas CADMIN pode criar a primeira unidade' });
+    }
+    
+    // Verificar se clínica está pending_unit
+    const { data: clinic, error: clinicError } = await supabase
+      .from('clinics')
+      .select('status')
+      .eq('id', clinic_id)
+      .single();
+      
+    if (clinicError || !clinic || clinic.status !== 'pending_unit') {
+      return res.status(400).json({ 
+        error: 'Clínica já tem unidade ou não está pendente' 
+      });
+    }
+    
+    // Verificar se nickname é único para esta clínica
+    const { data: existingUnit, error: existingError } = await supabase
+      .from('units')
+      .select('id')
+      .eq('clinic_id', clinic_id)
+      .eq('nickname', nickname.trim())
+      .maybeSingle();
+    
+    if (existingError) {
+      console.error('Error checking nickname uniqueness:', existingError);
+    }
+    
+    if (existingUnit) {
+      return res.status(400).json({ 
+        error: 'Já existe uma unidade com este apelido nesta clínica' 
+      });
+    }
+    
+    // Criar unidade com status pending_review
+    const { data: unit, error: unitError } = await supabase
+      .from('units')
+      .insert({
+        clinic_id,
+        name,
+        nickname: nickname.trim(),
+        address,
+        city,
+        state,
+        phone,
+        cnpj,
+        technical_manager,
+        is_main: true,
+        status: 'pending_review'
+      })
+      .select()
+      .single();
+      
+    if (unitError) throw unitError;
+    
+    // Atualizar clinic para pending_approval
+    await supabase
+      .from('clinics')
+      .update({ status: 'pending_approval' })
+      .eq('id', clinic_id);
+    
+    // Vincular CADMIN à unidade
+    await supabase
+      .from('clinic_users')
+      .update({ unit_id: unit.id })
+      .eq('clinic_id', clinic_id)
+      .eq('role', 'CADMIN');
+    
+    // Audit log
+    const metadata = extractRequestMetadata(req);
+    await createAuditLog({
+      user_id,
+      clinic_id,
+      unit_id: unit.id,
+      action: 'CREATE_FIRST_UNIT',
+      entity_type: 'unit',
+      entity_id: unit.id,
+      new_values: unit,
+      ...metadata,
+    });
+    
+    res.status(201).json({ 
+      unit,
+      message: 'Unidade criada! Aguarde aprovação do ADMIN para ativar sua conta.' 
+    });
+  } catch (error: any) {
+    console.error('Error creating first unit:', error);
+    res.status(500).json({ error: 'Erro ao criar unidade' });
   }
 };
 

@@ -10,6 +10,7 @@ export interface Vet {
   experience: string;
   email: string;
   clinic_id?: string;
+  photo_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -55,6 +56,14 @@ export const vetsApi = {
     return apiRequest(`/vets/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    });
+  },
+
+  // Atualizar foto de perfil
+  uploadPhoto: async (id: string, photo_url: string): Promise<{ vet: Vet }> => {
+    return apiRequest(`/vets/${id}/photo`, {
+      method: 'PATCH',
+      body: JSON.stringify({ photo_url }),
     });
   },
 

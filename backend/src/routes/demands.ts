@@ -11,10 +11,12 @@ import {
   getRecentActivity, 
   getDemandsByUnit 
 } from '../controllers/demandsController'
+import { requireActiveClinic } from '../middleware/requireActiveClinic'
 
 const router = express.Router()
 
-router.post('/create', createDemand)
+// Create demand (requires active clinic)
+router.post('/create', requireActiveClinic, createDemand)
 router.get('/open', getDemands)
 router.get('/all', getAllDemands)
 router.get('/recent-activity', getRecentActivity)

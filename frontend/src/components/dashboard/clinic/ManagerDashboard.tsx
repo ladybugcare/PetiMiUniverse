@@ -44,7 +44,10 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
       try {
         setLoading(true);
         const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const clinicId = user.id;
+        const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
+        const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
+
+        console.log('Loading manager data for clinic:', { clinicId, unitId: unit.id });
 
         // Fetch unit statistics
         const { stats: unitStats } = await unitsApi.getUnitStats(unit.id);
@@ -53,8 +56,9 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
         // Fetch recent activity
         const { demands } = await demandsApi.getRecentActivity(clinicId, unit.id, 3);
         setRecentDemands(demands);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error loading manager data:', error);
+        console.error('Error details:', error.message);
       } finally {
         setLoading(false);
       }

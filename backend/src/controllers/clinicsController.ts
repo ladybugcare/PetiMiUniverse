@@ -9,6 +9,7 @@ interface ClinicBody {
   address: string
   email: string
   password: string
+  description?: string
 }
 
 export const createClinic = async (req: Request<{}, {}, ClinicBody>, res: Response) => {
@@ -173,6 +174,36 @@ export const updateClinic = async (req: Request, res: Response) => {
   }
 }
 
+// Update clinic photo
+export const updateClinicPhoto = async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { photo_url } = req.body
+  
+  try {
+    if (!photo_url) {
+      return res.status(400).json({ error: 'photo_url is required' })
+    }
+    
+    const { data, error } = await supabase
+      .from('clinics')
+      .update({ photo_url })
+      .eq('id', id)
+      .select()
+    
+    if (error) {
+      return res.status(400).json({ error: error.message })
+    }
+    
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: 'Clinic not found' })
+    }
+    
+    res.json({ clinic: data[0] })
+  } catch (error: any) {
+    res.status(500).json({ error: error.message })
+  }
+}
+
 // Delete clinic (soft delete)
 export const deleteClinic = async (req: Request, res: Response) => {
   const { id } = req.params
@@ -196,5 +227,136 @@ export const deleteClinic = async (req: Request, res: Response) => {
     res.json({ message: 'Clinic deleted successfully', clinic: data[0] })
   } catch (error: any) {
     res.status(500).json({ error: error.message })
+  }
+}
+
+// Register clinic with first unit (unified endpoint)
+export const registerClinicWithUnit = async (req: Request, res: Response) => {
+  const { clinic, unit } = req.body;
+  const user_id = (req as any).user?.id;
+  
+  try {
+    if (!user_id) {
+      return res.status(401).json({ error: 'Usuário não autenticado' });
+    }
+
+    let clinicId: string;
+    let newClinic = null;
+
+    // 1. Criar ou atualizar clínica se fornecida
+    if (clinic) {
+      const { name, cnpj, description } = clinic;
+      
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: 'Nome da clínica é obrigatório' });
+      }
+
+      const { data: existingClinic, error: clinicCheckError } = await supabase
+        .from('clinics')
+        .select('id')
+        .eq('id', user_id)
+        .maybeSingle();
+
+      if (clinicCheckError) {
+        console.error('Error checking clinic:', clinicCheckError);
+      }
+
+      if (existingClinic) {
+        // Atualizar clínica existente
+        const { data: updatedClinic, error: updateError } = await supabase
+          .from('clinics')
+          .update({ 
+            name, 
+            cnpj: cnpj || null, 
+            description: description || null,
+            status: 'pending_unit'
+          })
+          .eq('id', user_id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        newClinic = updatedClinic;
+        clinicId = updatedClinic.id;
+      } else {
+        // Criar nova clínica
+        const { data: createdClinic, error: createError } = await supabase
+          .from('clinics')
+          .insert({ 
+            id: user_id,
+            name, 
+            cnpj: cnpj || null, 
+            description: description || null,
+            status: 'pending_unit'
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        newClinic = createdClinic;
+        clinicId = createdClinic.id;
+      }
+    } else {
+      // Se não forneceu dados da clínica, usar user_id como clinic_id
+      clinicId = user_id;
+    }
+
+    // 2. Se unit for null, apenas salvar clínica e retornar
+    if (!unit) {
+      res.status(201).json({ 
+        clinic: newClinic,
+        message: 'Dados da clínica salvos. Complete o cadastro da primeira unidade quando estiver pronto.' 
+      });
+      return;
+    }
+
+    // 3. Criar primeira unidade
+    if (!unit.name || !unit.nickname || !unit.address || !unit.city || !unit.state) {
+      return res.status(400).json({ 
+        error: 'Dados da unidade incompletos. Nome, apelido, endereço, cidade e estado são obrigatórios.' 
+      });
+    }
+
+    const { data: newUnit, error: unitError } = await supabase
+      .from('units')
+      .insert({
+        clinic_id: clinicId,
+        name: unit.name,
+        nickname: unit.nickname.trim(),
+        cnpj: unit.cnpj || null,
+        address: unit.address,
+        city: unit.city,
+        state: unit.state,
+        phone: unit.phone || null,
+        technical_manager: unit.technical_manager || null,
+        is_main: true,
+        status: 'pending_review'
+      })
+      .select()
+      .single();
+
+    if (unitError) throw unitError;
+
+    // 4. Atualizar status da clínica para pending_approval
+    await supabase
+      .from('clinics')
+      .update({ status: 'pending_approval' })
+      .eq('id', clinicId);
+
+    // 5. Vincular CADMIN à unidade (se existir registro de clinic_user)
+    await supabase
+      .from('clinic_users')
+      .update({ unit_id: newUnit.id })
+      .eq('clinic_id', clinicId)
+      .eq('user_id', user_id);
+
+    res.status(201).json({ 
+      clinic: newClinic,
+      unit: newUnit,
+      message: 'Clínica e unidade cadastradas! Aguarde aprovação do administrador.' 
+    });
+  } catch (error: any) {
+    console.error('Error in registerClinicWithUnit:', error);
+    res.status(500).json({ error: error.message || 'Erro ao registrar clínica e unidade' });
   }
 }

@@ -2,9 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
-import FloatingActionButton from '../components/FloatingActionButton';
+import FloatingActionButton, { FABOption } from '../components/FloatingActionButton';
+import ClinicStatusBanner from '../components/ClinicStatusBanner';
+import DashboardBlockedOverlay from '../components/DashboardBlockedOverlay';
 import { usePermissions } from '../hooks/usePermissions';
 import { useUnit } from '../contexts/UnitContext';
+import { BarChart2, Building2, Users, ClipboardList, ShoppingCart, Search, User, LogOut, MessageSquare, Stethoscope, Star, FileText } from 'lucide-react';
+import colors from '../styles/colors';
 
 // Import role-specific dashboard components
 import AdminDashboard from '../components/dashboard/clinic/AdminDashboard';
@@ -17,8 +21,10 @@ const ClinicDashboardPage: React.FC = () => {
   const { role: clinicRole, loading: permissionsLoading } = usePermissions();
   const { selectedUnit } = useUnit();
   const [activeSection, setActiveSection] = useState('resumo');
+  const [clinicStatus, setClinicStatus] = useState<string | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(true);
 
-  // Check authentication
+  // Check authentication and clinic status
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const userRole = user?.user_metadata?.role || user?.role;
@@ -36,6 +42,28 @@ const ClinicDashboardPage: React.FC = () => {
         navigate('/vet-dashboard');
       }
     }
+
+    // Check clinic status
+    const checkClinicStatus = async () => {
+      try {
+        const response = await fetch(`http://localhost:3000/clinics/${user.id}`, {
+          headers: {
+            'Authorization': `Bearer ${user.access_token || user.token}`,
+          },
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setClinicStatus(data.clinic?.status || null);
+        }
+      } catch (error) {
+        console.error('Error checking clinic status:', error);
+      } finally {
+        setCheckingStatus(false);
+      }
+    };
+    
+    checkClinicStatus();
   }, [navigate]);
 
   // Get configuration based on clinic role
@@ -89,56 +117,56 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'resumo',
       label: 'Visão Geral',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'resumo',
     },
     {
       id: 'units',
       label: 'Gerenciar Unidades',
-      icon: '🏥',
+      icon: <Building2 size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/units',
     },
     {
       id: 'users',
       label: 'Gerenciar Usuários',
-      icon: '👥',
+      icon: <Users size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/users',
     },
     {
       id: 'demandas',
       label: 'Todas as Demandas',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'audit',
       label: 'Logs de Auditoria',
-      icon: '🔍',
+      icon: <Search size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'audit',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
-      path: '/profile',
+      path: '/clinic-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];
@@ -148,56 +176,63 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'resumo',
       label: 'Resumo da Unidade',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'resumo',
     },
     {
+      id: 'units',
+      label: 'Gerenciar Unidades',
+      icon: <Building2 size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/units',
+    },
+    {
       id: 'demandas',
       label: 'Demandas',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'profissionais',
       label: 'Profissionais',
-      icon: '👩‍⚕️',
+      icon: <Stethoscope size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'profissionais',
     },
     {
       id: 'users',
       label: 'Equipe da Unidade',
-      icon: '👥',
+      icon: <Users size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/users',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      icon: '💬',
+      icon: <MessageSquare size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'mensagens',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
-      path: '/profile',
+      path: '/clinic-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];
@@ -207,42 +242,42 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'resumo',
       label: 'Resumo',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'resumo',
     },
     {
       id: 'demandas',
       label: 'Demandas',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      icon: '💬',
+      icon: <MessageSquare size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'mensagens',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
-      path: '/profile',
+      path: '/clinic-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];
@@ -252,49 +287,49 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'resumo',
       label: 'Meu Resumo',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'resumo',
     },
     {
       id: 'demandas',
       label: 'Demandas Disponíveis',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'candidaturas',
       label: 'Minhas Candidaturas',
-      icon: '📝',
+      icon: <FileText size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-applications',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      icon: '💬',
+      icon: <MessageSquare size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'mensagens',
     },
     {
       id: 'avaliacoes',
       label: 'Minhas Avaliações',
-      icon: '⭐',
+      icon: <Star size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'avaliacoes',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
-      path: '/profile',
+      path: '/clinic-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];
@@ -303,36 +338,50 @@ const ClinicDashboardPage: React.FC = () => {
   const getDefaultMenuItems = (): MenuItem[] => [
     {
       id: 'resumo',
-      label: 'Resumo das Demandas',
-      icon: '📊',
+      label: 'Dashboard',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'resumo',
     },
     {
+      id: 'units',
+      label: 'Gerenciar Unidades',
+      icon: <Building2 size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/units',
+    },
+    {
+      id: 'users',
+      label: 'Gerenciar Usuários',
+      icon: <Users size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/users',
+    },
+    {
       id: 'demandas',
       label: 'Ver Todas Demandas',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
-      path: '/profile',
+      path: '/clinic-profile',
     },
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];
@@ -342,21 +391,21 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'create-demand',
       label: 'Criar Demanda',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       path: '/create-demand',
       color: '#7c3aed',
     },
     {
       id: 'create-unit',
       label: 'Nova Unidade',
-      icon: '🏥',
+      icon: <Building2 size={20} color={colors.primary} />,
       path: '/units',
       color: '#3b82f6',
     },
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       path: '/marketplace/create',
       color: '#10b981',
     },
@@ -367,14 +416,14 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'create-demand',
       label: 'Criar Demanda',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       path: '/create-demand',
       color: '#7c3aed',
     },
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       path: '/marketplace/create',
       color: '#10b981',
     },
@@ -385,7 +434,7 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'create-demand',
       label: 'Criar Demanda',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       path: '/create-demand',
       color: '#7c3aed',
     },
@@ -396,7 +445,7 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'view-demands',
       label: 'Ver Demandas',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       path: '/demands',
       color: '#7c3aed',
     },
@@ -407,20 +456,20 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'create-demand',
       label: 'Criar Demanda',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       path: '/create-demand',
       color: '#7c3aed',
     },
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      icon: '🛒',
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       path: '/marketplace/create',
       color: '#10b981',
     },
   ];
 
-  if (permissionsLoading) {
+  if (permissionsLoading || checkingStatus) {
     return (
       <div style={styles.loading}>
         <div style={styles.spinner}></div>
@@ -429,17 +478,25 @@ const ClinicDashboardPage: React.FC = () => {
     );
   }
 
+  // Block dashboard if clinic status is pending_unit
+  if (clinicStatus === 'pending_unit') {
+    return <DashboardBlockedOverlay />;
+  }
+
   const config = getDashboardConfig();
 
   return (
-    <DashboardLayout 
-      pageName={config.title}
-      menuItems={config.menuItems}
-      notificationCount={0}
-    >
-      {config.component}
-      <FloatingActionButton options={config.fabOptions} />
-    </DashboardLayout>
+    <>
+      <ClinicStatusBanner />
+      <DashboardLayout 
+        pageName={config.title}
+        menuItems={config.menuItems}
+        notificationCount={0}
+      >
+        {config.component}
+        <FloatingActionButton options={config.fabOptions} />
+      </DashboardLayout>
+    </>
   );
 };
 

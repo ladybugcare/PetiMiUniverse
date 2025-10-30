@@ -4,6 +4,8 @@ import { login } from '../services/api';
 import HomeHeader from '../components/HomeHeader';
 import PasswordInput from '../components/PasswordInput';
 import { useAlert } from '../hooks/useAlert';
+import colors from '../styles/colors';
+import { Mail, Lock } from 'lucide-react';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -36,7 +38,32 @@ const LoginPage: React.FC = () => {
       if (userRole === 'admin') {
         navigate('/admin-dashboard');
       } else if (userRole === 'clinic') {
-        navigate('/clinic-dashboard');
+        // Check clinic status to redirect appropriately
+        try {
+          const response = await fetch(`http://localhost:3000/clinics/${result.user.id}`, {
+            headers: {
+              'Authorization': `Bearer ${result.session.access_token}`,
+            },
+          });
+          
+          if (response.ok) {
+            const { clinic } = await response.json();
+            
+            if (clinic.status === 'pending_unit') {
+              // Clinic needs to create first unit
+              navigate('/units/create-first');
+            } else {
+              // Clinic can access dashboard (pending_approval or active)
+              navigate('/clinic-dashboard');
+            }
+          } else {
+            // Default to dashboard if can't fetch status
+            navigate('/clinic-dashboard');
+          }
+        } catch (error) {
+          console.error('Error checking clinic status:', error);
+          navigate('/clinic-dashboard');
+        }
       } else if (userRole === 'vet') {
         navigate('/vet-dashboard');
       } else {
@@ -70,7 +97,10 @@ const LoginPage: React.FC = () => {
               {/* Email field */}
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  Email
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Mail size={18} color={colors.primary} />
+                    <span>Email</span>
+                  </div>
                 </label>
                 <input
                   type="email"
@@ -83,9 +113,12 @@ const LoginPage: React.FC = () => {
               </div>
               
               {/* Password field usando PasswordInput */}
-              <div>
+              <div style={{ marginTop: '32px' }}>
                 <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  Senha
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Lock size={18} color={colors.primary} />
+                    <span>Senha</span>
+                  </div>
                 </label>
                 <PasswordInput 
                   value={password}
@@ -96,22 +129,42 @@ const LoginPage: React.FC = () => {
               </div>
               
               {/* Botão Entrar */}
-              <button 
-                type="submit" 
-                disabled={loading}
-                className={`btn btn-primary w-full text-lg ${loading ? 'loading' : ''}`}
-              >
-                {loading ? 'Entrando...' : 'Entrar'}
-              </button>
+              <div style={{ marginTop: '32px' }}>
+                <button 
+                  type="submit" 
+                  disabled={loading}
+                  style={{
+                    width: '100%',
+                    padding: '12px 24px',
+                    backgroundColor: loading ? colors.primaryLight : colors.primary,
+                    color: colors.surface,
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    transition: 'background-color 0.2s',
+                    opacity: loading ? 0.5 : 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading) e.currentTarget.style.backgroundColor = colors.primaryDark;
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!loading) e.currentTarget.style.backgroundColor = colors.primary;
+                  }}
+                >
+                  {loading ? 'Entrando...' : 'Entrar'}
+                </button>
+              </div>
             </form>
             
             {/* Link Esqueci Minha Senha */}
-            <div className="text-center mt-4">
+            <div className="text-center" style={{ marginTop: '24px' }}>
               <Link 
                 to="/forgot-password" 
                 className="text-primary-600 hover:text-primary-700 text-sm transition-colors"
               >
-                Esqueci Minha Senha
+                Esqueci minha senha
               </Link>
             </div>
           </div>

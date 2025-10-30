@@ -7,6 +7,9 @@ export interface Clinic {
   cnpj: string;
   address: string;
   email: string;
+  photo_url?: string;
+  description?: string;
+  status?: string;
   created_at: string;
   updated_at: string;
 }
@@ -22,7 +25,11 @@ export interface CreateClinicData {
 // Services
 export const clinicsApi = {
   // Criar clínica
-  create: async (data: CreateClinicData): Promise<{ clinic: Clinic }> => {
+  create: async (data: CreateClinicData): Promise<{ 
+    clinic: Clinic; 
+    user?: any; 
+    session?: any;
+  }> => {
     return apiRequest('/clinics/register', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -47,10 +54,39 @@ export const clinicsApi = {
     });
   },
 
+  // Atualizar foto de perfil
+  uploadPhoto: async (id: string, photo_url: string): Promise<{ clinic: Clinic }> => {
+    return apiRequest(`/clinics/${id}/photo`, {
+      method: 'PATCH',
+      body: JSON.stringify({ photo_url }),
+    });
+  },
+
   // Deletar clínica
   delete: async (id: string): Promise<{ message: string; clinic: Clinic }> => {
     return apiRequest(`/clinics/${id}`, {
       method: 'DELETE',
+    });
+  },
+
+  // Registrar clínica com primeira unidade (unified endpoint)
+  registerWithUnit: async (payload: {
+    clinic: { name: string; cnpj?: string; description?: string } | null;
+    unit: {
+      clinic_id: string;
+      name: string;
+      nickname: string;
+      cnpj?: string;
+      address: string;
+      city: string;
+      state: string;
+      phone?: string;
+      technical_manager?: string;
+    };
+  }): Promise<{ clinic: Clinic | null; unit: any; message: string }> => {
+    return apiRequest('/clinics/register-with-unit', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 };

@@ -154,6 +154,36 @@ export const updateVet = async (req: Request, res: Response) => {
   }
 }
 
+// Update vet photo
+export const updateVetPhoto = async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { photo_url } = req.body
+  
+  try {
+    if (!photo_url) {
+      return res.status(400).json({ error: 'photo_url is required' })
+    }
+    
+    const { data, error } = await supabase
+      .from('vets')
+      .update({ photo_url })
+      .eq('id', id)
+      .select()
+    
+    if (error) {
+      return res.status(400).json({ error: error.message })
+    }
+    
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: 'Vet not found' })
+    }
+    
+    res.json({ vet: data[0] })
+  } catch (error: any) {
+    res.status(500).json({ error: error.message })
+  }
+}
+
 // Update vet status
 export const updateVetStatus = async (req: Request, res: Response) => {
   const { id } = req.params

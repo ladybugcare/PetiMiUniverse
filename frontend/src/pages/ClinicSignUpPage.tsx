@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clinicsApi } from '../services/clinicsApi';
+import { supabase } from '../services/supabase';
 import ProgressBar from '../components/ProgressBar';
 import PasswordInput from '../components/PasswordInput';
 import HomeHeader from '../components/HomeHeader';
 import { validateCNPJ, formatCNPJ, validateEmail, validatePassword } from '../utils/validators';
+import colors from '../styles/colors';
+import { Info, CheckCircle, Heart, Mail } from 'lucide-react';
 
 const ClinicSignUpPage: React.FC = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [signupComplete, setSignupComplete] = useState(false);
+  const [emailResent, setEmailResent] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -116,7 +121,7 @@ const ClinicSignUpPage: React.FC = () => {
     try {
       setLoading(true);
 
-      await clinicsApi.create({
+      const response: any = await clinicsApi.create({
         name: formData.name,
         cnpj: formData.cnpj,
         address: formData.address,
@@ -124,10 +129,34 @@ const ClinicSignUpPage: React.FC = () => {
         password: formData.password,
       });
 
-      alert('Clínica cadastrada com sucesso! ✓');
-      navigate('/demands');
+      // NÃO salvar flag isFirstAccess nem token ainda
+      // Usuário só acessa após confirmar email
+      
+      // Marcar cadastro como completo
+      setSignupComplete(true);
     } catch (err: any) {
       alert('Erro ao cadastrar: ' + (err.message || 'Tente novamente.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reenviar email de confirmação
+  const handleResendEmail = async () => {
+    try {
+      setLoading(true);
+      
+      // Usar API do Supabase para reenviar email de confirmação
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: formData.email,
+      });
+      
+      if (!error) {
+        setEmailResent(true);
+      }
+    } catch (err: any) {
+      console.error('Erro ao reenviar e-mail:', err);
     } finally {
       setLoading(false);
     }
@@ -176,8 +205,8 @@ const ClinicSignUpPage: React.FC = () => {
                 autoFocus
               />
               {validateCNPJ(formData.cnpj) && !errors.cnpj && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 text-xl">
-                  ✓
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
+                  <CheckCircle size={20} />
                 </span>
               )}
             </div>
@@ -204,8 +233,9 @@ const ClinicSignUpPage: React.FC = () => {
               rows={3}
               autoFocus
             />
-            <p className="text-sm text-neutral-500 mt-2">
-              💡 Dica: Inclua CEP para facilitar que veterinários encontrem sua clínica
+            <p className="text-sm text-neutral-500 mt-2" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Info size={16} color={colors.primary} />
+              Dica: Inclua CEP para facilitar que veterinários encontrem sua clínica
             </p>
           </div>
         );
@@ -229,8 +259,8 @@ const ClinicSignUpPage: React.FC = () => {
                 autoFocus
               />
               {validateEmail(formData.email) && !errors.email && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 text-xl">
-                  ✓
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
+                  <CheckCircle size={20} />
                 </span>
               )}
             </div>
@@ -280,15 +310,33 @@ const ClinicSignUpPage: React.FC = () => {
             {renderStepContent()}
           </div>
           
-          <div className="space-y-4">
+          <div style={{ marginTop: '24px' }}>
             {/* Botões principais */}
-            <div className="flex gap-4">
+            <div style={{ display: 'flex', gap: '12px' }}>
               {step > 1 && (
                 <button
                   type="button"
                   onClick={handleBack}
-                  className="btn btn-outline flex-1"
                   disabled={loading}
+                  style={{
+                    flex: 1,
+                    padding: '12px 24px',
+                    backgroundColor: colors.surface,
+                    color: colors.textSecondary,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                    opacity: loading ? 0.5 : 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading) e.currentTarget.style.backgroundColor = colors.neutral[50];
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!loading) e.currentTarget.style.backgroundColor = colors.surface;
+                  }}
                 >
                   ← Voltar
                 </button>
@@ -297,13 +345,29 @@ const ClinicSignUpPage: React.FC = () => {
                 type="button"
                 onClick={handleNext}
                 disabled={!isStepValid() || loading}
-                className={`btn btn-primary flex-1 ${loading ? 'loading' : ''}`}
+                style={{
+                  flex: 1,
+                  padding: '12px 24px',
+                  backgroundColor: (!isStepValid() || loading) ? colors.primaryLight : colors.primary,
+                  color: colors.surface,
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: (!isStepValid() || loading) ? 'not-allowed' : 'pointer',
+                  transition: 'background-color 0.2s',
+                  opacity: (!isStepValid() || loading) ? 0.5 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (isStepValid() && !loading) e.currentTarget.style.backgroundColor = colors.primaryDark;
+                }}
+                onMouseLeave={(e) => {
+                  if (isStepValid() && !loading) e.currentTarget.style.backgroundColor = colors.primary;
+                }}
               >
                 {loading ? 'Cadastrando...' : step === 5 ? 'Criar Conta' : 'Próximo →'}
               </button>
             </div>
-            
-            {/* Botão Voltar para o início */}
           </div>
         </div>
         
@@ -424,8 +488,124 @@ const ClinicSignUpPage: React.FC = () => {
         </div>
       </div>
     </div>
+
+    {/* Mensagem de sucesso após cadastro */}
+    {signupComplete && (
+      <div style={styles.successOverlay}>
+        <div style={styles.successCard}>
+          {!emailResent ? (
+            <>
+              <h2 style={styles.successTitle}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+                  <Heart size={32} color={colors.primary} fill={colors.primary} />
+                  <span>Tudo pronto!</span>
+                </div>
+              </h2>
+              <p style={styles.successMessage}>
+                Enviamos um e-mail de confirmação para o endereço que você cadastrou.
+              </p>
+              <p style={styles.successMessage}>
+              É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetiVet.
+              </p>
+              <p style={styles.successMessage}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  Você pode fechar esta aba — o restante do processo é feito por e-mail.
+                  <Mail size={18} color={colors.primary} />
+                </span>
+                           </p>
+              
+              <div style={styles.resendSection}>
+                <p style={styles.resendText}>Não recebeu o e-mail?</p>
+                <button 
+                  onClick={handleResendEmail} 
+                  style={styles.resendButton}
+                  disabled={loading}
+                >
+                  {loading ? 'Enviando...' : 'Reenviar e-mail'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 style={styles.successTitle}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+                  <Mail size={32} color={colors.primary} />
+                  <span>Tudo certo!</span>
+                </div>
+              </h2>
+              <p style={styles.successMessage}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  Enviamos novamente o e-mail de confirmação
+                  <Heart size={18} color={colors.primary} fill={colors.primary} />
+                </span>
+              </p>
+              <p style={styles.successMessage}>
+                Verifique sua caixa de entrada (ou spam) e confirme seu cadastro para continuar.
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    )}
     </>
   );
+};
+
+const styles = {
+  successOverlay: {
+    position: 'fixed' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+  },
+  successCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: '16px',
+    padding: '40px',
+    maxWidth: '500px',
+    width: '90%',
+    textAlign: 'center' as const,
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+  },
+  successTitle: {
+    fontSize: '28px',
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: '20px',
+  },
+  successMessage: {
+    fontSize: '16px',
+    color: '#6b7280',
+    lineHeight: '1.6',
+    marginBottom: '16px',
+  },
+  resendSection: {
+    marginTop: '24px',
+    paddingTop: '20px',
+    borderTop: '1px solid #e5e7eb',
+  },
+  resendText: {
+    fontSize: '14px',
+    color: '#9ca3af',
+    marginBottom: '12px',
+  },
+  resendButton: {
+    padding: '10px 24px',
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease-in-out',
+  },
 };
 
 export default ClinicSignUpPage;

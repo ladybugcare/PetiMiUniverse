@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-interface FABOption {
+export interface FABOption {
   id: string;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   path: string;
   color: string;
 }

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import FloatingActionButton from '../components/FloatingActionButton';
+import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut } from 'lucide-react';
+import colors from '../styles/colors';
 
 const VetDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -28,7 +30,7 @@ const VetDashboardPage: React.FC = () => {
     {
       id: 'view-demands',
       label: 'Ver Demandas',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       path: '/demands',
       color: '#7c3aed',
     },
@@ -45,35 +47,35 @@ const VetDashboardPage: React.FC = () => {
     {
       id: 'resumo',
       label: 'Meu Resumo',
-      icon: '📊',
+      icon: <BarChart2 size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'resumo',
     },
     {
       id: 'demandas',
       label: 'Demandas Disponíveis',
-      icon: '📋',
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'candidaturas',
       label: 'Minhas Candidaturas',
-      icon: '📝',
+      icon: <FileText size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-applications',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      icon: '💬',
+      icon: <MessageSquare size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'mensagens',
     },
     {
       id: 'avaliacoes',
       label: 'Minhas Avaliações',
-      icon: '⭐',
+      icon: <Star size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'avaliacoes',
     },
@@ -87,9 +89,9 @@ const VetDashboardPage: React.FC = () => {
     {
       id: 'perfil',
       label: 'Meu Perfil',
-      icon: '👤',
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
-      path: '/profile',
+      path: '/vet-profile',
     },
     {
       id: 'configuracoes',
@@ -101,7 +103,7 @@ const VetDashboardPage: React.FC = () => {
     {
       id: 'logout',
       label: 'Sair',
-      icon: '🚪',
+      icon: <LogOut size={20} color={colors.primary} />,
       action: 'logout',
     },
   ];

@@ -4,6 +4,7 @@ export interface Unit {
   id: string;
   clinic_id: string;
   name: string;
+  nickname?: string;
   cnpj?: string;
   address: string;
   city: string;
@@ -54,6 +55,7 @@ export interface UserInvitation {
 export interface CreateUnitData {
   clinic_id: string;
   name: string;
+  nickname?: string;
   cnpj?: string;
   address: string;
   city: string;
@@ -65,6 +67,7 @@ export interface CreateUnitData {
 
 export interface UpdateUnitData {
   name?: string;
+  nickname?: string;
   cnpj?: string;
   address?: string;
   city?: string;

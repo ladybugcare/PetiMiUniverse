@@ -10,7 +10,7 @@ const MarketplaceMessagesPage: React.FC = () => {
   const menuItems: MenuItem[] = [
     {
       id: 'marketplace',
-      label: 'Ver Marketplace',
+      label: 'Marketplace',
       icon: '🛒',
       action: 'navigate',
       path: '/marketplace',

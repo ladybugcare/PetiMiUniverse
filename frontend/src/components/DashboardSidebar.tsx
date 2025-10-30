@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 export interface MenuItem {
   id: string;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   action: 'navigate' | 'section' | 'logout';
   path?: string;
   sectionId?: string;

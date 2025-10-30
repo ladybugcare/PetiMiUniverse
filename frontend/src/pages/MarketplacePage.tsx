@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import MarketplaceCard from '../components/MarketplaceCard';
+import FloatingActionButton from '../components/FloatingActionButton';
 import { marketplaceApi, MarketplaceItem, MarketplaceFilters } from '../services/marketplaceApi';
 import { BRAZILIAN_STATES } from '../utils/locationData';
 
@@ -63,7 +64,7 @@ const MarketplacePage: React.FC = () => {
       label: 'Perfil',
       icon: '👤',
       action: 'navigate',
-      path: '/profile',
+      path: '/clinic-profile',
     },
     {
       id: 'logout',
@@ -111,12 +112,24 @@ const MarketplacePage: React.FC = () => {
     });
   };
 
+  // Floating Action Button options
+  const fabOptions = [
+    {
+      id: 'create-listing',
+      label: 'Criar Anúncio',
+      icon: '➕',
+      path: '/marketplace/create',
+      color: '#10b981',
+    },
+  ];
+
   return (
-    <DashboardLayout
-      pageName="Marketplace"
-      menuItems={menuItems}
-      notificationCount={0}
-    >
+    <>
+      <DashboardLayout
+        pageName="Marketplace"
+        menuItems={menuItems}
+        notificationCount={0}
+      >
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>
@@ -296,6 +309,8 @@ const MarketplacePage: React.FC = () => {
         )}
       </div>
     </DashboardLayout>
+    <FloatingActionButton options={fabOptions} />
+    </>
   );
 };
 

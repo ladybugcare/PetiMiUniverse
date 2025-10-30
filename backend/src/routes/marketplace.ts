@@ -8,11 +8,12 @@ import {
   deleteMarketplaceItem,
   markAsSold,
 } from '../controllers/marketplaceController';
+import { requireActiveClinic } from '../middleware/requireActiveClinic';
 
 const router = express.Router();
 
-// Create new listing
-router.post('/create', createMarketplaceItem);
+// Create new listing (requires active clinic)
+router.post('/create', requireActiveClinic, createMarketplaceItem);
 
 // Get all items (with filters)
 router.get('/', getMarketplaceItems);

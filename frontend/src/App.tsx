@@ -26,6 +26,13 @@ import AdminVetsPage from './pages/AdminVetsPage';
 import AdminDemandsPage from './pages/AdminDemandsPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import VetPositionsPage from './pages/VetPositionsPage';
+import VetProfilePage from './pages/VetProfilePage';
+import ClinicProfilePage from './pages/ClinicProfilePage';
+import AdminProfilePage from './pages/AdminProfilePage';
+import CreateFirstUnitPage from './pages/CreateFirstUnitPage';
+import CreateUnitPage from './pages/CreateUnitPage';
+import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
+import EmailConfirmedPage from './pages/EmailConfirmedPage';
 import './App.css';
 
 function App() {
@@ -38,6 +45,7 @@ function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/email-confirmed" element={<EmailConfirmedPage />} />
             <Route path="/clinic-signup" element={<ClinicSignUpPage />} />
             <Route path="/vet-signup" element={<VetSignUpPage />} />
             <Route path="/admin-dashboard" element={<AdminDashboardPage />} />
@@ -61,8 +69,18 @@ function App() {
             
             {/* Units & Users Management Routes */}
             <Route path="/units" element={<UnitsManagementPage />} />
+            <Route path="/units/create-first" element={<CreateFirstUnitPage />} />
+            <Route path="/units/create" element={<CreateUnitPage />} />
             <Route path="/users" element={<UsersManagementPage />} />
             <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
+            
+            {/* Profile Routes */}
+            <Route path="/vet-profile" element={<VetProfilePage />} />
+            <Route path="/clinic-profile" element={<ClinicProfilePage />} />
+            <Route path="/admin-profile" element={<AdminProfilePage />} />
+            
+            {/* Admin Routes */}
+            <Route path="/admin/pending-units" element={<AdminPendingUnitsPage />} />
             </Routes>
           </div>
         </Router>

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
+import { Home, ClipboardList, ShoppingCart, Building2, Users, LogOut } from 'lucide-react';
+import colors from '../styles/colors';
 import { useAlert } from '../hooks/useAlert';
 import { usePermissions } from '../hooks/usePermissions';
 import { useUnit } from '../contexts/UnitContext';
@@ -19,6 +21,7 @@ const UnitsManagementPage: React.FC = () => {
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const [formData, setFormData] = useState<Partial<CreateUnitData>>({
     name: '',
+    nickname: '',
     cnpj: '',
     address: '',
     city: '',
@@ -30,17 +33,24 @@ const UnitsManagementPage: React.FC = () => {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const userRole = user?.user_metadata?.role || user?.role;
 
+  // Redirect to CreateFirstUnitPage if no units exist
+  useEffect(() => {
+    if (!loading && units.length === 0) {
+      navigate('/units/create-first');
+    }
+  }, [units, loading, navigate]);
+
   const getMenuItems = (): MenuItem[] => {
     const baseItems: MenuItem[] = [];
 
     if (userRole === 'clinic') {
       baseItems.push(
-        { id: 'dashboard', label: 'Dashboard', icon: '🏠', action: 'navigate', path: '/clinic-dashboard' },
-        { id: 'demands', label: 'Demandas', icon: '📋', action: 'navigate', path: '/demands' },
-        { id: 'marketplace', label: 'Marketplace', icon: '🛒', action: 'navigate', path: '/marketplace' },
-        { id: 'units', label: 'Gerenciar Unidades', icon: '🏥', action: 'navigate', path: '/units' },
-        { id: 'users', label: 'Gerenciar Usuários', icon: '👥', action: 'navigate', path: '/users' },
-        { id: 'logout', label: 'Sair', icon: '🚪', action: 'logout' }
+        { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
+        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
+        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
+        { id: 'units', label: 'Gerenciar Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
+        { id: 'users', label: 'Gerenciar Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
+        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' }
       );
     }
 
@@ -48,10 +58,17 @@ const UnitsManagementPage: React.FC = () => {
   };
 
   const handleOpenModal = (unit?: Unit) => {
+    // If trying to create a new unit but no units exist, redirect to first unit flow
+    if (!unit && units.length === 0) {
+      navigate('/units/create-first');
+      return;
+    }
+
     if (unit) {
       setEditingUnit(unit);
       setFormData({
         name: unit.name,
+        nickname: unit.nickname || '',
         cnpj: unit.cnpj || '',
         address: unit.address,
         city: unit.city,
@@ -63,6 +80,7 @@ const UnitsManagementPage: React.FC = () => {
       setEditingUnit(null);
       setFormData({
         name: '',
+        nickname: '',
         cnpj: '',
         address: '',
         city: '',
@@ -79,6 +97,7 @@ const UnitsManagementPage: React.FC = () => {
     setEditingUnit(null);
     setFormData({
       name: '',
+      nickname: '',
       cnpj: '',
       address: '',
       city: '',
@@ -146,8 +165,9 @@ const UnitsManagementPage: React.FC = () => {
   };
 
   return (
-    <DashboardLayout pageName="Gerenciar Unidades" menuItems={getMenuItems()} notificationCount={0}>
-      <div style={styles.container}>
+    <>
+      <DashboardLayout pageName="Gerenciar Unidades" menuItems={getMenuItems()} notificationCount={0}>
+        <div style={styles.container}>
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>Unidades</h1>
@@ -174,7 +194,10 @@ const UnitsManagementPage: React.FC = () => {
             {units.map((unit) => (
               <div key={unit.id} style={styles.card}>
                 {unit.is_main && <span style={styles.mainBadge}>⭐ Principal</span>}
-                <h3 style={styles.unitName}>{unit.name}</h3>
+                <h3 style={styles.unitName}>
+                  {unit.name}
+                  {unit.nickname && <span style={styles.nicknameText}> ({unit.nickname})</span>}
+                </h3>
                 <div style={styles.unitInfo}>
                   <p><strong>CNPJ:</strong> {unit.cnpj || 'N/A'}</p>
                   <p><strong>Endereço:</strong> {unit.address}</p>
@@ -217,6 +240,22 @@ const UnitsManagementPage: React.FC = () => {
                     style={styles.input}
                     required
                   />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Apelido da Unidade *</label>
+                  <input
+                    type="text"
+                    name="nickname"
+                    value={formData.nickname}
+                    onChange={handleChange}
+                    placeholder="Ex: Granja Viana, Centro, Unidade 1"
+                    style={styles.input}
+                    required
+                    maxLength={100}
+                  />
+                  <small style={styles.helpText}>
+                    Use o bairro ou ponto de referência para diferenciar unidades
+                  </small>
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>CNPJ</label>
@@ -298,6 +337,22 @@ const UnitsManagementPage: React.FC = () => {
         )}
       </div>
     </DashboardLayout>
+
+      {/* Floating Action Button */}
+      <button
+        onClick={() => navigate('/units/create')}
+        style={styles.fab}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = 'scale(1.1)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = 'scale(1)';
+        }}
+        aria-label="Nova Unidade"
+      >
+        <span style={styles.fabIcon}>+</span>
+      </button>
+    </>
   );
 };
 
@@ -373,6 +428,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     color: '#262626',
     marginBottom: '16px',
+  },
+  nicknameText: {
+    fontSize: '18px',
+    fontWeight: '400',
+    color: '#737373',
   },
   unitInfo: {
     fontSize: '14px',
@@ -464,6 +524,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#262626',
     outline: 'none',
   },
+  helpText: {
+    fontSize: '12px',
+    color: '#737373',
+    marginTop: '4px',
+  },
   modalActions: {
     display: 'flex',
     gap: '12px',
@@ -490,6 +555,29 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     fontWeight: '500',
     cursor: 'pointer',
+  },
+  fab: {
+    position: 'fixed',
+    bottom: '24px',
+    right: '24px',
+    width: '64px',
+    height: '64px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)',
+    border: 'none',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2)',
+    transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+    zIndex: 999,
+  },
+  fabIcon: {
+    fontSize: '32px',
+    color: '#ffffff',
+    fontWeight: '300',
+    lineHeight: 1,
   },
 };
 

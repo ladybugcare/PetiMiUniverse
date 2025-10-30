@@ -14,10 +14,13 @@ import unitsRoutes from './routes/units';
 import clinicUsersRoutes from './routes/clinicUsers';
 import statisticsRoutes from './routes/statistics';
 import demandPositionsRoutes from './routes/demandPositions';
+import adminRoutes from './routes/admin';
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+// Increase payload limit to support image uploads (base64 encoded)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Rotas
 app.use('/auth', authRoutes);
@@ -33,6 +36,7 @@ app.use('/units', unitsRoutes);
 app.use('/clinic-users', clinicUsersRoutes);
 app.use('/statistics', statisticsRoutes);
 app.use('/demand-positions', demandPositionsRoutes);
+app.use('/admin', adminRoutes);
 
 // ... rest of the file
 

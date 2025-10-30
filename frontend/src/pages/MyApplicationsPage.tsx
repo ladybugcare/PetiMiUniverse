@@ -48,7 +48,7 @@ const MyApplicationsPage: React.FC = () => {
       label: 'Meu Perfil',
       icon: '👤',
       action: 'navigate',
-      path: '/profile',
+      path: '/vet-profile',
     },
     {
       id: 'logout',

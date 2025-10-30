@@ -16,6 +16,7 @@
     "axios": "^1.12.2",
     "expo": "~54.0.20",
     "expo-router": "^6.0.13",
+    "lucide-react": "^0.548.0",
     "nativewind": "^4.2.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",

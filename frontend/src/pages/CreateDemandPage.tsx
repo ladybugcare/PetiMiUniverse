@@ -38,7 +38,7 @@ const CreateDemandPage: React.FC = () => {
       label: 'Perfil',
       icon: '👤',
       action: 'navigate',
-      path: '/profile',
+      path: '/clinic-profile',
     },
     {
       id: 'logout',

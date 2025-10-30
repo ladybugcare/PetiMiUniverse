@@ -6,13 +6,18 @@ import {
   updateUnit,
   deleteUnit,
   getUnitStats,
+  createFirstUnit,
 } from '../controllers/unitsController';
 import { authenticateUser } from '../middleware/authMiddleware';
+import { requireActiveClinic } from '../middleware/requireActiveClinic';
 
 const router = express.Router();
 
-// Create unit (requires authentication, permission checked in controller)
-router.post('/create', authenticateUser, createUnit);
+// Create first unit (for new clinics - NO requireActiveClinic middleware)
+router.post('/create-first', authenticateUser, createFirstUnit);
+
+// Create unit (requires authentication + active clinic)
+router.post('/create', authenticateUser, requireActiveClinic, createUnit);
 
 // Get units by clinic ID
 router.get('/clinic/:clinic_id', authenticateUser, getUnitsByClinic);

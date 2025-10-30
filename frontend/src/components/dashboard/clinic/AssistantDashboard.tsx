@@ -37,7 +37,10 @@ const ResumoSection: React.FC = () => {
       try {
         setLoading(true);
         const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const clinicId = user.id;
+        const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
+        const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
+
+        console.log('Loading assistant data for clinic:', { clinicId, userId: user.id });
 
         // Fetch clinic's demands
         const { demands } = await demandsApi.getOpen('clinic', clinicId);
@@ -58,8 +61,9 @@ const ResumoSection: React.FC = () => {
         });
 
         setRecentDemands(demands.slice(0, 3));
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error loading assistant data:', error);
+        console.error('Error details:', error.message);
       } finally {
         setLoading(false);
       }

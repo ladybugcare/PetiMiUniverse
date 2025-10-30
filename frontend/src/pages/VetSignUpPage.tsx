@@ -5,6 +5,8 @@ import ProgressBar from '../components/ProgressBar';
 import PasswordInput from '../components/PasswordInput';
 import HomeHeader from '../components/HomeHeader';
 import { validateEmail, validatePassword } from '../utils/validators';
+import colors from '../styles/colors';
+import { Info, CheckCircle } from 'lucide-react';
 
 const VetSignUpPage: React.FC = () => {
   const navigate = useNavigate();
@@ -101,7 +103,7 @@ const VetSignUpPage: React.FC = () => {
         password: formData.password,
       });
 
-      alert('Veterinário cadastrado com sucesso! ✓');
+      alert('Veterinário cadastrado com sucesso!');
       navigate('/demands');
     } catch (err: any) {
       alert('Erro ao cadastrar: ' + (err.message || 'Tente novamente.'));
@@ -150,8 +152,9 @@ const VetSignUpPage: React.FC = () => {
               className="input"
               autoFocus
             />
-            <p className="text-sm text-neutral-500 mt-2">
-              💡 Formato: número-UF (exemplo: 12345-SP)
+            <p className="text-sm text-neutral-500 mt-2" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Info size={16} color={colors.primary} />
+              Formato: número-UF (exemplo: 12345-SP)
             </p>
           </div>
         );
@@ -173,8 +176,9 @@ const VetSignUpPage: React.FC = () => {
               rows={3}
               autoFocus
             />
-            <p className="text-sm text-neutral-500 mt-2">
-              💡 Separe múltiplas especialidades com vírgula
+            <p className="text-sm text-neutral-500 mt-2" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Info size={16} color={colors.primary} />
+              Separe múltiplas especialidades com vírgula
             </p>
           </div>
         );
@@ -218,8 +222,8 @@ const VetSignUpPage: React.FC = () => {
                 autoFocus
               />
               {validateEmail(formData.email) && !errors.email && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 text-xl">
-                  ✓
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
+                  <CheckCircle size={20} />
                 </span>
               )}
             </div>
@@ -269,15 +273,33 @@ const VetSignUpPage: React.FC = () => {
             {renderStepContent()}
           </div>
           
-          <div className="space-y-4">
+          <div style={{ marginTop: '24px' }}>
             {/* Botões principais */}
-            <div className="flex gap-4">
+            <div style={{ display: 'flex', gap: '12px' }}>
               {step > 1 && (
                 <button
                   type="button"
                   onClick={handleBack}
-                  className="btn btn-outline flex-1"
                   disabled={loading}
+                  style={{
+                    flex: 1,
+                    padding: '12px 24px',
+                    backgroundColor: colors.surface,
+                    color: colors.textSecondary,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                    opacity: loading ? 0.5 : 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading) e.currentTarget.style.backgroundColor = colors.neutral[50];
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!loading) e.currentTarget.style.backgroundColor = colors.surface;
+                  }}
                 >
                   ← Voltar
                 </button>
@@ -286,7 +308,25 @@ const VetSignUpPage: React.FC = () => {
                 type="button"
                 onClick={handleNext}
                 disabled={!isStepValid() || loading}
-                className={`btn btn-primary flex-1 ${loading ? 'loading' : ''}`}
+                style={{
+                  flex: 1,
+                  padding: '12px 24px',
+                  backgroundColor: (!isStepValid() || loading) ? colors.primaryLight : colors.primary,
+                  color: colors.surface,
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: (!isStepValid() || loading) ? 'not-allowed' : 'pointer',
+                  transition: 'background-color 0.2s',
+                  opacity: (!isStepValid() || loading) ? 0.5 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (isStepValid() && !loading) e.currentTarget.style.backgroundColor = colors.primaryDark;
+                }}
+                onMouseLeave={(e) => {
+                  if (isStepValid() && !loading) e.currentTarget.style.backgroundColor = colors.primary;
+                }}
               >
                 {loading ? 'Cadastrando...' : step === 6 ? 'Criar Conta' : 'Próximo →'}
               </button>

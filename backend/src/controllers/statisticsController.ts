@@ -6,6 +6,12 @@ export const getClinicStats = async (req: Request<{ clinicId: string }>, res: Re
   const { clinicId } = req.params;
   const { unit_id } = req.query;
 
+  console.log('getClinicStats called with:', { clinicId, unit_id });
+
+  if (!clinicId) {
+    return res.status(400).json({ error: 'clinicId is required' });
+  }
+
   try {
     // Get demands count by status
     let demandsQuery = supabase
@@ -34,33 +40,34 @@ export const getClinicStats = async (req: Request<{ clinicId: string }>, res: Re
     const { count: openDemands, error: openError } = await openDemandsQuery;
     if (openError) throw openError;
 
-    // Get applications count (for clinic's demands)
-    const { data: clinicDemands, error: clinicDemandsError } = await supabase
-      .from('demands')
-      .select('id')
-      .eq('clinic_id', clinicId);
+    // Get applications count (for clinic's demand_positions)
+    // First get all positions for this clinic's demands
+    const { data: clinicDemandPositions, error: positionsError} = await supabase
+      .from('demand_positions')
+      .select('id, master_demand_id, demands!inner(clinic_id)')
+      .eq('demands.clinic_id', clinicId);
 
-    if (clinicDemandsError) throw clinicDemandsError;
+    if (positionsError) throw positionsError;
 
-    const demandIds = clinicDemands?.map(d => d.id) || [];
+    const positionIds = clinicDemandPositions?.map(p => p.id) || [];
 
     let applicationsCount = 0;
     let pendingApplicationsCount = 0;
 
-    if (demandIds.length > 0) {
+    if (positionIds.length > 0) {
       const { count: totalApps, error: appsError } = await supabase
-        .from('applications')
+        .from('position_applications')
         .select('*', { count: 'exact', head: true })
-        .in('demand_id', demandIds);
+        .in('position_id', positionIds);
 
       if (appsError) throw appsError;
       applicationsCount = totalApps || 0;
 
       const { count: pendingApps, error: pendingError } = await supabase
-        .from('applications')
+        .from('position_applications')
         .select('*', { count: 'exact', head: true })
-        .in('demand_id', demandIds)
-        .eq('status', 'applied');
+        .in('position_id', positionIds)
+        .eq('status', 'pending');
 
       if (pendingError) throw pendingError;
       pendingApplicationsCount = pendingApps || 0;
@@ -96,7 +103,7 @@ export const getVetStats = async (req: Request<{ vetId: string }>, res: Response
   try {
     // Get vet's applications count by status
     const { count: totalApplications, error: appsError } = await supabase
-      .from('applications')
+      .from('position_applications')
       .select('*', { count: 'exact', head: true })
       .eq('vet_id', vetId);
 
@@ -104,7 +111,7 @@ export const getVetStats = async (req: Request<{ vetId: string }>, res: Response
 
     // Get accepted applications (active jobs)
     const { count: activeJobs, error: activeError } = await supabase
-      .from('applications')
+      .from('position_applications')
       .select('*', { count: 'exact', head: true })
       .eq('vet_id', vetId)
       .eq('status', 'accepted');
@@ -113,32 +120,33 @@ export const getVetStats = async (req: Request<{ vetId: string }>, res: Response
 
     // Get pending applications
     const { count: pendingApplications, error: pendingError } = await supabase
-      .from('applications')
+      .from('position_applications')
       .select('*', { count: 'exact', head: true })
       .eq('vet_id', vetId)
-      .eq('status', 'applied');
+      .eq('status', 'pending');
 
     if (pendingError) throw pendingError;
 
-    // Get available opportunities (open demands for vets)
+    // Get available opportunities (open demand positions for vets)
     const { count: availableOpportunities, error: opportunitiesError } = await supabase
-      .from('demands')
-      .select('*', { count: 'exact', head: true })
-      .eq('category', 'vet')
+      .from('demand_positions')
+      .select('*, demands!inner(*)', { count: 'exact', head: true })
+      .eq('demands.category', 'vet')
+      .eq('demands.status', 'open')
       .eq('status', 'open');
 
     if (opportunitiesError) throw opportunitiesError;
 
-    // Calculate completed jobs (demands with accepted application that are closed)
+    // Calculate completed jobs (positions with accepted application from closed demands)
     const { data: acceptedApps, error: acceptedError } = await supabase
-      .from('applications')
-      .select('demand_id')
+      .from('position_applications')
+      .select('position_id, demand_positions!inner(master_demand_id)')
       .eq('vet_id', vetId)
       .eq('status', 'accepted');
 
     if (acceptedError) throw acceptedError;
 
-    const acceptedDemandIds = acceptedApps?.map(a => a.demand_id) || [];
+    const acceptedDemandIds = acceptedApps?.map(a => a.demand_positions.master_demand_id) || [];
     let completedJobs = 0;
 
     if (acceptedDemandIds.length > 0) {
@@ -205,7 +213,7 @@ export const getSystemStats = async (req: Request, res: Response) => {
 
     // Get total applications
     const { count: totalApplications, error: appsError } = await supabase
-      .from('applications')
+      .from('position_applications')
       .select('*', { count: 'exact', head: true });
 
     if (appsError) throw appsError;

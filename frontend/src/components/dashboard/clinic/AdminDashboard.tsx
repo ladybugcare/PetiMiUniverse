@@ -22,7 +22,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
       try {
         setLoading(true);
         const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const clinicId = user.id;
+        const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
+        const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
+
+        console.log('Loading stats for clinic:', { clinicId, userId: user.id });
 
         // Fetch clinic statistics
         const { stats: clinicStats } = await statisticsApi.getClinicStats(clinicId);
@@ -36,8 +39,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
           totalDemands: clinicStats.totalDemands,
           pendingApplications: clinicStats.pendingApplications,
         });
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error loading stats:', error);
+        console.error('Error details:', error.message);
       } finally {
         setLoading(false);
       }

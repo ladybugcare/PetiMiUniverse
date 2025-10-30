@@ -24,7 +24,7 @@ const CreateMarketplaceListingPage: React.FC = () => {
     },
     {
       id: 'marketplace',
-      label: 'Ver Marketplace',
+      label: 'Marketplace',
       icon: '🛒',
       action: 'navigate',
       path: '/marketplace',
@@ -55,7 +55,7 @@ const CreateMarketplaceListingPage: React.FC = () => {
       label: 'Perfil',
       icon: '👤',
       action: 'navigate',
-      path: '/profile',
+      path: '/clinic-profile',
     },
     {
       id: 'logout',
