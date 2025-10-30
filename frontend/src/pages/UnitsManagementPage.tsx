@@ -166,7 +166,7 @@ const UnitsManagementPage: React.FC = () => {
 
   return (
     <>
-      <DashboardLayout pageName="Gerenciar Unidades" menuItems={getMenuItems()} notificationCount={0}>
+      <DashboardLayout pageName="Gerenciar Unidades" menuItems={getMenuItems()}>
         <div style={styles.container}>
         <div style={styles.header}>
           <div>

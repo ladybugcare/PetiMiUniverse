@@ -8,7 +8,6 @@ interface DashboardLayoutProps {
   menuItems: MenuItem[];
   activeSection?: string;
   onSectionChange?: (sectionId: string) => void;
-  notificationCount?: number;
 }
 
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({
@@ -17,7 +16,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   menuItems,
   activeSection,
   onSectionChange,
-  notificationCount = 0,
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -40,7 +38,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       <DashboardHeader
         onMenuClick={handleMenuToggle}
         pageName={pageName}
-        notificationCount={notificationCount}
       />
 
       {/* Sidebar */}

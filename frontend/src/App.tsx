@@ -31,6 +31,7 @@ import VetProfilePage from './pages/VetProfilePage';
 import ClinicProfilePage from './pages/ClinicProfilePage';
 import MySupportTicketsPage from './pages/MySupportTicketsPage';
 import AdminProfilePage from './pages/AdminProfilePage';
+import NotificationsPage from './pages/NotificationsPage';
 import CreateFirstUnitPage from './pages/CreateFirstUnitPage';
 import CreateUnitPage from './pages/CreateUnitPage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
@@ -84,6 +85,7 @@ function App() {
             <Route path="/clinic-profile" element={<ClinicProfilePage />} />
             <Route path="/admin-profile" element={<AdminProfilePage />} />
             <Route path="/my-support-tickets" element={<MySupportTicketsPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
             
             {/* Admin Routes */}
             <Route path="/admin/pending-units" element={<AdminPendingUnitsPage />} />

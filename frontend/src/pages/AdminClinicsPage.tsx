@@ -135,7 +135,7 @@ const AdminClinicsPage: React.FC = () => {
   };
 
   return (
-    <DashboardLayout pageName="Clínicas Cadastradas" menuItems={menuItems} notificationCount={0}>
+    <DashboardLayout pageName="Clínicas Cadastradas" menuItems={menuItems}>
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>

@@ -137,7 +137,6 @@ const VetDashboardPage: React.FC = () => {
         menuItems={menuItems}
         activeSection={activeSection}
         onSectionChange={setActiveSection}
-        notificationCount={5}
       >
         <div style={styles.container}>
           {renderContent()}

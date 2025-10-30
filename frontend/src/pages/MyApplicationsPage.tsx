@@ -104,7 +104,6 @@ const MyApplicationsPage: React.FC = () => {
     <DashboardLayout
       pageName="Minhas Candidaturas"
       menuItems={menuItems}
-      notificationCount={0}
     >
       <div style={styles.container}>
         <div style={styles.header}>

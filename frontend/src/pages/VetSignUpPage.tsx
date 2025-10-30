@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { vetsApi } from '../services/vetsApi';
+import { API_BASE_URL } from '../services/api';
 import ProgressBar from '../components/ProgressBar';
 import PasswordInput from '../components/PasswordInput';
 import HomeHeader from '../components/HomeHeader';
@@ -61,7 +62,7 @@ const VetSignUpPage: React.FC = () => {
     // Step 5: Verificar se email já existe
     if (step === 5) {
       try {
-        const response = await fetch(`http://localhost:3000/vets/check-email/${encodeURIComponent(formData.email)}`);
+        const response = await fetch(`${API_BASE_URL}/vets/check-email/${encodeURIComponent(formData.email)}`);
         if (response.ok) {
           const data = await response.json();
           if (data.exists) {

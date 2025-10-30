@@ -64,7 +64,6 @@ const CreateDemandPage: React.FC = () => {
     <DashboardLayout
       pageName="Criar Demanda"
       menuItems={menuItems}
-      notificationCount={0}
     >
       {step === 'category' ? (
         <CategorySelectionStep onSelect={handleCategorySelect} />

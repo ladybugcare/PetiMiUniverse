@@ -132,7 +132,6 @@ const AdminDashboardPage: React.FC = () => {
     <DashboardLayout 
       pageName="Painel do Administrador" 
       menuItems={menuItems}
-      notificationCount={0}
     >
       {renderSection()}
     </DashboardLayout>

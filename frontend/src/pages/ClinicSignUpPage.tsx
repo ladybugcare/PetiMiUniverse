@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clinicsApi } from '../services/clinicsApi';
+import { API_BASE_URL } from '../services/api';
 import { supabase } from '../services/supabase';
 import ProgressBar from '../components/ProgressBar';
 import PasswordInput from '../components/PasswordInput';
@@ -72,7 +73,7 @@ const ClinicSignUpPage: React.FC = () => {
     // Step 2: Verificar se CNPJ já existe
     if (step === 2) {
       try {
-        const response = await fetch(`http://localhost:3000/clinics/check-cnpj/${encodeURIComponent(formData.cnpj)}`);
+        const response = await fetch(`${API_BASE_URL}/clinics/check-cnpj/${encodeURIComponent(formData.cnpj)}`);
         if (response.ok) {
           const data = await response.json();
           if (data.exists) {
@@ -88,7 +89,7 @@ const ClinicSignUpPage: React.FC = () => {
     // Step 4: Verificar se email já existe
     if (step === 4) {
       try {
-        const response = await fetch(`http://localhost:3000/clinics/check-email/${encodeURIComponent(formData.email)}`);
+        const response = await fetch(`${API_BASE_URL}/clinics/check-email/${encodeURIComponent(formData.email)}`);
         if (response.ok) {
           const data = await response.json();
           if (data.exists) {

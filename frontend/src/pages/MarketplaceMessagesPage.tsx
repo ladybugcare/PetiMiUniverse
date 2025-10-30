@@ -64,7 +64,6 @@ const MarketplaceMessagesPage: React.FC = () => {
     <DashboardLayout
       pageName="Mensagens"
       menuItems={menuItems}
-      notificationCount={totalUnread}
     >
       <div style={styles.container}>
         {/* Header */}

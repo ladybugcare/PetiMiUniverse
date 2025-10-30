@@ -178,7 +178,7 @@ const VetProfilePage: React.FC = () => {
 
   if (loading) {
     return (
-      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems} notificationCount={0}>
+      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
         <div style={styles.loading}>Carregando...</div>
       </DashboardLayout>
     );
@@ -186,14 +186,14 @@ const VetProfilePage: React.FC = () => {
 
   if (!vet) {
     return (
-      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems} notificationCount={0}>
+      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
         <div style={styles.error}>Erro ao carregar perfil</div>
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout pageName="Meu Perfil" menuItems={menuItems} notificationCount={0}>
+    <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
       <div style={styles.container}>
         <div style={styles.card}>
           {/* Header */}
