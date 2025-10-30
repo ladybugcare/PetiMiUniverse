@@ -15,6 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { vetsApi } from '../src/services/vetsApi';
+import EmailStatusModal from '../components/EmailStatusModal';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -31,6 +32,11 @@ const VetSignUpScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const [form, setForm] = useState(initialFormState);
   const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState<{ visible: boolean; title: string; message: string }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
 
   const isSubmitDisabled = useMemo(() => {
     return Object.values(form).some((value) => !value.trim());
@@ -62,14 +68,19 @@ const VetSignUpScreen = () => {
         email: form.email,
         password: form.password,
       });
-
-      Alert.alert('Sucesso', 'Veterinário cadastrado com sucesso!');
+      setModal({
+        visible: true,
+        title: 'Verifique seu e‑mail',
+        message:
+          'Enviamos um link de confirmação para o e‑mail informado. Confirme para acessar e iniciar o onboarding.',
+      });
       setForm(initialFormState);
     } catch (error: any) {
-      Alert.alert(
-        'Erro ao cadastrar',
-        error?.message ?? 'Não foi possível concluir o cadastro. Tente novamente.'
-      );
+      setModal({
+        visible: true,
+        title: 'Não foi possível enviar o e‑mail',
+        message: error?.message ?? 'Tente novamente em alguns instantes.',
+      });
     } finally {
       setLoading(false);
     }
@@ -81,6 +92,13 @@ const VetSignUpScreen = () => {
       contentContainerStyle={styles.contentContainer}
       keyboardShouldPersistTaps="handled"
     >
+      <EmailStatusModal
+        visible={modal.visible}
+        title={modal.title}
+        message={modal.message}
+        primaryLabel="Entendi"
+        onPrimary={() => setModal((m) => ({ ...m, visible: false }))}
+      />
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Cadastre-se como Veterinário 🩺</Text>
         <Text style={styles.headerSubtitle}>

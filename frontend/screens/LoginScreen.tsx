@@ -14,6 +14,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { login } from '../src/services/api';
+import EmailStatusModal from '../components/EmailStatusModal';
+import { supabase } from '../src/services/supabase';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -22,6 +24,11 @@ const LoginScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState<
+    | { type: 'none' }
+    | { type: 'unconfirmed'; email: string; message: string }
+    | { type: 'info'; title: string; message: string }
+  >({ type: 'none' });
 
   const isDisabled = useMemo(() => !email.trim() || !password.trim(), [email, password]);
 
@@ -36,11 +43,31 @@ const LoginScreen = () => {
       await login({ email, password });
       Alert.alert('Sucesso', 'Login realizado com sucesso!');
     } catch (error: any) {
-      Alert.alert('Erro no login', error?.message ?? 'Tente novamente em instantes.');
+      const message = String(error?.message || '')
+      if (message.toLowerCase().includes('confirm') || message.toLowerCase().includes('email not confirmed')) {
+        setModal({ type: 'unconfirmed', email, message: 'Você precisa confirmar seu e‑mail para acessar. Quer reenviar o e‑mail de confirmação?' })
+      } else {
+        setModal({ type: 'info', title: 'Erro no login', message: message || 'Tente novamente em instantes.' })
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  const handleResend = async () => {
+    if (modal.type !== 'unconfirmed') return
+    setLoading(true)
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email: modal.email })
+      if (error) {
+        setModal({ type: 'info', title: 'Falha ao reenviar', message: error.message })
+      } else {
+        setModal({ type: 'info', title: 'E‑mail reenviado', message: 'Se o e‑mail existir e não estiver confirmado, você receberá um novo link.' })
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <ScrollView
@@ -48,6 +75,26 @@ const LoginScreen = () => {
       contentContainerStyle={styles.contentContainer}
       keyboardShouldPersistTaps="handled"
     >
+      {modal.type === 'unconfirmed' ? (
+        <EmailStatusModal
+          visible
+          title="Confirme seu e‑mail"
+          message={modal.message}
+          primaryLabel="Reenviar"
+          secondaryLabel="Fechar"
+          onPrimary={handleResend}
+          onSecondary={() => setModal({ type: 'none' })}
+        />
+      ) : null}
+      {modal.type === 'info' ? (
+        <EmailStatusModal
+          visible
+          title={modal.title}
+          message={modal.message}
+          primaryLabel="Ok"
+          onPrimary={() => setModal({ type: 'none' })}
+        />
+      ) : null}
       <View style={styles.formCard}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Bem-vindo de volta</Text>
