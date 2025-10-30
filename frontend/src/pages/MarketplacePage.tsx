@@ -119,7 +119,7 @@ const MarketplacePage: React.FC = () => {
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      icon: <PlusCircle size={20} />,
+      icon: <PlusCircle size={20} color="#ffffff" />,
       path: '/marketplace/create',
       color: '#10b981',
     },

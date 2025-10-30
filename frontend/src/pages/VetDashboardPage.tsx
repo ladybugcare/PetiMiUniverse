@@ -30,14 +30,14 @@ const VetDashboardPage: React.FC = () => {
     {
       id: 'view-demands',
       label: 'Ver Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
+      icon: <ClipboardList size={20} color="#ffffff" />,
       path: '/demands',
       color: '#7c3aed',
     },
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      icon: <ShoppingCart size={20} />,
+      icon: <ShoppingCart size={20} color="#ffffff" />,
       path: '/marketplace/create',
       color: '#10b981',
     },
@@ -190,35 +190,86 @@ const ResumoSection: React.FC = () => {
   return (
     <div style={styles.section}>
       <h2 style={styles.sectionTitle}>Meu Resumo Profissional</h2>
-      <div style={styles.cardsGrid}>
-        <DashboardCard
-          title="Candidaturas Ativas"
-          value={stats.totalApplications.toString()}
-          icon={<FileText size={32} />}
-          color="#7c3aed"
-          bgColor="#ede9fe"
-        />
-        <DashboardCard
-          title="Trabalhos em Andamento"
-          value={stats.activeJobs.toString()}
-          icon={<Clock size={32} />}
-          color="#0ea5e9"
-          bgColor="#e0f2fe"
-        />
-        <DashboardCard
-          title="Trabalhos Concluídos"
-          value={stats.completedJobs.toString()}
-          icon={<CheckCircle size={32} />}
-          color="#22c55e"
-          bgColor="#dcfce7"
-        />
-        <DashboardCard
-          title="Avaliação Média"
-          value={stats.averageRating.toFixed(1)}
-          icon={<Star size={32} fill="#f59e0b" />}
-          color="#f59e0b"
-          bgColor="#fef3c7"
-        />
+      <div style={styles.statsGrid}>
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
+          <div style={styles.statIcon}>
+            <FileText size={24} color={colors.primary} />
+          </div>
+          <div style={styles.statContent}>
+            <h3 style={styles.statValue}>{stats.totalApplications}</h3>
+            <p style={styles.statLabel}>Candidaturas Ativas</p>
+          </div>
+        </div>
+
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#0ea5e9' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(14, 165, 233, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
+          <div style={styles.statIcon}>
+            <Clock size={24} color={colors.primary} />
+          </div>
+          <div style={styles.statContent}>
+            <h3 style={styles.statValue}>{stats.activeJobs}</h3>
+            <p style={styles.statLabel}>Trabalhos em Andamento</p>
+          </div>
+        </div>
+
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#22c55e' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(34, 197, 94, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
+          <div style={styles.statIcon}>
+            <CheckCircle size={24} color={colors.primary} />
+          </div>
+          <div style={styles.statContent}>
+            <h3 style={styles.statValue}>{stats.completedJobs}</h3>
+            <p style={styles.statLabel}>Trabalhos Concluídos</p>
+          </div>
+        </div>
+
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#f59e0b' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(245, 158, 11, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
+          <div style={styles.statIcon}>
+            <Star size={24} color={colors.primary} />
+          </div>
+          <div style={styles.statContent}>
+            <h3 style={styles.statValue}>{stats.averageRating.toFixed(1)}</h3>
+            <p style={styles.statLabel}>Avaliação Média</p>
+          </div>
+        </div>
       </div>
 
       <div style={styles.recentActivity}>
@@ -347,26 +398,6 @@ const ConfiguracoesSection: React.FC = () => (
 );
 
 // Utility Components
-interface DashboardCardProps {
-  title: string;
-  value: string;
-  icon: React.ReactNode;
-  color: string;
-  bgColor: string;
-}
-
-const DashboardCard: React.FC<DashboardCardProps> = ({ title, value, icon, color, bgColor }) => (
-  <div style={styles.dashboardCard}>
-    <div style={{ ...styles.cardIcon, backgroundColor: bgColor, color }}>
-      <span style={{ fontSize: '32px' }}>{icon}</span>
-    </div>
-    <div style={styles.cardContent}>
-      <h3 style={{ ...styles.cardTitle, color: '#737373' }}>{title}</h3>
-      <p style={{ ...styles.cardValue, color }}>{value}</p>
-    </div>
-  </div>
-);
-
 interface OpportunityItemProps {
   icon: React.ReactNode;
   title: string;
@@ -468,43 +499,44 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#404040',
     marginBottom: '16px',
   },
-  cardsGrid: {
+  statsGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '20px',
+    gap: '24px',
     marginBottom: '40px',
   },
-  dashboardCard: {
+  statCard: {
     backgroundColor: '#ffffff',
-    borderRadius: '16px',
+    border: '1px solid #e5e5e5',
+    borderLeft: '4px solid',
+    borderRadius: '12px',
     padding: '24px',
-    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    cursor: 'pointer',
   },
-  cardIcon: {
-    width: '64px',
-    height: '64px',
-    borderRadius: '12px',
+  statIcon: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardContent: {
+  statContent: {
     flex: 1,
   },
-  cardTitle: {
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '14px',
-    fontWeight: '500',
-    margin: '0 0 8px 0',
-  },
-  cardValue: {
-    fontFamily: 'Poppins, sans-serif',
+  statValue: {
     fontSize: '32px',
     fontWeight: '700',
+    fontFamily: 'Poppins, sans-serif',
+    color: '#262626',
     margin: 0,
+  },
+  statLabel: {
+    fontSize: '14px',
+    color: '#737373',
+    margin: 0,
+    marginTop: '4px',
   },
   recentActivity: {
     backgroundColor: '#ffffff',
@@ -643,28 +675,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
     gap: '20px',
     marginBottom: '32px',
-  },
-  statCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: '16px',
-    padding: '24px',
-    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
-    textAlign: 'center',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  statValue: {
-    fontFamily: 'Poppins, sans-serif',
-    fontSize: '36px',
-    fontWeight: '700',
-    color: '#7c3aed',
-  },
-  statLabel: {
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '14px',
-    color: '#737373',
   },
   stars: {
     display: 'flex',

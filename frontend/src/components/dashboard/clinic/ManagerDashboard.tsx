@@ -3,7 +3,7 @@ import { useUnit } from '../../../contexts/UnitContext';
 import { unitsApi } from '../../../services/unitsApi';
 import { demandsApi } from '../../../services/demandsApi';
 import { applicationsApi } from '../../../services/applicationsApi';
-import { ClipboardList, Users, CheckCircle, MessageSquare, Stethoscope } from 'lucide-react';
+import { ClipboardList, Users, CheckCircle, MessageSquare, Stethoscope, Calendar } from 'lucide-react';
 import colors from '../../../styles/colors';
 
 interface ManagerDashboardProps {
@@ -85,7 +85,17 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
 
       {/* Unit Stats */}
       <div style={styles.statsGrid}>
-        <div style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}>
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
           <div style={styles.statIcon}>
             <ClipboardList size={24} color={colors.primary} />
           </div>
@@ -95,7 +105,17 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           </div>
         </div>
 
-        <div style={{ ...styles.statCard, borderLeftColor: '#3b82f6' }}>
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#3b82f6' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(59, 130, 246, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
           <div style={styles.statIcon}>
             <Users size={24} color={colors.primary} />
           </div>
@@ -105,7 +125,17 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           </div>
         </div>
 
-        <div style={{ ...styles.statCard, borderLeftColor: '#10b981' }}>
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#10b981' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(16, 185, 129, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
           <div style={styles.statIcon}>
             <CheckCircle size={24} color={colors.primary} />
           </div>
@@ -115,8 +145,20 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           </div>
         </div>
 
-        <div style={{ ...styles.statCard, borderLeftColor: '#f59e0b' }}>
-          <div style={styles.statIcon}>📅</div>
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#f59e0b' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(245, 158, 11, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
+          <div style={styles.statIcon}>
+            <Calendar size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalDemands}</h3>
             <p style={styles.statLabel}>Total de Demandas</p>
@@ -270,6 +312,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    cursor: 'pointer',
   },
   statIcon: {
     fontSize: '36px',

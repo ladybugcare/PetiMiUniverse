@@ -80,7 +80,17 @@ const ResumoSection: React.FC = () => {
 
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
-        <div style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}>
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
           <div style={styles.statIcon}>
             <ClipboardList size={24} color={colors.primary} />
           </div>
@@ -90,7 +100,17 @@ const ResumoSection: React.FC = () => {
           </div>
         </div>
 
-        <div style={{ ...styles.statCard, borderLeftColor: '#10b981' }}>
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#10b981' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(16, 185, 129, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
           <div style={styles.statIcon}>
             <CheckCircle size={24} color={colors.primary} />
           </div>
@@ -100,8 +120,20 @@ const ResumoSection: React.FC = () => {
           </div>
         </div>
 
-        <div style={{ ...styles.statCard, borderLeftColor: '#3b82f6' }}>
-          <div style={styles.statIcon}>📅</div>
+        <div 
+          style={{ ...styles.statCard, borderLeftColor: '#3b82f6' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(59, 130, 246, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
+          <div style={styles.statIcon}>
+            <Calendar size={24} color={colors.primary} />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.todayDemands}</h3>
             <p style={styles.statLabel}>Demandas Hoje</p>
@@ -113,28 +145,92 @@ const ResumoSection: React.FC = () => {
       <div style={styles.quickActions}>
         <h3 style={styles.subsectionTitle}>Ações Rápidas</h3>
         <div style={styles.actionsGrid}>
-          <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>
-              <ClipboardList size={20} />
-            </span>
+          <button 
+            style={styles.actionButton}
+            onMouseEnter={(e) => {
+              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
+              e.currentTarget.style.borderColor = '#a855f7';
+              if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
+            }}
+            onMouseLeave={(e) => {
+              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.borderColor = '#d7c7ff';
+              if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
+            }}
+          >
+            <div className="action-icon-circle" style={styles.actionIconCircle}>
+              <ClipboardList size={28} strokeWidth={1.5} color="white" />
+            </div>
             <span style={styles.actionLabel}>Nova Demanda</span>
           </button>
-          <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>
-              <Eye size={20} />
-            </span>
+          <button 
+            style={styles.actionButton}
+            onMouseEnter={(e) => {
+              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
+              e.currentTarget.style.borderColor = '#a855f7';
+              if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
+            }}
+            onMouseLeave={(e) => {
+              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.borderColor = '#d7c7ff';
+              if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
+            }}
+          >
+            <div className="action-icon-circle" style={styles.actionIconCircle}>
+              <Eye size={28} strokeWidth={1.5} color="white" />
+            </div>
             <span style={styles.actionLabel}>Ver Candidaturas</span>
           </button>
-          <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>
-              <Calendar size={20} />
-            </span>
+          <button 
+            style={styles.actionButton}
+            onMouseEnter={(e) => {
+              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
+              e.currentTarget.style.borderColor = '#a855f7';
+              if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
+            }}
+            onMouseLeave={(e) => {
+              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.borderColor = '#d7c7ff';
+              if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
+            }}
+          >
+            <div className="action-icon-circle" style={styles.actionIconCircle}>
+              <Calendar size={28} strokeWidth={1.5} color="white" />
+            </div>
             <span style={styles.actionLabel}>Agenda</span>
           </button>
-          <button style={styles.actionButton}>
-            <span style={styles.actionIcon}>
-              <MessageSquare size={20} />
-            </span>
+          <button 
+            style={styles.actionButton}
+            onMouseEnter={(e) => {
+              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
+              e.currentTarget.style.borderColor = '#a855f7';
+              if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
+            }}
+            onMouseLeave={(e) => {
+              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.borderColor = '#d7c7ff';
+              if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
+            }}
+          >
+            <div className="action-icon-circle" style={styles.actionIconCircle}>
+              <MessageSquare size={28} strokeWidth={1.5} color="white" />
+            </div>
             <span style={styles.actionLabel}>Mensagens</span>
           </button>
         </div>
@@ -245,6 +341,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    cursor: 'pointer',
   },
   statIcon: {
     fontSize: '36px',
@@ -270,27 +368,39 @@ const styles: { [key: string]: React.CSSProperties } = {
   actionsGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-    gap: '16px',
+    gap: '20px',
   },
   actionButton: {
     backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
-    borderRadius: '12px',
-    padding: '20px',
+    border: '1px solid #d7c7ff',
+    borderRadius: '16px',
+    padding: '24px 16px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: '8px',
+    gap: '12px',
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.08)',
+    position: 'relative',
+    overflow: 'hidden',
   },
-  actionIcon: {
-    fontSize: '32px',
+  actionIconCircle: {
+    width: '56px',
+    height: '56px',
+    background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
+    borderRadius: '14px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    boxShadow: '0 4px 12px rgba(168, 85, 247, 0.3)',
   },
   actionLabel: {
     fontSize: '14px',
-    fontWeight: '500',
-    color: '#525252',
+    fontWeight: '600',
+    color: '#2d1b69',
+    textAlign: 'center',
   },
   recentSection: {
     marginTop: '32px',

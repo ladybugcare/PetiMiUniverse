@@ -152,6 +152,14 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
         <div 
           style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#7c3aed' }}
           onClick={() => navigate('/admin/clinics')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
         >
           <div style={styles.statIcon}>
             <Building2 size={36} color="#7c3aed" />
@@ -165,6 +173,14 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
         <div 
           style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#3b82f6' }}
           onClick={() => navigate('/admin/vets')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(59, 130, 246, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
         >
           <div style={styles.statIcon}>
             <Stethoscope size={36} color="#3b82f6" />
@@ -178,6 +194,14 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
         <div 
           style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#10b981' }}
           onClick={() => navigate('/admin/demands')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(16, 185, 129, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
         >
           <div style={styles.statIcon}>
             <ClipboardList size={36} color="#10b981" />
@@ -191,6 +215,14 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
         <div 
           style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#f59e0b' }}
           onClick={() => navigate('/admin/users')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(245, 158, 11, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
         >
           <div style={styles.statIcon}>
             <Users size={36} color="#f59e0b" />
@@ -431,7 +463,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   statCardClickable: {
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
   },
   statIcon: {
     display: 'flex',

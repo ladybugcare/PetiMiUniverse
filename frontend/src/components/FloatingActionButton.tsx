@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Plus, X } from 'lucide-react';
 
 export interface FABOption {
   id: string;
@@ -111,7 +112,7 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
                   }}
                   aria-label={option.label}
                 >
-                  <span style={styles.optionIcon}>{option.icon}</span>
+                  <div style={styles.optionIcon}>{option.icon}</div>
                 </button>
               </div>
             ))}
@@ -138,7 +139,11 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
           aria-label={isOpen ? 'Fechar menu' : 'Abrir menu de ações'}
           aria-expanded={isOpen}
         >
-          <span style={styles.mainIcon}>+</span>
+          {isOpen ? (
+            <X size={28} color="#ffffff" strokeWidth={2.5} />
+          ) : (
+            <Plus size={28} color="#ffffff" strokeWidth={2.5} />
+          )}
         </button>
       </div>
     </>
@@ -219,7 +224,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'transform 0.2s ease',
   },
   optionIcon: {
-    fontSize: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#ffffff',
   },
 };
 
