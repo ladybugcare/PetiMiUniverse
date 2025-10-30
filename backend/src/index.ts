@@ -22,7 +22,7 @@ const app = express();
 // CORS configuration for different environments
 const allowedOrigins: string[] = [
   'http://localhost:3000',
-  'https://staging.petivet.vercel.app',
+  'https://peti-vet-git-staging-petivet.vercel.app',
   process.env.FRONTEND_URL
 ].filter((origin): origin is string => Boolean(origin));
 
