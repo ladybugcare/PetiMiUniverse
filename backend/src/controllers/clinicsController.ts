@@ -42,27 +42,60 @@ export const createClinic = async (req: Request<{}, {}, ClinicBody>, res: Respon
 
     console.log('Auth user created:', authData.user.id);
 
-    // 2. Then create the clinic profile (linked to auth user, without password)
-    const { data, error } = await supabase
+    // 2. Check if clinic profile already exists (in case of retry)
+    const { data: existingClinic, error: checkError } = await supabase
       .from('clinics')
-      .insert([{ 
-        id: authData.user.id,  // Link to auth user
-        name, 
-        cnpj, 
-        address, 
-        email
-        // NO PASSWORD HERE - it's stored securely in auth.users
-      }])
-      .select()
+      .select('id')
+      .eq('id', authData.user.id)
+      .maybeSingle();
 
-    if (error) {
-      console.error('Profile creation error:', error);
-      // If profile creation fails, ideally we'd delete the auth user
-      // but for now, just return the error
-      return res.status(400).json({ error: error.message || JSON.stringify(error) });
+    if (checkError && checkError.code !== 'PGRST116') {
+      console.error('Error checking existing clinic:', checkError);
     }
 
-    console.log('Clinic profile created successfully');
+    let data;
+    
+    if (existingClinic) {
+      // Update existing clinic profile
+      console.log('Clinic profile already exists, updating...');
+      const { data: updatedData, error: updateError } = await supabase
+        .from('clinics')
+        .update({ 
+          name, 
+          cnpj, 
+          address, 
+          email
+        })
+        .eq('id', authData.user.id)
+        .select();
+
+      if (updateError) {
+        console.error('Profile update error:', updateError);
+        return res.status(400).json({ error: updateError.message || JSON.stringify(updateError) });
+      }
+      data = updatedData;
+    } else {
+      // Create new clinic profile
+      const { data: insertedData, error: insertError } = await supabase
+        .from('clinics')
+        .insert([{ 
+          id: authData.user.id,  // Link to auth user
+          name, 
+          cnpj, 
+          address, 
+          email
+          // NO PASSWORD HERE - it's stored securely in auth.users
+        }])
+        .select();
+
+      if (insertError) {
+        console.error('Profile creation error:', insertError);
+        return res.status(400).json({ error: insertError.message || JSON.stringify(insertError) });
+      }
+      data = insertedData;
+    }
+
+    console.log('Clinic profile created/updated successfully');
 
     res.status(201).json({ 
       clinic: data[0],
