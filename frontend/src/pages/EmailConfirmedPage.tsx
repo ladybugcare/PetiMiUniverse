@@ -10,6 +10,16 @@ const EmailConfirmedPage: React.FC = () => {
   useEffect(() => {
     const handleEmailConfirmation = async () => {
       try {
+        // First, try to exchange the authorization code from the URL for a session.
+        // This is required for the confirmation link flow on the web.
+        try {
+          await supabase.auth.exchangeCodeForSession(window.location.href)
+        } catch (exchangeErr: any) {
+          // If there's no code in the URL or the exchange fails, we still attempt to read the session.
+          // This keeps the page resilient for cases where a valid session already exists.
+          console.error('Error exchanging code for session:', exchangeErr)
+        }
+
         // Obter sessão atual do Supabase
         const { data: { session }, error } = await supabase.auth.getSession();
         

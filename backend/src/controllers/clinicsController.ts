@@ -26,7 +26,8 @@ export const createClinic = async (req: Request<{}, {}, ClinicBody>, res: Respon
         data: {
           name,
           role: 'clinic'
-        }
+        },
+        emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/confirm`
       }
     });
 

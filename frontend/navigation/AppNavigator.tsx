@@ -6,6 +6,8 @@ import ClinicSignUpScreen from '../screens/ClinicSignUpScreen';
 import VetSignUpScreen from '../screens/VetSignUpScreen';
 import DemandsScreen from '../screens/DemandsScreen';
 import LoginScreen from '../screens/LoginScreen';
+import ConfirmEmailScreen from '../screens/ConfirmEmailScreen';
+import OnboardingStartScreen from '../screens/OnboardingStartScreen';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -13,6 +15,8 @@ export type RootStackParamList = {
   VetSignup: undefined;
   Demands: undefined;
   Login: undefined;
+  Confirm: undefined;
+  OnboardingStart: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -32,6 +36,8 @@ const AppNavigator = () => {
       <Stack.Screen name="VetSignup" component={VetSignUpScreen} />
       <Stack.Screen name="Demands" component={DemandsScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Confirm" component={ConfirmEmailScreen} />
+      <Stack.Screen name="OnboardingStart" component={OnboardingStartScreen} />
     </Stack.Navigator>
   );
 };

@@ -15,6 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { clinicsApi } from '../src/services/clinicsApi';
+import EmailStatusModal from '../components/EmailStatusModal';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -30,6 +31,11 @@ const ClinicSignUpScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const [form, setForm] = useState(initialFormValues);
   const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState<{ visible: boolean; title: string; message: string }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
 
   const isSubmittingDisabled = useMemo(() => {
     return Object.values(form).some((value) => !value.trim());
@@ -50,14 +56,22 @@ const ClinicSignUpScreen = () => {
 
     try {
       setLoading(true);
-      await clinicsApi.create(form);
-      Alert.alert('Sucesso', 'Clínica cadastrada com sucesso!');
+      const result = await clinicsApi.create(form);
+      setModal({
+        visible: true,
+        title: 'Verifique seu e‑mail',
+        message:
+          'Enviamos um e-mail de confirmação para o endereço que você cadastrou.\n\n' +
+          'É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetiVet.\n\n' +
+          'Você pode fechar esta aba — o restante do processo é feito por e-mail.',
+      });
       setForm(initialFormValues);
     } catch (error: any) {
-      Alert.alert(
-        'Erro ao cadastrar',
-        error?.message ?? 'Não foi possível concluir o cadastro. Tente novamente.'
-      );
+      setModal({
+        visible: true,
+        title: 'Não foi possível enviar o e‑mail',
+        message: error?.message ?? 'Tente novamente em alguns instantes.',
+      });
     } finally {
       setLoading(false);
     }
@@ -69,6 +83,13 @@ const ClinicSignUpScreen = () => {
       contentContainerStyle={styles.contentContainer}
       keyboardShouldPersistTaps="handled"
     >
+      <EmailStatusModal
+        visible={modal.visible}
+        title={modal.title}
+        message={modal.message}
+        primaryLabel="Fechar"
+        onPrimary={() => setModal((m) => ({ ...m, visible: false }))}
+      />
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Cadastre sua Clínica 🏥</Text>
         <Text style={styles.headerSubtitle}>
