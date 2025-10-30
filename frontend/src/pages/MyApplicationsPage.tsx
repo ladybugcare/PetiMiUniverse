@@ -4,7 +4,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { applicationsApi, Application } from '../services/applicationsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, FileText, User, LogOut } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, User, LogOut, Clock, FilePen } from 'lucide-react';
 import colors from '../styles/colors';
 
 interface ApplicationWithDemand extends Application {
@@ -116,12 +116,16 @@ const MyApplicationsPage: React.FC = () => {
 
         {loading ? (
           <div style={styles.loadingContainer}>
-            <div style={styles.loadingSpinner}>⏳</div>
+            <div style={styles.loadingSpinner}>
+              <Clock size={48} color="#7c3aed" />
+            </div>
             <p style={styles.loadingText}>Carregando candidaturas...</p>
           </div>
         ) : applications.length === 0 ? (
           <div style={styles.emptyState}>
-            <div style={styles.emptyIcon}>📝</div>
+            <div style={styles.emptyIcon}>
+              <FilePen size={64} color="#a3a3a3" />
+            </div>
             <h3 style={styles.emptyTitle}>Nenhuma candidatura ainda</h3>
             <p style={styles.emptyText}>
               Vá para a página de demandas e candidate-se às vagas disponíveis
@@ -197,7 +201,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '64px 0',
   },
   loadingSpinner: {
-    fontSize: '48px',
+    display: 'flex',
+    justifyContent: 'center',
     marginBottom: '16px',
   },
   loadingText: {
@@ -213,7 +218,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
   },
   emptyIcon: {
-    fontSize: '64px',
+    display: 'flex',
+    justifyContent: 'center',
     marginBottom: '16px',
   },
   emptyTitle: {

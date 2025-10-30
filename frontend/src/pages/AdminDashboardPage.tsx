@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, CheckCircle, Settings, TrendingUp } from 'lucide-react';
 import colors from '../styles/colors';
 
 const AdminDashboardPage: React.FC = () => {
@@ -153,7 +153,9 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
           style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#7c3aed' }}
           onClick={() => navigate('/admin/clinics')}
         >
-          <div style={styles.statIcon}>🏥</div>
+          <div style={styles.statIcon}>
+            <Building2 size={36} color="#7c3aed" />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalClinics}</h3>
             <p style={styles.statLabel}>Clínicas Cadastradas</p>
@@ -164,7 +166,9 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
           style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#3b82f6' }}
           onClick={() => navigate('/admin/vets')}
         >
-          <div style={styles.statIcon}>👨‍⚕️</div>
+          <div style={styles.statIcon}>
+            <Stethoscope size={36} color="#3b82f6" />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalVets}</h3>
             <p style={styles.statLabel}>Veterinários Cadastrados</p>
@@ -175,7 +179,9 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
           style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#10b981' }}
           onClick={() => navigate('/admin/demands')}
         >
-          <div style={styles.statIcon}>📋</div>
+          <div style={styles.statIcon}>
+            <ClipboardList size={36} color="#10b981" />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalDemands}</h3>
             <p style={styles.statLabel}>Demandas Ativas</p>
@@ -186,7 +192,9 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
           style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#f59e0b' }}
           onClick={() => navigate('/admin/users')}
         >
-          <div style={styles.statIcon}>👥</div>
+          <div style={styles.statIcon}>
+            <Users size={36} color="#f59e0b" />
+          </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalUsers}</h3>
             <p style={styles.statLabel}>Usuários Totais</p>
@@ -202,25 +210,25 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
             title="API Status"
             status="Operacional"
             statusColor="#10b981"
-            icon="✅"
+            icon={<CheckCircle size={32} color="#10b981" />}
           />
           <HealthCard
             title="Database"
             status="Operacional"
             statusColor="#10b981"
-            icon="✅"
+            icon={<CheckCircle size={32} color="#10b981" />}
           />
           <HealthCard
             title="Storage"
             status="Operacional"
             statusColor="#10b981"
-            icon="✅"
+            icon={<CheckCircle size={32} color="#10b981" />}
           />
           <HealthCard
             title="Email Service"
             status="Operacional"
             statusColor="#10b981"
-            icon="✅"
+            icon={<CheckCircle size={32} color="#10b981" />}
           />
         </div>
       </div>
@@ -259,8 +267,11 @@ const ClinicsSection: React.FC = () => {
     <div style={styles.container}>
       <h2 style={styles.sectionTitle}>Gerenciar Clínicas</h2>
       <div style={styles.placeholder}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+          <Building2 size={48} color="#a3a3a3" />
+        </div>
         <p style={styles.placeholderText}>
-          🏥 Lista de clínicas cadastradas no sistema
+          Lista de clínicas cadastradas no sistema
         </p>
         <p style={styles.placeholderSubtext}>
           Aqui você poderá visualizar, editar e gerenciar todas as clínicas
@@ -276,8 +287,11 @@ const VetsSection: React.FC = () => {
     <div style={styles.container}>
       <h2 style={styles.sectionTitle}>Gerenciar Veterinários</h2>
       <div style={styles.placeholder}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+          <Stethoscope size={48} color="#a3a3a3" />
+        </div>
         <p style={styles.placeholderText}>
-          👨‍⚕️ Lista de veterinários cadastrados no sistema
+          Lista de veterinários cadastrados no sistema
         </p>
         <p style={styles.placeholderSubtext}>
           Aqui você poderá visualizar, editar e gerenciar todos os veterinários
@@ -293,8 +307,11 @@ const DemandsSection: React.FC = () => {
     <div style={styles.container}>
       <h2 style={styles.sectionTitle}>Demandas do Sistema</h2>
       <div style={styles.placeholder}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+          <ClipboardList size={48} color="#a3a3a3" />
+        </div>
         <p style={styles.placeholderText}>
-          📋 Visão geral de todas as demandas do sistema
+          Visão geral de todas as demandas do sistema
         </p>
         <p style={styles.placeholderSubtext}>
           Acompanhe estatísticas e métricas de demandas
@@ -310,8 +327,11 @@ const ReportsSection: React.FC = () => {
     <div style={styles.container}>
       <h2 style={styles.sectionTitle}>Relatórios e Analytics</h2>
       <div style={styles.placeholder}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+          <TrendingUp size={48} color="#a3a3a3" />
+        </div>
         <p style={styles.placeholderText}>
-          📈 Relatórios e análises do sistema
+          Relatórios e análises do sistema
         </p>
         <p style={styles.placeholderSubtext}>
           Visualize métricas, gráficos e insights do negócio
@@ -327,8 +347,11 @@ const SettingsSection: React.FC = () => {
     <div style={styles.container}>
       <h2 style={styles.sectionTitle}>Configurações do Sistema</h2>
       <div style={styles.placeholder}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+          <Settings size={48} color="#a3a3a3" />
+        </div>
         <p style={styles.placeholderText}>
-          ⚙️ Configurações gerais do sistema
+          Configurações gerais do sistema
         </p>
         <p style={styles.placeholderSubtext}>
           Gerencie configurações, integrações e parâmetros do sistema
@@ -343,7 +366,7 @@ const HealthCard: React.FC<{
   title: string;
   status: string;
   statusColor: string;
-  icon: string;
+  icon: React.ReactNode;
 }> = ({ title, status, statusColor, icon }) => {
   return (
     <div style={styles.healthCard}>
@@ -411,7 +434,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   statIcon: {
-    fontSize: '36px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statContent: {
     flex: 1,
@@ -444,7 +469,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: 'center',
   },
   healthIcon: {
-    fontSize: '32px',
+    display: 'flex',
+    justifyContent: 'center',
     marginBottom: '8px',
   },
   healthTitle: {

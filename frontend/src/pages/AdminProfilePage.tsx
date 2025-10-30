@@ -4,7 +4,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, User, LogOut, MessageCircle } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, User, LogOut, MessageCircle, Edit, Crown } from 'lucide-react';
 import colors from '../styles/colors';
 
 interface AdminUser {
@@ -186,7 +186,10 @@ const AdminProfilePage: React.FC = () => {
             <h1 style={styles.title}>Meu Perfil</h1>
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
-                ✏️ Editar Perfil
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Edit size={16} />
+                  <span>Editar Perfil</span>
+                </div>
               </button>
             ) : (
               <div style={styles.buttonGroup}>
@@ -236,7 +239,8 @@ const AdminProfilePage: React.FC = () => {
             <div style={styles.formGroup}>
               <label style={styles.label}>Permissão</label>
               <div style={styles.badge}>
-                <span style={styles.badgeText}>👑 Administrador do Sistema</span>
+                <Crown size={16} color="#92400e" />
+                <span style={styles.badgeText}>Administrador do Sistema</span>
               </div>
             </div>
           </div>
@@ -358,6 +362,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   badge: {
     display: 'inline-flex',
     alignItems: 'center',
+    gap: '8px',
     padding: '8px 16px',
     backgroundColor: '#fef3c7',
     borderRadius: '8px',

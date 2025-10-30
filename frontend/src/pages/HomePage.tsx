@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import HomeHeader from '../components/HomeHeader';
 import HowItWorks from '../components/HowItWorks';
-import { Heart, Dog, Cat } from 'lucide-react';
+import { Heart, Dog, Cat, Building2, Stethoscope, ClipboardList, Lock } from 'lucide-react';
 
 const HomePage: React.FC = () => {
   return (
@@ -161,7 +161,7 @@ const HomePage: React.FC = () => {
           <div className="cards-grid gap-8">
             <Link to="/clinic-signup" className="icon-card group animate-scale-in">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
-                🏥
+                <Building2 size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
                 <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
@@ -175,7 +175,7 @@ const HomePage: React.FC = () => {
             
             <Link to="/vet-signup" className="icon-card group animate-scale-in animate-delay-100">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
-                🩺
+                <Stethoscope size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
                 <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
@@ -189,7 +189,7 @@ const HomePage: React.FC = () => {
             
             <Link to="/demands" className="icon-card group animate-scale-in animate-delay-200">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
-                📋
+                <ClipboardList size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
                 <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
@@ -203,7 +203,7 @@ const HomePage: React.FC = () => {
             
             <Link to="/login" className="icon-card group animate-scale-in animate-delay-300">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
-                🔐
+                <Lock size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
                 <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
@@ -269,7 +269,9 @@ const HomePage: React.FC = () => {
           </div>
           
           <div className="footer-bottom">
-            <p>Feito com ❤️ para pets e veterinários</p>
+            <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              Feito com <Heart size={18} fill="currentColor" style={{ color: '#7c3aed' }} /> para pets e veterinários
+            </p>
             <p className="mt-2">© 2025 PetiVet. Todos os direitos reservados.</p>
           </div>
         </div>

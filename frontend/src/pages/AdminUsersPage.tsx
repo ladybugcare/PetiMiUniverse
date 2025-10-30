@@ -6,7 +6,7 @@ import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
 import { clinicsApi, vetsApi } from '../services';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, Edit, Trash2 } from 'lucide-react';
 import colors from '../styles/colors';
 
 interface Clinic {
@@ -217,7 +217,12 @@ const AdminUsersPage: React.FC = () => {
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>
-          <h2 style={styles.title}>👥 Usuários Totais</h2>
+          <h2 style={styles.title}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Users size={28} color={colors.primary} />
+              <span>Usuários Totais</span>
+            </div>
+          </h2>
         </div>
 
         {/* Tabs */}
@@ -229,7 +234,10 @@ const AdminUsersPage: React.FC = () => {
               ...(activeTab === 'clinics' ? styles.activeTab : {}),
             }}
           >
-            🏥 Clínicas ({clinics.length})
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Building2 size={18} />
+              <span>Clínicas ({clinics.length})</span>
+            </div>
           </button>
           <button
             onClick={() => setActiveTab('vets')}
@@ -238,7 +246,10 @@ const AdminUsersPage: React.FC = () => {
               ...(activeTab === 'vets' ? styles.activeTab : {}),
             }}
           >
-            👨‍⚕️ Veterinários ({vets.length})
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Stethoscope size={18} />
+              <span>Veterinários ({vets.length})</span>
+            </div>
           </button>
         </div>
 
@@ -302,21 +313,21 @@ const AdminUsersPage: React.FC = () => {
                               style={{ ...styles.actionButton, ...styles.viewButton }}
                               title="Ver detalhes"
                             >
-                              👁️
+                              <Eye size={16} />
                             </button>
                             <button
                               onClick={() => handleEditClinic(clinic)}
                               style={{ ...styles.actionButton, ...styles.editButton }}
                               title="Editar"
                             >
-                              ✏️
+                              <Edit size={16} />
                             </button>
                             <button
                               onClick={() => handleDeleteClinic(clinic)}
                               style={{ ...styles.actionButton, ...styles.deleteButton }}
                               title="Excluir"
                             >
-                              🗑️
+                              <Trash2 size={16} />
                             </button>
                           </div>
                         </td>
@@ -355,21 +366,21 @@ const AdminUsersPage: React.FC = () => {
                               style={{ ...styles.actionButton, ...styles.viewButton }}
                               title="Ver detalhes"
                             >
-                              👁️
+                              <Eye size={16} />
                             </button>
                             <button
                               onClick={() => handleEditVet(vet)}
                               style={{ ...styles.actionButton, ...styles.editButton }}
                               title="Editar"
                             >
-                              ✏️
+                              <Edit size={16} />
                             </button>
                             <button
                               onClick={() => handleDeleteVet(vet)}
                               style={{ ...styles.actionButton, ...styles.deleteButton }}
                               title="Excluir"
                             >
-                              🗑️
+                              <Trash2 size={16} />
                             </button>
                           </div>
                         </td>

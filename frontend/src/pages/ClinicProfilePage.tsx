@@ -5,7 +5,7 @@ import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { clinicsApi, Clinic } from '../services/clinicsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, ShoppingCart, User, LogOut } from 'lucide-react';
+import { BarChart2, ClipboardList, ShoppingCart, User, LogOut, Edit } from 'lucide-react';
 import colors from '../styles/colors';
 
 const ClinicProfilePage: React.FC = () => {
@@ -154,7 +154,10 @@ const ClinicProfilePage: React.FC = () => {
             <h1 style={styles.title}>Meu Perfil</h1>
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
-                ✏️ Editar Perfil
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit size={16} />
+                <span>Editar Perfil</span>
+              </div>
               </button>
             ) : (
               <div style={styles.buttonGroup}>

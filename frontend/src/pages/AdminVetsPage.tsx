@@ -6,7 +6,7 @@ import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
 import { vetsApi } from '../services/vetsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, Edit, Trash2 } from 'lucide-react';
 import colors from '../styles/colors';
 
 interface Vet {
@@ -166,7 +166,12 @@ const AdminVetsPage: React.FC = () => {
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>
-          <h2 style={styles.title}>👨‍⚕️ Veterinários Cadastrados</h2>
+          <h2 style={styles.title}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Stethoscope size={28} color={colors.primary} />
+              <span>Veterinários Cadastrados</span>
+            </div>
+          </h2>
           <div style={styles.headerActions}>
             <select
               value={statusFilter}
@@ -237,21 +242,21 @@ const AdminVetsPage: React.FC = () => {
                             style={{ ...styles.actionButton, ...styles.viewButton }}
                             title="Ver detalhes"
                           >
-                            👁️
+                            <Eye size={16} />
                           </button>
                           <button
                             onClick={() => handleEdit(vet)}
                             style={{ ...styles.actionButton, ...styles.editButton }}
                             title="Editar"
                           >
-                            ✏️
+                            <Edit size={16} />
                           </button>
                           <button
                             onClick={() => handleDelete(vet)}
                             style={{ ...styles.actionButton, ...styles.deleteButton }}
                             title="Excluir"
                           >
-                            🗑️
+                            <Trash2 size={16} />
                           </button>
                         </div>
                       </td>

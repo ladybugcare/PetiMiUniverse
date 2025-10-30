@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import FloatingActionButton from '../components/FloatingActionButton';
-import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut, ShoppingCart, Clock, CheckCircle, Building2, Bell, Lock, Smartphone, Globe, MessageCircle } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut, ShoppingCart, Clock, CheckCircle, Building2, Bell, Lock, Smartphone, Globe, MessageCircle, Settings } from 'lucide-react';
 import colors from '../styles/colors';
 
 const VetDashboardPage: React.FC = () => {
@@ -103,7 +103,7 @@ const VetDashboardPage: React.FC = () => {
     {
       id: 'configuracoes',
       label: 'Configurações',
-      icon: '⚙️',
+      icon: <Settings size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'configuracoes',
     },
@@ -215,7 +215,7 @@ const ResumoSection: React.FC = () => {
         <DashboardCard
           title="Avaliação Média"
           value={stats.averageRating.toFixed(1)}
-          icon="⭐"
+          icon={<Star size={32} fill="#f59e0b" />}
           color="#f59e0b"
           bgColor="#fef3c7"
         />
@@ -279,7 +279,11 @@ const AvaliacoesSection: React.FC = () => (
       <div style={styles.statCard}>
         <span style={styles.statValue}>4.8</span>
         <span style={styles.statLabel}>Média Geral</span>
-        <div style={styles.stars}>⭐⭐⭐⭐⭐</div>
+        <div style={styles.stars}>
+          {[...Array(5)].map((_, i) => (
+            <Star key={i} size={20} fill="#f59e0b" color="#f59e0b" />
+          ))}
+        </div>
       </div>
       <div style={styles.statCard}>
         <span style={styles.statValue}>42</span>
@@ -416,7 +420,9 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ reviewer, rating, comment, date
     <div style={styles.reviewHeader}>
       <h4 style={styles.reviewerName}>{reviewer}</h4>
       <div style={styles.rating}>
-        {'⭐'.repeat(rating)}
+        {[...Array(rating)].map((_, i) => (
+          <Star key={i} size={16} fill="#f59e0b" color="#f59e0b" />
+        ))}
       </div>
     </div>
     <p style={styles.reviewComment}>{comment}</p>
@@ -661,7 +667,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#737373',
   },
   stars: {
-    fontSize: '20px',
+    display: 'flex',
+    gap: '4px',
   },
   reviewsList: {
     display: 'flex',
@@ -688,7 +695,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
   },
   rating: {
-    fontSize: '16px',
+    display: 'flex',
+    gap: '2px',
   },
   reviewComment: {
     fontFamily: 'Inter, sans-serif',

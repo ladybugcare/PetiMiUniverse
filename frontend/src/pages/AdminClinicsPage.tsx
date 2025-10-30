@@ -6,7 +6,7 @@ import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
 import { clinicsApi } from '../services/clinicsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, Edit, Trash2 } from 'lucide-react';
 import colors from '../styles/colors';
 
 interface Clinic {
@@ -139,7 +139,12 @@ const AdminClinicsPage: React.FC = () => {
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>
-          <h2 style={styles.title}>🏥 Clínicas Cadastradas</h2>
+          <h2 style={styles.title}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Building2 size={28} color={colors.primary} />
+              <span>Clínicas Cadastradas</span>
+            </div>
+          </h2>
           <SearchBar
             placeholder="Buscar por nome, email ou CNPJ..."
             value={searchQuery}
@@ -195,21 +200,21 @@ const AdminClinicsPage: React.FC = () => {
                             style={{ ...styles.actionButton, ...styles.viewButton }}
                             title="Ver detalhes"
                           >
-                            👁️
+                            <Eye size={16} />
                           </button>
                           <button
                             onClick={() => handleEdit(clinic)}
                             style={{ ...styles.actionButton, ...styles.editButton }}
                             title="Editar"
                           >
-                            ✏️
+                            <Edit size={16} />
                           </button>
                           <button
                             onClick={() => handleDelete(clinic)}
                             style={{ ...styles.actionButton, ...styles.deleteButton }}
                             title="Excluir"
                           >
-                            🗑️
+                            <Trash2 size={16} />
                           </button>
                         </div>
                       </td>

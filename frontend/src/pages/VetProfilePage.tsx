@@ -5,7 +5,7 @@ import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { vetsApi, Vet } from '../services/vetsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, FileText, ShoppingCart, User, LogOut } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, ShoppingCart, User, LogOut, Edit } from 'lucide-react';
 import colors from '../styles/colors';
 
 const VetProfilePage: React.FC = () => {
@@ -201,7 +201,10 @@ const VetProfilePage: React.FC = () => {
             <h1 style={styles.title}>Meu Perfil</h1>
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
-                ✏️ Editar Perfil
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit size={16} />
+                <span>Editar Perfil</span>
+              </div>
               </button>
             ) : (
               <div style={styles.buttonGroup}>
