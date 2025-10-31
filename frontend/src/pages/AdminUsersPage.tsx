@@ -5,8 +5,9 @@ import { MenuItem } from '../components/DashboardSidebar';
 import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
 import { clinicsApi, vetsApi } from '../services';
+import { adminApi, CreateUserData } from '../services/adminApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, Edit, Trash2 } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, EyeOff, Edit, Trash2, UserCog, Truck, UserPlus, Plus, Shield } from 'lucide-react';
 import colors from '../styles/colors';
 
 interface Clinic {
@@ -44,6 +45,17 @@ const AdminUsersPage: React.FC = () => {
   const [showEditVetModal, setShowEditVetModal] = useState(false);
   const [editClinicFormData, setEditClinicFormData] = useState<Partial<Clinic>>({});
   const [editVetFormData, setEditVetFormData] = useState<Partial<Vet>>({});
+  
+  // Create user form states
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [createUserStep, setCreateUserStep] = useState<1 | 2>(1);
+  const [createUserFormData, setCreateUserFormData] = useState<Partial<CreateUserData>>({
+    status: 'active',
+    generate_password: true,
+  });
+  const [createUserLoading, setCreateUserLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [emailError, setEmailError] = useState<string>('');
 
   const itemsPerPage = 20;
 
@@ -205,6 +217,83 @@ const AdminUsersPage: React.FC = () => {
     return new Date(dateString).toLocaleDateString('pt-BR');
   };
 
+  // Handle next step in create user form
+  const handleNextStep = () => {
+    if (!createUserFormData.user_type) {
+      showError('Por favor, selecione o tipo de usuário');
+      return;
+    }
+    setCreateUserStep(2);
+  };
+
+  // Handle back step
+  const handleBackStep = () => {
+    setCreateUserStep(1);
+  };
+
+  // Handle close modal and reset
+  const handleCloseCreateModal = () => {
+    setShowCreateUserModal(false);
+    setCreateUserStep(1);
+    setShowPassword(false);
+    setEmailError('');
+    setCreateUserFormData({
+      status: 'active',
+      generate_password: true,
+    });
+  };
+
+  // Create user handler
+  const handleCreateUser = async () => {
+    // Limpar erros anteriores
+    setEmailError('');
+    
+    if (!createUserFormData.name || !createUserFormData.email || !createUserFormData.user_type || !createUserFormData.status) {
+      showError('Por favor, preencha todos os campos obrigatórios');
+      return;
+    }
+
+    // Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(createUserFormData.email)) {
+      setEmailError('Formato de e-mail inválido');
+      return;
+    }
+
+    try {
+      setCreateUserLoading(true);
+      const response = await adminApi.createUser(createUserFormData as CreateUserData);
+      showSuccess(response.message || 'Usuário criado com sucesso!');
+      handleCloseCreateModal();
+      loadData();
+    } catch (error: any) {
+      // Extrair mensagem de erro
+      let errorMessage = error.message || 'Erro desconhecido';
+      
+      // Tentar parsear JSON se o erro vier como string JSON
+      try {
+        const errorJson = JSON.parse(errorMessage);
+        if (errorJson.error) {
+          errorMessage = errorJson.error;
+        }
+      } catch (e) {
+        // Não é JSON, usar mensagem original
+      }
+      
+      // Se o erro contém informações sobre email duplicado
+      if (errorMessage.includes('já está cadastrado') || errorMessage.includes('já existe') || errorMessage.includes('already registered') || errorMessage.includes('cadastrado')) {
+        setEmailError('Este e-mail já está cadastrado');
+      } else if (errorMessage.includes('Formato de e-mail inválido') || errorMessage.includes('email inválido') || errorMessage.includes('invalid email')) {
+        setEmailError('Formato de e-mail inválido');
+      } else {
+        // Para outros erros, mostrar no alert
+        showError('Erro ao criar usuário: ' + errorMessage);
+      }
+    } finally {
+      setCreateUserLoading(false);
+    }
+  };
+
   // Pagination
   const currentData = activeTab === 'clinics' ? filteredClinics : filteredVets;
   const totalPages = Math.ceil(currentData.length / itemsPerPage);
@@ -218,11 +307,18 @@ const AdminUsersPage: React.FC = () => {
         {/* Header */}
         <div style={styles.header}>
           <h2 style={styles.title}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <Users size={28} color={colors.primary} />
               <span>Usuários Totais</span>
             </div>
           </h2>
+          <button
+            onClick={() => setShowCreateUserModal(true)}
+            style={styles.newUserButton}
+          >
+            <Plus size={18} />
+            Novo Usuário
+          </button>
         </div>
 
         {/* Tabs */}
@@ -557,6 +653,354 @@ const AdminUsersPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Create User Modal */}
+        {showCreateUserModal && (
+          <div style={styles.modalOverlay} onClick={handleCloseCreateModal}>
+            <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <UserPlus size={24} color={colors.primary} />
+                  <h3 style={styles.modalTitle}>Novo Usuário</h3>
+                </div>
+                <button onClick={handleCloseCreateModal} style={styles.closeButton}>
+                  ✕
+                </button>
+              </div>
+
+              {/* Step Indicator */}
+              <div style={styles.stepIndicator}>
+                <div style={styles.stepContainer}>
+                  <div style={{
+                    ...styles.stepCircle,
+                    ...(createUserStep >= 1 ? styles.stepCircleActive : {})
+                  }}>
+                    1
+                  </div>
+                  <span style={styles.stepLabel}>Tipo de Usuário</span>
+                </div>
+                <div style={styles.stepLine}></div>
+                <div style={styles.stepContainer}>
+                  <div style={{
+                    ...styles.stepCircle,
+                    ...(createUserStep >= 2 ? styles.stepCircleActive : {})
+                  }}>
+                    2
+                  </div>
+                  <span style={styles.stepLabel}>Informações</span>
+                </div>
+              </div>
+
+              <div style={styles.modalBody}>
+                {/* Step 1: User Type Selection */}
+                {createUserStep === 1 && (
+                  <div style={styles.stepContent}>
+                    <div style={styles.formGroup}>
+                      <div style={styles.userTypeButtons}>
+                        {[
+                          { id: 'admin', label: 'Administrador', icon: UserCog, color: '#7c3aed' },
+                          { id: 'clinic', label: 'Clínica', icon: Building2, color: '#3b82f6' },
+                          { id: 'vet', label: 'Veterinário', icon: Stethoscope, color: '#10b981' },
+                          { id: 'supplier', label: 'Fornecedor', icon: Truck, color: '#f59e0b' },
+                          { id: 'tutor', label: 'Tutor', icon: UserPlus, color: '#ef4444' },
+                        ].map((type) => {
+                          const IconComponent = type.icon;
+                          const isSelected = createUserFormData.user_type === type.id;
+                          return (
+                            <button
+                              key={type.id}
+                              type="button"
+                              onClick={() =>
+                                setCreateUserFormData({
+                                  ...createUserFormData,
+                                  user_type: type.id as 'clinic' | 'vet' | 'supplier' | 'tutor' | 'admin',
+                                })
+                              }
+                              style={{
+                                ...styles.userTypeButton,
+                                ...(isSelected ? { ...styles.userTypeButtonSelected, borderColor: type.color } : {}),
+                              }}
+                            >
+                              <div
+                                style={{
+                                  ...styles.userTypeIconCircle,
+                                  backgroundColor: isSelected ? type.color : '#f3f4f6',
+                                }}
+                              >
+                                <IconComponent size={28} strokeWidth={1.5} color={isSelected ? 'white' : '#6b7280'} />
+                              </div>
+                              <span
+                                style={{
+                                  ...styles.userTypeLabel,
+                                  color: isSelected ? type.color : '#374151',
+                                  fontWeight: isSelected ? '600' : '500',
+                                }}
+                              >
+                                {type.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div style={styles.formActions}>
+                      <button onClick={handleCloseCreateModal} style={styles.cancelButton}>
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={handleNextStep}
+                        style={{
+                          ...styles.saveButton,
+                          ...(!createUserFormData.user_type ? styles.buttonDisabled : {})
+                        }}
+                        disabled={!createUserFormData.user_type}
+                      >
+                        Próximo
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 2: User Information */}
+                {createUserStep === 2 && (
+                  <div style={styles.stepContent}>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Nome Completo *</label>
+                      <input
+                        type="text"
+                        value={createUserFormData.name || ''}
+                        onChange={(e) =>
+                          setCreateUserFormData({ ...createUserFormData, name: e.target.value })
+                        }
+                        style={styles.input}
+                        placeholder="Nome completo"
+                      />
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>E-mail *</label>
+                      <input
+                        type="email"
+                        value={createUserFormData.email || ''}
+                        onChange={(e) => {
+                          const emailValue = e.target.value;
+                          setCreateUserFormData({ ...createUserFormData, email: emailValue });
+                          if (emailError) {
+                            setEmailError('');
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const emailValue = e.target.value.trim();
+                          if (!emailValue) return;
+                          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                          if (!emailRegex.test(emailValue)) {
+                            setEmailError('Formato de e-mail inválido');
+                          } else {
+                            setEmailError('');
+                          }
+                        }}
+                        style={{
+                          ...styles.input,
+                          ...(emailError ? { borderColor: '#ef4444', borderWidth: '2px' } : {}),
+                        }}
+                        placeholder="email@exemplo.com"
+                      />
+                      {emailError && (
+                        <div style={styles.fieldError}>
+                          {emailError}
+                        </div>
+                      )}
+                    </div>
+
+                    {createUserFormData.user_type !== 'admin' && (
+                      <>
+                        {createUserFormData.user_type === 'clinic' && (
+                          <>
+                            <div style={styles.formGroup}>
+                              <label style={styles.label}>CNPJ</label>
+                              <input
+                                type="text"
+                                value={createUserFormData.cnpj || ''}
+                                onChange={(e) =>
+                                  setCreateUserFormData({ ...createUserFormData, cnpj: e.target.value })
+                                }
+                                style={styles.input}
+                                placeholder="00.000.000/0000-00"
+                              />
+                            </div>
+                            <div style={styles.formGroup}>
+                              <label style={styles.label}>Role da Clínica</label>
+                              <select
+                                value={createUserFormData.clinic_role || 'standard'}
+                                onChange={(e) =>
+                                  setCreateUserFormData({
+                                    ...createUserFormData,
+                                    clinic_role: e.target.value as 'standard' | 'premium' | 'partner',
+                                  })
+                                }
+                                style={styles.input}
+                              >
+                                <option value="standard">Standard</option>
+                                <option value="premium">Premium</option>
+                                <option value="partner">Partner</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+
+                        {createUserFormData.user_type === 'vet' && (
+                          <div style={styles.formGroup}>
+                            <label style={styles.label}>CRMV</label>
+                            <input
+                              type="text"
+                              value={createUserFormData.crmv || ''}
+                              onChange={(e) =>
+                                setCreateUserFormData({ ...createUserFormData, crmv: e.target.value })
+                              }
+                              style={styles.input}
+                              placeholder="CRMV"
+                            />
+                          </div>
+                        )}
+
+                        {(createUserFormData.user_type === 'clinic' || createUserFormData.user_type === 'supplier') && (
+                          <>
+                            <div style={styles.formGroup}>
+                              <label style={styles.label}>Telefone</label>
+                              <input
+                                type="text"
+                                value={createUserFormData.phone || ''}
+                                onChange={(e) =>
+                                  setCreateUserFormData({ ...createUserFormData, phone: e.target.value })
+                                }
+                                style={styles.input}
+                                placeholder="(00) 00000-0000"
+                              />
+                            </div>
+                            <div style={styles.formGroup}>
+                              <label style={styles.label}>Endereço</label>
+                              <input
+                                type="text"
+                                value={createUserFormData.address || ''}
+                                onChange={(e) =>
+                                  setCreateUserFormData({ ...createUserFormData, address: e.target.value })
+                                }
+                                style={styles.input}
+                                placeholder="Endereço completo"
+                              />
+                            </div>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                              <div style={{ ...styles.formGroup, flex: 1 }}>
+                                <label style={styles.label}>Cidade</label>
+                                <input
+                                  type="text"
+                                  value={createUserFormData.city || ''}
+                                  onChange={(e) =>
+                                    setCreateUserFormData({ ...createUserFormData, city: e.target.value })
+                                  }
+                                  style={styles.input}
+                                  placeholder="Cidade"
+                                />
+                              </div>
+                              <div style={{ ...styles.formGroup, flex: 1 }}>
+                                <label style={styles.label}>Estado</label>
+                                <input
+                                  type="text"
+                                  value={createUserFormData.state || ''}
+                                  onChange={(e) =>
+                                    setCreateUserFormData({ ...createUserFormData, state: e.target.value })
+                                  }
+                                  style={styles.input}
+                                  placeholder="UF"
+                                />
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Senha</label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={styles.passwordInputWrapper}>
+                          <input
+                            type={showPassword ? 'text' : 'password'}
+                            value={createUserFormData.password || ''}
+                            onChange={(e) =>
+                              setCreateUserFormData({
+                                ...createUserFormData,
+                                password: e.target.value,
+                                generate_password: false
+                              })
+                            }
+                            style={styles.passwordInput}
+                            placeholder="Deixe vazio para gerar automaticamente"
+                            disabled={createUserFormData.generate_password}
+                          />
+                          {!createUserFormData.generate_password && (
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              style={styles.passwordToggleBtn}
+                            >
+                              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                            </button>
+                          )}
+                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+                          <input
+                            type="checkbox"
+                            checked={createUserFormData.generate_password || false}
+                            onChange={(e) => {
+                              setCreateUserFormData({
+                                ...createUserFormData,
+                                generate_password: e.target.checked,
+                                password: e.target.checked ? undefined : createUserFormData.password
+                              });
+                              if (e.target.checked) setShowPassword(false);
+                            }}
+                          />
+                          Gerar senha automaticamente
+                        </label>
+                      </div>
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Status *</label>
+                      <select
+                        value={createUserFormData.status || 'active'}
+                        onChange={(e) =>
+                          setCreateUserFormData({
+                            ...createUserFormData,
+                            status: e.target.value as 'active' | 'inactive',
+                          })
+                        }
+                        style={styles.input}
+                      >
+                        <option value="active">Ativo</option>
+                        <option value="inactive">Inativo</option>
+                      </select>
+                    </div>
+
+                    <div style={styles.formActions}>
+                      <button onClick={handleBackStep} style={styles.cancelButton}>
+                        Voltar
+                      </button>
+                      <button
+                        onClick={handleCreateUser}
+                        style={styles.saveButton}
+                        disabled={createUserLoading}
+                      >
+                        {createUserLoading ? 'Criando...' : 'Criar Usuário'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );
@@ -569,6 +1013,23 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   header: {
     marginBottom: '24px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  newUserButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 20px',
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
   },
   title: {
     fontSize: '28px',
@@ -786,6 +1247,133 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     fontWeight: '500',
     cursor: 'pointer',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+    cursor: 'not-allowed',
+  },
+  stepIndicator: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    padding: '24px',
+    borderBottom: '1px solid #e5e5e5',
+    gap: '16px',
+  },
+  stepContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    flex: 1,
+    maxWidth: '150px',
+  },
+  stepCircle: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    backgroundColor: '#e5e5e5',
+    color: '#737373',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '16px',
+    fontWeight: '600',
+    transition: 'all 0.3s',
+    flexShrink: 0,
+  },
+  stepCircleActive: {
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+  },
+  stepLine: {
+    width: '100px',
+    height: '2px',
+    backgroundColor: '#e5e5e5',
+    marginTop: '19px',
+    flexShrink: 0,
+  },
+  stepLabel: {
+    fontSize: '12px',
+    color: '#737373',
+    textAlign: 'center',
+    fontWeight: '500',
+    lineHeight: '1.4',
+  },
+  stepContent: {
+    padding: '0',
+  },
+  userTypeButtons: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: '16px',
+    marginTop: '12px',
+  },
+  userTypeButton: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '20px 16px',
+    backgroundColor: '#ffffff',
+    border: '2px solid #e5e5e5',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+  },
+  userTypeButtonSelected: {
+    borderWidth: '2px',
+    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.2)',
+  },
+  userTypeIconCircle: {
+    width: '56px',
+    height: '56px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.3s',
+  },
+  userTypeLabel: {
+    fontSize: '14px',
+    fontWeight: '500',
+    textAlign: 'center',
+    transition: 'color 0.3s',
+  },
+  fieldError: {
+    color: '#ef4444',
+    fontSize: '12px',
+    marginTop: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  passwordInputWrapper: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  passwordInput: {
+    width: '100%',
+    padding: '12px 40px 12px 12px',
+    fontSize: '14px',
+    border: '1px solid #e5e5e5',
+    borderRadius: '8px',
+    fontFamily: 'Inter, sans-serif',
+    boxSizing: 'border-box',
+  },
+  passwordToggleBtn: {
+    position: 'absolute',
+    right: '12px',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#6b7280',
+    padding: '4px',
   },
 };
 
