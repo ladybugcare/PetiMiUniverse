@@ -1,4 +1,5 @@
-const API_BASE_URL = 'http://localhost:3000';
+// Mobile: usar variável de ambiente se disponível, senão localhost
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
 // Tipos base
 interface SignUpData {

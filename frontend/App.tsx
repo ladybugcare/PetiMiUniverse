@@ -15,6 +15,8 @@ const linking = {
       VetSignup: 'vet-signup',
       Demands: 'demands',
       Login: 'login',
+      Confirm: 'confirm',
+      OnboardingStart: 'onboarding-start',
     } satisfies Record<keyof RootStackParamList, string | { path: string }>,
   },
 };
@@ -23,7 +25,7 @@ const navigationTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    background: '#a855f7', // Cor do hero-purple web
+    background: '#ffffff',
   },
 };
 
