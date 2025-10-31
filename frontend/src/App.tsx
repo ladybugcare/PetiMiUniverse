@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AlertProvider } from './hooks/useAlert';
 import { UnitProvider } from './contexts/UnitContext';
@@ -37,9 +37,15 @@ import CreateUnitPage from './pages/CreateUnitPage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
 import EmailConfirmedPage from './pages/EmailConfirmedPage';
 import AuthListener from './components/AuthListener';
+import { enforceEnvConsistency } from './utils/envGuard';
 import './App.css';
 
 function App() {
+  // Check environment consistency on app startup
+  useEffect(() => {
+    enforceEnvConsistency();
+  }, []);
+
   return (
     <AlertProvider>
       <UnitProvider>

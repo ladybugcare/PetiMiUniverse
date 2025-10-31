@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
+import { handleInvalidToken } from '../utils/envGuard';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
@@ -122,18 +123,7 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
     
     // Se inválido/expirado, limpar apenas chaves de auth para evitar JWT de outro ambiente
     if (response.status === 401 && /invalid|expirad|assinatura|signature/i.test(String(errorText))) {
-      try {
-        // Web: limpar localStorage
-        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-          localStorage.removeItem('user');
-          localStorage.removeItem('session');
-          localStorage.removeItem('clinic_user');
-        }
-        // Mobile: limpar sessão do Supabase (que usa AsyncStorage internamente)
-        if (Platform.OS !== 'web') {
-          await supabase.auth.signOut({ scope: 'local' });
-        }
-      } catch {}
+      await handleInvalidToken();
     }
 
     // Para outros erros, usar mensagem padrão
