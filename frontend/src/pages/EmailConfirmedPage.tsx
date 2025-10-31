@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
-import { CheckCircle, XCircle, PartyPopper } from 'lucide-react';
+import { CheckCircle, XCircle, PartyPopper, Sparkles, LogIn, AlertCircle, Mail } from 'lucide-react';
 
 const EmailConfirmedPage: React.FC = () => {
   const navigate = useNavigate();
@@ -67,25 +67,18 @@ const EmailConfirmedPage: React.FC = () => {
         authListenerSubscription = null;
       }
 
-      // Salvar dados do usuário e token no localStorage
-      const userData = {
-        id: session.user.id,
-        email: session.user.email,
-        user_metadata: session.user.user_metadata,
-        access_token: session.access_token,
-        token: session.access_token,
-      };
-      localStorage.setItem('user', JSON.stringify(userData));
+      // NÃO salvar sessão completa - apenas confirmar que email foi validado
+      // O usuário fará login depois para estabelecer sessão corretamente
+      // Limpar qualquer sessão anterior que possa ter sido salva
+      localStorage.removeItem('user');
+      localStorage.removeItem('session');
+      localStorage.removeItem('isFirstAccess');
       
-      // Marcar como primeiro acesso
-      localStorage.setItem('isFirstAccess', 'true');
+      // Apenas marcar que email foi confirmado (para referência, se necessário)
+      // Mas não manter sessão ativa
       
       setStatus('success');
-      
-      // Aguardar 2 segundos antes de redirecionar
-      timeoutId = setTimeout(() => {
-        navigate('/units/create-first');
-      }, 2000);
+      // NÃO redirecionar automaticamente - mostrar botão para login
     };
 
     const handleError = (error?: any) => {
@@ -220,11 +213,35 @@ const EmailConfirmedPage: React.FC = () => {
         type,
       });
 
-      // Se link veio com erro (ex.: otp_expired), cair para formulário/OTP
+      // Se link veio com erro (ex.: otp_expired), mostrar tela de erro
       if (errorParam) {
         console.error('❌ Erro no hash:', errorParam, error_description);
-        handleError(new Error(error_description || errorParam));
-        setStatus('form');
+        
+        // Capturar email do hash se disponível para permitir reenvio
+        const emailFromHash = hashParams.get('email');
+        if (emailFromHash && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailFromHash)) {
+          setEmail(emailFromHash);
+          setEmailFromUrl(true);
+          localStorage.setItem('pendingEmail', emailFromHash);
+        }
+        
+        // Criar mensagem específica baseada no tipo de erro
+        let errorMsg = error_description || errorParam;
+        const errorCode = hashParams.get('error_code');
+        
+        if (errorCode === 'otp_expired' || errorParam === 'access_denied') {
+          if (error_description?.includes('expired') || error_description?.includes('expirado')) {
+            errorMsg = 'Este link de confirmação expirou ou já foi utilizado. Reenvie um novo link ou use o código de 6 dígitos.';
+          } else if (error_description?.includes('invalid')) {
+            errorMsg = 'Este link de confirmação é inválido ou já foi usado. Reenvie um novo link ou use o código.';
+          } else {
+            errorMsg = 'Não foi possível confirmar seu e-mail com este link. O link pode ter expirado ou já ter sido utilizado.';
+          }
+        }
+        
+        setErrorMessage(errorMsg);
+        setShowResend(true); // Mostrar botão de reenviar
+        setStatus('error');
         return;
       }
 
@@ -383,25 +400,22 @@ const EmailConfirmedPage: React.FC = () => {
                   const { data, error } = await supabase.auth.verifyOtp({ email, token: code, type: 'signup' } as any);
                   if (error) throw error;
                   if (data?.session?.user?.email_confirmed_at) {
-                    // salvar e redirecionar
-                    const s = data.session;
-                    const userData = { id: s.user.id, email: s.user.email, user_metadata: s.user.user_metadata, access_token: s.access_token, token: s.access_token };
-                    localStorage.setItem('user', JSON.stringify(userData));
-                    localStorage.setItem('isFirstAccess','true');
+                    // Email confirmado - limpar sessão e mostrar botão de login
+                    localStorage.removeItem('user');
+                    localStorage.removeItem('session');
+                    localStorage.removeItem('isFirstAccess');
                     localStorage.removeItem('pendingEmail');
                     setStatus('success');
-                    setTimeout(() => navigate('/units/create-first'), 1500);
                     return;
                   }
                   const { data: s } = await supabase.auth.getSession();
                   if (s.session?.user?.email_confirmed_at) {
-                    const ss = s.session;
-                    const userData = { id: ss.user.id, email: ss.user.email, user_metadata: ss.user.user_metadata, access_token: ss.access_token, token: ss.access_token };
-                    localStorage.setItem('user', JSON.stringify(userData));
-                    localStorage.setItem('isFirstAccess','true');
+                    // Email confirmado - limpar sessão e mostrar botão de login
+                    localStorage.removeItem('user');
+                    localStorage.removeItem('session');
+                    localStorage.removeItem('isFirstAccess');
                     localStorage.removeItem('pendingEmail');
                     setStatus('success');
-                    setTimeout(() => navigate('/units/create-first'), 1500);
                     return;
                   }
                   throw new Error('Não foi possível validar a sessão após o código.');
@@ -449,48 +463,147 @@ const EmailConfirmedPage: React.FC = () => {
         
         {status === 'success' && (
           <>
-            <div style={styles.successIcon}>
-              <CheckCircle size={36} strokeWidth={3} />
+            {/* Logo PetiVet */}
+            <div style={styles.logoContainer}>
+              <img 
+                src="/purple_logo.png" 
+                alt="PetiVet" 
+                style={styles.logo}
+              />
             </div>
+
+            {/* Ícone de sucesso com animação */}
+            <div style={styles.successIcon}>
+              <CheckCircle size={64} strokeWidth={3} />
+              <div style={styles.sparkles}>
+                <Sparkles size={24} style={{ position: 'absolute', top: '-10px', right: '-10px' }} />
+                <Sparkles size={20} style={{ position: 'absolute', bottom: '-8px', left: '-8px' }} />
+              </div>
+            </div>
+
             <h2 style={styles.title}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <span>E-mail confirmado com sucesso!</span>
-                <PartyPopper size={28} />
+                <PartyPopper size={32} style={{ color: '#7c3aed' }} />
               </div>
             </h2>
-            <p style={styles.message}>
-              Redirecionando você para cadastrar sua primeira unidade...
+
+            <p style={styles.successMessage}>
+              Seu e-mail foi confirmado com sucesso! 🎉<br />
+              Faça login para acessar o ecossistema PetiVet e começar a gerenciar sua clínica ou perfil veterinário.
             </p>
+
+            {/* Botão Fazer login estilizado */}
+            <button 
+              onClick={() => navigate('/login')} 
+              style={styles.loginButton}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#6d28d9';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#7c3aed';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 8px 16px rgba(124, 58, 237, 0.3)';
+              }}
+            >
+              <LogIn size={20} style={{ marginRight: '8px' }} />
+              Fazer login
+            </button>
           </>
         )}
         
         {status === 'error' && (
           <>
-            <div style={styles.errorIcon}>
-              <XCircle size={36} strokeWidth={3} />
+            {/* Logo PetiVet */}
+            <div style={styles.logoContainer}>
+              <img 
+                src="/purple_logo.png" 
+                alt="PetiVet" 
+                style={styles.logo}
+              />
             </div>
-            <h2 style={styles.title}>Erro ao confirmar e-mail</h2>
-            <p style={styles.message}>{errorMessage || 'Não foi possível confirmar seu e-mail. Você pode tentar novamente ou reenviar o código.'}</p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button onClick={() => setStatus('form')} style={styles.button}>Tentar novamente</button>
-              {showResend && (
-                <button onClick={async () => {
-                  try {
-                    setResending(true);
-                    if (!email) throw new Error('Informe seu e-mail para reenviar o código.');
-                    const { error } = await supabase.auth.resend({ type: 'signup', email } as any);
-                    if (error) throw error;
-                    setCooldown(60);
-                    setShowResend(false);
-                    setErrorMessage('Enviamos um novo código. Aguarde 60s e use o mais recente.');
-                  } catch (err: any) {
-                    setErrorMessage(err?.message || 'Não foi possível reenviar o código.');
-                  } finally { setResending(false); }
-                }} style={{ ...styles.button, backgroundColor: '#6b7280' }} disabled={resending}>
-                  {resending ? 'Reenviando...' : 'Reenviar código'}
+
+            {/* Ícone de erro */}
+            <div style={styles.errorIcon}>
+              <AlertCircle size={64} strokeWidth={3} />
+            </div>
+
+            <h2 style={styles.title}>Não foi possível confirmar seu e-mail</h2>
+            <p style={styles.errorMessage}>
+              {errorMessage || 'O link de confirmação pode ter expirado ou já ter sido utilizado. Você pode reenviar um novo link ou usar o código de 6 dígitos que enviamos para seu e-mail.'}
+            </p>
+
+            {/* Email se disponível */}
+            {email && (
+              <div style={styles.emailInfo}>
+                <Mail size={18} style={{ marginRight: '8px', color: '#6b7280' }} />
+                <span style={{ color: '#6b7280', fontSize: '15px' }}>{email}</span>
+              </div>
+            )}
+
+            {/* Botões de ação */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', width: '100%', marginTop: '24px' }}>
+              {/* Reenviar link de confirmação */}
+              {showResend && email && (
+                <button 
+                  onClick={async () => {
+                    try {
+                      setResending(true);
+                      const { error } = await supabase.auth.resend({ type: 'signup', email } as any);
+                      if (error) throw error;
+                      setCooldown(60);
+                      setErrorMessage('Enviamos um novo link de confirmação para seu e-mail! Verifique sua caixa de entrada e use o link mais recente.');
+                    } catch (err: any) {
+                      setErrorMessage(err?.message || 'Não foi possível reenviar o link. Verifique se o e-mail está correto.');
+                    } finally { 
+                      setResending(false); 
+                    }
+                  }} 
+                  style={styles.resendButton}
+                  disabled={resending || cooldown > 0}
+                  onMouseEnter={(e) => {
+                    if (!resending && cooldown === 0) {
+                      e.currentTarget.style.backgroundColor = '#f59e0b';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!resending && cooldown === 0) {
+                      e.currentTarget.style.backgroundColor = '#f97316';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }
+                  }}
+                >
+                  <Mail size={18} style={{ marginRight: '8px' }} />
+                  {cooldown > 0 ? `Aguarde ${cooldown}s` : resending ? 'Reenviando...' : 'Reenviar link de confirmação'}
                 </button>
               )}
-              <button onClick={() => navigate('/login')} style={{ ...styles.button, backgroundColor: '#6b7280' }}>Ir para Login</button>
+
+              {/* Tentar com código */}
+              <button 
+                onClick={() => setStatus('form')} 
+                style={styles.secondaryButton}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#6b7280';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#4b5563';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                Tentar com código de 6 dígitos
+              </button>
+
+              {/* Ir para Login */}
+              <button 
+                onClick={() => navigate('/login')} 
+                style={styles.tertiaryButton}
+              >
+                Ir para Login
+              </button>
             </div>
           </>
         )}
@@ -512,22 +625,41 @@ const styles = {
     backgroundColor: '#ffffff',
     borderRadius: '16px',
     padding: '48px 32px',
-    maxWidth: '480px',
+    maxWidth: '520px',
     width: '100%',
     textAlign: 'center' as const,
     boxShadow: '0 8px 24px rgba(0, 0, 0, 0.1)',
   },
+  logoContainer: {
+    marginBottom: '32px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logo: {
+    height: '60px',
+    width: 'auto',
+    maxWidth: '100%',
+  },
   title: {
-    fontSize: '24px',
+    fontSize: '28px',
     fontWeight: '700',
     color: '#1f2937',
     marginBottom: '16px',
+    lineHeight: '1.3',
   },
   message: {
     fontSize: '16px',
     color: '#6b7280',
     lineHeight: '1.6',
     marginBottom: '24px',
+  },
+  successMessage: {
+    fontSize: '17px',
+    color: '#4b5563',
+    lineHeight: '1.7',
+    marginBottom: '32px',
+    fontWeight: '400',
   },
   spinner: {
     width: '48px',
@@ -539,30 +671,119 @@ const styles = {
     animation: 'spin 1s linear infinite',
   },
   successIcon: {
-    width: '64px',
-    height: '64px',
-    margin: '0 auto 24px',
+    width: '80px',
+    height: '80px',
+    margin: '0 auto 32px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10b981',
-    color: '#ffffff',
+    backgroundColor: '#d1fae5',
+    color: '#10b981',
     borderRadius: '50%',
-    fontSize: '36px',
-    fontWeight: '700',
+    position: 'relative' as const,
+    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)',
+  },
+  sparkles: {
+    position: 'relative' as const,
+    width: '100%',
+    height: '100%',
+    pointerEvents: 'none' as const,
+  },
+  loginButton: {
+    padding: '16px 32px',
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '12px',
+    fontSize: '18px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.3s ease-in-out',
+    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.3)',
+    minWidth: '200px',
+    marginTop: '8px',
   },
   errorIcon: {
-    width: '64px',
-    height: '64px',
-    margin: '0 auto 24px',
+    width: '80px',
+    height: '80px',
+    margin: '0 auto 32px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ef4444',
-    color: '#ffffff',
+    backgroundColor: '#fee2e2',
+    color: '#dc2626',
     borderRadius: '50%',
-    fontSize: '36px',
-    fontWeight: '700',
+    position: 'relative' as const,
+    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.2)',
+  },
+  errorMessage: {
+    fontSize: '16px',
+    color: '#6b7280',
+    lineHeight: '1.7',
+    marginBottom: '24px',
+    fontWeight: '400',
+  },
+  emailInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '12px 16px',
+    backgroundColor: '#f9fafb',
+    borderRadius: '8px',
+    border: '1px solid #e5e7eb',
+    marginBottom: '16px',
+    width: '100%',
+    maxWidth: '400px',
+    margin: '0 auto 16px',
+  },
+  resendButton: {
+    padding: '16px 32px',
+    backgroundColor: '#f97316',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '12px',
+    fontSize: '17px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.3s ease-in-out',
+    boxShadow: '0 8px 16px rgba(249, 115, 22, 0.3)',
+    minWidth: '280px',
+    width: '100%',
+    maxWidth: '400px',
+  },
+  secondaryButton: {
+    padding: '14px 28px',
+    backgroundColor: '#4b5563',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '10px',
+    fontSize: '16px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease-in-out',
+    minWidth: '280px',
+    width: '100%',
+    maxWidth: '400px',
+  },
+  tertiaryButton: {
+    padding: '12px 24px',
+    backgroundColor: 'transparent',
+    color: '#6b7280',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    fontSize: '15px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease-in-out',
+    minWidth: '280px',
+    width: '100%',
+    maxWidth: '400px',
   },
   button: {
     padding: '12px 32px',
