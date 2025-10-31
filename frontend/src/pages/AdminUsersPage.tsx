@@ -26,14 +26,25 @@ interface Vet {
   created_at: string;
 }
 
+interface Admin {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  created_at: string;
+  last_sign_in_at?: string | null;
+}
+
 const AdminUsersPage: React.FC = () => {
   const navigate = useNavigate();
   const { showSuccess, showError, showConfirm } = useAlert();
-  const [activeTab, setActiveTab] = useState<'clinics' | 'vets'>('clinics');
+  const [activeTab, setActiveTab] = useState<'clinics' | 'vets' | 'admins'>('clinics');
   const [clinics, setClinics] = useState<Clinic[]>([]);
   const [vets, setVets] = useState<Vet[]>([]);
+  const [admins, setAdmins] = useState<Admin[]>([]);
   const [filteredClinics, setFilteredClinics] = useState<Clinic[]>([]);
   const [filteredVets, setFilteredVets] = useState<Vet[]>([]);
+  const [filteredAdmins, setFilteredAdmins] = useState<Admin[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -76,14 +87,17 @@ const AdminUsersPage: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [clinicsResult, vetsResult] = await Promise.all([
+      const [clinicsResult, vetsResult, adminsResult] = await Promise.all([
         clinicsApi.getAll(),
         vetsApi.getAll(),
+        adminApi.getAdmins(),
       ]);
       setClinics(clinicsResult.clinics);
       setVets(vetsResult.vets);
+      setAdmins(adminsResult.admins);
       setFilteredClinics(clinicsResult.clinics);
       setFilteredVets(vetsResult.vets);
+      setFilteredAdmins(adminsResult.admins);
     } catch (error: any) {
       showError('Erro ao carregar usuários: ' + error.message);
     } finally {
@@ -114,6 +128,18 @@ const AdminUsersPage: React.FC = () => {
       setCurrentPage(1);
     }
   }, [searchQuery, vets, activeTab]);
+
+  // Search for admins
+  useEffect(() => {
+    if (activeTab === 'admins') {
+      const filtered = admins.filter((admin) =>
+        admin.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        admin.email.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredAdmins(filtered);
+      setCurrentPage(1);
+    }
+  }, [searchQuery, admins, activeTab]);
 
   // Reset search when changing tabs
   useEffect(() => {
@@ -295,7 +321,11 @@ const AdminUsersPage: React.FC = () => {
   };
 
   // Pagination
-  const currentData = activeTab === 'clinics' ? filteredClinics : filteredVets;
+  const currentData = activeTab === 'clinics' 
+    ? filteredClinics 
+    : activeTab === 'vets' 
+    ? filteredVets 
+    : filteredAdmins;
   const totalPages = Math.ceil(currentData.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
@@ -347,6 +377,18 @@ const AdminUsersPage: React.FC = () => {
               <span>Veterinários ({vets.length})</span>
             </div>
           </button>
+          <button
+            onClick={() => setActiveTab('admins')}
+            style={{
+              ...styles.tab,
+              ...(activeTab === 'admins' ? styles.activeTab : {}),
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Shield size={18} />
+              <span>Administradores ({admins.length})</span>
+            </div>
+          </button>
         </div>
 
         {/* Search */}
@@ -355,7 +397,9 @@ const AdminUsersPage: React.FC = () => {
             placeholder={
               activeTab === 'clinics'
                 ? 'Buscar clínicas...'
-                : 'Buscar veterinários...'
+                : activeTab === 'vets'
+                ? 'Buscar veterinários...'
+                : 'Buscar administradores...'
             }
             value={searchQuery}
             onChange={setSearchQuery}
@@ -432,7 +476,7 @@ const AdminUsersPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-            ) : (
+            ) : activeTab === 'vets' ? (
               <div style={styles.tableContainer}>
                 <table style={styles.table}>
                   <thead>
@@ -479,6 +523,48 @@ const AdminUsersPage: React.FC = () => {
                               <Trash2 size={16} />
                             </button>
                           </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={styles.tableContainer}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.tableHeaderRow}>
+                      <th style={styles.tableHeader}>Nome</th>
+                      <th style={styles.tableHeader}>E-mail</th>
+                      <th style={styles.tableHeader}>Tipo</th>
+                      <th style={styles.tableHeader}>Status</th>
+                      <th style={styles.tableHeader}>Data Cadastro</th>
+                      <th style={styles.tableHeader}>Último Acesso</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(currentItems as Admin[]).map((admin) => (
+                      <tr key={admin.id} style={styles.tableRow}>
+                        <td style={styles.tableCell}>{admin.name}</td>
+                        <td style={styles.tableCell}>{admin.email}</td>
+                        <td style={styles.tableCell}>
+                          <span style={{ ...styles.typeBadge, backgroundColor: '#f59e0b' }}>
+                            Administrador
+                          </span>
+                        </td>
+                        <td style={styles.tableCell}>
+                          <span
+                            style={{
+                              ...styles.statusBadge,
+                              backgroundColor: admin.status === 'active' ? '#10b981' : '#6b7280',
+                            }}
+                          >
+                            {admin.status === 'active' ? 'Ativo' : 'Inativo'}
+                          </span>
+                        </td>
+                        <td style={styles.tableCell}>{formatDate(admin.created_at)}</td>
+                        <td style={styles.tableCell}>
+                          {admin.last_sign_in_at ? formatDate(admin.last_sign_in_at) : 'Nunca'}
                         </td>
                       </tr>
                     ))}
@@ -1085,6 +1171,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#262626',
   },
   typeBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '500',
+    color: '#ffffff',
+  },
+  statusBadge: {
     display: 'inline-block',
     padding: '4px 12px',
     borderRadius: '12px',
