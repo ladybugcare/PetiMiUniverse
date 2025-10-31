@@ -228,7 +228,7 @@ export const getClinicUsers = async (req: Request, res: Response) => {
       .from('clinic_users')
       .select(`
         *,
-        user:user_id (
+        user:auth.users!clinic_users_user_id_fkey (
           id,
           email
         )
@@ -484,4 +484,3 @@ export const cancelInvitation = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Erro ao cancelar convite' });
   }
 };
-

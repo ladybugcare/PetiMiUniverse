@@ -1,7 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import dotenv from 'dotenv'
-
-dotenv.config()
+import './loadEnv'
 
 // Client padrão (anon key) - usado para operações do usuário autenticado
 export const supabase = createClient(

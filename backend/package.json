@@ -4,6 +4,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
+    "dev:clean": "lsof -ti tcp:3000 | xargs -r kill && npm run dev",
     "build": "tsc",
     "start": "node dist/index.js",
     "start:staging": "NODE_ENV=staging node dist/index.js"

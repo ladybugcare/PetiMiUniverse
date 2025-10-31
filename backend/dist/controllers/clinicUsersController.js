@@ -198,7 +198,7 @@ const getClinicUsers = async (req, res) => {
             .from('clinic_users')
             .select(`
         *,
-        user:user_id (
+        user:auth.users!clinic_users_user_id_fkey (
           id,
           email
         )

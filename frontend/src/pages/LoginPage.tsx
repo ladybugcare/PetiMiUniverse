@@ -31,6 +31,7 @@ const LoginPage: React.FC = () => {
       localStorage.setItem('session', JSON.stringify(result.session));
 
       const onboardingInfo = result.onboarding;
+      const clinicUserInfo = result.clinicUser;
 
       if (onboardingInfo) {
         localStorage.setItem('clinicOnboarding', JSON.stringify(onboardingInfo));
@@ -43,6 +44,12 @@ const LoginPage: React.FC = () => {
         localStorage.removeItem('clinicOnboarding');
         localStorage.removeItem('isFirstAccess');
       }
+
+      if (clinicUserInfo) {
+        localStorage.setItem('clinic_user', JSON.stringify(clinicUserInfo));
+      } else {
+        localStorage.removeItem('clinic_user');
+      }
       
       console.log('Login result:', result);
       
@@ -52,7 +59,7 @@ const LoginPage: React.FC = () => {
         navigate('/admin-dashboard');
       } else if (userRole === 'clinic') {
         // Check clinic status to redirect appropriately
-        if (onboardingInfo?.needsOnboarding) {
+        if (onboardingInfo?.shouldCompleteFirstUnit) {
           navigate('/units/create-first');
           return;
         }
@@ -85,7 +92,12 @@ const LoginPage: React.FC = () => {
       } else if (userRole === 'vet') {
         navigate('/vet-dashboard');
       } else {
-        navigate('/demands'); // fallback
+        // For clinic staff roles, force onboarding only when required
+        if (onboardingInfo?.shouldCompleteFirstUnit) {
+          navigate('/units/create-first');
+        } else {
+          navigate('/demands'); // fallback
+        }
       }
       
     } catch (error: any) {
