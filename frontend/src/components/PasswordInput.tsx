@@ -6,13 +6,15 @@ interface PasswordInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   showStrength?: boolean;
+  showRequirements?: boolean;
 }
 
 const PasswordInput: React.FC<PasswordInputProps> = ({ 
   value, 
   onChange, 
   placeholder = 'Digite sua senha',
-  showStrength = true 
+  showStrength = true,
+  showRequirements = true
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const validation = validatePassword(value);
@@ -80,7 +82,7 @@ const PasswordInput: React.FC<PasswordInputProps> = ({
         </div>
       )}
       
-      {value.length > 0 && validation.errors.length > 0 && (
+      {showRequirements && value.length > 0 && validation.errors.length > 0 && (
         <div className="password-requirements">
           <p className="text-sm font-medium text-neutral-700 mb-2">Requisitos:</p>
           <ul className="password-requirements-list">

@@ -369,21 +369,26 @@ body {
 .dropdown-button-outline {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-6);
+  padding: calc(var(--space-3) - 2px) calc(var(--space-6) - 2px);
   border-radius: var(--radius-full);
   font-weight: 600;
   font-size: 0.9375rem;
   cursor: pointer;
   transition: all 0.2s;
-  border: none;
+  border: 2px solid transparent;
   background: none;
   white-space: nowrap;
+  box-sizing: border-box;
+  line-height: 1;
+  min-height: 40px;
 }
 
 .dropdown-button {
   background: #a855f7;
   color: white;
+  border-color: transparent;
 }
 
 .dropdown-button:hover {
@@ -392,15 +397,16 @@ body {
 }
 
 .dropdown-button-outline {
-  border: 2px solid #a855f7;
   color: #a855f7;
   background: white;
+  border-color: #a855f7;
 }
 
 .dropdown-button-outline:hover {
   background: #f5f0ff;
   border-color: #9333ea;
   color: #9333ea;
+  transform: translateY(-1px);
 }
 
 .dropdown-arrow {

@@ -3,18 +3,13 @@ import { Link } from 'react-router-dom';
 
 const HomeHeader: React.FC = () => {
   const [signUpOpen, setSignUpOpen] = useState(false);
-  const [loginOpen, setLoginOpen] = useState(false);
   const signUpRef = useRef<HTMLDivElement>(null);
-  const loginRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (signUpRef.current && !signUpRef.current.contains(event.target as Node)) {
         setSignUpOpen(false);
-      }
-      if (loginRef.current && !loginRef.current.contains(event.target as Node)) {
-        setLoginOpen(false);
       }
     };
 
@@ -43,7 +38,6 @@ const HomeHeader: React.FC = () => {
               className="dropdown-button"
               onClick={() => {
                 setSignUpOpen(!signUpOpen);
-                setLoginOpen(false);
               }}
             >
               Sign Up
@@ -77,45 +71,14 @@ const HomeHeader: React.FC = () => {
             )}
           </div>
 
-          {/* Login Dropdown */}
-          <div className="dropdown-wrapper" ref={loginRef}>
-            <button
-              className="dropdown-button-outline"
-              onClick={() => {
-                setLoginOpen(!loginOpen);
-                setSignUpOpen(false);
-              }}
-            >
-              Login
-              <svg 
-                className={`dropdown-arrow ${loginOpen ? 'open' : ''}`}
-                width="12" 
-                height="12" 
-                viewBox="0 0 12 12" 
-                fill="none"
-              >
-                <path d="M2 4L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </button>
-            {loginOpen && (
-              <div className="dropdown-menu">
-                <Link 
-                  to="/login?role=vet" 
-                  className="dropdown-item"
-                  onClick={() => setLoginOpen(false)}
-                >
-                  Login Veterinário
-                </Link>
-                <Link 
-                  to="/login?role=clinic" 
-                  className="dropdown-item"
-                  onClick={() => setLoginOpen(false)}
-                >
-                  Login Clínica
-                </Link>
-              </div>
-            )}
-          </div>
+          {/* Login Button */}
+          <Link
+            to="/login"
+            className="dropdown-button-outline"
+            style={{ textDecoration: 'none' }}
+          >
+            Login
+          </Link>
         </div>
       </div>
     </header>

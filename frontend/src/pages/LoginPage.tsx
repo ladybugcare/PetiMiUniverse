@@ -125,6 +125,7 @@ const LoginPage: React.FC = () => {
                   onChange={setPassword}
                   placeholder="Digite sua senha"
                   showStrength={false}
+                  showRequirements={false}
                 />
               </div>
               
