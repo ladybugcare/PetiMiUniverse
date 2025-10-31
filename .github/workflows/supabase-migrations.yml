@@ -1,0 +1,44 @@
+name: Apply Supabase Migrations
+
+on:
+  push:
+    branches:
+      - staging
+      - main
+  workflow_dispatch: {}
+
+jobs:
+  apply-migrations:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        run: npm i -g supabase
+
+      - name: Select environment
+        id: envsel
+        run: |
+          if [ "${{ github.ref_name }}" = "staging" ]; then
+            echo "PROJECT_REF=${{ secrets.SB_STG_REF }}" >> $GITHUB_OUTPUT
+            echo "DB_URL=${{ secrets.SB_STG_DB_URL }}" >> $GITHUB_OUTPUT
+            echo "TARGET_ENV=staging" >> $GITHUB_OUTPUT
+          else
+            echo "PROJECT_REF=${{ secrets.SB_PROD_REF }}" >> $GITHUB_OUTPUT
+            echo "DB_URL=${{ secrets.SB_PROD_DB_URL }}" >> $GITHUB_OUTPUT
+            echo "TARGET_ENV=production" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Link to Supabase
+        run: supabase link --project-ref ${{ steps.envsel.outputs.PROJECT_REF }} --db-url "${{ steps.envsel.outputs.DB_URL }}"
+
+      - name: Apply migrations
+        run: supabase db push --non-interactive
+
+      - name: Summary
+        run: |
+          echo "Migrations applied to ${{ steps.envsel.outputs.TARGET_ENV }}."
+
+
