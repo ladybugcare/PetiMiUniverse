@@ -98,11 +98,20 @@ const EmailConfirmedPage: React.FC = () => {
       const errorParam = hashParams.get('error');
       const error_description = hashParams.get('error_description');
 
+      // Também verificar querystring por token_hash/type/email (fluxo alternativo de verificação)
+      const url = new URL(window.location.href);
+      const qsTokenHash = url.searchParams.get('token_hash') || url.searchParams.get('token');
+      const qsType = url.searchParams.get('type');
+      const qsEmail = url.searchParams.get('email') || email;
+
       console.log('🔍 Debug info:', {
         hasHash: !!hash,
         hasAccessToken: !!accessToken,
         hasRefreshToken: !!refreshToken,
         type,
+        qsType,
+        hasTokenHash: !!qsTokenHash,
+        hasEmailInQS: !!qsEmail,
         fullUrl: window.location.href,
         hashOnly: hash.substring(0, 100) + '...'
       });
@@ -112,6 +121,44 @@ const EmailConfirmedPage: React.FC = () => {
         handleError(new Error(error_description || errorParam));
         setStatus('form');
         return;
+      }
+
+      // Fluxo 1: verificação via token_hash na query (Supabase envia em alguns templates)
+      if (qsTokenHash && (qsType === 'signup' || qsType === 'magiclink' || qsType === 'email')) {
+        try {
+          setStatus('loading');
+          const targetEmail = qsEmail || localStorage.getItem('pendingEmail') || '';
+          if (!targetEmail) {
+            throw new Error('E-mail não encontrado na URL. Abra o link mais recente ou use o código.');
+          }
+          // Para confirmação de cadastro, usar type: 'signup'
+          const verifyType = (qsType === 'signup' ? 'signup' : 'email') as any;
+          const { data, error } = await supabase.auth.verifyOtp({
+            email: targetEmail,
+            type: verifyType,
+            token_hash: qsTokenHash,
+          } as any);
+          if (error) throw error;
+          if (data?.session?.user) {
+            handleSuccess(data.session);
+            // Limpar a query após processar
+            window.history.replaceState({}, document.title, url.origin + url.pathname);
+            return;
+          }
+          // Se não retornou sessão, tentar captar via getSession
+          const { data: s } = await supabase.auth.getSession();
+          if (s.session?.user) {
+            handleSuccess(s.session);
+            window.history.replaceState({}, document.title, url.origin + url.pathname);
+            return;
+          }
+          throw new Error('Não foi possível confirmar com o link. Tente com o código ou reenvie.');
+        } catch (err) {
+          console.error('❌ verifyOtp via token_hash falhou:', err);
+          handleError(err);
+          setStatus('form');
+          return;
+        }
       }
 
       // Se há tokens no hash, precisamos processá-los manualmente
