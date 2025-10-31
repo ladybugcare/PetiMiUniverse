@@ -12,8 +12,9 @@ const EmailConfirmedPage: React.FC = () => {
   const [resending, setResending] = useState<boolean>(false);
   const [showResend, setShowResend] = useState<boolean>(false);
   const [cooldown, setCooldown] = useState<number>(0);
+  const [emailFromUrl, setEmailFromUrl] = useState<boolean>(false); // Indica se email veio da URL
 
-  // Capturar email da URL (?email=...) ou hash (&email=...)
+  // Capturar email da URL (?email=...) ou hash (&email=...) IMEDIATAMENTE
   useEffect(() => {
     try {
       const url = new URL(window.location.href);
@@ -25,15 +26,20 @@ const EmailConfirmedPage: React.FC = () => {
       if (emailFromUrl && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailFromUrl)) {
         localStorage.setItem('pendingEmail', emailFromUrl);
         setEmail(emailFromUrl);
+        setEmailFromUrl(true); // Email veio da URL, esconder campo
       }
     } catch (_) {}
   }, []);
 
   // Preencher email do localStorage se existir
   useEffect(() => {
-    const pendingEmail = localStorage.getItem('pendingEmail');
-    if (pendingEmail) setEmail(pendingEmail);
-  }, []);
+    if (!email) {
+      const pendingEmail = localStorage.getItem('pendingEmail');
+      if (pendingEmail) {
+        setEmail(pendingEmail);
+      }
+    }
+  }, [email]);
 
   // cooldown de reenvio
   useEffect(() => {
@@ -89,7 +95,116 @@ const EmailConfirmedPage: React.FC = () => {
     };
 
     const processEmailConfirmation = async () => {
-      // Verificar se há hash na URL com tokens de confirmação
+      const url = new URL(window.location.href);
+      
+      // Log completo da URL recebida
+      console.log('🔍 URL completa recebida:', {
+        fullUrl: window.location.href,
+        search: window.location.search,
+        hash: window.location.hash.substring(0, 100) + '...',
+      });
+
+      // FLUXO 1: Query string do link direto Supabase (PRIORIDADE MÁXIMA)
+      // Link Supabase: ?token=...&type=signup&email=...
+      const qsToken = url.searchParams.get('token');
+      const qsType = url.searchParams.get('type');
+      const qsEmail = url.searchParams.get('email');
+
+      if (qsToken && qsType === 'signup' && qsEmail) {
+        console.log('🚀 Processando link direto Supabase (query string)...', {
+          hasToken: !!qsToken,
+          type: qsType,
+          email: qsEmail.substring(0, 20) + '...',
+        });
+
+        try {
+          setStatus('loading');
+          setEmail(qsEmail); // Auto-preencher email
+          setEmailFromUrl(true); // Esconder campo
+
+          const { data, error } = await supabase.auth.verifyOtp({
+            email: qsEmail,
+            type: 'signup',
+            token_hash: qsToken, // O 'token' do link é o 'token_hash' para verifyOtp
+          } as any);
+
+          if (error) {
+            console.error('❌ verifyOtp falhou:', error);
+            throw error;
+          }
+
+          if (data?.session?.user) {
+            console.log('✅ Confirmação via link direto Supabase: SUCESSO');
+            handleSuccess(data.session);
+            // Limpar query após processar
+            window.history.replaceState({}, document.title, url.origin + url.pathname);
+            return;
+          }
+
+          // Se não retornou sessão, tentar captar via getSession
+          const { data: s } = await supabase.auth.getSession();
+          if (s.session?.user) {
+            console.log('✅ Sessão encontrada após verifyOtp via getSession');
+            handleSuccess(s.session);
+            window.history.replaceState({}, document.title, url.origin + url.pathname);
+            return;
+          }
+
+          throw new Error('Não foi possível confirmar com o link. Tente com o código ou reenvie.');
+        } catch (err: any) {
+          console.error('❌ Erro no fluxo de link direto Supabase:', err);
+          handleError(err);
+          setStatus('form');
+          return;
+        }
+      }
+
+      // FLUXO 2: token_hash na query (fallback)
+      const qsTokenHash = url.searchParams.get('token_hash');
+      if (qsTokenHash && (qsType === 'signup' || qsType === 'magiclink' || qsType === 'email')) {
+        console.log('🔄 Processando token_hash na query (fallback)...');
+        try {
+          setStatus('loading');
+          const targetEmail = qsEmail || url.searchParams.get('email') || localStorage.getItem('pendingEmail') || email || '';
+          if (!targetEmail) {
+            throw new Error('E-mail não encontrado na URL. Abra o link mais recente ou use o código.');
+          }
+          setEmail(targetEmail);
+          setEmailFromUrl(true);
+
+          const verifyType = (qsType === 'signup' ? 'signup' : 'email') as any;
+          const { data, error } = await supabase.auth.verifyOtp({
+            email: targetEmail,
+            type: verifyType,
+            token_hash: qsTokenHash,
+          } as any);
+
+          if (error) throw error;
+          if (data?.session?.user) {
+            console.log('✅ Confirmação via token_hash: SUCESSO');
+            handleSuccess(data.session);
+            window.history.replaceState({}, document.title, url.origin + url.pathname);
+            return;
+          }
+
+          const { data: s } = await supabase.auth.getSession();
+          if (s.session?.user) {
+            console.log('✅ Sessão encontrada após verifyOtp via getSession');
+            handleSuccess(s.session);
+            window.history.replaceState({}, document.title, url.origin + url.pathname);
+            return;
+          }
+
+          throw new Error('Não foi possível confirmar com o link. Tente com o código ou reenvie.');
+        } catch (err: any) {
+          console.error('❌ verifyOtp via token_hash falhou:', err);
+          handleError(err);
+          setStatus('form');
+          return;
+        }
+      }
+
+      // FLUXO 3: Verificar hash na URL (access_token/refresh_token)
       const hash = window.location.hash.substring(1);
       const hashParams = new URLSearchParams(hash);
       const accessToken = hashParams.get('access_token');
@@ -98,74 +213,28 @@ const EmailConfirmedPage: React.FC = () => {
       const errorParam = hashParams.get('error');
       const error_description = hashParams.get('error_description');
 
-      // Também verificar querystring por token_hash/type/email (fluxo alternativo de verificação)
-      const url = new URL(window.location.href);
-      const qsTokenHash = url.searchParams.get('token_hash') || url.searchParams.get('token');
-      const qsType = url.searchParams.get('type');
-      const qsEmail = url.searchParams.get('email') || email;
-
-      console.log('🔍 Debug info:', {
+      console.log('🔍 Verificando hash na URL:', {
         hasHash: !!hash,
         hasAccessToken: !!accessToken,
         hasRefreshToken: !!refreshToken,
         type,
-        qsType,
-        hasTokenHash: !!qsTokenHash,
-        hasEmailInQS: !!qsEmail,
-        fullUrl: window.location.href,
-        hashOnly: hash.substring(0, 100) + '...'
       });
 
       // Se link veio com erro (ex.: otp_expired), cair para formulário/OTP
       if (errorParam) {
+        console.error('❌ Erro no hash:', errorParam, error_description);
         handleError(new Error(error_description || errorParam));
         setStatus('form');
         return;
       }
 
-      // Fluxo 1: verificação via token_hash na query (Supabase envia em alguns templates)
-      if (qsTokenHash && (qsType === 'signup' || qsType === 'magiclink' || qsType === 'email')) {
-        try {
-          setStatus('loading');
-          const targetEmail = qsEmail || localStorage.getItem('pendingEmail') || '';
-          if (!targetEmail) {
-            throw new Error('E-mail não encontrado na URL. Abra o link mais recente ou use o código.');
-          }
-          // Para confirmação de cadastro, usar type: 'signup'
-          const verifyType = (qsType === 'signup' ? 'signup' : 'email') as any;
-          const { data, error } = await supabase.auth.verifyOtp({
-            email: targetEmail,
-            type: verifyType,
-            token_hash: qsTokenHash,
-          } as any);
-          if (error) throw error;
-          if (data?.session?.user) {
-            handleSuccess(data.session);
-            // Limpar a query após processar
-            window.history.replaceState({}, document.title, url.origin + url.pathname);
-            return;
-          }
-          // Se não retornou sessão, tentar captar via getSession
-          const { data: s } = await supabase.auth.getSession();
-          if (s.session?.user) {
-            handleSuccess(s.session);
-            window.history.replaceState({}, document.title, url.origin + url.pathname);
-            return;
-          }
-          throw new Error('Não foi possível confirmar com o link. Tente com o código ou reenvie.');
-        } catch (err) {
-          console.error('❌ verifyOtp via token_hash falhou:', err);
-          handleError(err);
-          setStatus('form');
-          return;
-        }
-      }
-
-      // Se há tokens no hash, precisamos processá-los manualmente
+      // FLUXO 3: Processar tokens no hash (access_token/refresh_token)
       if (accessToken && refreshToken && type === 'signup') {
-        console.log('🔐 Processing email confirmation hash manually...');
+        console.log('🔐 Processando tokens no hash (access_token/refresh_token)...');
         
         try {
+          setStatus('loading');
+          
           // Tentar usar setSession para criar a sessão manualmente
           const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
             access_token: accessToken,
@@ -173,11 +242,11 @@ const EmailConfirmedPage: React.FC = () => {
           });
 
           if (!setSessionError && sessionData?.session?.user) {
-            console.log('✅ Session created manually via setSession');
+            console.log('✅ Sessão criada via setSession do hash');
             handleSuccess(sessionData.session);
             return;
           } else if (setSessionError) {
-            console.error('❌ Error setting session:', setSessionError);
+            console.error('❌ Erro ao criar sessão via setSession:', setSessionError);
           }
 
           // Se setSession não funcionou, tentar aguardar e verificar se Supabase processou automaticamente
@@ -187,10 +256,10 @@ const EmailConfirmedPage: React.FC = () => {
           for (let i = 0; i < 5; i++) {
             const { data: { session }, error } = await supabase.auth.getSession();
             
-            console.log(`🔍 Attempt ${i + 1}/5:`, { hasSession: !!session?.user, error: error?.message });
+            console.log(`🔍 Tentativa ${i + 1}/5:`, { hasSession: !!session?.user, error: error?.message });
             
             if (!error && session?.user) {
-              console.log('✅ Session found via getSession');
+              console.log('✅ Sessão encontrada via getSession após processar hash');
               handleSuccess(session);
               return;
             }
@@ -200,34 +269,38 @@ const EmailConfirmedPage: React.FC = () => {
               await new Promise(resolve => setTimeout(resolve, 800));
             }
           }
+
+          console.warn('⚠️ Não foi possível criar sessão via hash após 5 tentativas');
         } catch (err) {
-          console.error('❌ Error processing hash:', err);
+          console.error('❌ Erro ao processar hash:', err);
           handleError(err);
         }
       }
 
-      // Se não há hash ou não funcionou, verificar sessão existente
-      console.log('🔍 Checking existing session...');
+      // FLUXO 4: Verificar sessão existente
+      console.log('🔍 Verificando sessão existente...');
       const { data: { session }, error: getErr } = await supabase.auth.getSession();
       
       if (!getErr && session?.user) {
-        console.log('✅ Existing session found');
+        console.log('✅ Sessão existente encontrada');
         handleSuccess(session);
         return;
-        } else {
-          console.log('⚠️ No existing session:', getErr?.message || 'No error but no session');
-        }
+      } else {
+        console.log('⚠️ Nenhuma sessão existente:', getErr?.message || 'Sem erro mas sem sessão');
+      }
 
-      // Se ainda não tem sessão, usar listener de auth state change
-      // O listener vai capturar quando o Supabase processar o hash
-          console.log('⏳ Setting up auth state listener...');
+      // FLUXO 5: Usar listener de auth state change como último recurso
+      // O listener vai capturar quando o Supabase processar automaticamente
+      console.log('⏳ Configurando listener de auth state change (último recurso)...');
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         async (event, session) => {
-          console.log('🔐 Auth event on EmailConfirmedPage:', event, session?.user?.email);
+          console.log('🔐 Auth event no EmailConfirmedPage:', event, session?.user?.email);
           
           if (event === 'SIGNED_IN' && session?.user) {
+            console.log('✅ Evento SIGNED_IN detectado via listener');
             handleSuccess(session);
           } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+            console.log('✅ Evento TOKEN_REFRESHED detectado via listener');
             handleSuccess(session);
           }
         }
@@ -235,16 +308,17 @@ const EmailConfirmedPage: React.FC = () => {
 
       authListenerSubscription = subscription;
 
-      // Timeout de segurança: se após 15 segundos não houve confirmação, dar erro
+      // Timeout aumentado: se após 30 segundos não houve confirmação, mostrar formulário
       timeoutId = setTimeout(async () => {
         if (!successHandled) {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session?.user) {
-            console.error('⏱️ Timeout: No session after 15 seconds');
-            handleError();
+            console.warn('⏱️ Timeout: Nenhuma sessão após 30 segundos. Mostrando formulário manual.');
+            setStatus('form');
+            // Não chamar handleError aqui, apenas mostrar formulário
           }
         }
-      }, 15000) as any;
+      }, 30000) as any; // Aumentado de 15s para 30s
     };
 
      // Processar confirmação de email automaticamente; se falhar, form/OTP
@@ -268,7 +342,20 @@ const EmailConfirmedPage: React.FC = () => {
               </div>
             </h2>
             <p style={styles.message}>Enviamos um código de 6 dígitos para seu e-mail. Cole abaixo para confirmar e continuar.</p>
-            {!email && (
+            {email && emailFromUrl ? (
+              <div style={{ 
+                width: '100%', 
+                padding: '12px', 
+                borderRadius: '8px', 
+                border: '1px solid #e5e7eb', 
+                marginBottom: '12px',
+                backgroundColor: '#f9fafb',
+                color: '#6b7280',
+                fontSize: '14px'
+              }}>
+                <strong>E-mail:</strong> {email}
+              </div>
+            ) : (
               <input
                 type="email"
                 value={email}

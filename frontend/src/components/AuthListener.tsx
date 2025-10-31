@@ -11,15 +11,24 @@ const AuthListener: React.FC = () => {
   const location = useLocation();
 
   useEffect(() => {
-    // Detectar confirmação de email via hash na URL
+    // Não interferir se já estamos na página de confirmação de email
+    // Deixar EmailConfirmedPage processar sozinha
+    if (location.pathname === '/email-confirmed') {
+      console.log('📍 Já estamos em /email-confirmed, deixando EmailConfirmedPage processar');
+      return;
+    }
+
+    // Detectar confirmação de email via hash na URL (apenas se não estamos em /email-confirmed)
     const handleHashChange = () => {
+      if (location.pathname === '/email-confirmed') return; // Não navegar se já está na página
+
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const type = hashParams.get('type');
       const accessToken = hashParams.get('access_token');
 
       // Se é uma confirmação de email
       if (type === 'signup' && accessToken) {
-        console.log('✅ Email confirmation detected via hash');
+        console.log('✅ Email confirmation detected via hash, redirecionando para /email-confirmed');
         navigate('/email-confirmed');
       }
 
@@ -30,7 +39,7 @@ const AuthListener: React.FC = () => {
       }
     };
 
-    // Executar ao montar
+    // Executar ao montar (apenas se não estamos em /email-confirmed)
     handleHashChange();
 
     // Listener para mudanças no hash
@@ -39,6 +48,11 @@ const AuthListener: React.FC = () => {
     // Listener para mudanças de autenticação do Supabase
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('🔐 Auth event:', event);
+
+      // Não navegar se já estamos em /email-confirmed
+      if (location.pathname === '/email-confirmed') {
+        return;
+      }
 
       if (event === 'SIGNED_IN') {
         // Se acabou de logar e está na página de confirmação de email
