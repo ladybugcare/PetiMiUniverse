@@ -2,12 +2,13 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import HomeHeader from '../components/HomeHeader';
 import HowItWorks from '../components/HowItWorks';
-import { Heart, Dog, Cat, Building2, Stethoscope, ClipboardList, ShoppingCart, Instagram } from 'lucide-react';
+import { Heart, Dog, Cat, Building2, Stethoscope, ClipboardList, Lock, Instagram, CheckCircle } from 'lucide-react';
 
 const HomePage: React.FC = () => {
   return (
     <div className="min-h-screen">
       <HomeHeader />
+
       {/* Purple Hero Section with Paw Prints */}
       <section className="hero-purple">
         <div className="container">
@@ -39,78 +40,69 @@ const HomePage: React.FC = () => {
             
             {/* Lado direito - Galeria circular */}
             <div className="hero-images-right animate-scale-in animate-delay-300">
-              <div style={{ position: 'relative', width: '100%', maxWidth: '520px', height: '520px' }}>
-                <div 
-                  className="hero-image-circle animate-float" 
-                  style={{ position: 'absolute', top: '40px', left: '60px', width: '150px', height: '150px', zIndex: 4 }}
+              <div style={{ position: 'relative', width: '100%', maxWidth: '500px', height: '500px' }}>
+                <div
+                  className="hero-image-circle animate-float"
+                  style={{ position: 'absolute', top: '20px', left: '20px', width: '200px', height: '200px', zIndex: 3 }}
                 >
                   <img src="/img1.png" alt="Galeria PetiVet 1" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
 
-                <div 
-                  className="hero-image-circle" 
-                  style={{ position: 'absolute', top: '35px', left: '390px', width: '120px', height: '120px', zIndex: 3, animationDelay: '0.15s' }}
+                <div
+                  className="hero-image-circle"
+                  style={{ position: 'absolute', top: '60px', right: '40px', width: '180px', height: '180px', zIndex: 4, animationDelay: '0.3s' }}
                 >
                   <img src="/img2.jpg" alt="Galeria PetiVet 2" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
 
-                <div 
-                  className="hero-image-circle animate-float" 
-                  style={{ position: 'absolute', top: '150px', left: '200px', width: '210px', height: '210px', zIndex: 5, animationDelay: '0.3s' }}
+                <div
+                  className="hero-image-circle animate-float"
+                  style={{ position: 'absolute', bottom: '80px', right: '80px', width: '240px', height: '240px', zIndex: 5, animationDelay: '0.15s' }}
                 >
                   <img src="/im3.jpg" alt="Galeria PetiVet 3" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
 
-                <div 
-                  className="hero-image-circle" 
-                  style={{ position: 'absolute', top: '205px', left: '0px', width: '110px', height: '110px', zIndex: 2, animationDelay: '0.45s' }}
+                <div
+                  className="hero-image-circle"
+                  style={{ position: 'absolute', bottom: '40px', left: '0', width: '160px', height: '160px', zIndex: 2, animationDelay: '0.5s' }}
                 >
-                  <img src="/img2.jpg" alt="Galeria PetiVet 4" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src="/img4.jpg" alt="Galeria PetiVet 4" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
 
-                <div 
-                  className="hero-image-circle" 
-                  style={{ position: 'absolute', top: '205px', left: '405px', width: '105px', height: '105px', zIndex: 2, animationDelay: '0.6s' }}
+                <div
+                  className="hero-image-circle animate-float"
+                  style={{ position: 'absolute', bottom: '0', right: '20px', width: '140px', height: '140px', zIndex: 1, animationDelay: '0.7s' }}
                 >
-                  <img src="/img1.png" alt="Galeria PetiVet 5" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-
-                <div 
-                  className="hero-image-circle animate-float" 
-                  style={{ position: 'absolute', top: '360px', left: '70px', width: '140px', height: '140px', zIndex: 3, animationDelay: '0.75s' }}
-                >
-                  <img src="/img4.jpg" alt="Galeria PetiVet 6" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-
-                <div 
-                  className="hero-image-circle" 
-                  style={{ position: 'absolute', top: '400px', left: '400px', width: '110px', height: '110px', zIndex: 2, animationDelay: '0.9s' }}
-                >
-                  <img src="/img5.jpg" alt="Galeria PetiVet 7" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-
-                <div 
-                  className="hero-image-circle" 
-                  style={{ position: 'absolute', top: '0px', left: '230px', width: '100px', height: '100px', zIndex: 2, animationDelay: '1.05s' }}
-                >
-                  <img src="/img4.jpg" alt="Galeria PetiVet 8" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-
-                <div 
-                  className="hero-image-circle animate-float" 
-                  style={{ position: 'absolute', top: '420px', left: '240px', width: '95px', height: '95px', zIndex: 1, animationDelay: '1.2s' }}
-                >
-                  <img src="/img5.jpg" alt="Galeria PetiVet 9" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-
-                <div 
-                  className="hero-image-circle" 
-                  style={{ position: 'absolute', top: '130px', left: '430px', width: '90px', height: '90px', zIndex: 1, animationDelay: '1.35s' }}
-                >
-                  <img src="/img4.jpg" alt="Galeria PetiVet 10" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src="/img5.jpg" alt="Galeria PetiVet 5" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="section secondary-cta">
+        <div className="container secondary-cta__content">
+          <div>
+            <span className="secondary-cta__eyebrow">Próximo passo</span>
+            <h2>Converse com a equipe e conheça a plataforma de perto</h2>
+            <p>
+              Agende uma demo e veja como o PetiVet pode acelerar a gestão da sua clínica,
+              engajar a equipe e colaborar com especialistas de confiança.
+            </p>
+            <div className="secondary-cta__benefits">
+              <div><CheckCircle size={16} /> Onboarding guiado com checklists inteligentes</div>
+              <div><CheckCircle size={16} /> Ferramentas para equipe: convites, agendas, unidades</div>
+              <div><CheckCircle size={16} /> Marketplace para vender serviços e produtos pet</div>
+            </div>
+          </div>
+          <div className="secondary-cta__actions">
+            <a className="btn-white" href="https://wa.me/5511999999999" target="_blank" rel="noopener noreferrer">
+              Fale com a gente no WhatsApp
+            </a>
+            <a className="btn-white" href="mailto:contato@petivet.com">
+              Agendar uma demo
+            </a>
           </div>
         </div>
       </section>
@@ -174,14 +166,14 @@ const HomePage: React.FC = () => {
             
             <div className="icon-card group animate-scale-in animate-delay-300">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
-                <ShoppingCart size={48} strokeWidth={1.5} />
+                <Lock size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
                 <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
-                  Marketplace
+                  Login
                 </h3>
                 <p className="text-neutral-600 leading-relaxed">
-                  Explore produtos, serviços e oportunidades pensadas para o universo pet.
+                  Acesse sua conta para gerenciar suas informações e candidaturas
                 </p>
               </div>
             </div>
