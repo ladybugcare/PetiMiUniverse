@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabase, supabaseAdmin } from '../config/supabase';
+import { createNotification } from './notificationsController';
 
 interface SendMessageBody {
   item_id: string;
@@ -37,6 +38,34 @@ export const sendMessage = async (
     .single();
 
   if (error) return res.status(400).json({ error: error.message });
+
+  // Get item info and sender info for notification
+  const { data: item } = await supabase
+    .from('marketplace_items')
+    .select('title, seller_id')
+    .eq('id', item_id)
+    .single();
+
+  // Get sender info using Admin API
+  const { data: senderData } = await supabaseAdmin.auth.admin.getUserById(sender_id);
+  const sender = senderData?.user;
+  
+  // Get sender name
+  const senderName = sender?.user_metadata?.name || sender?.raw_user_meta_data?.name || sender?.email?.split('@')[0] || 'Um usuário';
+
+  // Create notification for receiver
+  if (item) {
+    await createNotification({
+      user_id: receiver_id,
+      type: 'marketplace_message',
+      title: 'Nova Mensagem no Marketplace',
+      message: `${senderName} enviou uma mensagem sobre "${item.title}"`,
+      link: `/marketplace/messages?item_id=${item_id}`,
+      entity_type: 'marketplace_item',
+      entity_id: item_id,
+    });
+  }
+
   res.status(201).json({ message: data });
 };
 

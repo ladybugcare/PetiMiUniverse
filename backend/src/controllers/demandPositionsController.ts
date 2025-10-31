@@ -105,6 +105,40 @@ export const createCompositeDemand = async (req: Request, res: Response) => {
       specialties: positions[index].specialties,
     }));
 
+    // Get clinic info for notification
+    const { data: clinic } = await supabase
+      .from('clinics')
+      .select('name')
+      .eq('id', clinic_id)
+      .single();
+
+    // Notify all veterinarians about new demand (broadcast)
+    // Get all active veterinarians
+    const { data: allVets } = await supabase
+      .from('vets')
+      .select('id')
+      .eq('status', 'active');
+
+    if (allVets && clinic) {
+      // Send notification to all vets
+      const notificationPromises = allVets.map((vet) =>
+        createNotification({
+          user_id: vet.id,
+          type: 'new_demand_created',
+          title: 'Nova Oportunidade de Trabalho',
+          message: `Nova vaga disponível: "${masterDemand.title}" na ${clinic.name}`,
+          link: `/demands/${masterDemand.id}`,
+          entity_type: 'demand',
+          entity_id: masterDemand.id,
+        })
+      );
+
+      // Execute all notifications in parallel (don't wait or fail the request)
+      Promise.all(notificationPromises).catch((err) => {
+        console.error('Error sending new demand notifications:', err);
+      });
+    }
+
     res.status(201).json({
       demand: masterDemand,
       positions: positionsWithSpecialties,

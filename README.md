@@ -4,6 +4,8 @@ PetiVet connects veterinary clinics and professionals. This workspace provides:
 - **Backend** (Express + TypeScript) in `backend/`
 - **Universal Frontend** (Expo/React Native) in `frontend/` which runs on web, iOS, and Android
 
+> 🚀 **Quer começar rapidamente?** Veja o [SETUP_LOCAL.md](SETUP_LOCAL.md) para um guia passo a passo conciso.
+
 ## 📋 Features
 
 ### For Veterinary Clinics
@@ -40,130 +42,304 @@ PetiVet connects veterinary clinics and professionals. This workspace provides:
 - iOS builds: macOS + Xcode (for Simulator)
 - Android builds: Android Studio + SDK / Emulator or physical device (USB debugging enabled)
 
-## 🚀 Installation
+## 🚀 Installation & Setup
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd PetiVet
-   ```
+### 1. Clone the Repository
 
-2. **Install dependencies**
-   ```bash
-   npm install           # root dependencies (if any shared)
-   cd backend && npm install
-   cd ../frontend && npm install
-   ```
+```bash
+git clone <repository-url>
+cd PetiVet
+```
 
-   > Frontend install upgrades TypeScript to 5.x so Expo + React Navigation compile correctly.
+### 2. Install Dependencies
 
-3. **Configure Supabase**
+```bash
+# Install root dependencies (if any)
+npm install
+
+# Install backend dependencies
+cd backend
+npm install
+
+# Install frontend dependencies
+cd ../frontend
+npm install
+```
+
+> **Note**: Frontend install upgrades TypeScript to 5.x so Expo + React Navigation compile correctly.
+
+### 3. Configure Environment Variables
+
+#### Backend Configuration
+
+Create a `.env` file in the `backend/` directory:
+
+```env
+# Supabase Configuration
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# Server Configuration
+PORT=3000
+NODE_ENV=development
+
+# Frontend URL for CORS
+FRONTEND_URL=http://localhost:3000
+```
+
+#### Frontend Configuration
+
+Create a `.env.local` file in the `frontend/` directory:
+
+```env
+# Supabase Configuration
+REACT_APP_SUPABASE_URL=your_supabase_project_url
+REACT_APP_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# Backend API URL
+REACT_APP_API_URL=http://localhost:3000
+
+# Alternative for Expo (if using Expo build)
+EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+**Where to find Supabase credentials:**
+1. Go to https://app.supabase.com
+2. Select your project
+3. Navigate to **Settings → API**
+4. Copy:
+   - **Project URL** → `SUPABASE_URL` / `REACT_APP_SUPABASE_URL`
+   - **anon/public key** → `SUPABASE_KEY` / `REACT_APP_SUPABASE_ANON_KEY`
+   - **service_role key** → `SUPABASE_SERVICE_ROLE_KEY` (backend only)
+
+⚠️ **IMPORTANT**: Never commit `.env` files to Git!
+
+### 4. Set up Supabase Database
+
+The database migrations are located in `backend/database_migrations/`. 
+
+**Option 1: Run migrations manually**
    
-   Create a `.env` file in the `backend/` directory:
-   ```env
-   SUPABASE_URL=your_supabase_project_url
-   SUPABASE_KEY=your_supabase_anon_key
-   PORT=3000
-   ```
+Execute the SQL files in your Supabase SQL Editor in order:
+1. Start with the base schema files
+2. Run any migration files as needed
+3. Check `backend/database_migrations/*.md` for migration documentation
 
-4. **Set up Supabase Database**
-
-   Run the following SQL in your Supabase SQL Editor:
-
-   ```sql
-   -- Create clinics table
-   CREATE TABLE clinics (
-     id uuid PRIMARY KEY,
-     name text NOT NULL,
-     cnpj text NOT NULL UNIQUE,
-     address text NOT NULL,
-     email text NOT NULL UNIQUE,
-     created_at timestamp with time zone DEFAULT now(),
-     updated_at timestamp with time zone DEFAULT now()
-   );
-
-   -- Create vets table
-   CREATE TABLE vets (
-     id uuid PRIMARY KEY,
-     name text NOT NULL,
-     crmv text NOT NULL UNIQUE,
-     specialties text[] NOT NULL DEFAULT '{}',
-     certificates text[] DEFAULT '{}',
-     experience text NOT NULL,
-     email text NOT NULL UNIQUE,
-     clinic_id uuid REFERENCES clinics(id),
-     created_at timestamp with time zone DEFAULT now(),
-     updated_at timestamp with time zone DEFAULT now()
-   );
-
-   -- Create demands table
-   CREATE TABLE demands (
-     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-     title text NOT NULL,
-     description text NOT NULL,
-     clinic_id uuid REFERENCES clinics(id) NOT NULL,
-     required_specialties text[] NOT NULL DEFAULT '{}',
-     start_date text,
-     end_date text,
-     workload text,
-     compensation text,
-     status text DEFAULT 'open',
-     created_at timestamp with time zone DEFAULT now(),
-     updated_at timestamp with time zone DEFAULT now()
-   );
-
-   -- Create applications table
-   CREATE TABLE applications (
-     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-     demand_id uuid REFERENCES demands(id) NOT NULL,
-     vet_id uuid REFERENCES vets(id) NOT NULL,
-     message text,
-     status text DEFAULT 'pending',
-     created_at timestamp with time zone DEFAULT now(),
-     updated_at timestamp with time zone DEFAULT now()
-   );
-   ```
-
-5. **Configure Supabase Authentication**
+**Option 2: Quick setup (basic tables)**
    
-   In your Supabase Dashboard:
-   - Go to **Authentication** → **Providers**
-   - Enable **Email** provider
-   - **Disable** "Confirm email" for development (optional)
+You can run the basic schema in Supabase SQL Editor. See the migration files for the complete schema.
+
+> **Tip**: Check the `backend/database_migrations/` directory for all available migrations and their documentation.
+
+### 5. Configure Supabase Authentication
+
+In your Supabase Dashboard:
+- Go to **Authentication** → **Providers**
+- Enable **Email** provider
+- **Disable** "Confirm email" for development (optional)
 
 ---
 
 ## 🏃 Running the Application
 
-### Backend (API)
+### Development Mode
+
+#### Start Backend (API Server)
 
 ```bash
 cd backend
-npm run dev           # runs nodemon with ts-node
+npm run dev           # Runs nodemon with ts-node (auto-reload on file changes)
 ```
 
 The API will be available at **http://localhost:3000**
 
-### Frontend (Expo app)
+**Backend Scripts:**
+- `npm run dev` - Start development server with auto-reload
+- `npm run build` - Compile TypeScript to JavaScript
+- `npm start` - Run production build (requires `npm run build` first)
+- `npm run start:staging` - Run staging build
+
+#### Start Frontend (Expo/React Native)
 
 ```bash
 cd frontend
-npm run start         # open Expo CLI, choose platform (press w/i/a)
-# or
-npm run start:web     # launch web build only
-npm run start:ios     # open iOS simulator (macOS + Xcode)
-npm run start:android # open Android emulator or connected device
+npm start             # Opens Expo CLI, choose platform (press w/i/a)
 ```
 
-### Quick Start Commands
+**Frontend Scripts:**
+- `npm start` - Start Expo dev server (interactive menu)
+- `npm run start:web` - Launch web build only
+- `npm run start:ios` - Open iOS simulator (requires macOS + Xcode)
+- `npm run start:android` - Open Android emulator or connected device
+- `npm run web` - Alternative web start with React Scripts
+
+### Quick Start (Multiple Terminals)
+
+Open two terminal windows:
+
+**Terminal 1 - Backend:**
+```bash
+cd backend
+npm run dev
+```
+
+**Terminal 2 - Frontend:**
+```bash
+cd frontend
+npm start
+```
+
+Then choose your platform:
+- Press `w` for web
+- Press `i` for iOS simulator
+- Press `a` for Android emulator
+- Press `r` to reload
+- Press `m` to toggle menu
+
+### Running on Mobile Devices
+
+#### iOS Simulator (macOS only)
+```bash
+cd frontend
+npm run start:ios
+```
+
+**Requirements:**
+- macOS
+- Xcode installed
+- iOS Simulator available
+
+#### Android Emulator/Device
+```bash
+cd frontend
+npm run start:android
+```
+
+**Requirements:**
+- Android Studio installed
+- Android SDK configured
+- Emulator running OR physical device connected with USB debugging enabled
+
+**For physical devices:**
+- Enable Developer Mode and USB Debugging
+- Connect via USB
+- Run `adb devices` to verify connection
+
+**Important**: Update `REACT_APP_API_URL` in `frontend/.env.local` to your machine's local IP (e.g., `http://192.168.1.100:3000`) instead of `localhost` so mobile devices can reach the backend.
+
+---
+
+## 📦 Building for Production
+
+### Backend Build
 
 ```bash
-# Terminal 1 - Backend
-cd backend && npm run dev
+cd backend
 
-# Terminal 2 - Frontend  
-cd frontend && npm run start
+# Build TypeScript to JavaScript
+npm run build
+
+# The compiled files will be in the `dist/` directory
+
+# Run production build
+npm start
+
+# Or run staging build
+npm run start:staging
 ```
+
+**Build Output:** `backend/dist/`
+
+### Frontend Build
+
+#### Web Build (React Scripts)
+
+```bash
+cd frontend
+
+# Build for production
+npm run build:web
+
+# The optimized build will be in the `build/` directory
+# You can serve it with any static file server:
+# - Serve locally: npx serve -s build
+# - Deploy to Vercel, Netlify, etc.
+```
+
+**Build Output:** `frontend/build/`
+
+#### Native Mobile Builds (Expo EAS)
+
+For iOS and Android native builds, use Expo's EAS Build:
+
+```bash
+cd frontend
+
+# Install EAS CLI globally (if not already installed)
+npm install -g eas-cli
+
+# Login to Expo
+eas login
+
+# Configure EAS (first time only)
+eas build:configure
+
+# Build for iOS
+eas build --platform ios
+
+# Build for Android
+eas build --platform android
+
+# Build for both platforms
+eas build --platform all
+```
+
+**Requirements for EAS Build:**
+- Expo account (free)
+- For iOS: Apple Developer account ($99/year)
+- For Android: Google Play Developer account ($25 one-time)
+
+**Local Builds (Alternative):**
+
+```bash
+# iOS (macOS only, requires Xcode)
+expo build:ios
+
+# Android
+expo build:android
+```
+
+> **Note**: Local builds require additional setup. EAS Build is recommended for most cases.
+
+### Environment-Specific Builds
+
+#### Staging
+
+**Backend:**
+```bash
+cd backend
+NODE_ENV=staging npm run build
+NODE_ENV=staging npm start
+```
+
+**Frontend:**
+- Set environment variables in `.env.local` to point to staging URLs
+- Build normally: `npm run build:web`
+
+#### Production
+
+**Backend:**
+```bash
+cd backend
+NODE_ENV=production npm run build
+NODE_ENV=production npm start
+```
+
+**Frontend:**
+- Set environment variables in `.env.local` to point to production URLs
+- Build: `npm run build:web`
 
 ---
 
@@ -176,14 +352,22 @@ PetiVet/
 │   │   ├── config/         # Supabase configuration
 │   │   ├── controllers/    # Business logic
 │   │   ├── routes/         # API routes
+│   │   ├── middleware/     # Auth and other middleware
+│   │   ├── utils/          # Utility functions
 │   │   └── index.ts        # Server entry point
+│   ├── database_migrations/  # SQL migration files
+│   ├── dist/               # Compiled JavaScript (generated)
 │   └── package.json
 │
 ├── frontend/          # Expo project (React Native + web)
 │   ├── App.tsx
 │   ├── navigation/
 │   ├── screens/
-│   └── src/           # shared utilities/services, web styles
+│   ├── src/           # shared utilities/services, web styles
+│   ├── components/    # Reusable components
+│   ├── services/      # API services
+│   ├── build/         # Web build output (generated)
+│   └── package.json
 │
 ├── babel.config.js
 ├── tailwind.config.js
@@ -230,16 +414,6 @@ PetiVet/
 `frontend/src/services/api.ts` currently points to `http://localhost:3000`.  
 When testing on a device/emulator, replace `localhost` with your machine's LAN IP (e.g. `http://192.168.0.10:3000`) so the app can reach the backend.
 
-### Building native binaries
-
-Expo Managed apps use EAS:
-```bash
-npx expo login
-npx expo install expo-cli
-npx eas build --platform ios
-npx eas build --platform android
-```
-Requires linking an Expo account; follow CLI prompts to configure credentials and build profiles.
 
 ---
 
@@ -281,10 +455,19 @@ Requires linking an Expo account; follow CLI prompts to configure credentials an
 
 ### Useful Scripts
 
-- `npm run dev` (backend) – hot reload API
-- `npm run start` (frontend) – Expo dev server
-- `npm run start:web` (frontend) – web build
-- `npm test` (frontend) – Jest/React Testing Library
+**Backend:**
+- `npm run dev` - Start development server with auto-reload
+- `npm run build` - Compile TypeScript to JavaScript
+- `npm start` - Run production build
+- `npm run start:staging` - Run staging build
+
+**Frontend:**
+- `npm start` - Start Expo dev server (interactive menu)
+- `npm run start:web` - Launch web build only
+- `npm run start:ios` - Open iOS simulator
+- `npm run start:android` - Open Android emulator
+- `npm run build:web` - Build production web bundle
+- `npm test` - Run tests (Jest/React Testing Library)
 
 ### Adding New Features
 

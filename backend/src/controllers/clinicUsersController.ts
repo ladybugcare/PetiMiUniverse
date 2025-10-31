@@ -1,9 +1,10 @@
 import type { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabase, supabaseAdmin } from '../config/supabase';
 import { checkPermission, checkClinicAccess } from '../middleware/authMiddleware';
 import { createAuditLog, extractRequestMetadata } from '../utils/auditLog';
 import { generateInvitationToken, sendInvitationEmail } from '../utils/emailService';
 import { getRoleDisplayName } from '../utils/permissions';
+import { createNotification } from './notificationsController';
 
 interface InviteUserBody {
   email: string;
@@ -83,6 +84,36 @@ export const inviteUser = async (req: Request<{}, {}, InviteUserBody>, res: Resp
 
     // Send invitation email
     await sendInvitationEmail(email, token, clinic_id, unit_id, getRoleDisplayName(role));
+
+    // Get clinic and unit info for notification
+    const { data: clinic } = await supabase
+      .from('clinics')
+      .select('name')
+      .eq('id', clinic_id)
+      .single();
+
+    const { data: unit } = await supabase
+      .from('units')
+      .select('name')
+      .eq('id', unit_id)
+      .single();
+
+    // Get user_id from email if user already exists (using Admin API)
+    const { data: usersData } = await supabaseAdmin.auth.admin.listUsers();
+    const existingAuthUser = usersData?.users?.find(user => user.email === email);
+
+    // Create notification if user exists in the system
+    if (existingAuthUser?.id && clinic && unit) {
+      await createNotification({
+        user_id: existingAuthUser.id,
+        type: 'unit_invitation',
+        title: 'Convite para Unidade',
+        message: `Você foi convidado para a unidade "${unit.name}" da clínica "${clinic.name}" como ${getRoleDisplayName(role)}`,
+        link: `/accept-invitation?token=${token}`,
+        entity_type: 'invitation',
+        entity_id: data[0].id,
+      });
+    }
 
     // Audit log
     const metadata = extractRequestMetadata(req);
