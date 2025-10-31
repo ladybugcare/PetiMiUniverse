@@ -9,7 +9,7 @@ export const getPendingUnits = async (req: Request, res: Response) => {
   try {
     // Verificar se é ADMIN
     const user = req.user!;
-    const userRole = user.role || (user as any).user_metadata?.role || (user as any).raw_user_meta_data?.role;
+    const userRole = user.role || (user as any).user_metadata?.role;
     
     if (userRole !== 'admin') {
       return res.status(403).json({ error: 'Acesso negado' });
@@ -42,7 +42,7 @@ export const reviewUnit = async (req: Request, res: Response) => {
   try {
     // Verificar se é ADMIN
     const user = req.user!;
-    const userRole = user.role || (user as any).user_metadata?.role || (user as any).raw_user_meta_data?.role;
+    const userRole = user.role || (user as any).user_metadata?.role;
     
     if (userRole !== 'admin') {
       return res.status(403).json({ error: 'Acesso negado' });
@@ -220,7 +220,7 @@ export const createUser = async (req: Request<{}, {}, CreateUserBody>, res: Resp
   try {
     // Verificar se é ADMIN
     const user = req.user!;
-    const userRole = user.role || (user as any).user_metadata?.role || (user as any).raw_user_meta_data?.role;
+    const userRole = user.role || (user as any).user_metadata?.role;
     
     if (userRole !== 'admin') {
       return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem criar usuários.' });
@@ -422,7 +422,7 @@ export const getAdmins = async (req: Request, res: Response) => {
   try {
     // Verificar se é ADMIN
     const user = req.user!;
-    const userRole = user.role || (user as any).user_metadata?.role || (user as any).raw_user_meta_data?.role;
+    const userRole = user.role || (user as any).user_metadata?.role;
     
     if (userRole !== 'admin') {
       return res.status(403).json({ error: 'Acesso negado' });
@@ -438,14 +438,14 @@ export const getAdmins = async (req: Request, res: Response) => {
     // Filtrar apenas admins e formatar dados
     const admins = (usersData?.users || [])
       .filter(user => {
-        const role = user.user_metadata?.role || user.raw_user_meta_data?.role;
+        const role = user.user_metadata?.role;
         return role === 'admin';
       })
       .map(user => ({
         id: user.id,
-        name: user.user_metadata?.name || user.raw_user_meta_data?.name || user.email?.split('@')[0] || 'Sem nome',
+        name: user.user_metadata?.name || user.email?.split('@')[0] || 'Sem nome',
         email: user.email || '',
-        status: user.banned ? 'inactive' : 'active',
+        status: ((user as any).banned_until || (user as any).ban_until) ? 'inactive' : 'active',
         created_at: user.created_at || new Date().toISOString(),
         last_sign_in_at: user.last_sign_in_at || null,
       }));

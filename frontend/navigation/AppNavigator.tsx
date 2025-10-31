@@ -24,7 +24,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const screenOptions = {
   headerShown: false,
   contentStyle: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#a855f7', // Cor do hero-purple web
   },
 };
 

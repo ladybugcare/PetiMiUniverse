@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ScrollView,
   View,
@@ -6,11 +6,38 @@ import {
   Pressable,
   StyleSheet,
   Platform,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-
 import { RootStackParamList } from '../navigation/AppNavigator';
+import LoadingScreen from '../components/LoadingScreen';
+
+// Importar logo
+const logoSource = require('../assets/just_logo.png');
+
+// Importar ícones do Lucide condicionalmente por plataforma
+let Heart: any, Dog: any, Cat: any;
+if (Platform.OS === 'web') {
+  const LucideWeb = require('lucide-react');
+  Heart = LucideWeb.Heart;
+  Dog = LucideWeb.Dog;
+  Cat = LucideWeb.Cat;
+} else {
+  // Para mobile, usar lucide-react-native
+  try {
+    const LucideNative = require('lucide-react-native');
+    Heart = LucideNative.Heart;
+    Dog = LucideNative.Dog;
+    Cat = LucideNative.Cat;
+  } catch (e) {
+    // Fallback: ícones não disponíveis
+    Heart = null;
+    Dog = null;
+    Cat = null;
+  }
+}
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -68,6 +95,20 @@ const timelineSteps = [
 const HomeScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const isWeb = Platform.OS === 'web';
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // Simular carregamento inicial
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (isLoading) {
+    return <LoadingScreen onFinish={() => setIsLoading(false)} />;
+  }
 
   return (
     <ScrollView
@@ -75,14 +116,48 @@ const HomeScreen = () => {
       contentContainerStyle={styles.contentContainer}
     >
       <View style={styles.heroSection}>
-        <Text style={styles.heroTitle}>PetiVet 🐾</Text>
-        <Text style={styles.heroSubtitle}>
-          Conectando clínicas e veterinários
+        <View style={styles.logoContainer}>
+          <Image
+            source={logoSource}
+            style={styles.logo}
+            resizeMode="contain"
+            accessibilityLabel="PetiVet Logo"
+            onError={(error) => {
+              console.error('Image load error:', error);
+            }}
+            onLoad={() => {
+              console.log('Logo loaded successfully');
+            }}
+          />
+        </View>
+        <Text style={styles.heroTitle}>
+          Conectando quem cuida, quem ama e quem precisa.
         </Text>
-        <Text style={styles.heroDescription}>
-          A plataforma que revoluciona o atendimento veterinário, facilitando a{' '}
-          {'\n'}
-          conexão entre clínicas e profissionais qualificados.
+        
+        <View style={styles.heroDescriptionContainer}>
+          <Text style={styles.heroDescription}>
+            O PetiVet é a plataforma que une clínicas veterinárias, profissionais 
+            independentes, freelancers e tutores em um só lugar. Aqui, quem oferece 
+            cuidado encontra quem precisa dele — de forma simples, segura e com muito 
+            amor pelos animais.{' '}
+          </Text>
+          <View style={styles.heroIconsInline}>
+            {Heart && Dog && Cat ? (
+              <>
+                <Heart size={20} color="#ffffff" fill="#ffffff" />
+                <Dog size={20} color="#ffffff" />
+                <Cat size={20} color="#ffffff" />
+              </>
+            ) : (
+              <Text style={styles.heroIconsEmoji}>❤️ 🐶 🐱</Text>
+            )}
+          </View>
+        </View>
+        
+        <Text style={styles.heroDescriptionSecondary}>
+          Encontre clínicas próximas, descubra oportunidades de trabalho e colabore 
+          com outros profissionais do mundo pet. O PetiVet foi criado para facilitar 
+          conexões e fortalecer o cuidado animal.
         </Text>
 
         <View
@@ -254,36 +329,62 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#a855f7', // Cor do hero-purple web
   },
   contentContainer: {
     paddingBottom: 48,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#a855f7', // Cor do hero-purple web
   },
   heroSection: {
-    backgroundColor: '#8b5cf6',
+    backgroundColor: '#a855f7', // Cor do hero-purple web
     paddingTop: 96,
     paddingBottom: 96,
     paddingHorizontal: 24,
     alignItems: 'center',
+    minHeight: Platform.OS === 'web' ? '100vh' : undefined,
+  },
+  logoContainer: {
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  logo: {
+    width: 120,
+    height: 120,
+    opacity: 1,
   },
   heroTitle: {
-    fontSize: 42,
+    fontSize: Platform.OS === 'web' ? 48 : 36,
     fontWeight: '800',
     color: '#ffffff',
     textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: Platform.OS === 'web' ? 56 : 44,
+  },
+  heroDescriptionContainer: {
+    alignItems: 'center',
+    maxWidth: 720,
     marginBottom: 16,
   },
-  heroSubtitle: {
-    fontSize: 22,
-    color: '#f2e9ff',
-    textAlign: 'center',
-    fontWeight: '600',
-    marginBottom: 12,
-  },
   heroDescription: {
-    fontSize: 18,
-    color: '#f5efff',
+    fontSize: Platform.OS === 'web' ? 20 : 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    lineHeight: 28,
+  },
+  heroIconsInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  heroIconsEmoji: {
+    fontSize: 20,
+    letterSpacing: 8,
+  },
+  heroDescriptionSecondary: {
+    fontSize: Platform.OS === 'web' ? 18 : 16,
+    color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
     maxWidth: 720,
     lineHeight: 26,

@@ -23,7 +23,7 @@ const navigationTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    background: '#ffffff',
+    background: '#a855f7', // Cor do hero-purple web
   },
 };
 

@@ -51,7 +51,7 @@ export const sendMessage = async (
   const sender = senderData?.user;
   
   // Get sender name
-  const senderName = sender?.user_metadata?.name || sender?.raw_user_meta_data?.name || sender?.email?.split('@')[0] || 'Um usuário';
+  const senderName = sender?.user_metadata?.name || sender?.email?.split('@')[0] || 'Um usuário';
 
   // Create notification for receiver
   if (item) {

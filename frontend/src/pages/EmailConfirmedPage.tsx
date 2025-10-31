@@ -6,6 +6,7 @@ import { CheckCircle, XCircle, PartyPopper } from 'lucide-react';
 const EmailConfirmedPage: React.FC = () => {
   const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
@@ -49,6 +50,8 @@ const EmailConfirmedPage: React.FC = () => {
 
     const handleError = (error?: any) => {
       console.error('Error confirming email:', error);
+      const message = error?.message || error?.toString() || 'Não foi possível confirmar seu e-mail.';
+      setErrorMessage(message);
       setStatus('error');
     };
 
@@ -59,82 +62,55 @@ const EmailConfirmedPage: React.FC = () => {
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
       const type = hashParams.get('type');
+      const error_description = hashParams.get('error_description');
+      const error = hashParams.get('error');
 
       console.log('🔍 Debug info:', {
         hasHash: !!hash,
         hasAccessToken: !!accessToken,
         hasRefreshToken: !!refreshToken,
         type,
+        error,
+        error_description,
         fullUrl: window.location.href,
         hashOnly: hash.substring(0, 100) + '...'
       });
 
-      // Se há tokens no hash, precisamos processá-los manualmente
-      if (accessToken && refreshToken && type === 'signup') {
-        console.log('🔐 Processing email confirmation hash manually...');
-        
-        try {
-          // Tentar usar setSession para criar a sessão manualmente
-          const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          });
-
-          if (!setSessionError && sessionData?.session?.user) {
-            console.log('✅ Session created manually via setSession');
-            handleSuccess(sessionData.session);
-            return;
-          } else if (setSessionError) {
-            console.error('❌ Error setting session:', setSessionError);
-          }
-
-          // Se setSession não funcionou, tentar aguardar e verificar se Supabase processou automaticamente
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Tentar obter a sessão várias vezes com delay
-          for (let i = 0; i < 5; i++) {
-            const { data: { session }, error } = await supabase.auth.getSession();
-            
-            console.log(`🔍 Attempt ${i + 1}/5:`, { hasSession: !!session?.user, error: error?.message });
-            
-            if (!error && session?.user) {
-              console.log('✅ Session found via getSession');
-              handleSuccess(session);
-              return;
-            }
-            
-            // Se ainda não tem sessão, aguardar mais um pouco
-            if (i < 4) {
-              await new Promise(resolve => setTimeout(resolve, 800));
-            }
-          }
-        } catch (err) {
-          console.error('❌ Error processing hash:', err);
-        }
-      }
-
-      // Se não há hash ou não funcionou, verificar sessão existente
-      console.log('🔍 Checking existing session...');
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (!error && session?.user) {
-        console.log('✅ Existing session found');
-        handleSuccess(session);
+      // Se há erro no hash, tratar como erro
+      if (error) {
+        console.error('❌ Error in hash:', error, error_description);
+        handleError(new Error(error_description || error));
         return;
-      } else {
-        console.log('⚠️ No existing session:', error?.message || 'No error but no session');
       }
 
-      // Se ainda não tem sessão, usar listener de auth state change
-      // O listener vai capturar quando o Supabase processar o hash
-      console.log('⏳ Setting up auth state listener...');
+      // Configurar listener PRIMEIRO, antes de qualquer processamento
+      // O Supabase processa o hash automaticamente quando chamamos getSession()
+      // e dispara eventos de auth state change
+      console.log('⏳ Setting up auth state listener first...');
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         async (event, session) => {
-          console.log('🔐 Auth event on EmailConfirmedPage:', event, session?.user?.email);
+          console.log('🔐 Auth event on EmailConfirmedPage:', event, {
+            hasSession: !!session,
+            userEmail: session?.user?.email,
+            emailConfirmed: session?.user?.email_confirmed_at ? 'yes' : 'no'
+          });
           
           if (event === 'SIGNED_IN' && session?.user) {
-            handleSuccess(session);
+            // Verificar se o email foi confirmado
+            if (session.user.email_confirmed_at) {
+              console.log('✅ Email confirmed and user signed in');
+              handleSuccess(session);
+            } else {
+              console.log('⚠️ User signed in but email not confirmed yet');
+              // Aguardar um pouco mais - pode estar processando
+            }
           } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+            if (session.user.email_confirmed_at) {
+              console.log('✅ Token refreshed and email confirmed');
+              handleSuccess(session);
+            }
+          } else if (event === 'USER_UPDATED' && session?.user?.email_confirmed_at) {
+            console.log('✅ User updated with confirmed email');
             handleSuccess(session);
           }
         }
@@ -142,16 +118,97 @@ const EmailConfirmedPage: React.FC = () => {
 
       authListenerSubscription = subscription;
 
-      // Timeout de segurança: se após 15 segundos não houve confirmação, dar erro
+      // Se há tokens no hash, o Supabase deve processar automaticamente
+      // ao chamar getSession(), mas vamos tentar setSession também como fallback
+      if (accessToken && refreshToken && type === 'signup') {
+        console.log('🔐 Processing email confirmation hash...');
+        
+        try {
+          // PRIMEIRA TENTATIVA: Deixar o Supabase processar automaticamente
+          // getSession() internamente chama _getSessionFromURL que processa o hash
+          await new Promise(resolve => setTimeout(resolve, 500)); // Pequeno delay para o listener se registrar
+          
+          const { data: { session: autoSession }, error: autoError } = await supabase.auth.getSession();
+          
+          if (!autoError && autoSession?.user?.email_confirmed_at) {
+            console.log('✅ Session created automatically by Supabase');
+            handleSuccess(autoSession);
+            return;
+          }
+
+          // SEGUNDA TENTATIVA: Usar setSession manualmente
+          console.log('🔄 Trying setSession manually...');
+          const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+
+          if (!setSessionError && sessionData?.session?.user) {
+            console.log('✅ Session created manually via setSession');
+            
+            // Verificar se o email foi confirmado
+            if (sessionData.session.user.email_confirmed_at) {
+              handleSuccess(sessionData.session);
+              return;
+            } else {
+              console.log('⚠️ Session created but email not confirmed yet, waiting...');
+            }
+          } else if (setSessionError) {
+            console.error('❌ Error setting session:', setSessionError);
+            
+            // Se o erro é de token expirado ou inválido, dar erro imediato
+            if (setSessionError.message?.includes('expired') || 
+                setSessionError.message?.includes('invalid') ||
+                setSessionError.message?.includes('token')) {
+              handleError(new Error('Link de confirmação expirado ou inválido. Por favor, solicite um novo email de confirmação.'));
+              return;
+            }
+          }
+
+          // TERCEIRA TENTATIVA: Aguardar eventos de auth state change
+          // Já configurado acima, apenas aguardar
+          console.log('⏳ Waiting for auth state change events...');
+          
+        } catch (err: any) {
+          console.error('❌ Error processing hash:', err);
+          handleError(err);
+          return;
+        }
+      } else {
+        // Se não há hash, verificar se já existe sessão
+        console.log('🔍 No hash found, checking existing session...');
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (!error && session?.user?.email_confirmed_at) {
+          console.log('✅ Existing session found with confirmed email');
+          handleSuccess(session);
+          return;
+        } else {
+          console.log('⚠️ No existing session or email not confirmed:', {
+            hasSession: !!session,
+            hasUser: !!session?.user,
+            emailConfirmed: session?.user?.email_confirmed_at ? 'yes' : 'no',
+            error: error?.message || 'No error but no session'
+          });
+        }
+      }
+
+      // Timeout de segurança: se após 20 segundos não houve confirmação, dar erro
       timeoutId = setTimeout(async () => {
         if (!successHandled) {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session?.user) {
-            console.error('⏱️ Timeout: No session after 15 seconds');
-            handleError();
+          const { data: { session: finalSession } } = await supabase.auth.getSession();
+          if (!finalSession?.user?.email_confirmed_at) {
+            console.error('⏱️ Timeout: No confirmed session after 20 seconds');
+            console.error('Final check:', {
+              hasSession: !!finalSession,
+              hasUser: !!finalSession?.user,
+              emailConfirmed: finalSession?.user?.email_confirmed_at ? 'yes' : 'no',
+              hash: window.location.hash.substring(0, 100)
+            });
+            handleError(new Error('O link de confirmação pode ter expirado. Por favor, faça login ou solicite um novo email de confirmação.'));
           }
         }
-      }, 15000) as any;
+      }, 20000) as any;
     };
 
     // Processar confirmação de email
@@ -199,14 +256,26 @@ const EmailConfirmedPage: React.FC = () => {
             </div>
             <h2 style={styles.title}>Erro ao confirmar e-mail</h2>
             <p style={styles.message}>
-              Não foi possível confirmar seu e-mail. Por favor, tente fazer login.
+              {errorMessage || 'Não foi possível confirmar seu e-mail. Por favor, tente fazer login.'}
             </p>
-            <button 
-              onClick={() => navigate('/login')} 
-              style={styles.button}
-            >
-              Ir para Login
-            </button>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button 
+                onClick={() => navigate('/login')} 
+                style={styles.button}
+              >
+                Ir para Login
+              </button>
+              <button 
+                onClick={() => {
+                  // Limpar hash e recarregar a página
+                  window.location.hash = '';
+                  window.location.reload();
+                }}
+                style={{ ...styles.button, backgroundColor: '#6b7280' }}
+              >
+                Tentar Novamente
+              </button>
+            </div>
           </>
         )}
       </div>

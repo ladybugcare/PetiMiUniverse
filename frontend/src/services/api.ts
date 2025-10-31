@@ -1,4 +1,16 @@
+import { Platform } from 'react-native';
+import { supabase } from './supabase';
+
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+
+// Helper para localStorage/AsyncStorage
+const getStorageItem = (key: string): string | null => {
+  if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+    return localStorage.getItem(key);
+  }
+  // No mobile, retornar null - vamos usar apenas Supabase
+  return null;
+};
 
 // Tipos base
 interface SignUpData {
@@ -17,34 +29,36 @@ interface LoginData {
 const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
   
-  // Buscar token de autenticação do localStorage
-  const userStr = localStorage.getItem('user');
-  const sessionStr = localStorage.getItem('session');
+  // Buscar token de autenticação
   let authToken = null;
   
-  if (userStr) {
-    try {
-      const user = JSON.parse(userStr);
-      authToken = user.access_token || user.token;
-    } catch (e) {
-      // Ignore parse errors
+  // No web, tentar localStorage primeiro
+  if (Platform.OS === 'web') {
+    const userStr = getStorageItem('user');
+    const sessionStr = getStorageItem('session');
+    
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        authToken = user.access_token || user.token;
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+    
+    if (!authToken && sessionStr) {
+      try {
+        const session = JSON.parse(sessionStr);
+        authToken = session.access_token || session?.access_token;
+      } catch (e) {
+        // Ignore parse errors
+      }
     }
   }
   
-  // Se não encontrou no user, tentar na session
-  if (!authToken && sessionStr) {
-    try {
-      const session = JSON.parse(sessionStr);
-      authToken = session.access_token || session?.access_token;
-    } catch (e) {
-      // Ignore parse errors
-    }
-  }
-  
-  // Se ainda não encontrou, tentar buscar do Supabase client diretamente
+  // Sempre tentar buscar do Supabase (funciona tanto web quanto mobile)
   if (!authToken) {
     try {
-      const { supabase } = await import('./supabase');
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
         authToken = session.access_token;

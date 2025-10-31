@@ -41,8 +41,8 @@ export const authenticateUser = async (
     }
 
     // Attach user to request
-    // O role pode estar em user_metadata ou raw_user_meta_data
-    const role = user.user_metadata?.role || (user as any).raw_user_meta_data?.role;
+    // O role está em user_metadata
+    const role = user.user_metadata?.role;
     
     // Debug: log role para verificar
     if (!role) {
