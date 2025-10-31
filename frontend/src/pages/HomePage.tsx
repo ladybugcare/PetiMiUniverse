@@ -159,7 +159,7 @@ const HomePage: React.FC = () => {
           </div>
           
           <div className="cards-grid gap-8">
-            <Link to="/clinic-signup" className="icon-card group animate-scale-in">
+            <div className="icon-card group animate-scale-in">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
                 <Building2 size={48} strokeWidth={1.5} />
               </div>
@@ -171,9 +171,9 @@ const HomePage: React.FC = () => {
                   Registre sua clínica veterinária e publique oportunidades de trabalho
                 </p>
               </div>
-            </Link>
+            </div>
             
-            <Link to="/vet-signup" className="icon-card group animate-scale-in animate-delay-100">
+            <div className="icon-card group animate-scale-in animate-delay-100">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
                 <Stethoscope size={48} strokeWidth={1.5} />
               </div>
@@ -185,9 +185,9 @@ const HomePage: React.FC = () => {
                   Registre-se como profissional e encontre as melhores oportunidades
                 </p>
               </div>
-            </Link>
+            </div>
             
-            <Link to="/demands" className="icon-card group animate-scale-in animate-delay-200">
+            <div className="icon-card group animate-scale-in animate-delay-200">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
                 <ClipboardList size={48} strokeWidth={1.5} />
               </div>
@@ -199,9 +199,9 @@ const HomePage: React.FC = () => {
                   Visualize todas as demandas abertas por clínicas veterinárias
                 </p>
               </div>
-            </Link>
+            </div>
             
-            <Link to="/login" className="icon-card group animate-scale-in animate-delay-300">
+            <div className="icon-card group animate-scale-in animate-delay-300">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
                 <Lock size={48} strokeWidth={1.5} />
               </div>
@@ -213,23 +213,8 @@ const HomePage: React.FC = () => {
                   Acesse sua conta para gerenciar suas informações e candidaturas
                 </p>
               </div>
-            </Link>
+            </div>
           </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="cta-purple">
-        <div className="container">
-          <h2 className="text-display text-4xl md:text-5xl font-bold mb-6 animate-fade-in-up">
-            Pronto para começar?
-          </h2>
-          <p className="text-xl md:text-2xl mb-8 opacity-90 animate-fade-in-up animate-delay-100">
-            Junte-se à comunidade PetiVet e faça parte da revolução no atendimento veterinário
-          </p>
-          <Link to="/clinic-signup" className="btn-white text-lg animate-scale-in animate-delay-200">
-            Começar Agora
-          </Link>
         </div>
       </section>
 
