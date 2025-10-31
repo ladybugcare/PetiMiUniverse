@@ -85,18 +85,52 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    // Tentar parsear como JSON primeiro
+    let errorText: string;
+    let errorData: any;
+    
     try {
-      const errorJson = JSON.parse(errorText);
-      const errorMessage = errorJson.error || errorJson.message || errorText;
-      const error = new Error(errorMessage);
-      (error as any).response = errorJson;
-      throw error;
-    } catch (parseError) {
-      // Se não for JSON, usar o texto diretamente
-      throw new Error(errorText);
+      errorText = await response.text();
+      errorData = errorText ? JSON.parse(errorText) : null;
+    } catch {
+      errorText = 'Erro desconhecido';
+      errorData = null;
     }
+
+    // Melhorar mensagem de erro para problemas de token
+    if (response.status === 401) {
+      const errorMessage = errorData?.error || errorText;
+      
+      // Se o erro menciona Supabase ou configuração, sugerir verificação
+      if (errorMessage?.includes('Supabase') || errorMessage?.includes('projeto')) {
+        throw new Error(errorMessage + ' (Dica: Verifique se frontend e backend usam o mesmo projeto Supabase)');
+      }
+      
+      // Verificar se token pode estar expirado
+      if (errorMessage?.includes('expirado') || errorMessage?.includes('inválido')) {
+        // Tentar buscar novo token do Supabase
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            // Se tem novo token, pode ser que o problema seja no localStorage
+            console.warn('Token pode estar desatualizado. Considere fazer logout e login novamente.');
+          }
+        } catch {}
+        
+        throw new Error(errorMessage);
+      }
+    }
+    
+    // Se inválido/expirado, limpar apenas chaves de auth para evitar JWT de outro ambiente
+    if (response.status === 401 && /invalid|expirad|assinatura|signature/i.test(String(errorText))) {
+      try {
+        localStorage.removeItem('user');
+        localStorage.removeItem('session');
+        localStorage.removeItem('clinic_user');
+      } catch {}
+    }
+
+    // Para outros erros, usar mensagem padrão
+    throw new Error(errorData?.error || errorData?.message || errorText || `Erro ${response.status}`);
   }
 
   return response.json();

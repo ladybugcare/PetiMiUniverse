@@ -49,7 +49,7 @@ const CreateUnitPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await fetch('${API_BASE_URL}/units/create', {
+      const response = await fetch(`${API_BASE_URL}/units/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -61,10 +61,19 @@ const CreateUnitPage: React.FC = () => {
         }),
       });
 
-      const data = await response.json();
+      // Check if response is JSON before parsing
+      const contentType = response.headers.get('content-type');
+      let data;
+      
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`Erro ${response.status}: ${text || 'Resposta inválida do servidor'}`);
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || 'Erro ao criar unidade');
+        throw new Error(data.error || `Erro ${response.status}: Erro ao criar unidade`);
       }
 
       // Sucesso

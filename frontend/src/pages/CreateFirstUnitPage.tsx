@@ -159,7 +159,7 @@ const CreateFirstUnitPage: React.FC = () => {
     // Save partial clinic data if provided
     if (clinicData.name.trim()) {
       try {
-        await fetch('${API_BASE_URL}/clinics/register-with-unit', {
+        await fetch(`${API_BASE_URL}/clinics/register-with-unit`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -204,7 +204,7 @@ const CreateFirstUnitPage: React.FC = () => {
         },
       };
 
-      const response = await fetch('${API_BASE_URL}/clinics/register-with-unit', {
+      const response = await fetch(`${API_BASE_URL}/clinics/register-with-unit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -213,10 +213,19 @@ const CreateFirstUnitPage: React.FC = () => {
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      // Check if response is JSON before parsing
+      const contentType = response.headers.get('content-type');
+      let data;
+      
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`Erro ${response.status}: ${text || 'Resposta inválida do servidor'}`);
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || 'Erro ao cadastrar clínica e unidade');
+        throw new Error(data.error || `Erro ${response.status}: Erro ao cadastrar clínica e unidade`);
       }
 
       // Clear onboarding flags

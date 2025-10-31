@@ -37,6 +37,24 @@ export const authenticateUser = async (
     } = await supabase.auth.getUser(token);
 
     if (error || !user) {
+      // Log detalhado para debug (apenas em desenvolvimento)
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Token validation error:', {
+          error: error?.message,
+          errorCode: error?.status,
+          supabaseUrl: process.env.SUPABASE_URL?.substring(0, 30) + '...',
+          tokenPreview: token.substring(0, 20) + '...',
+        });
+      }
+      
+      // Mensagem mais detalhada se for erro de configuração
+      if (error?.message?.includes('Invalid API key') || error?.message?.includes('JWT')) {
+        return res.status(401).json({ 
+          error: 'Token inválido. Verifique se frontend e backend usam o mesmo projeto Supabase.',
+          details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+      }
+      
       return res.status(401).json({ error: 'Token inválido ou expirado' });
     }
 
@@ -56,8 +74,17 @@ export const authenticateUser = async (
     };
 
     next();
-  } catch (error) {
+  } catch (error: any) {
     console.error('Authentication error:', error);
+    
+    // Detectar problemas de configuração do Supabase
+    if (error?.message?.includes('Invalid API key') || error?.message?.includes('SUPABASE')) {
+      return res.status(500).json({ 
+        error: 'Erro de configuração do Supabase. Verifique se SUPABASE_URL e SUPABASE_KEY estão corretos.',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+    
     return res.status(500).json({ error: 'Erro na autenticação' });
   }
 };

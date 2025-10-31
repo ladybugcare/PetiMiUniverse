@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 import { StatusBar } from 'react-native';
 
 import AppNavigator, { RootStackParamList } from './navigation/AppNavigator';
+import { enforceAuthEnvConsistency } from './src/services/authEnvGuard';
 
 const linking = {
   prefixes: [Linking.createURL('/')],
@@ -28,6 +29,9 @@ const navigationTheme = {
 };
 
 export default function App() {
+  useEffect(() => {
+    enforceAuthEnvConsistency();
+  }, []);
   return (
     <SafeAreaProvider>
       <NavigationContainer linking={linking} theme={navigationTheme}>
