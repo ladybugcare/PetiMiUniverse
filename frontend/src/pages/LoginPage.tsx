@@ -52,7 +52,7 @@ const LoginPage: React.FC = () => {
         navigate('/admin-dashboard');
       } else if (userRole === 'clinic') {
         // Check clinic status to redirect appropriately
-        if (onboardingInfo?.needsOnboarding) {
+        if (onboardingInfo?.shouldCompleteFirstUnit) {
           navigate('/units/create-first');
           return;
         }
@@ -85,7 +85,12 @@ const LoginPage: React.FC = () => {
       } else if (userRole === 'vet') {
         navigate('/vet-dashboard');
       } else {
-        navigate('/demands'); // fallback
+        // For clinic staff roles, force onboarding only when required
+        if (onboardingInfo?.shouldCompleteFirstUnit) {
+          navigate('/units/create-first');
+        } else {
+          navigate('/demands'); // fallback
+        }
       }
       
     } catch (error: any) {
