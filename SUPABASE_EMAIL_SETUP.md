@@ -20,7 +20,13 @@ Na seção **URL Configuration**, configure os seguintes campos:
   - `http://localhost:3002/units/create-first`
   - Sua URL de produção + `/email-confirmed` (quando aplicável)
 
-### 3. Configurar Template de E-mail (Opcional)
+### 3. Habilitar e exibir código OTP (Confirmação manual)
+
+- O Supabase envia um código OTP (6 dígitos) no e‑mail de confirmação quando a verificação é feita por código.
+- Caso use templates customizados, inclua o token no corpo do e‑mail (ex.: `{{ .Token }}`) ou mantenha o template padrão de "Confirm signup".
+- O link pode continuar existindo, mas o frontend agora mostra um campo para inserir o código manualmente em `/email-confirmed`.
+
+### 4. Configurar Template de E-mail (Opcional)
 
 Para personalizar o e-mail de confirmação:
 
@@ -29,14 +35,15 @@ Para personalizar o e-mail de confirmação:
 3. Modifique o template para incluir informações da PetiVet
 4. O link de confirmação padrão já deve redirecionar para `/email-confirmed`
 
-### 4. Testar o Fluxo
+### 5. Testar o Fluxo
 
 1. Crie uma nova conta de clínica em `http://localhost:3002/clinic-signup`
 2. Preencha o formulário de 5 passos
 3. Após submeter, você verá a mensagem "Tudo pronto! 🐶✨"
 4. Abra seu e-mail e clique no link de confirmação
 5. Você será redirecionado para `/email-confirmed`
-6. Após 2 segundos, será redirecionado automaticamente para `/units/create-first`
+6. Cole o código de 6 dígitos recebido por e‑mail
+7. Após sucesso, você será redirecionado automaticamente para `/units/create-first`
 
 ## Fluxo Completo
 
