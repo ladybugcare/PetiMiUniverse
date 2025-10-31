@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createEvaluation = exports.markMessagesAsRead = exports.getTicketMessages = exports.addMessage = exports.getUnreadCount = exports.markTicketAsRead = exports.getTicketsCount = exports.updateTicketStatus = exports.replyToTicket = exports.getAllTickets = exports.getUserTickets = exports.createTicket = void 0;
 const supabase_1 = require("../config/supabase");
+const notificationsController_1 = require("./notificationsController");
 // ========================================
 // CRIAR TICKET DE SUPORTE
 // ========================================
@@ -402,6 +403,18 @@ const addMessage = async (req, res) => {
             .eq('id', ticket_id);
         if (updateError) {
             console.error('Error updating ticket:', updateError);
+        }
+        // Create notification if admin is replying to user
+        if (sender_role === 'admin') {
+            await (0, notificationsController_1.createNotification)({
+                user_id: ticket.user_id,
+                type: 'support_reply',
+                title: 'Resposta de Suporte',
+                message: 'Você recebeu uma resposta do suporte',
+                link: `/my-support-tickets`,
+                entity_type: 'ticket',
+                entity_id: ticket_id
+            });
         }
         res.status(201).json({ message: newMessage });
     }

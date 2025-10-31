@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUnreadCount = exports.markAsRead = exports.getMyConversations = exports.getConversation = exports.sendMessage = void 0;
 const supabase_1 = require("../config/supabase");
+const notificationsController_1 = require("./notificationsController");
 // Send a message
 const sendMessage = async (req, res) => {
     const { item_id, receiver_id, message } = req.body;
@@ -26,6 +27,29 @@ const sendMessage = async (req, res) => {
         .single();
     if (error)
         return res.status(400).json({ error: error.message });
+    // Get item info and sender info for notification
+    const { data: item } = await supabase_1.supabase
+        .from('marketplace_items')
+        .select('title, seller_id')
+        .eq('id', item_id)
+        .single();
+    // Get sender info using Admin API
+    const { data: senderData } = await supabase_1.supabaseAdmin.auth.admin.getUserById(sender_id);
+    const sender = senderData?.user;
+    // Get sender name
+    const senderName = sender?.user_metadata?.name || sender?.email?.split('@')[0] || 'Um usuário';
+    // Create notification for receiver
+    if (item) {
+        await (0, notificationsController_1.createNotification)({
+            user_id: receiver_id,
+            type: 'marketplace_message',
+            title: 'Nova Mensagem no Marketplace',
+            message: `${senderName} enviou uma mensagem sobre "${item.title}"`,
+            link: `/marketplace/messages?item_id=${item_id}`,
+            entity_type: 'marketplace_item',
+            entity_id: item_id,
+        });
+    }
     res.status(201).json({ message: data });
 };
 exports.sendMessage = sendMessage;

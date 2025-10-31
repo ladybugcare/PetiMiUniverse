@@ -21,16 +21,40 @@ const statistics_1 = __importDefault(require("./routes/statistics"));
 const demandPositions_1 = __importDefault(require("./routes/demandPositions"));
 const admin_1 = __importDefault(require("./routes/admin"));
 const supportTickets_1 = __importDefault(require("./routes/supportTickets"));
+const notifications_1 = __importDefault(require("./routes/notifications"));
 const app = (0, express_1.default)();
 // CORS configuration for different environments
 const allowedOrigins = [
     'http://localhost:3000',
+    'http://localhost:3002', // React dev server
     'https://peti-vet-git-staging-petivet.vercel.app',
+    'https://peti-vet-petivet.vercel.app', // Vercel production URL
     process.env.FRONTEND_URL
 ].filter((origin) => Boolean(origin));
+// Normalize origins (remove trailing slashes for comparison)
+const normalizedOrigins = allowedOrigins.map(origin => origin.replace(/\/$/, ''));
 app.use((0, cors_1.default)({
-    origin: allowedOrigins,
-    credentials: true
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) {
+            return callback(null, true);
+        }
+        // Normalize origin (remove trailing slash)
+        const normalizedOrigin = origin.replace(/\/$/, '');
+        // Check if origin is allowed
+        if (normalizedOrigins.includes(normalizedOrigin) || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        }
+        else {
+            console.warn(`[CORS] Blocked origin: ${origin} (normalized: ${normalizedOrigin})`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    maxAge: 86400 // 24 hours
 }));
 // Increase payload limit to support image uploads (base64 encoded)
 app.use(express_1.default.json({ limit: '50mb' }));
@@ -51,6 +75,7 @@ app.use('/statistics', statistics_1.default);
 app.use('/demand-positions', demandPositions_1.default);
 app.use('/admin', admin_1.default);
 app.use('/support', supportTickets_1.default);
+app.use('/notifications', notifications_1.default);
 // ... rest of the file
 app.get('/test-supabase', async (req, res) => {
     const { data, error } = await supabase_1.supabase.from('test').select('*');

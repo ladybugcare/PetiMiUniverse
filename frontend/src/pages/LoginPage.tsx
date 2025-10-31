@@ -29,6 +29,20 @@ const LoginPage: React.FC = () => {
       // Store the session/user data
       localStorage.setItem('user', JSON.stringify(result.user));
       localStorage.setItem('session', JSON.stringify(result.session));
+
+      const onboardingInfo = result.onboarding;
+
+      if (onboardingInfo) {
+        localStorage.setItem('clinicOnboarding', JSON.stringify(onboardingInfo));
+        if (onboardingInfo.isFirstLogin) {
+          localStorage.setItem('isFirstAccess', 'true');
+        } else {
+          localStorage.removeItem('isFirstAccess');
+        }
+      } else {
+        localStorage.removeItem('clinicOnboarding');
+        localStorage.removeItem('isFirstAccess');
+      }
       
       console.log('Login result:', result);
       
@@ -38,6 +52,11 @@ const LoginPage: React.FC = () => {
         navigate('/admin-dashboard');
       } else if (userRole === 'clinic') {
         // Check clinic status to redirect appropriately
+        if (onboardingInfo?.needsOnboarding) {
+          navigate('/units/create-first');
+          return;
+        }
+
         try {
           const response = await fetch(`${API_BASE_URL}/clinics/${result.user.id}`, {
             headers: {

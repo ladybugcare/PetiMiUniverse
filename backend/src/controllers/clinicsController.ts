@@ -396,10 +396,20 @@ export const registerClinicWithUnit = async (req: Request, res: Response) => {
       .update({ status: 'pending_approval' })
       .eq('id', clinicId);
 
-    // 5. Vincular CADMIN à unidade (se existir registro de clinic_user)
+    const nowIso = new Date().toISOString();
+
+    // 5. Vincular CADMIN à unidade (se existir registro de clinic_user) e marcar conclusão do onboarding
     await supabase
       .from('clinic_users')
-      .update({ unit_id: newUnit.id })
+      .update({ 
+        unit_id: newUnit.id,
+        first_login_completed_at: nowIso,
+        onboarding_state: {
+          last_step: 'unit',
+          completed: true,
+          completed_at: nowIso,
+        }
+      })
       .eq('clinic_id', clinicId)
       .eq('user_id', user_id);
 

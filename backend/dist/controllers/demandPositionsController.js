@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.cancelApplication = exports.getVetApplications = exports.getDemandWithPositions = exports.getPositionApplications = exports.rejectApplication = exports.acceptApplication = exports.applyToPosition = exports.getAvailablePositions = exports.createCompositeDemand = void 0;
 const supabase_1 = require("../config/supabase");
+const notificationsController_1 = require("./notificationsController");
 // Criar demanda composta com posições
 const createCompositeDemand = async (req, res) => {
     const { title, description, clinic_id, unit_id, demand_date, start_time, end_time, category, positions, // [{specialties: ["Anestesista", "Cirurgião"], slots: 2, payment: 500, description: ""}, ...]
@@ -83,6 +84,34 @@ const createCompositeDemand = async (req, res) => {
             ...pos,
             specialties: positions[index].specialties,
         }));
+        // Get clinic info for notification
+        const { data: clinic } = await supabase_1.supabase
+            .from('clinics')
+            .select('name')
+            .eq('id', clinic_id)
+            .single();
+        // Notify all veterinarians about new demand (broadcast)
+        // Get all active veterinarians
+        const { data: allVets } = await supabase_1.supabase
+            .from('vets')
+            .select('id')
+            .eq('status', 'active');
+        if (allVets && clinic) {
+            // Send notification to all vets
+            const notificationPromises = allVets.map((vet) => (0, notificationsController_1.createNotification)({
+                user_id: vet.id,
+                type: 'new_demand_created',
+                title: 'Nova Oportunidade de Trabalho',
+                message: `Nova vaga disponível: "${masterDemand.title}" na ${clinic.name}`,
+                link: `/demands/${masterDemand.id}`,
+                entity_type: 'demand',
+                entity_id: masterDemand.id,
+            }));
+            // Execute all notifications in parallel (don't wait or fail the request)
+            Promise.all(notificationPromises).catch((err) => {
+                console.error('Error sending new demand notifications:', err);
+            });
+        }
         res.status(201).json({
             demand: masterDemand,
             positions: positionsWithSpecialties,
@@ -184,7 +213,7 @@ const acceptApplication = async (req, res) => {
         // Verificar se candidatura existe
         const { data: existingApp } = await supabase_1.supabase
             .from('position_applications')
-            .select('*, demand_positions!inner(total_slots, filled_slots)')
+            .select('*, demand_positions!inner(total_slots, filled_slots, master_demand_id)')
             .eq('id', application_id)
             .single();
         if (!existingApp) {
@@ -208,6 +237,24 @@ const acceptApplication = async (req, res) => {
             .single();
         if (error)
             throw error;
+        // Get demand info for notification
+        const { data: demand } = await supabase_1.supabase
+            .from('demands')
+            .select('title')
+            .eq('id', position.master_demand_id)
+            .single();
+        // Create notification for vet
+        if (demand) {
+            await (0, notificationsController_1.createNotification)({
+                user_id: existingApp.vet_id,
+                type: 'application_accepted',
+                title: 'Candidatura Aceita! 🎉',
+                message: `Sua candidatura para "${demand.title}" foi aceita`,
+                link: `/demands/${position.master_demand_id}`,
+                entity_type: 'application',
+                entity_id: application_id
+            });
+        }
         res.json({
             application: data,
             message: 'Candidato aceito com sucesso'
@@ -224,6 +271,12 @@ const rejectApplication = async (req, res) => {
     const { application_id } = req.params;
     const { reason } = req.body;
     try {
+        // Get application details before updating
+        const { data: existingApp } = await supabase_1.supabase
+            .from('position_applications')
+            .select('vet_id, position_id, demand_positions!inner(master_demand_id)')
+            .eq('id', application_id)
+            .single();
         const { data, error } = await supabase_1.supabase
             .from('position_applications')
             .update({
@@ -236,6 +289,27 @@ const rejectApplication = async (req, res) => {
             .single();
         if (error)
             throw error;
+        // Get demand info for notification
+        if (existingApp) {
+            const position = existingApp.demand_positions;
+            const { data: demand } = await supabase_1.supabase
+                .from('demands')
+                .select('title')
+                .eq('id', position.master_demand_id)
+                .single();
+            // Create notification for vet
+            if (demand) {
+                await (0, notificationsController_1.createNotification)({
+                    user_id: existingApp.vet_id,
+                    type: 'application_rejected',
+                    title: 'Candidatura Não Selecionada',
+                    message: `Sua candidatura para "${demand.title}" não foi selecionada`,
+                    link: `/vet-dashboard`,
+                    entity_type: 'application',
+                    entity_id: application_id
+                });
+            }
+        }
         res.json({
             application: data,
             message: 'Candidatura rejeitada'

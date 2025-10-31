@@ -29,6 +29,8 @@ const ClinicDashboardPage: React.FC = () => {
   // Check authentication and clinic status
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const session = JSON.parse(localStorage.getItem('session') || '{}');
+    const accessToken: string | undefined = session?.access_token;
     const userRole = user?.user_metadata?.role || user?.role;
     
     if (!user || !user.id) {
@@ -48,10 +50,13 @@ const ClinicDashboardPage: React.FC = () => {
     // Check clinic status
     const checkClinicStatus = async () => {
       try {
+        const headers: Record<string, string> = {};
+        if (accessToken) {
+          headers['Authorization'] = `Bearer ${accessToken}`;
+        }
+
         const response = await fetch(`${API_BASE_URL}/clinics/${user.id}`, {
-          headers: {
-            'Authorization': `Bearer ${user.access_token || user.token}`,
-          },
+          headers,
         });
         
         if (response.ok) {

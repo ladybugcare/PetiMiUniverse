@@ -11,4 +11,8 @@ const router = express_1.default.Router();
 router.get('/pending-units', authMiddleware_1.authenticateUser, adminController_1.getPendingUnits);
 // Review unit (approve or reject) - admin only
 router.patch('/units/:id/review', authMiddleware_1.authenticateUser, adminController_1.reviewUnit);
+// Create new user (admin only)
+router.post('/users', authMiddleware_1.authenticateUser, adminController_1.createUser);
+// Get all admins (admin only)
+router.get('/admins', authMiddleware_1.authenticateUser, adminController_1.getAdmins);
 exports.default = router;

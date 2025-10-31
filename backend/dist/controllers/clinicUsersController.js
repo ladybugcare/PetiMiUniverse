@@ -6,6 +6,7 @@ const authMiddleware_1 = require("../middleware/authMiddleware");
 const auditLog_1 = require("../utils/auditLog");
 const emailService_1 = require("../utils/emailService");
 const permissions_1 = require("../utils/permissions");
+const notificationsController_1 = require("./notificationsController");
 // Invite new user
 const inviteUser = async (req, res) => {
     const { email, clinic_id, unit_id, role } = req.body;
@@ -68,6 +69,32 @@ const inviteUser = async (req, res) => {
             return res.status(400).json({ error: error.message });
         // Send invitation email
         await (0, emailService_1.sendInvitationEmail)(email, token, clinic_id, unit_id, (0, permissions_1.getRoleDisplayName)(role));
+        // Get clinic and unit info for notification
+        const { data: clinic } = await supabase_1.supabase
+            .from('clinics')
+            .select('name')
+            .eq('id', clinic_id)
+            .single();
+        const { data: unit } = await supabase_1.supabase
+            .from('units')
+            .select('name')
+            .eq('id', unit_id)
+            .single();
+        // Get user_id from email if user already exists (using Admin API)
+        const { data: usersData } = await supabase_1.supabaseAdmin.auth.admin.listUsers();
+        const existingAuthUser = usersData?.users?.find(user => user.email === email);
+        // Create notification if user exists in the system
+        if (existingAuthUser?.id && clinic && unit) {
+            await (0, notificationsController_1.createNotification)({
+                user_id: existingAuthUser.id,
+                type: 'unit_invitation',
+                title: 'Convite para Unidade',
+                message: `Você foi convidado para a unidade "${unit.name}" da clínica "${clinic.name}" como ${(0, permissions_1.getRoleDisplayName)(role)}`,
+                link: `/accept-invitation?token=${token}`,
+                entity_type: 'invitation',
+                entity_id: data[0].id,
+            });
+        }
         // Audit log
         const metadata = (0, auditLog_1.extractRequestMetadata)(req);
         await (0, auditLog_1.createAuditLog)({

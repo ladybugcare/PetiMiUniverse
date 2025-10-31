@@ -6,6 +6,15 @@ const createClinic = async (req, res) => {
     const { name, cnpj, address, email, password } = req.body;
     try {
         console.log('Creating clinic with email:', email);
+        // Build redirect URL strictly from env; never fallback to localhost in staging/prod
+        const rawFrontendUrl = process.env.FRONTEND_URL?.trim();
+        const FRONTEND_URL = rawFrontendUrl?.replace(/\/$/, '');
+        if (!FRONTEND_URL) {
+            console.error('[SIGNUP] FRONTEND_URL not set. Aborting to avoid wrong redirect.');
+            return res.status(500).json({ error: 'FRONTEND_URL não configurada no servidor' });
+        }
+        const emailRedirectTo = `${FRONTEND_URL}/email-confirmed`;
+        console.log('[SIGNUP] Using emailRedirectTo:', emailRedirectTo);
         // 1. Create user in Supabase Auth first
         const { data: authData, error: authError } = await supabase_1.supabase.auth.signUp({
             email,
@@ -14,7 +23,8 @@ const createClinic = async (req, res) => {
                 data: {
                     name,
                     role: 'clinic'
-                }
+                },
+                emailRedirectTo
             }
         });
         if (authError) {
@@ -26,6 +36,16 @@ const createClinic = async (req, res) => {
             return res.status(400).json({ error: 'Failed to create user' });
         }
         console.log('Auth user created:', authData.user.id);
+        // Ensure email is sent in local/dev even if autoconfirm is enabled
+        if (process.env.NODE_ENV !== 'production') {
+            try {
+                await supabase_1.supabase.auth.resend({ type: 'signup', email });
+                console.log('[SIGNUP] Resend confirmation email invoked (dev)');
+            }
+            catch (e) {
+                console.warn('[SIGNUP] Resend confirmation email failed (non-fatal):', e?.message);
+            }
+        }
         // 2. Check if clinic profile already exists (in case of retry)
         const { data: existingClinic, error: checkError } = await supabase_1.supabase
             .from('clinics')
@@ -329,10 +349,19 @@ const registerClinicWithUnit = async (req, res) => {
             .from('clinics')
             .update({ status: 'pending_approval' })
             .eq('id', clinicId);
-        // 5. Vincular CADMIN à unidade (se existir registro de clinic_user)
+        const nowIso = new Date().toISOString();
+        // 5. Vincular CADMIN à unidade (se existir registro de clinic_user) e marcar conclusão do onboarding
         await supabase_1.supabase
             .from('clinic_users')
-            .update({ unit_id: newUnit.id })
+            .update({
+            unit_id: newUnit.id,
+            first_login_completed_at: nowIso,
+            onboarding_state: {
+                last_step: 'unit',
+                completed: true,
+                completed_at: nowIso,
+            }
+        })
             .eq('clinic_id', clinicId)
             .eq('user_id', user_id);
         res.status(201).json({

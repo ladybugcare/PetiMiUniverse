@@ -36,6 +36,8 @@ const CreateFirstUnitPage: React.FC = () => {
   });
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const session = JSON.parse(localStorage.getItem('session') || '{}');
+  const accessToken: string | undefined = session?.access_token;
   const clinicId = user.id;
 
   // Check if clinic already exists and manage initial step
@@ -45,10 +47,13 @@ const CreateFirstUnitPage: React.FC = () => {
         const hideModal = localStorage.getItem('hideWelcomeModal');
         const isFirstAccess = localStorage.getItem('isFirstAccess');
         
+        const headers: Record<string, string> = {};
+        if (accessToken) {
+          headers['Authorization'] = `Bearer ${accessToken}`;
+        }
+
         const response = await fetch(`${API_BASE_URL}/clinics/${clinicId}`, {
-          headers: {
-            'Authorization': `Bearer ${user.access_token || user.token}`,
-          },
+          headers,
         });
         
         if (response.ok) {
@@ -84,7 +89,7 @@ const CreateFirstUnitPage: React.FC = () => {
     } else {
       setCheckingClinic(false);
     }
-  }, [clinicId, user.access_token, user.token]);
+  }, [clinicId, accessToken]);
 
   const handleClinicChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setClinicData({
@@ -159,12 +164,16 @@ const CreateFirstUnitPage: React.FC = () => {
     // Save partial clinic data if provided
     if (clinicData.name.trim()) {
       try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (accessToken) {
+          headers['Authorization'] = `Bearer ${accessToken}`;
+        }
+
         await fetch(`${API_BASE_URL}/clinics/register-with-unit`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${user.access_token || user.token}`,
-          },
+          headers,
           body: JSON.stringify({
             clinic: clinicData,
             unit: null,
@@ -204,12 +213,16 @@ const CreateFirstUnitPage: React.FC = () => {
         },
       };
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
       const response = await fetch(`${API_BASE_URL}/clinics/register-with-unit`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.access_token || user.token}`,
-        },
+        headers,
         body: JSON.stringify(payload),
       });
 

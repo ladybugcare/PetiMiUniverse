@@ -22,6 +22,8 @@ const CreateUnitPage: React.FC = () => {
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
+  const session = JSON.parse(localStorage.getItem('session') || '{}');
+  const accessToken: string | undefined = session?.access_token;
   const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -49,12 +51,17 @@ const CreateUnitPage: React.FC = () => {
     setLoading(true);
 
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
       const response = await fetch(`${API_BASE_URL}/units/create`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.access_token || user.token}`,
-        },
+        headers,
         body: JSON.stringify({
           clinic_id: clinicId,
           ...formData,
@@ -434,4 +441,3 @@ const styles: { [key: string]: React.CSSProperties } = {
 };
 
 export default CreateUnitPage;
-

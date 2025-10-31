@@ -2,15 +2,47 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getPendingApplicationsCount = exports.getApplicationsByUnit = exports.getApplicationsByClinic = exports.getApplicationsByDemand = exports.applyToDemand = void 0;
 const supabase_1 = require("../config/supabase");
+const notificationsController_1 = require("./notificationsController");
 const applyToDemand = async (req, res) => {
     const { demand_id, vet_id } = req.body;
-    const { data, error } = await supabase_1.supabase
-        .from('applications')
-        .insert([{ demand_id, vet_id, status: 'applied' }])
-        .select();
-    if (error)
-        return res.status(400).json({ error });
-    res.status(201).json({ application: data[0] });
+    try {
+        // Create application
+        const { data, error } = await supabase_1.supabase
+            .from('applications')
+            .insert([{ demand_id, vet_id, status: 'applied' }])
+            .select();
+        if (error)
+            return res.status(400).json({ error });
+        const application = data[0];
+        // Get demand and vet info for notification
+        const { data: demand } = await supabase_1.supabase
+            .from('demands')
+            .select('title, clinic_id')
+            .eq('id', demand_id)
+            .single();
+        const { data: vet } = await supabase_1.supabase
+            .from('vets')
+            .select('name')
+            .eq('id', vet_id)
+            .single();
+        // Create notification for clinic
+        if (demand && vet) {
+            await (0, notificationsController_1.createNotification)({
+                user_id: demand.clinic_id,
+                type: 'application_received',
+                title: 'Nova Candidatura',
+                message: `${vet.name} se candidatou à vaga "${demand.title}"`,
+                link: `/demands/${demand_id}`,
+                entity_type: 'application',
+                entity_id: application.id
+            });
+        }
+        res.status(201).json({ application });
+    }
+    catch (error) {
+        console.error('Error applying to demand:', error);
+        res.status(500).json({ error: error.message || 'Failed to apply to demand' });
+    }
 };
 exports.applyToDemand = applyToDemand;
 // Tipando o param da rota

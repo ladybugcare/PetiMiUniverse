@@ -14,7 +14,8 @@ const createVet = async (req, res) => {
                 data: {
                     name,
                     role: 'vet'
-                }
+                },
+                emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3002'}/email-confirmed`
             }
         });
         if (authError) {
@@ -26,19 +27,29 @@ const createVet = async (req, res) => {
             return res.status(400).json({ error: 'Failed to create user' });
         }
         console.log('Auth user created:', authData.user.id);
-        // 2. Then create the vet profile (linked to auth user, without password)
+        // Ensure email is sent in local/dev even if autoconfirm is enabled
+        if (process.env.NODE_ENV !== 'production') {
+            try {
+                await supabase_1.supabase.auth.resend({ type: 'signup', email });
+                console.log('[SIGNUP] Resend confirmation email invoked (dev)');
+            }
+            catch (e) {
+                console.warn('[SIGNUP] Resend confirmation email failed (non-fatal):', e?.message);
+            }
+        }
+        // 2. Then create or update the vet profile (linked to auth user)
+        // Use upsert to avoid duplicate key errors when the profile already exists
         const { data, error } = await supabase_1.supabase
             .from('vets')
-            .insert([{
-                id: authData.user.id, // Link to auth user
-                name,
-                crmv,
-                specialties,
-                certificates: certificates || [],
-                experience,
-                email
-                // NO PASSWORD HERE - it's stored securely in auth.users
-            }])
+            .upsert({
+            id: authData.user.id, // Link to auth user
+            name,
+            crmv,
+            specialties: specialties || [],
+            certificates: certificates || [],
+            experience,
+            email
+        }, { onConflict: 'id' })
             .select();
         if (error) {
             console.error('Profile creation error:', error);
