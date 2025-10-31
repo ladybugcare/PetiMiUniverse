@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   useWindowDimensions,
-  ScrollView,
   Pressable,
   PressableStateCallbackType,
 } from 'react-native';
@@ -46,18 +45,11 @@ const cards: AudienceCard[] = [
     description: 'Groomers, adestradores, cuidadores e outros profissionais encontram aqui espaço para se destacar.',
     emphasis: 'Ofereça seus serviços ao mundo pet.',
   },
-  {
-    id: 'tutors',
-    icon: <Heart size={32} color={colors.primary} fill={colors.primary} />,
-    title: 'Para Tutores',
-    description: 'Agende consultas, acompanhe o histórico e receba atendimento de profissionais que realmente amam animais.',
-    emphasis: 'Encontre o cuidado ideal para seu pet.',
-  },
 ];
 
 const HowItWorks: React.FC = () => {
   const { width } = useWindowDimensions();
-  const isMobile = width < 768;
+  const isDesktop = width >= 1024;
 
   return (
     <View style={styles.section}>
@@ -67,27 +59,23 @@ const HowItWorks: React.FC = () => {
           Uma plataforma feita para unir quem oferece cuidado e quem precisa dele. Tudo em um só lugar — simples, rápido e cheio de amor pelos pets.
         </Text>
 
-        {isMobile ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.carouselContent}
-          >
-            {cards.map((card) => (
-              <HowItWorksCard
-                key={card.id}
-                card={card}
-                variant="carousel"
-              />
-            ))}
-          </ScrollView>
-        ) : (
+        {isDesktop ? (
           <View style={styles.grid}>
             {cards.map((card) => (
               <HowItWorksCard
                 key={card.id}
                 card={card}
                 variant="grid"
+              />
+            ))}
+          </View>
+        ) : (
+          <View style={styles.stack}>
+            {cards.map((card) => (
+              <HowItWorksCard
+                key={card.id}
+                card={card}
+                variant="stack"
               />
             ))}
           </View>
@@ -99,7 +87,7 @@ const HowItWorks: React.FC = () => {
 
 type HowItWorksCardProps = {
   card: AudienceCard;
-  variant: 'grid' | 'carousel';
+  variant: 'grid' | 'stack';
 };
 
 const HowItWorksCard: React.FC<HowItWorksCardProps> = ({ card, variant }) => {
@@ -108,7 +96,7 @@ const HowItWorksCard: React.FC<HowItWorksCardProps> = ({ card, variant }) => {
       accessibilityRole="button"
       style={({ hovered }: PressableStateWithHover) => [
         styles.card,
-        variant === 'grid' ? styles.cardGrid : styles.cardCarousel,
+        variant === 'grid' ? styles.cardGrid : styles.cardStack,
         hovered && styles.cardHovered,
       ]}
     >
@@ -169,8 +157,12 @@ const styles = StyleSheet.create({
   grid: {
     marginTop: 40,
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     justifyContent: 'space-between',
+  },
+  stack: {
+    marginTop: 32,
+    flexDirection: 'column',
   },
   card: {
     backgroundColor: '#ffffff',
@@ -185,12 +177,11 @@ const styles = StyleSheet.create({
     borderColor: '#e6e1ff',
   },
   cardGrid: {
-    width: '48%',
-    marginBottom: 24,
+    width: '32%',
   },
-  cardCarousel: {
-    width: 260,
-    marginRight: 16,
+  cardStack: {
+    width: '100%',
+    marginBottom: 20,
   },
   cardHovered: {
     shadowOpacity: 0.18,
@@ -239,12 +230,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: '#4b3f75',
     marginTop: 8,
-  },
-  carouselContent: {
-    marginTop: 40,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    paddingRight: 20,
   },
 });
 
