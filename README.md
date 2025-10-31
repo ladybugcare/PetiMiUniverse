@@ -5,6 +5,8 @@ PetiVet connects veterinary clinics and professionals. This workspace provides:
 - **Universal Frontend** (Expo/React Native) in `frontend/` which runs on web, iOS, and Android
 
 > 🚀 **Quer começar rapidamente?** Veja o [SETUP_LOCAL.md](SETUP_LOCAL.md) para um guia passo a passo conciso.
+> 
+> 📱 **Precisa buildar para iOS/Android?** Consulte o [BUILD_MOBILE.md](BUILD_MOBILE.md) para instruções completas de build.
 
 ## 📋 Features
 
