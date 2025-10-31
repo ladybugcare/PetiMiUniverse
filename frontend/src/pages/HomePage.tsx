@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import HomeHeader from '../components/HomeHeader';
 import HowItWorks from '../components/HowItWorks';
-import { Heart, Dog, Cat, Building2, Stethoscope, ClipboardList, Lock } from 'lucide-react';
+import { Heart, Dog, Cat, Building2, Stethoscope, ClipboardList, Lock, Instagram } from 'lucide-react';
 
 const HomePage: React.FC = () => {
   return (
@@ -219,33 +219,47 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Footer */}
-      <footer className="footer">
+      <footer className="footer footer--minimal">
         <div className="container">
           <div className="footer-content">
-            <div>
+            <div className="footer-brand">
               <img 
-                src="/logo.png" 
+                src="/logo_n_name.png" 
                 alt="PetiVet" 
-                className="mb-4"
-                style={{width: '180px', height: 'auto', filter: 'brightness(0) saturate(100%) invert(46%) sepia(93%) saturate(2574%) hue-rotate(247deg) brightness(98%) contrast(93%)'}}
+                className="footer-logo"
               />
-              <p className="text-neutral-600">
-                Conectando clínicas e veterinários para melhor atender nossos amigos de quatro patas
+              <p>
+                Conectando clínicas, profissionais e tutores para levar cuidado,
+                agilidade e amor aos pets.
               </p>
             </div>
             
-            <div>
-              <h4 className="font-bold mb-4 text-neutral-800">Links Rápidos</h4>
-              <ul className="space-y-2">
-                <li><Link to="/clinic-signup" className="text-neutral-600 hover:text-purple-600 transition-colors">Cadastrar Clínica</Link></li>
-                <li><Link to="/vet-signup" className="text-neutral-600 hover:text-purple-600 transition-colors">Cadastrar Veterinário</Link></li>
-                <li><Link to="/demands" className="text-neutral-600 hover:text-purple-600 transition-colors">Ver Demandas</Link></li>
+            <div className="footer-links">
+              <h4>Links Rápidos</h4>
+              <ul>
+                <li><Link to="/clinic-signup">Cadastrar Clínica</Link></li>
+                <li><Link to="/vet-signup">Cadastrar Veterinário</Link></li>
+                <li><Link to="/demands">Ver Demandas</Link></li>
               </ul>
             </div>
             
-            <div>
-              <h4 className="font-bold mb-4 text-neutral-800">Contato</h4>
-              <ul className="space-y-2 text-neutral-600">
+            <div className="footer-social">
+              <h4>Conecte-se</h4>
+              <a
+                href="https://www.instagram.com/petivet.oficial"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="footer-social__link"
+              >
+                <Instagram size={22} strokeWidth={1.6} />
+                <span>@petivet.oficial</span>
+              </a>
+              <p>Nossa rotina, bastidores e dicas semanais sobre gestão e bem-estar animal.</p>
+            </div>
+
+            <div className="footer-contact">
+              <h4>Contato</h4>
+              <ul>
                 <li>contato@petivet.com</li>
                 <li>(11) 98765-4321</li>
                 <li>São Paulo, SP</li>
@@ -254,10 +268,10 @@ const HomePage: React.FC = () => {
           </div>
           
           <div className="footer-bottom">
-            <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-              Feito com <Heart size={18} fill="currentColor" style={{ color: '#7c3aed' }} /> para pets e veterinários
+            <p className="footer-bottom__tagline">
+              Feito com <Heart size={18} fill="currentColor" /> para pets e veterinários
             </p>
-            <p className="mt-2">© 2025 PetiVet. Todos os direitos reservados.</p>
+            <p className="footer-bottom__copyright">© 2025 PetiVet. Todos os direitos reservados.</p>
           </div>
         </div>
       </footer>
