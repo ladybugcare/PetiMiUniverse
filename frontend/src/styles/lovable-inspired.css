@@ -520,8 +520,8 @@ body {
 }
 
 .hero-image-circle {
-  width: 80px; /* Reduzido de 100px para 80px */
-  height: 80px; /* Reduzido de 100px para 80px */
+  width: 80px;
+  height: 80px;
   border-radius: 50%;
   overflow: hidden;
   border: 3px solid white;
@@ -606,6 +606,91 @@ body {
 
 .section-what-you-can-do__header p {
   color: #6b5ca5;
+}
+
+.btn-white,
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  text-decoration: none;
+}
+
+.secondary-cta {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(79, 70, 229, 0.18));
+  padding: var(--space-16) 0;
+  margin: var(--space-20) 0;
+}
+
+.secondary-cta__content {
+  display: grid;
+  gap: var(--space-8);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  align-items: center;
+}
+
+.secondary-cta__content h2 {
+  font-family: var(--font-display);
+  font-size: 2.25rem;
+  color: #37246c;
+  margin-bottom: var(--space-3);
+}
+
+.secondary-cta__content p {
+  color: #4c3b78;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.secondary-cta__eyebrow {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #6d28d9;
+  text-transform: uppercase;
+  margin-bottom: var(--space-2);
+}
+
+.secondary-cta__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: flex-end;
+}
+
+.secondary-cta__benefits {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  color: #4c3b78;
+  font-size: 0.95rem;
+}
+
+.secondary-cta__benefits div {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.btn-white {
+  background: #ffffff;
+  color: #6d28d9;
+  padding: 0.9rem 1.6rem;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  border: 1px solid rgba(109, 40, 217, 0.15);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  text-decoration: none;
+}
+
+.btn-white:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .section-alt {
