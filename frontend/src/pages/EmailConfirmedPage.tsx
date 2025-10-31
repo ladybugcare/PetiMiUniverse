@@ -597,12 +597,44 @@ const EmailConfirmedPage: React.FC = () => {
                 Tentar com código de 6 dígitos
               </button>
 
-              {/* Ir para Login */}
+              {/* Reenviar email */}
               <button 
-                onClick={() => navigate('/login')} 
-                style={styles.tertiaryButton}
+                onClick={async () => {
+                  try {
+                    setResending(true);
+                    // Tentar usar email do state, senão do localStorage
+                    const emailToUse = email || localStorage.getItem('pendingEmail') || '';
+                    if (!emailToUse) {
+                      throw new Error('E-mail não encontrado. Por favor, tente com o código de 6 dígitos.');
+                    }
+                    const { error } = await supabase.auth.resend({ type: 'signup', email: emailToUse } as any);
+                    if (error) throw error;
+                    setCooldown(60);
+                    setErrorMessage('✅ Enviamos um novo link de confirmação para seu e-mail! Após receber, clique no link do email para confirmar. Esta página não funcionará após o reenvio - use o link do email.');
+                  } catch (err: any) {
+                    setErrorMessage(err?.message || 'Não foi possível reenviar o email. Verifique se o e-mail está correto.');
+                  } finally { 
+                    setResending(false); 
+                  }
+                }} 
+                style={styles.resendEmailButton}
+                disabled={resending || cooldown > 0}
+                title="Após receber o email, clique no link do email para confirmar sua conta. Esta página ficará inativa após o reenvio."
+                onMouseEnter={(e) => {
+                  if (!resending && cooldown === 0) {
+                    e.currentTarget.style.backgroundColor = '#7c3aed';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!resending && cooldown === 0) {
+                    e.currentTarget.style.backgroundColor = '#6b7280';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }
+                }}
               >
-                Ir para Login
+                <Mail size={18} style={{ marginRight: '8px' }} />
+                {cooldown > 0 ? `Aguarde ${cooldown}s` : resending ? 'Reenviando...' : 'Reenviar email'}
               </button>
             </div>
           </>
@@ -771,19 +803,23 @@ const styles = {
     width: '100%',
     maxWidth: '400px',
   },
-  tertiaryButton: {
-    padding: '12px 24px',
-    backgroundColor: 'transparent',
-    color: '#6b7280',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    fontSize: '15px',
+  resendEmailButton: {
+    padding: '14px 28px',
+    backgroundColor: '#6b7280',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '10px',
+    fontSize: '16px',
     fontWeight: '500',
     cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     transition: 'all 0.2s ease-in-out',
     minWidth: '280px',
     width: '100%',
     maxWidth: '400px',
+    position: 'relative' as const,
   },
   button: {
     padding: '12px 32px',
