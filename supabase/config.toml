@@ -1,0 +1,17 @@
+[auth]
+site_url = "http://localhost:3002"
+
+additional_redirect_urls = [
+  "http://localhost:3002/*",
+  "http://localhost:3002/email-confirmed",
+  "http://localhost:3002/units/create-first"
+]
+
+
+# (opcionais) se precisar permitir localhost com porta diferente
+# additional_redirect_urls = [
+#   "http://localhost:3000/*",
+#   "http://localhost:3002/*",
+#   "http://localhost:3002/email-confirmed",
+#   "http://localhost:3002/units/create-first"
+# ]
