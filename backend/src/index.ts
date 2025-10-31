@@ -29,9 +29,32 @@ const allowedOrigins: string[] = [
   process.env.FRONTEND_URL
 ].filter((origin): origin is string => Boolean(origin));
 
+// Normalize origins (remove trailing slashes for comparison)
+const normalizedOrigins = allowedOrigins.map(origin => origin.replace(/\/$/, ''));
+
 app.use(cors({
-  origin: allowedOrigins,
-  credentials: true
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Normalize origin (remove trailing slash)
+    const normalizedOrigin = origin.replace(/\/$/, '');
+    
+    // Check if origin is allowed
+    if (normalizedOrigins.includes(normalizedOrigin) || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`[CORS] Blocked origin: ${origin} (normalized: ${normalizedOrigin})`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400 // 24 hours
 }));
 
 // Increase payload limit to support image uploads (base64 encoded)
