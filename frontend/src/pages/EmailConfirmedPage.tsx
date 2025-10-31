@@ -8,57 +8,160 @@ const EmailConfirmedPage: React.FC = () => {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
 
   useEffect(() => {
-    const handleEmailConfirmation = async () => {
-      try {
-        // First, try to exchange the authorization code from the URL for a session.
-        // This is required for the confirmation link flow on the web.
-        try {
-          await supabase.auth.exchangeCodeForSession(window.location.href)
-        } catch (exchangeErr: any) {
-          // If there's no code in the URL or the exchange fails, we still attempt to read the session.
-          // This keeps the page resilient for cases where a valid session already exists.
-          console.error('Error exchanging code for session:', exchangeErr)
-        }
+    let timeoutId: NodeJS.Timeout;
+    let authListenerSubscription: { unsubscribe: () => void } | null = null;
+    let successHandled = false;
 
-        // Obter sessão atual do Supabase
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error('Error getting session:', error);
-          setStatus('error');
-          return;
-        }
+    const handleSuccess = (session: any) => {
+      // Evitar processar múltiplas vezes
+      if (successHandled) return;
+      successHandled = true;
 
-        if (session && session.user) {
-          // Salvar dados do usuário e token no localStorage
-          const userData = {
-            id: session.user.id,
-            email: session.user.email,
-            user_metadata: session.user.user_metadata,
-            access_token: session.access_token,
-            token: session.access_token,
-          };
-          localStorage.setItem('user', JSON.stringify(userData));
-          
-          // Marcar como primeiro acesso
-          localStorage.setItem('isFirstAccess', 'true');
-          
-          setStatus('success');
-          
-          // Aguardar 2 segundos antes de redirecionar
-          setTimeout(() => {
-            navigate('/units/create-first');
-          }, 2000);
-        } else {
-          setStatus('error');
-        }
-      } catch (err) {
-        console.error('Error confirming email:', err);
-        setStatus('error');
+      // Limpar timeout de erro se existir
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      // Desinscrever listener se existir
+      if (authListenerSubscription) {
+        authListenerSubscription.unsubscribe();
+        authListenerSubscription = null;
       }
+
+      // Salvar dados do usuário e token no localStorage
+      const userData = {
+        id: session.user.id,
+        email: session.user.email,
+        user_metadata: session.user.user_metadata,
+        access_token: session.access_token,
+        token: session.access_token,
+      };
+      localStorage.setItem('user', JSON.stringify(userData));
+      
+      // Marcar como primeiro acesso
+      localStorage.setItem('isFirstAccess', 'true');
+      
+      setStatus('success');
+      
+      // Aguardar 2 segundos antes de redirecionar
+      timeoutId = setTimeout(() => {
+        navigate('/units/create-first');
+      }, 2000);
     };
-    
-    handleEmailConfirmation();
+
+    const handleError = (error?: any) => {
+      console.error('Error confirming email:', error);
+      setStatus('error');
+    };
+
+    const processEmailConfirmation = async () => {
+      // Verificar se há hash na URL com tokens de confirmação
+      const hash = window.location.hash.substring(1);
+      const hashParams = new URLSearchParams(hash);
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      const type = hashParams.get('type');
+
+      console.log('🔍 Debug info:', {
+        hasHash: !!hash,
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+        type,
+        fullUrl: window.location.href,
+        hashOnly: hash.substring(0, 100) + '...'
+      });
+
+      // Se há tokens no hash, precisamos processá-los manualmente
+      if (accessToken && refreshToken && type === 'signup') {
+        console.log('🔐 Processing email confirmation hash manually...');
+        
+        try {
+          // Tentar usar setSession para criar a sessão manualmente
+          const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+
+          if (!setSessionError && sessionData?.session?.user) {
+            console.log('✅ Session created manually via setSession');
+            handleSuccess(sessionData.session);
+            return;
+          } else if (setSessionError) {
+            console.error('❌ Error setting session:', setSessionError);
+          }
+
+          // Se setSession não funcionou, tentar aguardar e verificar se Supabase processou automaticamente
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Tentar obter a sessão várias vezes com delay
+          for (let i = 0; i < 5; i++) {
+            const { data: { session }, error } = await supabase.auth.getSession();
+            
+            console.log(`🔍 Attempt ${i + 1}/5:`, { hasSession: !!session?.user, error: error?.message });
+            
+            if (!error && session?.user) {
+              console.log('✅ Session found via getSession');
+              handleSuccess(session);
+              return;
+            }
+            
+            // Se ainda não tem sessão, aguardar mais um pouco
+            if (i < 4) {
+              await new Promise(resolve => setTimeout(resolve, 800));
+            }
+          }
+        } catch (err) {
+          console.error('❌ Error processing hash:', err);
+        }
+      }
+
+      // Se não há hash ou não funcionou, verificar sessão existente
+      console.log('🔍 Checking existing session...');
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (!error && session?.user) {
+        console.log('✅ Existing session found');
+        handleSuccess(session);
+        return;
+      } else {
+        console.log('⚠️ No existing session:', error?.message || 'No error but no session');
+      }
+
+      // Se ainda não tem sessão, usar listener de auth state change
+      // O listener vai capturar quando o Supabase processar o hash
+      console.log('⏳ Setting up auth state listener...');
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          console.log('🔐 Auth event on EmailConfirmedPage:', event, session?.user?.email);
+          
+          if (event === 'SIGNED_IN' && session?.user) {
+            handleSuccess(session);
+          } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+            handleSuccess(session);
+          }
+        }
+      );
+
+      authListenerSubscription = subscription;
+
+      // Timeout de segurança: se após 15 segundos não houve confirmação, dar erro
+      timeoutId = setTimeout(async () => {
+        if (!successHandled) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session?.user) {
+            console.error('⏱️ Timeout: No session after 15 seconds');
+            handleError();
+          }
+        }
+      }, 15000) as any;
+    };
+
+    // Processar confirmação de email
+    processEmailConfirmation();
+
+    // Cleanup
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (authListenerSubscription) authListenerSubscription.unsubscribe();
+    };
   }, [navigate]);
 
   return (

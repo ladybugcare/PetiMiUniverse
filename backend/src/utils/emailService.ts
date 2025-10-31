@@ -58,3 +58,78 @@ export const sendInvitationEmail = async (
   */
 };
 
+// Send welcome email to newly created user (placeholder - integrate with actual email service)
+export const sendWelcomeEmail = async (
+  email: string,
+  name: string,
+  userType: string,
+  password?: string,
+  isPasswordGenerated: boolean = false
+): Promise<void> => {
+  // TODO: Integrate with actual email service (SendGrid, AWS SES, etc.)
+  
+  const loginLink = `${process.env.FRONTEND_URL || 'http://localhost:3002'}/login`;
+  
+  const userTypeDisplayNames: Record<string, string> = {
+    clinic: 'Clínica',
+    vet: 'Veterinário',
+    supplier: 'Fornecedor',
+    tutor: 'Tutor',
+  };
+  
+  const userTypeDisplay = userTypeDisplayNames[userType] || userType;
+  
+  console.log('========================================');
+  console.log('📧 WELCOME EMAIL');
+  console.log('========================================');
+  console.log(`To: ${email}`);
+  console.log(`Subject: Bem-vindo(a) à PetiVet!`);
+  console.log(`\nOlá ${name},`);
+  console.log(`\nSua conta ${userTypeDisplay} foi criada na plataforma PetiVet!`);
+  console.log(`\nCredenciais de acesso:`);
+  console.log(`E-mail: ${email}`);
+  if (password) {
+    console.log(`Senha: ${password}${isPasswordGenerated ? ' (gerada automaticamente - recomendamos alterar após o primeiro acesso)' : ''}`);
+  }
+  console.log(`\nLink de acesso: ${loginLink}`);
+  console.log(`\nInstruções:`);
+  console.log(`1. Acesse o link acima ou vá até a página de login`);
+  console.log(`2. Faça login com suas credenciais`);
+  if (isPasswordGenerated && password) {
+    console.log(`3. Altere sua senha na primeira vez que acessar`);
+  }
+  console.log(`\nBem-vindo(a) à nossa plataforma!`);
+  console.log('========================================\n');
+
+  // Example integration with a real email service:
+  /*
+  const nodemailer = require('nodemailer');
+  
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD,
+    },
+  });
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'Bem-vindo(a) à PetiVet!',
+    html: `
+      <h2>Olá ${name}!</h2>
+      <p>Sua conta ${userTypeDisplay} foi criada na plataforma PetiVet!</p>
+      <h3>Credenciais de acesso:</h3>
+      <p><strong>E-mail:</strong> ${email}</p>
+      ${password ? `<p><strong>Senha:</strong> ${password}${isPasswordGenerated ? ' (gerada automaticamente - recomendamos alterar após o primeiro acesso)' : ''}</p>` : ''}
+      <p><a href="${loginLink}">Clique aqui para fazer login</a></p>
+      ${isPasswordGenerated && password ? '<p><strong>Importante:</strong> Altere sua senha na primeira vez que acessar.</p>' : ''}
+      <p>Bem-vindo(a) à nossa plataforma!</p>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+  */
+};
+

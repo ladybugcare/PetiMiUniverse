@@ -41,10 +41,18 @@ export const authenticateUser = async (
     }
 
     // Attach user to request
+    // O role pode estar em user_metadata ou raw_user_meta_data
+    const role = user.user_metadata?.role || (user as any).raw_user_meta_data?.role;
+    
+    // Debug: log role para verificar
+    if (!role) {
+      console.warn('Warning: User role not found for user:', user.id, 'email:', user.email);
+    }
+    
     req.user = {
       id: user.id,
       email: user.email,
-      role: user.user_metadata?.role,
+      role: role,
     };
 
     next();

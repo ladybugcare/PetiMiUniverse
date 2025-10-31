@@ -7,12 +7,13 @@ import PasswordInput from '../components/PasswordInput';
 import HomeHeader from '../components/HomeHeader';
 import { validateEmail, validatePassword } from '../utils/validators';
 import colors from '../styles/colors';
-import { Info, CheckCircle } from 'lucide-react';
+import { Info, CheckCircle, Heart, Mail } from 'lucide-react';
 
 const VetSignUpPage: React.FC = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [signupComplete, setSignupComplete] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -104,8 +105,8 @@ const VetSignUpPage: React.FC = () => {
         password: formData.password,
       });
 
-      alert('Veterinário cadastrado com sucesso!');
-      navigate('/demands');
+      // Marcar cadastro como completo - mostrar modal ao invés de alert
+      setSignupComplete(true);
     } catch (err: any) {
       alert('Erro ao cadastrar: ' + (err.message || 'Tente novamente.'));
     } finally {
@@ -452,8 +453,88 @@ const VetSignUpPage: React.FC = () => {
         </div>
       </div>
     </div>
+
+    {/* Mensagem de sucesso após cadastro */}
+    {signupComplete && (
+      <div style={styles.successOverlay}>
+        <div style={styles.successCard}>
+          <h2 style={styles.successTitle}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+              <Heart size={32} color={colors.primary} fill={colors.primary} />
+              <span>Tudo pronto!</span>
+            </div>
+          </h2>
+          <p style={styles.successMessage}>
+            Enviamos um e-mail de confirmação para o endereço que você cadastrou.
+          </p>
+          <p style={styles.successMessage}>
+            É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetiVet.
+          </p>
+          <p style={styles.successMessage}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              Você pode fechar esta aba — o restante do processo é feito por e-mail.
+              <Mail size={18} color={colors.primary} />
+            </span>
+          </p>
+          <button 
+            onClick={() => navigate('/login')} 
+            style={styles.closeButton}
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    )}
     </>
   );
+};
+
+const styles = {
+  successOverlay: {
+    position: 'fixed' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+  },
+  successCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: '16px',
+    padding: '40px',
+    maxWidth: '500px',
+    width: '90%',
+    textAlign: 'center' as const,
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+  },
+  successTitle: {
+    fontSize: '28px',
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: '20px',
+  },
+  successMessage: {
+    fontSize: '16px',
+    color: '#6b7280',
+    lineHeight: '1.6',
+    marginBottom: '16px',
+  },
+  closeButton: {
+    marginTop: '24px',
+    padding: '12px 32px',
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease-in-out',
+  },
 };
 
 export default VetSignUpPage;
