@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import HomeHeader from '../components/HomeHeader';
 import HowItWorks from '../components/HowItWorks';
-import { Heart, Dog, Cat, Building2, Stethoscope, ClipboardList, Lock, Instagram } from 'lucide-react';
+import { Heart, Dog, Cat, Building2, Stethoscope, ClipboardList, ShoppingCart, Instagram } from 'lucide-react';
 
 const HomePage: React.FC = () => {
   return (
@@ -203,14 +203,14 @@ const HomePage: React.FC = () => {
             
             <div className="icon-card group animate-scale-in animate-delay-300">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
-                <Lock size={48} strokeWidth={1.5} />
+                <ShoppingCart size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
                 <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
-                  Login
+                  Marketplace
                 </h3>
                 <p className="text-neutral-600 leading-relaxed">
-                  Acesse sua conta para gerenciar suas informações e candidaturas
+                  Explore produtos, serviços e oportunidades pensadas para o universo pet.
                 </p>
               </div>
             </div>
