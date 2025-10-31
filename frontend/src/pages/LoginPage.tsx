@@ -31,6 +31,7 @@ const LoginPage: React.FC = () => {
       localStorage.setItem('session', JSON.stringify(result.session));
 
       const onboardingInfo = result.onboarding;
+      const clinicUserInfo = result.clinicUser;
 
       if (onboardingInfo) {
         localStorage.setItem('clinicOnboarding', JSON.stringify(onboardingInfo));
@@ -42,6 +43,12 @@ const LoginPage: React.FC = () => {
       } else {
         localStorage.removeItem('clinicOnboarding');
         localStorage.removeItem('isFirstAccess');
+      }
+
+      if (clinicUserInfo) {
+        localStorage.setItem('clinic_user', JSON.stringify(clinicUserInfo));
+      } else {
+        localStorage.removeItem('clinic_user');
       }
       
       console.log('Login result:', result);

@@ -20,6 +20,7 @@ router.post('/login', async (req, res) => {
     const { user, session } = data;
 
     let onboarding: Record<string, any> | null = null;
+    let clinicUserRecord: any = null;
 
     try {
       const userRole = user?.user_metadata?.role || user?.role;
@@ -32,13 +33,15 @@ router.post('/login', async (req, res) => {
         } = await supabaseAdmin
           .from('clinic_users')
           .select(
-            'clinic_id, role, status, first_login_at, first_login_completed_at, onboarding_state'
+            'id, clinic_id, user_id, role, status, unit_id, first_login_at, first_login_completed_at, onboarding_state'
           )
           .eq('user_id', user.id)
           .in('role', allowedRolesForOnboarding)
           .order('created_at', { ascending: true })
           .limit(1)
           .maybeSingle();
+
+        clinicUserRecord = clinicUser;
 
         const clinicUserRole = clinicUser?.role as string | null;
         const clinicUserStatus = clinicUser?.status as string | null;
@@ -115,10 +118,25 @@ router.post('/login', async (req, res) => {
       console.error('[AUTH] Falha ao compor dados de onboarding:', onboardingError);
     }
 
+    const clinicUserPayload = clinicUserRecord
+      ? {
+          id: clinicUserRecord.id,
+          clinic_id: clinicUserRecord.clinic_id,
+          user_id: clinicUserRecord.user_id,
+          role: clinicUserRecord.role,
+          status: clinicUserRecord.status,
+          unit_id: clinicUserRecord.unit_id,
+          first_login_at: clinicUserRecord.first_login_at,
+          first_login_completed_at: clinicUserRecord.first_login_completed_at,
+          onboarding_state: clinicUserRecord.onboarding_state,
+        }
+      : null;
+
     res.json({ 
       user,
       session,
       onboarding,
+      clinicUser: clinicUserPayload,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

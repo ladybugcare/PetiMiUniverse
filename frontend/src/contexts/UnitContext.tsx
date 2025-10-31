@@ -27,17 +27,23 @@ export const UnitProvider: React.FC<UnitProviderProps> = ({ children }) => {
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       const userRole = user?.user_metadata?.role || user?.role;
 
-      // Only load units for clinic users
-      if (userRole !== 'clinic') {
-        setLoading(false);
-        return;
+      let clinicUser: any = null;
+      const clinicUserRaw = localStorage.getItem('clinic_user');
+      if (clinicUserRaw) {
+        try {
+          clinicUser = JSON.parse(clinicUserRaw);
+        } catch (error) {
+          console.warn('Failed to parse clinic_user from localStorage:', error);
+        }
       }
 
-      // Get clinic_id from user or clinic_user data
-      const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
-      const clinicId = clinicUser.clinic_id || user.id;
+      // Determine clinic_id based on clinic_user or clinic owner
+      let clinicId: string | null =
+        clinicUser?.clinic_id || (userRole === 'clinic' ? user.id : null);
 
       if (!clinicId) {
+        setUnits([]);
+        setSelectedUnitState(null);
         setLoading(false);
         return;
       }
@@ -92,4 +98,3 @@ export const useUnit = () => {
   }
   return context;
 };
-
