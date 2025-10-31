@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
+import LoadingOverlay from '../components/LoadingOverlay';
 import { 
   Bell, 
   UserPlus, 
@@ -240,6 +241,7 @@ const NotificationsPage: React.FC = () => {
   const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
+    <>
     <DashboardLayout pageName="Notificações" menuItems={menuItems}>
       <div style={styles.container}>
         {/* Header */}
@@ -302,9 +304,7 @@ const NotificationsPage: React.FC = () => {
         </div>
 
         {/* Notifications List */}
-        {loading ? (
-          <div style={styles.loading}>Carregando notificações...</div>
-        ) : notifications.length === 0 ? (
+        {notifications.length === 0 ? (
           <div style={styles.empty}>
             <Bell size={64} color="#d1d5db" />
             <h3 style={styles.emptyTitle}>Nenhuma notificação</h3>
@@ -388,6 +388,8 @@ const NotificationsPage: React.FC = () => {
         )}
       </div>
     </DashboardLayout>
+    <LoadingOverlay visible={loading} label="Carregando notificações..." />
+    </>
   );
 };
 

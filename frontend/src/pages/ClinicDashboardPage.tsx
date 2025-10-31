@@ -5,6 +5,7 @@ import { MenuItem } from '../components/DashboardSidebar';
 import FloatingActionButton, { FABOption } from '../components/FloatingActionButton';
 import ClinicStatusBanner from '../components/ClinicStatusBanner';
 import DashboardBlockedOverlay from '../components/DashboardBlockedOverlay';
+import LoadingOverlay from '../components/LoadingOverlay';
 import { usePermissions } from '../hooks/usePermissions';
 import { useUnit } from '../contexts/UnitContext';
 import { API_BASE_URL } from '../services/api';
@@ -498,14 +499,7 @@ const ClinicDashboardPage: React.FC = () => {
     },
   ];
 
-  if (permissionsLoading || checkingStatus) {
-    return (
-      <div style={styles.loading}>
-        <div style={styles.spinner}></div>
-        <p>Carregando...</p>
-      </div>
-    );
-  }
+  // Use overlay instead of blank screen to evitar "piscadas" enquanto carrega
 
   // Block dashboard if clinic status is pending_unit
   if (clinicStatus === 'pending_unit') {
@@ -524,27 +518,11 @@ const ClinicDashboardPage: React.FC = () => {
         {config.component}
         <FloatingActionButton options={config.fabOptions} />
       </DashboardLayout>
+      <LoadingOverlay visible={permissionsLoading || checkingStatus} />
     </>
   );
 };
 
-const styles: { [key: string]: React.CSSProperties } = {
-  loading: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '100vh',
-    fontFamily: 'Inter, sans-serif',
-  },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #f3f4f6',
-    borderTop: '4px solid #7c3aed',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-  },
-};
+const styles: { [key: string]: React.CSSProperties } = {};
 
 export default ClinicDashboardPage;

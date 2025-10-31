@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import MarketplaceCard from '../components/MarketplaceCard';
+import LoadingOverlay from '../components/LoadingOverlay';
 import { marketplaceApi, MarketplaceItem } from '../services/marketplaceApi';
 import { ShoppingCart, PlusCircle, Package, MessageSquare } from 'lucide-react';
 import colors from '../styles/colors';
@@ -79,6 +80,7 @@ const MyMarketplaceListingsPage: React.FC = () => {
   const stats = getStats();
 
   return (
+    <>
     <DashboardLayout
       pageName="Meus Anúncios"
       menuItems={menuItems}
@@ -145,9 +147,7 @@ const MyMarketplaceListingsPage: React.FC = () => {
         </div>
 
         {/* Items Grid */}
-        {loading ? (
-          <div style={styles.loading}>Carregando seus anúncios...</div>
-        ) : filteredItems.length === 0 ? (
+        {filteredItems.length === 0 ? (
           <div style={styles.emptyState}>
             <p style={styles.emptyIcon}>📦</p>
             <p style={styles.emptyText}>
@@ -171,6 +171,8 @@ const MyMarketplaceListingsPage: React.FC = () => {
         )}
       </div>
     </DashboardLayout>
+    <LoadingOverlay visible={loading} label="Carregando seus anúncios..." />
+    </>
   );
 };
 

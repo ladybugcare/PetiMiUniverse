@@ -30,7 +30,6 @@ const LoginPage: React.FC = () => {
       localStorage.setItem('user', JSON.stringify(result.user));
       localStorage.setItem('session', JSON.stringify(result.session));
       
-      showSuccess('Login realizado com sucesso!');
       console.log('Login result:', result);
       
       // Navigate to role-specific dashboard after successful login

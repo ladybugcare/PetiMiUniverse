@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
+import LoadingOverlay from '../components/LoadingOverlay';
 import { MenuItem } from '../components/DashboardSidebar';
 import FloatingActionButton from '../components/FloatingActionButton';
 import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut, ShoppingCart, Clock, CheckCircle, Building2, Bell, Lock, Smartphone, Globe, MessageCircle, Settings } from 'lucide-react';
@@ -9,6 +10,7 @@ import colors from '../styles/colors';
 const VetDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('resumo');
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Check authentication
   useEffect(() => {
@@ -17,12 +19,13 @@ const VetDashboardPage: React.FC = () => {
     
     if (!user || !user.id) {
       navigate('/login');
-      return;
+      return setCheckingAuth(false);
     }
     
     if (userRole !== 'vet') {
       navigate('/clinic-dashboard');
     }
+    setCheckingAuth(false);
   }, [navigate]);
 
   // Floating Action Button options
@@ -143,6 +146,7 @@ const VetDashboardPage: React.FC = () => {
         </div>
       </DashboardLayout>
       <FloatingActionButton options={fabOptions} />
+      <LoadingOverlay visible={checkingAuth} />
     </>
   );
 };

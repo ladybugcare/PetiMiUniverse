@@ -4,6 +4,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
+import LoadingOverlay from '../components/LoadingOverlay';
 import { demandsApi, clinicsApi } from '../services';
 import { Demand } from '../services/demandsApi';
 import { useAlert } from '../hooks/useAlert';
@@ -189,6 +190,7 @@ const AdminDemandsPage: React.FC = () => {
   };
 
   return (
+    <>
     <DashboardLayout pageName="Demandas" menuItems={menuItems}>
       <div style={styles.container}>
         {/* Header */}
@@ -228,9 +230,7 @@ const AdminDemandsPage: React.FC = () => {
         </div>
 
         {/* Table */}
-        {loading ? (
-          <div style={styles.loading}>Carregando...</div>
-        ) : currentDemands.length === 0 ? (
+        {currentDemands.length === 0 ? (
           <div style={styles.emptyState}>
             <p>Nenhuma demanda encontrada</p>
           </div>
@@ -444,6 +444,8 @@ const AdminDemandsPage: React.FC = () => {
         )}
       </div>
     </DashboardLayout>
+    <LoadingOverlay visible={loading} label="Carregando demandas..." />
+    </>
   );
 };
 

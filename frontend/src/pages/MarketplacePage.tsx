@@ -3,6 +3,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import MarketplaceCard from '../components/MarketplaceCard';
 import FloatingActionButton from '../components/FloatingActionButton';
+import LoadingOverlay from '../components/LoadingOverlay';
 import { marketplaceApi, MarketplaceItem, MarketplaceFilters } from '../services/marketplaceApi';
 import { BRAZILIAN_STATES } from '../utils/locationData';
 import { BarChart2, ShoppingCart, PlusCircle, Package, MessageSquare, User, LogOut, Search } from 'lucide-react';
@@ -296,9 +297,7 @@ const MarketplacePage: React.FC = () => {
         </div>
 
         {/* Items Grid */}
-        {loading ? (
-          <div style={styles.loading}>Carregando anúncios...</div>
-        ) : items.length === 0 ? (
+        {items.length === 0 ? (
           <div style={styles.emptyState}>
             <p style={styles.emptyIcon}>
               <Package size={64} color="#a3a3a3" />
@@ -316,6 +315,7 @@ const MarketplacePage: React.FC = () => {
       </div>
     </DashboardLayout>
     <FloatingActionButton options={fabOptions} />
+    <LoadingOverlay visible={loading} label="Carregando anúncios..." />
     </>
   );
 };

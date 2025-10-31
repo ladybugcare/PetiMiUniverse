@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
+import LoadingOverlay from '../components/LoadingOverlay';
 import { MenuItem } from '../components/DashboardSidebar';
 import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, CheckCircle, Settings, TrendingUp } from 'lucide-react';
 import colors from '../styles/colors';
@@ -8,6 +9,7 @@ import colors from '../styles/colors';
 const AdminDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('overview');
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [stats, setStats] = useState({
     totalClinics: 0,
     totalVets: 0,
@@ -22,7 +24,7 @@ const AdminDashboardPage: React.FC = () => {
     
     if (!user || !user.id) {
       navigate('/login');
-      return;
+      return setCheckingAuth(false);
     }
     
     // Only allow system admins
@@ -36,6 +38,7 @@ const AdminDashboardPage: React.FC = () => {
         navigate('/login');
       }
     }
+    setCheckingAuth(false);
   }, [navigate]);
 
   useEffect(() => {
@@ -129,12 +132,15 @@ const AdminDashboardPage: React.FC = () => {
   };
 
   return (
-    <DashboardLayout 
-      pageName="Painel do Administrador" 
-      menuItems={menuItems}
-    >
-      {renderSection()}
-    </DashboardLayout>
+    <>
+      <DashboardLayout 
+        pageName="Painel do Administrador" 
+        menuItems={menuItems}
+      >
+        {renderSection()}
+      </DashboardLayout>
+      <LoadingOverlay visible={checkingAuth} />
+    </>
   );
 };
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
+import LoadingOverlay from '../components/LoadingOverlay';
 import { applicationsApi, Application } from '../services/applicationsApi';
 import { useAlert } from '../hooks/useAlert';
 import { BarChart2, ClipboardList, FileText, User, LogOut, Clock, FilePen } from 'lucide-react';
@@ -101,6 +102,7 @@ const MyApplicationsPage: React.FC = () => {
   };
 
   return (
+    <>
     <DashboardLayout
       pageName="Minhas Candidaturas"
       menuItems={menuItems}
@@ -113,14 +115,7 @@ const MyApplicationsPage: React.FC = () => {
           </p>
         </div>
 
-        {loading ? (
-          <div style={styles.loadingContainer}>
-            <div style={styles.loadingSpinner}>
-              <Clock size={48} color="#7c3aed" />
-            </div>
-            <p style={styles.loadingText}>Carregando candidaturas...</p>
-          </div>
-        ) : applications.length === 0 ? (
+        {applications.length === 0 ? (
           <div style={styles.emptyState}>
             <div style={styles.emptyIcon}>
               <FilePen size={64} color="#a3a3a3" />
@@ -171,6 +166,8 @@ const MyApplicationsPage: React.FC = () => {
         )}
       </div>
     </DashboardLayout>
+    <LoadingOverlay visible={loading} label="Carregando candidaturas..." />
+    </>
   );
 };
 

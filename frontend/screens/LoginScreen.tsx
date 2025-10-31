@@ -41,7 +41,6 @@ const LoginScreen = () => {
     try {
       setLoading(true);
       await login({ email, password });
-      Alert.alert('Sucesso', 'Login realizado com sucesso!');
     } catch (error: any) {
       const message = String(error?.message || '')
       if (message.toLowerCase().includes('confirm') || message.toLowerCase().includes('email not confirmed')) {

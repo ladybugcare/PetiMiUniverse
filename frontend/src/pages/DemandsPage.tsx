@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import CalendarView from '../components/CalendarView';
+import LoadingOverlay from '../components/LoadingOverlay';
 import { demandsApi, clinicsApi, applicationsApi } from '../services';
 import { Demand } from '../services/demandsApi';
 import { useAlert } from '../hooks/useAlert';
@@ -167,6 +168,7 @@ const DemandsPage: React.FC = () => {
   };
 
   return (
+    <>
     <DashboardLayout
       pageName="Demandas"
       menuItems={getMenuItems()}
@@ -203,12 +205,7 @@ const DemandsPage: React.FC = () => {
           </div>
         </div>
 
-        {loading ? (
-          <div style={styles.loadingContainer}>
-            <div style={styles.loadingSpinner}>⏳</div>
-            <p style={styles.loadingText}>Carregando demandas...</p>
-          </div>
-        ) : demands.length === 0 ? (
+        {demands.length === 0 ? (
           <div style={styles.emptyState}>
             <div style={styles.emptyIcon}>📋</div>
             <h3 style={styles.emptyTitle}>Nenhuma demanda aberta</h3>
@@ -326,6 +323,8 @@ const DemandsPage: React.FC = () => {
         </div>
       )}
     </DashboardLayout>
+    <LoadingOverlay visible={loading} label="Carregando demandas..." />
+  </>
   );
 };
 
