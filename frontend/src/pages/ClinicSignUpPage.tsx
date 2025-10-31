@@ -132,11 +132,7 @@ const ClinicSignUpPage: React.FC = () => {
 
       // NÃO salvar flag isFirstAccess nem token ainda
       // Usuário só acessa após confirmar email
-      // Guardar email para confirmação manual com código OTP
-      try {
-        localStorage.setItem('pendingEmail', formData.email);
-      } catch {}
-
+      
       // Marcar cadastro como completo
       setSignupComplete(true);
     } catch (err: any) {
@@ -507,14 +503,14 @@ const ClinicSignUpPage: React.FC = () => {
                 </div>
               </h2>
               <p style={styles.successMessage}>
-                Enviamos um <strong>código de 6 dígitos</strong> para o e-mail que você cadastrou.
+                Enviamos um e-mail de confirmação para o endereço que você cadastrou.
               </p>
               <p style={styles.successMessage}>
-                Acesse sua caixa de entrada, copie o código e cole na próxima tela para confirmar seu acesso.
+              É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetiVet.
               </p>
               <p style={styles.successMessage}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  Você pode fechar esta aba — o restante do processo é feito por e-mail e código.
+                  Você pode fechar esta aba — o restante do processo é feito por e-mail.
                   <Mail size={18} color={colors.primary} />
                 </span>
                            </p>
