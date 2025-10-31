@@ -17,6 +17,15 @@ export const createClinic = async (req: Request<{}, {}, ClinicBody>, res: Respon
 
   try {
     console.log('Creating clinic with email:', email);
+    // Build redirect URL strictly from env; never fallback to localhost in staging/prod
+    const rawFrontendUrl = process.env.FRONTEND_URL?.trim();
+    const FRONTEND_URL = rawFrontendUrl?.replace(/\/$/, '');
+    if (!FRONTEND_URL) {
+      console.error('[SIGNUP] FRONTEND_URL not set. Aborting to avoid wrong redirect.');
+      return res.status(500).json({ error: 'FRONTEND_URL não configurada no servidor' });
+    }
+    const emailRedirectTo = `${FRONTEND_URL}/email-confirmed`;
+    console.log('[SIGNUP] Using emailRedirectTo:', emailRedirectTo);
 
     // 1. Create user in Supabase Auth first
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -27,7 +36,7 @@ export const createClinic = async (req: Request<{}, {}, ClinicBody>, res: Respon
           name,
           role: 'clinic'
         },
-        emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3002'}/email-confirmed`
+        emailRedirectTo
       }
     });
 
