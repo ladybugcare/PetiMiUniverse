@@ -37,106 +37,77 @@ const HomePage: React.FC = () => {
               </p>
             </div>
             
-            {/* Lado direito - Imagens circulares */}
+            {/* Lado direito - Galeria circular */}
             <div className="hero-images-right animate-scale-in animate-delay-300">
-              <div style={{position: 'relative', width: '100%', maxWidth: '500px', height: '500px'}}>
-                {/* Imagem 1 - Top Left (Golden Retriever) */}
+              <div style={{ position: 'relative', width: '100%', maxWidth: '520px', height: '520px' }}>
                 <div 
                   className="hero-image-circle animate-float" 
-                  style={{
-                    position: 'absolute',
-                    top: '20px',
-                    left: '20px',
-                    width: '200px',
-                    height: '200px',
-                    zIndex: 3
-                  }}
+                  style={{ position: 'absolute', top: '40px', left: '60px', width: '150px', height: '150px', zIndex: 4 }}
                 >
-                  <img 
-                    src="/img1.png" 
-                    alt="Veterinário cuidando de pet" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                  <img src="/img1.png" alt="Galeria PetiVet 1" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
 
-                {/* Imagem 2 - Top Right (Cachorrinho branco) - sobrepõe img1 */}
                 <div 
                   className="hero-image-circle" 
-                  style={{
-                    position: 'absolute',
-                    top: '60px',
-                    right: '40px',
-                    width: '180px',
-                    height: '180px',
-                    zIndex: 4,
-                    animationDelay: '0.3s'
-                  }}
+                  style={{ position: 'absolute', top: '35px', left: '390px', width: '120px', height: '120px', zIndex: 3, animationDelay: '0.15s' }}
                 >
-                  <img 
-                    src="/img2.jpg" 
-                    alt="Pet feliz" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                  <img src="/img2.jpg" alt="Galeria PetiVet 2" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
 
-                {/* Imagem 3 - Center-Bottom (Cachorro sorrindo) - maior e central */}
                 <div 
                   className="hero-image-circle animate-float" 
-                  style={{
-                    position: 'absolute',
-                    bottom: '80px',
-                    right: '80px',
-                    width: '240px',
-                    height: '240px',
-                    zIndex: 5,
-                    animationDelay: '0.15s'
-                  }}
+                  style={{ position: 'absolute', top: '150px', left: '200px', width: '210px', height: '210px', zIndex: 5, animationDelay: '0.3s' }}
                 >
-                  <img 
-                    src="/im3.jpg" 
-                    alt="Clínica veterinária" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                  <img src="/im3.jpg" alt="Galeria PetiVet 3" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
 
-                {/* Imagem 4 - Bottom Left (Veterinário com pet) - parcialmente sob img1 */}
                 <div 
                   className="hero-image-circle" 
-                  style={{
-                    position: 'absolute',
-                    bottom: '40px',
-                    left: '0',
-                    width: '160px',
-                    height: '160px',
-                    zIndex: 2,
-                    animationDelay: '0.5s'
-                  }}
+                  style={{ position: 'absolute', top: '205px', left: '0px', width: '110px', height: '110px', zIndex: 2, animationDelay: '0.45s' }}
                 >
-                  <img 
-                    src="/img4.jpg" 
-                    alt="Profissional veterinário" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                  <img src="/img2.jpg" alt="Galeria PetiVet 4" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
 
-                {/* Imagem 5 - Bottom Right Small (Pet) - parcialmente sob img3 */}
+                <div 
+                  className="hero-image-circle" 
+                  style={{ position: 'absolute', top: '205px', left: '405px', width: '105px', height: '105px', zIndex: 2, animationDelay: '0.6s' }}
+                >
+                  <img src="/img1.png" alt="Galeria PetiVet 5" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+
                 <div 
                   className="hero-image-circle animate-float" 
-                  style={{
-                    position: 'absolute',
-                    bottom: '0',
-                    right: '20px',
-                    width: '140px',
-                    height: '140px',
-                    zIndex: 1,
-                    animationDelay: '0.7s'
-                  }}
+                  style={{ position: 'absolute', top: '360px', left: '70px', width: '140px', height: '140px', zIndex: 3, animationDelay: '0.75s' }}
                 >
-                  <img 
-                    src="/img5.jpg" 
-                    alt="Cuidado animal" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                  <img src="/img4.jpg" alt="Galeria PetiVet 6" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+
+                <div 
+                  className="hero-image-circle" 
+                  style={{ position: 'absolute', top: '400px', left: '400px', width: '110px', height: '110px', zIndex: 2, animationDelay: '0.9s' }}
+                >
+                  <img src="/img5.jpg" alt="Galeria PetiVet 7" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+
+                <div 
+                  className="hero-image-circle" 
+                  style={{ position: 'absolute', top: '0px', left: '230px', width: '100px', height: '100px', zIndex: 2, animationDelay: '1.05s' }}
+                >
+                  <img src="/img4.jpg" alt="Galeria PetiVet 8" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+
+                <div 
+                  className="hero-image-circle animate-float" 
+                  style={{ position: 'absolute', top: '420px', left: '240px', width: '95px', height: '95px', zIndex: 1, animationDelay: '1.2s' }}
+                >
+                  <img src="/img5.jpg" alt="Galeria PetiVet 9" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+
+                <div 
+                  className="hero-image-circle" 
+                  style={{ position: 'absolute', top: '130px', left: '430px', width: '90px', height: '90px', zIndex: 1, animationDelay: '1.35s' }}
+                >
+                  <img src="/img4.jpg" alt="Galeria PetiVet 10" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
               </div>
             </div>
