@@ -218,21 +218,6 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="cta-purple">
-        <div className="container">
-          <h2 className="text-display text-4xl md:text-5xl font-bold mb-6 animate-fade-in-up">
-            Pronto para começar?
-          </h2>
-          <p className="text-xl md:text-2xl mb-8 opacity-90 animate-fade-in-up animate-delay-100">
-            Junte-se à comunidade PetiVet e faça parte da revolução no atendimento veterinário
-          </p>
-          <Link to="/clinic-signup" className="btn-white text-lg animate-scale-in animate-delay-200">
-            Começar Agora
-          </Link>
-        </div>
-      </section>
-
       {/* Footer */}
       <footer className="footer">
         <div className="container">
