@@ -7,15 +7,17 @@ import { clinicsApi, Clinic } from '../services/clinicsApi';
 import { useAlert } from '../hooks/useAlert';
 import { BarChart2, ClipboardList, ShoppingCart, User, LogOut, Edit } from 'lucide-react';
 import colors from '../styles/colors';
+import { supabase } from '../services/supabase';
 
 const ClinicProfilePage: React.FC = () => {
   const navigate = useNavigate();
-  const { showSuccess, showError } = useAlert();
+  const { showSuccess, showError, showConfirm } = useAlert();
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -129,6 +131,33 @@ const ClinicProfilePage: React.FC = () => {
     }
   };
 
+  const handleDeactivateAccount = () => {
+    if (!clinic) return;
+
+    showConfirm(
+      'Tem certeza que deseja inativar a conta da clínica? O acesso será bloqueado imediatamente.',
+      async () => {
+        try {
+          setDeactivating(true);
+          await clinicsApi.deactivate(clinic.id);
+          showSuccess('Conta da clínica inativada com sucesso!');
+          localStorage.removeItem('user');
+          localStorage.removeItem('session');
+          try {
+            await supabase.auth.signOut();
+          } catch (signOutError) {
+            console.warn('Erro ao encerrar sessão local após inativação:', signOutError);
+          }
+          navigate('/login');
+        } catch (error: any) {
+          showError('Erro ao inativar clínica: ' + error.message);
+          setDeactivating(false);
+        }
+      },
+      'Confirmar Inativação'
+    );
+  };
+
   if (loading) {
     return (
       <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
@@ -232,6 +261,23 @@ const ClinicProfilePage: React.FC = () => {
                 <p style={styles.value}>{clinic.address}</p>
               )}
             </div>
+          </div>
+          <div style={styles.dangerSection}>
+            <h2 style={styles.dangerTitle}>Inativar conta da clínica</h2>
+            <p style={styles.dangerDescription}>
+              Inativar a conta encerra imediatamente o acesso de todos os usuários da clínica. Um
+              administrador do sistema deve reativar a conta para restabelecer o acesso.
+            </p>
+            <button
+              onClick={handleDeactivateAccount}
+              style={{
+                ...styles.dangerButton,
+                ...(deactivating ? styles.dangerButtonDisabled : {}),
+              }}
+              disabled={deactivating}
+            >
+              {deactivating ? 'Inativando...' : 'Inativar clínica'}
+            </button>
           </div>
         </div>
       </div>
@@ -357,6 +403,42 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: '#f9fafb',
     borderRadius: '8px',
   },
+  dangerSection: {
+    marginTop: '40px',
+    padding: '24px',
+    border: '1px solid #fee2e2',
+    backgroundColor: '#fef2f2',
+    borderRadius: '12px',
+  },
+  dangerTitle: {
+    fontFamily: 'Poppins, sans-serif',
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#b91c1c',
+    margin: '0 0 8px 0',
+  },
+  dangerDescription: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    color: '#7f1d1d',
+    margin: '0 0 16px 0',
+  },
+  dangerButton: {
+    padding: '12px 20px',
+    backgroundColor: '#dc2626',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease',
+  },
+  dangerButtonDisabled: {
+    opacity: 0.7,
+    cursor: 'not-allowed',
+  },
   loading: {
     textAlign: 'center',
     padding: '48px',
@@ -374,4 +456,3 @@ const styles: { [key: string]: React.CSSProperties } = {
 };
 
 export default ClinicProfilePage;
-

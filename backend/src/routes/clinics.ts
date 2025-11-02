@@ -11,6 +11,6 @@ router.get('/check-email/:email', checkEmail)
 router.get('/:id', getClinicById)
 router.patch('/:id', updateClinic)
 router.patch('/:id/photo', updateClinicPhoto)
-router.delete('/:id', deleteClinic)
+router.delete('/:id', authenticateUser, deleteClinic)
 
 export default router

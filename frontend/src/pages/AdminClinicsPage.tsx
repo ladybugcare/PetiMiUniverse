@@ -18,6 +18,8 @@ interface Clinic {
   phone?: string;
   city?: string;
   state?: string;
+  status?: string;
+  deleted_at?: string | null;
   created_at: string;
 }
 
@@ -101,19 +103,19 @@ const AdminClinicsPage: React.FC = () => {
     setShowEditModal(true);
   };
 
-  const handleDelete = (clinic: Clinic) => {
+  const handleDeactivate = (clinic: Clinic) => {
     showConfirm(
-      `Tem certeza que deseja excluir a clínica "${clinic.name}"? Esta ação não pode ser desfeita.`,
+      `Tem certeza que deseja inativar a clínica "${clinic.name}"? Usuários dessa clínica perderão o acesso até que seja reativada.`,
       async () => {
         try {
-          await clinicsApi.delete(clinic.id);
-          showSuccess('Clínica excluída com sucesso!');
+          await clinicsApi.deactivate(clinic.id);
+          showSuccess('Clínica inativada com sucesso!');
           loadClinics();
         } catch (error: any) {
-          showError('Erro ao excluir clínica: ' + error.message);
+          showError('Erro ao inativar clínica: ' + error.message);
         }
       },
-      'Confirmar Exclusão'
+      'Confirmar Inativação'
     );
   };
 
@@ -210,9 +212,9 @@ const AdminClinicsPage: React.FC = () => {
                             <Edit size={16} />
                           </button>
                           <button
-                            onClick={() => handleDelete(clinic)}
+                            onClick={() => handleDeactivate(clinic)}
                             style={{ ...styles.actionButton, ...styles.deleteButton }}
-                            title="Excluir"
+                            title="Inativar"
                           >
                             <Trash2 size={16} />
                           </button>
@@ -546,4 +548,3 @@ const styles: { [key: string]: React.CSSProperties } = {
 };
 
 export default AdminClinicsPage;
-
