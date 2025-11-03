@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { supabase } from '../config/supabase'
+import { supabase, supabaseAdmin } from '../config/supabase'
 
 interface VetBody {
   name: string
@@ -14,8 +14,26 @@ interface VetBody {
 export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) => {
   const { name, crmv, specialties, certificates, experience, email, password } = req.body
 
+  let newUserId: string | null = null;
+
   try {
     console.log('Creating vet with email:', email);
+
+    // Ensure email is not already registered as a vet
+    const { data: existingVet, error: existingVetError } = await supabaseAdmin
+      .from('vets')
+      .select('id, status')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (existingVetError) {
+      console.error('Error checking existing vet email:', existingVetError);
+      return res.status(500).json({ error: 'Erro ao verificar cadastro existente de veterinário' });
+    }
+
+    if (existingVet) {
+      return res.status(400).json({ error: 'Este e-mail já está cadastrado como veterinário' });
+    }
 
     // 1. Create user in Supabase Auth first
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -41,6 +59,7 @@ export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) =>
     }
 
     console.log('Auth user created:', authData.user.id);
+    newUserId = authData.user.id;
 
     // Ensure email is sent in local/dev even if autoconfirm is enabled
     if (process.env.NODE_ENV !== 'production') {
@@ -56,33 +75,47 @@ export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) =>
     // Use upsert to avoid duplicate key errors when the profile already exists
     const { data, error } = await supabase
       .from('vets')
-      .upsert({ 
-        id: authData.user.id, // Link to auth user
+      .insert({ 
+        id: newUserId, // Link to auth user
         name,
         crmv,
         specialties: specialties || [],
         certificates: certificates || [],
         experience,
-        email
-      }, { onConflict: 'id' })
+        email,
+        status: 'active',
+      })
       .select()
+      .single()
 
     if (error) {
       console.error('Profile creation error:', error);
-      // If profile creation fails, ideally we'd delete the auth user
-      // but for now, just return the error
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(newUserId);
+        console.log('Rolled back auth user after vet profile error:', newUserId);
+      } catch (cleanupError) {
+        console.error('Failed to rollback auth user after vet profile error:', cleanupError);
+      }
       return res.status(400).json({ error: error.message || JSON.stringify(error) });
     }
 
     console.log('Vet profile created successfully');
 
     res.status(201).json({ 
-      vet: data[0],
+      vet: data,
       user: authData.user,
       session: authData.session
     });
   } catch (error: any) {
     console.error('Unexpected error:', error);
+    if (newUserId) {
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(newUserId);
+        console.log('Rolled back auth user after unexpected error:', newUserId);
+      } catch (cleanupError) {
+        console.error('Failed to rollback auth user after unexpected error:', cleanupError);
+      }
+    }
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 }

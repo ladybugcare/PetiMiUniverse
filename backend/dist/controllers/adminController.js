@@ -157,7 +157,7 @@ const checkEmailExists = async (email) => {
             return true;
     }
     // Verificar em clinics
-    const { data: clinic, error: clinicError } = await supabase_1.supabase
+    const { data: clinic, error: clinicError } = await supabase_1.supabaseAdmin
         .from('clinics')
         .select('id')
         .eq('email', email)
@@ -165,7 +165,7 @@ const checkEmailExists = async (email) => {
     if (!clinicError && clinic)
         return true;
     // Verificar em vets
-    const { data: vet, error: vetError } = await supabase_1.supabase
+    const { data: vet, error: vetError } = await supabase_1.supabaseAdmin
         .from('vets')
         .select('id')
         .eq('email', email)

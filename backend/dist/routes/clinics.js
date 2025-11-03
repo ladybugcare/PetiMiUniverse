@@ -15,5 +15,5 @@ router.get('/check-email/:email', clinicsController_1.checkEmail);
 router.get('/:id', clinicsController_1.getClinicById);
 router.patch('/:id', clinicsController_1.updateClinic);
 router.patch('/:id/photo', clinicsController_1.updateClinicPhoto);
-router.delete('/:id', clinicsController_1.deleteClinic);
+router.delete('/:id', authMiddleware_1.authenticateUser, clinicsController_1.deleteClinic);
 exports.default = router;

@@ -15,6 +15,8 @@ interface Clinic {
   name: string;
   email: string;
   cnpj?: string;
+  status?: string;
+  deleted_at?: string | null;
   created_at: string;
 }
 
@@ -23,6 +25,8 @@ interface Vet {
   name: string;
   email: string;
   crmv: string;
+  status?: string;
+  deleted_at?: string | null;
   created_at: string;
 }
 
@@ -70,6 +74,32 @@ const AdminUsersPage: React.FC = () => {
 
   const itemsPerPage = 20;
 
+  const getStatusMeta = (status?: string) => {
+    const normalized = (status || 'active').toLowerCase();
+    const statusMap: Record<string, { label: string; color: string }> = {
+      active: { label: 'Ativo', color: '#10b981' },
+      inactive: { label: 'Inativo', color: '#6b7280' },
+      pending: { label: 'Pendente', color: '#f59e0b' },
+      pending_activation: { label: 'Pendente', color: '#f59e0b' },
+      pending_unit: { label: 'Pendente', color: '#f59e0b' },
+      pending_review: { label: 'Pendente', color: '#f59e0b' },
+      suspended: { label: 'Suspenso', color: '#ef4444' },
+      rejected: { label: 'Rejeitado', color: '#ef4444' },
+      approved: { label: 'Aprovado', color: '#3b82f6' },
+    };
+
+    if (statusMap[normalized]) {
+      return statusMap[normalized];
+    }
+
+    const formatted = normalized
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+
+    return { label: formatted || '—', color: '#6b7280' };
+  };
+
   // Check authentication
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -92,12 +122,21 @@ const AdminUsersPage: React.FC = () => {
         vetsApi.getAll(),
         adminApi.getAdmins(),
       ]);
-      setClinics(clinicsResult.clinics);
-      setVets(vetsResult.vets);
-      setAdmins(adminsResult.admins);
-      setFilteredClinics(clinicsResult.clinics);
-      setFilteredVets(vetsResult.vets);
-      setFilteredAdmins(adminsResult.admins);
+      const adminIds = new Set((adminsResult.admins || []).map((admin) => admin.id));
+
+      const clinicsWithoutAdmins = (clinicsResult.clinics || []).filter(
+        (clinic) => !adminIds.has(clinic.id)
+      );
+      const vetsWithoutAdmins = (vetsResult.vets || []).filter(
+        (vet) => !adminIds.has(vet.id)
+      );
+
+      setClinics(clinicsWithoutAdmins);
+      setVets(vetsWithoutAdmins);
+      setAdmins(adminsResult.admins || []);
+      setFilteredClinics(clinicsWithoutAdmins);
+      setFilteredVets(vetsWithoutAdmins);
+      setFilteredAdmins(adminsResult.admins || []);
     } catch (error: any) {
       showError('Erro ao carregar usuários: ' + error.message);
     } finally {
@@ -169,19 +208,19 @@ const AdminUsersPage: React.FC = () => {
     setShowEditClinicModal(true);
   };
 
-  const handleDeleteClinic = (clinic: Clinic) => {
+  const handleDeactivateClinic = (clinic: Clinic) => {
     showConfirm(
-      `Tem certeza que deseja excluir a clínica "${clinic.name}"? Esta ação não pode ser desfeita.`,
+      `Tem certeza que deseja inativar a clínica "${clinic.name}"? Os usuários vinculados perderão o acesso.`,
       async () => {
         try {
-          await clinicsApi.delete(clinic.id);
-          showSuccess('Clínica excluída com sucesso!');
+          await clinicsApi.deactivate(clinic.id);
+          showSuccess('Clínica inativada com sucesso!');
           loadData();
         } catch (error: any) {
-          showError('Erro ao excluir clínica: ' + error.message);
+          showError('Erro ao inativar clínica: ' + error.message);
         }
       },
-      'Confirmar Exclusão'
+      'Confirmar Inativação'
     );
   };
 
@@ -431,48 +470,62 @@ const AdminUsersPage: React.FC = () => {
                       <th style={styles.tableHeader}>Nome</th>
                       <th style={styles.tableHeader}>E-mail</th>
                       <th style={styles.tableHeader}>Tipo</th>
+                      <th style={styles.tableHeader}>Status</th>
                       <th style={styles.tableHeader}>Data Cadastro</th>
                       <th style={styles.tableHeader}>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(currentItems as Clinic[]).map((clinic) => (
-                      <tr key={clinic.id} style={styles.tableRow}>
-                        <td style={styles.tableCell}>{clinic.name}</td>
-                        <td style={styles.tableCell}>{clinic.email}</td>
-                        <td style={styles.tableCell}>
-                          <span style={{ ...styles.typeBadge, backgroundColor: '#7c3aed' }}>
-                            Clínica
-                          </span>
-                        </td>
-                        <td style={styles.tableCell}>{formatDate(clinic.created_at)}</td>
-                        <td style={styles.tableCell}>
-                          <div style={styles.actions}>
-                            <button
-                              onClick={() => handleViewClinic(clinic)}
-                              style={{ ...styles.actionButton, ...styles.viewButton }}
-                              title="Ver detalhes"
+                    {(currentItems as Clinic[]).map((clinic) => {
+                      const statusMeta = getStatusMeta(clinic.status);
+                      return (
+                        <tr key={clinic.id} style={styles.tableRow}>
+                          <td style={styles.tableCell}>{clinic.name}</td>
+                          <td style={styles.tableCell}>{clinic.email}</td>
+                          <td style={styles.tableCell}>
+                            <span style={{ ...styles.typeBadge, backgroundColor: '#7c3aed' }}>
+                              Clínica
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span
+                              style={{
+                                ...styles.statusBadge,
+                                backgroundColor: statusMeta.color,
+                              }}
                             >
-                              <Eye size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleEditClinic(clinic)}
-                              style={{ ...styles.actionButton, ...styles.editButton }}
-                              title="Editar"
-                            >
-                              <Edit size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteClinic(clinic)}
-                              style={{ ...styles.actionButton, ...styles.deleteButton }}
-                              title="Excluir"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {statusMeta.label}
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>{formatDate(clinic.created_at)}</td>
+                          <td style={styles.tableCell}>
+                            <div style={styles.actions}>
+                              <button
+                                onClick={() => handleViewClinic(clinic)}
+                                style={{ ...styles.actionButton, ...styles.viewButton }}
+                                title="Ver detalhes"
+                              >
+                                <Eye size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleEditClinic(clinic)}
+                                style={{ ...styles.actionButton, ...styles.editButton }}
+                                title="Editar"
+                              >
+                                <Edit size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDeactivateClinic(clinic)}
+                                style={{ ...styles.actionButton, ...styles.deleteButton }}
+                                title="Inativar"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -484,48 +537,62 @@ const AdminUsersPage: React.FC = () => {
                       <th style={styles.tableHeader}>Nome</th>
                       <th style={styles.tableHeader}>E-mail</th>
                       <th style={styles.tableHeader}>Tipo</th>
+                      <th style={styles.tableHeader}>Status</th>
                       <th style={styles.tableHeader}>Data Cadastro</th>
                       <th style={styles.tableHeader}>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(currentItems as Vet[]).map((vet) => (
-                      <tr key={vet.id} style={styles.tableRow}>
-                        <td style={styles.tableCell}>{vet.name}</td>
-                        <td style={styles.tableCell}>{vet.email}</td>
-                        <td style={styles.tableCell}>
-                          <span style={{ ...styles.typeBadge, backgroundColor: '#3b82f6' }}>
-                            Veterinário
-                          </span>
-                        </td>
-                        <td style={styles.tableCell}>{formatDate(vet.created_at)}</td>
-                        <td style={styles.tableCell}>
-                          <div style={styles.actions}>
-                            <button
-                              onClick={() => handleViewVet(vet)}
-                              style={{ ...styles.actionButton, ...styles.viewButton }}
-                              title="Ver detalhes"
+                    {(currentItems as Vet[]).map((vet) => {
+                      const statusMeta = getStatusMeta(vet.status);
+                      return (
+                        <tr key={vet.id} style={styles.tableRow}>
+                          <td style={styles.tableCell}>{vet.name}</td>
+                          <td style={styles.tableCell}>{vet.email}</td>
+                          <td style={styles.tableCell}>
+                            <span style={{ ...styles.typeBadge, backgroundColor: '#3b82f6' }}>
+                              Veterinário
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span
+                              style={{
+                                ...styles.statusBadge,
+                                backgroundColor: statusMeta.color,
+                              }}
                             >
-                              <Eye size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleEditVet(vet)}
-                              style={{ ...styles.actionButton, ...styles.editButton }}
-                              title="Editar"
-                            >
-                              <Edit size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteVet(vet)}
-                              style={{ ...styles.actionButton, ...styles.deleteButton }}
-                              title="Excluir"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {statusMeta.label}
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>{formatDate(vet.created_at)}</td>
+                          <td style={styles.tableCell}>
+                            <div style={styles.actions}>
+                              <button
+                                onClick={() => handleViewVet(vet)}
+                                style={{ ...styles.actionButton, ...styles.viewButton }}
+                                title="Ver detalhes"
+                              >
+                                <Eye size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleEditVet(vet)}
+                                style={{ ...styles.actionButton, ...styles.editButton }}
+                                title="Editar"
+                              >
+                                <Edit size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteVet(vet)}
+                                style={{ ...styles.actionButton, ...styles.deleteButton }}
+                                title="Excluir"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1472,4 +1539,3 @@ const styles: { [key: string]: React.CSSProperties } = {
 };
 
 export default AdminUsersPage;
-

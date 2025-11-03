@@ -21,11 +21,12 @@ router.post('/login', async (req, res) => {
 
     let onboarding: Record<string, any> | null = null;
     let clinicUserRecord: any = null;
+    const userRole = user?.user_metadata?.role || user?.role;
+    const allowedRolesForOnboarding = ['CADMIN', 'CMANAGER'];
+    let clinicStatus: string | null = null;
+    let clinicUserStatus: string | null = null;
 
     try {
-      const userRole = user?.user_metadata?.role || user?.role;
-      const allowedRolesForOnboarding = ['CADMIN', 'CMANAGER'];
-
       if (user) {
         const {
           data: clinicUser,
@@ -44,7 +45,7 @@ router.post('/login', async (req, res) => {
         clinicUserRecord = clinicUser;
 
         const clinicUserRole = clinicUser?.role as string | null;
-        const clinicUserStatus = clinicUser?.status as string | null;
+        clinicUserStatus = clinicUser?.status as string | null;
         const clinicId = clinicUser?.clinic_id || (userRole === 'clinic' ? user.id : null);
 
         const isEligibleClinicUser =
@@ -89,7 +90,7 @@ router.post('/login', async (req, res) => {
           }
 
           const hasUnits = (unitCount ?? 0) > 0;
-          const clinicStatus = clinic?.status || null;
+          clinicStatus = clinic?.status || null;
           const firstLoginCompletedAt = clinicUser?.first_login_completed_at || null;
           const firstLoginAt = clinicUser?.first_login_at || null;
 
@@ -116,6 +117,18 @@ router.post('/login', async (req, res) => {
       }
     } catch (onboardingError: any) {
       console.error('[AUTH] Falha ao compor dados de onboarding:', onboardingError);
+    }
+
+    if (userRole === 'clinic' && clinicStatus === 'inactive') {
+      return res.status(403).json({
+        error: 'Conta da clínica inativada. Entre em contato com o suporte para reativação.',
+      });
+    }
+
+    if (clinicUserStatus === 'inactive') {
+      return res.status(403).json({
+        error: 'Seu acesso como membro da clínica foi inativado. Solicite reativação ao administrador.',
+      });
     }
 
     const clinicUserPayload = clinicUserRecord

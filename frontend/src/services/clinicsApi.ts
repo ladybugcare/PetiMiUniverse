@@ -12,6 +12,7 @@ export interface Clinic {
   status?: string;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface CreateClinicData {
@@ -62,8 +63,8 @@ export const clinicsApi = {
     });
   },
 
-  // Deletar clínica
-  delete: async (id: string): Promise<{ message: string; clinic: Clinic }> => {
+  // Inativar clínica
+  deactivate: async (id: string): Promise<{ message: string; clinic: Clinic }> => {
     return apiRequest(`/clinics/${id}`, {
       method: 'DELETE',
     });

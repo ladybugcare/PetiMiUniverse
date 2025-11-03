@@ -11,6 +11,8 @@ export interface Vet {
   email: string;
   clinic_id?: string;
   photo_url?: string;
+  status?: string;
+  deleted_at?: string | null;
   created_at: string;
   updated_at: string;
 }

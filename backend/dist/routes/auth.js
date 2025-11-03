@@ -20,9 +20,11 @@ router.post('/login', async (req, res) => {
         const { user, session } = data;
         let onboarding = null;
         let clinicUserRecord = null;
+        const userRole = user?.user_metadata?.role || user?.role;
+        const allowedRolesForOnboarding = ['CADMIN', 'CMANAGER'];
+        let clinicStatus = null;
+        let clinicUserStatus = null;
         try {
-            const userRole = user?.user_metadata?.role || user?.role;
-            const allowedRolesForOnboarding = ['CADMIN', 'CMANAGER'];
             if (user) {
                 const { data: clinicUser, error: clinicUserError, } = await supabase_1.supabaseAdmin
                     .from('clinic_users')
@@ -34,7 +36,7 @@ router.post('/login', async (req, res) => {
                     .maybeSingle();
                 clinicUserRecord = clinicUser;
                 const clinicUserRole = clinicUser?.role;
-                const clinicUserStatus = clinicUser?.status;
+                clinicUserStatus = clinicUser?.status;
                 const clinicId = clinicUser?.clinic_id || (userRole === 'clinic' ? user.id : null);
                 const isEligibleClinicUser = clinicUserRole ? allowedRolesForOnboarding.includes(clinicUserRole) : false;
                 const isClinicOwner = userRole === 'clinic';
@@ -65,7 +67,7 @@ router.post('/login', async (req, res) => {
                         console.error('[AUTH] Erro ao contar unidades:', unitsError.message);
                     }
                     const hasUnits = (unitCount ?? 0) > 0;
-                    const clinicStatus = clinic?.status || null;
+                    clinicStatus = clinic?.status || null;
                     const firstLoginCompletedAt = clinicUser?.first_login_completed_at || null;
                     const firstLoginAt = clinicUser?.first_login_at || null;
                     const needsOnboarding = clinicStatus === 'pending_unit' || !hasUnits;
@@ -88,6 +90,16 @@ router.post('/login', async (req, res) => {
         }
         catch (onboardingError) {
             console.error('[AUTH] Falha ao compor dados de onboarding:', onboardingError);
+        }
+        if (userRole === 'clinic' && clinicStatus === 'inactive') {
+            return res.status(403).json({
+                error: 'Conta da clínica inativada. Entre em contato com o suporte para reativação.',
+            });
+        }
+        if (clinicUserStatus === 'inactive') {
+            return res.status(403).json({
+                error: 'Seu acesso como membro da clínica foi inativado. Solicite reativação ao administrador.',
+            });
         }
         const clinicUserPayload = clinicUserRecord
             ? {

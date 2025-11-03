@@ -7,20 +7,30 @@ const resolveFromBackendRoot = (relativePath: string) =>
 
 const loadEnvFile = (relativePath: string) => {
   const fullPath = resolveFromBackendRoot(relativePath);
-  if (fs.existsSync(fullPath)) {
-    dotenv.config({ path: fullPath, override: true });
+  if (!fs.existsSync(fullPath)) {
+    return;
   }
-};
 
-// Base .env (tracked) always loads first
-loadEnvFile('.env');
+  dotenv.config({
+    path: fullPath,
+    // Never override variables already defined by the runtime (Render, CI, etc).
+    override: false
+  });
+};
 
 const environment = process.env.NODE_ENV || 'development';
 
+// Load files from highest to lowest precedence (mimics CRA behaviour).
 const candidates = [
   `.env.${environment}.local`,
   `.env.${environment}`,
-  '.env.local',
-];
+  environment !== 'test' ? '.env.local' : undefined,
+  '.env'
+].filter((file): file is string => Boolean(file));
 
 candidates.forEach(loadEnvFile);
+
+// Ensure NODE_ENV is always defined for downstream code.
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = environment;
+}

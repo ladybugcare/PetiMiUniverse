@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { supabase } from '../config/supabase'
+import { supabase, supabaseAdmin } from '../config/supabase'
 
 
 
@@ -257,28 +257,78 @@ export const updateClinicPhoto = async (req: Request, res: Response) => {
   }
 }
 
-// Delete clinic (soft delete)
+// Deactivate clinic (soft delete)
 export const deleteClinic = async (req: Request, res: Response) => {
   const { id } = req.params
+  const user = req.user
+
+  if (!user) {
+    return res.status(401).json({ error: 'Usuário não autenticado' })
+  }
+
+  const isSystemAdmin = user.role === 'admin'
+  const isClinicOwner = user.role === 'clinic' && user.id === id
+
+  if (!isSystemAdmin && !isClinicOwner) {
+    return res.status(403).json({ error: 'Acesso negado' })
+  }
+  
+  const timestamp = new Date().toISOString()
   
   try {
-    // Soft delete by updating a deleted flag or setting inactive status
-    const { data, error } = await supabase
+    const { data: clinic, error } = await supabaseAdmin
       .from('clinics')
-      .update({ deleted_at: new Date().toISOString() })
+      .update({ 
+        status: 'inactive',
+        deleted_at: timestamp,
+        updated_at: timestamp,
+      })
       .eq('id', id)
       .select()
+      .single()
     
     if (error) {
       return res.status(400).json({ error: error.message })
     }
     
-    if (!data || data.length === 0) {
+    if (!clinic) {
       return res.status(404).json({ error: 'Clinic not found' })
     }
+
+    // Inativar todos os vínculos e unidades da clínica
+    await supabaseAdmin
+      .from('clinic_users')
+      .update({ status: 'inactive', updated_at: timestamp })
+      .eq('clinic_id', id)
+
+    await supabaseAdmin
+      .from('units')
+      .update({ status: 'inactive', updated_at: timestamp })
+      .eq('clinic_id', id)
+
+    // Atualizar metadados e banir o usuário no Auth para impedir novos logins
+    try {
+      const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(id)
+
+      if (!authUserError && authUser?.user) {
+        const existingMetadata = authUser.user.user_metadata || {}
+        const mergedMetadata = {
+          ...existingMetadata,
+          status: 'inactive',
+        }
+
+        await supabaseAdmin.auth.admin.updateUserById(id, {
+          ban_duration: 'forever',
+          user_metadata: mergedMetadata,
+        })
+      }
+    } catch (authUpdateError) {
+      console.error('Failed to update auth user during clinic deactivation:', authUpdateError)
+    }
     
-    res.json({ message: 'Clinic deleted successfully', clinic: data[0] })
+    res.json({ message: 'Clinic deactivated successfully', clinic })
   } catch (error: any) {
+    console.error('Error deactivating clinic:', error)
     res.status(500).json({ error: error.message })
   }
 }

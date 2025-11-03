@@ -176,7 +176,7 @@ const checkEmailExists = async (email: string): Promise<boolean> => {
   }
   
   // Verificar em clinics
-  const { data: clinic, error: clinicError } = await supabase
+  const { data: clinic, error: clinicError } = await supabaseAdmin
     .from('clinics')
     .select('id')
     .eq('email', email)
@@ -185,7 +185,7 @@ const checkEmailExists = async (email: string): Promise<boolean> => {
   if (!clinicError && clinic) return true;
   
   // Verificar em vets
-  const { data: vet, error: vetError } = await supabase
+  const { data: vet, error: vetError } = await supabaseAdmin
     .from('vets')
     .select('id')
     .eq('email', email)
@@ -456,4 +456,3 @@ export const getAdmins = async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message || 'Erro ao buscar administradores' });
   }
 };
-
