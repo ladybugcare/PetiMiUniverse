@@ -223,25 +223,67 @@ const updateClinicPhoto = async (req, res) => {
     }
 };
 exports.updateClinicPhoto = updateClinicPhoto;
-// Delete clinic (soft delete)
+// Deactivate clinic (soft delete)
 const deleteClinic = async (req, res) => {
     const { id } = req.params;
+    const user = req.user;
+    if (!user) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+    }
+    const isSystemAdmin = user.role === 'admin';
+    const isClinicOwner = user.role === 'clinic' && user.id === id;
+    if (!isSystemAdmin && !isClinicOwner) {
+        return res.status(403).json({ error: 'Acesso negado' });
+    }
+    const timestamp = new Date().toISOString();
     try {
-        // Soft delete by updating a deleted flag or setting inactive status
-        const { data, error } = await supabase_1.supabase
+        const { data: clinic, error } = await supabase_1.supabaseAdmin
             .from('clinics')
-            .update({ deleted_at: new Date().toISOString() })
+            .update({
+            status: 'inactive',
+            deleted_at: timestamp,
+            updated_at: timestamp,
+        })
             .eq('id', id)
-            .select();
+            .select()
+            .single();
         if (error) {
             return res.status(400).json({ error: error.message });
         }
-        if (!data || data.length === 0) {
+        if (!clinic) {
             return res.status(404).json({ error: 'Clinic not found' });
         }
-        res.json({ message: 'Clinic deleted successfully', clinic: data[0] });
+        // Inativar todos os vínculos e unidades da clínica
+        await supabase_1.supabaseAdmin
+            .from('clinic_users')
+            .update({ status: 'inactive', updated_at: timestamp })
+            .eq('clinic_id', id);
+        await supabase_1.supabaseAdmin
+            .from('units')
+            .update({ status: 'inactive', updated_at: timestamp })
+            .eq('clinic_id', id);
+        // Atualizar metadados e banir o usuário no Auth para impedir novos logins
+        try {
+            const { data: authUser, error: authUserError } = await supabase_1.supabaseAdmin.auth.admin.getUserById(id);
+            if (!authUserError && authUser?.user) {
+                const existingMetadata = authUser.user.user_metadata || {};
+                const mergedMetadata = {
+                    ...existingMetadata,
+                    status: 'inactive',
+                };
+                await supabase_1.supabaseAdmin.auth.admin.updateUserById(id, {
+                    ban_duration: 'forever',
+                    user_metadata: mergedMetadata,
+                });
+            }
+        }
+        catch (authUpdateError) {
+            console.error('Failed to update auth user during clinic deactivation:', authUpdateError);
+        }
+        res.json({ message: 'Clinic deactivated successfully', clinic });
     }
     catch (error) {
+        console.error('Error deactivating clinic:', error);
         res.status(500).json({ error: error.message });
     }
 };
