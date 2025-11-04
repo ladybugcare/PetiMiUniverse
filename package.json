@@ -6,6 +6,7 @@
     "dev": "nodemon --watch src --ext ts,json --exec \"ts-node -r tsconfig-paths/register src/index.ts\""
   },
   "dependencies": {
+    "cline": "^1.0.4",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "nativewind": "^4.2.1",

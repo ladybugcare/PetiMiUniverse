@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, User, LogOut } from 'lucide-react';
 import UnitSelector from './UnitSelector';
 import SupportModal from './SupportModal';
 import NotificationBell from './NotificationBell';
 import { supportTicketsApi } from '../services/supportTicketsApi';
+import { useAuth } from '../AuthContext'; // ✅ Importa o contexto
 
 interface DashboardHeaderProps {
   onMenuClick: () => void;
@@ -18,11 +19,13 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   const navigate = useNavigate();
   const [supportModalOpen, setSupportModalOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const { user, role, logout, isLoggingOut } = useAuth(); // ✅ Usa logout e role globais
 
   // Verificar se é admin (admins não veem o botão de suporte)
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const userRole = user?.user_metadata?.role || user?.role;
-  const isAdmin = userRole === 'admin';
+  const isAdmin = role === 'ADMIN';
   const userId = user?.id;
 
   // Buscar contagem de tickets não lidos
@@ -39,37 +42,44 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     };
 
     loadUnreadCount();
-    
-    // Atualizar contagem a cada 30 segundos
     const interval = setInterval(loadUnreadCount, 30000);
-    
     return () => clearInterval(interval);
   }, [userId, isAdmin]);
 
-  const handleLogoClick = () => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const userRole = user?.user_metadata?.role || user?.role;
+  // Fecha dropdown ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
-    // Navigate to respective dashboard based on user role
-    if (userRole === 'admin') {
-      navigate('/admin-dashboard');
-    } else if (userRole === 'clinic') {
+  const handleLogoClick = () => {
+    if (role === 'ADMIN') navigate('/admin-dashboard');
+    else if (role === 'CADMIN' || role === 'CMANAGER')
       navigate('/clinic-dashboard');
-    } else if (userRole === 'vet') {
-      navigate('/vet-dashboard');
-    } else {
-      navigate('/');
-    }
+    else if (role === 'VET') navigate('/vet-dashboard');
+    else navigate('/');
   };
 
   const handleSupportClick = () => {
-    if (unreadCount > 0) {
-      // Se há tickets não lidos, navegar para página de tickets
-      navigate('/my-support-tickets');
-    } else {
-      // Se não há tickets não lidos, abrir modal para nova mensagem
-      setSupportModalOpen(true);
-    }
+    if (unreadCount > 0) navigate('/my-support-tickets');
+    else setSupportModalOpen(true);
+  };
+
+  const handleViewProfile = () => {
+    if (role === 'ADMIN') navigate('/admin-profile');
+    else if (role === 'VET') navigate('/vet-profile');
+    else navigate('/clinic-profile');
+    setDropdownOpen(false);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setDropdownOpen(false);
   };
 
   return (
@@ -111,17 +121,20 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           />
         </div>
 
-        {/* Right: Unit Selector + Support Button + Notification Bell */}
+        {/* Right: Unit Selector + Support + Notifications + Avatar */}
         <div style={styles.rightSection}>
           <UnitSelector />
-          
-          {/* Support Button (apenas para clinic e vet) */}
+
           {!isAdmin && (
             <button
               onClick={handleSupportClick}
               style={styles.supportButton}
               aria-label="Suporte"
-              title={unreadCount > 0 ? `Ver Respostas (${unreadCount} ${unreadCount === 1 ? 'nova' : 'novas'})` : 'Solicitar Suporte'}
+              title={
+                unreadCount > 0
+                  ? `Ver Respostas (${unreadCount} ${unreadCount === 1 ? 'nova' : 'novas'})`
+                  : 'Solicitar Suporte'
+              }
             >
               <HelpCircle size={20} />
               {unreadCount > 0 && (
@@ -131,21 +144,58 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               )}
             </button>
           )}
-          
-          {/* Notification Bell */}
+
           <NotificationBell />
+
+          {/* Profile Dropdown */}
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              style={styles.avatarButton}
+              aria-label="Menu do usuário"
+            >
+              <img
+                src={user?.user_metadata?.avatar_url || '/default_avatar.png'}
+                alt="Avatar"
+                style={styles.avatarImage}
+              />
+            </button>
+
+            {dropdownOpen && (
+              <div style={styles.dropdownMenu}>
+                <button onClick={handleViewProfile} style={styles.dropdownItem}>
+                  <User size={16} />
+                  <span>Ver Perfil</span>
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  style={{
+                    ...styles.dropdownItem,
+                    color: isLoggingOut ? '#aaa' : '#ef4444',
+                    cursor: isLoggingOut ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <LogOut size={16} />
+                  <span>{isLoggingOut ? 'Saindo...' : 'Sair'}</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Support Modal */}
-      <SupportModal 
-        isOpen={supportModalOpen} 
-        onClose={() => setSupportModalOpen(false)} 
+      <SupportModal
+        isOpen={supportModalOpen}
+        onClose={() => setSupportModalOpen(false)}
       />
     </header>
   );
 };
 
+/* 🎨 Estilos */
 const styles: { [key: string]: React.CSSProperties } = {
   header: {
     position: 'fixed',
@@ -163,7 +213,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     justifyContent: 'space-between',
     height: '100%',
-    maxWidth: '100%',
     padding: '0 24px',
   },
   leftSection: {
@@ -173,38 +222,25 @@ const styles: { [key: string]: React.CSSProperties } = {
     flex: '1',
   },
   hamburger: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '40px',
-    height: '40px',
+    background: 'none',
     border: 'none',
-    backgroundColor: 'transparent',
-    color: '#525252',
     cursor: 'pointer',
-    borderRadius: '8px',
-    transition: 'background-color 0.2s ease',
+    color: '#525252',
   },
   pageName: {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '18px',
     fontWeight: '600',
     color: '#262626',
-    margin: 0,
   },
   centerSection: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
     position: 'absolute',
     left: '50%',
     transform: 'translateX(-50%)',
   },
   logo: {
     height: '40px',
-    width: 'auto',
     cursor: 'pointer',
-    transition: 'opacity 0.2s ease',
   },
   rightSection: {
     display: 'flex',
@@ -224,27 +260,61 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: 'transparent',
     color: '#7c3aed',
     cursor: 'pointer',
-    borderRadius: '8px',
-    transition: 'background-color 0.2s ease',
   },
   supportBadge: {
     position: 'absolute',
     top: '6px',
     right: '6px',
+    backgroundColor: '#ef4444',
+    color: '#fff',
+    fontSize: '10px',
+    fontWeight: 600,
+    borderRadius: '9999px',
+    padding: '2px 5px',
+    border: '2px solid #fff',
+  },
+  avatarButton: {
+    border: 'none',
+    backgroundColor: 'transparent',
+    cursor: 'pointer',
+    borderRadius: '50%',
+    width: '40px',
+    height: '40px',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    borderRadius: '50%',
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: '50px',
+    right: 0,
+    backgroundColor: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+    width: '160px',
+    display: 'flex',
+    flexDirection: 'column',
+    padding: '8px 0',
+    zIndex: 200,
+  },
+  dropdownItem: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: '18px',
-    height: '18px',
-    padding: '0 4px',
-    backgroundColor: '#ef4444',
-    color: '#ffffff',
-    fontSize: '10px',
-    fontWeight: '600',
-    borderRadius: '9999px',
-    border: '2px solid #ffffff',
+    gap: '8px',
+    padding: '10px 16px',
+    background: 'none',
+    border: 'none',
+    color: '#374151',
+    fontSize: '14px',
+    cursor: 'pointer',
+    width: '100%',
+    textAlign: 'left',
   },
 };
 
 export default DashboardHeader;
-

@@ -1,7 +1,14 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { AlertProvider } from './hooks/useAlert';
 import { UnitProvider } from './contexts/UnitContext';
+import { AuthProvider } from './AuthContext';
+import ProtectedRoute from './routes/ProtectedRoute';
+import PublicRoute from './routes/PublicRoute';
+import AuthListener from './components/AuthListener';
+import { enforceEnvConsistency } from './utils/envGuard';
+import './App.css';
+
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -36,12 +43,12 @@ import CreateFirstUnitPage from './pages/CreateFirstUnitPage';
 import CreateUnitPage from './pages/CreateUnitPage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
 import EmailConfirmedPage from './pages/EmailConfirmedPage';
-import AuthListener from './components/AuthListener';
-import { enforceEnvConsistency } from './utils/envGuard';
-import './App.css';
+
+if (!process.env.REACT_APP_SUPABASE_URL) {
+  console.error('🚨 Faltando REACT_APP_SUPABASE_URL no ambiente. Verifique o .env!');
+}
 
 function App() {
-  // Check environment consistency on app startup
   useEffect(() => {
     enforceEnvConsistency();
   }, []);
@@ -49,55 +56,291 @@ function App() {
   return (
     <AlertProvider>
       <UnitProvider>
-        <Router>
-          <AuthListener /> {/* Detecta confirmação de email automaticamente */}
+        <AuthProvider>
+          <AuthListener />
           <div className="App">
             <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/email-confirmed" element={<EmailConfirmedPage />} />
-            <Route path="/clinic-signup" element={<ClinicSignUpPage />} />
-            <Route path="/vet-signup" element={<VetSignUpPage />} />
-            <Route path="/admin-dashboard" element={<AdminDashboardPage />} />
-            <Route path="/admin/clinics" element={<AdminClinicsPage />} />
-            <Route path="/admin/vets" element={<AdminVetsPage />} />
-            <Route path="/admin/demands" element={<AdminDemandsPage />} />
-            <Route path="/admin/support-tickets" element={<AdminSupportTicketsPage />} />
-            <Route path="/admin/users" element={<AdminUsersPage />} />
-            <Route path="/clinic-dashboard" element={<ClinicDashboardPage />} />
-            <Route path="/vet-dashboard" element={<VetDashboardPage />} />
-            <Route path="/vet-positions" element={<VetPositionsPage />} />
-            <Route path="/demands" element={<DemandsPage />} />
-            <Route path="/create-demand" element={<CreateDemandPage />} />
-            <Route path="/my-applications" element={<MyApplicationsPage />} />
-            
-            {/* Marketplace Routes */}
-            <Route path="/marketplace" element={<MarketplacePage />} />
-            <Route path="/marketplace/create" element={<CreateMarketplaceListingPage />} />
-            <Route path="/marketplace/:id" element={<MarketplaceItemDetailPage />} />
-            <Route path="/marketplace/my-listings" element={<MyMarketplaceListingsPage />} />
-            <Route path="/marketplace/messages" element={<MarketplaceMessagesPage />} />
-            
-            {/* Units & Users Management Routes */}
-            <Route path="/units" element={<UnitsManagementPage />} />
-            <Route path="/units/create-first" element={<CreateFirstUnitPage />} />
-            <Route path="/units/create" element={<CreateUnitPage />} />
-            <Route path="/users" element={<UsersManagementPage />} />
-            <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
-            
-            {/* Profile Routes */}
-            <Route path="/vet-profile" element={<VetProfilePage />} />
-            <Route path="/clinic-profile" element={<ClinicProfilePage />} />
-            <Route path="/admin-profile" element={<AdminProfilePage />} />
-            <Route path="/my-support-tickets" element={<MySupportTicketsPage />} />
-            <Route path="/notifications" element={<NotificationsPage />} />
-            
-            {/* Admin Routes */}
-            <Route path="/admin/pending-units" element={<AdminPendingUnitsPage />} />
+              {/* ROTAS PÚBLICAS (só para deslogados) */}
+              <Route
+                path="/login"
+                element={
+                  <PublicRoute>
+                    <LoginPage />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/forgot-password"
+                element={
+                  <PublicRoute>
+                    <ForgotPasswordPage />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/clinic-signup"
+                element={
+                  <PublicRoute>
+                    <ClinicSignUpPage />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/vet-signup"
+                element={
+                  <PublicRoute>
+                    <VetSignUpPage />
+                  </PublicRoute>
+                }
+              />
+              <Route path="/email-confirmed" element={<EmailConfirmedPage />} />
+
+              {/* ROTAS PROTEGIDAS GENÉRICAS (qualquer logado) */}
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <HomePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/demands"
+                element={
+                  <ProtectedRoute>
+                    <DemandsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/create-demand"
+                element={
+                  <ProtectedRoute>
+                    <CreateDemandPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/my-applications"
+                element={
+                  <ProtectedRoute>
+                    <MyApplicationsPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* ADMIN ONLY */}
+              <Route
+                path="/admin-dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminDashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/clinics"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminClinicsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/vets"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminVetsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/demands"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminDemandsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/support-tickets"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminSupportTicketsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/users"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminUsersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/pending-units"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminPendingUnitsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin-profile"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* CLÍNICA (CADMIN / CMANAGER) */}
+              <Route
+                path="/clinic-dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                    <ClinicDashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/units"
+                element={
+                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                    <UnitsManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/units/create-first"
+                element={
+                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                    <CreateFirstUnitPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/units/create"
+                element={
+                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                    <CreateUnitPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/users"
+                element={
+                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                    <UsersManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/clinic-profile"
+                element={
+                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                    <ClinicProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* VET */}
+              <Route
+                path="/vet-dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={['VET']}>
+                    <VetDashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/vet-positions"
+                element={
+                  <ProtectedRoute allowedRoles={['VET']}>
+                    <VetPositionsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/vet-profile"
+                element={
+                  <ProtectedRoute allowedRoles={['VET']}>
+                    <VetProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Marketplace (vale para clinic + vet, e se quiser também admin) */}
+              <Route
+                path="/marketplace"
+                element={
+                  <ProtectedRoute>
+                    <MarketplacePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/marketplace/create"
+                element={
+                  <ProtectedRoute>
+                    <CreateMarketplaceListingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/marketplace/:id"
+                element={
+                  <ProtectedRoute>
+                    <MarketplaceItemDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/marketplace/my-listings"
+                element={
+                  <ProtectedRoute>
+                    <MyMarketplaceListingsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/marketplace/messages"
+                element={
+                  <ProtectedRoute>
+                    <MarketplaceMessagesPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Genéricos de usuário logado */}
+              <Route
+                path="/accept-invitation"
+                element={
+                  <ProtectedRoute>
+                    <AcceptInvitationPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/my-support-tickets"
+                element={
+                  <ProtectedRoute>
+                    <MySupportTicketsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/notifications"
+                element={
+                  <ProtectedRoute>
+                    <NotificationsPage />
+                  </ProtectedRoute>
+                }
+              />
             </Routes>
           </div>
-        </Router>
+        </AuthProvider>
       </UnitProvider>
     </AlertProvider>
   );

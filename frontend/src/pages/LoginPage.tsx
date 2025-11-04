@@ -6,17 +6,20 @@ import PasswordInput from '../components/PasswordInput';
 import { useAlert } from '../hooks/useAlert';
 import colors from '../styles/colors';
 import { Mail, Lock } from 'lucide-react';
+import { useAuth } from '../AuthContext';
+import { getDashboardPathForRole } from '../utils/authHelpers';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { showSuccess, showError, showWarning } = useAlert();
+  const { showError, showWarning } = useAlert();
+  const { setAuthFromLogin } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!email || !password) {
       showWarning('Por favor, preencha todos os campos.');
       return;
@@ -25,84 +28,70 @@ const LoginPage: React.FC = () => {
     try {
       setLoading(true);
       const result = await login({ email, password });
-      
-      // Store the session/user data
-      localStorage.setItem('user', JSON.stringify(result.user));
-      localStorage.setItem('session', JSON.stringify(result.session));
+
+      if (!result?.user) {
+        showError('Falha ao obter informações do usuário.');
+        return;
+      }
+
+      console.log('Login result:', result);
+
+      // Centraliza persistência de auth (user/session/onboarding/etc)
+      setAuthFromLogin(result);
 
       const onboardingInfo = result.onboarding;
-      const clinicUserInfo = result.clinicUser;
+      const userRoleRaw =
+        result.user?.user_metadata?.role ||
+        result.user?.role;
+      const userRole = userRoleRaw ? String(userRoleRaw).toUpperCase() : 'UNKNOWN';
 
-      if (onboardingInfo) {
-        localStorage.setItem('clinicOnboarding', JSON.stringify(onboardingInfo));
-        if (onboardingInfo.isFirstLogin) {
-          localStorage.setItem('isFirstAccess', 'true');
-        } else {
-          localStorage.removeItem('isFirstAccess');
-        }
-      } else {
-        localStorage.removeItem('clinicOnboarding');
-        localStorage.removeItem('isFirstAccess');
+      // Regras de redirecionamento pós-login
+      if (userRole === 'ADMIN') {
+        navigate('/admin-dashboard', { replace: true });
+        return;
       }
 
-      if (clinicUserInfo) {
-        localStorage.setItem('clinic_user', JSON.stringify(clinicUserInfo));
-      } else {
-        localStorage.removeItem('clinic_user');
-      }
-      
-      console.log('Login result:', result);
-      
-      // Navigate to role-specific dashboard after successful login
-      const userRole = result.user?.user_metadata?.role || result.user?.role;
-      if (userRole === 'admin') {
-        navigate('/admin-dashboard');
-      } else if (userRole === 'clinic') {
-        // Check clinic status to redirect appropriately
+      if (userRole === 'CADMIN' || userRole === 'CMANAGER') {
+        // Onboarding de clínica
         if (onboardingInfo?.shouldCompleteFirstUnit) {
-          navigate('/units/create-first');
+          navigate('/units/create-first', { replace: true });
           return;
         }
 
         try {
           const response = await fetch(`${API_BASE_URL}/clinics/${result.user.id}`, {
             headers: {
-              'Authorization': `Bearer ${result.session.access_token}`,
+              Authorization: `Bearer ${result.session.access_token}`,
             },
           });
-          
+
           if (response.ok) {
             const { clinic } = await response.json();
-            
             if (clinic.status === 'pending_unit') {
-              // Clinic needs to create first unit
-              navigate('/units/create-first');
+              navigate('/units/create-first', { replace: true });
             } else {
-              // Clinic can access dashboard (pending_approval or active)
-              navigate('/clinic-dashboard');
+              navigate('/clinic-dashboard', { replace: true });
             }
           } else {
-            // Default to dashboard if can't fetch status
-            navigate('/clinic-dashboard');
+            navigate('/clinic-dashboard', { replace: true });
           }
         } catch (error) {
-          console.error('Error checking clinic status:', error);
-          navigate('/clinic-dashboard');
+          console.error('Erro ao verificar status da clínica:', error);
+          navigate('/clinic-dashboard', { replace: true });
         }
-      } else if (userRole === 'vet') {
-        navigate('/vet-dashboard');
-      } else {
-        // For clinic staff roles, force onboarding only when required
-        if (onboardingInfo?.shouldCompleteFirstUnit) {
-          navigate('/units/create-first');
-        } else {
-          navigate('/demands'); // fallback
-        }
+        return;
       }
-      
+
+      if (userRole === 'VET') {
+        navigate('/vet-dashboard', { replace: true });
+        return;
+      }
+
+      // Fallback para roles desconhecidas
+      const fallback = getDashboardPathForRole('UNKNOWN');
+      navigate(fallback, { replace: true });
     } catch (error: any) {
-      // Show the actual error message from the backend
-      console.error('Login error:', error);
+      console.error('Erro no login:', error);
       showError('Erro no login: ' + (error.message || 'Tente novamente.'));
     } finally {
       setLoading(false);
@@ -114,7 +103,6 @@ const LoginPage: React.FC = () => {
       <HomeHeader />
       <div className="clinic-signup-container">
         <div className="clinic-signup-content">
-          {/* Coluna Esquerda - Formulário */}
           <div className="signup-form-section">
             <h1 className="text-display text-3xl font-bold mb-2 text-neutral-800">
               Bem-vindo de volta
@@ -122,9 +110,9 @@ const LoginPage: React.FC = () => {
             <p className="text-neutral-600 mb-8">
               Acesse sua conta PetiVet
             </p>
-            
+
             <form onSubmit={handleLogin} className="space-y-6">
-              {/* Email field */}
+              {/* Campo de email */}
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-2">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -141,8 +129,8 @@ const LoginPage: React.FC = () => {
                   required
                 />
               </div>
-              
-              {/* Password field usando PasswordInput */}
+
+              {/* Campo de senha */}
               <div style={{ marginTop: '32px' }}>
                 <label className="block text-sm font-medium text-neutral-700 mb-2">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -150,7 +138,7 @@ const LoginPage: React.FC = () => {
                     <span>Senha</span>
                   </div>
                 </label>
-                <PasswordInput 
+                <PasswordInput
                   value={password}
                   onChange={setPassword}
                   placeholder="Digite sua senha"
@@ -158,11 +146,11 @@ const LoginPage: React.FC = () => {
                   showRequirements={false}
                 />
               </div>
-              
-              {/* Botão Entrar */}
+
+              {/* Botão de entrar */}
               <div style={{ marginTop: '32px' }}>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={loading}
                   style={{
                     width: '100%',
@@ -178,64 +166,56 @@ const LoginPage: React.FC = () => {
                     opacity: loading ? 0.5 : 1,
                   }}
                   onMouseEnter={(e) => {
-                    if (!loading) e.currentTarget.style.backgroundColor = colors.primaryDark;
+                    if (!loading)
+                      e.currentTarget.style.backgroundColor = colors.primaryDark;
                   }}
                   onMouseLeave={(e) => {
-                    if (!loading) e.currentTarget.style.backgroundColor = colors.primary;
+                    if (!loading)
+                      e.currentTarget.style.backgroundColor = colors.primary;
                   }}
                 >
                   {loading ? 'Entrando...' : 'Entrar'}
                 </button>
               </div>
             </form>
-            
-            {/* Link Esqueci Minha Senha */}
+
             <div className="text-center" style={{ marginTop: '24px' }}>
-              <Link 
-                to="/forgot-password" 
+              <Link
+                to="/forgot-password"
                 className="text-primary-600 hover:text-primary-700 text-sm transition-colors"
               >
                 Esqueci minha senha
               </Link>
             </div>
           </div>
-          
-          {/* Coluna Direita - Imagens e Texto */}
+
+          {/* Lado direito - imagens */}
           <div className="signup-images-section">
             <h2 className="text-display">
               Conectando quem cuida, quem ama e quem precisa.
             </h2>
             <p>
-              Acesse sua conta PetiVet para gerenciar suas demandas, visualizar candidaturas e 
-              encontrar as melhores oportunidades na área veterinária. Conecte-se com profissionais 
+              Acesse sua conta PetiVet para gerenciar suas demandas, visualizar candidaturas e
+              encontrar as melhores oportunidades na área veterinária. Conecte-se com profissionais
               qualificados e clínicas de confiança.
             </p>
-            
-            {/* Colagem de imagens */}
             <div className="hero-images-right">
-              <div style={{position: 'relative', width: '100%', maxWidth: '320px', height: '320px'}}>
-                {/* Imagem 1 - Top Left Large (Golden Retriever) */}
-                <div 
-                  className="hero-image-circle animate-float" 
+              <div style={{ position: 'relative', width: '100%', maxWidth: '320px', height: '320px' }}>
+                <div
+                  className="hero-image-circle animate-float"
                   style={{
                     position: 'absolute',
                     top: '10px',
                     left: '10px',
                     width: '120px',
                     height: '120px',
-                    zIndex: 3
+                    zIndex: 3,
                   }}
                 >
-                  <img 
-                    src="/img1.png" 
-                    alt="Veterinário cuidando de pet" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                  <img src="/img1.png" alt="Veterinário cuidando de pet" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
-
-                {/* Imagem 2 - Top Right Medium (White puppy) */}
-                <div 
-                  className="hero-image-circle" 
+                <div
+                  className="hero-image-circle"
                   style={{
                     position: 'absolute',
                     top: '40px',
@@ -243,19 +223,13 @@ const LoginPage: React.FC = () => {
                     width: '110px',
                     height: '110px',
                     zIndex: 4,
-                    animationDelay: '0.3s'
+                    animationDelay: '0.3s',
                   }}
                 >
-                  <img 
-                    src="/img2.jpg" 
-                    alt="Pet feliz" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                  <img src="/img2.jpg" alt="Pet feliz" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
-
-                {/* Imagem 3 - Center/Bottom Large (Dog close-up) */}
-                <div 
-                  className="hero-image-circle animate-float" 
+                <div
+                  className="hero-image-circle animate-float"
                   style={{
                     position: 'absolute',
                     bottom: '60px',
@@ -263,19 +237,13 @@ const LoginPage: React.FC = () => {
                     width: '140px',
                     height: '140px',
                     zIndex: 5,
-                    animationDelay: '0.15s'
+                    animationDelay: '0.15s',
                   }}
                 >
-                  <img 
-                    src="/im3.jpg" 
-                    alt="Clínica veterinária" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                  <img src="/im3.jpg" alt="Clínica veterinária" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
-
-                {/* Imagem 4 - Bottom Left Medium (Vet with dog) */}
-                <div 
-                  className="hero-image-circle" 
+                <div
+                  className="hero-image-circle"
                   style={{
                     position: 'absolute',
                     bottom: '30px',
@@ -283,19 +251,13 @@ const LoginPage: React.FC = () => {
                     width: '95px',
                     height: '95px',
                     zIndex: 2,
-                    animationDelay: '0.5s'
+                    animationDelay: '0.5s',
                   }}
                 >
-                  <img 
-                    src="/img4.jpg" 
-                    alt="Profissional veterinário" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                  <img src="/img4.jpg" alt="Profissional veterinário" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
-
-                {/* Imagem 5 - Bottom Right Small (Fluffy dog) */}
-                <div 
-                  className="hero-image-circle animate-float" 
+                <div
+                  className="hero-image-circle animate-float"
                   style={{
                     position: 'absolute',
                     bottom: '0',
@@ -303,14 +265,10 @@ const LoginPage: React.FC = () => {
                     width: '85px',
                     height: '85px',
                     zIndex: 1,
-                    animationDelay: '0.7s'
+                    animationDelay: '0.7s',
                   }}
                 >
-                  <img 
-                    src="/img5.jpg" 
-                    alt="Cuidado animal" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                  <img src="/img5.jpg" alt="Cuidado animal" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
               </div>
             </div>

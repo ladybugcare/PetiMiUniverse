@@ -18,6 +18,6 @@
     "transpileOnly": true,
     "preferTsExts": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "../frontend/hooks", "../frontend/context"],
   "exclude": ["node_modules", "dist"]
 }

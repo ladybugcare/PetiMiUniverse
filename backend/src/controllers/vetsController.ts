@@ -10,6 +10,112 @@ interface VetBody {
   email: string
   password: string
 }
+// export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) => {
+//   const { name, crmv, specialties, certificates, experience, email, password } = req.body;
+//   let newUserId: string | null = null;
+
+//   try {
+//     console.log('Creating vet with email:', email);
+
+//     // 1️⃣ Verifica se já existe o registro no Auth e em vets
+//     const { data: existingVet, error: existingVetError } = await supabaseAdmin
+//       .from('vets')
+//       .select('id')
+//       .eq('email', email)
+//       .maybeSingle();
+
+//     if (existingVetError) {
+//       console.error('Error checking existing vet email:', existingVetError);
+//       return res.status(500).json({ error: 'Erro ao verificar veterinário existente.' });
+//     }
+
+//     if (existingVet) {
+//       return res.status(400).json({ error: 'Este e-mail já está cadastrado na plataforma.' });
+//     }
+
+//     // 2️⃣ Cria o usuário no Supabase Auth
+//     const { data: authData, error: authError } = await supabase.auth.signUp({
+//       email,
+//       password,
+//       options: {
+//         data: { name, role: 'vet' },
+//         emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3002'}/email-confirmed`,
+//       },
+//     });
+
+//     if (authError) {
+//       console.error('Auth error:', authError);
+//       return res.status(400).json({ error: authError.message });
+//     }
+
+//     const user = authData?.user;
+//     if (!user) {
+//       return res.status(400).json({ error: 'Falha ao criar usuário no Supabase Auth.' });
+//     }
+
+//     newUserId = user.id;
+//     console.log('Auth user created:', newUserId);
+
+//     // 3️⃣ Reenvia e-mail de confirmação no ambiente local
+//     if (process.env.NODE_ENV !== 'production') {
+//       try {
+//         await supabase.auth.resend({ type: 'signup', email });
+//         console.log('[SIGNUP] Resend confirmation email invoked (dev)');
+//       } catch (e) {
+//         console.warn('[SIGNUP] Resend confirmation email failed:', (e as any)?.message);
+//       }
+//     }
+
+//     // 4️⃣ Verifica se o trigger já criou o vet no Supabase
+//     const { data: existingAfterAuth } = await supabase
+//       .from('vets')
+//       .select('id')
+//       .eq('id', newUserId)
+//       .maybeSingle();
+
+//     // 5️⃣ Insere apenas se o trigger não tiver criado ainda
+//     if (!existingAfterAuth) {
+//       const { error: insertError } = await supabase
+//         .from('vets')
+//         .insert({
+//           id: newUserId,
+//           name,
+//           crmv,
+//           specialties: specialties || [],
+//           certificates: certificates || [],
+//           experience,
+//           email,
+//           status: 'pending_verification',
+//         });
+
+//       if (insertError) {
+//         console.error('Insert error:', insertError);
+//         throw insertError;
+//       }
+//     } else {
+//       console.log('Vet record already exists after Auth signup — skipping insert.');
+//     }
+
+//     res.status(201).json({
+//       message: 'Cadastro criado com sucesso. Verifique seu e-mail.',
+//       user,
+//     });
+//   } catch (error: any) {
+//     console.error('Unexpected error:', error);
+
+//     // Rollback de usuário se algo falhar após criação do Auth
+//     if (newUserId) {
+//       try {
+//         await supabaseAdmin.auth.admin.deleteUser(newUserId);
+//         console.log('Rolled back auth user after failure:', newUserId);
+//       } catch (cleanupError) {
+//         console.error('Failed to rollback auth user:', cleanupError);
+//       }
+//     }
+
+//     res.status(500).json({ error: error.message || 'Erro interno ao registrar veterinário.' });
+//   }
+// };
 
 export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) => {
   const { name, crmv, specialties, certificates, experience, email, password } = req.body
