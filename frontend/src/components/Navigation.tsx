@@ -79,12 +79,6 @@ const Navigation: React.FC<NavigationProps> = ({ user, onLogout }) => {
                 <span className="text-sm text-neutral-600">
                   {userData?.email || userData?.user_metadata?.name}
                 </span>
-                <button
-                  onClick={handleLogout}
-                  className="btn btn-outline btn-sm"
-                >
-                  Sair
-                </button>
               </div>
             </div>
 
@@ -199,15 +193,6 @@ const Navigation: React.FC<NavigationProps> = ({ user, onLogout }) => {
                   <div className="px-4 py-2 text-sm text-neutral-600">
                     {userData?.email || userData?.user_metadata?.name}
                   </div>
-                  <button
-                    onClick={() => {
-                      setIsSidebarOpen(false);
-                      handleLogout();
-                    }}
-                    className="w-full text-left px-4 py-2 rounded-md text-sm font-medium text-red-600 hover:bg-red-50"
-                  >
-                    🚪 Sair
-                  </button>
                 </div>
               </div>
             </div>

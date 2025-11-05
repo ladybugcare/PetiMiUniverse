@@ -104,12 +104,12 @@ const AdminDashboardPage: React.FC = () => {
       action: 'navigate',
       path: '/admin/users',
     },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout',
-    },
+    // {
+    //   id: 'logout',
+    //   label: 'Sair',
+    //   icon: <LogOut size={20} color={colors.primary} />,
+    //   action: 'logout',
+    // },
   ];
 
   const renderSection = () => {

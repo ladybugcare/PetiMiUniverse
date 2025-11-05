@@ -63,12 +63,12 @@ const VetProfilePage: React.FC = () => {
       action: 'navigate',
       path: '/vet-profile',
     },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout',
-    },
+    // {
+    //   id: 'logout',
+    //   label: 'Sair',
+    //   icon: <LogOut size={20} color={colors.primary} />,
+    //   action: 'logout',
+    // },
   ];
 
   useEffect(() => {

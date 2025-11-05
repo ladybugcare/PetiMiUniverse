@@ -54,12 +54,12 @@ const NotificationsPage: React.FC = () => {
           action: 'navigate',
           path: '/notifications',
         },
-        {
-          id: 'logout',
-          label: 'Sair',
-          icon: <LogOut size={20} color="#ef4444" />,
-          action: 'logout',
-        },
+        // {
+        //   id: 'logout',
+        //   label: 'Sair',
+        //   icon: <LogOut size={20} color="#ef4444" />,
+        //   action: 'logout',
+        // },
       ];
     } else if (userRole === 'clinic') {
       return [
@@ -77,12 +77,12 @@ const NotificationsPage: React.FC = () => {
           action: 'navigate',
           path: '/notifications',
         },
-        {
-          id: 'logout',
-          label: 'Sair',
-          icon: <LogOut size={20} color="#ef4444" />,
-          action: 'logout',
-        },
+        // {
+        //   id: 'logout',
+        //   label: 'Sair',
+        //   icon: <LogOut size={20} color="#ef4444" />,
+        //   action: 'logout',
+        // },
       ];
     } else {
       return [
@@ -100,12 +100,12 @@ const NotificationsPage: React.FC = () => {
           action: 'navigate',
           path: '/notifications',
         },
-        {
-          id: 'logout',
-          label: 'Sair',
-          icon: <LogOut size={20} color="#ef4444" />,
-          action: 'logout',
-        },
+        // {
+        //   id: 'logout',
+        //   label: 'Sair',
+        //   icon: <LogOut size={20} color="#ef4444" />,
+        //   action: 'logout',
+        // },
       ];
     }
   };

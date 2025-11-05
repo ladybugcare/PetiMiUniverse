@@ -177,12 +177,12 @@ const ClinicDashboardPage: React.FC = () => {
       action: 'navigate',
       path: '/clinic-profile',
     },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout',
-    },
+    // {
+    //   id: 'logout',
+    //   label: 'Sair',
+    //   icon: <LogOut size={20} color={colors.primary} />,
+    //   action: 'logout',
+    // },
   ];
 
   // Menu items for CMANAGER
@@ -250,12 +250,12 @@ const ClinicDashboardPage: React.FC = () => {
       action: 'navigate',
       path: '/clinic-profile',
     },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout',
-    },
+    // {
+    //   id: 'logout',
+    //   label: 'Sair',
+    //   icon: <LogOut size={20} color={colors.primary} />,
+    //   action: 'logout',
+    // },
   ];
 
   // Menu items for CASSISTANT
@@ -302,12 +302,12 @@ const ClinicDashboardPage: React.FC = () => {
       action: 'navigate',
       path: '/clinic-profile',
     },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout',
-    },
+    // {
+    //   id: 'logout',
+    //   label: 'Sair',
+    //   icon: <LogOut size={20} color={colors.primary} />,
+    //   action: 'logout',
+    // },
   ];
 
   // Menu items for CVET_INTERNAL
@@ -361,12 +361,12 @@ const ClinicDashboardPage: React.FC = () => {
       action: 'navigate',
       path: '/clinic-profile',
     },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout',
-    },
+    // {
+    //   id: 'logout',
+    //   label: 'Sair',
+    //   icon: <LogOut size={20} color={colors.primary} />,
+    //   action: 'logout',
+    // },
   ];
 
   // Default menu items (for clinic owners without clinic_user role)
@@ -413,12 +413,12 @@ const ClinicDashboardPage: React.FC = () => {
       action: 'navigate',
       path: '/clinic-profile',
     },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout',
-    },
+    // {
+    //   id: 'logout',
+    //   label: 'Sair',
+    //   icon: <LogOut size={20} color={colors.primary} />,
+    //   action: 'logout',
+    // },
   ];
 
   // FAB options for CADMIN

@@ -72,12 +72,12 @@ const AdminProfilePage: React.FC = () => {
       action: 'navigate',
       path: '/admin-profile',
     },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout',
-    },
+    // {
+    //   id: 'logout',
+    //   label: 'Sair',
+    //   icon: <LogOut size={20} color={colors.primary} />,
+    //   action: 'logout',
+    // },
   ];
 
   useEffect(() => {

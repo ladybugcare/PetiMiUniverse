@@ -225,7 +225,7 @@ const VetSignUpPage: React.FC = () => {
               />
               {validateEmail(formData.email) && !errors.email && (
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
-                  <CheckCircle size={20} />
+                  
                 </span>
               )}
             </div>

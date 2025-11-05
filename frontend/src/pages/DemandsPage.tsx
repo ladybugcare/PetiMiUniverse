@@ -62,12 +62,12 @@ const DemandsPage: React.FC = () => {
           action: 'navigate',
           path: '/clinic-profile',
         },
-        {
-          id: 'logout',
-          label: 'Sair',
-          icon: <LogOut size={20} color={colors.primary} />,
-          action: 'logout',
-        },
+        // {
+        //   id: 'logout',
+        //   label: 'Sair',
+        //   icon: <LogOut size={20} color={colors.primary} />,
+        //   action: 'logout',
+        // },
       ];
     } else {
       // Vet menu

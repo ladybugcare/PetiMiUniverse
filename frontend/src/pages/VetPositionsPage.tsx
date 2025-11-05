@@ -150,12 +150,12 @@ const VetPositionsPage: React.FC = () => {
       action: 'navigate' as const,
       path: '/vet-profile',
     },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout' as const,
-    },
+    // {
+    //   id: 'logout',
+    //   label: 'Sair',
+    //   icon: <LogOut size={20} color={colors.primary} />,
+    //   action: 'logout' as const,
+    // },
   ];
 
   return (
