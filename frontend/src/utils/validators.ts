@@ -56,6 +56,11 @@ export const validateEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 };
+// Validar CRMV de Vet
+export const validateCRMV = (value: string): boolean => {
+  const crmRegex = /^[0-9]{4,6}-[A-Z]{2}$/; // Exemplo: 12345-SP
+  return crmRegex.test(value.trim());
+};
 
 // Validar força da senha
 export const validatePassword = (password: string): { valid: boolean; errors: string[]; strength: 'weak' | 'medium' | 'strong' } => {
@@ -72,6 +77,7 @@ export const validatePassword = (password: string): { valid: boolean; errors: st
   if (!/[0-9]/.test(password)) {
     errors.push('Pelo menos 1 número');
   }
+  
   
   // Calcular força
   let strength: 'weak' | 'medium' | 'strong' = 'weak';
