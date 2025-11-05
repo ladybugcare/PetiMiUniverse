@@ -4,7 +4,8 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
-import { clinicsApi, vetsApi } from '../services';
+import { clinicsApi } from '../services';
+import { vetsApi, Vet } from '../services/vetsApi';
 import { adminApi, CreateUserData } from '../services/adminApi';
 import { useAlert } from '../hooks/useAlert';
 import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, EyeOff, Edit, Trash2, UserCog, Truck, UserPlus, Plus, Shield } from 'lucide-react';
@@ -15,16 +16,6 @@ interface Clinic {
   name: string;
   email: string;
   cnpj?: string;
-  status?: string;
-  deleted_at?: string | null;
-  created_at: string;
-}
-
-interface Vet {
-  id: string;
-  name: string;
-  email: string;
-  crmv: string;
   status?: string;
   deleted_at?: string | null;
   created_at: string;
@@ -60,7 +51,7 @@ const AdminUsersPage: React.FC = () => {
   const [showEditVetModal, setShowEditVetModal] = useState(false);
   const [editClinicFormData, setEditClinicFormData] = useState<Partial<Clinic>>({});
   const [editVetFormData, setEditVetFormData] = useState<Partial<Vet>>({});
-  
+
   // Create user form states
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [createUserStep, setCreateUserStep] = useState<1 | 2>(1);
@@ -104,12 +95,12 @@ const AdminUsersPage: React.FC = () => {
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const userRole = user?.user_metadata?.role || user?.role;
-    
+
     if (!user || !user.id || userRole !== 'admin') {
       navigate('/login');
       return;
     }
-    
+
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
@@ -278,9 +269,11 @@ const AdminUsersPage: React.FC = () => {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
-  };
+  const formatDate = (dateString?: string) => {
+  if (!dateString) return '—';
+  return new Date(dateString).toLocaleDateString('pt-BR');
+};
+
 
   // Handle next step in create user form
   const handleNextStep = () => {
@@ -312,7 +305,7 @@ const AdminUsersPage: React.FC = () => {
   const handleCreateUser = async () => {
     // Limpar erros anteriores
     setEmailError('');
-    
+
     if (!createUserFormData.name || !createUserFormData.email || !createUserFormData.user_type || !createUserFormData.status) {
       showError('Por favor, preencha todos os campos obrigatórios');
       return;
@@ -334,7 +327,7 @@ const AdminUsersPage: React.FC = () => {
     } catch (error: any) {
       // Extrair mensagem de erro
       let errorMessage = error.message || 'Erro desconhecido';
-      
+
       // Tentar parsear JSON se o erro vier como string JSON
       try {
         const errorJson = JSON.parse(errorMessage);
@@ -344,7 +337,7 @@ const AdminUsersPage: React.FC = () => {
       } catch (e) {
         // Não é JSON, usar mensagem original
       }
-      
+
       // Se o erro contém informações sobre email duplicado
       if (errorMessage.includes('já está cadastrado') || errorMessage.includes('já existe') || errorMessage.includes('already registered') || errorMessage.includes('cadastrado')) {
         setEmailError('Este e-mail já está cadastrado');
@@ -360,11 +353,11 @@ const AdminUsersPage: React.FC = () => {
   };
 
   // Pagination
-  const currentData = activeTab === 'clinics' 
-    ? filteredClinics 
-    : activeTab === 'vets' 
-    ? filteredVets 
-    : filteredAdmins;
+  const currentData = activeTab === 'clinics'
+    ? filteredClinics
+    : activeTab === 'vets'
+      ? filteredVets
+      : filteredAdmins;
   const totalPages = Math.ceil(currentData.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
@@ -376,7 +369,7 @@ const AdminUsersPage: React.FC = () => {
         {/* Header */}
         <div style={styles.header}>
           <h2 style={styles.title}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <Users size={28} color={colors.primary} />
               <span>Usuários Totais</span>
             </div>
@@ -437,8 +430,8 @@ const AdminUsersPage: React.FC = () => {
               activeTab === 'clinics'
                 ? 'Buscar clínicas...'
                 : activeTab === 'vets'
-                ? 'Buscar veterinários...'
-                : 'Buscar administradores...'
+                  ? 'Buscar veterinários...'
+                  : 'Buscar administradores...'
             }
             value={searchQuery}
             onChange={setSearchQuery}
@@ -981,23 +974,21 @@ const AdminUsersPage: React.FC = () => {
                                 placeholder="00.000.000/0000-00"
                               />
                             </div>
-                            <div style={styles.formGroup}>
-                              <label style={styles.label}>Role da Clínica</label>
-                              <select
-                                value={createUserFormData.clinic_role || 'standard'}
-                                onChange={(e) =>
-                                  setCreateUserFormData({
-                                    ...createUserFormData,
-                                    clinic_role: e.target.value as 'standard' | 'premium' | 'partner',
-                                  })
-                                }
-                                style={styles.input}
-                              >
-                                <option value="standard">Standard</option>
-                                <option value="premium">Premium</option>
-                                <option value="partner">Partner</option>
-                              </select>
-                            </div>
+                            <select
+                              value={createUserFormData.clinic_role || 'admin'}
+                              onChange={(e) =>
+                                setCreateUserFormData({
+                                  ...createUserFormData,
+                                  clinic_role: e.target.value as 'admin' | 'manager' | 'staff',
+                                })
+                              }
+                              style={styles.input}
+                            >
+                              <option value="admin">Administrador</option>
+                              <option value="manager">Gerente</option>
+                              <option value="staff">Equipe</option>
+                            </select>
+
                           </>
                         )}
 

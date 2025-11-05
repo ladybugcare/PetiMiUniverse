@@ -1,16 +1,32 @@
-import express from 'express'
-import { createVet, getVets, getVetById, updateVet, updateVetPhoto, updateVetStatus, deleteVet, checkEmail } from '../controllers/vetsController'
+// backend/routes/vets.ts
+import express from 'express';
+import { createVetPublic } from '../controllers/vets/createVetPublic';
+import { checkVetEmail } from '../controllers/vets/checkVetEmail';
+import { getVets } from '../controllers/vets/getVets';
+import { getVetById } from '../controllers/vets/getVetById';
+import { authenticateUser } from '../middleware/authMiddleware';
 
-const router = express.Router()
+const router = express.Router();
 
-router.post('/register', createVet)
-router.get('/', getVets)
-router.get('/check-email/:email', checkEmail)
-router.get('/:id', getVetById)
-router.patch('/:id', updateVet)
-router.patch('/:id/photo', updateVetPhoto)
-router.patch('/:id/status', updateVetStatus)
-router.delete('/:id', deleteVet)
+/**
+ * ===========================================================
+ * 🩺 FLUXO DE CADASTRO PÚBLICO DE VETERINÁRIOS
+ * ===========================================================
+ */
+router.post('/', createVetPublic);
 
-export default router
+/**
+ * ===========================================================
+ * 🔍 CONSULTAS E VALIDAÇÕES
+ * ===========================================================
+ */
+router.get('/check-email/:email', checkVetEmail);
+router.get('/', getVets);
+router.get('/:id', getVetById);
 
+/**
+ * (Opcional) rotas futuras com autenticação
+ * router.put('/:id', authenticateUser, updateVet);
+ */
+
+export default router;

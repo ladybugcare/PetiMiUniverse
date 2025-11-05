@@ -9,13 +9,18 @@ export const supabase = createClient(
 
 // Admin client (service role key) - usado apenas no backend para operações administrativas
 // IMPORTANTE: Nunca exponha esta chave no frontend!
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('🚨 Faltando SUPABASE_SERVICE_ROLE_KEY no .env — operações admin irão falhar.');
+}
+
 export const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!, // 👈 só aceita a chave service
   {
     auth: {
       autoRefreshToken: false,
-      persistSession: false
-    }
+      persistSession: false,
+    },
   }
-)
+);
+

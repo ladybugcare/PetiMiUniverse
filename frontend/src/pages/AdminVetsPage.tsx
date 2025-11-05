@@ -4,22 +4,10 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
-import { vetsApi } from '../services/vetsApi';
+import { vetsApi, Vet } from '../services/vetsApi';
 import { useAlert } from '../hooks/useAlert';
 import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, Edit, Trash2 } from 'lucide-react';
 import colors from '../styles/colors';
-
-interface Vet {
-  id: string;
-  name: string;
-  email: string;
-  crmv: string;
-  specialties: string[];
-  certificates: string[];
-  experience: string;
-  status?: string;
-  created_at: string;
-}
 
 const AdminVetsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -157,9 +145,11 @@ const AdminVetsPage: React.FC = () => {
     );
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
-  };
+  const formatDate = (dateString?: string) => {
+  if (!dateString) return '—';
+  return new Date(dateString).toLocaleDateString('pt-BR');
+};
+
 
   return (
     <DashboardLayout pageName="Veterinários Cadastrados" menuItems={menuItems}>

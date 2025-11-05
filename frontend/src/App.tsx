@@ -9,6 +9,7 @@ import AuthListener from './components/AuthListener';
 import { enforceEnvConsistency } from './utils/envGuard';
 import './App.css';
 
+// Páginas
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -44,6 +45,7 @@ import CreateUnitPage from './pages/CreateUnitPage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
 import EmailConfirmedPage from './pages/EmailConfirmedPage';
 
+
 if (!process.env.REACT_APP_SUPABASE_URL) {
   console.error('🚨 Faltando REACT_APP_SUPABASE_URL no ambiente. Verifique o .env!');
 }
@@ -60,7 +62,7 @@ function App() {
           <AuthListener />
           <div className="App">
             <Routes>
-              {/* ROTAS PÚBLICAS (só para deslogados) */}
+              {/* ROTAS PÚBLICAS */}
               <Route
                 path="/login"
                 element={
@@ -77,22 +79,11 @@ function App() {
                   </PublicRoute>
                 }
               />
-              <Route
-                path="/clinic-signup"
-                element={
-                  <PublicRoute>
-                    <ClinicSignUpPage />
-                  </PublicRoute>
-                }
-              />
-              <Route
-                path="/vet-signup"
-                element={
-                  <PublicRoute>
-                    <VetSignUpPage />
-                  </PublicRoute>
-                }
-              />
+
+              {/* Signup — agora realmente públicas */}
+              <Route path="/clinic-signup" element={<ClinicSignUpPage />} />
+              <Route path="/vet-signup" element={<VetSignUpPage />} />
+
               <Route path="/email-confirmed" element={<EmailConfirmedPage />} />
 
               {/* ROTAS PROTEGIDAS GENÉRICAS (qualquer logado) */}
@@ -271,7 +262,7 @@ function App() {
                 }
               />
 
-              {/* Marketplace (vale para clinic + vet, e se quiser também admin) */}
+              {/* Marketplace */}
               <Route
                 path="/marketplace"
                 element={
@@ -313,7 +304,7 @@ function App() {
                 }
               />
 
-              {/* Genéricos de usuário logado */}
+              {/* Genéricos */}
               <Route
                 path="/accept-invitation"
                 element={

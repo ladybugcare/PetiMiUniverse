@@ -204,3 +204,26 @@ export const requireClinicAccess = async (
   }
 };
 
+
+// ✅ Middleware para garantir que o usuário logado é um admin
+export const verifyAdmin = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const user = req.user;
+
+  if (!user) {
+    return res.status(401).json({ error: 'Usuário não autenticado' });
+  }
+
+  const userRole = user.role?.toLowerCase();
+
+  if (userRole !== 'admin') {
+    return res
+      .status(403)
+      .json({ error: 'Acesso negado. Somente administradores podem executar esta ação.' });
+  }
+
+  next();
+};

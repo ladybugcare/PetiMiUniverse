@@ -5,7 +5,7 @@ import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { vetsApi, Vet } from '../services/vetsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, FileText, ShoppingCart, User, LogOut, Edit } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, ShoppingCart, User, Edit } from 'lucide-react';
 import colors from '../styles/colors';
 
 const VetProfilePage: React.FC = () => {
@@ -63,12 +63,6 @@ const VetProfilePage: React.FC = () => {
       action: 'navigate',
       path: '/vet-profile',
     },
-    // {
-    //   id: 'logout',
-    //   label: 'Sair',
-    //   icon: <LogOut size={20} color={colors.primary} />,
-    //   action: 'logout',
-    // },
   ];
 
   useEffect(() => {
@@ -89,7 +83,7 @@ const VetProfilePage: React.FC = () => {
         name: vetData.name,
         specialties: vetData.specialties || [],
         certificates: vetData.certificates || [],
-        experience: vetData.experience,
+        experience: vetData.experience || '', // ✅ fallback seguro
       });
     } catch (error: any) {
       showError('Erro ao carregar perfil: ' + error.message);
@@ -117,7 +111,7 @@ const VetProfilePage: React.FC = () => {
       name: vet!.name,
       specialties: vet!.specialties || [],
       certificates: vet!.certificates || [],
-      experience: vet!.experience,
+      experience: vet!.experience || '', // ✅ fallback seguro
     });
     setIsEditing(false);
   };
@@ -125,8 +119,6 @@ const VetProfilePage: React.FC = () => {
   const handlePhotoSelect = async (file: File) => {
     try {
       setUploadingPhoto(true);
-      // For now, we'll use a simple data URL
-      // In production, you would upload to Supabase Storage and get the URL
       const reader = new FileReader();
       reader.onloadend = async () => {
         const photo_url = reader.result as string;
@@ -202,9 +194,9 @@ const VetProfilePage: React.FC = () => {
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Edit size={16} />
-                <span>Editar Perfil</span>
-              </div>
+                  <Edit size={16} />
+                  <span>Editar Perfil</span>
+                </div>
               </button>
             ) : (
               <div style={styles.buttonGroup}>
@@ -229,7 +221,7 @@ const VetProfilePage: React.FC = () => {
 
           {/* Form */}
           <div style={styles.form}>
-            {/* Name */}
+            {/* Nome */}
             <div style={styles.formGroup}>
               <label style={styles.label}>Nome</label>
               {isEditing ? (
@@ -244,19 +236,19 @@ const VetProfilePage: React.FC = () => {
               )}
             </div>
 
-            {/* Email (read-only) */}
+            {/* Email */}
             <div style={styles.formGroup}>
               <label style={styles.label}>Email</label>
               <p style={styles.valueReadOnly}>{vet.email}</p>
             </div>
 
-            {/* CRMV (read-only) */}
+            {/* CRMV */}
             <div style={styles.formGroup}>
               <label style={styles.label}>CRMV</label>
               <p style={styles.valueReadOnly}>{vet.crmv}</p>
             </div>
 
-            {/* Specialties */}
+            {/* Especialidades */}
             <div style={styles.formGroup}>
               <label style={styles.label}>Especialidades</label>
               {isEditing ? (
@@ -291,7 +283,7 @@ const VetProfilePage: React.FC = () => {
               ) : (
                 <div style={styles.tagContainer}>
                   {vet.specialties && vet.specialties.length > 0 ? (
-                    vet.specialties.map((spec) => (
+                    vet.specialties.map((spec: string) => (
                       <span key={spec} style={styles.tagReadOnly}>
                         {spec}
                       </span>
@@ -303,7 +295,7 @@ const VetProfilePage: React.FC = () => {
               )}
             </div>
 
-            {/* Certificates */}
+            {/* Certificados */}
             <div style={styles.formGroup}>
               <label style={styles.label}>Certificados</label>
               {isEditing ? (
@@ -338,7 +330,7 @@ const VetProfilePage: React.FC = () => {
               ) : (
                 <div style={styles.tagContainer}>
                   {vet.certificates && vet.certificates.length > 0 ? (
-                    vet.certificates.map((cert) => (
+                    vet.certificates.map((cert: string) => (
                       <span key={cert} style={styles.tagReadOnly}>
                         {cert}
                       </span>
@@ -350,7 +342,7 @@ const VetProfilePage: React.FC = () => {
               )}
             </div>
 
-            {/* Experience */}
+            {/* Experiência */}
             <div style={styles.formGroup}>
               <label style={styles.label}>Experiência</label>
               {isEditing ? (
@@ -361,7 +353,7 @@ const VetProfilePage: React.FC = () => {
                   rows={4}
                 />
               ) : (
-                <p style={styles.value}>{vet.experience}</p>
+                <p style={styles.value}>{vet.experience || ''}</p>
               )}
             </div>
           </div>
@@ -371,6 +363,7 @@ const VetProfilePage: React.FC = () => {
   );
 };
 
+// Estilos
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
     padding: '24px',
@@ -565,4 +558,3 @@ const styles: { [key: string]: React.CSSProperties } = {
 };
 
 export default VetProfilePage;
-

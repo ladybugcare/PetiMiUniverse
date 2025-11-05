@@ -22,7 +22,7 @@ const VetSignUpPage: React.FC = () => {
     specialties: '',
     experience: '',
     email: '',
-    password: ''
+    password: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -30,36 +30,43 @@ const VetSignUpPage: React.FC = () => {
   // Validar step atual
   const isStepValid = (): boolean => {
     switch (step) {
-      case 1: return formData.name.trim().length >= 3;
-      case 2: return validateCRMV(formData.crmv) && !errors.crmv;
-      case 3: return formData.specialties.trim().length >= 3;
-      case 4: return formData.experience.trim().length > 0;
-      case 5: return validateEmail(formData.email) && !errors.email;
-      case 6: return validatePassword(formData.password).valid;
-      default: return false;
+      case 1:
+        return formData.name.trim().length >= 3;
+      case 2:
+        return validateCRMV(formData.crmv) && !errors.crmv;
+      case 3:
+        return formData.specialties.trim().length >= 3;
+      case 4:
+        return formData.experience.trim().length > 0;
+      case 5:
+        return validateEmail(formData.email) && !errors.email;
+      case 6:
+        return validatePassword(formData.password).valid;
+      default:
+        return false;
     }
   };
 
   // Handle campo change
   const handleFieldChange = (field: keyof typeof formData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
 
     // Limpa erro ao digitar novamente
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+      setErrors((prev) => ({ ...prev, [field]: '' }));
     }
 
     // Validação dinâmica para CRMV
     if (field === 'crmv' && value.length > 0) {
       if (!validateCRMV(value)) {
-        setErrors(prev => ({ ...prev, crmv: 'Formato inválido. Exemplo: 12345-SP' }));
+        setErrors((prev) => ({ ...prev, crmv: 'Formato inválido. Exemplo: 12345-SP' }));
       }
     }
 
     // Validação dinâmica para email
     if (field === 'email' && value.length > 0) {
       if (!validateEmail(value)) {
-        setErrors(prev => ({ ...prev, email: 'Email inválido' }));
+        setErrors((prev) => ({ ...prev, email: 'Email inválido' }));
       }
     }
   };
@@ -68,7 +75,7 @@ const VetSignUpPage: React.FC = () => {
   const handleNext = async () => {
     if (!isStepValid()) return;
 
-    // Step 5 → Verificar email
+    // Step 5 → Verificar email duplicado
     if (step === 5) {
       try {
         setLoading(true);
@@ -97,9 +104,7 @@ const VetSignUpPage: React.FC = () => {
 
   // Voltar step
   const handleBack = () => {
-    if (step > 1) {
-      setStep(step - 1);
-    }
+    if (step > 1) setStep(step - 1);
   };
 
   // Enviar cadastro
@@ -108,17 +113,19 @@ const VetSignUpPage: React.FC = () => {
       setLoading(true);
 
       await vetsApi.create({
-        name: formData.name,
-        crmv: formData.crmv,
-        specialties: formData.specialties.split(',').map(s => s.trim()),
-        experience: formData.experience,
-        email: formData.email,
+        name: formData.name.trim(),
+        crmv: formData.crmv.trim(),
+        specialties: formData.specialties.split(',').map((s) => s.trim()),
+        experience: formData.experience.trim(),
+        email: formData.email.trim(),
         password: formData.password,
+        role: 'VET',
       });
 
       // Marcar cadastro como completo - mostrar modal ao invés de alert
       setSignupComplete(true);
     } catch (err: any) {
+      console.error('Erro ao cadastrar:', err);
       alert('Erro ao cadastrar: ' + (err.message || 'Tente novamente.'));
     } finally {
       setLoading(false);
@@ -179,7 +186,13 @@ const VetSignUpPage: React.FC = () => {
               placeholder="Ex: 12345-SP"
               value={formData.crmv}
               onChange={(e) => handleFieldChange('crmv', e.target.value)}
-              className={`input ${errors.crmv ? 'border-red-500' : validateCRMV(formData.crmv) ? 'border-green-500' : ''}`}
+              className={`input ${
+                errors.crmv
+                  ? 'border-red-500'
+                  : validateCRMV(formData.crmv)
+                  ? 'border-green-500'
+                  : ''
+              }`}
               autoFocus
             />
             {errors.crmv && (
@@ -208,7 +221,9 @@ const VetSignUpPage: React.FC = () => {
             <textarea
               placeholder="Ex: Cirurgia, Clínica Geral, Cardiologia"
               value={formData.specialties}
-              onChange={(e) => handleFieldChange('specialties', e.target.value)}
+              onChange={(e) =>
+                handleFieldChange('specialties', e.target.value)
+              }
               className="input"
               rows={3}
               autoFocus
@@ -236,7 +251,9 @@ const VetSignUpPage: React.FC = () => {
               type="text"
               placeholder="Ex: 5 anos"
               value={formData.experience}
-              onChange={(e) => handleFieldChange('experience', e.target.value)}
+              onChange={(e) =>
+                handleFieldChange('experience', e.target.value)
+              }
               className="input"
               autoFocus
             />
@@ -258,7 +275,13 @@ const VetSignUpPage: React.FC = () => {
                 placeholder="dr.joao@email.com"
                 value={formData.email}
                 onChange={(e) => handleFieldChange('email', e.target.value)}
-                className={`input ${errors.email ? 'border-red-500' : validateEmail(formData.email) ? 'border-green-500' : ''}`}
+                className={`input ${
+                  errors.email
+                    ? 'border-red-500'
+                    : validateEmail(formData.email)
+                    ? 'border-green-500'
+                    : ''
+                }`}
                 autoFocus
               />
             </div>
@@ -279,7 +302,9 @@ const VetSignUpPage: React.FC = () => {
             </p>
             <PasswordInput
               value={formData.password}
-              onChange={(value) => handleFieldChange('password', value)}
+              onChange={(value) =>
+                handleFieldChange('password', value)
+              }
               placeholder="Digite sua senha"
               showStrength={true}
             />
@@ -304,12 +329,9 @@ const VetSignUpPage: React.FC = () => {
               Passo {step} de 6
             </p>
 
-            <div className="mb-8">
-              {renderStepContent()}
-            </div>
+            <div className="mb-8">{renderStepContent()}</div>
 
             <div style={{ marginTop: '24px' }}>
-              {/* Botões principais */}
               <div style={{ display: 'flex', gap: '12px' }}>
                 {step > 1 && (
                   <button
@@ -330,10 +352,14 @@ const VetSignUpPage: React.FC = () => {
                       opacity: loading ? 0.5 : 1,
                     }}
                     onMouseEnter={(e) => {
-                      if (!loading) e.currentTarget.style.backgroundColor = colors.neutral[50];
+                      if (!loading)
+                        e.currentTarget.style.backgroundColor =
+                          colors.neutral[50];
                     }}
                     onMouseLeave={(e) => {
-                      if (!loading) e.currentTarget.style.backgroundColor = colors.surface;
+                      if (!loading)
+                        e.currentTarget.style.backgroundColor =
+                          colors.surface;
                     }}
                   >
                     ← Voltar
@@ -347,28 +373,39 @@ const VetSignUpPage: React.FC = () => {
                     flex: 1,
                     padding: '12px 24px',
                     backgroundColor:
-                      (!isStepValid() || loading) ? colors.primaryLight : colors.primary,
+                      !isStepValid() || loading
+                        ? colors.primaryLight
+                        : colors.primary,
                     color: colors.surface,
                     border: 'none',
                     borderRadius: '8px',
                     fontSize: '14px',
                     fontWeight: '600',
-                    cursor: (!isStepValid() || loading) ? 'not-allowed' : 'pointer',
+                    cursor:
+                      !isStepValid() || loading
+                        ? 'not-allowed'
+                        : 'pointer',
                     transition: 'background-color 0.2s',
-                    opacity: (!isStepValid() || loading) ? 0.5 : 1,
+                    opacity: !isStepValid() || loading ? 0.5 : 1,
                   }}
                   onMouseEnter={(e) => {
                     if (isStepValid() && !loading) {
-                      e.currentTarget.style.backgroundColor = colors.primaryDark;
+                      e.currentTarget.style.backgroundColor =
+                        colors.primaryDark;
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (isStepValid() && !loading) {
-                      e.currentTarget.style.backgroundColor = colors.primary;
+                      e.currentTarget.style.backgroundColor =
+                        colors.primary;
                     }
                   }}
                 >
-                  {loading ? 'Cadastrando...' : step === 6 ? 'Criar Conta' : 'Próximo →'}
+                  {loading
+                    ? 'Cadastrando...'
+                    : step === 6
+                    ? 'Criar Conta'
+                    : 'Próximo →'}
                 </button>
               </div>
             </div>
@@ -380,14 +417,21 @@ const VetSignUpPage: React.FC = () => {
               Conectando quem cuida, quem ama e quem precisa.
             </h2>
             <p>
-              Junte-se ao PetiVet e encontre as melhores oportunidades de trabalho
-              em clínicas veterinárias. Candidate-se às demandas que mais combinam
-              com seu perfil e construa uma carreira de sucesso.
+              Junte-se ao PetiVet e encontre as melhores oportunidades de
+              trabalho em clínicas veterinárias. Candidate-se às demandas que
+              mais combinam com seu perfil e construa uma carreira de sucesso.
             </p>
 
             {/* Colagem de imagens circulares */}
             <div className="hero-images-right">
-              <div style={{ position: 'relative', width: '100%', maxWidth: '320px', height: '320px' }}>
+              <div
+                style={{
+                  position: 'relative',
+                  width: '100%',
+                  maxWidth: '320px',
+                  height: '320px',
+                }}
+              >
                 {/* Imagem 1 */}
                 <div
                   className="hero-image-circle animate-float"
@@ -397,13 +441,17 @@ const VetSignUpPage: React.FC = () => {
                     left: '10px',
                     width: '120px',
                     height: '120px',
-                    zIndex: 3
+                    zIndex: 3,
                   }}
                 >
                   <img
                     src="/img1.png"
                     alt="Veterinário cuidando de pet"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
                   />
                 </div>
 
@@ -417,13 +465,17 @@ const VetSignUpPage: React.FC = () => {
                     width: '110px',
                     height: '110px',
                     zIndex: 4,
-                    animationDelay: '0.3s'
+                    animationDelay: '0.3s',
                   }}
                 >
                   <img
                     src="/img2.jpg"
                     alt="Pet feliz"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
                   />
                 </div>
 
@@ -437,13 +489,17 @@ const VetSignUpPage: React.FC = () => {
                     width: '140px',
                     height: '140px',
                     zIndex: 5,
-                    animationDelay: '0.15s'
+                    animationDelay: '0.15s',
                   }}
                 >
                   <img
                     src="/im3.jpg"
                     alt="Clínica veterinária"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
                   />
                 </div>
 
@@ -457,13 +513,17 @@ const VetSignUpPage: React.FC = () => {
                     width: '95px',
                     height: '95px',
                     zIndex: 2,
-                    animationDelay: '0.5s'
+                    animationDelay: '0.5s',
                   }}
                 >
                   <img
                     src="/img4.jpg"
                     alt="Profissional veterinário"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
                   />
                 </div>
 
@@ -477,13 +537,17 @@ const VetSignUpPage: React.FC = () => {
                     width: '85px',
                     height: '85px',
                     zIndex: 1,
-                    animationDelay: '0.7s'
+                    animationDelay: '0.7s',
                   }}
                 >
                   <img
                     src="/img5.jpg"
                     alt="Cuidado animal"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
                   />
                 </div>
               </div>
@@ -492,7 +556,7 @@ const VetSignUpPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Mensagem de sucesso após cadastro */}
+      {/* Mensagem de sucesso */}
       {signupComplete && (
         <SignUpSuccessModal
           email={formData.email}

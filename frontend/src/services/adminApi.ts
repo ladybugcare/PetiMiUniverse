@@ -1,6 +1,7 @@
+// frontend/src/services/adminApi.ts
 import { apiRequest } from './api';
 
-// Types
+// Tipos
 export interface PendingUnit {
   id: string;
   name: string;
@@ -30,10 +31,10 @@ export interface CreateUserData {
   password?: string;
   generate_password?: boolean;
   status: 'active' | 'inactive';
-  // Campos específicos por tipo
-  cnpj?: string; // para clinic
-  clinic_role?: 'standard' | 'premium' | 'partner'; // role da clínica
-  crmv?: string; // para vet
+  // Campos específicos
+  cnpj?: string;
+  clinic_role?: 'admin' | 'manager' | 'staff';
+  crmv?: string;
   phone?: string;
   address?: string;
   city?: string;
@@ -64,36 +65,33 @@ export interface Admin {
   last_sign_in_at?: string | null;
 }
 
-// Services
+// Serviços administrativos
 export const adminApi = {
-  // Get pending units for approval
-  getPendingUnits: async (): Promise<{ units: PendingUnit[] }> => {
-    return apiRequest('/admin/pending-units');
-  },
+  // Listar unidades pendentes
+  getPendingUnits: async (): Promise<{ units: PendingUnit[] }> =>
+    apiRequest('/admin/pending-units'),
 
-  // Review unit (approve or reject)
+  // Revisar unidade
   reviewUnit: async (
     id: string,
     approved: boolean,
     rejection_reason?: string
-  ): Promise<{ success: boolean; status: string; message: string }> => {
-    return apiRequest(`/admin/units/${id}/review`, {
+  ): Promise<{ success: boolean; status: string; message: string }> =>
+    apiRequest(`/admin/units/${id}/review`, {
       method: 'PATCH',
       body: JSON.stringify({ approved, rejection_reason }),
-    });
-  },
+    }),
 
-  // Create new user
+  // Criar novo usuário (admin/clinic/vet)
   createUser: async (data: CreateUserData): Promise<CreateUserResponse> => {
-    return apiRequest('/admin/users', {
+    const { user_type } = data;
+    return apiRequest(`/admin/users/create/${user_type}`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  // Get all admins
-  getAdmins: async (): Promise<{ admins: Admin[] }> => {
-    return apiRequest('/admin/admins');
-  },
+  // Buscar administradores
+  getAdmins: async (): Promise<{ admins: Admin[] }> =>
+    apiRequest('/admin/users/admins'),
 };
-

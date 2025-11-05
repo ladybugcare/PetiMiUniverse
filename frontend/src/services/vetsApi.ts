@@ -1,86 +1,44 @@
 import { apiRequest } from './api';
 
-// Tipos
 export interface Vet {
   id: string;
   name: string;
-  crmv: string;
-  specialties: string[];
-  certificates: string[];
-  experience: string;
   email: string;
-  clinic_id?: string;
-  photo_url?: string;
-  status?: string;
-  deleted_at?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateVetData {
-  name: string;
-  crmv: string;
-  specialties: string[];
+  crmv: string; // obrigatório pra simplificar compatibilidade
+  phone?: string;
+  specialties?: string[];
   certificates?: string[];
-  experience: string;
-  email: string;
-  password: string;
-  clinic_id?: string;
+  experience?: string;
+  photo_url?: string;
+  status?: 'active' | 'inactive' | 'pending' | string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-// Services
 export const vetsApi = {
-  // Criar veterinário
-  create: async (data: CreateVetData): Promise<{ vet: Vet }> => {
-    return apiRequest('/vets/register', {
+  getAll: async (): Promise<{ vets: Vet[] }> => apiRequest('/vets'),
+
+  getById: async (id: string): Promise<{ vet: Vet }> =>
+    apiRequest(`/vets/${id}`),
+
+  create: async (data: any): Promise<{ vet: Vet }> =>
+    apiRequest('/vets', {
       method: 'POST',
       body: JSON.stringify(data),
-    });
-  },
+    }),
 
-  // Listar veterinários
-  getAll: async (): Promise<{ vets: Vet[] }> => {
-    return apiRequest('/vets');
-  },
-
-  // Buscar veterinário por ID
-  getById: async (id: string): Promise<{ vet: Vet }> => {
-    return apiRequest(`/vets/${id}`);
-  },
-
-  // Buscar veterinários por clínica
-  getByClinic: async (clinicId: string): Promise<{ vets: Vet[] }> => {
-    return apiRequest(`/vets/clinic/${clinicId}`);
-  },
-
-  // Atualizar veterinário
-  update: async (id: string, data: Partial<Vet>): Promise<{ vet: Vet }> => {
-    return apiRequest(`/vets/${id}`, {
+  update: async (id: string, data: any): Promise<{ vet: Vet }> =>
+    apiRequest(`/vets/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    });
-  },
+    }),
 
-  // Atualizar foto de perfil
-  uploadPhoto: async (id: string, photo_url: string): Promise<{ vet: Vet }> => {
-    return apiRequest(`/vets/${id}/photo`, {
+  delete: async (id: string): Promise<{ success: boolean }> =>
+    apiRequest(`/vets/${id}`, { method: 'DELETE' }),
+
+  uploadPhoto: async (id: string, photo_url: string): Promise<{ vet: Vet }> =>
+    apiRequest(`/vets/${id}/photo`, {
       method: 'PATCH',
       body: JSON.stringify({ photo_url }),
-    });
-  },
-
-  // Atualizar status do veterinário
-  updateStatus: async (id: string, status: string): Promise<{ vet: Vet }> => {
-    return apiRequest(`/vets/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-  },
-
-  // Deletar veterinário
-  delete: async (id: string): Promise<{ message: string; vet: Vet }> => {
-    return apiRequest(`/vets/${id}`, {
-      method: 'DELETE',
-    });
-  },
+    }),
 };
