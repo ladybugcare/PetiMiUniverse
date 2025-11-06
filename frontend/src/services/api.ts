@@ -2,7 +2,13 @@ import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { handleInvalidToken } from '../utils/envGuard';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+const API_BASE_URL =
+  (process.env.REACT_APP_API_URL as string) ||
+  (process.env.VITE_API_BASE_URL as string) ||
+  'https://petivet-api-staging.onrender.com';
+
+  
+
 
 // Helper para localStorage/AsyncStorage
 const getStorageItem = (key: string): string | null => {
