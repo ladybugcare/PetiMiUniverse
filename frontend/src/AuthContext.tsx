@@ -5,28 +5,26 @@ import React, {
   useEffect,
   useState,
   ReactNode,
-} from 'react';
-import { Role, getUserRole } from './utils/authHelpers';
+} from "react";
+import { Role, getUserRole } from "./utils/authHelpers";
+import { supabase } from "./services/supabase";
 
 type AuthContextType = {
   user: any | null;
   session: any | null;
   role: Role;
   loading: boolean;
-  /** usado após login: salva em localStorage + atualiza estado */
-  setAuthFromLogin: (result: any) => void;
-  /** logout global: limpa localStorage + estado */
+  setAuthFromLogin: (result: any) => Promise<void>;
   logout: () => Promise<void>;
-  /** estado que indica se logout está em andamento */
   isLoggingOut: boolean;
 };
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
-  role: 'UNKNOWN',
+  role: "UNKNOWN",
   loading: true,
-  setAuthFromLogin: () => {},
+  setAuthFromLogin: async () => {},
   logout: async () => {},
   isLoggingOut: false,
 });
@@ -34,92 +32,134 @@ const AuthContext = createContext<AuthContextType>({
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<any | null>(null);
   const [session, setSession] = useState<any | null>(null);
-  const [role, setRole] = useState<Role>('UNKNOWN');
+  const [role, setRole] = useState<Role>("UNKNOWN");
   const [loading, setLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const navigate = useNavigate();
 
-  /** 🔹 Carrega dados do localStorage ao iniciar o app */
+  /**
+   * 🔹 Inicializa listener de sessão e restaura sessão salva no Supabase
+   */
   useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem('user');
-      const storedSession = localStorage.getItem('session');
+    const initAuth = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
 
-      const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-      const parsedSession = storedSession ? JSON.parse(storedSession) : null;
+        if (data.session) {
+          setSession(data.session);
+          setUser(data.session.user);
+          setRole(getUserRole(data.session.user));
+        } else {
+          setSession(null);
+          setUser(null);
+          setRole("UNKNOWN");
+        }
+      } catch (err) {
+        console.error("[AuthContext] Erro ao carregar sessão:", err);
+        setSession(null);
+        setUser(null);
+        setRole("UNKNOWN");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-      setUser(parsedUser);
-      setSession(parsedSession);
-      setRole(getUserRole(parsedUser));
-    } catch (err) {
-      console.error('[AuthContext] Erro ao ler localStorage:', err);
-      setUser(null);
-      setSession(null);
-      setRole('UNKNOWN');
-    } finally {
-      setLoading(false);
-    }
+    // Listener para login/logout automáticos
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session) {
+          setSession(session);
+          setUser(session.user);
+          setRole(getUserRole(session.user));
+        } else {
+          setSession(null);
+          setUser(null);
+          setRole("UNKNOWN");
+        }
+      }
+    );
+
+    initAuth();
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
-  /** 🔹 Chamada pelo LoginPage após login bem sucedido */
-  const setAuthFromLogin = (result: any) => {
-    const nextUser = result?.user || null;
-    const nextSession = result?.session || null;
-    const onboardingInfo = result?.onboarding || null;
-    const clinicUserInfo = result?.clinicUser || null;
+  /**
+   * 🔹 Chamado após login bem-sucedido
+   */
+  const setAuthFromLogin = async (result: any) => {
+    try {
+      const nextUser = result?.user || null;
+      const nextSession = result?.session || null;
+      const onboardingInfo = result?.onboarding || null;
+      const clinicUserInfo = result?.clinicUser || null;
 
-    // Persistência no localStorage
-    if (nextUser) localStorage.setItem('user', JSON.stringify(nextUser));
-    else localStorage.removeItem('user');
+      if (nextSession) {
+        // 🔸 Define sessão no Supabase (garante persistência em staging/prod)
+        await supabase.auth.setSession(nextSession);
+      }
 
-    if (nextSession) localStorage.setItem('session', JSON.stringify(nextSession));
-    else localStorage.removeItem('session');
+      // Persistência local (opcional, útil pra dados extras)
+      if (nextUser) localStorage.setItem("user", JSON.stringify(nextUser));
+      else localStorage.removeItem("user");
 
-    if (onboardingInfo) {
-      localStorage.setItem('clinicOnboarding', JSON.stringify(onboardingInfo));
-      onboardingInfo.isFirstLogin
-        ? localStorage.setItem('isFirstAccess', 'true')
-        : localStorage.removeItem('isFirstAccess');
-    } else {
-      localStorage.removeItem('clinicOnboarding');
-      localStorage.removeItem('isFirstAccess');
+      if (nextSession)
+        localStorage.setItem("session", JSON.stringify(nextSession));
+      else localStorage.removeItem("session");
+
+      if (onboardingInfo) {
+        localStorage.setItem(
+          "clinicOnboarding",
+          JSON.stringify(onboardingInfo)
+        );
+        onboardingInfo.isFirstLogin
+          ? localStorage.setItem("isFirstAccess", "true")
+          : localStorage.removeItem("isFirstAccess");
+      } else {
+        localStorage.removeItem("clinicOnboarding");
+        localStorage.removeItem("isFirstAccess");
+      }
+
+      if (clinicUserInfo)
+        localStorage.setItem("clinic_user", JSON.stringify(clinicUserInfo));
+      else localStorage.removeItem("clinic_user");
+
+      // Atualiza estados globais
+      setUser(nextUser);
+      setSession(nextSession);
+      setRole(getUserRole(nextUser));
+    } catch (err) {
+      console.error("[AuthContext] Erro ao definir sessão:", err);
     }
-
-    if (clinicUserInfo) localStorage.setItem('clinic_user', JSON.stringify(clinicUserInfo));
-    else localStorage.removeItem('clinic_user');
-
-    // Atualiza estado global
-    setUser(nextUser);
-    setSession(nextSession);
-    setRole(getUserRole(nextUser));
   };
 
-  /** 🔹 Logout seguro: bloqueia múltiplos cliques e redireciona */
+  /**
+   * 🔹 Logout global
+   */
   const logout = async () => {
-    if (isLoggingOut) return; // evita múltiplos cliques
+    if (isLoggingOut) return;
     setIsLoggingOut(true);
 
     try {
-      // (Opcional) Se usar Supabase: await supabase.auth.signOut();
+      await supabase.auth.signOut();
 
-      // Limpa localStorage
-      localStorage.removeItem('user');
-      localStorage.removeItem('session');
-      localStorage.removeItem('clinicOnboarding');
-      localStorage.removeItem('clinic_user');
-      localStorage.removeItem('isFirstAccess');
+      // Limpa tudo
+      localStorage.removeItem("user");
+      localStorage.removeItem("session");
+      localStorage.removeItem("clinicOnboarding");
+      localStorage.removeItem("clinic_user");
+      localStorage.removeItem("isFirstAccess");
 
-      // Reseta estados globais
       setUser(null);
       setSession(null);
-      setRole('UNKNOWN');
+      setRole("UNKNOWN");
 
-      // Redireciona após logout
-      navigate('/login', { replace: true });
+      navigate("/login", { replace: true });
     } catch (err) {
-      console.error('[Logout] Erro ao encerrar sessão:', err);
+      console.error("[Logout] Erro ao encerrar sessão:", err);
     } finally {
-      // Desbloqueia o botão após breve delay (previne flood)
       setTimeout(() => setIsLoggingOut(false), 800);
     }
   };

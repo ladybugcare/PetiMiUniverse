@@ -31,6 +31,7 @@ const app = express();
 // 🔹 Configuração de CORS (com suporte a múltiplos domínios)
 const allowedOrigins: string[] = [
   'http://localhost:3000',
+  'http://localhost:3001',
   'http://localhost:3002', // React dev server
   'https://peti-vet-git-staging-petivet.vercel.app',
   'https://peti-vet-petivet.vercel.app', // Vercel production
