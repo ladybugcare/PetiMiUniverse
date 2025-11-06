@@ -14,6 +14,8 @@ import { authenticateUser } from '../middleware/authMiddleware';
 import { supabase } from '../config/supabase';
 import type { Request, Response } from 'express';
 import { createClinicPublic } from '../controllers/clinics/createClinicPublic';
+import { checkClinicCnpj } from '../controllers/clinics/checkClinicCnpj';
+
 
 const router = express.Router();
 
@@ -39,6 +41,7 @@ router.post('/register-with-unit', authenticateUser, registerClinicWithUnit);
 router.get('/', getClinics);
 router.get('/check-cnpj/:cnpj', checkCNPJ);
 router.get('/check-email/:email', checkEmail);
+router.get('/check-cnpj/:cnpj', checkClinicCnpj);
 router.get('/:id', getClinicById);
 
 /**
