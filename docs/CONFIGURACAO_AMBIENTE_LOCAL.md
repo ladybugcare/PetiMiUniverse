@@ -252,6 +252,63 @@ has been blocked by CORS policy
 | Frontend | `http://localhost:3001` ou `http://localhost:3002` | 3001/3002 |
 | Supabase API | `http://127.0.0.1:54321` | 54321 |
 | Supabase Studio | `http://127.0.0.1:54323` | 54323 |
+| **Inbucket (Emails)** | `http://localhost:54324` | 54324 |
+
+---
+
+## 📧 Visualizar Emails com Inbucket
+
+O Inbucket é um servidor de email de teste integrado ao Supabase local. Ele captura todos os emails enviados durante o desenvolvimento, permitindo que você visualize e teste emails sem precisar de uma conta de email real.
+
+### Como Acessar o Inbucket
+
+1. **Verifique se está rodando:**
+   ```bash
+   supabase status
+   ```
+   Você deve ver: `Inbucket URL: http://127.0.0.1:54324`
+
+2. **Acesse no navegador:**
+   ```
+   http://localhost:54324
+   ```
+
+### Como Usar
+
+1. **Fazer signup no frontend:**
+   - Acesse `http://localhost:3002/clinic-signup`
+   - Preencha o formulário e submeta
+
+2. **Verificar email no Inbucket:**
+   - Abra `http://localhost:54324` em uma nova aba
+   - Você verá um novo email na lista
+   - Clique no email para ver o conteúdo completo
+
+3. **Confirmar email:**
+   - No email aberto, encontre o link de confirmação
+   - Clique no link (ou copie e cole no navegador)
+   - Você será redirecionado para `/email-confirmed`
+
+### Diferença: Local vs Staging/Production
+
+- **Local**: Emails capturados pelo Inbucket (não são enviados de verdade)
+- **Staging/Production**: Emails enviados pelo Supabase Cloud (chegam na caixa de entrada real)
+
+### Troubleshooting
+
+**Problema: Inbucket não está acessível**
+
+- Verifique se o Supabase está rodando: `supabase status`
+- Se não estiver, inicie: `supabase start`
+- Aguarde alguns segundos para o Inbucket inicializar
+
+**Problema: Emails não aparecem no Inbucket**
+
+- Verifique se `email_confirm: true` no código de signup
+- Verifique os logs do backend para erros
+- Verifique `supabase/config.toml` linha 192: `enabled = true`
+
+📚 **Para mais detalhes, consulte:** [`docs/INBUCKET_GUIDE.md`](./INBUCKET_GUIDE.md)
 
 ---
 
@@ -277,6 +334,7 @@ Após configurar o ambiente local:
 
 - `backend/ENV_SETUP.md` - Configuração detalhada de variáveis do backend
 - `frontend/ENV_SETUP.md` - Configuração detalhada de variáveis do frontend
+- `docs/INBUCKET_GUIDE.md` - Guia completo sobre como usar o Inbucket para visualizar emails
 - `docs/ENVIRONMENT_SYNC_GUIDE.md` - Guia de sincronização entre ambientes
 
 ---

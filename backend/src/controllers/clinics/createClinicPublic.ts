@@ -27,7 +27,7 @@ export const createClinicPublic = async (req: Request, res: Response) => {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: false,
+      email_confirm: true, // ✅ Envia email automaticamente (Inbucket local, Supabase Cloud staging/prod)
       user_metadata: { 
         role: 'clinic', // Trigger procura por 'role'
         name,

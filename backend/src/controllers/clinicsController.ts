@@ -406,7 +406,7 @@ export const registerClinicWithUnit = async (req: Request, res: Response) => {
         if (!clinicAddress) {
           const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.getUserById(user_id);
           if (!authError && authUser?.user) {
-            const metadata = authUser.user.user_metadata || authUser.user.raw_user_meta_data || {};
+            const metadata = authUser.user.user_metadata || {};
             clinicName = clinicName || metadata.name || 'Clínica sem nome';
             clinicCnpj = clinicCnpj || (metadata.cnpj ? normalizeCNPJ(metadata.cnpj) : null);
             clinicAddress = clinicAddress || metadata.address || '';
@@ -452,7 +452,7 @@ export const registerClinicWithUnit = async (req: Request, res: Response) => {
           return res.status(400).json({ error: 'Dados da clínica são obrigatórios' });
         }
 
-        const metadata = authUser.user.user_metadata || authUser.user.raw_user_meta_data || {};
+        const metadata = authUser.user.user_metadata || {};
         const clinicName = metadata.name || 'Clínica sem nome';
         const clinicCnpj = metadata.cnpj ? normalizeCNPJ(metadata.cnpj) : null;
         const clinicAddress = metadata.address || '';
