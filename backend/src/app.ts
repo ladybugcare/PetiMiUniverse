@@ -4,6 +4,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 
 import clinicsRoutes from './routes/clinics';
+console.log('✅ Rotas de clínicas carregadas');
+
 import adminRoutes from './routes/adminRoutes';
 import vetsRoutes from './routes/vets';
 
@@ -17,6 +19,8 @@ app.use(express.json());
 
 // 🚀 Rotas principais
 app.use('/clinics', clinicsRoutes);
+console.log('✅ Rotas /clinics registradas');
+
 app.use('/admin', adminRoutes);
 app.use('/vets', vetsRoutes);
 

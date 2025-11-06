@@ -1,32 +1,49 @@
-// backend/routes/clinics.ts
+// backend/src/routes/clinics.ts
+console.log('🩺 Clinics routes inicializadas');
+
 import express from 'express';
-import {
-  updateClinic,
-  updateClinicPhoto,
-  deleteClinic,
-  checkCNPJ,
-  checkEmail,
-  registerClinicWithUnit
-} from '../controllers/clinicsController';
 import { authenticateUser } from '../middleware/authMiddleware';
 import { supabase } from '../config/supabase';
 import type { Request, Response } from 'express';
+
+// 🏥 Controladores novos (organizados)
 import { createClinicPublic } from '../controllers/clinics/createClinicPublic';
 import { checkClinicCnpj } from '../controllers/clinics/checkClinicCnpj';
 import { getClinics } from '../controllers/clinics/getClinics';
 import { getClinicById } from '../controllers/clinics/getClinicById';
 
-
+// 🧩 Controladores antigos ainda úteis
+import {
+  updateClinic,
+  updateClinicPhoto,
+  deleteClinic,
+  checkEmail,
+  registerClinicWithUnit,
+} from '../controllers/clinicsController';
 
 const router = express.Router();
 
 /**
  * ===========================================================
- * 🏥 FLUXO DE CADASTRO PÚBLICO (sem login)
+ * 🏥 FLUXO DE CADASTRO PÚBLICO
  * ===========================================================
  */
-router.post('/register', createClinicPublic);
 router.post('/', createClinicPublic);
+
+/**
+ * ===========================================================
+ * 🔍 CONSULTAS E VALIDAÇÕES
+ * ===========================================================
+ */
+router.get('/check-cnpj/:cnpj', (req, res, next) => {
+  console.log('📡 Rota /clinics/check-cnpj chamada com:', req.params.cnpj);
+  next();
+}, checkClinicCnpj);
+
+
+router.get('/check-email/:email', checkEmail);
+router.get('/', getClinics);
+router.get('/:id', getClinicById);
 
 /**
  * ===========================================================
@@ -37,65 +54,16 @@ router.post('/register-with-unit', authenticateUser, registerClinicWithUnit);
 
 /**
  * ===========================================================
- * 🔍 CONSULTAS E VALIDAÇÕES
- * ===========================================================
- */
-router.get('/', getClinics);
-router.get('/check-cnpj/:cnpj', checkCNPJ);
-router.get('/check-email/:email', checkEmail);
-router.get('/check-cnpj/:cnpj', checkClinicCnpj);
-router.get('/:id', getClinicById);
-
-
-/**
- * ===========================================================
  * ✏️ ATUALIZAÇÃO DE DADOS
  * ===========================================================
  */
-router.put('/:id', authenticateUser, async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { name, email, cnpj, phone, address, city, state, status } = req.body;
-
-  try {
-    const { data, error } = await supabase
-      .from('clinics')
-      .update({
-        name,
-        email,
-        cnpj,
-        phone,
-        address,
-        city,
-        state,
-        status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return res.json({
-      success: true,
-      message: 'Clínica atualizada com sucesso',
-      clinic: data,
-    });
-  } catch (error: any) {
-    console.error('Erro ao atualizar clínica:', error);
-    return res.status(500).json({
-      error: error.message || 'Erro ao atualizar clínica',
-    });
-  }
-});
+router.put('/:id', authenticateUser, updateClinic);
 
 /**
  * ===========================================================
  * 🖼️ FOTO E EXCLUSÃO
  * ===========================================================
  */
-router.get('/check-cnpj/:cnpj', checkClinicCnpj);
-router.get('/', getClinics);
-router.get('/:id', getClinicById);
 router.patch('/:id/photo', authenticateUser, updateClinicPhoto);
 router.delete('/:id', authenticateUser, deleteClinic);
 

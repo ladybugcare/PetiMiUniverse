@@ -76,20 +76,25 @@ const ClinicSignUpPage: React.FC = () => {
     if (!isStepValid()) return;
 
     // Step 2 → verifica CNPJ duplicado
-    if (step === 2) {
-      try {
-        const response = await fetch(
-          `${API_BASE_URL}/clinics/check-cnpj/${encodeURIComponent(formData.cnpj)}`
-        );
-        const data = await response.json();
-        if (data.exists) {
-          setErrors({ cnpj: 'CNPJ já cadastrado na plataforma' });
-          return;
-        }
-      } catch (error) {
-        console.error('Erro ao verificar CNPJ:', error);
-      }
+if (step === 2) {
+  try {
+    // 🧼 Remove tudo que não for número (., /, -)
+    const cleanCnpj = formData.cnpj.replace(/\D/g, '');
+
+    const response = await fetch(
+      `${API_BASE_URL}/clinics/check-cnpj/${cleanCnpj}`
+    );
+
+    const data = await response.json();
+
+    if (data.exists) {
+      setErrors({ cnpj: 'CNPJ já cadastrado na plataforma' });
+      return;
     }
+  } catch (error) {
+    console.error('Erro ao verificar CNPJ:', error);
+  }
+}
 
     // Step 4 → verifica email duplicado
     if (step === 4) {

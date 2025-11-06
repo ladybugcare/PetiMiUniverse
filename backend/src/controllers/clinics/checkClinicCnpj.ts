@@ -3,6 +3,7 @@ import { supabase } from '../../config/supabase';
 
 export const checkClinicCnpj = async (req: Request, res: Response) => {
   const { cnpj } = req.params;
+  
 
   try {
     const { data, error } = await supabase

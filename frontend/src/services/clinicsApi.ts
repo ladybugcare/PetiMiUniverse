@@ -31,7 +31,7 @@ export const clinicsApi = {
     user?: any; 
     session?: any;
   }> => {
-    return apiRequest('/clinics/register', {
+    return apiRequest('/clinics', {
       method: 'POST',
       body: JSON.stringify(data),
     });
