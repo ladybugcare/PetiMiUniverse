@@ -57,8 +57,10 @@ SUPABASE_ANON_KEY=[Anon Key do Supabase Staging]
 SUPABASE_SERVICE_ROLE_KEY=[Service Role Key do Supabase Staging]
 PORT=10000
 NODE_ENV=staging
-FRONTEND_URL=https://staging.petivet.vercel.app
+FRONTEND_URL=https://peti-vet-git-staging-petivet.vercel.app
 ```
+
+**Importante**: A `FRONTEND_URL` deve ser a URL exata do frontend no Vercel (staging). Não use `http://localhost:3002` em staging/production!
 
 ## Para Produção
 

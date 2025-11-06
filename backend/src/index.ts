@@ -46,15 +46,25 @@ const normalizedOrigins = allowedOrigins.map((origin) =>
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
+      // Permite requisições sem origem (ex: Postman, mobile apps)
+      if (!origin) {
+        return callback(null, true);
+      }
+      
       const normalizedOrigin = origin.replace(/\/$/, '');
-      if (
+      
+      // Verifica se a origem está na lista de permitidas
+      const isAllowed = 
         normalizedOrigins.includes(normalizedOrigin) ||
-        allowedOrigins.includes(origin)
-      ) {
-        callback(null, true);
+        allowedOrigins.includes(origin) ||
+        allowedOrigins.includes(normalizedOrigin);
+      
+      if (isAllowed) {
+        // Retorna a origem exata da requisição (não uma origem fixa)
+        callback(null, origin);
       } else {
         console.warn(`[CORS] Blocked origin: ${origin}`);
+        console.warn(`[CORS] Allowed origins:`, allowedOrigins);
         callback(new Error('Not allowed by CORS'));
       }
     },
