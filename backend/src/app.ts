@@ -3,9 +3,9 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
-import clinicsRoutes from './src/routes/clinics';
-import adminRoutes from './src/routes/adminRoutes';
-import vetsRoutes from './src/routes/vets';
+import clinicsRoutes from './routes/clinics';
+import adminRoutes from './routes/adminRoutes';
+import vetsRoutes from './routes/vets';
 
 dotenv.config();
 

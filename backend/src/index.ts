@@ -2,25 +2,25 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { supabase } from './config/supabase';
+import { supabase } from './config/supabase.js';
 
 // 🔹 Importa rotas
-import petRoutes from './routes/pets';
-import clinicsRoutes from './routes/clinics';
-import vetsRoutes from './routes/vets';
-import demandsRoutes from './routes/demands';
-import applicationsRoutes from './routes/applications';
-import authRoutes from './routes/auth';
-import specialtiesRoutes from './routes/specialties';
-import marketplaceRoutes from './routes/marketplace';
-import marketplaceMessagesRoutes from './routes/marketplaceMessages';
-import unitsRoutes from './routes/units';
-import clinicUsersRoutes from './routes/clinicUsers';
-import statisticsRoutes from './routes/statistics';
-import demandPositionsRoutes from './routes/demandPositions';
-import adminRoutes from './routes/adminRoutes';
-import supportTicketsRoutes from './routes/supportTickets';
-import notificationsRoutes from './routes/notifications';
+import petRoutes from './routes/pets.js';
+import clinicsRoutes from './routes/clinics.js';
+import vetsRoutes from './routes/vets.js';
+import demandsRoutes from './routes/demands.js';
+import applicationsRoutes from './routes/applications.js';
+import authRoutes from './routes/auth.js';
+import specialtiesRoutes from './routes/specialties.js';
+import marketplaceRoutes from './routes/marketplace.js';
+import marketplaceMessagesRoutes from './routes/marketplaceMessages.js';
+import unitsRoutes from './routes/units.js';
+import clinicUsersRoutes from './routes/clinicUsers.js';
+import statisticsRoutes from './routes/statistics.js';
+import demandPositionsRoutes from './routes/demandPositions.js';
+import adminRoutes from './routes/adminRoutes.js';
+import supportTicketsRoutes from './routes/supportTickets.js';
+import notificationsRoutes from './routes/notifications.js';
 
 // 🔹 Carrega variáveis de ambiente
 dotenv.config();

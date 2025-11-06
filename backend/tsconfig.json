@@ -1,26 +1,26 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "commonjs",
+    "moduleResolution": "node",
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
+     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "dist",
-    "rootDir": "./", 
-    "baseUrl": "./",
+   "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": "./src",
     "types": ["node"],
-    "noImplicitAny": false,
+    "noImplicitAny": false
   },
   "ts-node": {
     "transpileOnly": true,
     "preferTsExts": true
   },
   "include": [
-    "server.ts",
+    "src/server.ts",
     "src/**/*",
     "routes/**/*",
     "controllers/**/*",
