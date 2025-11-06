@@ -60,10 +60,16 @@ app.use(
         allowedOrigins.includes(normalizedOrigin);
       
       if (isAllowed) {
-        // Retorna a origem exata da requisição (não uma origem fixa)
+        // Log para debug (apenas em staging/dev)
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[CORS] Allowed origin: ${origin}`);
+        }
+        // Retorna a origem exata da requisição para o header CORS
+        // Isso garante que o header access-control-allow-origin seja a origem correta
         callback(null, origin);
       } else {
         console.warn(`[CORS] Blocked origin: ${origin}`);
+        console.warn(`[CORS] Normalized: ${normalizedOrigin}`);
         console.warn(`[CORS] Allowed origins:`, allowedOrigins);
         callback(new Error('Not allowed by CORS'));
       }
