@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { supabase, supabaseAdmin } from '../../config/supabase.js';
 import crypto from 'crypto';
+import { normalizeCNPJ } from '../../utils/cnpjUtils.js';
 
 /**
  * Fluxo de criação pública de clínicas (cadastro via sign-up)
@@ -35,6 +36,9 @@ export const createClinicPublic = async (req: Request, res: Response) => {
     const userId = authData.user.id;
     const clinicId = crypto.randomUUID();
 
+    // Normaliza o CNPJ antes de salvar (remove formatação)
+    const normalizedCnpj = cnpj ? normalizeCNPJ(cnpj) : null;
+
     // 2️⃣ Cria registro na tabela clinics
     const { data: clinic, error: clinicError } = await supabase
       .from('clinics')
@@ -42,10 +46,11 @@ export const createClinicPublic = async (req: Request, res: Response) => {
         {
           id: clinicId,
           name,
-          cnpj,
+          cnpj: normalizedCnpj, // Salva CNPJ normalizado (apenas números)
           address,
           email,
-          status: 'pending_email', // Aguardando confirmação de email          created_at: new Date().toISOString(),
+          status: 'pending_email', // Aguardando confirmação de email
+          created_at: new Date().toISOString(),
         },
       ])
       .select()
