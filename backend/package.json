@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "commonjs",
   "scripts": {
-  "dev": "nodemon --exec ts-node src/index.ts",
+   "dev": "ts-node-dev --respawn server.ts",
   "dev:clean": "lsof -ti tcp:3000 | xargs -r kill && npm run dev",
   "build": "tsc",
   "start": "node dist/server.js",

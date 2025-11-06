@@ -10,14 +10,21 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
-    "rootDir": "./src",
-    "baseUrl": "./src",
+    "rootDir": "./", 
+    "baseUrl": "./",
     "types": ["node"]
   },
   "ts-node": {
     "transpileOnly": true,
     "preferTsExts": true
   },
-  "include": ["src/**/*", "../frontend/hooks", "../frontend/context"],
+  "include": [
+    "server.ts",
+    "src/**/*",
+    "routes/**/*",
+    "controllers/**/*",
+    "../frontend/hooks",
+    "../frontend/context"
+  ],
   "exclude": ["node_modules", "dist"]
 }
