@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express'
 import { supabase, supabaseAdmin } from '../config/supabase'
+import { normalizeCNPJ } from '../utils/cnpjUtils'
 
 
 
@@ -334,6 +335,7 @@ export const deleteClinic = async (req: Request, res: Response) => {
 }
 
 // Register clinic with first unit (unified endpoint)
+// ✅ NOVO FLUXO: Verifica clinic_user com clinic_id NULL, cria clinic primeiro, depois cria unit e atualiza clinic_user
 export const registerClinicWithUnit = async (req: Request, res: Response) => {
   const { clinic, unit } = req.body;
   const user_id = (req as any).user?.id;
@@ -343,53 +345,84 @@ export const registerClinicWithUnit = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Usuário não autenticado' });
     }
 
+    // ✅ 1. Verificar clinic_user (deve existir com clinic_id = NULL e status = 'pending_clinic')
+    const { data: clinicUser, error: clinicUserError } = await supabase
+      .from('clinic_users')
+      .select('id, role, clinic_id, status')
+      .eq('user_id', user_id)
+      .eq('role', 'CADMIN')
+      .maybeSingle();
+
+    if (clinicUserError || !clinicUser) {
+      return res.status(403).json({ error: 'Usuário não encontrado ou sem permissão' });
+    }
+
+    // Se clinic_id já existe, significa que já tem clínica
+    if (clinicUser.clinic_id) {
+      // Se já tem clínica, pode atualizar ou criar nova unidade normalmente
+      // Mas não é o fluxo de primeira unidade
+      if (!unit) {
+        return res.status(400).json({ error: 'Clínica já existe. Use o endpoint de criação de unidade normal.' });
+      }
+    }
+
     let clinicId: string;
     let newClinic = null;
 
-    // 1. Criar ou atualizar clínica se fornecida
+    // ✅ 2. Criar ou atualizar clínica
     if (clinic) {
-      const { name, cnpj, description } = clinic;
+      const { name, cnpj, description, address } = clinic;
       
       if (!name || !name.trim()) {
         return res.status(400).json({ error: 'Nome da clínica é obrigatório' });
       }
 
-      const { data: existingClinic, error: clinicCheckError } = await supabase
-        .from('clinics')
-        .select('id')
-        .eq('id', user_id)
-        .maybeSingle();
-
-      if (clinicCheckError) {
-        console.error('Error checking clinic:', clinicCheckError);
-      }
-
-      if (existingClinic) {
+      // Se clinic_id já existe, usar ele
+      if (clinicUser.clinic_id) {
+        clinicId = clinicUser.clinic_id;
         // Atualizar clínica existente
         const { data: updatedClinic, error: updateError } = await supabase
           .from('clinics')
           .update({ 
             name, 
-            cnpj: cnpj || null, 
+            cnpj: cnpj ? normalizeCNPJ(cnpj) : null, 
             description: description || null,
-            status: 'pending_unit'
+            address: address || null,
+            status: clinicUser.clinic_id ? 'pending_unit' : 'pending_unit',
+            updated_at: new Date().toISOString(),
           })
-          .eq('id', user_id)
+          .eq('id', clinicId)
           .select()
           .single();
 
         if (updateError) throw updateError;
         newClinic = updatedClinic;
-        clinicId = updatedClinic.id;
       } else {
+        // Buscar dados do Auth se não foram fornecidos
+        let clinicName = name;
+        let clinicCnpj = cnpj ? normalizeCNPJ(cnpj) : null;
+        let clinicAddress = address;
+
+        if (!clinicAddress) {
+          const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.getUserById(user_id);
+          if (!authError && authUser?.user) {
+            const metadata = authUser.user.user_metadata || authUser.user.raw_user_meta_data || {};
+            clinicName = clinicName || metadata.name || 'Clínica sem nome';
+            clinicCnpj = clinicCnpj || (metadata.cnpj ? normalizeCNPJ(metadata.cnpj) : null);
+            clinicAddress = clinicAddress || metadata.address || '';
+          }
+        }
+
         // Criar nova clínica
         const { data: createdClinic, error: createError } = await supabase
           .from('clinics')
           .insert({ 
-            id: user_id,
-            name, 
-            cnpj: cnpj || null, 
+            id: user_id, // Clinic ID = User ID
+            name: clinicName, 
+            cnpj: clinicCnpj, 
             description: description || null,
+            address: clinicAddress,
+            email: (req as any).user?.email || null,
             status: 'pending_unit'
           })
           .select()
@@ -398,13 +431,62 @@ export const registerClinicWithUnit = async (req: Request, res: Response) => {
         if (createError) throw createError;
         newClinic = createdClinic;
         clinicId = createdClinic.id;
+
+        // Atualizar clinic_user com clinic_id
+        await supabase
+          .from('clinic_users')
+          .update({ 
+            clinic_id: clinicId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', clinicUser.id);
       }
     } else {
-      // Se não forneceu dados da clínica, usar user_id como clinic_id
-      clinicId = user_id;
+      // Se não forneceu dados da clínica, verificar se já existe
+      if (clinicUser.clinic_id) {
+        clinicId = clinicUser.clinic_id;
+      } else {
+        // Buscar dados do Auth
+        const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.getUserById(user_id);
+        if (authError || !authUser?.user) {
+          return res.status(400).json({ error: 'Dados da clínica são obrigatórios' });
+        }
+
+        const metadata = authUser.user.user_metadata || authUser.user.raw_user_meta_data || {};
+        const clinicName = metadata.name || 'Clínica sem nome';
+        const clinicCnpj = metadata.cnpj ? normalizeCNPJ(metadata.cnpj) : null;
+        const clinicAddress = metadata.address || '';
+
+        // Criar nova clínica
+        const { data: createdClinic, error: createError } = await supabase
+          .from('clinics')
+          .insert({ 
+            id: user_id,
+            name: clinicName, 
+            cnpj: clinicCnpj,
+            address: clinicAddress,
+            email: authUser.user.email || null,
+            status: 'pending_unit'
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        newClinic = createdClinic;
+        clinicId = createdClinic.id;
+
+        // Atualizar clinic_user com clinic_id
+        await supabase
+          .from('clinic_users')
+          .update({ 
+            clinic_id: clinicId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', clinicUser.id);
+      }
     }
 
-    // 2. Se unit for null, apenas salvar clínica e retornar
+    // ✅ 3. Se unit for null, apenas salvar clínica e retornar
     if (!unit) {
       res.status(201).json({ 
         clinic: newClinic,
@@ -413,7 +495,7 @@ export const registerClinicWithUnit = async (req: Request, res: Response) => {
       return;
     }
 
-    // 3. Criar primeira unidade
+    // ✅ 4. Criar primeira unidade
     if (!unit.name || !unit.nickname || !unit.address || !unit.city || !unit.state) {
       return res.status(400).json({ 
         error: 'Dados da unidade incompletos. Nome, apelido, endereço, cidade e estado são obrigatórios.' 
@@ -426,7 +508,7 @@ export const registerClinicWithUnit = async (req: Request, res: Response) => {
         clinic_id: clinicId,
         name: unit.name,
         nickname: unit.nickname.trim(),
-        cnpj: unit.cnpj || null,
+        cnpj: unit.cnpj ? normalizeCNPJ(unit.cnpj) : null,
         address: unit.address,
         city: unit.city,
         state: unit.state,
@@ -440,7 +522,7 @@ export const registerClinicWithUnit = async (req: Request, res: Response) => {
 
     if (unitError) throw unitError;
 
-    // 4. Atualizar status da clínica para pending_approval
+    // ✅ 5. Atualizar status da clínica para pending_approval
     await supabase
       .from('clinics')
       .update({ status: 'pending_approval' })
@@ -448,20 +530,22 @@ export const registerClinicWithUnit = async (req: Request, res: Response) => {
 
     const nowIso = new Date().toISOString();
 
-    // 5. Vincular CADMIN à unidade (se existir registro de clinic_user) e marcar conclusão do onboarding
+    // ✅ 6. Vincular CADMIN à unidade e marcar conclusão do onboarding
     await supabase
       .from('clinic_users')
       .update({ 
-        unit_id: newUnit.id,
+        clinic_id: clinicId, // ✅ Garantir que está vinculado
+        unit_id: newUnit.id, // ✅ Vincular à primeira unidade
+        status: 'active',     // ✅ Ativar usuário
         first_login_completed_at: nowIso,
         onboarding_state: {
           last_step: 'unit',
           completed: true,
           completed_at: nowIso,
-        }
+        },
+        updated_at: nowIso,
       })
-      .eq('clinic_id', clinicId)
-      .eq('user_id', user_id);
+      .eq('id', clinicUser.id);
 
     res.status(201).json({ 
       clinic: newClinic,

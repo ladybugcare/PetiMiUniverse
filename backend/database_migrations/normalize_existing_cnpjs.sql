@@ -19,21 +19,77 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
--- Normalizar CNPJs na tabela clinics
-UPDATE clinics
-SET cnpj = normalize_cnpj(cnpj)
-WHERE cnpj IS NOT NULL 
-  AND cnpj != normalize_cnpj(cnpj); -- Só atualiza se houver diferença
+-- Verificar e criar coluna cnpj na tabela clinics se não existir
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'clinics' 
+    AND column_name = 'cnpj'
+  ) THEN
+    ALTER TABLE clinics ADD COLUMN cnpj text UNIQUE;
+    CREATE INDEX IF NOT EXISTS idx_clinics_cnpj ON clinics(cnpj);
+    RAISE NOTICE 'Coluna cnpj criada na tabela clinics';
+  END IF;
+END $$;
 
--- Normalizar CNPJs na tabela units (se existir)
-UPDATE units
-SET cnpj = normalize_cnpj(cnpj)
-WHERE cnpj IS NOT NULL 
-  AND cnpj != normalize_cnpj(cnpj); -- Só atualiza se houver diferença
+-- Normalizar CNPJs na tabela clinics (se a coluna existir)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'clinics' 
+    AND column_name = 'cnpj'
+  ) THEN
+    UPDATE clinics
+    SET cnpj = normalize_cnpj(cnpj)
+    WHERE cnpj IS NOT NULL 
+      AND cnpj != normalize_cnpj(cnpj); -- Só atualiza se houver diferença
+    
+    RAISE NOTICE 'CNPJs da tabela clinics normalizados';
+  END IF;
+END $$;
+
+-- Verificar e criar coluna cnpj na tabela units se não existir
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+    AND table_name = 'units'
+  ) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'units' 
+      AND column_name = 'cnpj'
+    ) THEN
+      ALTER TABLE units ADD COLUMN cnpj text;
+      RAISE NOTICE 'Coluna cnpj criada na tabela units';
+    END IF;
+    
+    -- Normalizar CNPJs na tabela units
+    UPDATE units
+    SET cnpj = normalize_cnpj(cnpj)
+    WHERE cnpj IS NOT NULL 
+      AND cnpj != normalize_cnpj(cnpj);
+    
+    RAISE NOTICE 'CNPJs da tabela units normalizados';
+  END IF;
+END $$;
 
 -- Mensagem de sucesso
 SELECT 
   'Migration normalize_existing_cnpjs.sql concluída com sucesso!' as status,
-  COUNT(*) FILTER (WHERE cnpj IS NOT NULL) as total_cnpjs_normalizados
-FROM clinics;
+  CASE 
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'clinics' 
+      AND column_name = 'cnpj'
+    ) THEN (SELECT COUNT(*) FROM clinics WHERE cnpj IS NOT NULL)
+    ELSE 0
+  END as total_cnpjs_na_tabela_clinics;
 
