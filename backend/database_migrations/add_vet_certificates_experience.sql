@@ -23,3 +23,5 @@ SELECT
   (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'vets' AND column_name = 'certificates') as certificates_exists,
   (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'vets' AND column_name = 'experience') as experience_exists;
 
+
+

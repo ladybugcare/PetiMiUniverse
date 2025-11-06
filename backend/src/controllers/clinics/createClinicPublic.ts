@@ -45,8 +45,7 @@ export const createClinicPublic = async (req: Request, res: Response) => {
           cnpj,
           address,
           email,
-          status: 'pending_verification',
-          created_at: new Date().toISOString(),
+          status: 'pending_email', // Aguardando confirmação de email          created_at: new Date().toISOString(),
         },
       ])
       .select()

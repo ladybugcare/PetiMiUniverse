@@ -29,13 +29,14 @@ dotenv.config();
 const app = express();
 
 // 🔹 Configuração de CORS (com suporte a múltiplos domínios)
+// Permite origens locais (portas 3001 e 3002 para React dev server) e ambientes de deploy
 const allowedOrigins: string[] = [
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'http://localhost:3002', // React dev server
-  'https://peti-vet-git-staging-petivet.vercel.app',
+  'http://localhost:3000', // Backend local (caso frontend rode na mesma porta)
+  'http://localhost:3001', // Frontend local - porta alternativa
+  'http://localhost:3002', // Frontend local - porta padrão React dev server
+  'https://peti-vet-git-staging-petivet.vercel.app', // Staging
   'https://peti-vet-petivet.vercel.app', // Vercel production
-  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL, // Variável de ambiente (permite configuração flexível)
 ].filter((origin): origin is string => Boolean(origin));
 
 const normalizedOrigins = allowedOrigins.map((origin) =>

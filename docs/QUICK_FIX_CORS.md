@@ -1,5 +1,12 @@
 # ⚡ Fix Rápido - Erro CORS (5 minutos)
 
+> ⚠️ **AVISO**: Este documento foi consolidado no guia principal de configuração local.
+> 
+> **Para informações atualizadas sobre CORS e configuração de ambiente local, consulte:**
+> - 📘 [`CONFIGURACAO_AMBIENTE_LOCAL.md`](./CONFIGURACAO_AMBIENTE_LOCAL.md) - Guia completo e atualizado
+> 
+> Este documento é mantido apenas para referência histórica.
+
 ---
 
 ## 🎯 O que fazer AGORA
