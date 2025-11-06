@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { supabase, supabaseAdmin } from '../../config/supabase';
+import { supabase, supabaseAdmin } from '../../config/supabase.js';
 import crypto from 'crypto';
 
 /**
