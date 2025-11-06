@@ -9,6 +9,9 @@ const clinicsController_1 = require("../controllers/clinicsController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const supabase_1 = require("../config/supabase");
 const createClinicPublic_1 = require("../controllers/clinics/createClinicPublic");
+const checkClinicCnpj_1 = require("../controllers/clinics/checkClinicCnpj");
+const getClinics_1 = require("../controllers/clinics/getClinics");
+const getClinicById_1 = require("../controllers/clinics/getClinicById");
 const router = express_1.default.Router();
 /**
  * ===========================================================
@@ -16,6 +19,7 @@ const router = express_1.default.Router();
  * ===========================================================
  */
 router.post('/register', createClinicPublic_1.createClinicPublic);
+router.post('/', createClinicPublic_1.createClinicPublic);
 /**
  * ===========================================================
  * 🏢 FLUXO INTERNO (clínicas autenticadas)
@@ -27,10 +31,11 @@ router.post('/register-with-unit', authMiddleware_1.authenticateUser, clinicsCon
  * 🔍 CONSULTAS E VALIDAÇÕES
  * ===========================================================
  */
-router.get('/', clinicsController_1.getClinics);
+router.get('/', getClinics_1.getClinics);
 router.get('/check-cnpj/:cnpj', clinicsController_1.checkCNPJ);
 router.get('/check-email/:email', clinicsController_1.checkEmail);
-router.get('/:id', clinicsController_1.getClinicById);
+router.get('/check-cnpj/:cnpj', checkClinicCnpj_1.checkClinicCnpj);
+router.get('/:id', getClinicById_1.getClinicById);
 /**
  * ===========================================================
  * ✏️ ATUALIZAÇÃO DE DADOS
@@ -76,6 +81,9 @@ router.put('/:id', authMiddleware_1.authenticateUser, async (req, res) => {
  * 🖼️ FOTO E EXCLUSÃO
  * ===========================================================
  */
+router.get('/check-cnpj/:cnpj', checkClinicCnpj_1.checkClinicCnpj);
+router.get('/', getClinics_1.getClinics);
+router.get('/:id', getClinicById_1.getClinicById);
 router.patch('/:id/photo', authMiddleware_1.authenticateUser, clinicsController_1.updateClinicPhoto);
 router.delete('/:id', authMiddleware_1.authenticateUser, clinicsController_1.deleteClinic);
 exports.default = router;

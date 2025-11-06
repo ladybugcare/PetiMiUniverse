@@ -1,8 +1,6 @@
 // backend/routes/clinics.ts
 import express from 'express';
 import {
-  getClinics,
-  getClinicById,
   updateClinic,
   updateClinicPhoto,
   deleteClinic,
@@ -15,6 +13,9 @@ import { supabase } from '../config/supabase';
 import type { Request, Response } from 'express';
 import { createClinicPublic } from '../controllers/clinics/createClinicPublic';
 import { checkClinicCnpj } from '../controllers/clinics/checkClinicCnpj';
+import { getClinics } from '../controllers/clinics/getClinics';
+import { getClinicById } from '../controllers/clinics/getClinicById';
+
 
 
 const router = express.Router();
@@ -25,6 +26,7 @@ const router = express.Router();
  * ===========================================================
  */
 router.post('/register', createClinicPublic);
+router.post('/', createClinicPublic);
 
 /**
  * ===========================================================
@@ -43,6 +45,7 @@ router.get('/check-cnpj/:cnpj', checkCNPJ);
 router.get('/check-email/:email', checkEmail);
 router.get('/check-cnpj/:cnpj', checkClinicCnpj);
 router.get('/:id', getClinicById);
+
 
 /**
  * ===========================================================
@@ -90,6 +93,9 @@ router.put('/:id', authenticateUser, async (req: Request, res: Response) => {
  * 🖼️ FOTO E EXCLUSÃO
  * ===========================================================
  */
+router.get('/check-cnpj/:cnpj', checkClinicCnpj);
+router.get('/', getClinics);
+router.get('/:id', getClinicById);
 router.patch('/:id/photo', authenticateUser, updateClinicPhoto);
 router.delete('/:id', authenticateUser, deleteClinic);
 
