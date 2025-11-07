@@ -28,8 +28,8 @@ const ClinicDashboardPage: React.FC = () => {
 
   // Check authentication and clinic status
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const session = JSON.parse(localStorage.getItem('session') || '{}');
+    const user = JSON.parse(localStorage.getItem('user') || '');
+    const session = JSON.parse(localStorage.getItem('session') || '');
     const accessToken: string | undefined = session?.access_token;
     const userRole = user?.user_metadata?.role || user?.role;
     
@@ -41,7 +41,7 @@ const ClinicDashboardPage: React.FC = () => {
     // Allow both 'clinic' users and those with clinic_user roles
     if (userRole !== 'clinic') {
       // Check if user has a clinic_user role
-      const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
+      const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '');
       if (!clinicUser.role) {
         navigate('/vet-dashboard');
       }
@@ -50,7 +50,7 @@ const ClinicDashboardPage: React.FC = () => {
     // Check clinic status
     const checkClinicStatus = async () => {
       try {
-        const headers: Record<string, string> = {};
+        const headers: Record<string, string> = ;
         if (accessToken) {
           headers['Authorization'] = `Bearer ${accessToken}`;
         }
@@ -180,7 +180,11 @@ const ClinicDashboardPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
+<<<<<<< HEAD
     //   icon: <LogOut size={20} color={colors.primary} />,
+=======
+        //   icon: <LogOut size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     //   action: 'logout',
     // },
   ];
@@ -253,7 +257,11 @@ const ClinicDashboardPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
+<<<<<<< HEAD
     //   icon: <LogOut size={20} color={colors.primary} />,
+=======
+        //   icon: <LogOut size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     //   action: 'logout',
     // },
   ];
@@ -305,7 +313,11 @@ const ClinicDashboardPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
+<<<<<<< HEAD
     //   icon: <LogOut size={20} color={colors.primary} />,
+=======
+        //   icon: <LogOut size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     //   action: 'logout',
     // },
   ];
@@ -364,7 +376,11 @@ const ClinicDashboardPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
+<<<<<<< HEAD
     //   icon: <LogOut size={20} color={colors.primary} />,
+=======
+        //   icon: <LogOut size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     //   action: 'logout',
     // },
   ];
@@ -416,7 +432,11 @@ const ClinicDashboardPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
+<<<<<<< HEAD
     //   icon: <LogOut size={20} color={colors.primary} />,
+=======
+        //   icon: <LogOut size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     //   action: 'logout',
     // },
   ];
@@ -528,6 +548,6 @@ const ClinicDashboardPage: React.FC = () => {
   );
 };
 
-const styles: { [key: string]: React.CSSProperties } = {};
+const styles: { [key: string]: React.CSSProperties } = ;
 
 export default ClinicDashboardPage;

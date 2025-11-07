@@ -125,7 +125,7 @@ const MarketplaceFormStep: React.FC<MarketplaceFormStepProps> = ({
     try {
       setLoading(true);
 
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       const sellerId = user.id;
       const sellerType = user.user_metadata?.role || user.role;
 

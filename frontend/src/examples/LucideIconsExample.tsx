@@ -64,7 +64,11 @@ const LucideIconsExample: React.FC = () => {
 
   const IconCard = ({ icon: Icon, name }: { icon: any; name: string }) => (
     <div style={iconStyle}>
+<<<<<<< HEAD
       <Icon size={24} color={colors.primary} />
+=======
+            <Icon size={24} color={colors.primary} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       <span style={{ fontSize: '12px', color: colors.textSecondary, textAlign: 'center' }}>
         {name}
       </span>
@@ -248,7 +252,11 @@ const LucideIconsExample: React.FC = () => {
 
 // Em botões
 <button>
+<<<<<<< HEAD
   <Plus size={18} />
+=======
+    <Plus size={18} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
   Adicionar
 </button>`}
         </pre>

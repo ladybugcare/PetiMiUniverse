@@ -6,7 +6,7 @@
 describe('envGuard (Web)', () => {
   // Mock localStorage
   const mockLocalStorage = (() => {
-    let store: Record<string, string> = {};
+    let store: Record<string, string> = ;
     return {
       getItem: (key: string) => store[key] || null,
       setItem: (key: string, value: string) => {
@@ -16,7 +16,7 @@ describe('envGuard (Web)', () => {
         delete store[key];
       },
       clear: () => {
-        store = {};
+        store = ;
       },
     };
   })();

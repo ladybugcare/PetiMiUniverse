@@ -28,8 +28,7 @@ const EmailConfirmedPage: React.FC = () => {
         setEmail(emailFromUrl);
         setEmailFromUrl(true); // Email veio da URL, esconder campo
       }
-    } catch (_) {}
-  }, []);
+    } catch (_) }, []);
 
   // Preencher email do localStorage se existir
   useEffect(() => {
@@ -130,7 +129,7 @@ const EmailConfirmedPage: React.FC = () => {
             console.log('✅ Confirmação via link direto Supabase: SUCESSO');
             handleSuccess(data.session);
             // Limpar query após processar
-            window.history.replaceState({}, document.title, url.origin + url.pathname);
+            window.history.replaceState(, document.title, url.origin + url.pathname);
             return;
           }
 
@@ -139,7 +138,7 @@ const EmailConfirmedPage: React.FC = () => {
           if (s.session?.user) {
             console.log('✅ Sessão encontrada após verifyOtp via getSession');
             handleSuccess(s.session);
-            window.history.replaceState({}, document.title, url.origin + url.pathname);
+            window.history.replaceState(, document.title, url.origin + url.pathname);
             return;
           }
 
@@ -176,7 +175,7 @@ const EmailConfirmedPage: React.FC = () => {
           if (data?.session?.user) {
             console.log('✅ Confirmação via token_hash: SUCESSO');
             handleSuccess(data.session);
-            window.history.replaceState({}, document.title, url.origin + url.pathname);
+            window.history.replaceState(, document.title, url.origin + url.pathname);
             return;
           }
 
@@ -184,7 +183,7 @@ const EmailConfirmedPage: React.FC = () => {
           if (s.session?.user) {
             console.log('✅ Sessão encontrada após verifyOtp via getSession');
             handleSuccess(s.session);
-            window.history.replaceState({}, document.title, url.origin + url.pathname);
+            window.history.replaceState(, document.title, url.origin + url.pathname);
             return;
           }
 
@@ -474,17 +473,28 @@ const EmailConfirmedPage: React.FC = () => {
 
             {/* Ícone de sucesso com animação */}
             <div style={styles.successIcon}>
+<<<<<<< HEAD
               <CheckCircle size={64} strokeWidth={3} />
               <div style={styles.sparkles}>
                 <Sparkles size={24} style={{ position: 'absolute', top: '-10px', right: '-10px' }} />
                 <Sparkles size={20} style={{ position: 'absolute', bottom: '-8px', left: '-8px' }} />
+=======
+                            <CheckCircle size={64} strokeWidth={3} />
+              <div style={styles.sparkles}>
+                                <Sparkles size={24} style={{ position: 'absolute', top: '-10px', right: '-10px' }} />
+                                <Sparkles size={20} style={{ position: 'absolute', bottom: '-8px', left: '-8px' }} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
               </div>
             </div>
 
             <h2 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <span>E-mail confirmado com sucesso!</span>
+<<<<<<< HEAD
                 <PartyPopper size={32} style={{ color: '#7c3aed' }} />
+=======
+                                <PartyPopper size={32} style={{ color: '#7c3aed' }} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
               </div>
             </h2>
 
@@ -508,7 +518,11 @@ const EmailConfirmedPage: React.FC = () => {
                 e.currentTarget.style.boxShadow = '0 8px 16px rgba(124, 58, 237, 0.3)';
               }}
             >
+<<<<<<< HEAD
               <LogIn size={20} style={{ marginRight: '8px' }} />
+=======
+                            <LogIn size={20} style={{ marginRight: '8px' }} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
               Fazer login
             </button>
           </>
@@ -527,7 +541,11 @@ const EmailConfirmedPage: React.FC = () => {
 
             {/* Ícone de erro */}
             <div style={styles.errorIcon}>
+<<<<<<< HEAD
               <AlertCircle size={64} strokeWidth={3} />
+=======
+                            <AlertCircle size={64} strokeWidth={3} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             </div>
 
             <h2 style={styles.title}>Não foi possível confirmar seu e-mail</h2>
@@ -538,7 +556,11 @@ const EmailConfirmedPage: React.FC = () => {
             {/* Email se disponível */}
             {email && (
               <div style={styles.emailInfo}>
+<<<<<<< HEAD
                 <Mail size={18} style={{ marginRight: '8px', color: '#6b7280' }} />
+=======
+                                <Mail size={18} style={{ marginRight: '8px', color: '#6b7280' }} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                 <span style={{ color: '#6b7280', fontSize: '15px' }}>{email}</span>
               </div>
             )}
@@ -576,7 +598,11 @@ const EmailConfirmedPage: React.FC = () => {
                     }
                   }}
                 >
+<<<<<<< HEAD
                   <Mail size={18} style={{ marginRight: '8px' }} />
+=======
+                                    <Mail size={18} style={{ marginRight: '8px' }} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                   {cooldown > 0 ? `Aguarde ${cooldown}s` : resending ? 'Reenviando...' : 'Reenviar link de confirmação'}
                 </button>
               )}
@@ -633,7 +659,11 @@ const EmailConfirmedPage: React.FC = () => {
                   }
                 }}
               >
+<<<<<<< HEAD
                 <Mail size={18} style={{ marginRight: '8px' }} />
+=======
+                                <Mail size={18} style={{ marginRight: '8px' }} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                 {cooldown > 0 ? `Aguarde ${cooldown}s` : resending ? 'Reenviando...' : 'Reenviar email'}
               </button>
             </div>

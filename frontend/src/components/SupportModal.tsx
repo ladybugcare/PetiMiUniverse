@@ -26,7 +26,7 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
       setLoading(true);
       setError('');
 
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       const userId = user?.id;
       const userRole = user?.user_metadata?.role || user?.role;
 
@@ -74,7 +74,10 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
         {/* Header */}
         <div style={styles.header}>
           <div style={styles.headerLeft}>
+<<<<<<< HEAD
             {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <MessageCircle size={24} color={colors.primary} />
             <h2 style={styles.title}>Suporte</h2>
           </div>
@@ -83,7 +86,10 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
             style={styles.closeButton}
             disabled={loading}
           >
+<<<<<<< HEAD
             {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <X size={20} />
           </button>
         </div>
@@ -143,7 +149,10 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
                   'Enviando...'
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+<<<<<<< HEAD
                     {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                     <Send size={18} />
                     <span>Enviar</span>
                   </div>

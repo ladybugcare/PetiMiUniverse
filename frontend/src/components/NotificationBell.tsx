@@ -24,7 +24,7 @@ const NotificationBell: React.FC = () => {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Get user ID from localStorage
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user = JSON.parse(localStorage.getItem('user') || '');
   const userId = user?.id;
 
   // Load unread count
@@ -217,7 +217,7 @@ const NotificationBell: React.FC = () => {
                   onClick={() => handleNotificationClick(notification)}
                   style={{
                     ...styles.notificationItem,
-                    ...(notification.read ? {} : styles.notificationItemUnread),
+                    ...(notification.read ? : styles.notificationItemUnread),
                   }}
                 >
                   <div style={styles.notificationIcon}>

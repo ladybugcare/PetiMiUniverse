@@ -67,7 +67,7 @@ const VetProfilePage: React.FC = () => {
 
   const loadProfile = useCallback(async () => {
     try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       if (!user || !user.id) {
         navigate('/login');
         return;
@@ -194,7 +194,10 @@ const VetProfilePage: React.FC = () => {
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+<<<<<<< HEAD
                   {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                   <Edit size={16} />
                   <span>Editar Perfil</span>
                 </div>

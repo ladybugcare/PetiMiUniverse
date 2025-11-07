@@ -47,35 +47,55 @@ const AdminProfilePage: React.FC = () => {
     {
       id: 'veterinarios',
       label: 'Veterinários',
+<<<<<<< HEAD
       icon: <Stethoscope size={20} color={colors.primary} />,
+=======
+            icon: <Stethoscope size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       action: 'navigate',
       path: '/admin/vets',
     },
     {
       id: 'demandas',
       label: 'Demandas',
+<<<<<<< HEAD
       icon: <ClipboardList size={20} color={colors.primary} />,
+=======
+            icon: <ClipboardList size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       action: 'navigate',
       path: '/admin/demands',
     },
     {
       id: 'support',
       label: 'Tickets de Suporte',
+<<<<<<< HEAD
       icon: <MessageCircle size={20} color={colors.primary} />,
+=======
+            icon: <MessageCircle size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       action: 'navigate',
       path: '/admin/support-tickets',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
+<<<<<<< HEAD
       icon: <User size={20} color={colors.primary} />,
+=======
+            icon: <User size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       action: 'navigate',
       path: '/admin-profile',
     },
     // {
     //   id: 'logout',
     //   label: 'Sair',
+<<<<<<< HEAD
     //   icon: <LogOut size={20} color={colors.primary} />,
+=======
+        //   icon: <LogOut size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     //   action: 'logout',
     // },
   ];
@@ -86,7 +106,7 @@ const AdminProfilePage: React.FC = () => {
 
   const loadProfile = async () => {
     try {
-      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      const userData = JSON.parse(localStorage.getItem('user') || '');
       if (!userData || !userData.id) {
         navigate('/login');
         return;
@@ -187,7 +207,11 @@ const AdminProfilePage: React.FC = () => {
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+<<<<<<< HEAD
                   <Edit size={16} />
+=======
+                                    <Edit size={16} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                   <span>Editar Perfil</span>
                 </div>
               </button>
@@ -239,7 +263,11 @@ const AdminProfilePage: React.FC = () => {
             <div style={styles.formGroup}>
               <label style={styles.label}>Permissão</label>
               <div style={styles.badge}>
+<<<<<<< HEAD
                 <Crown size={16} color="#92400e" />
+=======
+                                <Crown size={16} color="#92400e" />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                 <span style={styles.badgeText}>Administrador do Sistema</span>
               </div>
             </div>

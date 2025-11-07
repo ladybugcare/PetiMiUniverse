@@ -116,7 +116,11 @@ const LoginPage: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-2">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+<<<<<<< HEAD
                     <Mail size={18} color={colors.primary} />
+=======
+                                        <Mail size={18} color={colors.primary} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                     <span>Email</span>
                   </div>
                 </label>
@@ -134,7 +138,11 @@ const LoginPage: React.FC = () => {
               <div style={{ marginTop: '32px' }}>
                 <label className="block text-sm font-medium text-neutral-700 mb-2">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+<<<<<<< HEAD
                     <Lock size={18} color={colors.primary} />
+=======
+                                        <Lock size={18} color={colors.primary} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                     <span>Senha</span>
                   </div>
                 </label>

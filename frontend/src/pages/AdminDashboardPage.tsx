@@ -19,7 +19,7 @@ const AdminDashboardPage: React.FC = () => {
 
   // Check authentication
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user = JSON.parse(localStorage.getItem('user') || '');
     const userRole = user?.user_metadata?.role || user?.role;
     
     if (!user || !user.id) {
@@ -107,7 +107,11 @@ const AdminDashboardPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
+<<<<<<< HEAD
     //   icon: <LogOut size={20} color={colors.primary} />,
+=======
+        //   icon: <LogOut size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     //   action: 'logout',
     // },
   ];
@@ -188,7 +192,10 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
           }}
         >
           <div style={styles.statIcon}>
+<<<<<<< HEAD
             {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <Stethoscope size={36} color="#3b82f6" />
           </div>
           <div style={styles.statContent}>
@@ -210,7 +217,10 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
           }}
         >
           <div style={styles.statIcon}>
+<<<<<<< HEAD
             {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <ClipboardList size={36} color="#10b981" />
           </div>
           <div style={styles.statContent}>
@@ -232,7 +242,10 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
           }}
         >
           <div style={styles.statIcon}>
+<<<<<<< HEAD
             {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <Users size={36} color="#f59e0b" />
           </div>
           <div style={styles.statContent}>
@@ -328,7 +341,10 @@ const VetsSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Gerenciar Veterinários</h2>
       <div style={styles.placeholder}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+<<<<<<< HEAD
           {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           <Stethoscope size={48} color="#a3a3a3" />
         </div>
         <p style={styles.placeholderText}>
@@ -349,7 +365,10 @@ const DemandsSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Demandas do Sistema</h2>
       <div style={styles.placeholder}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+<<<<<<< HEAD
           {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           <ClipboardList size={48} color="#a3a3a3" />
         </div>
         <p style={styles.placeholderText}>
@@ -370,7 +389,10 @@ const ReportsSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Relatórios e Analytics</h2>
       <div style={styles.placeholder}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+<<<<<<< HEAD
           {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           <TrendingUp size={48} color="#a3a3a3" />
         </div>
         <p style={styles.placeholderText}>
@@ -391,7 +413,10 @@ const SettingsSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Configurações do Sistema</h2>
       <div style={styles.placeholder}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+<<<<<<< HEAD
           {}
+=======
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           <Settings size={48} color="#a3a3a3" />
         </div>
         <p style={styles.placeholderText}>

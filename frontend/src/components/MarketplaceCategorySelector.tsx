@@ -19,28 +19,44 @@ interface CategoryCardData {
 const categories: CategoryCardData[] = [
   {
     id: 'equipment',
+<<<<<<< HEAD
     icon: <Microscope size={40} />,
+=======
+        icon: <Microscope size={40} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     title: 'Equipamentos',
     description: 'Equipamentos cirúrgicos, diagnósticos, mobiliário clínico e laboratório',
     color: '#7c3aed',
   },
   {
     id: 'medicine',
+<<<<<<< HEAD
     icon: <Pill size={40} />,
+=======
+        icon: <Pill size={40} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     title: 'Medicamentos',
     description: 'Antibióticos, analgésicos, antiparasitários e outros medicamentos',
     color: '#ef4444',
   },
   {
     id: 'vaccine',
+<<<<<<< HEAD
     icon: <Syringe size={40} />,
+=======
+        icon: <Syringe size={40} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     title: 'Vacinas',
     description: 'Vacinas para cães, gatos e outros animais',
     color: '#f59e0b',
   },
   {
     id: 'supplies',
+<<<<<<< HEAD
     icon: <Package size={40} />,
+=======
+        icon: <Package size={40} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     title: 'Suprimentos',
     description: 'Material cirúrgico, limpeza, consumíveis e outros suprimentos',
     color: '#06b6d4',

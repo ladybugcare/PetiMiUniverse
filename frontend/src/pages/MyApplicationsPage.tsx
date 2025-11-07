@@ -57,7 +57,11 @@ const MyApplicationsPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
+<<<<<<< HEAD
     //   icon: <LogOut size={20} color={colors.primary} />,
+=======
+        //   icon: <LogOut size={20} color={colors.primary} />,
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     //   action: 'logout',
     // },
   ];
@@ -69,7 +73,7 @@ const MyApplicationsPage: React.FC = () => {
   const loadApplications = async () => {
     try {
       setLoading(true);
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       const vetId = user.id;
 
       const response = await applicationsApi.getByVet(vetId);

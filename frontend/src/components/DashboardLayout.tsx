@@ -20,7 +20,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Get user info from localStorage
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user = JSON.parse(localStorage.getItem('user') || '');
   const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
   const userEmail = user?.email || '';
 

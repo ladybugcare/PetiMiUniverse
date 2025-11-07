@@ -45,15 +45,23 @@ const AdminSupportTicketsPage: React.FC = () => {
   const menuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
     { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
+<<<<<<< HEAD
     { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
     { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
     { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
     { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
     { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
+=======
+        { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
+        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
+        { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
+        { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
+        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
   ];
 
   useEffect(() => {
-    const userData = JSON.parse(localStorage.getItem('user') || '{}');
+    const userData = JSON.parse(localStorage.getItem('user') || '');
     setUser(userData);
     loadTickets();
   }, [statusFilter]);
@@ -151,10 +159,17 @@ const AdminSupportTicketsPage: React.FC = () => {
 
   const getStatusBadge = (status: SupportTicket['status']) => {
     const statusConfig: { [key: string]: { label: string; icon: React.ReactNode; color: string; bgColor: string } } = {
+<<<<<<< HEAD
       open: { label: 'Aberto', icon: <Clock size={14} />, color: '#ef4444', bgColor: '#fee2e2' },
       in_progress: { label: 'Em Análise', icon: <Clock size={14} />, color: '#f59e0b', bgColor: '#fef3c7' },
       resolved: { label: 'Resolvido', icon: <CheckCircle size={14} />, color: '#22c55e', bgColor: '#dcfce7' },
       closed: { label: 'Fechado', icon: <XCircle size={14} />, color: '#6b7280', bgColor: '#f3f4f6' },
+=======
+            open: { label: 'Aberto', icon: <Clock size={14} />, color: '#ef4444', bgColor: '#fee2e2' },
+            in_progress: { label: 'Em Análise', icon: <Clock size={14} />, color: '#f59e0b', bgColor: '#fef3c7' },
+            resolved: { label: 'Resolvido', icon: <CheckCircle size={14} />, color: '#22c55e', bgColor: '#dcfce7' },
+            closed: { label: 'Fechado', icon: <XCircle size={14} />, color: '#6b7280', bgColor: '#f3f4f6' },
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     };
 
     const config = statusConfig[status] || statusConfig.open;
@@ -245,7 +260,11 @@ const AdminSupportTicketsPage: React.FC = () => {
             <div style={styles.loading}>Carregando tickets...</div>
           ) : tickets.length === 0 ? (
             <div style={styles.emptyState}>
+<<<<<<< HEAD
               <MessageCircle size={64} color="#a3a3a3" />
+=======
+                            <MessageCircle size={64} color="#a3a3a3" />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
               <p style={styles.emptyText}>Nenhum ticket encontrado</p>
               <p style={styles.emptyHint}>
                 {statusFilter === 'all' 
@@ -263,7 +282,11 @@ const AdminSupportTicketsPage: React.FC = () => {
                 >
                   <div style={styles.ticketHeader}>
                     <div style={styles.ticketMeta}>
+<<<<<<< HEAD
                       <User size={16} color={colors.primary} />
+=======
+                                            <User size={16} color={colors.primary} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                       <span style={styles.ticketUserId}>
                         {ticket.user_id.substring(0, 8)}...
                       </span>
@@ -320,7 +343,11 @@ const AdminSupportTicketsPage: React.FC = () => {
         {/* Header da conversação */}
         <div style={styles.conversationHeader}>
           <button onClick={handleCloseTicket} style={styles.backButton}>
+<<<<<<< HEAD
             <ArrowLeft size={20} />
+=======
+                        <ArrowLeft size={20} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <span>Voltar</span>
           </button>
           <div style={styles.conversationInfo}>
@@ -337,7 +364,11 @@ const AdminSupportTicketsPage: React.FC = () => {
                   onClick={() => handleUpdateStatus('in_progress')}
                   style={{ ...styles.statusButton, ...styles.progressButton }}
                 >
+<<<<<<< HEAD
                   <Clock size={16} />
+=======
+                                    <Clock size={16} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                   Em Análise
                 </button>
               )}
@@ -346,7 +377,11 @@ const AdminSupportTicketsPage: React.FC = () => {
                   onClick={() => handleUpdateStatus('resolved')}
                   style={{ ...styles.statusButton, ...styles.resolveButton }}
                 >
+<<<<<<< HEAD
                   <CheckCircle size={16} />
+=======
+                                    <CheckCircle size={16} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                   Resolver
                 </button>
               )}
@@ -355,7 +390,11 @@ const AdminSupportTicketsPage: React.FC = () => {
                   onClick={() => handleUpdateStatus('closed')}
                   style={{ ...styles.statusButton, ...styles.closeButton }}
                 >
+<<<<<<< HEAD
                   <XCircle size={16} />
+=======
+                                    <XCircle size={16} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                   Fechar
                 </button>
               )}
@@ -435,13 +474,21 @@ const AdminSupportTicketsPage: React.FC = () => {
               style={styles.sendButton}
               disabled={sending || !newMessage.trim()}
             >
+<<<<<<< HEAD
               <Send size={20} />
+=======
+                            <Send size={20} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
               {sending ? 'Enviando...' : 'Enviar'}
             </button>
           </form>
         ) : (
           <div style={styles.closedMessage}>
+<<<<<<< HEAD
             <CheckCircle size={24} color={colors.primary} />
+=======
+                        <CheckCircle size={24} color={colors.primary} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <div>
               <p style={styles.closedTitle}>Ticket avaliado e encerrado pelo usuário</p>
               <p style={styles.closedSubtitle}>

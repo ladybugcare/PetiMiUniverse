@@ -140,9 +140,15 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
           aria-expanded={isOpen}
         >
           {isOpen ? (
+<<<<<<< HEAD
             <X size={28} color="#ffffff" strokeWidth={2.5} />
           ) : (
             <Plus size={28} color="#ffffff" strokeWidth={2.5} />
+=======
+                        <X size={28} color="#ffffff" strokeWidth={2.5} />
+          ) : (
+                        <Plus size={28} color="#ffffff" strokeWidth={2.5} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           )}
         </button>
       </div>

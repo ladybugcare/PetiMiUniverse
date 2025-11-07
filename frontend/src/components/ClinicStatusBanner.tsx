@@ -13,7 +13,7 @@ const ClinicStatusBanner: React.FC = () => {
   useEffect(() => {
     const loadStatus = async () => {
       try {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const user = JSON.parse(localStorage.getItem('user') || '');
         const userRole = user?.user_metadata?.role || user?.role;
         
         // Only check status for clinic users

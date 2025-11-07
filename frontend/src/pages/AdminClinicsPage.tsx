@@ -34,13 +34,13 @@ const AdminClinicsPage: React.FC = () => {
   const [selectedClinic, setSelectedClinic] = useState<Clinic | null>(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editFormData, setEditFormData] = useState<Partial<Clinic>>({});
+  const [editFormData, setEditFormData] = useState<Partial<Clinic>>();
 
   const itemsPerPage = 20;
 
   // Check authentication
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user = JSON.parse(localStorage.getItem('user') || '');
     const userRole = user?.user_metadata?.role || user?.role;
     
     if (!user || !user.id || userRole !== 'admin') {
@@ -85,11 +85,19 @@ const AdminClinicsPage: React.FC = () => {
   const menuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
     { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
+<<<<<<< HEAD
     { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
     { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
     { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
     { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
     { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
+=======
+        { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
+        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
+        { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
+        { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
+        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
   ];
 
   const handleView = (clinic: Clinic) => {
@@ -202,14 +210,22 @@ const AdminClinicsPage: React.FC = () => {
                             style={{ ...styles.actionButton, ...styles.viewButton }}
                             title="Ver detalhes"
                           >
+<<<<<<< HEAD
                             <Eye size={16} />
+=======
+                                                        <Eye size={16} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                           </button>
                           <button
                             onClick={() => handleEdit(clinic)}
                             style={{ ...styles.actionButton, ...styles.editButton }}
                             title="Editar"
                           >
+<<<<<<< HEAD
                             <Edit size={16} />
+=======
+                                                        <Edit size={16} />
+>>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                           </button>
                           <button
                             onClick={() => handleDeactivate(clinic)}
