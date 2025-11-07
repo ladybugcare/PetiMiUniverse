@@ -62,6 +62,7 @@ const ClinicStatusBanner: React.FC = () => {
       <div style={styles.bannerInfo}>
         <div style={styles.bannerContent}>
           <span style={styles.bannerIcon}>
+            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
             <Clock size={24} color="#f59e0b" />
           </span>
           <div style={styles.bannerText}>
