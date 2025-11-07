@@ -1,5 +1,8 @@
 {
-  "installCommand": "npm install --legacy-peer-deps",
-  "buildCommand": "npm run build:web"
+  "installCommand": "cd frontend && rm -rf node_modules/.cache && npm install --legacy-peer-deps",
+  "buildCommand": "cd frontend && CI=false npm run build:web",
+  "outputDirectory": "frontend/build",
+  "framework": null,
+  "nodeVersion": "18.x"
 }
 

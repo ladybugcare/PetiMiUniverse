@@ -59,3 +59,4 @@ echo -e "${GREEN}✅ App deve estar rodando no simulador iOS!${NC}"
 
 
 
+
