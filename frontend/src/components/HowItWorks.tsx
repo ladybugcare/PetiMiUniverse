@@ -26,6 +26,7 @@ type AudienceCard = {
 const cards: AudienceCard[] = [
   {
     id: 'clinics',
+    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     icon: <Building2 size={32} color={colors.primary} />,
     title: 'Para Clínicas',
     description: 'Publique demandas, visualize perfis de veterinários e freelancers, e contrate com segurança e agilidade.',
@@ -33,6 +34,7 @@ const cards: AudienceCard[] = [
   },
   {
     id: 'vets',
+    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     icon: <Stethoscope size={32} color={colors.primary} />,
     title: 'Para Veterinários',
     description: 'Candidata-se a demandas de clínicas, exiba suas especialidades e amplie sua rede de parceiros na área.',
@@ -40,6 +42,7 @@ const cards: AudienceCard[] = [
   },
   {
     id: 'freelancers',
+    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     icon: <Heart size={32} color={colors.primary} fill={colors.primary} />,
     title: 'Para Freelancers',
     description: 'Groomers, adestradores, cuidadores e outros profissionais encontram aqui espaço para se destacar.',

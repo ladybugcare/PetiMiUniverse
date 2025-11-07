@@ -40,6 +40,7 @@ const ClinicStatusBanner: React.FC = () => {
       <div style={styles.bannerWarning}>
         <div style={styles.bannerContent}>
           <span style={styles.bannerIcon}>
+            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
             <Construction size={24} color="#f59e0b" />
           </span>
           <div style={styles.bannerText}>
