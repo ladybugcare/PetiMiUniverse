@@ -30,26 +30,43 @@ dotenv_1.default.config();
 // 🔹 Inicializa o Express
 const app = (0, express_1.default)();
 // 🔹 Configuração de CORS (com suporte a múltiplos domínios)
+// Permite origens locais (portas 3001 e 3002 para React dev server) e ambientes de deploy
 const allowedOrigins = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:3002', // React dev server
-    'https://peti-vet-git-staging-petivet.vercel.app',
+    'http://localhost:3000', // Backend local (caso frontend rode na mesma porta)
+    'http://localhost:3001', // Frontend local - porta alternativa
+    'http://localhost:3002', // Frontend local - porta padrão React dev server
+    'https://peti-vet-git-staging-petivet.vercel.app', // Staging
     'https://peti-vet-petivet.vercel.app', // Vercel production
-    process.env.FRONTEND_URL,
+    process.env.FRONTEND_URL, // Variável de ambiente (permite configuração flexível)
 ].filter((origin) => Boolean(origin));
 const normalizedOrigins = allowedOrigins.map((origin) => origin.replace(/\/$/, ''));
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
-        if (!origin)
-            return callback(null, true);
+        // Permite requisições sem origem apenas em desenvolvimento/staging
+        if (!origin) {
+            if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'staging') {
+                return callback(null, true);
+            }
+            return callback(new Error('Not allowed by CORS'));
+        }
         const normalizedOrigin = origin.replace(/\/$/, '');
-        if (normalizedOrigins.includes(normalizedOrigin) ||
-            allowedOrigins.includes(origin)) {
-            callback(null, true);
+        // Verifica se a origem está na lista de permitidas
+        const isAllowed = normalizedOrigins.includes(normalizedOrigin) ||
+            allowedOrigins.includes(origin) ||
+            allowedOrigins.includes(normalizedOrigin);
+        if (isAllowed) {
+            // Log para debug (apenas em staging/dev)
+            if (process.env.NODE_ENV !== 'production') {
+                console.log(`[CORS] Allowed origin: ${origin}`);
+            }
+            // Retorna a origem exata da requisição para o header CORS
+            // Isso garante que o header access-control-allow-origin seja a origem correta
+            callback(null, origin);
         }
         else {
             console.warn(`[CORS] Blocked origin: ${origin}`);
+            console.warn(`[CORS] Normalized: ${normalizedOrigin}`);
+            console.warn(`[CORS] Allowed origins:`, allowedOrigins);
             callback(new Error('Not allowed by CORS'));
         }
     },

@@ -5,9 +5,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const supabase_1 = require("../config/supabase");
+const rateLimiter_js_1 = require("../middleware/rateLimiter.js");
 const router = express_1.default.Router();
-// Login
-router.post('/login', async (req, res) => {
+// Login (com rate limiting mais restritivo)
+router.post('/login', rateLimiter_js_1.authLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
         const { data, error } = await supabase_1.supabase.auth.signInWithPassword({
@@ -37,44 +38,71 @@ router.post('/login', async (req, res) => {
                 clinicUserRecord = clinicUser;
                 const clinicUserRole = clinicUser?.role;
                 clinicUserStatus = clinicUser?.status;
-                const clinicId = clinicUser?.clinic_id || (userRole === 'clinic' ? user.id : null);
+                // ✅ clinic_id pode ser NULL (usuário ainda não criou clínica)
+                const clinicId = clinicUser?.clinic_id || null;
                 const isEligibleClinicUser = clinicUserRole ? allowedRolesForOnboarding.includes(clinicUserRole) : false;
                 const isClinicOwner = userRole === 'clinic';
-                if (clinicId && (isEligibleClinicUser || isClinicOwner)) {
+                // ✅ Ajustar: considerar usuários sem clínica (clinic_id NULL)
+                if ((isEligibleClinicUser || isClinicOwner) && clinicUser) {
                     // Garantir que first_login_at seja registrado na primeira autenticação
-                    if (clinicUser && !clinicUser.first_login_at) {
-                        await supabase_1.supabaseAdmin
-                            .from('clinic_users')
-                            .update({ first_login_at: new Date().toISOString() })
-                            .eq('user_id', user.id)
+                    if (!clinicUser.first_login_at) {
+                        const updateData = { first_login_at: new Date().toISOString() };
+                        // Só adicionar clinic_id na query se não for NULL
+                        if (clinicId) {
+                            await supabase_1.supabaseAdmin
+                                .from('clinic_users')
+                                .update(updateData)
+                                .eq('user_id', user.id)
+                                .eq('clinic_id', clinicId);
+                        }
+                        else {
+                            await supabase_1.supabaseAdmin
+                                .from('clinic_users')
+                                .update(updateData)
+                                .eq('user_id', user.id)
+                                .is('clinic_id', null);
+                        }
+                    }
+                    let hasUnits = false;
+                    let clinicStatusValue = null;
+                    // ✅ Só buscar clinic e units se clinic_id não for NULL
+                    if (clinicId) {
+                        // Buscar status da clínica
+                        const { data: clinic, error: clinicError, } = await supabase_1.supabaseAdmin
+                            .from('clinics')
+                            .select('status')
+                            .eq('id', clinicId)
+                            .maybeSingle();
+                        if (clinicError) {
+                            console.error('[AUTH] Erro ao buscar clínica:', clinicError.message);
+                        }
+                        // Contar unidades cadastradas
+                        const { count: unitCount, error: unitsError, } = await supabase_1.supabaseAdmin
+                            .from('units')
+                            .select('id', { count: 'exact', head: true })
                             .eq('clinic_id', clinicId);
+                        if (unitsError) {
+                            console.error('[AUTH] Erro ao contar unidades:', unitsError.message);
+                        }
+                        hasUnits = (unitCount ?? 0) > 0;
+                        clinicStatusValue = clinic?.status || null;
                     }
-                    // Buscar status da clínica
-                    const { data: clinic, error: clinicError, } = await supabase_1.supabaseAdmin
-                        .from('clinics')
-                        .select('status')
-                        .eq('id', clinicId)
-                        .maybeSingle();
-                    if (clinicError) {
-                        console.error('[AUTH] Erro ao buscar clínica:', clinicError.message);
+                    else {
+                        // ✅ Se clinic_id é NULL, usuário precisa criar clínica (primeira unidade)
+                        clinicStatusValue = null;
+                        hasUnits = false;
                     }
-                    // Contar unidades cadastradas
-                    const { count: unitCount, error: unitsError, } = await supabase_1.supabaseAdmin
-                        .from('units')
-                        .select('id', { count: 'exact', head: true })
-                        .eq('clinic_id', clinicId);
-                    if (unitsError) {
-                        console.error('[AUTH] Erro ao contar unidades:', unitsError.message);
-                    }
-                    const hasUnits = (unitCount ?? 0) > 0;
-                    clinicStatus = clinic?.status || null;
                     const firstLoginCompletedAt = clinicUser?.first_login_completed_at || null;
                     const firstLoginAt = clinicUser?.first_login_at || null;
-                    const needsOnboarding = clinicStatus === 'pending_unit' || !hasUnits;
+                    // ✅ needsOnboarding se:
+                    // - clinic_id é NULL (não tem clínica ainda)
+                    // - clinic_status é 'pending_unit' (tem clínica mas não tem unidade)
+                    // - não tem unidades
+                    const needsOnboarding = !clinicId || clinicStatusValue === 'pending_unit' || !hasUnits;
                     const shouldCompleteFirstUnit = needsOnboarding && (isEligibleClinicUser || isClinicOwner);
                     onboarding = {
-                        clinicId,
-                        clinicStatus,
+                        clinicId, // Pode ser null
+                        clinicStatus: clinicStatusValue,
                         hasUnits,
                         isFirstLogin: !firstLoginCompletedAt,
                         needsOnboarding,
@@ -125,8 +153,8 @@ router.post('/login', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-// Signup
-router.post('/signup', async (req, res) => {
+// Signup (com rate limiting mais restritivo)
+router.post('/signup', rateLimiter_js_1.authLimiter, async (req, res) => {
     try {
         const { email, password, name, role } = req.body;
         const { data, error } = await supabase_1.supabase.auth.signUp({

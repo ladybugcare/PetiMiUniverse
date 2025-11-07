@@ -4,6 +4,7 @@ exports.createFirstUnit = exports.getUnitStats = exports.deleteUnit = exports.up
 const supabase_1 = require("../config/supabase");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const auditLog_1 = require("../utils/auditLog");
+const cnpjUtils_1 = require("../utils/cnpjUtils");
 // Create unit (CADMIN only)
 const createUnit = async (req, res) => {
     const { clinic_id, name, nickname, cnpj, address, city, state, phone, technical_manager, is_main, } = req.body;
@@ -312,8 +313,9 @@ const getUnitStats = async (req, res) => {
 };
 exports.getUnitStats = getUnitStats;
 // Create first unit (for new clinics waiting approval)
+// ✅ NOVO FLUXO: Cria clinic primeiro (se não existir), depois cria unit e atualiza clinic_user
 const createFirstUnit = async (req, res) => {
-    const { clinic_id, name, nickname, address, city, state, phone, cnpj, technical_manager } = req.body;
+    const { clinic_id, name, nickname, address, city, state, phone, cnpj, technical_manager, clinic_name, clinic_cnpj, clinic_address } = req.body;
     const user_id = req.user.id;
     try {
         // Validar nickname obrigatório
@@ -324,33 +326,86 @@ const createFirstUnit = async (req, res) => {
         if (nickname.length > 100) {
             return res.status(400).json({ error: 'O apelido deve ter no máximo 100 caracteres' });
         }
-        // Verificar se usuário é CADMIN desta clínica
+        // ✅ 1. Verificar clinic_user (deve existir com clinic_id = NULL e status = 'pending_clinic')
         const { data: clinicUser, error: clinicUserError } = await supabase_1.supabase
             .from('clinic_users')
-            .select('role, clinic_id')
+            .select('id, role, clinic_id, status')
             .eq('user_id', user_id)
-            .eq('clinic_id', clinic_id)
             .eq('role', 'CADMIN')
-            .single();
+            .maybeSingle();
         if (clinicUserError || !clinicUser) {
-            return res.status(403).json({ error: 'Apenas CADMIN pode criar a primeira unidade' });
+            return res.status(403).json({ error: 'Usuário não encontrado ou sem permissão para criar primeira unidade' });
         }
-        // Verificar se clínica está pending_unit
-        const { data: clinic, error: clinicError } = await supabase_1.supabase
-            .from('clinics')
-            .select('status')
-            .eq('id', clinic_id)
-            .single();
-        if (clinicError || !clinic || clinic.status !== 'pending_unit') {
+        // Se clinic_id já existe, significa que já tem clínica (não deveria estar aqui)
+        if (clinicUser.clinic_id) {
             return res.status(400).json({
-                error: 'Clínica já tem unidade ou não está pendente'
+                error: 'Usuário já possui clínica. Use o endpoint de criação de unidade normal.'
             });
         }
-        // Verificar se nickname é único para esta clínica
+        // ✅ 2. Buscar dados do usuário do Auth (name, cnpj, address do signup)
+        let clinicName = clinic_name;
+        let clinicCnpj = clinic_cnpj ? (0, cnpjUtils_1.normalizeCNPJ)(clinic_cnpj) : null;
+        let clinicAddress = clinic_address;
+        if (!clinicName || !clinicAddress) {
+            // Buscar do user_metadata do Auth
+            const { data: authUser, error: authError } = await supabase_1.supabaseAdmin.auth.admin.getUserById(user_id);
+            if (!authError && authUser?.user) {
+                const metadata = authUser.user.user_metadata || {};
+                clinicName = clinicName || metadata.name || 'Clínica sem nome';
+                clinicCnpj = clinicCnpj || (metadata.cnpj ? (0, cnpjUtils_1.normalizeCNPJ)(metadata.cnpj) : null);
+                clinicAddress = clinicAddress || metadata.address || '';
+            }
+        }
+        if (!clinicName) {
+            return res.status(400).json({ error: 'Nome da clínica é obrigatório' });
+        }
+        // ✅ 3. Criar clinic (se não existir)
+        let finalClinicId;
+        const { data: existingClinic } = await supabase_1.supabase
+            .from('clinics')
+            .select('id, status')
+            .eq('id', user_id) // Clinic ID = User ID
+            .maybeSingle();
+        if (existingClinic) {
+            // Clinic já existe, atualizar dados
+            finalClinicId = existingClinic.id;
+            await supabase_1.supabase
+                .from('clinics')
+                .update({
+                name: clinicName,
+                cnpj: clinicCnpj,
+                address: clinicAddress,
+                status: 'pending_unit', // Mudará para pending_approval após criar unit
+                updated_at: new Date().toISOString(),
+            })
+                .eq('id', finalClinicId);
+        }
+        else {
+            // Criar nova clinic
+            const { data: newClinic, error: createClinicError } = await supabase_1.supabase
+                .from('clinics')
+                .insert({
+                id: user_id, // Clinic ID = User ID
+                name: clinicName,
+                cnpj: clinicCnpj,
+                address: clinicAddress,
+                email: req.user.email || null,
+                status: 'pending_unit', // Mudará para pending_approval após criar unit
+                created_at: new Date().toISOString(),
+            })
+                .select()
+                .single();
+            if (createClinicError) {
+                console.error('Error creating clinic:', createClinicError);
+                return res.status(500).json({ error: 'Erro ao criar clínica' });
+            }
+            finalClinicId = newClinic.id;
+        }
+        // ✅ 4. Verificar se nickname é único para esta clínica
         const { data: existingUnit, error: existingError } = await supabase_1.supabase
             .from('units')
             .select('id')
-            .eq('clinic_id', clinic_id)
+            .eq('clinic_id', finalClinicId)
             .eq('nickname', nickname.trim())
             .maybeSingle();
         if (existingError) {
@@ -361,42 +416,64 @@ const createFirstUnit = async (req, res) => {
                 error: 'Já existe uma unidade com este apelido nesta clínica'
             });
         }
-        // Criar unidade com status pending_review
+        // ✅ 5. Criar unidade com status pending_review
         const { data: unit, error: unitError } = await supabase_1.supabase
             .from('units')
             .insert({
-            clinic_id,
+            clinic_id: finalClinicId,
             name,
             nickname: nickname.trim(),
             address,
             city,
             state,
             phone,
-            cnpj,
+            cnpj: cnpj ? (0, cnpjUtils_1.normalizeCNPJ)(cnpj) : null,
             technical_manager,
             is_main: true,
             status: 'pending_review'
         })
             .select()
             .single();
-        if (unitError)
-            throw unitError;
-        // Atualizar clinic para pending_approval
+        if (unitError) {
+            console.error('Error creating unit:', unitError);
+            return res.status(500).json({ error: 'Erro ao criar unidade' });
+        }
+        // ✅ 6. Atualizar clinic para pending_approval
         await supabase_1.supabase
             .from('clinics')
             .update({ status: 'pending_approval' })
-            .eq('id', clinic_id);
-        // Vincular CADMIN à unidade
-        await supabase_1.supabase
+            .eq('id', finalClinicId);
+        // ✅ 7. Atualizar clinic_user com clinic_id e unit_id
+        const nowIso = new Date().toISOString();
+        const { error: updateClinicUserError } = await supabase_1.supabase
             .from('clinic_users')
-            .update({ unit_id: unit.id })
-            .eq('clinic_id', clinic_id)
-            .eq('role', 'CADMIN');
-        // Audit log
+            .update({
+            clinic_id: finalClinicId, // ✅ Agora vincula à clinic criada
+            unit_id: unit.id, // ✅ Vincula à primeira unidade
+            status: 'active', // ✅ Ativa o usuário
+            first_login_completed_at: nowIso,
+            onboarding_state: {
+                last_step: 'unit',
+                completed: true,
+                completed_at: nowIso,
+            },
+            updated_at: nowIso,
+        })
+            .eq('id', clinicUser.id);
+        if (updateClinicUserError) {
+            console.error('Error updating clinic_user:', updateClinicUserError);
+            // Rollback: deletar unit e clinic criados
+            await supabase_1.supabase.from('units').delete().eq('id', unit.id);
+            if (!existingClinic) {
+                await supabase_1.supabase.from('clinics').delete().eq('id', finalClinicId);
+            }
+            return res.status(500).json({ error: 'Erro ao vincular usuário à clínica' });
+        }
+        // ✅ 8. Audit log
         const metadata = (0, auditLog_1.extractRequestMetadata)(req);
         await (0, auditLog_1.createAuditLog)({
             user_id,
-            clinic_id,
+            clinic_id: finalClinicId,
             unit_id: unit.id,
             action: 'CREATE_FIRST_UNIT',
             entity_type: 'unit',
@@ -405,8 +482,9 @@ const createFirstUnit = async (req, res) => {
             ...metadata,
         });
         res.status(201).json({
+            clinic_id: finalClinicId,
             unit,
-            message: 'Unidade criada! Aguarde aprovação do ADMIN para ativar sua conta.'
+            message: 'Clínica e unidade criadas! Aguarde aprovação do ADMIN para ativar sua conta.'
         });
     }
     catch (error) {
