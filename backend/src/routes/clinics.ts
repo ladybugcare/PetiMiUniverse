@@ -34,7 +34,7 @@ router.post('/', createClinicPublic);
  * 🔍 CONSULTAS E VALIDAÇÕES
  * ===========================================================
  */
-router.get('/check-cnpj/:cnpj', ...checkClinicCnpj);
+router.get('/check-cnpj/:cnpj', checkClinicCnpj);
 
 
 router.get('/check-email/:email', checkEmail);

@@ -1,34 +1,37 @@
 import type { Request, Response } from 'express';
 import { supabase } from '../../config/supabase';
 import { normalizeCNPJ } from '../../utils/cnpjUtils';
-import { logger } from '../../utils/logger.js';
-import { z } from 'zod';
-import { validate } from '../../utils/validation.js';
 
-// Schema de validação para CNPJ
-const cnpjParamSchema = z.object({
-  cnpj: z.string().regex(/^\d{14}$/, 'CNPJ deve ter 14 dígitos'),
-});
+// Helper para logging seguro (não quebra se logger falhar)
+const safeLog = (level: 'debug' | 'warn' | 'error', message: string, meta?: any) => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { logger } = require('../../utils/logger.js');
+    logger[level](message, meta);
+  } catch (err) {
+    // Fallback para console se logger não estiver disponível
+    console[level === 'debug' ? 'log' : level](`[CNPJ] ${message}`, meta || '');
+  }
+};
 
-export const checkClinicCnpj = [
-  validate(cnpjParamSchema, 'params'),
-  async (req: Request, res: Response) => {
-    const { cnpj } = req.params;
-    
-    logger.debug('Checking CNPJ', { cnpj });
+export const checkClinicCnpj = async (req: Request, res: Response) => {
+  const { cnpj } = req.params;
+  
+  try {
+    safeLog('debug', 'Checking CNPJ', { cnpj });
     
     // Normaliza o CNPJ (remove formatação) para garantir busca consistente
     const normalizedCnpj = normalizeCNPJ(cnpj);
     
-    logger.debug('Normalized CNPJ', { normalizedCnpj });
+    safeLog('debug', 'Normalized CNPJ', { normalizedCnpj });
     
+    // Validação básica: deve ter 14 dígitos após normalização
     if (!normalizedCnpj || normalizedCnpj.length !== 14) {
-      logger.warn('Invalid CNPJ format', { normalizedCnpj });
+      safeLog('warn', 'Invalid CNPJ format', { cnpj, normalizedCnpj });
       return res.status(400).json({ error: 'CNPJ inválido' });
     }
 
-    try {
-      // Busca usando CNPJ normalizado
+    // Busca usando CNPJ normalizado
     // Como agora salvamos sempre normalizado, a busca é simples
     const { data, error } = await supabase
       .from('clinics')
@@ -37,20 +40,19 @@ export const checkClinicCnpj = [
       .maybeSingle();
 
     if (error) {
-      logger.error('Error checking CNPJ', { error: error.message, cnpj: normalizedCnpj });
+      safeLog('error', 'Error checking CNPJ', { error: error.message, cnpj: normalizedCnpj });
       return res.status(500).json({ error: 'Erro interno ao verificar CNPJ' });
     }
 
-    logger.debug('CNPJ check result', { exists: !!data, cnpj: normalizedCnpj });
+    safeLog('debug', 'CNPJ check result', { exists: !!data, cnpj: normalizedCnpj });
     
     if (data) {
       return res.json({ exists: true });
     }
 
     return res.json({ exists: false });
-  } catch (err) {
-    logger.error('Unexpected error checking CNPJ', { error: err, cnpj: normalizedCnpj });
+  } catch (err: any) {
+    safeLog('error', 'Unexpected error checking CNPJ', { error: err?.message || err, cnpj });
     return res.status(500).json({ error: 'Erro interno do servidor' });
   }
-  },
-];
+};
