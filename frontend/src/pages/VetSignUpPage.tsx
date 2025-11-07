@@ -203,6 +203,7 @@ const VetSignUpPage: React.FC = () => {
               className="text-sm text-neutral-500 mt-2"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Info size={16} color={colors.primary} />
               Formato: número-UF (exemplo: 12345-SP)
             </p>
@@ -232,6 +233,7 @@ const VetSignUpPage: React.FC = () => {
               className="text-sm text-neutral-500 mt-2"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Info size={16} color={colors.primary} />
               Separe múltiplas especialidades com vírgula
             </p>

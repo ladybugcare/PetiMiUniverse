@@ -22,6 +22,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
           <>
             <h2 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Heart size={32} color={colors.primary} fill={colors.primary} />
                 <span>Tudo pronto!</span>
               </div>
@@ -36,6 +37,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
             <p style={styles.text}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 Você pode fechar esta aba — o restante do processo é feito por e-mail.
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Mail size={18} color={colors.primary} />
               </span>
             </p>
@@ -55,6 +57,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
           <>
             <h2 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Mail size={32} color={colors.primary} />
                 <span>E-mail reenviado!</span>
               </div>

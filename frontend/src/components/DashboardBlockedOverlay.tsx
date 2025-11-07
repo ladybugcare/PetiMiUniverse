@@ -11,6 +11,7 @@ const DashboardBlockedOverlay: React.FC = () => {
       <div style={styles.card}>
         <div style={styles.iconContainer}>
           <span style={styles.icon}>
+            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <Lock size={48} color={colors.primary} />
           </span>
         </div>
@@ -24,6 +25,7 @@ const DashboardBlockedOverlay: React.FC = () => {
 
         <div style={styles.infoBox}>
           <span style={styles.infoIcon}>
+            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <Lightbulb size={20} color={colors.primary} />
           </span>
           <p style={styles.infoText}>

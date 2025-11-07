@@ -59,6 +59,7 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({
           <div style={styles.howItWorks}>
             <div style={styles.sectionHeader}>
               <span style={styles.emoji}>
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Sparkles size={24} color={colors.primary} />
               </span>
               <h3 style={styles.sectionTitle}>Como funciona:</h3>

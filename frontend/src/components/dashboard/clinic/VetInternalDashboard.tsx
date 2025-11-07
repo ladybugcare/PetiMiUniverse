@@ -78,6 +78,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
+            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <ClipboardList size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -98,6 +99,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
+            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <FileText size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -118,6 +120,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
+            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <CheckCircle size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -138,6 +141,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
+            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <Star size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -203,6 +207,7 @@ const MensagensSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Mensagens</h2>
       <div style={styles.placeholder}>
         <p style={styles.placeholderText}>
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
           Suas mensagens aparecerão aqui
         </p>

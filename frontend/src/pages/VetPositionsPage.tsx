@@ -132,6 +132,7 @@ const VetPositionsPage: React.FC = () => {
     {
       id: 'positions',
       label: 'Posições Disponíveis',
+      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <Briefcase size={20} color={colors.primary} />,
       action: 'navigate' as const,
       path: '/vet-positions',
@@ -139,6 +140,7 @@ const VetPositionsPage: React.FC = () => {
     {
       id: 'applications',
       label: 'Minhas Candidaturas',
+      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate' as const,
       path: '/vet-applications',
@@ -146,6 +148,7 @@ const VetPositionsPage: React.FC = () => {
     {
       id: 'profile',
       label: 'Meu Perfil',
+      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <User size={20} color={colors.primary} />,
       action: 'navigate' as const,
       path: '/vet-profile',
@@ -153,6 +156,7 @@ const VetPositionsPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
+    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     //   icon: <LogOut size={20} color={colors.primary} />,
     //   action: 'logout' as const,
     // },

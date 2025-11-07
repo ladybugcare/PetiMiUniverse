@@ -50,6 +50,7 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           icon: <Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
@@ -57,6 +58,7 @@ const NotificationsPage: React.FC = () => {
         // {
         //   id: 'logout',
         //   label: 'Sair',
+        // @ts-ignore - Type incompatibility between React 18 and lucide-react
         //   icon: <LogOut size={20} color="#ef4444" />,
         //   action: 'logout',
         // },
@@ -73,6 +75,7 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           icon: <Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
@@ -80,6 +83,7 @@ const NotificationsPage: React.FC = () => {
         // {
         //   id: 'logout',
         //   label: 'Sair',
+        // @ts-ignore - Type incompatibility between React 18 and lucide-react
         //   icon: <LogOut size={20} color="#ef4444" />,
         //   action: 'logout',
         // },
@@ -96,6 +100,7 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           icon: <Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
@@ -103,6 +108,7 @@ const NotificationsPage: React.FC = () => {
         // {
         //   id: 'logout',
         //   label: 'Sair',
+        // @ts-ignore - Type incompatibility between React 18 and lucide-react
         //   icon: <LogOut size={20} color="#ef4444" />,
         //   action: 'logout',
         // },
@@ -248,6 +254,7 @@ const NotificationsPage: React.FC = () => {
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Bell size={28} style={{ marginRight: '12px' }} />
               Notificações
             </h1>
@@ -261,6 +268,7 @@ const NotificationsPage: React.FC = () => {
           <div style={styles.headerActions}>
             {unreadCount > 0 && (
               <button onClick={handleMarkAllAsRead} style={styles.actionButton}>
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Check size={18} />
                 Marcar todas como lidas
               </button>
@@ -306,6 +314,7 @@ const NotificationsPage: React.FC = () => {
         {/* Notifications List */}
         {notifications.length === 0 ? (
           <div style={styles.empty}>
+            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <Bell size={64} color="#d1d5db" />
             <h3 style={styles.emptyTitle}>Nenhuma notificação</h3>
             <p style={styles.emptyText}>

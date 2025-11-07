@@ -20,6 +20,7 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Icon */}
         <div style={styles.iconContainer}>
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           <CheckCircle size={64} color={colors.primary} />
         </div>
 

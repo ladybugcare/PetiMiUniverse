@@ -92,6 +92,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
+            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <ClipboardList size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -112,6 +113,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
+            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <CheckCircle size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -132,6 +134,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
+            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <Calendar size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -163,6 +166,7 @@ const ResumoSection: React.FC = () => {
             }}
           >
             <div className="action-icon-circle" style={styles.actionIconCircle}>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <ClipboardList size={28} strokeWidth={1.5} color="white" />
             </div>
             <span style={styles.actionLabel}>Nova Demanda</span>
@@ -185,6 +189,7 @@ const ResumoSection: React.FC = () => {
             }}
           >
             <div className="action-icon-circle" style={styles.actionIconCircle}>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Eye size={28} strokeWidth={1.5} color="white" />
             </div>
             <span style={styles.actionLabel}>Ver Candidaturas</span>
@@ -207,6 +212,7 @@ const ResumoSection: React.FC = () => {
             }}
           >
             <div className="action-icon-circle" style={styles.actionIconCircle}>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Calendar size={28} strokeWidth={1.5} color="white" />
             </div>
             <span style={styles.actionLabel}>Agenda</span>
@@ -229,6 +235,7 @@ const ResumoSection: React.FC = () => {
             }}
           >
             <div className="action-icon-circle" style={styles.actionIconCircle}>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <MessageSquare size={28} strokeWidth={1.5} color="white" />
             </div>
             <span style={styles.actionLabel}>Mensagens</span>
@@ -267,6 +274,7 @@ const MensagensSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Mensagens</h2>
       <div style={styles.placeholder}>
         <p style={styles.placeholderText}>
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
           Suas mensagens aparecerão aqui
         </p>
@@ -293,10 +301,12 @@ const DemandCard: React.FC<{
       </div>
       <div style={styles.demandInfo}>
         <span style={styles.demandDate}>
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           <Calendar size={16} style={{ marginRight: '4px', display: 'inline-block', verticalAlign: 'middle' }} />
           {date}
         </span>
         <span style={styles.demandCandidates}>
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           <Users size={16} style={{ marginRight: '4px', display: 'inline-block', verticalAlign: 'middle' }} />
           {candidates} candidatos
         </span>

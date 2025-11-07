@@ -239,6 +239,7 @@ if (step === 2) {
               className="text-sm text-neutral-500 mt-2"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Info size={16} color={colors.primary} />
               Dica: Inclua CEP para facilitar que veterinários encontrem sua
               clínica

@@ -114,6 +114,7 @@ const CreateUnitPage: React.FC = () => {
         {error && (
           <div style={styles.errorBanner}>
             <span style={styles.errorIcon}>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <AlertTriangle size={20} />
             </span>
             {error}
@@ -152,6 +153,7 @@ const CreateUnitPage: React.FC = () => {
             />
             <div style={styles.tooltip}>
               <span style={styles.tooltipIcon}>
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Lightbulb size={18} color={colors.primary} />
               </span>
               <span style={styles.tooltipText}>
@@ -249,6 +251,7 @@ const CreateUnitPage: React.FC = () => {
 
           <div style={styles.infoBox}>
             <span style={styles.infoIcon}>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Info size={20} color={colors.primary} />
             </span>
             <div>

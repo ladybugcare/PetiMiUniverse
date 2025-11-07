@@ -474,9 +474,12 @@ const EmailConfirmedPage: React.FC = () => {
 
             {/* Ícone de sucesso com animação */}
             <div style={styles.successIcon}>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <CheckCircle size={64} strokeWidth={3} />
               <div style={styles.sparkles}>
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Sparkles size={24} style={{ position: 'absolute', top: '-10px', right: '-10px' }} />
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Sparkles size={20} style={{ position: 'absolute', bottom: '-8px', left: '-8px' }} />
               </div>
             </div>
@@ -484,6 +487,7 @@ const EmailConfirmedPage: React.FC = () => {
             <h2 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <span>E-mail confirmado com sucesso!</span>
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <PartyPopper size={32} style={{ color: '#7c3aed' }} />
               </div>
             </h2>
@@ -508,6 +512,7 @@ const EmailConfirmedPage: React.FC = () => {
                 e.currentTarget.style.boxShadow = '0 8px 16px rgba(124, 58, 237, 0.3)';
               }}
             >
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <LogIn size={20} style={{ marginRight: '8px' }} />
               Fazer login
             </button>
@@ -527,6 +532,7 @@ const EmailConfirmedPage: React.FC = () => {
 
             {/* Ícone de erro */}
             <div style={styles.errorIcon}>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <AlertCircle size={64} strokeWidth={3} />
             </div>
 
@@ -538,6 +544,7 @@ const EmailConfirmedPage: React.FC = () => {
             {/* Email se disponível */}
             {email && (
               <div style={styles.emailInfo}>
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Mail size={18} style={{ marginRight: '8px', color: '#6b7280' }} />
                 <span style={{ color: '#6b7280', fontSize: '15px' }}>{email}</span>
               </div>
@@ -576,6 +583,7 @@ const EmailConfirmedPage: React.FC = () => {
                     }
                   }}
                 >
+                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
                   <Mail size={18} style={{ marginRight: '8px' }} />
                   {cooldown > 0 ? `Aguarde ${cooldown}s` : resending ? 'Reenviando...' : 'Reenviar link de confirmação'}
                 </button>
@@ -633,6 +641,7 @@ const EmailConfirmedPage: React.FC = () => {
                   }
                 }}
               >
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Mail size={18} style={{ marginRight: '8px' }} />
                 {cooldown > 0 ? `Aguarde ${cooldown}s` : resending ? 'Reenviando...' : 'Reenviar email'}
               </button>

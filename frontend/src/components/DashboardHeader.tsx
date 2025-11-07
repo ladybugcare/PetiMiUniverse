@@ -136,6 +136,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                   : 'Solicitar Suporte'
               }
             >
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <HelpCircle size={20} />
               {unreadCount > 0 && (
                 <span style={styles.supportBadge}>
@@ -164,6 +165,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             {dropdownOpen && (
               <div style={styles.dropdownMenu}>
                 <button onClick={handleViewProfile} style={styles.dropdownItem}>
+                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
                   <User size={16} />
                   <span>Ver Perfil</span>
                 </button>
@@ -177,6 +179,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                     cursor: isLoggingOut ? 'not-allowed' : 'pointer',
                   }}
                 >
+                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
                   <LogOut size={16} />
                   <span>{isLoggingOut ? 'Saindo...' : 'Sair'}</span>
                 </button>

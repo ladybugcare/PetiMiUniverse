@@ -94,8 +94,11 @@ const HomePage: React.FC = () => {
               engajar a equipe e colaborar com especialistas de confiança.
             </p>
             <div className="secondary-cta__benefits">
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <div><CheckCircle size={16} /> Onboarding guiado com checklists inteligentes</div>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <div><CheckCircle size={16} /> Ferramentas para equipe: convites, agendas, unidades</div>
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <div><CheckCircle size={16} /> Marketplace para vender serviços e produtos pet</div>
             </div>
           </div>
@@ -172,6 +175,7 @@ const HomePage: React.FC = () => {
             
             <div className="icon-card group animate-scale-in animate-delay-300">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Lock size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
@@ -220,6 +224,7 @@ const HomePage: React.FC = () => {
                 rel="noopener noreferrer"
                 className="footer-social__link"
               >
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Instagram size={22} strokeWidth={1.6} />
                 <span>@petivet.oficial</span>
               </a>
@@ -238,6 +243,7 @@ const HomePage: React.FC = () => {
           
           <div className="footer-bottom">
             <p className="footer-bottom__tagline">
+              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               Feito com {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}<Heart size={18} fill="currentColor" /> para pets e veterinários
             </p>
             <p className="footer-bottom__copyright">© 2025 PetiVet. Todos os direitos reservados.</p>

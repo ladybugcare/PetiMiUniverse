@@ -44,6 +44,7 @@ const DemandsPage: React.FC = () => {
         {
           id: 'demandas',
           label: 'Ver Todas Demandas',
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           icon: <ClipboardList size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/demands',
@@ -51,6 +52,7 @@ const DemandsPage: React.FC = () => {
         {
           id: 'criar-demanda',
           label: 'Criar Nova Demanda',
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           icon: <PlusCircle size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/create-demand',
@@ -58,6 +60,7 @@ const DemandsPage: React.FC = () => {
         {
           id: 'perfil',
           label: 'Perfil',
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           icon: <User size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/clinic-profile',
@@ -65,6 +68,7 @@ const DemandsPage: React.FC = () => {
         // {
         //   id: 'logout',
         //   label: 'Sair',
+        // @ts-ignore - Type incompatibility between React 18 and lucide-react
         //   icon: <LogOut size={20} color={colors.primary} />,
         //   action: 'logout',
         // },
@@ -82,6 +86,7 @@ const DemandsPage: React.FC = () => {
         {
           id: 'demandas',
           label: 'Demandas Disponíveis',
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           icon: <ClipboardList size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/demands',
@@ -89,6 +94,7 @@ const DemandsPage: React.FC = () => {
         {
           id: 'candidaturas',
           label: 'Minhas Candidaturas',
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           icon: <FileText size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/my-applications',
@@ -96,6 +102,7 @@ const DemandsPage: React.FC = () => {
         {
           id: 'perfil',
           label: 'Meu Perfil',
+          // @ts-ignore - Type incompatibility between React 18 and lucide-react
           icon: <User size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/vet-profile',
@@ -103,6 +110,7 @@ const DemandsPage: React.FC = () => {
         // {
         //   id: 'logout',
         //   label: 'Sair',
+        // @ts-ignore - Type incompatibility between React 18 and lucide-react
         //   icon: <LogOut size={20} color={colors.primary} />,
         //   action: 'logout',
         // },

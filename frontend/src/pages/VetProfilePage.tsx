@@ -38,6 +38,7 @@ const VetProfilePage: React.FC = () => {
     {
       id: 'demandas',
       label: 'Demandas',
+      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
@@ -45,6 +46,7 @@ const VetProfilePage: React.FC = () => {
     {
       id: 'candidaturas',
       label: 'Minhas Candidaturas',
+      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <FileText size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-applications',
@@ -52,6 +54,7 @@ const VetProfilePage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Marketplace',
+      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
@@ -59,6 +62,7 @@ const VetProfilePage: React.FC = () => {
     {
       id: 'perfil',
       label: 'Meu Perfil',
+      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/vet-profile',
@@ -194,6 +198,7 @@ const VetProfilePage: React.FC = () => {
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
                   <Edit size={16} />
                   <span>Editar Perfil</span>
                 </div>

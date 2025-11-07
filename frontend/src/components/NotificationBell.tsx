@@ -176,6 +176,7 @@ const NotificationBell: React.FC = () => {
         style={styles.bellButton}
         aria-label="Notificações"
       >
+        // @ts-ignore - Type incompatibility between React 18 and lucide-react
         <Bell size={20} />
         {unreadCount > 0 && (
           <span style={styles.badge}>
@@ -206,6 +207,7 @@ const NotificationBell: React.FC = () => {
               <div style={styles.loading}>Carregando...</div>
             ) : notifications.length === 0 ? (
               <div style={styles.empty}>
+                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                 <Bell size={32} color="#d1d5db" />
                 <p style={styles.emptyText}>Nenhuma notificação</p>
               </div>
@@ -241,6 +243,7 @@ const NotificationBell: React.FC = () => {
                     style={styles.deleteButton}
                     aria-label="Remover notificação"
                   >
+                    // @ts-ignore - Type incompatibility between React 18 and lucide-react
                     <X size={16} />
                   </button>
                 </div>

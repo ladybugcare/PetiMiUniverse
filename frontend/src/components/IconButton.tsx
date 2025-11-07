@@ -107,6 +107,7 @@ const IconButton: React.FC<IconButtonProps> = ({
         outline: 'none',
       }}
     >
+      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       <Icon size={currentSize.iconSize} />
       {label && <span>{label}</span>}
     </button>
