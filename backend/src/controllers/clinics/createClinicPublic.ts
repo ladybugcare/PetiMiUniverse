@@ -21,13 +21,23 @@ export const createClinicPublic = async (req: Request, res: Response) => {
   try {
     console.log('🔹 Criando usuário de clínica (signup):', email);
 
+    // Build redirect URL from environment
+    const rawFrontendUrl = process.env.FRONTEND_URL?.trim();
+    const FRONTEND_URL = rawFrontendUrl?.replace(/\/$/, '');
+    if (!FRONTEND_URL) {
+      console.error('[SIGNUP] FRONTEND_URL not set. Aborting to avoid wrong redirect.');
+      return res.status(500).json({ error: 'FRONTEND_URL não configurada no servidor' });
+    }
+    const emailRedirectTo = `${FRONTEND_URL}/email-confirmed`;
+    console.log('[SIGNUP] Using emailRedirectTo:', emailRedirectTo);
+
     // 1️⃣ Cria usuário no Auth
     // IMPORTANTE: Usa 'role' para acionar o trigger handle_new_user
     // O trigger criará clinic_users com clinic_id = NULL e status = 'pending_clinic'
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true, // ✅ Envia email automaticamente (Inbucket local, Supabase Cloud staging/prod)
+      email_confirm: false, // ❌ NÃO confirmar automaticamente - precisa enviar email
       user_metadata: { 
         role: 'clinic', // Trigger procura por 'role'
         name,
@@ -42,6 +52,36 @@ export const createClinicPublic = async (req: Request, res: Response) => {
     }
 
     const userId = authData.user.id;
+
+    // 1.5️⃣ Envia email de confirmação
+    // IMPORTANTE: admin.createUser() NÃO envia email automaticamente
+    // Precisamos gerar o link e o Supabase enviará o email
+    try {
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'signup',
+        email,
+        password, // Necessário para generateLink type 'signup'
+        options: {
+          redirectTo: emailRedirectTo,
+        },
+      });
+
+      if (linkError) {
+        console.error('[SIGNUP] Erro ao gerar link de confirmação:', linkError);
+        console.error('[SIGNUP] Detalhes do erro:', JSON.stringify(linkError, null, 2));
+      } else {
+        console.log('[SIGNUP] Link de confirmação gerado com sucesso');
+        // O Supabase envia o email automaticamente quando geramos o link de signup
+        // O link está em linkData.properties.action_link se precisarmos usar manualmente
+        if (linkData?.properties?.action_link) {
+          console.log('[SIGNUP] Link gerado (email deve ter sido enviado):', linkData.properties.action_link.substring(0, 50) + '...');
+        }
+      }
+    } catch (linkErr: any) {
+      console.error('[SIGNUP] Erro ao gerar/enviar link de confirmação:', linkErr);
+      console.error('[SIGNUP] Stack:', linkErr?.stack);
+      // Não falha o cadastro, mas é crítico que o email seja enviado
+    }
 
     // 2️⃣ Verifica se clinic_users foi criado pelo trigger
     // O trigger handle_new_user deve ter criado clinic_users com clinic_id = NULL
