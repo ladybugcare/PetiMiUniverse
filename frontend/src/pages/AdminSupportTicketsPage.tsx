@@ -45,15 +45,10 @@ const AdminSupportTicketsPage: React.FC = () => {
   const menuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
     { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
   ];
 
@@ -156,13 +151,9 @@ const AdminSupportTicketsPage: React.FC = () => {
 
   const getStatusBadge = (status: SupportTicket['status']) => {
     const statusConfig: { [key: string]: { label: string; icon: React.ReactNode; color: string; bgColor: string } } = {
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       open: { label: 'Aberto', icon: <Clock size={14} />, color: '#ef4444', bgColor: '#fee2e2' },
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       in_progress: { label: 'Em Análise', icon: <Clock size={14} />, color: '#f59e0b', bgColor: '#fef3c7' },
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       resolved: { label: 'Resolvido', icon: <CheckCircle size={14} />, color: '#22c55e', bgColor: '#dcfce7' },
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       closed: { label: 'Fechado', icon: <XCircle size={14} />, color: '#6b7280', bgColor: '#f3f4f6' },
     };
 
@@ -254,7 +245,6 @@ const AdminSupportTicketsPage: React.FC = () => {
             <div style={styles.loading}>Carregando tickets...</div>
           ) : tickets.length === 0 ? (
             <div style={styles.emptyState}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <MessageCircle size={64} color="#a3a3a3" />
               <p style={styles.emptyText}>Nenhum ticket encontrado</p>
               <p style={styles.emptyHint}>
@@ -273,7 +263,6 @@ const AdminSupportTicketsPage: React.FC = () => {
                 >
                   <div style={styles.ticketHeader}>
                     <div style={styles.ticketMeta}>
-                      // @ts-ignore - Type incompatibility between React 18 and lucide-react
                       <User size={16} color={colors.primary} />
                       <span style={styles.ticketUserId}>
                         {ticket.user_id.substring(0, 8)}...
@@ -331,7 +320,6 @@ const AdminSupportTicketsPage: React.FC = () => {
         {/* Header da conversação */}
         <div style={styles.conversationHeader}>
           <button onClick={handleCloseTicket} style={styles.backButton}>
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <ArrowLeft size={20} />
             <span>Voltar</span>
           </button>
@@ -349,7 +337,6 @@ const AdminSupportTicketsPage: React.FC = () => {
                   onClick={() => handleUpdateStatus('in_progress')}
                   style={{ ...styles.statusButton, ...styles.progressButton }}
                 >
-                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
                   <Clock size={16} />
                   Em Análise
                 </button>
@@ -359,7 +346,6 @@ const AdminSupportTicketsPage: React.FC = () => {
                   onClick={() => handleUpdateStatus('resolved')}
                   style={{ ...styles.statusButton, ...styles.resolveButton }}
                 >
-                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
                   <CheckCircle size={16} />
                   Resolver
                 </button>
@@ -369,7 +355,6 @@ const AdminSupportTicketsPage: React.FC = () => {
                   onClick={() => handleUpdateStatus('closed')}
                   style={{ ...styles.statusButton, ...styles.closeButton }}
                 >
-                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
                   <XCircle size={16} />
                   Fechar
                 </button>
@@ -450,14 +435,12 @@ const AdminSupportTicketsPage: React.FC = () => {
               style={styles.sendButton}
               disabled={sending || !newMessage.trim()}
             >
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Send size={20} />
               {sending ? 'Enviando...' : 'Enviar'}
             </button>
           </form>
         ) : (
           <div style={styles.closedMessage}>
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <CheckCircle size={24} color={colors.primary} />
             <div>
               <p style={styles.closedTitle}>Ticket avaliado e encerrado pelo usuário</p>

@@ -21,7 +21,6 @@ const MarketplaceItemDetailPage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Voltar ao Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
@@ -29,7 +28,6 @@ const MarketplaceItemDetailPage: React.FC = () => {
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/create',
@@ -37,7 +35,6 @@ const MarketplaceItemDetailPage: React.FC = () => {
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <Package size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/my-listings',

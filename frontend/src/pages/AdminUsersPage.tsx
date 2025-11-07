@@ -180,15 +180,10 @@ const AdminUsersPage: React.FC = () => {
   const menuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
     { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
   ];
 
@@ -375,7 +370,6 @@ const AdminUsersPage: React.FC = () => {
         <div style={styles.header}>
           <h2 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Users size={28} color={colors.primary} />
               <span>Usuários Totais</span>
             </div>
@@ -384,7 +378,6 @@ const AdminUsersPage: React.FC = () => {
             onClick={() => setShowCreateUserModal(true)}
             style={styles.newUserButton}
           >
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <Plus size={18} />
             Novo Usuário
           </button>
@@ -412,7 +405,6 @@ const AdminUsersPage: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Stethoscope size={18} />
               <span>Veterinários ({vets.length})</span>
             </div>
@@ -425,7 +417,6 @@ const AdminUsersPage: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
               <Shield size={18} />
               <span>Administradores ({admins.length})</span>
             </div>
@@ -507,7 +498,6 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.viewButton }}
                                 title="Ver detalhes"
                               >
-                                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                                 <Eye size={16} />
                               </button>
                               <button
@@ -515,7 +505,6 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.editButton }}
                                 title="Editar"
                               >
-                                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                                 <Edit size={16} />
                               </button>
                               <button
@@ -576,7 +565,6 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.viewButton }}
                                 title="Ver detalhes"
                               >
-                                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                                 <Eye size={16} />
                               </button>
                               <button
@@ -584,7 +572,6 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.editButton }}
                                 title="Editar"
                               >
-                                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                                 <Edit size={16} />
                               </button>
                               <button
@@ -819,7 +806,6 @@ const AdminUsersPage: React.FC = () => {
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
                   <UserPlus size={24} color={colors.primary} />
                   <h3 style={styles.modalTitle}>Novo Usuário</h3>
                 </div>
@@ -887,7 +873,6 @@ const AdminUsersPage: React.FC = () => {
                                   backgroundColor: isSelected ? type.color : '#f3f4f6',
                                 }}
                               >
-                                // @ts-ignore - Type incompatibility between React 18 and lucide-react
                                 <IconComponent size={28} strokeWidth={1.5} color={isSelected ? 'white' : '#6b7280'} />
                               </div>
                               <span
@@ -1103,7 +1088,6 @@ const AdminUsersPage: React.FC = () => {
                               onClick={() => setShowPassword(!showPassword)}
                               style={styles.passwordToggleBtn}
                             >
-                              // @ts-ignore - Type incompatibility between React 18 and lucide-react
                               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                             </button>
                           )}

@@ -111,7 +111,6 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
 
           {/* Warning */}
           <div style={styles.warning}>
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
             <AlertTriangle size={18} color={colors.warning} />
             <span style={styles.warningText}>
               Após avaliar, não será possível enviar mais mensagens neste ticket.

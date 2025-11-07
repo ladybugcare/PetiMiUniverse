@@ -64,7 +64,6 @@ const LucideIconsExample: React.FC = () => {
 
   const IconCard = ({ icon: Icon, name }: { icon: any; name: string }) => (
     <div style={iconStyle}>
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       <Icon size={24} color={colors.primary} />
       <span style={{ fontSize: '12px', color: colors.textSecondary, textAlign: 'center' }}>
         {name}
@@ -239,20 +238,16 @@ const LucideIconsExample: React.FC = () => {
 {`import { Mail, Lock, Eye, Plus } from 'lucide-react';
 
 // Uso básico
-// @ts-ignore - Type incompatibility between React 18 and lucide-react
 <Mail size={24} color="#7c3aed" />
 
 // Com estilo inline
-// @ts-ignore - Type incompatibility between React 18 and lucide-react
 <Lock size={20} style={{ color: '#7c3aed' }} />
 
 // Com className (Tailwind)
-// @ts-ignore - Type incompatibility between React 18 and lucide-react
 <Eye size={18} className="text-primary-600" />
 
 // Em botões
 <button>
-  // @ts-ignore - Type incompatibility between React 18 and lucide-react
   <Plus size={18} />
   Adicionar
 </button>`}

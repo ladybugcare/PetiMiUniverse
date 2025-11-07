@@ -24,7 +24,6 @@ const CreateDemandPage: React.FC = () => {
     {
       id: 'demandas',
       label: 'Ver Todas Demandas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
@@ -32,7 +31,6 @@ const CreateDemandPage: React.FC = () => {
     {
       id: 'criar-demanda',
       label: 'Criar Nova Demanda',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/create-demand',
@@ -40,7 +38,6 @@ const CreateDemandPage: React.FC = () => {
     {
       id: 'perfil',
       label: 'Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
@@ -48,7 +45,6 @@ const CreateDemandPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     //   icon: <LogOut size={20} color={colors.primary} />,
     //   action: 'logout',
     // },

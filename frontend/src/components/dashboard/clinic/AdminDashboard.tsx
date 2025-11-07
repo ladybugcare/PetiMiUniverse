@@ -88,7 +88,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
           }}
         >
           <div style={styles.statIcon}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
+            {}
             <Building2 size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -109,7 +109,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
           }}
         >
           <div style={styles.statIcon}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
+            {}
             <Users size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -130,7 +130,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
           }}
         >
           <div style={styles.statIcon}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
+            {}
             <ClipboardList size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -151,7 +151,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
           }}
         >
           <div style={styles.statIcon}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
+            {}
             <AlertCircle size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -204,7 +204,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             }}
           >
               <div className="action-icon-circle" style={styles.actionIconCircle}>
-                {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
+                {}
                 <Building2 size={28} strokeWidth={1.5} color="white" />
               </div>
             <span style={styles.actionLabel}>Nova Unidade</span>
@@ -231,7 +231,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             }}
           >
               <div className="action-icon-circle" style={styles.actionIconCircle}>
-                {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
+                {}
                 <UserPlus size={28} strokeWidth={1.5} color="white" />
               </div>
             <span style={styles.actionLabel}>Convidar Usuário</span>
@@ -258,7 +258,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             }}
           >
               <div className="action-icon-circle" style={styles.actionIconCircle}>
-                {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
+                {}
                 <ClipboardList size={28} strokeWidth={1.5} color="white" />
               </div>
             <span style={styles.actionLabel}>Nova Demanda</span>
@@ -285,7 +285,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             }}
           >
               <div className="action-icon-circle" style={styles.actionIconCircle}>
-                {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
+                {}
                 <BarChart2 size={28} strokeWidth={1.5} color="white" />
               </div>
             <span style={styles.actionLabel}>Relatórios</span>

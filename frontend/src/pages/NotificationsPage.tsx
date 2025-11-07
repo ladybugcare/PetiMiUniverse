@@ -51,14 +51,13 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
-          icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Bell size={20} color={colors.primary} />,
+          icon: <Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
         },
         // {
         //   id: 'logout',
         //   label: 'Sair',
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
         //   icon: <LogOut size={20} color="#ef4444" />,
         //   action: 'logout',
         // },
@@ -75,14 +74,13 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
-          icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Bell size={20} color={colors.primary} />,
+          icon: <Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
         },
         // {
         //   id: 'logout',
         //   label: 'Sair',
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
         //   icon: <LogOut size={20} color="#ef4444" />,
         //   action: 'logout',
         // },
@@ -99,14 +97,13 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
-          icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Bell size={20} color={colors.primary} />,
+          icon: <Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
         },
         // {
         //   id: 'logout',
         //   label: 'Sair',
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
         //   icon: <LogOut size={20} color="#ef4444" />,
         //   action: 'logout',
         // },

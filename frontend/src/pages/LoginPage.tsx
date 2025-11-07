@@ -116,7 +116,6 @@ const LoginPage: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-2">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    // @ts-ignore - Type incompatibility between React 18 and lucide-react
                     <Mail size={18} color={colors.primary} />
                     <span>Email</span>
                   </div>
@@ -135,7 +134,6 @@ const LoginPage: React.FC = () => {
               <div style={{ marginTop: '32px' }}>
                 <label className="block text-sm font-medium text-neutral-700 mb-2">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    // @ts-ignore - Type incompatibility between React 18 and lucide-react
                     <Lock size={18} color={colors.primary} />
                     <span>Senha</span>
                   </div>

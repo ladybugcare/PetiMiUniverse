@@ -19,7 +19,6 @@ interface CategoryCardData {
 const categories: CategoryCardData[] = [
   {
     id: 'equipment',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     icon: <Microscope size={40} />,
     title: 'Equipamentos',
     description: 'Equipamentos cirúrgicos, diagnósticos, mobiliário clínico e laboratório',
@@ -27,7 +26,6 @@ const categories: CategoryCardData[] = [
   },
   {
     id: 'medicine',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     icon: <Pill size={40} />,
     title: 'Medicamentos',
     description: 'Antibióticos, analgésicos, antiparasitários e outros medicamentos',
@@ -35,7 +33,6 @@ const categories: CategoryCardData[] = [
   },
   {
     id: 'vaccine',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     icon: <Syringe size={40} />,
     title: 'Vacinas',
     description: 'Vacinas para cães, gatos e outros animais',
@@ -43,7 +40,6 @@ const categories: CategoryCardData[] = [
   },
   {
     id: 'supplies',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     icon: <Package size={40} />,
     title: 'Suprimentos',
     description: 'Material cirúrgico, limpeza, consumíveis e outros suprimentos',

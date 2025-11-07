@@ -57,7 +57,6 @@ const MyApplicationsPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     //   icon: <LogOut size={20} color={colors.primary} />,
     //   action: 'logout',
     // },

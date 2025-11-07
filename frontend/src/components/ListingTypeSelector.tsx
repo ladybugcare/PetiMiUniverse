@@ -18,7 +18,6 @@ interface TypeCardData {
 const listingTypes: TypeCardData[] = [
   {
     id: 'sale',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     icon: <ShoppingBag size={48} />,
     title: 'VENDER',
     description: 'Tenho equipamentos, medicamentos ou suprimentos para vender',
@@ -26,7 +25,6 @@ const listingTypes: TypeCardData[] = [
   },
   {
     id: 'wanted',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     icon: <Search size={48} />,
     title: 'PROCURAR',
     description: 'Estou procurando comprar equipamentos ou produtos veterinários',

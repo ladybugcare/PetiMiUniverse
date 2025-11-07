@@ -13,7 +13,6 @@ const MarketplaceMessagesPage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
@@ -21,7 +20,6 @@ const MarketplaceMessagesPage: React.FC = () => {
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/create',
@@ -29,7 +27,6 @@ const MarketplaceMessagesPage: React.FC = () => {
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <Package size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/my-listings',
@@ -37,7 +34,6 @@ const MarketplaceMessagesPage: React.FC = () => {
     {
       id: 'mensagens',
       label: 'Mensagens',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
       icon: <MessageSquare size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/messages',
