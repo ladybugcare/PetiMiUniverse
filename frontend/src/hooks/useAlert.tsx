@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import Alert, { AlertType } from '../components/Alert';
+import { CheckCircle, XCircle, AlertCircle, Info } from 'lucide-react';
 
 interface AlertOptions {
   title?: string;
