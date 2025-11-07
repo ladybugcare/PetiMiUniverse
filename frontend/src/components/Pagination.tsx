@@ -48,7 +48,7 @@ const Pagination: React.FC<PaginationProps> = ({ currentPage, totalPages, onPage
         disabled={currentPage === 1}
         style={{
           ...styles.button,
-          ...(currentPage === 1 ? styles.buttonDisabled : {}),
+          ...(currentPage === 1 ? styles.buttonDisabled : ),
         }}
       >
         ← Anterior
@@ -62,7 +62,7 @@ const Pagination: React.FC<PaginationProps> = ({ currentPage, totalPages, onPage
               onClick={() => onPageChange(page)}
               style={{
                 ...styles.pageButton,
-                ...(currentPage === page ? styles.pageButtonActive : {}),
+                ...(currentPage === page ? styles.pageButtonActive : ),
               }}
             >
               {page}
@@ -80,7 +80,7 @@ const Pagination: React.FC<PaginationProps> = ({ currentPage, totalPages, onPage
         disabled={currentPage === totalPages}
         style={{
           ...styles.button,
-          ...(currentPage === totalPages ? styles.buttonDisabled : {}),
+          ...(currentPage === totalPages ? styles.buttonDisabled : ),
         }}
       >
         Próxima →

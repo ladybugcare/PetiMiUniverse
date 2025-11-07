@@ -66,15 +66,14 @@ const MarketplacePage: React.FC = () => {
     {
       id: 'perfil',
       label: 'Perfil',
-      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<User size={20} color={colors.primary} />,
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
     // {
     //   id: 'logout',
     //   label: 'Sair',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    //   icon: <LogOut size={20} color={colors.primary} />,
+        //   icon: <LogOut size={20} color={colors.primary} />,
     //   action: 'logout',
     // },
   ];
@@ -122,7 +121,7 @@ const MarketplacePage: React.FC = () => {
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<PlusCircle size={20} color="#ffffff" />,
+      icon: <PlusCircle size={20} color="#ffffff" />,
       path: '/marketplace/create',
       color: '#10b981',
     },

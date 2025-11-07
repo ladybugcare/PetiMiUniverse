@@ -24,7 +24,7 @@ export const UnitProvider: React.FC<UnitProviderProps> = ({ children }) => {
   const loadUnits = async () => {
     try {
       setLoading(true);
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       const userRole = user?.user_metadata?.role || user?.role;
 
       let clinicUser: any = null;

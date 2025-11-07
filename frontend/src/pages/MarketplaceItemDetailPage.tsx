@@ -21,24 +21,21 @@ const MarketplaceItemDetailPage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Voltar ao Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color={colors.primary} />,
+            icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <PlusCircle size={20} color={colors.primary} />,
+            icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/create',
     },
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Package size={20} color={colors.primary} />,
+            icon: <Package size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/my-listings',
     },
@@ -69,7 +66,7 @@ const MarketplaceItemDetailPage: React.FC = () => {
 
     try {
       setSendingMessage(true);
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       
       await marketplaceMessagesApi.send({
         item_id: item.id,
@@ -122,7 +119,7 @@ const MarketplaceItemDetailPage: React.FC = () => {
     ? item.images
     : ['https://via.placeholder.com/800x600?text=Sem+Imagem'];
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user = JSON.parse(localStorage.getItem('user') || '');
   const isOwner = user.id === item.seller_id;
 
   return (
@@ -415,7 +412,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '500',
     fontFamily: 'Inter, sans-serif',
   },
-  description: {},
+  description: ,
   sectionTitle: {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '20px',
@@ -431,7 +428,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
     whiteSpace: 'pre-wrap',
   },
-  details: {},
+  details: ,
   detailsGrid: {
     display: 'grid',
     gap: '12px',

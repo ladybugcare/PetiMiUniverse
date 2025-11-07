@@ -41,7 +41,7 @@ interface LoginData {
 // 🚀 Função base de requisições HTTP
 // ===========================================================
 
-const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+const apiRequest = async (endpoint: string, options: RequestInit = ) => {
   const url = `${API_BASE_URL}${endpoint}`;
   let authToken: string | null = null;
 
@@ -82,7 +82,7 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
   // 🧾 Montar headers
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
+    ...(options.headers as Record<string, string> || ),
   };
 
   if (authToken) {
@@ -117,8 +117,7 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
           if (session?.access_token) {
             console.warn('Token pode estar desatualizado. Considere fazer logout e login novamente.');
           }
-        } catch {}
-        throw new Error(errorMessage);
+        } catch throw new Error(errorMessage);
       }
     }
 

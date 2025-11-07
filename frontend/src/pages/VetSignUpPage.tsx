@@ -26,7 +26,7 @@ const VetSignUpPage: React.FC = () => {
     password: '',
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>();
 
   // Validar step atual
   const isStepValid = (): boolean => {

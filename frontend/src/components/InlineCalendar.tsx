@@ -143,8 +143,8 @@ const InlineCalendar: React.FC<InlineCalendarProps> = ({
               }}
               style={{
                 ...styles.day,
-                ...(disabled ? styles.dayDisabled : {}),
-                ...(selected ? styles.daySelected : {}),
+                ...(disabled ? styles.dayDisabled : ),
+                ...(selected ? styles.daySelected : ),
               }}
               title={disabled ? 'Data indisponível' : `Selecionar ${day}/${month + 1}/${year}`}
             >

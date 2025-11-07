@@ -138,7 +138,7 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
     try {
       setLoading(true);
 
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       const clinicId = user.id;
 
       // Usar nova API de demandas compostas

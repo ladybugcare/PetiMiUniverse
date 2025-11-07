@@ -36,8 +36,8 @@ const CreateFirstUnitPage: React.FC = () => {
     technical_manager: '',
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const session = JSON.parse(localStorage.getItem('session') || '{}');
+  const user = JSON.parse(localStorage.getItem('user') || '');
+  const session = JSON.parse(localStorage.getItem('session') || '');
   const accessToken: string | undefined = session?.access_token;
   const clinicId = user.id;
 
@@ -48,7 +48,7 @@ const CreateFirstUnitPage: React.FC = () => {
         const hideModal = localStorage.getItem('hideWelcomeModal');
         const isFirstAccess = localStorage.getItem('isFirstAccess');
         
-        const headers: Record<string, string> = {};
+        const headers: Record<string, string> = ;
         if (accessToken) {
           headers['Authorization'] = `Bearer ${accessToken}`;
         }

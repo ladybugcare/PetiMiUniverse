@@ -47,40 +47,35 @@ const AdminProfilePage: React.FC = () => {
     {
       id: 'veterinarios',
       label: 'Veterinários',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Stethoscope size={20} color={colors.primary} />,
+            icon: <Stethoscope size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/admin/vets',
     },
     {
       id: 'demandas',
       label: 'Demandas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color={colors.primary} />,
+            icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/admin/demands',
     },
     {
       id: 'support',
       label: 'Tickets de Suporte',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageCircle size={20} color={colors.primary} />,
+            icon: <MessageCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/admin/support-tickets',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+            icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/admin-profile',
     },
     // {
     //   id: 'logout',
     //   label: 'Sair',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    //   icon: <LogOut size={20} color={colors.primary} />,
+        //   icon: <LogOut size={20} color={colors.primary} />,
     //   action: 'logout',
     // },
   ];
@@ -91,7 +86,7 @@ const AdminProfilePage: React.FC = () => {
 
   const loadProfile = async () => {
     try {
-      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      const userData = JSON.parse(localStorage.getItem('user') || '');
       if (!userData || !userData.id) {
         navigate('/login');
         return;
@@ -192,8 +187,7 @@ const AdminProfilePage: React.FC = () => {
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                  <Edit size={16} />
+                                    <Edit size={16} />
                   <span>Editar Perfil</span>
                 </div>
               </button>
@@ -245,8 +239,7 @@ const AdminProfilePage: React.FC = () => {
             <div style={styles.formGroup}>
               <label style={styles.label}>Permissão</label>
               <div style={styles.badge}>
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <Crown size={16} color="#92400e" />
+                                <Crown size={16} color="#92400e" />
                 <span style={styles.badgeText}>Administrador do Sistema</span>
               </div>
             </div>

@@ -34,13 +34,13 @@ const AdminClinicsPage: React.FC = () => {
   const [selectedClinic, setSelectedClinic] = useState<Clinic | null>(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editFormData, setEditFormData] = useState<Partial<Clinic>>({});
+  const [editFormData, setEditFormData] = useState<Partial<Clinic>>();
 
   const itemsPerPage = 20;
 
   // Check authentication
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user = JSON.parse(localStorage.getItem('user') || '');
     const userRole = user?.user_metadata?.role || user?.role;
     
     if (!user || !user.id || userRole !== 'admin') {
@@ -85,16 +85,11 @@ const AdminClinicsPage: React.FC = () => {
   const menuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
     { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
+        { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
+        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
+        { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
+        { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
+        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
   ];
 
   const handleView = (clinic: Clinic) => {
@@ -207,16 +202,14 @@ const AdminClinicsPage: React.FC = () => {
                             style={{ ...styles.actionButton, ...styles.viewButton }}
                             title="Ver detalhes"
                           >
-                            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                            <Eye size={16} />
+                                                        <Eye size={16} />
                           </button>
                           <button
                             onClick={() => handleEdit(clinic)}
                             style={{ ...styles.actionButton, ...styles.editButton }}
                             title="Editar"
                           >
-                            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                            <Edit size={16} />
+                                                        <Edit size={16} />
                           </button>
                           <button
                             onClick={() => handleDeactivate(clinic)}

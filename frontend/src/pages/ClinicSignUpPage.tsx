@@ -30,7 +30,7 @@ const ClinicSignUpPage: React.FC = () => {
     password: '',
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>();
 
   // Validação do step atual
   const isStepValid = (): boolean => {

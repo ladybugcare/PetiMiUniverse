@@ -140,11 +140,9 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
           aria-expanded={isOpen}
         >
           {isOpen ? (
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-            <X size={28} color="#ffffff" strokeWidth={2.5} />
+                        <X size={28} color="#ffffff" strokeWidth={2.5} />
           ) : (
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-            <Plus size={28} color="#ffffff" strokeWidth={2.5} />
+                        <Plus size={28} color="#ffffff" strokeWidth={2.5} />
           )}
         </button>
       </div>

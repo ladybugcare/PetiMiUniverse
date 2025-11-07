@@ -27,7 +27,7 @@ const DemandsPage: React.FC = () => {
   const [isApplying, setIsApplying] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user = JSON.parse(localStorage.getItem('user') || '');
   const userRole = user?.user_metadata?.role || user?.role;
 
   // Menu items based on user role
@@ -44,32 +44,28 @@ const DemandsPage: React.FC = () => {
         {
           id: 'demandas',
           label: 'Ver Todas Demandas',
-          // @ts-ignore - Type incompatibility between React 18 and lucide-react
-          icon: <ClipboardList size={20} color={colors.primary} />,
+                    icon: <ClipboardList size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/demands',
         },
         {
           id: 'criar-demanda',
           label: 'Criar Nova Demanda',
-          // @ts-ignore - Type incompatibility between React 18 and lucide-react
-          icon: <PlusCircle size={20} color={colors.primary} />,
+                    icon: <PlusCircle size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/create-demand',
         },
         {
           id: 'perfil',
           label: 'Perfil',
-          // @ts-ignore - Type incompatibility between React 18 and lucide-react
-          icon: <User size={20} color={colors.primary} />,
+                    icon: <User size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/clinic-profile',
         },
         // {
         //   id: 'logout',
         //   label: 'Sair',
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        //   icon: <LogOut size={20} color={colors.primary} />,
+                //   icon: <LogOut size={20} color={colors.primary} />,
         //   action: 'logout',
         // },
       ];
@@ -86,32 +82,28 @@ const DemandsPage: React.FC = () => {
         {
           id: 'demandas',
           label: 'Demandas Disponíveis',
-          // @ts-ignore - Type incompatibility between React 18 and lucide-react
-          icon: <ClipboardList size={20} color={colors.primary} />,
+                    icon: <ClipboardList size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/demands',
         },
         {
           id: 'candidaturas',
           label: 'Minhas Candidaturas',
-          // @ts-ignore - Type incompatibility between React 18 and lucide-react
-          icon: <FileText size={20} color={colors.primary} />,
+                    icon: <FileText size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/my-applications',
         },
         {
           id: 'perfil',
           label: 'Meu Perfil',
-          // @ts-ignore - Type incompatibility between React 18 and lucide-react
-          icon: <User size={20} color={colors.primary} />,
+                    icon: <User size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/vet-profile',
         },
         // {
         //   id: 'logout',
         //   label: 'Sair',
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        //   icon: <LogOut size={20} color={colors.primary} />,
+                //   icon: <LogOut size={20} color={colors.primary} />,
         //   action: 'logout',
         // },
       ];

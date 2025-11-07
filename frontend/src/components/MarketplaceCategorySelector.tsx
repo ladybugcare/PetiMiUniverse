@@ -19,32 +19,28 @@ interface CategoryCardData {
 const categories: CategoryCardData[] = [
   {
     id: 'equipment',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Microscope size={40} />,
+        icon: <Microscope size={40} />,
     title: 'Equipamentos',
     description: 'Equipamentos cirúrgicos, diagnósticos, mobiliário clínico e laboratório',
     color: '#7c3aed',
   },
   {
     id: 'medicine',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Pill size={40} />,
+        icon: <Pill size={40} />,
     title: 'Medicamentos',
     description: 'Antibióticos, analgésicos, antiparasitários e outros medicamentos',
     color: '#ef4444',
   },
   {
     id: 'vaccine',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Syringe size={40} />,
+        icon: <Syringe size={40} />,
     title: 'Vacinas',
     description: 'Vacinas para cães, gatos e outros animais',
     color: '#f59e0b',
   },
   {
     id: 'supplies',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Package size={40} />,
+        icon: <Package size={40} />,
     title: 'Suprimentos',
     description: 'Material cirúrgico, limpeza, consumíveis e outros suprimentos',
     color: '#06b6d4',

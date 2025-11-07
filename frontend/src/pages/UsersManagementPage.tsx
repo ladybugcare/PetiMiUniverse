@@ -29,7 +29,7 @@ const UsersManagementPage: React.FC = () => {
     role: 'CASSISTANT' as Role,
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user = JSON.parse(localStorage.getItem('user') || '');
   const userRole = user?.user_metadata?.role || user?.role;
   const clinicId = user.id;
 
@@ -38,17 +38,12 @@ const UsersManagementPage: React.FC = () => {
 
     if (userRole === 'clinic') {
       baseItems.push(
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
+                { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
+                { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
+                { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
         { id: 'units', label: 'Gerenciar Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        { id: 'users', label: 'Gerenciar Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' }
+                { id: 'users', label: 'Gerenciar Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
+                { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' }
       );
     }
 

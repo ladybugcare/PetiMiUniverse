@@ -30,7 +30,7 @@ const AcceptInvitationPage: React.FC = () => {
       setAccepting(true);
       
       // Check if user is logged in
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       if (!user.id) {
         // Redirect to login with token in URL
         navigate(`/login?invitation=${token}`);

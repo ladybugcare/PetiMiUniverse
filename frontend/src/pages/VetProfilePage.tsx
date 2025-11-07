@@ -38,28 +38,28 @@ const VetProfilePage: React.FC = () => {
     {
       id: 'demandas',
       label: 'Demandas',
-      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color={colors.primary} />,
+      icon: <ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'candidaturas',
       label: 'Minhas Candidaturas',
-      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<FileText size={20} color={colors.primary} />,
+      icon: <FileText size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-applications',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ShoppingCart size={20} color={colors.primary} />,
+      icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
-      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<User size={20} color={colors.primary} />,
+      icon: <User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/vet-profile',
     },
@@ -67,7 +67,7 @@ const VetProfilePage: React.FC = () => {
 
   const loadProfile = useCallback(async () => {
     try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       if (!user || !user.id) {
         navigate('/login');
         return;
@@ -194,7 +194,6 @@ const VetProfilePage: React.FC = () => {
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
                   <Edit size={16} />
                   <span>Editar Perfil</span>
                 </div>

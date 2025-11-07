@@ -33,7 +33,7 @@ const NotificationsPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user = JSON.parse(localStorage.getItem('user') || '');
   const userId = user?.id;
   const userRole = user?.user_metadata?.role || user?.role;
 
@@ -51,15 +51,14 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
-          icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Bell size={20} color={colors.primary} />,
+          icon: <Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
         },
         // {
         //   id: 'logout',
         //   label: 'Sair',
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        //   icon: <LogOut size={20} color="#ef4444" />,
+                //   icon: <LogOut size={20} color="#ef4444" />,
         //   action: 'logout',
         // },
       ];
@@ -75,15 +74,14 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
-          icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Bell size={20} color={colors.primary} />,
+          icon: <Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
         },
         // {
         //   id: 'logout',
         //   label: 'Sair',
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        //   icon: <LogOut size={20} color="#ef4444" />,
+                //   icon: <LogOut size={20} color="#ef4444" />,
         //   action: 'logout',
         // },
       ];
@@ -99,15 +97,14 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
-          icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Bell size={20} color={colors.primary} />,
+          icon: <Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
         },
         // {
         //   id: 'logout',
         //   label: 'Sair',
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        //   icon: <LogOut size={20} color="#ef4444" />,
+                //   icon: <LogOut size={20} color="#ef4444" />,
         //   action: 'logout',
         // },
       ];
@@ -282,7 +279,7 @@ const NotificationsPage: React.FC = () => {
             onClick={() => setFilter('all')}
             style={{
               ...styles.filterButton,
-              ...(filter === 'all' ? styles.filterButtonActive : {}),
+              ...(filter === 'all' ? styles.filterButtonActive : ),
             }}
           >
             Todas ({notifications.length})
@@ -291,7 +288,7 @@ const NotificationsPage: React.FC = () => {
             onClick={() => setFilter('unread')}
             style={{
               ...styles.filterButton,
-              ...(filter === 'unread' ? styles.filterButtonActive : {}),
+              ...(filter === 'unread' ? styles.filterButtonActive : ),
             }}
           >
             Não lidas ({unreadCount})
@@ -300,7 +297,7 @@ const NotificationsPage: React.FC = () => {
             onClick={() => setFilter('read')}
             style={{
               ...styles.filterButton,
-              ...(filter === 'read' ? styles.filterButtonActive : {}),
+              ...(filter === 'read' ? styles.filterButtonActive : ),
             }}
           >
             Lidas ({notifications.length - unreadCount})
@@ -327,7 +324,7 @@ const NotificationsPage: React.FC = () => {
                 key={notification.id}
                 style={{
                   ...styles.notificationCard,
-                  ...(notification.read ? {} : styles.notificationCardUnread),
+                  ...(notification.read ? : styles.notificationCardUnread),
                 }}
               >
                 <div
@@ -370,7 +367,7 @@ const NotificationsPage: React.FC = () => {
               disabled={page === 1}
               style={{
                 ...styles.paginationButton,
-                ...(page === 1 ? styles.paginationButtonDisabled : {}),
+                ...(page === 1 ? styles.paginationButtonDisabled : ),
               }}
             >
               Anterior
@@ -383,7 +380,7 @@ const NotificationsPage: React.FC = () => {
               disabled={page === totalPages}
               style={{
                 ...styles.paginationButton,
-                ...(page === totalPages ? styles.paginationButtonDisabled : {}),
+                ...(page === totalPages ? styles.paginationButtonDisabled : ),
               }}
             >
               Próxima

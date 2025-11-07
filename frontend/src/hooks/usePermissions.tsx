@@ -10,8 +10,8 @@ export const usePermissions = () => {
   useEffect(() => {
     const loadPermissions = () => {
       try {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
+        const user = JSON.parse(localStorage.getItem('user') || '');
+        const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '');
 
         const userRole = clinicUser.role || null;
         setRole(userRole);

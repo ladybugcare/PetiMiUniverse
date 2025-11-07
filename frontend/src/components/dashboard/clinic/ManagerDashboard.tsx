@@ -45,8 +45,8 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
 
       try {
         setLoading(true);
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
+        const user = JSON.parse(localStorage.getItem('user') || '');
+        const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '');
         const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
 
         console.log('Loading manager data for clinic:', { clinicId, unitId: unit.id });
@@ -97,7 +97,6 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
             <ClipboardList size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -118,7 +117,6 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
             <Users size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -139,7 +137,6 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
             <CheckCircle size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -160,7 +157,6 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
             <Calendar size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -178,7 +174,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
             recentDemands.map((demand) => (
               <ActivityItem
                 key={demand.id}
-                icon={/* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color={colors.primary} />}
+                icon={<ClipboardList size={20} color={colors.primary} />}
                 title={demand.title}
                 description={`Categoria: ${demand.category} - Status: ${demand.status}`}
                 time={new Date(demand.created_at).toLocaleDateString('pt-BR')}
@@ -225,7 +221,6 @@ const ProfissionaisSection: React.FC<{ unitId?: string }> = ({ unitId }) => {
           {applications.map((app) => (
             <div key={app.id} style={styles.activityItem}>
               <div style={styles.activityIcon}>
-                {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
                 <Stethoscope size={20} color={colors.primary} />
               </div>
               <div style={styles.activityContent}>
@@ -240,7 +235,6 @@ const ProfissionaisSection: React.FC<{ unitId?: string }> = ({ unitId }) => {
       ) : (
         <div style={styles.placeholder}>
           <p style={styles.placeholderText}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
             <Stethoscope size={20} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
             Nenhuma candidatura recebida ainda
           </p>
@@ -256,7 +250,6 @@ const MensagensSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Mensagens Recentes</h2>
       <div style={styles.placeholder}>
         <p style={styles.placeholderText}>
-          {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
           <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
           Suas mensagens aparecerão aqui
         </p>

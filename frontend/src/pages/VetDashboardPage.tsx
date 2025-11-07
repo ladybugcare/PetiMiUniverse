@@ -15,7 +15,7 @@ const VetDashboardPage: React.FC = () => {
 
   // Check authentication
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user = JSON.parse(localStorage.getItem('user') || '');
     const userRole = user?.user_metadata?.role || user?.role;
     
     if (!user || !user.id) {
@@ -167,7 +167,7 @@ const ResumoSection: React.FC = () => {
     const loadData = async () => {
       try {
         setLoading(true);
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const user = JSON.parse(localStorage.getItem('user') || '');
         const vetId = user.id;
 
         // Import statisticsApi and demandsApi dynamically

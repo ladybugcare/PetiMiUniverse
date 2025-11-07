@@ -18,32 +18,28 @@ const MyMarketplaceListingsPage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Ver Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color={colors.primary} />,
+            icon: <ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <PlusCircle size={20} color={colors.primary} />,
+            icon: <PlusCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/create',
     },
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Package size={20} color={colors.primary} />,
+            icon: <Package size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/my-listings',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageSquare size={20} color={colors.primary} />,
+            icon: <MessageSquare size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/messages',
     },
@@ -56,7 +52,7 @@ const MyMarketplaceListingsPage: React.FC = () => {
   const loadMyListings = async () => {
     try {
       setLoading(true);
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       const result = await marketplaceApi.getMyListings(user.id);
       setItems(result.items);
     } catch (error: any) {

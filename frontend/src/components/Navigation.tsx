@@ -21,7 +21,7 @@ const Navigation: React.FC<NavigationProps> = ({ user, onLogout }) => {
   const isActive = (path: string) => location.pathname === path;
 
   // Get user role from localStorage if not provided
-  const userData = user || JSON.parse(localStorage.getItem('user') || '{}');
+  const userData = user || JSON.parse(localStorage.getItem('user') || '');
   const userRole = userData?.user_metadata?.role || userData?.role;
 
   return (

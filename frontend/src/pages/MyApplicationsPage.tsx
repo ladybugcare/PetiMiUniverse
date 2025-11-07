@@ -57,8 +57,7 @@ const MyApplicationsPage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    //   icon: <LogOut size={20} color={colors.primary} />,
+        //   icon: <LogOut size={20} color={colors.primary} />,
     //   action: 'logout',
     // },
   ];
@@ -70,7 +69,7 @@ const MyApplicationsPage: React.FC = () => {
   const loadApplications = async () => {
     try {
       setLoading(true);
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       const vetId = user.id;
 
       const response = await applicationsApi.getByVet(vetId);

@@ -49,8 +49,8 @@ const AdminUsersPage: React.FC = () => {
   const [showViewVetModal, setShowViewVetModal] = useState(false);
   const [showEditClinicModal, setShowEditClinicModal] = useState(false);
   const [showEditVetModal, setShowEditVetModal] = useState(false);
-  const [editClinicFormData, setEditClinicFormData] = useState<Partial<Clinic>>({});
-  const [editVetFormData, setEditVetFormData] = useState<Partial<Vet>>({});
+  const [editClinicFormData, setEditClinicFormData] = useState<Partial<Clinic>>();
+  const [editVetFormData, setEditVetFormData] = useState<Partial<Vet>>();
 
   // Create user form states
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
@@ -93,7 +93,7 @@ const AdminUsersPage: React.FC = () => {
 
   // Check authentication
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user = JSON.parse(localStorage.getItem('user') || '');
     const userRole = user?.user_metadata?.role || user?.role;
 
     if (!user || !user.id || userRole !== 'admin') {
@@ -180,16 +180,11 @@ const AdminUsersPage: React.FC = () => {
   const menuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
     { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
+        { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
+        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
+        { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
+        { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
+        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
   ];
 
   // Clinic handlers
@@ -375,8 +370,7 @@ const AdminUsersPage: React.FC = () => {
         <div style={styles.header}>
           <h2 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Users size={28} color={colors.primary} />
+                            <Users size={28} color={colors.primary} />
               <span>Usuários Totais</span>
             </div>
           </h2>
@@ -384,8 +378,7 @@ const AdminUsersPage: React.FC = () => {
             onClick={() => setShowCreateUserModal(true)}
             style={styles.newUserButton}
           >
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-            <Plus size={18} />
+                        <Plus size={18} />
             Novo Usuário
           </button>
         </div>
@@ -396,7 +389,7 @@ const AdminUsersPage: React.FC = () => {
             onClick={() => setActiveTab('clinics')}
             style={{
               ...styles.tab,
-              ...(activeTab === 'clinics' ? styles.activeTab : {}),
+              ...(activeTab === 'clinics' ? styles.activeTab : ),
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -408,12 +401,11 @@ const AdminUsersPage: React.FC = () => {
             onClick={() => setActiveTab('vets')}
             style={{
               ...styles.tab,
-              ...(activeTab === 'vets' ? styles.activeTab : {}),
+              ...(activeTab === 'vets' ? styles.activeTab : ),
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Stethoscope size={18} />
+                            <Stethoscope size={18} />
               <span>Veterinários ({vets.length})</span>
             </div>
           </button>
@@ -421,12 +413,11 @@ const AdminUsersPage: React.FC = () => {
             onClick={() => setActiveTab('admins')}
             style={{
               ...styles.tab,
-              ...(activeTab === 'admins' ? styles.activeTab : {}),
+              ...(activeTab === 'admins' ? styles.activeTab : ),
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Shield size={18} />
+                            <Shield size={18} />
               <span>Administradores ({admins.length})</span>
             </div>
           </button>
@@ -507,16 +498,14 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.viewButton }}
                                 title="Ver detalhes"
                               >
-                                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                                <Eye size={16} />
+                                                                <Eye size={16} />
                               </button>
                               <button
                                 onClick={() => handleEditClinic(clinic)}
                                 style={{ ...styles.actionButton, ...styles.editButton }}
                                 title="Editar"
                               >
-                                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                                <Edit size={16} />
+                                                                <Edit size={16} />
                               </button>
                               <button
                                 onClick={() => handleDeactivateClinic(clinic)}
@@ -576,16 +565,14 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.viewButton }}
                                 title="Ver detalhes"
                               >
-                                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                                <Eye size={16} />
+                                                                <Eye size={16} />
                               </button>
                               <button
                                 onClick={() => handleEditVet(vet)}
                                 style={{ ...styles.actionButton, ...styles.editButton }}
                                 title="Editar"
                               >
-                                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                                <Edit size={16} />
+                                                                <Edit size={16} />
                               </button>
                               <button
                                 onClick={() => handleDeleteVet(vet)}
@@ -819,8 +806,7 @@ const AdminUsersPage: React.FC = () => {
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                  <UserPlus size={24} color={colors.primary} />
+                                    <UserPlus size={24} color={colors.primary} />
                   <h3 style={styles.modalTitle}>Novo Usuário</h3>
                 </div>
                 <button onClick={handleCloseCreateModal} style={styles.closeButton}>
@@ -833,7 +819,7 @@ const AdminUsersPage: React.FC = () => {
                 <div style={styles.stepContainer}>
                   <div style={{
                     ...styles.stepCircle,
-                    ...(createUserStep >= 1 ? styles.stepCircleActive : {})
+                    ...(createUserStep >= 1 ? styles.stepCircleActive : )
                   }}>
                     1
                   </div>
@@ -843,7 +829,7 @@ const AdminUsersPage: React.FC = () => {
                 <div style={styles.stepContainer}>
                   <div style={{
                     ...styles.stepCircle,
-                    ...(createUserStep >= 2 ? styles.stepCircleActive : {})
+                    ...(createUserStep >= 2 ? styles.stepCircleActive : )
                   }}>
                     2
                   </div>
@@ -878,7 +864,7 @@ const AdminUsersPage: React.FC = () => {
                               }
                               style={{
                                 ...styles.userTypeButton,
-                                ...(isSelected ? { ...styles.userTypeButtonSelected, borderColor: type.color } : {}),
+                                ...(isSelected ? { ...styles.userTypeButtonSelected, borderColor: type.color } : ),
                               }}
                             >
                               <div
@@ -887,8 +873,7 @@ const AdminUsersPage: React.FC = () => {
                                   backgroundColor: isSelected ? type.color : '#f3f4f6',
                                 }}
                               >
-                                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                                <IconComponent size={28} strokeWidth={1.5} color={isSelected ? 'white' : '#6b7280'} />
+                                                                <IconComponent size={28} strokeWidth={1.5} color={isSelected ? 'white' : '#6b7280'} />
                               </div>
                               <span
                                 style={{
@@ -912,7 +897,7 @@ const AdminUsersPage: React.FC = () => {
                         onClick={handleNextStep}
                         style={{
                           ...styles.saveButton,
-                          ...(!createUserFormData.user_type ? styles.buttonDisabled : {})
+                          ...(!createUserFormData.user_type ? styles.buttonDisabled : )
                         }}
                         disabled={!createUserFormData.user_type}
                       >
@@ -962,7 +947,7 @@ const AdminUsersPage: React.FC = () => {
                         }}
                         style={{
                           ...styles.input,
-                          ...(emailError ? { borderColor: '#ef4444', borderWidth: '2px' } : {}),
+                          ...(emailError ? { borderColor: '#ef4444', borderWidth: '2px' } : ),
                         }}
                         placeholder="email@exemplo.com"
                       />
@@ -1103,8 +1088,7 @@ const AdminUsersPage: React.FC = () => {
                               onClick={() => setShowPassword(!showPassword)}
                               style={styles.passwordToggleBtn}
                             >
-                              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                                                            {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                             </button>
                           )}
                         </div>
