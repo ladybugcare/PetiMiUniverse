@@ -46,9 +46,12 @@ const normalizedOrigins = allowedOrigins.map((origin) =>
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Permite requisições sem origem (ex: Postman, mobile apps)
+      // Permite requisições sem origem apenas em desenvolvimento/staging
       if (!origin) {
-        return callback(null, true);
+        if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'staging') {
+          return callback(null, true);
+        }
+        return callback(new Error('Not allowed by CORS'));
       }
       
       const normalizedOrigin = origin.replace(/\/$/, '');

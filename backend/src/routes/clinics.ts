@@ -1,10 +1,9 @@
 // backend/src/routes/clinics.ts
-console.log('🩺 Clinics routes inicializadas');
-
 import express from 'express';
 import { authenticateUser } from '../middleware/authMiddleware';
 import { supabase } from '../config/supabase';
 import type { Request, Response } from 'express';
+import { logger } from '../utils/logger.js';
 
 // 🏥 Controladores novos (organizados)
 import { createClinicPublic } from '../controllers/clinics/createClinicPublic';
@@ -35,10 +34,7 @@ router.post('/', createClinicPublic);
  * 🔍 CONSULTAS E VALIDAÇÕES
  * ===========================================================
  */
-router.get('/check-cnpj/:cnpj', (req, res, next) => {
-  console.log('📡 Rota /clinics/check-cnpj chamada com:', req.params.cnpj);
-  next();
-}, checkClinicCnpj);
+router.get('/check-cnpj/:cnpj', ...checkClinicCnpj);
 
 
 router.get('/check-email/:email', checkEmail);

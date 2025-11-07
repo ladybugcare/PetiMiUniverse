@@ -1,9 +1,0 @@
-import express from 'express'
-import { createDemand, getDemands } from '../controllers/demandsController.ts'
-
-const router = express.Router()
-
-router.post('/create', createDemand)
-router.get('/open', getDemands)
-
-export default router

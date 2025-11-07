@@ -1,11 +1,11 @@
 import express from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase';
-
+import { authLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
-// Login
-router.post('/login', async (req, res) => {
+// Login (com rate limiting mais restritivo)
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     
@@ -184,8 +184,8 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Signup
-router.post('/signup', async (req, res) => {
+// Signup (com rate limiting mais restritivo)
+router.post('/signup', authLimiter, async (req, res) => {
   try {
     const { email, password, name, role } = req.body;
     

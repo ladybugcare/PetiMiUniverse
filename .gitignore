@@ -84,3 +84,6 @@ release/
 *.properties
 *.probe
 
+# Backup files
+*.bak
+
