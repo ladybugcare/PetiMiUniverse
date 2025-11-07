@@ -36,8 +36,10 @@ const allowedOrigins: string[] = [
   'http://localhost:3000', // Backend local (caso frontend rode na mesma porta)
   'http://localhost:3001', // Frontend local - porta alternativa
   'http://localhost:3002', // Frontend local - porta padrão React dev server
-  'https://peti-vet-git-staging-petivet.vercel.app', // Staging
-  'https://peti-vet-petivet.vercel.app', // Vercel production
+  'https://peti-vet-git-staging-petivet.vercel.app', // Staging (Vercel preview)
+  'https://staging.petivet.com.br', // Staging (domínio customizado)
+  'https://peti-vet-petivet.vercel.app', // Vercel production (preview)
+  'https://petivet.com.br', // Produção (domínio customizado)
   process.env.FRONTEND_URL, // Variável de ambiente (permite configuração flexível)
 ].filter((origin): origin is string => Boolean(origin));
 
