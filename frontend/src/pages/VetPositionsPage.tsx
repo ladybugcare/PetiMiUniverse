@@ -132,24 +132,21 @@ const VetPositionsPage: React.FC = () => {
     {
       id: 'positions',
       label: 'Posições Disponíveis',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Briefcase size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Briefcase size={20} color={colors.primary} />,
       action: 'navigate' as const,
       path: '/vet-positions',
     },
     {
       id: 'applications',
       label: 'Minhas Candidaturas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color={colors.primary} />,
       action: 'navigate' as const,
       path: '/vet-applications',
     },
     {
       id: 'profile',
       label: 'Meu Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<User size={20} color={colors.primary} />,
       action: 'navigate' as const,
       path: '/vet-profile',
     },

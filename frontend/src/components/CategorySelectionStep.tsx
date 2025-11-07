@@ -1,5 +1,6 @@
 import React from 'react';
 import { Stethoscope, Heart, Building2, Star } from 'lucide-react';
+import IconWrapper from './IconWrapper';
 
 type CategoryType = 'vet' | 'freelancer' | 'clinic' | 'other';
 
@@ -18,32 +19,28 @@ interface CategoryCardData {
 const categories: CategoryCardData[] = [
   {
     id: 'vet',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Stethoscope size={32} />,
+    icon: <IconWrapper icon={Stethoscope} size={32} />,
     title: 'Buscar Veterinário',
     description: 'Encontre profissionais especializados para consultas, cirurgias e emergências',
     color: '#7c3aed',
   },
   {
     id: 'freelancer',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Heart size={32} fill="currentColor" />,
+    icon: <IconWrapper icon={Heart} size={32} fill="currentColor" />,
     title: 'Buscar Freelancer',
     description: 'Grooming, adestramento, passeios e cuidados especializados',
     color: '#f59e0b',
   },
   {
     id: 'clinic',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Building2 size={32} />,
+    icon: <IconWrapper icon={Building2} size={32} />,
     title: 'Buscar Clínica Parceira',
     description: 'Parcerias com outras clínicas para serviços especializados',
     color: '#0ea5e9',
   },
   {
     id: 'other',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Star size={32} fill="currentColor" />,
+    icon: <IconWrapper icon={Star} size={32} fill="currentColor" />,
     title: 'Outros Profissionais',
     description: 'Consultorias, pesquisa e outros serviços especializados',
     color: '#22c55e',

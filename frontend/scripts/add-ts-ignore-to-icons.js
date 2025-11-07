@@ -47,10 +47,10 @@ function addTsIgnoreToFile(filePath) {
     if (line.match(/<[A-Z][a-zA-Z]*\s+(size|color|fill|strokeWidth)=/)) {
       // Verifica se já tem @ts-ignore na linha anterior
       const prevLine = i > 0 ? lines[i - 1].trim() : '';
-      if (!prevLine.includes('@ts-ignore') && !prevLine.includes('// @ts-ignore')) {
-        // Adiciona @ts-ignore antes da linha do ícone
+      if (!prevLine.includes('@ts-ignore') && !prevLine.includes('{/* @ts-ignore')) {
+        // Adiciona @ts-ignore antes da linha do ícone (formato JSX)
         const indent = line.match(/^(\s*)/)[1];
-        newLines.push(`${indent}// @ts-ignore - Type incompatibility between React 18 and lucide-react`);
+        newLines.push(`${indent}{/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}`);
         modified = true;
       }
     }

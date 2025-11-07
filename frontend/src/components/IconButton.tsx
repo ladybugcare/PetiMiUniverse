@@ -1,4 +1,5 @@
 import React from 'react';
+import IconWrapper from './IconWrapper';
 import { LucideIcon } from 'lucide-react';
 import colors from '../styles/colors';
 
@@ -107,8 +108,7 @@ const IconButton: React.FC<IconButtonProps> = ({
         outline: 'none',
       }}
     >
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      <Icon size={currentSize.iconSize} />
+      <IconWrapper icon={Icon} size={currentSize.iconSize} />
       {label && <span>{label}</span>}
     </button>
   );

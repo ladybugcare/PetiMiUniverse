@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info } from 'lucide-react';
+import IconWrapper from './IconWrapper';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info';
 
@@ -31,18 +32,14 @@ const Alert: React.FC<AlertProps> = ({
   const getIconAndColor = () => {
     switch (type) {
       case 'success':
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        return { icon: <CheckCircle size={32} />, color: '#10b981', bgColor: '#d1fae5' };
+        return { icon: <IconWrapper icon={CheckCircle} size={32} />, color: '#10b981', bgColor: '#d1fae5' };
       case 'error':
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        return { icon: <XCircle size={32} />, color: '#ef4444', bgColor: '#fee2e2' };
+        return { icon: <IconWrapper icon={XCircle} size={32} />, color: '#ef4444', bgColor: '#fee2e2' };
       case 'warning':
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        return { icon: <AlertTriangle size={32} />, color: '#f59e0b', bgColor: '#fef3c7' };
+        return { icon: <IconWrapper icon={AlertTriangle} size={32} />, color: '#f59e0b', bgColor: '#fef3c7' };
       case 'info':
       default:
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        return { icon: <Info size={32} />, color: '#7c3aed', bgColor: '#ede9fe' };
+        return { icon: <IconWrapper icon={Info} size={32} />, color: '#7c3aed', bgColor: '#ede9fe' };
     }
   };
 

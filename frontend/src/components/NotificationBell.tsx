@@ -13,6 +13,7 @@ import {
   X
 } from 'lucide-react';
 import { notificationsApi, Notification } from '../services/notificationsApi';
+import IconWrapper from './IconWrapper';
 
 const NotificationBell: React.FC = () => {
   const navigate = useNavigate();
@@ -132,23 +133,23 @@ const NotificationBell: React.FC = () => {
     const iconProps = { size: 20 };
     switch (type) {
       case 'application_received':
-        return <UserPlus {...iconProps} color="#7c3aed" />;
+        return <IconWrapper icon={UserPlus} {...iconProps} color="#7c3aed" />;
       case 'application_accepted':
-        return <CheckCircle {...iconProps} color="#22c55e" />;
+        return <IconWrapper icon={CheckCircle} {...iconProps} color="#22c55e" />;
       case 'application_rejected':
-        return <XCircle {...iconProps} color="#ef4444" />;
+        return <IconWrapper icon={XCircle} {...iconProps} color="#ef4444" />;
       case 'support_reply':
-        return <MessageCircle {...iconProps} color="#0ea5e9" />;
+        return <IconWrapper icon={MessageCircle} {...iconProps} color="#0ea5e9" />;
       case 'unit_invitation':
-        return <Mail {...iconProps} color="#f59e0b" />;
+        return <IconWrapper icon={Mail} {...iconProps} color="#f59e0b" />;
       case 'marketplace_message':
-        return <MessageSquare {...iconProps} color="#ec4899" />;
+        return <IconWrapper icon={MessageSquare} {...iconProps} color="#ec4899" />;
       case 'demand_status_changed':
-        return <AlertCircle {...iconProps} color="#f97316" />;
+        return <IconWrapper icon={AlertCircle} {...iconProps} color="#f97316" />;
       case 'new_demand_created':
-        return <Briefcase {...iconProps} color="#8b5cf6" />;
+        return <IconWrapper icon={Briefcase} {...iconProps} color="#8b5cf6" />;
       default:
-        return <Bell {...iconProps} color="#6b7280" />;
+        return <IconWrapper icon={Bell} {...iconProps} color="#6b7280" />;
     }
   };
 
@@ -176,8 +177,7 @@ const NotificationBell: React.FC = () => {
         style={styles.bellButton}
         aria-label="Notificações"
       >
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        <Bell size={20} />
+        <IconWrapper icon={Bell} size={20} />
         {unreadCount > 0 && (
           <span style={styles.badge}>
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -207,8 +207,7 @@ const NotificationBell: React.FC = () => {
               <div style={styles.loading}>Carregando...</div>
             ) : notifications.length === 0 ? (
               <div style={styles.empty}>
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <Bell size={32} color="#d1d5db" />
+                <IconWrapper icon={Bell} size={32} color="#d1d5db" />
                 <p style={styles.emptyText}>Nenhuma notificação</p>
               </div>
             ) : (
@@ -243,8 +242,7 @@ const NotificationBell: React.FC = () => {
                     style={styles.deleteButton}
                     aria-label="Remover notificação"
                   >
-                    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                    <X size={16} />
+                    <IconWrapper icon={X} size={16} />
                   </button>
                 </div>
               ))

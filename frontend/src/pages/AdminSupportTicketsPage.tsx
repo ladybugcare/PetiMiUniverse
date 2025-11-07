@@ -24,6 +24,7 @@ import {
   TicketMessage 
 } from '../services/supportTicketsApi';
 import { SuccessModal } from '../components/SuccessModal';
+import IconWrapper from '../components/IconWrapper';
 import colors from '../styles/colors';
 
 const AdminSupportTicketsPage: React.FC = () => {
@@ -382,8 +383,7 @@ const AdminSupportTicketsPage: React.FC = () => {
           <div style={styles.evaluationBanner}>
             <div style={styles.evaluationContent}>
               <div style={styles.evaluationHeader}>
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <CheckCircle size={20} color={colors.primary} />
+                <IconWrapper icon={CheckCircle} size={20} color={colors.primary} />
                 <span style={styles.evaluationTitle}>Ticket Avaliado pelo Usuário</span>
               </div>
               {renderStars(selectedTicket.evaluation.rating)}

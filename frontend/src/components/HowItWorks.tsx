@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Building2, Stethoscope, Heart } from 'lucide-react';
 import colors from '../styles/colors';
+import IconWrapper from './IconWrapper';
 
 // Extend PressableStateCallbackType to include hover state (React Native Web)
 type PressableStateWithHover = PressableStateCallbackType & {
@@ -26,24 +27,21 @@ type AudienceCard = {
 const cards: AudienceCard[] = [
   {
     id: 'clinics',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Building2 size={32} color={colors.primary} />,
+    icon: <IconWrapper icon={Building2} size={32} color={colors.primary} />,
     title: 'Para Clínicas',
     description: 'Publique demandas, visualize perfis de veterinários e freelancers, e contrate com segurança e agilidade.',
     emphasis: 'Encontre profissionais quando mais precisa.',
   },
   {
     id: 'vets',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Stethoscope size={32} color={colors.primary} />,
+    icon: <IconWrapper icon={Stethoscope} size={32} color={colors.primary} />,
     title: 'Para Veterinários',
     description: 'Candidata-se a demandas de clínicas, exiba suas especialidades e amplie sua rede de parceiros na área.',
     emphasis: 'Conecte-se a novas oportunidades.',
   },
   {
     id: 'freelancers',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
-    icon: <Heart size={32} color={colors.primary} fill={colors.primary} />,
+    icon: <IconWrapper icon={Heart} size={32} color={colors.primary} fill={colors.primary} />,
     title: 'Para Freelancers',
     description: 'Groomers, adestradores, cuidadores e outros profissionais encontram aqui espaço para se destacar.',
     emphasis: 'Ofereça seus serviços ao mundo pet.',
@@ -111,7 +109,7 @@ const HowItWorksCard: React.FC<HowItWorksCardProps> = ({ card, variant }) => {
               hovered && styles.iconBubbleHovered,
             ]}
           >
-            <Text style={styles.iconText}>{card.icon}</Text>
+            {card.icon}
           </View>
           <Text style={styles.cardLabel}>{card.title}</Text>
           <Text
@@ -206,9 +204,6 @@ const styles = StyleSheet.create({
   },
   iconBubbleHovered: {
     backgroundColor: '#dcd4ff',
-  },
-  iconText: {
-    fontSize: 30,
   },
   cardLabel: {
     fontFamily: 'Poppins, sans-serif',

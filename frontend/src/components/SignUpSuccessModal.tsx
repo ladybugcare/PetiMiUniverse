@@ -1,5 +1,6 @@
 import React from 'react';
 import { Heart, Mail } from 'lucide-react';
+import IconWrapper from './IconWrapper';
 import colors from '../styles/colors';
 
 interface SignUpSuccessModalProps {
@@ -22,8 +23,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
           <>
             <h2 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <Heart size={32} color={colors.primary} fill={colors.primary} />
+                <IconWrapper icon={Heart} size={32} color={colors.primary} fill={colors.primary} />
                 <span>Tudo pronto!</span>
               </div>
             </h2>
@@ -37,8 +37,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
             <p style={styles.text}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 Você pode fechar esta aba — o restante do processo é feito por e-mail.
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <Mail size={18} color={colors.primary} />
+                <IconWrapper icon={Mail} size={18} color={colors.primary} />
               </span>
             </p>
 
@@ -57,8 +56,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
           <>
             <h2 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <Mail size={32} color={colors.primary} />
+                <IconWrapper icon={Mail} size={32} color={colors.primary} />
                 <span>E-mail reenviado!</span>
               </div>
             </h2>

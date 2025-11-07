@@ -5,6 +5,7 @@ import LoadingOverlay from '../components/LoadingOverlay';
 import { MenuItem } from '../components/DashboardSidebar';
 import FloatingActionButton from '../components/FloatingActionButton';
 import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut, ShoppingCart, Clock, CheckCircle, Building2, Bell, Lock, Smartphone, Globe, MessageCircle, Settings } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
 import colors from '../styles/colors';
 
 const VetDashboardPage: React.FC = () => {
@@ -33,16 +34,14 @@ const VetDashboardPage: React.FC = () => {
     {
       id: 'view-demands',
       label: 'Ver Demandas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color="#ffffff" />,
+      icon: <IconWrapper icon={ClipboardList} size={20} color="#ffffff" />,
       path: '/demands',
       color: '#7c3aed',
     },
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color="#ffffff" />,
+      icon: <IconWrapper icon={ShoppingCart} size={20} color="#ffffff" />,
       path: '/marketplace/create',
       color: '#10b981',
     },
@@ -59,71 +58,62 @@ const VetDashboardPage: React.FC = () => {
     {
       id: 'demandas',
       label: 'Demandas Disponíveis',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={ClipboardList} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'candidaturas',
       label: 'Minhas Candidaturas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <FileText size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={FileText} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-applications',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageSquare size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={MessageSquare} size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'mensagens',
     },
     {
       id: 'avaliacoes',
       label: 'Minhas Avaliações',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Star size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={Star} size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'avaliacoes',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={ShoppingCart} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'support',
       label: 'Meus Tickets',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageCircle size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={MessageCircle} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-support-tickets',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={User} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/vet-profile',
     },
     {
       id: 'configuracoes',
       label: 'Configurações',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Settings size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={Settings} size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'configuracoes',
     },
     // {
     //   id: 'logout',
     //   label: 'Sair',
-    // @ts-ignore - Type incompatibility between React 18 and lucide-react
     //   icon: <LogOut size={20} color={colors.primary} />,
     //   action: 'logout',
     // },
@@ -217,8 +207,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-            <FileText size={24} color={colors.primary} />
+            <IconWrapper icon={FileText} size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalApplications}</h3>
@@ -238,8 +227,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-            <Clock size={24} color={colors.primary} />
+            <IconWrapper icon={Clock} size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.activeJobs}</h3>
@@ -259,8 +247,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-            <CheckCircle size={24} color={colors.primary} />
+            <IconWrapper icon={CheckCircle} size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.completedJobs}</h3>
@@ -280,8 +267,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-            <Star size={24} color={colors.primary} />
+            <IconWrapper icon={Star} size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.averageRating.toFixed(1)}</h3>
@@ -392,26 +378,22 @@ const ConfiguracoesSection: React.FC = () => (
     <h2 style={styles.sectionTitle}>Configurações</h2>
     <div style={styles.settingsGrid}>
       <SettingCard
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        icon={<Bell size={28} color="#7c3aed" />}
+        icon={<IconWrapper icon={Bell} size={28} color="#7c3aed" />}
         title="Notificações"
         description="Gerencie suas preferências de notificação"
       />
       <SettingCard
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        icon={<Lock size={28} color="#7c3aed" />}
+        icon={<IconWrapper icon={Lock} size={28} color="#7c3aed" />}
         title="Privacidade"
         description="Controle quem pode ver seu perfil"
       />
       <SettingCard
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        icon={<Smartphone size={28} color="#7c3aed" />}
+        icon={<IconWrapper icon={Smartphone} size={28} color="#7c3aed" />}
         title="Preferências"
         description="Personalize sua experiência"
       />
       <SettingCard
-        // @ts-ignore - Type incompatibility between React 18 and lucide-react
-        icon={<Globe size={28} color="#7c3aed" />}
+        icon={<IconWrapper icon={Globe} size={28} color="#7c3aed" />}
         title="Idioma"
         description="Português (Brasil)"
       />

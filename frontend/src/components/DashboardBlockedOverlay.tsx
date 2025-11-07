@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import colors from '../styles/colors';
 import { Lock, Lightbulb } from 'lucide-react';
+import IconWrapper from './IconWrapper';
 
 const DashboardBlockedOverlay: React.FC = () => {
   const navigate = useNavigate();
@@ -11,8 +12,7 @@ const DashboardBlockedOverlay: React.FC = () => {
       <div style={styles.card}>
         <div style={styles.iconContainer}>
           <span style={styles.icon}>
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-            <Lock size={48} color={colors.primary} />
+            <IconWrapper icon={Lock} size={48} color={colors.primary} />
           </span>
         </div>
         
@@ -25,8 +25,7 @@ const DashboardBlockedOverlay: React.FC = () => {
 
         <div style={styles.infoBox}>
           <span style={styles.infoIcon}>
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-            <Lightbulb size={20} color={colors.primary} />
+            <IconWrapper icon={Lightbulb} size={20} color={colors.primary} />
           </span>
           <p style={styles.infoText}>
             Não se preocupe! O processo é rápido e nossa equipe irá revisar 

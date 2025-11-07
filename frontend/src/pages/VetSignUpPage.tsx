@@ -7,6 +7,7 @@ import HomeHeader from '../components/HomeHeader';
 import { validateEmail, validatePassword, validateCRMV } from '../utils/validators';
 import colors from '../styles/colors';
 import { Info } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
 import { supabase } from '../services/supabase';
 import SignUpSuccessModal from '../components/SignUpSuccessModal';
 
@@ -203,8 +204,9 @@ const VetSignUpPage: React.FC = () => {
               className="text-sm text-neutral-500 mt-2"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Info size={16} color={colors.primary} />
+              <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                <IconWrapper icon={Info} size={16} color={colors.primary} />
+              </span>
               Formato: número-UF (exemplo: 12345-SP)
             </p>
           </div>
@@ -233,8 +235,9 @@ const VetSignUpPage: React.FC = () => {
               className="text-sm text-neutral-500 mt-2"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Info size={16} color={colors.primary} />
+              <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                <IconWrapper icon={Info} size={16} color={colors.primary} />
+              </span>
               Separe múltiplas especialidades com vírgula
             </p>
           </div>

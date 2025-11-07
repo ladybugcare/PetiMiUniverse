@@ -138,48 +138,42 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'users',
       label: 'Gerenciar Usuários',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Users size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Users size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/users',
     },
     {
       id: 'demandas',
       label: 'Todas as Demandas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'audit',
       label: 'Logs de Auditoria',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Search size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Search size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'audit',
     },
     {
       id: 'support',
       label: 'Meus Tickets',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageSquare size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<MessageSquare size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-support-tickets',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
@@ -211,56 +205,49 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'demandas',
       label: 'Demandas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'profissionais',
       label: 'Profissionais',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Stethoscope size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Stethoscope size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'profissionais',
     },
     {
       id: 'users',
       label: 'Equipe da Unidade',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Users size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Users size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/users',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageSquare size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<MessageSquare size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'mensagens',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'support',
       label: 'Meus Tickets',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageCircle size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<MessageCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-support-tickets',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
@@ -285,40 +272,35 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'demandas',
       label: 'Demandas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageSquare size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<MessageSquare size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'mensagens',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'support',
       label: 'Meus Tickets',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageCircle size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<MessageCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-support-tickets',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
@@ -343,48 +325,42 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'demandas',
       label: 'Demandas Disponíveis',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'candidaturas',
       label: 'Minhas Candidaturas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <FileText size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<FileText size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-applications',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageSquare size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<MessageSquare size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'mensagens',
     },
     {
       id: 'avaliacoes',
       label: 'Minhas Avaliações',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Star size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Star size={20} color={colors.primary} />,
       action: 'section',
       sectionId: 'avaliacoes',
     },
     {
       id: 'support',
       label: 'Meus Tickets',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageCircle size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<MessageCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-support-tickets',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
@@ -416,32 +392,28 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'users',
       label: 'Gerenciar Usuários',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Users size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Users size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/users',
     },
     {
       id: 'demandas',
       label: 'Ver Todas Demandas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
@@ -459,8 +431,7 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'create-demand',
       label: 'Criar Demanda',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color="#ffffff" />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color="#ffffff" />,
       path: '/create-demand',
       color: '#7c3aed',
     },
@@ -474,8 +445,7 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color="#ffffff" />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ShoppingCart size={20} color="#ffffff" />,
       path: '/marketplace/create',
       color: '#10b981',
     },
@@ -486,16 +456,14 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'create-demand',
       label: 'Criar Demanda',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color="#ffffff" />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color="#ffffff" />,
       path: '/create-demand',
       color: '#7c3aed',
     },
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color="#ffffff" />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ShoppingCart size={20} color="#ffffff" />,
       path: '/marketplace/create',
       color: '#10b981',
     },
@@ -506,8 +474,7 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'create-demand',
       label: 'Criar Demanda',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color="#ffffff" />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color="#ffffff" />,
       path: '/create-demand',
       color: '#7c3aed',
     },
@@ -518,8 +485,7 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'view-demands',
       label: 'Ver Demandas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color="#ffffff" />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color="#ffffff" />,
       path: '/demands',
       color: '#7c3aed',
     },
@@ -530,16 +496,14 @@ const ClinicDashboardPage: React.FC = () => {
     {
       id: 'create-demand',
       label: 'Criar Demanda',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color="#ffffff" />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color="#ffffff" />,
       path: '/create-demand',
       color: '#7c3aed',
     },
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color="#ffffff" />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ShoppingCart size={20} color="#ffffff" />,
       path: '/marketplace/create',
       color: '#10b981',
     },

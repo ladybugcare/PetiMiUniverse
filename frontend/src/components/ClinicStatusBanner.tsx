@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clinicsApi } from '../services/clinicsApi';
 import { Construction, Clock, AlertTriangle } from 'lucide-react';
+import IconWrapper from './IconWrapper';
 import colors from '../styles/colors';
 
 const ClinicStatusBanner: React.FC = () => {
@@ -40,8 +41,7 @@ const ClinicStatusBanner: React.FC = () => {
       <div style={styles.bannerWarning}>
         <div style={styles.bannerContent}>
           <span style={styles.bannerIcon}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
-            <Construction size={24} color="#f59e0b" />
+            <IconWrapper icon={Construction} size={24} color="#f59e0b" />
           </span>
           <div style={styles.bannerText}>
             <strong>Ação necessária:</strong> Crie sua primeira unidade para ativar sua conta.
@@ -62,8 +62,7 @@ const ClinicStatusBanner: React.FC = () => {
       <div style={styles.bannerInfo}>
         <div style={styles.bannerContent}>
           <span style={styles.bannerIcon}>
-            {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
-            <Clock size={24} color="#f59e0b" />
+            <IconWrapper icon={Clock} size={24} color="#f59e0b" />
           </span>
           <div style={styles.bannerText}>
             <strong>Aguardando aprovação:</strong> Sua unidade está em análise pelo ADMIN. Você poderá criar demandas e anúncios após a aprovação.

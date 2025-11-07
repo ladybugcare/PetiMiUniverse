@@ -13,6 +13,7 @@ import {
 } from '../utils/validators';
 import colors from '../styles/colors';
 import { Info } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
 import SignUpSuccessModal from '../components/SignUpSuccessModal';
 
 const ClinicSignUpPage: React.FC = () => {
@@ -239,8 +240,9 @@ if (step === 2) {
               className="text-sm text-neutral-500 mt-2"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Info size={16} color={colors.primary} />
+              <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                <IconWrapper icon={Info} size={16} color={colors.primary} />
+              </span>
               Dica: Inclua CEP para facilitar que veterinários encontrem sua
               clínica
             </p>

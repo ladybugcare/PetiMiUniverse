@@ -8,6 +8,7 @@ import { marketplaceApi, MarketplaceItem, MarketplaceFilters } from '../services
 import { BRAZILIAN_STATES } from '../utils/locationData';
 import { BarChart2, ShoppingCart, PlusCircle, Package, MessageSquare, User, LogOut, Search } from 'lucide-react';
 import colors from '../styles/colors';
+import IconWrapper from '../components/IconWrapper';
 
 const MarketplacePage: React.FC = () => {
   const [items, setItems] = useState<MarketplaceItem[]>([]);
@@ -37,40 +38,35 @@ const MarketplacePage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Ver Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={ShoppingCart} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <PlusCircle size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={PlusCircle} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/create',
     },
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <Package size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={Package} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/my-listings',
     },
     {
       id: 'mensagens',
       label: 'Mensagens',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <MessageSquare size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={MessageSquare} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace/messages',
     },
     {
       id: 'perfil',
       label: 'Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/clinic-profile',
     },
@@ -126,8 +122,7 @@ const MarketplacePage: React.FC = () => {
     {
       id: 'create-listing',
       label: 'Criar Anúncio',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <PlusCircle size={20} color="#ffffff" />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<PlusCircle size={20} color="#ffffff" />,
       path: '/marketplace/create',
       color: '#10b981',
     },
@@ -153,8 +148,7 @@ const MarketplacePage: React.FC = () => {
             style={styles.filterToggleButton}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Search size={18} />
+              <IconWrapper icon={Search} size={18} />
               <span>{showFilters ? 'Ocultar' : 'Mostrar'} Filtros</span>
             </div>
           </button>
@@ -307,10 +301,9 @@ const MarketplacePage: React.FC = () => {
         {/* Items Grid */}
         {items.length === 0 ? (
           <div style={styles.emptyState}>
-            <p style={styles.emptyIcon}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Package size={64} color="#a3a3a3" />
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+              <IconWrapper icon={Package} size={64} color="#a3a3a3" />
+            </div>
             <p style={styles.emptyText}>Nenhum item encontrado</p>
             <p style={styles.emptyHint}>Tente ajustar os filtros ou criar um novo anúncio</p>
           </div>

@@ -4,6 +4,7 @@ import { BRAZILIAN_STATES } from '../utils/locationData';
 import { API_BASE_URL } from '../services/api';
 import colors from '../styles/colors';
 import { AlertTriangle, Lightbulb, Info, Building2 } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
 
 const CreateUnitPage: React.FC = () => {
   const navigate = useNavigate();
@@ -114,8 +115,7 @@ const CreateUnitPage: React.FC = () => {
         {error && (
           <div style={styles.errorBanner}>
             <span style={styles.errorIcon}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <AlertTriangle size={20} />
+              <IconWrapper icon={AlertTriangle} size={20} />
             </span>
             {error}
           </div>
@@ -153,8 +153,7 @@ const CreateUnitPage: React.FC = () => {
             />
             <div style={styles.tooltip}>
               <span style={styles.tooltipIcon}>
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <Lightbulb size={18} color={colors.primary} />
+                <IconWrapper icon={Lightbulb} size={18} color={colors.primary} />
               </span>
               <span style={styles.tooltipText}>
                 Use o bairro ou ponto de referência para diferenciar se tiver mais de uma unidade na mesma cidade
@@ -251,8 +250,7 @@ const CreateUnitPage: React.FC = () => {
 
           <div style={styles.infoBox}>
             <span style={styles.infoIcon}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Info size={20} color={colors.primary} />
+              <IconWrapper icon={Info} size={20} color={colors.primary} />
             </span>
             <div>
               <strong>Sobre a nova unidade</strong>

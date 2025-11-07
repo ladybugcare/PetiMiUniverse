@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import HomeHeader from '../components/HomeHeader';
 import HowItWorks from '../components/HowItWorks';
 import { Heart, Dog, Cat, Building2, Stethoscope, ClipboardList, Lock, Instagram, CheckCircle } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
 
 const HomePage: React.FC = () => {
   return (
@@ -25,12 +26,9 @@ const HomePage: React.FC = () => {
                 cuidado encontra quem precisa dele — de forma simples, segura e com muito 
                 amor pelos animais.{' '}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
-                  <Heart size={20} fill="currentColor" />
-                  {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
-                  <Dog size={20} />
-                  {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
-                  <Cat size={20} />
+                  <IconWrapper icon={Heart} size={20} fill="currentColor" />
+                  <IconWrapper icon={Dog} size={20} />
+                  <IconWrapper icon={Cat} size={20} />
                 </span>
               </p>
               
@@ -94,12 +92,9 @@ const HomePage: React.FC = () => {
               engajar a equipe e colaborar com especialistas de confiança.
             </p>
             <div className="secondary-cta__benefits">
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <div><CheckCircle size={16} /> Onboarding guiado com checklists inteligentes</div>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <div><CheckCircle size={16} /> Ferramentas para equipe: convites, agendas, unidades</div>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <div><CheckCircle size={16} /> Marketplace para vender serviços e produtos pet</div>
+              <div><IconWrapper icon={CheckCircle} size={16} /> Onboarding guiado com checklists inteligentes</div>
+              <div><IconWrapper icon={CheckCircle} size={16} /> Ferramentas para equipe: convites, agendas, unidades</div>
+              <div><IconWrapper icon={CheckCircle} size={16} /> Marketplace para vender serviços e produtos pet</div>
             </div>
           </div>
           <div className="secondary-cta__actions">
@@ -130,8 +125,7 @@ const HomePage: React.FC = () => {
           <div className="cards-grid gap-8">
             <div className="icon-card group animate-scale-in">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
-                {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
-                <Building2 size={48} strokeWidth={1.5} />
+                <IconWrapper icon={Building2} size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
                 <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
@@ -145,8 +139,7 @@ const HomePage: React.FC = () => {
             
             <div className="icon-card group animate-scale-in animate-delay-100">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
-                {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
-                <Stethoscope size={48} strokeWidth={1.5} />
+                <IconWrapper icon={Stethoscope} size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
                 <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
@@ -160,8 +153,7 @@ const HomePage: React.FC = () => {
             
             <div className="icon-card group animate-scale-in animate-delay-200">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
-                {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
-                <ClipboardList size={48} strokeWidth={1.5} />
+                <IconWrapper icon={ClipboardList} size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
                 <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
@@ -175,8 +167,7 @@ const HomePage: React.FC = () => {
             
             <div className="icon-card group animate-scale-in animate-delay-300">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <Lock size={48} strokeWidth={1.5} />
+                <IconWrapper icon={Lock} size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
                 <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
@@ -224,8 +215,7 @@ const HomePage: React.FC = () => {
                 rel="noopener noreferrer"
                 className="footer-social__link"
               >
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <Instagram size={22} strokeWidth={1.6} />
+                <IconWrapper icon={Instagram} size={22} strokeWidth={1.6} />
                 <span>@petivet.oficial</span>
               </a>
               <p>Nossa rotina, bastidores e dicas semanais sobre gestão e bem-estar animal.</p>
@@ -243,8 +233,7 @@ const HomePage: React.FC = () => {
           
           <div className="footer-bottom">
             <p className="footer-bottom__tagline">
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              Feito com {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}<Heart size={18} fill="currentColor" /> para pets e veterinários
+              Feito com <IconWrapper icon={Heart} size={18} fill="currentColor" /> para pets e veterinários
             </p>
             <p className="footer-bottom__copyright">© 2025 PetiVet. Todos os direitos reservados.</p>
           </div>

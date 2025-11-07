@@ -5,7 +5,8 @@ import { MenuItem } from '../components/DashboardSidebar';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { applicationsApi, Application } from '../services/applicationsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, FileText, User, LogOut, Clock, FilePen } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, User, LogOut, Clock, Edit } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
 import colors from '../styles/colors';
 
 interface ApplicationWithDemand extends Application {
@@ -35,24 +36,21 @@ const MyApplicationsPage: React.FC = () => {
     {
       id: 'demandas',
       label: 'Demandas Disponíveis',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={ClipboardList} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'candidaturas',
       label: 'Minhas Candidaturas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <FileText size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={FileText} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-applications',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+      icon: <IconWrapper icon={User} size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/vet-profile',
     },
@@ -122,8 +120,7 @@ const MyApplicationsPage: React.FC = () => {
         {applications.length === 0 ? (
           <div style={styles.emptyState}>
             <div style={styles.emptyIcon}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <FilePen size={64} color="#a3a3a3" />
+              <IconWrapper icon={Edit} size={64} color="#a3a3a3" />
             </div>
             <h3 style={styles.emptyTitle}>Nenhuma candidatura ainda</h3>
             <p style={styles.emptyText}>

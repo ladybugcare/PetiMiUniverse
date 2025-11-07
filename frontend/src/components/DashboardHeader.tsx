@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { HelpCircle, User, LogOut } from 'lucide-react';
+import IconWrapper from './IconWrapper';
 import UnitSelector from './UnitSelector';
 import SupportModal from './SupportModal';
 import NotificationBell from './NotificationBell';
@@ -136,8 +137,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                   : 'Solicitar Suporte'
               }
             >
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <HelpCircle size={20} />
+              <IconWrapper icon={HelpCircle} size={20} />
               {unreadCount > 0 && (
                 <span style={styles.supportBadge}>
                   {unreadCount > 9 ? '9+' : unreadCount}
@@ -165,8 +165,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             {dropdownOpen && (
               <div style={styles.dropdownMenu}>
                 <button onClick={handleViewProfile} style={styles.dropdownItem}>
-                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                  <User size={16} />
+                  <IconWrapper icon={User} size={16} />
                   <span>Ver Perfil</span>
                 </button>
 
@@ -179,8 +178,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                     cursor: isLoggingOut ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                  <LogOut size={16} />
+                  <IconWrapper icon={LogOut} size={16} />
                   <span>{isLoggingOut ? 'Saindo...' : 'Sair'}</span>
                 </button>
               </div>

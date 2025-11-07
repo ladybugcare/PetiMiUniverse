@@ -5,6 +5,7 @@ import { API_BASE_URL } from '../services/api';
 import WelcomeModal from '../components/WelcomeModal';
 import colors from '../styles/colors';
 import { Heart, Info, Lightbulb, Building2 } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
 
 type Step = 'welcome' | 'clinic' | 'unit';
 
@@ -448,8 +449,7 @@ const CreateFirstUnitPage: React.FC = () => {
             />
             <div style={styles.tooltip}>
               <span style={styles.tooltipIcon}>
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <Lightbulb size={18} color={colors.primary} />
+                <IconWrapper icon={Lightbulb} size={18} color={colors.primary} />
               </span>
               <span style={styles.tooltipText}>
                 Use o nome do bairro ou ponto de referência para diferenciar unidades (ex: Cotia – Granja Viana)
@@ -549,8 +549,7 @@ const CreateFirstUnitPage: React.FC = () => {
 
           <div style={styles.infoBox}>
             <span style={styles.infoIcon}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Info size={20} color={colors.primary} />
+              <IconWrapper icon={Info} size={20} color={colors.primary} />
             </span>
             <div>
               <strong>E depois?</strong>

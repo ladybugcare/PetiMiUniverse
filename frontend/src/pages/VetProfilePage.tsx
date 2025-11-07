@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
@@ -38,42 +38,34 @@ const VetProfilePage: React.FC = () => {
     {
       id: 'demandas',
       label: 'Demandas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ClipboardList size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ClipboardList size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'candidaturas',
       label: 'Minhas Candidaturas',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <FileText size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<FileText size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/my-applications',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <ShoppingCart size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<ShoppingCart size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
-      // @ts-ignore - Type incompatibility between React 18 and lucide-react
-      icon: <User size={20} color={colors.primary} />,
+      icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<User size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/vet-profile',
     },
   ];
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
-
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     try {
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       if (!user || !user.id) {
@@ -94,7 +86,11 @@ const VetProfilePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate, showError]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
 
   const handleSave = async () => {
     try {
@@ -198,7 +194,7 @@ const VetProfilePage: React.FC = () => {
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  // @ts-ignore - Type incompatibility between React 18 and lucide-react
+                  {/* @ts-ignore - Type incompatibility between React 18 and lucide-react */}
                   <Edit size={16} />
                   <span>Editar Perfil</span>
                 </div>

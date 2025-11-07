@@ -18,6 +18,7 @@ import {
   BarChart2,
   LogOut
 } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
 import { notificationsApi, Notification } from '../services/notificationsApi';
 
 const colors = {
@@ -50,8 +51,7 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
-          // @ts-ignore - Type incompatibility between React 18 and lucide-react
-          icon: <Bell size={20} color={colors.primary} />,
+          icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
         },
@@ -75,8 +75,7 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
-          // @ts-ignore - Type incompatibility between React 18 and lucide-react
-          icon: <Bell size={20} color={colors.primary} />,
+          icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
         },
@@ -100,8 +99,7 @@ const NotificationsPage: React.FC = () => {
         {
           id: 'notifications',
           label: 'Notificações',
-          // @ts-ignore - Type incompatibility between React 18 and lucide-react
-          icon: <Bell size={20} color={colors.primary} />,
+          icon: /* @ts-ignore - Type incompatibility between React 18 and lucide-react */<Bell size={20} color={colors.primary} />,
           action: 'navigate',
           path: '/notifications',
         },
@@ -202,23 +200,23 @@ const NotificationsPage: React.FC = () => {
     const iconProps = { size: 24 };
     switch (type) {
       case 'application_received':
-        return <UserPlus {...iconProps} color="#7c3aed" />;
+        return <IconWrapper icon={UserPlus} {...iconProps} color="#7c3aed" />;
       case 'application_accepted':
-        return <CheckCircle {...iconProps} color="#22c55e" />;
+        return <IconWrapper icon={CheckCircle} {...iconProps} color="#22c55e" />;
       case 'application_rejected':
-        return <XCircle {...iconProps} color="#ef4444" />;
+        return <IconWrapper icon={XCircle} {...iconProps} color="#ef4444" />;
       case 'support_reply':
-        return <MessageCircle {...iconProps} color="#0ea5e9" />;
+        return <IconWrapper icon={MessageCircle} {...iconProps} color="#0ea5e9" />;
       case 'unit_invitation':
-        return <Mail {...iconProps} color="#f59e0b" />;
+        return <IconWrapper icon={Mail} {...iconProps} color="#f59e0b" />;
       case 'marketplace_message':
-        return <MessageSquare {...iconProps} color="#ec4899" />;
+        return <IconWrapper icon={MessageSquare} {...iconProps} color="#ec4899" />;
       case 'demand_status_changed':
-        return <AlertCircle {...iconProps} color="#f97316" />;
+        return <IconWrapper icon={AlertCircle} {...iconProps} color="#f97316" />;
       case 'new_demand_created':
-        return <Briefcase {...iconProps} color="#8b5cf6" />;
+        return <IconWrapper icon={Briefcase} {...iconProps} color="#8b5cf6" />;
       default:
-        return <Bell {...iconProps} color="#6b7280" />;
+        return <IconWrapper icon={Bell} {...iconProps} color="#6b7280" />;
     }
   };
 
@@ -254,8 +252,7 @@ const NotificationsPage: React.FC = () => {
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>
-              // @ts-ignore - Type incompatibility between React 18 and lucide-react
-              <Bell size={28} style={{ marginRight: '12px' }} />
+              <IconWrapper icon={Bell} size={28} style={{ marginRight: '12px' }} />
               Notificações
             </h1>
             <p style={styles.subtitle}>
@@ -268,8 +265,7 @@ const NotificationsPage: React.FC = () => {
           <div style={styles.headerActions}>
             {unreadCount > 0 && (
               <button onClick={handleMarkAllAsRead} style={styles.actionButton}>
-                // @ts-ignore - Type incompatibility between React 18 and lucide-react
-                <Check size={18} />
+                <IconWrapper icon={Check} size={18} />
                 Marcar todas como lidas
               </button>
             )}
@@ -314,8 +310,7 @@ const NotificationsPage: React.FC = () => {
         {/* Notifications List */}
         {notifications.length === 0 ? (
           <div style={styles.empty}>
-            // @ts-ignore - Type incompatibility between React 18 and lucide-react
-            <Bell size={64} color="#d1d5db" />
+            <IconWrapper icon={Bell} size={64} color="#d1d5db" />
             <h3 style={styles.emptyTitle}>Nenhuma notificação</h3>
             <p style={styles.emptyText}>
               {filter === 'unread'
