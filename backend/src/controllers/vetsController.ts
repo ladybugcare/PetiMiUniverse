@@ -57,14 +57,21 @@ export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) =>
     newUserId = user.id
     console.log('Auth user created:', newUserId)
 
-    // 2️⃣ Reenvia e-mail de confirmação (ambiente local)
-    if (process.env.NODE_ENV !== 'production') {
-      try {
-        await supabase.auth.resend({ type: 'signup', email })
-        console.log('[SIGNUP] Resend confirmation email invoked (dev)')
-      } catch (e) {
-        console.warn('[SIGNUP] Resend confirmation email failed (non-fatal):', (e as any)?.message)
+    // 2️⃣ Reenvia e-mail de confirmação (staging e production)
+    // O signUp() pode não enviar email se auto-confirm estiver habilitado
+    // Então sempre tentamos reenviar para garantir que o email seja enviado
+    try {
+      const { error: resendError } = await supabase.auth.resend({ 
+        type: 'signup', 
+        email 
+      })
+      if (resendError) {
+        console.warn('[SIGNUP] Resend confirmation email failed (non-fatal):', resendError.message)
+      } else {
+        console.log('[SIGNUP] Confirmation email resent successfully')
       }
+    } catch (e) {
+      console.warn('[SIGNUP] Resend confirmation email failed (non-fatal):', (e as any)?.message)
     }
 
     // 3️⃣ Verifica se o trigger do Supabase já criou o registro na tabela "vets"
