@@ -367,7 +367,7 @@ const NotificationsPage: React.FC = () => {
               disabled={page === 1}
               style={{
                 ...styles.paginationButton,
-                ...(page === 1 ? styles.paginationButtonDisabled : ),
+                ...(page === 1 ? styles.paginationButtonDisabled : {}),
               }}
             >
               Anterior
