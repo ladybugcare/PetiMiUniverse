@@ -288,7 +288,7 @@ const NotificationsPage: React.FC = () => {
             onClick={() => setFilter('unread')}
             style={{
               ...styles.filterButton,
-              ...(filter === 'unread' ? styles.filterButtonActive : ),
+              ...(filter === 'unread' ? styles.filterButtonActive : {}),
             }}
           >
             Não lidas ({unreadCount})
@@ -297,7 +297,7 @@ const NotificationsPage: React.FC = () => {
             onClick={() => setFilter('read')}
             style={{
               ...styles.filterButton,
-              ...(filter === 'read' ? styles.filterButtonActive : ),
+              ...(filter === 'read' ? styles.filterButtonActive : {}),
             }}
           >
             Lidas ({notifications.length - unreadCount})

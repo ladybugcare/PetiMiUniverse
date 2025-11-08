@@ -528,6 +528,6 @@ const ClinicDashboardPage: React.FC = () => {
   );
 };
 
-const styles: { [key: string]: React.CSSProperties } = ;
+const styles: { [key: string]: React.CSSProperties } = {};
 
 export default ClinicDashboardPage;

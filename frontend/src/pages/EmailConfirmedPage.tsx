@@ -130,7 +130,7 @@ const EmailConfirmedPage: React.FC = () => {
             console.log('✅ Confirmação via link direto Supabase: SUCESSO');
             handleSuccess(data.session);
             // Limpar query após processar
-            window.history.replaceState(, document.title, url.origin + url.pathname);
+            window.history.replaceState({}, document.title, url.origin + url.pathname);
             return;
           }
 
@@ -139,7 +139,7 @@ const EmailConfirmedPage: React.FC = () => {
           if (s.session?.user) {
             console.log('✅ Sessão encontrada após verifyOtp via getSession');
             handleSuccess(s.session);
-            window.history.replaceState(, document.title, url.origin + url.pathname);
+            window.history.replaceState({}, document.title, url.origin + url.pathname);
             return;
           }
 
@@ -176,7 +176,7 @@ const EmailConfirmedPage: React.FC = () => {
           if (data?.session?.user) {
             console.log('✅ Confirmação via token_hash: SUCESSO');
             handleSuccess(data.session);
-            window.history.replaceState(, document.title, url.origin + url.pathname);
+            window.history.replaceState({}, document.title, url.origin + url.pathname);
             return;
           }
 
@@ -184,7 +184,7 @@ const EmailConfirmedPage: React.FC = () => {
           if (s.session?.user) {
             console.log('✅ Sessão encontrada após verifyOtp via getSession');
             handleSuccess(s.session);
-            window.history.replaceState(, document.title, url.origin + url.pathname);
+            window.history.replaceState({}, document.title, url.origin + url.pathname);
             return;
           }
 

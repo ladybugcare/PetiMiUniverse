@@ -1,8 +1,10 @@
 // Support Tickets API Service
 import { apiRequest } from './api';
 
-// =================================// TIPOS
-// =================================export interface SupportTicket {
+// =================================
+// TIPOS
+// =================================
+export interface SupportTicket {
   id: string;
   user_id: string;
   user_role: 'clinic' | 'vet';

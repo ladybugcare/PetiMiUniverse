@@ -483,7 +483,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: 'center',
     marginBottom: '24px',
   },
-  ratingScore: ,
+  ratingScore: {},
   scoreValue: {
     fontSize: '48px',
     fontWeight: '700',

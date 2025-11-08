@@ -401,7 +401,7 @@ const AdminUsersPage: React.FC = () => {
             onClick={() => setActiveTab('vets')}
             style={{
               ...styles.tab,
-              ...(activeTab === 'vets' ? styles.activeTab : ),
+              ...(activeTab === 'vets' ? styles.activeTab : {}),
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

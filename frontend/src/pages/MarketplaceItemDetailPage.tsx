@@ -432,7 +432,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
     whiteSpace: 'pre-wrap',
   },
-  details: ,
+  details: {},
   detailsGrid: {
     display: 'grid',
     gap: '12px',

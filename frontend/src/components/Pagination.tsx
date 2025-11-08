@@ -62,7 +62,7 @@ const Pagination: React.FC<PaginationProps> = ({ currentPage, totalPages, onPage
               onClick={() => onPageChange(page)}
               style={{
                 ...styles.pageButton,
-                ...(currentPage === page ? styles.pageButtonActive : ),
+                ...(currentPage === page ? styles.pageButtonActive : {}),
               }}
             >
               {page}

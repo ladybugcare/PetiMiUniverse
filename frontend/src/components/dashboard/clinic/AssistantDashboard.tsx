@@ -444,8 +444,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     color: '#737373',
   },
-  demandDate: ,
-  demandCandidates: ,
+  demandDate: {},
+  demandCandidates: {},
   placeholder: {
     backgroundColor: '#fafafa',
     border: '2px dashed #e5e5e5',
