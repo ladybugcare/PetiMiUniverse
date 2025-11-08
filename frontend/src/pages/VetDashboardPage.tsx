@@ -6,28 +6,42 @@ import { MenuItem } from '../components/DashboardSidebar';
 import FloatingActionButton from '../components/FloatingActionButton';
 import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut, ShoppingCart, Clock, CheckCircle, Building2, Bell, Lock, Smartphone, Globe, MessageCircle, Settings } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
+import { useAuth } from '../AuthContext';
+import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
 import colors from '../styles/colors';
 
 const VetDashboardPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user, role, loading: authLoading } = useAuth();
   const [activeSection, setActiveSection] = useState('resumo');
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Check authentication
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '');
-    const userRole = user?.user_metadata?.role || user?.role;
+    // Aguardar carregamento da autenticação
+    if (authLoading) return;
     
-    if (!user || !user.id) {
-      navigate('/login');
-      return setCheckingAuth(false);
+    // Se não há usuário, redirecionar para login
+    if (!user) {
+      navigate('/login', { replace: true });
+      setCheckingAuth(false);
+      return;
     }
     
-    if (userRole !== 'vet') {
-      navigate('/clinic-dashboard');
+    // Usar getUserRole() para detecção robusta da role
+    const userRole = getUserRole(user);
+    
+    // Se não for VET, redirecionar para dashboard apropriado
+    if (userRole !== 'VET') {
+      const dashboardPath = getDashboardPathForRole(userRole);
+      console.log('[VetDashboardPage] Usuário não é VET, redirecionando para:', dashboardPath);
+      navigate(dashboardPath, { replace: true });
+      setCheckingAuth(false);
+      return;
     }
+    
     setCheckingAuth(false);
-  }, [navigate]);
+  }, [navigate, user, authLoading]);
 
   // Floating Action Button options
   const fabOptions = [

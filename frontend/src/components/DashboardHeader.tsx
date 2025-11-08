@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { HelpCircle, User, LogOut } from 'lucide-react';
 import IconWrapper from './IconWrapper';
@@ -27,25 +27,71 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
   // Verificar se é admin (admins não veem o botão de suporte)
   const isAdmin = role === 'ADMIN';
-  const userId = user?.id;
+  const userId = useMemo(() => user?.id, [user?.id]);
+  const isLoadingRef = useRef(false);
+  const lastRequestTimeRef = useRef(0);
+  const errorCountRef = useRef(0);
 
-  // Buscar contagem de tickets não lidos
-  useEffect(() => {
-    const loadUnreadCount = async () => {
-      if (userId && !isAdmin) {
-        try {
-          const result = await supportTicketsApi.getUnreadCount(userId);
-          setUnreadCount(result.unread_count);
-        } catch (error) {
-          console.error('Error loading unread count:', error);
+  // Buscar contagem de tickets não lidos com throttling
+  const loadUnreadCount = useCallback(async () => {
+    if (!userId || isAdmin) return;
+    
+    // Throttle: não fazer requisição se a última foi há menos de 2 segundos
+    const now = Date.now();
+    if (now - lastRequestTimeRef.current < 2000) {
+      return;
+    }
+    
+    // Se já está carregando, não fazer nova requisição
+    if (isLoadingRef.current) {
+      return;
+    }
+    
+    // Se houve muitos erros (429), aumentar o throttle
+    if (errorCountRef.current > 3) {
+      if (now - lastRequestTimeRef.current < 10000) {
+        return;
+      }
+      // Reset error count após 10 segundos
+      errorCountRef.current = 0;
+    }
+    
+    isLoadingRef.current = true;
+    lastRequestTimeRef.current = now;
+    
+    try {
+      const result = await supportTicketsApi.getUnreadCount(userId);
+      setUnreadCount(result.unread_count);
+      errorCountRef.current = 0; // Reset error count em caso de sucesso
+    } catch (error: any) {
+      console.error('Error loading unread count:', error);
+      
+      // Se for erro 429, incrementar contador de erros
+      if (error?.message?.includes('429') || error?.status === 429) {
+        errorCountRef.current += 1;
+        // Se muitos erros, parar polling temporariamente
+        if (errorCountRef.current > 5) {
+          console.warn('[DashboardHeader] Muitos erros 429, pausando polling temporariamente');
         }
       }
-    };
-
-    loadUnreadCount();
-    const interval = setInterval(loadUnreadCount, 30000);
-    return () => clearInterval(interval);
+    } finally {
+      isLoadingRef.current = false;
+    }
   }, [userId, isAdmin]);
+
+  useEffect(() => {
+    if (!userId || isAdmin) return;
+    
+    // Carregar imediatamente apenas uma vez
+    loadUnreadCount();
+    
+    // Polling a cada 30 segundos
+    const interval = setInterval(() => {
+      loadUnreadCount();
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [userId, isAdmin, loadUnreadCount]);
 
   // Fecha dropdown ao clicar fora
   useEffect(() => {
@@ -319,3 +365,4 @@ const styles: { [key: string]: React.CSSProperties } = {
 };
 
 export default DashboardHeader;
+

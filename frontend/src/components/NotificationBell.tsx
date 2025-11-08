@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Bell, 
@@ -13,33 +13,73 @@ import {
   X
 } from 'lucide-react';
 import { notificationsApi, Notification } from '../services/notificationsApi';
+import { useAuth } from '../AuthContext';
 import IconWrapper from './IconWrapper';
 
 const NotificationBell: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const isLoadingRef = useRef(false);
+  const lastRequestTimeRef = useRef(0);
+  const errorCountRef = useRef(0);
 
-  // Get user ID from localStorage
-  const user = JSON.parse(localStorage.getItem('user') || '');
-  const userId = user?.id;
+  // Memoizar userId para evitar re-renders desnecessários
+  const userId = useMemo(() => user?.id, [user?.id]);
 
-  // Load unread count
-  const loadUnreadCount = async () => {
+  // Load unread count com throttling e tratamento de erro
+  const loadUnreadCount = useCallback(async () => {
     if (!userId) return;
+    
+    // Throttle: não fazer requisição se a última foi há menos de 2 segundos
+    const now = Date.now();
+    if (now - lastRequestTimeRef.current < 2000) {
+      return;
+    }
+    
+    // Se já está carregando, não fazer nova requisição
+    if (isLoadingRef.current) {
+      return;
+    }
+    
+    // Se houve muitos erros (429), aumentar o throttle
+    if (errorCountRef.current > 3) {
+      if (now - lastRequestTimeRef.current < 10000) {
+        return;
+      }
+      // Reset error count após 10 segundos
+      errorCountRef.current = 0;
+    }
+    
+    isLoadingRef.current = true;
+    lastRequestTimeRef.current = now;
+    
     try {
       const count = await notificationsApi.getUnreadCount(userId);
       setUnreadCount(count);
-    } catch (error) {
+      errorCountRef.current = 0; // Reset error count em caso de sucesso
+    } catch (error: any) {
       console.error('Error loading unread count:', error);
+      
+      // Se for erro 429, incrementar contador de erros
+      if (error?.message?.includes('429') || error?.status === 429) {
+        errorCountRef.current += 1;
+        // Se muitos erros, parar polling temporariamente
+        if (errorCountRef.current > 5) {
+          console.warn('[NotificationBell] Muitos erros 429, pausando polling temporariamente');
+        }
+      }
+    } finally {
+      isLoadingRef.current = false;
     }
-  };
+  }, [userId]);
 
   // Load notifications list
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     try {
@@ -50,14 +90,22 @@ const NotificationBell: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Polling: Update unread count every 30 seconds
-  useEffect(() => {
-    loadUnreadCount();
-    const interval = setInterval(loadUnreadCount, 30000);
-    return () => clearInterval(interval);
   }, [userId]);
+
+  // Polling: Update unread count every 30 seconds (com tratamento de erro)
+  useEffect(() => {
+    if (!userId) return;
+    
+    // Carregar imediatamente apenas uma vez
+    loadUnreadCount();
+    
+    // Polling a cada 30 segundos (aumentado de 30s para evitar muitos requests)
+    const interval = setInterval(() => {
+      loadUnreadCount();
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [userId, loadUnreadCount]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
