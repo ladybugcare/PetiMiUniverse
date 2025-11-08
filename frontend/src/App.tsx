@@ -100,15 +100,10 @@ function App() {
 
               <Route path="/email-confirmed" element={<EmailConfirmedPage />} />
 
+              {/* ROTA PÚBLICA - HomePage (landing page) */}
+              <Route path="/" element={<HomePage />} />
+
               {/* ROTAS PROTEGIDAS GENÉRICAS (qualquer logado) */}
-              <Route
-                path="/"
-                element={
-                  <ProtectedRoute>
-                    <HomePage />
-                  </ProtectedRoute>
-                }
-              />
               <Route
                 path="/demands"
                 element={
