@@ -217,7 +217,7 @@ const NotificationBell: React.FC = () => {
                   onClick={() => handleNotificationClick(notification)}
                   style={{
                     ...styles.notificationItem,
-                    ...(notification.read ? : styles.notificationItemUnread),
+                    ...(notification.read ? {} : styles.notificationItemUnread),
                   }}
                 >
                   <div style={styles.notificationIcon}>

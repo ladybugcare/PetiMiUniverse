@@ -78,10 +78,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-<<<<<<< HEAD
             {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <ClipboardList size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -102,10 +99,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-<<<<<<< HEAD
             {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <FileText size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -126,10 +120,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-<<<<<<< HEAD
             {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <CheckCircle size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -150,10 +141,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-<<<<<<< HEAD
             {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <Star size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -219,10 +207,7 @@ const MensagensSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Mensagens</h2>
       <div style={styles.placeholder}>
         <p style={styles.placeholderText}>
-<<<<<<< HEAD
           {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
           Suas mensagens aparecerão aqui
         </p>

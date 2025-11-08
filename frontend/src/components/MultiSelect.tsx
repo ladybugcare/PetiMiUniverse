@@ -59,8 +59,8 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
         onClick={() => !disabled && setIsOpen(!isOpen)}
         style={{
           ...styles.trigger,
-          ...(disabled ? styles.triggerDisabled : ),
-          ...(isOpen ? styles.triggerOpen : ),
+          ...(disabled ? styles.triggerDisabled : {}),
+          ...(isOpen ? styles.triggerOpen : {}),
         }}
       >
         <div style={styles.selectedArea}>

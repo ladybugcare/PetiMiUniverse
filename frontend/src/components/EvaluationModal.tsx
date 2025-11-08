@@ -111,11 +111,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
 
           {/* Warning */}
           <div style={styles.warning}>
-<<<<<<< HEAD
             <AlertTriangle size={18} color={colors.warning} />
-=======
-                        <AlertTriangle size={18} color={colors.warning} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <span style={styles.warningText}>
               Após avaliar, não será possível enviar mais mensagens neste ticket.
             </span>

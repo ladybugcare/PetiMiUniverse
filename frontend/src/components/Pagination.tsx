@@ -48,7 +48,7 @@ const Pagination: React.FC<PaginationProps> = ({ currentPage, totalPages, onPage
         disabled={currentPage === 1}
         style={{
           ...styles.button,
-          ...(currentPage === 1 ? styles.buttonDisabled : ),
+          ...(currentPage === 1 ? styles.buttonDisabled : {}),
         }}
       >
         ← Anterior

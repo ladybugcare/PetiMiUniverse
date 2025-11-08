@@ -179,7 +179,6 @@ const MySupportTicketsPage: React.FC = () => {
     if (userRole === 'clinic') {
       return [
         { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
-<<<<<<< HEAD
         { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
         { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
         { id: 'units', label: 'Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
@@ -187,51 +186,26 @@ const MySupportTicketsPage: React.FC = () => {
         { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
         { id: 'perfil', label: 'Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-profile' },
         { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-=======
-                { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-                { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-        { id: 'units', label: 'Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
-                { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
-                { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
-                { id: 'perfil', label: 'Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-profile' },
-                { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       ];
     } else {
       return [
         { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/vet-dashboard' },
-<<<<<<< HEAD
         { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
         { id: 'candidaturas', label: 'Minhas Candidaturas', icon: <FileText size={20} color={colors.primary} />, action: 'navigate', path: '/my-applications' },
         { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
         { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
         { id: 'perfil', label: 'Meu Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/vet-profile' },
         { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-=======
-                { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-                { id: 'candidaturas', label: 'Minhas Candidaturas', icon: <FileText size={20} color={colors.primary} />, action: 'navigate', path: '/my-applications' },
-                { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-                { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
-                { id: 'perfil', label: 'Meu Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/vet-profile' },
-                { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       ];
     }
   };
 
   const getStatusBadge = (status: SupportTicket['status']) => {
     const statusConfig: { [key: string]: { label: string; icon: React.ReactNode; color: string; bgColor: string } } = {
-<<<<<<< HEAD
       open: { label: 'Aberto', icon: <AlertCircle size={14} />, color: '#ef4444', bgColor: '#fee2e2' },
       in_progress: { label: 'Em Análise', icon: <Clock size={14} />, color: '#f59e0b', bgColor: '#fef3c7' },
       resolved: { label: 'Resolvido', icon: <CheckCircle size={14} />, color: '#22c55e', bgColor: '#dcfce7' },
       closed: { label: 'Fechado', icon: <XCircle size={14} />, color: '#6b7280', bgColor: '#f3f4f6' },
-=======
-            open: { label: 'Aberto', icon: <AlertCircle size={14} />, color: '#ef4444', bgColor: '#fee2e2' },
-            in_progress: { label: 'Em Análise', icon: <Clock size={14} />, color: '#f59e0b', bgColor: '#fef3c7' },
-            resolved: { label: 'Resolvido', icon: <CheckCircle size={14} />, color: '#22c55e', bgColor: '#dcfce7' },
-            closed: { label: 'Fechado', icon: <XCircle size={14} />, color: '#6b7280', bgColor: '#f3f4f6' },
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     };
 
     const config = statusConfig[status] || statusConfig.open;
@@ -291,11 +265,7 @@ const MySupportTicketsPage: React.FC = () => {
             <div style={styles.loading}>Carregando tickets...</div>
           ) : tickets.length === 0 ? (
             <div style={styles.emptyState}>
-<<<<<<< HEAD
               <MessageCircle size={64} color="#a3a3a3" />
-=======
-                            <MessageCircle size={64} color="#a3a3a3" />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
               <p style={styles.emptyText}>Nenhum ticket encontrado</p>
               <p style={styles.emptyHint}>
                 Você ainda não enviou nenhuma solicitação de suporte. 
@@ -369,11 +339,7 @@ const MySupportTicketsPage: React.FC = () => {
         {/* Header da conversação */}
         <div style={styles.conversationHeader}>
           <button onClick={handleCloseTicket} style={styles.backButton}>
-<<<<<<< HEAD
             <ArrowLeft size={20} />
-=======
-                        <ArrowLeft size={20} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <span>Voltar</span>
           </button>
           <div style={styles.conversationInfo}>
@@ -387,11 +353,7 @@ const MySupportTicketsPage: React.FC = () => {
           <div style={styles.evaluationBanner}>
             <div style={styles.evaluationContent}>
               <div style={styles.evaluationHeader}>
-<<<<<<< HEAD
                 <CheckCircle size={20} color={colors.primary} />
-=======
-                                <CheckCircle size={20} color={colors.primary} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                 <span style={styles.evaluationTitle}>Ticket Avaliado e Resolvido</span>
               </div>
               {renderStars(selectedTicket.evaluation.rating)}
@@ -450,11 +412,7 @@ const MySupportTicketsPage: React.FC = () => {
                 onClick={() => setShowEvaluationModal(true)}
                 style={styles.evaluateButton}
               >
-<<<<<<< HEAD
                 <CheckCircle size={18} />
-=======
-                                <CheckCircle size={18} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                 Marcar como Resolvido
               </button>
             </div>
@@ -475,22 +433,14 @@ const MySupportTicketsPage: React.FC = () => {
                 style={styles.sendButton}
                 disabled={sending || !newMessage.trim()}
               >
-<<<<<<< HEAD
                 <Send size={20} />
-=======
-                                <Send size={20} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                 {sending ? 'Enviando...' : 'Enviar'}
               </button>
             </form>
           </>
         ) : (
           <div style={styles.closedMessage}>
-<<<<<<< HEAD
             <CheckCircle size={24} color={colors.primary} />
-=======
-                        <CheckCircle size={24} color={colors.primary} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <div>
               <p style={styles.closedTitle}>Ticket resolvido e avaliado</p>
               <p style={styles.closedSubtitle}>

@@ -17,7 +17,6 @@ const AdminPendingUnitsPage: React.FC = () => {
   const [processing, setProcessing] = useState(false);
 
   const menuItems: MenuItem[] = [
-<<<<<<< HEAD
     { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
     { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
     { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
@@ -25,15 +24,6 @@ const AdminPendingUnitsPage: React.FC = () => {
     { id: 'pending-units', label: 'Aprovações Pendentes', icon: <Clock size={20} color={colors.primary} />, action: 'navigate', path: '/admin/pending-units' },
     { id: 'profile', label: 'Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/admin-profile' },
     { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-=======
-        { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-        { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-        { id: 'pending-units', label: 'Aprovações Pendentes', icon: <Clock size={20} color={colors.primary} />, action: 'navigate', path: '/admin/pending-units' },
-        { id: 'profile', label: 'Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/admin-profile' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
   ];
 
   useEffect(() => {

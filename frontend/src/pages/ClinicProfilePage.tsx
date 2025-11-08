@@ -36,44 +36,28 @@ const ClinicProfilePage: React.FC = () => {
     {
       id: 'demandas',
       label: 'Demandas',
-<<<<<<< HEAD
       icon: <ClipboardList size={20} color={colors.primary} />,
-=======
-            icon: <ClipboardList size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       action: 'navigate',
       path: '/demands',
     },
     {
       id: 'marketplace',
       label: 'Marketplace',
-<<<<<<< HEAD
       icon: <ShoppingCart size={20} color={colors.primary} />,
-=======
-            icon: <ShoppingCart size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'perfil',
       label: 'Meu Perfil',
-<<<<<<< HEAD
       icon: <User size={20} color={colors.primary} />,
-=======
-            icon: <User size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       action: 'navigate',
       path: '/clinic-profile',
     },
     // {
     //   id: 'logout',
     //   label: 'Sair',
-<<<<<<< HEAD
     //   icon: <LogOut size={20} color={colors.primary} />,
-=======
-        //   icon: <LogOut size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     //   action: 'logout',
     // },
   ];
@@ -200,11 +184,7 @@ const ClinicProfilePage: React.FC = () => {
             {!isEditing ? (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-<<<<<<< HEAD
                 <Edit size={16} />
-=======
-                                <Edit size={16} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                 <span>Editar Perfil</span>
               </div>
               </button>
@@ -292,7 +272,7 @@ const ClinicProfilePage: React.FC = () => {
               onClick={handleDeactivateAccount}
               style={{
                 ...styles.dangerButton,
-                ...(deactivating ? styles.dangerButtonDisabled : ),
+                ...(deactivating ? styles.dangerButtonDisabled : {}),
               }}
               disabled={deactivating}
             >

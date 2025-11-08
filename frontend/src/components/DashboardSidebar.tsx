@@ -99,7 +99,7 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
                     ...styles.menuButton,
                     ...(activeSection === item.sectionId && item.action === 'section'
                       ? styles.menuButtonActive
-                      : ),
+                      : {}),
                   }}
                 >
                   <span style={styles.menuIcon}>{item.icon}</span>

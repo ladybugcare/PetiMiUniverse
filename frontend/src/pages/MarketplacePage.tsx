@@ -73,11 +73,7 @@ const MarketplacePage: React.FC = () => {
     // {
     //   id: 'logout',
     //   label: 'Sair',
-<<<<<<< HEAD
     //   icon: <LogOut size={20} color={colors.primary} />,
-=======
-        //   icon: <LogOut size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     //   action: 'logout',
     // },
   ];

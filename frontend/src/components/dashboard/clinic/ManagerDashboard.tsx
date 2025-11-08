@@ -97,10 +97,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-<<<<<<< HEAD
             {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <ClipboardList size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -121,10 +118,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-<<<<<<< HEAD
             {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <Users size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -145,10 +139,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-<<<<<<< HEAD
             {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <CheckCircle size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -169,10 +160,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-<<<<<<< HEAD
             {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <Calendar size={24} color={colors.primary} />
           </div>
           <div style={styles.statContent}>
@@ -237,10 +225,7 @@ const ProfissionaisSection: React.FC<{ unitId?: string }> = ({ unitId }) => {
           {applications.map((app) => (
             <div key={app.id} style={styles.activityItem}>
               <div style={styles.activityIcon}>
-<<<<<<< HEAD
                 {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                 <Stethoscope size={20} color={colors.primary} />
               </div>
               <div style={styles.activityContent}>
@@ -255,10 +240,7 @@ const ProfissionaisSection: React.FC<{ unitId?: string }> = ({ unitId }) => {
       ) : (
         <div style={styles.placeholder}>
           <p style={styles.placeholderText}>
-<<<<<<< HEAD
             {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             <Stethoscope size={20} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
             Nenhuma candidatura recebida ainda
           </p>
@@ -274,10 +256,7 @@ const MensagensSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Mensagens Recentes</h2>
       <div style={styles.placeholder}>
         <p style={styles.placeholderText}>
-<<<<<<< HEAD
           {}
-=======
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
           Suas mensagens aparecerão aqui
         </p>

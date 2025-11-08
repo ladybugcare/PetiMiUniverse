@@ -12,7 +12,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ demands, onDemandClick }) =
 
   // Get demands grouped by date
   const demandsByDate = useMemo(() => {
-    const grouped: { [key: string]: Demand[] } = ;
+    const grouped: { [key: string]: Demand[] } = {};
     
     demands.forEach((demand) => {
       const date = new Date(demand.demand_date).toISOString().split('T')[0];

@@ -1,10 +1,8 @@
 // Support Tickets API Service
 import { apiRequest } from './api';
 
-// ========================================
-// TIPOS
-// ========================================
-export interface SupportTicket {
+// =================================// TIPOS
+// =================================export interface SupportTicket {
   id: string;
   user_id: string;
   user_role: 'clinic' | 'vet';
@@ -75,10 +73,8 @@ export interface TicketsCount {
   total: number;
 }
 
-// ========================================
-// API SERVICE
-// ========================================
-export const supportTicketsApi = {
+// =================================// API SERVICE
+// =================================export const supportTicketsApi = {
   // Criar novo ticket de suporte
   create: async (data: CreateTicketData): Promise<{ ticket: SupportTicket }> => {
     return apiRequest('/support/tickets', {

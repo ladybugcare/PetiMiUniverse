@@ -180,19 +180,11 @@ const AdminUsersPage: React.FC = () => {
   const menuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
     { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-<<<<<<< HEAD
     { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
     { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
     { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
     { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
     { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-=======
-        { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-        { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-        { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
   ];
 
   // Clinic handlers
@@ -378,11 +370,7 @@ const AdminUsersPage: React.FC = () => {
         <div style={styles.header}>
           <h2 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-<<<<<<< HEAD
               <Users size={28} color={colors.primary} />
-=======
-                            <Users size={28} color={colors.primary} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
               <span>Usuários Totais</span>
             </div>
           </h2>
@@ -390,11 +378,7 @@ const AdminUsersPage: React.FC = () => {
             onClick={() => setShowCreateUserModal(true)}
             style={styles.newUserButton}
           >
-<<<<<<< HEAD
             <Plus size={18} />
-=======
-                        <Plus size={18} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
             Novo Usuário
           </button>
         </div>
@@ -405,7 +389,7 @@ const AdminUsersPage: React.FC = () => {
             onClick={() => setActiveTab('clinics')}
             style={{
               ...styles.tab,
-              ...(activeTab === 'clinics' ? styles.activeTab : ),
+              ...(activeTab === 'clinics' ? styles.activeTab : {}),
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -421,11 +405,7 @@ const AdminUsersPage: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-<<<<<<< HEAD
               <Stethoscope size={18} />
-=======
-                            <Stethoscope size={18} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
               <span>Veterinários ({vets.length})</span>
             </div>
           </button>
@@ -437,11 +417,7 @@ const AdminUsersPage: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-<<<<<<< HEAD
               <Shield size={18} />
-=======
-                            <Shield size={18} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
               <span>Administradores ({admins.length})</span>
             </div>
           </button>
@@ -522,22 +498,14 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.viewButton }}
                                 title="Ver detalhes"
                               >
-<<<<<<< HEAD
                                 <Eye size={16} />
-=======
-                                                                <Eye size={16} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                               </button>
                               <button
                                 onClick={() => handleEditClinic(clinic)}
                                 style={{ ...styles.actionButton, ...styles.editButton }}
                                 title="Editar"
                               >
-<<<<<<< HEAD
                                 <Edit size={16} />
-=======
-                                                                <Edit size={16} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                               </button>
                               <button
                                 onClick={() => handleDeactivateClinic(clinic)}
@@ -597,22 +565,14 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.viewButton }}
                                 title="Ver detalhes"
                               >
-<<<<<<< HEAD
                                 <Eye size={16} />
-=======
-                                                                <Eye size={16} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                               </button>
                               <button
                                 onClick={() => handleEditVet(vet)}
                                 style={{ ...styles.actionButton, ...styles.editButton }}
                                 title="Editar"
                               >
-<<<<<<< HEAD
                                 <Edit size={16} />
-=======
-                                                                <Edit size={16} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                               </button>
                               <button
                                 onClick={() => handleDeleteVet(vet)}
@@ -846,11 +806,7 @@ const AdminUsersPage: React.FC = () => {
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-<<<<<<< HEAD
                   <UserPlus size={24} color={colors.primary} />
-=======
-                                    <UserPlus size={24} color={colors.primary} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                   <h3 style={styles.modalTitle}>Novo Usuário</h3>
                 </div>
                 <button onClick={handleCloseCreateModal} style={styles.closeButton}>
@@ -917,11 +873,7 @@ const AdminUsersPage: React.FC = () => {
                                   backgroundColor: isSelected ? type.color : '#f3f4f6',
                                 }}
                               >
-<<<<<<< HEAD
                                 <IconComponent size={28} strokeWidth={1.5} color={isSelected ? 'white' : '#6b7280'} />
-=======
-                                                                <IconComponent size={28} strokeWidth={1.5} color={isSelected ? 'white' : '#6b7280'} />
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                               </div>
                               <span
                                 style={{
@@ -1136,11 +1088,7 @@ const AdminUsersPage: React.FC = () => {
                               onClick={() => setShowPassword(!showPassword)}
                               style={styles.passwordToggleBtn}
                             >
-<<<<<<< HEAD
                               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-=======
-                                                            {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
                             </button>
                           )}
                         </div>

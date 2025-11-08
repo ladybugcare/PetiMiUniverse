@@ -58,11 +58,7 @@ const NotificationsPage: React.FC = () => {
         // {
         //   id: 'logout',
         //   label: 'Sair',
-<<<<<<< HEAD
         //   icon: <LogOut size={20} color="#ef4444" />,
-=======
-                //   icon: <LogOut size={20} color="#ef4444" />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
         //   action: 'logout',
         // },
       ];
@@ -85,11 +81,7 @@ const NotificationsPage: React.FC = () => {
         // {
         //   id: 'logout',
         //   label: 'Sair',
-<<<<<<< HEAD
         //   icon: <LogOut size={20} color="#ef4444" />,
-=======
-                //   icon: <LogOut size={20} color="#ef4444" />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
         //   action: 'logout',
         // },
       ];
@@ -112,11 +104,7 @@ const NotificationsPage: React.FC = () => {
         // {
         //   id: 'logout',
         //   label: 'Sair',
-<<<<<<< HEAD
         //   icon: <LogOut size={20} color="#ef4444" />,
-=======
-                //   icon: <LogOut size={20} color="#ef4444" />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
         //   action: 'logout',
         // },
       ];
@@ -291,7 +279,7 @@ const NotificationsPage: React.FC = () => {
             onClick={() => setFilter('all')}
             style={{
               ...styles.filterButton,
-              ...(filter === 'all' ? styles.filterButtonActive : ),
+              ...(filter === 'all' ? styles.filterButtonActive : {}),
             }}
           >
             Todas ({notifications.length})

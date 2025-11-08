@@ -1,9 +1,7 @@
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
-// ========================================
-// INTERFACES
-// ========================================
-
+// =================================// INTERFACES
+// =================================
 export interface Notification {
   id: string;
   user_id: string;
@@ -39,10 +37,8 @@ export interface UnreadCountResponse {
   unread_count: number;
 }
 
-// ========================================
-// API FUNCTIONS
-// ========================================
-
+// =================================// API FUNCTIONS
+// =================================
 /**
  * Buscar notificações do usuário (paginadas)
  */

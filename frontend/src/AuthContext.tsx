@@ -24,8 +24,8 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   role: "UNKNOWN",
   loading: true,
-  setAuthFromLogin: async () => ,
-  logout: async () => ,
+  setAuthFromLogin: async () => {},
+  logout: async () => {},
   isLoggingOut: false,
 });
 

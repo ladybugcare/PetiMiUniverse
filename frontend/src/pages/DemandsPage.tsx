@@ -44,44 +44,28 @@ const DemandsPage: React.FC = () => {
         {
           id: 'demandas',
           label: 'Ver Todas Demandas',
-<<<<<<< HEAD
           icon: <ClipboardList size={20} color={colors.primary} />,
-=======
-                    icon: <ClipboardList size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           action: 'navigate',
           path: '/demands',
         },
         {
           id: 'criar-demanda',
           label: 'Criar Nova Demanda',
-<<<<<<< HEAD
           icon: <PlusCircle size={20} color={colors.primary} />,
-=======
-                    icon: <PlusCircle size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           action: 'navigate',
           path: '/create-demand',
         },
         {
           id: 'perfil',
           label: 'Perfil',
-<<<<<<< HEAD
           icon: <User size={20} color={colors.primary} />,
-=======
-                    icon: <User size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           action: 'navigate',
           path: '/clinic-profile',
         },
         // {
         //   id: 'logout',
         //   label: 'Sair',
-<<<<<<< HEAD
         //   icon: <LogOut size={20} color={colors.primary} />,
-=======
-                //   icon: <LogOut size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
         //   action: 'logout',
         // },
       ];
@@ -98,44 +82,28 @@ const DemandsPage: React.FC = () => {
         {
           id: 'demandas',
           label: 'Demandas Disponíveis',
-<<<<<<< HEAD
           icon: <ClipboardList size={20} color={colors.primary} />,
-=======
-                    icon: <ClipboardList size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           action: 'navigate',
           path: '/demands',
         },
         {
           id: 'candidaturas',
           label: 'Minhas Candidaturas',
-<<<<<<< HEAD
           icon: <FileText size={20} color={colors.primary} />,
-=======
-                    icon: <FileText size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           action: 'navigate',
           path: '/my-applications',
         },
         {
           id: 'perfil',
           label: 'Meu Perfil',
-<<<<<<< HEAD
           icon: <User size={20} color={colors.primary} />,
-=======
-                    icon: <User size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
           action: 'navigate',
           path: '/vet-profile',
         },
         // {
         //   id: 'logout',
         //   label: 'Sair',
-<<<<<<< HEAD
         //   icon: <LogOut size={20} color={colors.primary} />,
-=======
-                //   icon: <LogOut size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
         //   action: 'logout',
         // },
       ];

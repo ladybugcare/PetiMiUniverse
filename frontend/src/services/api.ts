@@ -10,10 +10,8 @@ const API_BASE_URL =
 
 console.log('🌎 API_BASE_URL em uso:', API_BASE_URL);
 
-// ===========================================================
-// 🧠 Funções utilitárias
-// ===========================================================
-
+// ====================================================// 🧠 Funções utilitárias
+// ====================================================
 const getStorageItem = (key: string): string | null => {
   if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
     return localStorage.getItem(key);
@@ -21,10 +19,8 @@ const getStorageItem = (key: string): string | null => {
   return null;
 };
 
-// ===========================================================
-// 🔐 Tipos base de autenticação
-// ===========================================================
-
+// ====================================================// 🔐 Tipos base de autenticação
+// ====================================================
 interface SignUpData {
   role: 'vet' | 'clinic';
   name: string;
@@ -37,11 +33,9 @@ interface LoginData {
   password: string;
 }
 
-// ===========================================================
-// 🚀 Função base de requisições HTTP
-// ===========================================================
-
-const apiRequest = async (endpoint: string, options: RequestInit = ) => {
+// ====================================================// 🚀 Função base de requisições HTTP
+// ====================================================
+const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
   let authToken: string | null = null;
 
@@ -132,10 +126,8 @@ const apiRequest = async (endpoint: string, options: RequestInit = ) => {
   return response.json();
 };
 
-// ===========================================================
-// 🔑 Serviços de autenticação
-// ===========================================================
-
+// ====================================================// 🔑 Serviços de autenticação
+// ====================================================
 export const signUp = async (data: SignUpData) => {
   return apiRequest('/auth/signup', {
     method: 'POST',
@@ -150,8 +142,6 @@ export const login = async (data: LoginData) => {
   });
 };
 
-// ===========================================================
-// 📦 Exportações
-// ===========================================================
-
+// ====================================================// 📦 Exportações
+// ====================================================
 export { apiRequest, API_BASE_URL };

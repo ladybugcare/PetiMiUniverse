@@ -21,33 +21,21 @@ const MarketplaceItemDetailPage: React.FC = () => {
     {
       id: 'marketplace',
       label: 'Voltar ao Marketplace',
-<<<<<<< HEAD
       icon: <ShoppingCart size={20} color={colors.primary} />,
-=======
-            icon: <ShoppingCart size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       action: 'navigate',
       path: '/marketplace',
     },
     {
       id: 'criar-anuncio',
       label: 'Criar Anúncio',
-<<<<<<< HEAD
       icon: <PlusCircle size={20} color={colors.primary} />,
-=======
-            icon: <PlusCircle size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       action: 'navigate',
       path: '/marketplace/create',
     },
     {
       id: 'meus-anuncios',
       label: 'Meus Anúncios',
-<<<<<<< HEAD
       icon: <Package size={20} color={colors.primary} />,
-=======
-            icon: <Package size={20} color={colors.primary} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
       action: 'navigate',
       path: '/marketplace/my-listings',
     },
@@ -424,7 +412,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '500',
     fontFamily: 'Inter, sans-serif',
   },
-  description: ,
+  description: {
+    fontSize: '14px',
+    color: '#666',
+    lineHeight: '1.6',
+  },
   sectionTitle: {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '20px',

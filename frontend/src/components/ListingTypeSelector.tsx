@@ -18,22 +18,14 @@ interface TypeCardData {
 const listingTypes: TypeCardData[] = [
   {
     id: 'sale',
-<<<<<<< HEAD
     icon: <ShoppingBag size={48} />,
-=======
-        icon: <ShoppingBag size={48} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     title: 'VENDER',
     description: 'Tenho equipamentos, medicamentos ou suprimentos para vender',
     gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
   },
   {
     id: 'wanted',
-<<<<<<< HEAD
     icon: <Search size={48} />,
-=======
-        icon: <Search size={48} />,
->>>>>>> c05ee3cbec49f0605ebe1b5c5ff44929457fde77
     title: 'PROCURAR',
     description: 'Estou procurando comprar equipamentos ou produtos veterinários',
     gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
