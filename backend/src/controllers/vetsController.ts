@@ -44,12 +44,18 @@ export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) =>
     const emailRedirectTo = `${FRONTEND_URL}/email-confirmed`;
     console.log('[SIGNUP] Using emailRedirectTo:', emailRedirectTo);
 
+    // 🔍 Verifica se é ambiente local (não precisa confirmar email)
+    // Local: URL contém localhost ou 127.0.0.1
+    // Staging/Production: URL é https:// (não localhost)
+    const isLocalEnv = FRONTEND_URL.includes('localhost') || 
+                      FRONTEND_URL.includes('127.0.0.1');
+
     // 1️⃣ Cria o usuário no Supabase Auth
-    // IMPORTANTE: Usa admin.createUser() com email_confirm: false para garantir que o email seja enviado
+    // IMPORTANTE: Usa admin.createUser() com email_confirm baseado no ambiente
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: false, // ❌ NÃO confirmar automaticamente - precisa enviar email
+      email_confirm: isLocalEnv, // ✅ Confirmar automaticamente em local, ❌ não confirmar em staging/prod
       user_metadata: { 
         name, 
         role: 'vet' 
@@ -64,34 +70,38 @@ export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) =>
     newUserId = authData.user.id
     console.log('Auth user created:', newUserId)
 
-    // 2️⃣ Envia email de confirmação
+    // 2️⃣ Envia email de confirmação (apenas em staging/production)
     // IMPORTANTE: admin.createUser() NÃO envia email automaticamente
     // Precisamos gerar o link e o Supabase enviará o email
-    try {
-      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'signup',
-        email,
-        password, // Necessário para generateLink type 'signup'
-        options: {
-          redirectTo: emailRedirectTo,
-        },
-      });
+    if (!isLocalEnv) {
+      try {
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+          type: 'signup',
+          email,
+          password, // Necessário para generateLink type 'signup'
+          options: {
+            redirectTo: emailRedirectTo,
+          },
+        });
 
-      if (linkError) {
-        console.error('[SIGNUP] Erro ao gerar link de confirmação:', linkError);
-        console.error('[SIGNUP] Detalhes do erro:', JSON.stringify(linkError, null, 2));
-      } else {
-        console.log('[SIGNUP] Link de confirmação gerado com sucesso');
-        // O Supabase envia o email automaticamente quando geramos o link de signup
-        // O link está em linkData.properties.action_link se precisarmos usar manualmente
-        if (linkData?.properties?.action_link) {
-          console.log('[SIGNUP] Link gerado (email deve ter sido enviado):', linkData.properties.action_link.substring(0, 50) + '...');
+        if (linkError) {
+          console.error('[SIGNUP] Erro ao gerar link de confirmação:', linkError);
+          console.error('[SIGNUP] Detalhes do erro:', JSON.stringify(linkError, null, 2));
+        } else {
+          console.log('[SIGNUP] Link de confirmação gerado com sucesso');
+          // O Supabase envia o email automaticamente quando geramos o link de signup
+          // O link está em linkData.properties.action_link se precisarmos usar manualmente
+          if (linkData?.properties?.action_link) {
+            console.log('[SIGNUP] Link gerado (email deve ter sido enviado):', linkData.properties.action_link.substring(0, 50) + '...');
+          }
         }
+      } catch (linkErr: any) {
+        console.error('[SIGNUP] Erro ao gerar/enviar link de confirmação:', linkErr);
+        console.error('[SIGNUP] Stack:', linkErr?.stack);
+        // Não falha o cadastro, mas é crítico que o email seja enviado
       }
-    } catch (linkErr: any) {
-      console.error('[SIGNUP] Erro ao gerar/enviar link de confirmação:', linkErr);
-      console.error('[SIGNUP] Stack:', linkErr?.stack);
-      // Não falha o cadastro, mas é crítico que o email seja enviado
+    } else {
+      console.log('[SIGNUP] Ambiente local detectado - email confirmado automaticamente');
     }
 
     // 3️⃣ Verifica se o trigger do Supabase já criou o registro na tabela "vets"

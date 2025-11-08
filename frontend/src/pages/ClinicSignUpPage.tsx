@@ -30,7 +30,7 @@ const ClinicSignUpPage: React.FC = () => {
     password: '',
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>();
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Validação do step atual
   const isStepValid = (): boolean => {
@@ -38,11 +38,11 @@ const ClinicSignUpPage: React.FC = () => {
       case 1:
         return formData.name.trim().length >= 3;
       case 2:
-        return validateCNPJ(formData.cnpj) && !errors.cnpj;
+        return validateCNPJ(formData.cnpj) && !errors?.cnpj;
       case 3:
         return formData.address.trim().length > 10;
       case 4:
-        return validateEmail(formData.email) && !errors.email;
+        return validateEmail(formData.email) && !errors?.email;
       case 5:
         return validatePassword(formData.password).valid;
       default:
@@ -54,7 +54,7 @@ const ClinicSignUpPage: React.FC = () => {
   const handleFieldChange = (field: keyof typeof formData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
 
-    if (errors[field]) setErrors((prev) => ({ ...prev, [field]: '' }));
+    if (errors?.[field]) setErrors((prev) => ({ ...prev, [field]: '' }));
 
     if (field === 'cnpj') {
       const formatted = formatCNPJ(value);
@@ -203,7 +203,7 @@ if (step === 2) {
                 value={formData.cnpj}
                 onChange={(e) => handleFieldChange('cnpj', e.target.value)}
                 className={`input ${
-                  errors.cnpj
+                  errors?.cnpj
                     ? 'border-red-500'
                     : validateCNPJ(formData.cnpj)
                     ? 'border-green-500'
@@ -213,7 +213,7 @@ if (step === 2) {
                 autoFocus
               />
             </div>
-            {errors.cnpj && (
+            {errors?.cnpj && (
               <p className="text-red-500 text-sm mt-2">{errors.cnpj}</p>
             )}
           </div>
@@ -265,7 +265,7 @@ if (step === 2) {
                 value={formData.email}
                 onChange={(e) => handleFieldChange('email', e.target.value)}
                 className={`input ${
-                  errors.email
+                  errors?.email
                     ? 'border-red-500'
                     : validateEmail(formData.email)
                     ? 'border-green-500'
@@ -274,7 +274,7 @@ if (step === 2) {
                 autoFocus
               />
             </div>
-            {errors.email && (
+            {errors?.email && (
               <p className="text-red-500 text-sm mt-2">{errors.email}</p>
             )}
           </div>
