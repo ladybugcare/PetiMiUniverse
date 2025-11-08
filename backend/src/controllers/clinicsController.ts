@@ -53,14 +53,21 @@ export const createClinic = async (req: Request<{}, {}, ClinicBody>, res: Respon
 
     console.log('Auth user created:', authData.user.id);
 
-    // Ensure email is sent in local/dev even if autoconfirm is enabled
-    if (process.env.NODE_ENV !== 'production') {
-      try {
-        await supabase.auth.resend({ type: 'signup', email });
-        console.log('[SIGNUP] Resend confirmation email invoked (dev)');
-      } catch (e) {
-        console.warn('[SIGNUP] Resend confirmation email failed (non-fatal):', (e as any)?.message);
+    // Reenvia e-mail de confirmação (staging e production)
+    // O signUp() pode não enviar email se auto-confirm estiver habilitado
+    // Então sempre tentamos reenviar para garantir que o email seja enviado
+    try {
+      const { error: resendError } = await supabase.auth.resend({ 
+        type: 'signup', 
+        email 
+      });
+      if (resendError) {
+        console.warn('[SIGNUP] Resend confirmation email failed (non-fatal):', resendError.message);
+      } else {
+        console.log('[SIGNUP] Confirmation email resent successfully');
       }
+    } catch (e) {
+      console.warn('[SIGNUP] Resend confirmation email failed (non-fatal):', (e as any)?.message);
     }
 
     // 2. Check if clinic profile already exists (in case of retry)
