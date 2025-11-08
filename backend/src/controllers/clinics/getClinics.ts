@@ -13,7 +13,7 @@ export const getClinics = async (_req: Request, res: Response) => {
       return res.status(500).json({ error: 'Erro ao buscar clínicas' });
     }
 
-    return res.json(data);
+    return res.json({ clinics: data || [] });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Erro interno do servidor' });

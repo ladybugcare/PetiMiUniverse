@@ -108,28 +108,44 @@ const AdminUsersPage: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
+      console.log('[AdminUsersPage] Carregando dados...');
+      
       const [clinicsResult, vetsResult, adminsResult] = await Promise.all([
         clinicsApi.getAll(),
         vetsApi.getAll(),
         adminApi.getAdmins(),
       ]);
-      const adminIds = new Set((adminsResult.admins || []).map((admin) => admin.id));
+      
+      console.log('[AdminUsersPage] Resultados recebidos:', {
+        clinics: clinicsResult?.clinics?.length || 0,
+        vets: vetsResult?.vets?.length || 0,
+        admins: adminsResult?.admins?.length || 0,
+      });
 
-      const clinicsWithoutAdmins = (clinicsResult.clinics || []).filter(
+      const adminIds = new Set((adminsResult?.admins || []).map((admin) => admin.id));
+
+      const clinicsWithoutAdmins = (clinicsResult?.clinics || []).filter(
         (clinic) => !adminIds.has(clinic.id)
       );
-      const vetsWithoutAdmins = (vetsResult.vets || []).filter(
+      const vetsWithoutAdmins = (vetsResult?.vets || []).filter(
         (vet) => !adminIds.has(vet.id)
       );
 
+      console.log('[AdminUsersPage] Após filtragem:', {
+        clinics: clinicsWithoutAdmins.length,
+        vets: vetsWithoutAdmins.length,
+        admins: adminsResult?.admins?.length || 0,
+      });
+
       setClinics(clinicsWithoutAdmins);
       setVets(vetsWithoutAdmins);
-      setAdmins(adminsResult.admins || []);
+      setAdmins(adminsResult?.admins || []);
       setFilteredClinics(clinicsWithoutAdmins);
       setFilteredVets(vetsWithoutAdmins);
-      setFilteredAdmins(adminsResult.admins || []);
+      setFilteredAdmins(adminsResult?.admins || []);
     } catch (error: any) {
-      showError('Erro ao carregar usuários: ' + error.message);
+      console.error('[AdminUsersPage] Erro ao carregar usuários:', error);
+      showError('Erro ao carregar usuários: ' + (error.message || 'Erro desconhecido'));
     } finally {
       setLoading(false);
     }

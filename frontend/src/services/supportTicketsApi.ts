@@ -7,7 +7,8 @@ import { apiRequest } from './api';
 export interface SupportTicket {
   id: string;
   user_id: string;
-  user_role: 'clinic' | 'vet';
+  user_role: 'clinic' | 'vet' | 'admin';
+  user_name?: string; // Nome do usuário (clínica, veterinário ou admin)
   message: string;
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   admin_reply: string | null;
@@ -43,7 +44,7 @@ export interface TicketEvaluation {
 
 export interface CreateTicketData {
   user_id: string;
-  user_role: 'clinic' | 'vet';
+  user_role: 'clinic' | 'vet' | 'admin';
   message: string;
 }
 

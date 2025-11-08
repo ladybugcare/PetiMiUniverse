@@ -175,16 +175,36 @@ const AdminSupportTicketsPage: React.FC = () => {
     );
   };
 
-  const getRoleBadge = (role: 'clinic' | 'vet') => {
+  const getRoleBadge = (role: 'clinic' | 'vet' | 'admin') => {
+    const roleConfig = {
+      clinic: {
+        label: 'Clínica',
+        color: colors.primary,
+        backgroundColor: colors.primaryLight,
+      },
+      vet: {
+        label: 'Veterinário',
+        color: '#0ea5e9',
+        backgroundColor: '#e0f2fe',
+      },
+      admin: {
+        label: 'Administrador',
+        color: '#8b5cf6',
+        backgroundColor: '#ede9fe',
+      },
+    };
+
+    const config = roleConfig[role] || roleConfig.clinic;
+
     return (
       <span
         style={{
           ...styles.roleBadge,
-          color: role === 'clinic' ? colors.primary : '#0ea5e9',
-          backgroundColor: role === 'clinic' ? colors.primaryLight : '#e0f2fe',
+          color: config.color,
+          backgroundColor: config.backgroundColor,
         }}
       >
-        {role === 'clinic' ? 'Clínica' : 'Veterinário'}
+        {config.label}
       </span>
     );
   };
@@ -264,19 +284,23 @@ const AdminSupportTicketsPage: React.FC = () => {
                   <div style={styles.ticketHeader}>
                     <div style={styles.ticketMeta}>
                       <User size={16} color={colors.primary} />
-                      <span style={styles.ticketUserId}>
-                        {ticket.user_id.substring(0, 8)}...
-                      </span>
+                      <div style={styles.userInfo}>
+                        <span style={styles.ticketUserId}>
+                          {ticket.user_name || ticket.user_id.substring(0, 8) + '...'}
+                        </span>
+                        <span style={styles.ticketDate}>
+                          {new Date(ticket.created_at).toLocaleDateString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={styles.badgesContainer}>
                       {getRoleBadge(ticket.user_role)}
                       {getStatusBadge(ticket.status)}
                     </div>
-                    <span style={styles.ticketDate}>
-                      {new Date(ticket.created_at).toLocaleDateString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                      })}
-                    </span>
                   </div>
 
                   {ticket.evaluation && (
@@ -324,6 +348,10 @@ const AdminSupportTicketsPage: React.FC = () => {
             <span>Voltar</span>
           </button>
           <div style={styles.conversationInfo}>
+            <User size={16} color={colors.primary} />
+            <span style={styles.userName}>
+              {selectedTicket.user_name || selectedTicket.user_id.substring(0, 8) + '...'}
+            </span>
             {getRoleBadge(selectedTicket.user_role)}
             {getStatusBadge(selectedTicket.status)}
             <span style={styles.ticketId}>#{selectedTicket.id.substring(0, 8)}</span>
@@ -554,20 +582,27 @@ const styles: { [key: string]: React.CSSProperties } = {
   ticketHeader: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: '12px',
     flexWrap: 'wrap',
     gap: '8px',
   },
   ticketMeta: {
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: '8px',
+    flex: 1,
+  },
+  userInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
   },
   ticketUserId: {
-    fontFamily: 'monospace',
-    fontSize: '13px',
-    color: colors.textSecondary,
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '500',
+    color: colors.text,
   },
   statusBadge: {
     padding: '6px 12px',
@@ -585,8 +620,14 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   ticketDate: {
     fontFamily: 'Inter, sans-serif',
-    fontSize: '13px',
+    fontSize: '12px',
     color: colors.textSecondary,
+  },
+  badgesContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
   },
   ticketEvaluation: {
     display: 'flex',
@@ -646,6 +687,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '12px',
     flex: 1,
+  },
+  userName: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '500',
+    color: colors.text,
   },
   ticketId: {
     fontSize: '13px',

@@ -13,7 +13,7 @@ export const getVets = async (_req: Request, res: Response) => {
 
     if (error) throw error;
 
-    return res.json(data);
+    return res.json({ vets: data || [] });
   } catch (err: any) {
     console.error('Erro ao buscar veterinários:', err);
     return res.status(500).json({

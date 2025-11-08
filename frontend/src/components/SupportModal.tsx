@@ -28,16 +28,19 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
 
       const user = JSON.parse(localStorage.getItem('user') || '');
       const userId = user?.id;
-      const userRole = user?.user_metadata?.role || user?.role;
+      let userRole = user?.user_metadata?.role || user?.role;
 
       if (!userId || !userRole) {
         setError('Erro ao identificar usuário. Por favor, faça login novamente.');
         return;
       }
 
+      // Normalizar role para lowercase (admin, clinic, vet)
+      userRole = String(userRole).toLowerCase();
+
       await supportTicketsApi.create({
         user_id: userId,
-        user_role: userRole,
+        user_role: userRole as 'clinic' | 'vet' | 'admin',
         message: message.trim(),
       });
 
