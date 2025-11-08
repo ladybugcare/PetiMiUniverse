@@ -83,49 +83,71 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  // 🌐 Fazer requisição
-  const response = await fetch(url, { headers, ...options });
+  // ⏱️ Configurar timeout (30 segundos)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  // ⚠️ Tratar erros
-  if (!response.ok) {
-    let errorText = '';
-    let errorData: any = null;
+  try {
+    // 🌐 Fazer requisição com timeout
+    const response = await fetch(url, { 
+      headers, 
+      ...options,
+      signal: controller.signal,
+    });
 
-    try {
-      errorText = await response.text();
-      errorData = errorText ? JSON.parse(errorText) : null;
-    } catch {
-      errorText = 'Erro desconhecido';
-    }
+    clearTimeout(timeoutId);
 
-    if (response.status === 401) {
-      const errorMessage = errorData?.error || errorText;
+    // ⚠️ Tratar erros
+    if (!response.ok) {
+      let errorText = '';
+      let errorData: any = null;
 
-      if (errorMessage?.includes('Supabase') || errorMessage?.includes('projeto')) {
-        throw new Error(errorMessage + ' (Dica: verifique se frontend e backend usam o mesmo projeto Supabase)');
+      try {
+        errorText = await response.text();
+        errorData = errorText ? JSON.parse(errorText) : null;
+      } catch {
+        errorText = 'Erro desconhecido';
       }
 
-      if (errorMessage?.includes('expirado') || errorMessage?.includes('inválido')) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.access_token) {
-            console.warn('Token pode estar desatualizado. Considere fazer logout e login novamente.');
+      if (response.status === 401) {
+        const errorMessage = errorData?.error || errorText;
+
+        if (errorMessage?.includes('Supabase') || errorMessage?.includes('projeto')) {
+          throw new Error(errorMessage + ' (Dica: verifique se frontend e backend usam o mesmo projeto Supabase)');
+        }
+
+        if (errorMessage?.includes('expirado') || errorMessage?.includes('inválido')) {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.access_token) {
+              console.warn('Token pode estar desatualizado. Considere fazer logout e login novamente.');
+            }
+          } catch (error) {
+            throw new Error(errorMessage);
           }
-        } catch (error) {
-          throw new Error(errorMessage);
         }
       }
+
+      if (response.status === 401 && /invalid|expirad|assinatura|signature/i.test(String(errorText))) {
+        await handleInvalidToken();
+      }
+
+      throw new Error(errorData?.error || errorData?.message || errorText || `Erro ${response.status}`);
     }
 
-    if (response.status === 401 && /invalid|expirad|assinatura|signature/i.test(String(errorText))) {
-      await handleInvalidToken();
+    // ✅ Retornar JSON de sucesso
+    return response.json();
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    
+    // Tratar erro de timeout/abort
+    if (error.name === 'AbortError') {
+      throw new Error('A requisição demorou muito para responder. Verifique sua conexão ou tente novamente.');
     }
-
-    throw new Error(errorData?.error || errorData?.message || errorText || `Erro ${response.status}`);
+    
+    // Re-throw outros erros
+    throw error;
   }
-
-  // ✅ Retornar JSON de sucesso
-  return response.json();
 };
 
 // ====================================================// 🔑 Serviços de autenticação
