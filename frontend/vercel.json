@@ -1,5 +1,5 @@
 {
-  "installCommand": "rm -rf node_modules/.cache && npm install --legacy-peer-deps",
+  "installCommand": "rm -rf node_modules node_modules/.cache .cache && npm install --legacy-peer-deps",
   "buildCommand": "CI=false npm run build:web",
   "outputDirectory": "build",
   "framework": null
