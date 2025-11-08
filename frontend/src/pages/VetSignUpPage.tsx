@@ -26,7 +26,7 @@ const VetSignUpPage: React.FC = () => {
     password: '',
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>();
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Validar step atual
   const isStepValid = (): boolean => {
@@ -34,13 +34,13 @@ const VetSignUpPage: React.FC = () => {
       case 1:
         return formData.name.trim().length >= 3;
       case 2:
-        return validateCRMV(formData.crmv) && !errors.crmv;
+        return validateCRMV(formData.crmv) && !errors?.crmv;
       case 3:
         return formData.specialties.trim().length >= 3;
       case 4:
         return formData.experience.trim().length > 0;
       case 5:
-        return validateEmail(formData.email) && !errors.email;
+        return validateEmail(formData.email) && !errors?.email;
       case 6:
         return validatePassword(formData.password).valid;
       default:
@@ -53,7 +53,7 @@ const VetSignUpPage: React.FC = () => {
     setFormData((prev) => ({ ...prev, [field]: value }));
 
     // Limpa erro ao digitar novamente
-    if (errors[field]) {
+    if (errors?.[field]) {
       setErrors((prev) => ({ ...prev, [field]: '' }));
     }
 
@@ -188,7 +188,7 @@ const VetSignUpPage: React.FC = () => {
               value={formData.crmv}
               onChange={(e) => handleFieldChange('crmv', e.target.value)}
               className={`input ${
-                errors.crmv
+                errors?.crmv
                   ? 'border-red-500'
                   : validateCRMV(formData.crmv)
                   ? 'border-green-500'
@@ -196,7 +196,7 @@ const VetSignUpPage: React.FC = () => {
               }`}
               autoFocus
             />
-            {errors.crmv && (
+            {errors?.crmv && (
               <p className="text-red-500 text-sm mt-2">{errors.crmv}</p>
             )}
 
@@ -281,7 +281,7 @@ const VetSignUpPage: React.FC = () => {
                 value={formData.email}
                 onChange={(e) => handleFieldChange('email', e.target.value)}
                 className={`input ${
-                  errors.email
+                  errors?.email
                     ? 'border-red-500'
                     : validateEmail(formData.email)
                     ? 'border-green-500'
@@ -290,7 +290,7 @@ const VetSignUpPage: React.FC = () => {
                 autoFocus
               />
             </div>
-            {errors.email && (
+            {errors?.email && (
               <p className="text-red-500 text-sm mt-2">{errors.email}</p>
             )}
           </div>
