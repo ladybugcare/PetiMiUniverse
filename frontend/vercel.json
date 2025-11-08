@@ -1,10 +1,7 @@
 {
-  "installCommand": "rm -rf node_modules node_modules/.cache .cache package-lock.json && npm cache clean --force && npm install --legacy-peer-deps",
+  "installCommand": "rm -rf node_modules/.cache .cache && npm ci --legacy-peer-deps || npm install --legacy-peer-deps",
   "buildCommand": "CI=false GENERATE_SOURCEMAP=false npm run build:web",
   "outputDirectory": "build",
-  "framework": null,
-  "env": {
-    "NODE_ENV": "production"
-  }
+  "framework": null
 }
 
