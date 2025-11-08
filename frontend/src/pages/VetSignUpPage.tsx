@@ -4,7 +4,7 @@ import { API_BASE_URL } from '../services/api';
 import ProgressBar from '../components/ProgressBar';
 import PasswordInput from '../components/PasswordInput';
 import HomeHeader from '../components/HomeHeader';
-import { validateEmail, validatePassword, validateCRMV, validateCPF, validateCNPJ, formatCPF, formatCNPJ } from '../utils/validators';
+import { validateEmail, validatePassword, validateCRMV, validateCPF, validateCNPJ, formatCPF, formatCNPJ, formatCRMV } from '../utils/validators';
 import colors from '../styles/colors';
 import { Info, HelpCircle } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
@@ -104,8 +104,12 @@ const VetSignUpPage: React.FC = () => {
         formattedValue = formatCNPJ(value);
       }
       setFormData((prev) => ({ ...prev, [field]: formattedValue }));
+    } else if (field === 'crmv') {
+      // Aplicar formatação automática para CRMV
+      const formattedValue = formatCRMV(value);
+      setFormData((prev) => ({ ...prev, [field]: formattedValue }));
     } else {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+      setFormData((prev) => ({ ...prev, [field]: value }));
     }
 
     // Limpa erro ao digitar novamente
@@ -115,8 +119,10 @@ const VetSignUpPage: React.FC = () => {
 
     // Validação dinâmica para CRMV
     if (field === 'crmv' && value.length > 0) {
-      if (!validateCRMV(value)) {
-        setErrors((prev) => ({ ...prev, crmv: 'Formato inválido. Exemplo: 12345-SP' }));
+      // Usar valor formatado para validação
+      const formattedValue = formatCRMV(value);
+      if (!validateCRMV(formattedValue)) {
+        setErrors((prev) => ({ ...prev, crmv: 'CRMV inválido. Use o formato 00000-UF (ex: 12345-SP).' }));
       }
     }
 

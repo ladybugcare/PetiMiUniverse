@@ -101,10 +101,39 @@ export const validateEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 };
+// Formatar CRMV com máscara automática
+export const formatCRMV = (value: string): string => {
+  if (!value) return "";
+
+  // Remove espaços e caracteres inválidos, converte para maiúsculas
+  let formatted = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  // Se o valor tiver 2 letras no final, separa com hífen
+  const letters = formatted.match(/[A-Z]{2}$/);
+  const numbers = formatted.replace(/[A-Z]/g, "");
+
+  if (letters && numbers) {
+    // letters é um array, então usamos letters[0] que contém a string completa
+    formatted = `${numbers}-${letters[0]}`;
+  }
+
+  return formatted;
+};
+
 // Validar CRMV de Vet
 export const validateCRMV = (value: string): boolean => {
-  const crmRegex = /^[0-9]{4,6}-[A-Z]{2}$/; // Exemplo: 12345-SP
-  return crmRegex.test(value.trim());
+  if (!value) return false;
+
+  const formatted = value.trim().toUpperCase();
+
+  const validUFs = [
+    "AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG",
+    "MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR",
+    "RS","SC","SE","SP","TO"
+  ];
+
+  const regex = new RegExp(`^\\d{3,6}-(${validUFs.join("|")})$`);
+  return regex.test(formatted);
 };
 
 // Validar força da senha

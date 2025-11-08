@@ -8,6 +8,7 @@ import { clinicsApi } from '../services';
 import { vetsApi, Vet } from '../services/vetsApi';
 import { adminApi, CreateUserData } from '../services/adminApi';
 import { useAlert } from '../hooks/useAlert';
+import { formatCRMV } from '../utils/validators';
 import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, EyeOff, Edit, Trash2, UserCog, Truck, UserPlus, Plus, Shield } from 'lucide-react';
 import colors from '../styles/colors';
 
@@ -797,9 +798,10 @@ const AdminUsersPage: React.FC = () => {
                   <input
                     type="text"
                     value={editVetFormData.crmv || ''}
-                    onChange={(e) =>
-                      setEditVetFormData({ ...editVetFormData, crmv: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const formatted = formatCRMV(e.target.value);
+                      setEditVetFormData({ ...editVetFormData, crmv: formatted });
+                    }}
                     style={styles.input}
                   />
                 </div>
@@ -1014,9 +1016,10 @@ const AdminUsersPage: React.FC = () => {
                             <input
                               type="text"
                               value={createUserFormData.crmv || ''}
-                              onChange={(e) =>
-                                setCreateUserFormData({ ...createUserFormData, crmv: e.target.value })
-                              }
+                              onChange={(e) => {
+                                const formatted = formatCRMV(e.target.value);
+                                setCreateUserFormData({ ...createUserFormData, crmv: formatted });
+                              }}
                               style={styles.input}
                               placeholder="CRMV"
                             />
