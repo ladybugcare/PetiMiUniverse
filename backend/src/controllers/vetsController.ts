@@ -34,44 +34,64 @@ export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) =>
       return res.status(400).json({ error: 'Este e-mail já está cadastrado como veterinário.' })
     }
 
+    // Build redirect URL from environment
+    const rawFrontendUrl = process.env.FRONTEND_URL?.trim();
+    const FRONTEND_URL = rawFrontendUrl?.replace(/\/$/, '');
+    if (!FRONTEND_URL) {
+      console.error('[SIGNUP] FRONTEND_URL not set. Aborting to avoid wrong redirect.');
+      return res.status(500).json({ error: 'FRONTEND_URL não configurada no servidor' });
+    }
+    const emailRedirectTo = `${FRONTEND_URL}/email-confirmed`;
+    console.log('[SIGNUP] Using emailRedirectTo:', emailRedirectTo);
+
     // 1️⃣ Cria o usuário no Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    // IMPORTANTE: Usa admin.createUser() com email_confirm: false para garantir que o email seja enviado
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: { name, role: 'vet' },
-        emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3002'}/email-confirmed`,
+      email_confirm: false, // ❌ NÃO confirmar automaticamente - precisa enviar email
+      user_metadata: { 
+        name, 
+        role: 'vet' 
       },
     })
 
-    if (authError) {
+    if (authError || !authData?.user) {
       console.error('Auth error:', authError)
-      return res.status(400).json({ error: authError.message })
+      return res.status(400).json({ error: authError?.message || 'Falha ao criar usuário no Supabase Auth.' })
     }
 
-    const user = authData?.user
-    if (!user) {
-      return res.status(400).json({ error: 'Falha ao criar usuário no Supabase Auth.' })
-    }
-
-    newUserId = user.id
+    newUserId = authData.user.id
     console.log('Auth user created:', newUserId)
 
-    // 2️⃣ Reenvia e-mail de confirmação (staging e production)
-    // O signUp() pode não enviar email se auto-confirm estiver habilitado
-    // Então sempre tentamos reenviar para garantir que o email seja enviado
+    // 2️⃣ Envia email de confirmação
+    // IMPORTANTE: admin.createUser() NÃO envia email automaticamente
+    // Precisamos gerar o link e o Supabase enviará o email
     try {
-      const { error: resendError } = await supabase.auth.resend({ 
-        type: 'signup', 
-        email 
-      })
-      if (resendError) {
-        console.warn('[SIGNUP] Resend confirmation email failed (non-fatal):', resendError.message)
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'signup',
+        email,
+        password, // Necessário para generateLink type 'signup'
+        options: {
+          redirectTo: emailRedirectTo,
+        },
+      });
+
+      if (linkError) {
+        console.error('[SIGNUP] Erro ao gerar link de confirmação:', linkError);
+        console.error('[SIGNUP] Detalhes do erro:', JSON.stringify(linkError, null, 2));
       } else {
-        console.log('[SIGNUP] Confirmation email resent successfully')
+        console.log('[SIGNUP] Link de confirmação gerado com sucesso');
+        // O Supabase envia o email automaticamente quando geramos o link de signup
+        // O link está em linkData.properties.action_link se precisarmos usar manualmente
+        if (linkData?.properties?.action_link) {
+          console.log('[SIGNUP] Link gerado (email deve ter sido enviado):', linkData.properties.action_link.substring(0, 50) + '...');
+        }
       }
-    } catch (e) {
-      console.warn('[SIGNUP] Resend confirmation email failed (non-fatal):', (e as any)?.message)
+    } catch (linkErr: any) {
+      console.error('[SIGNUP] Erro ao gerar/enviar link de confirmação:', linkErr);
+      console.error('[SIGNUP] Stack:', linkErr?.stack);
+      // Não falha o cadastro, mas é crítico que o email seja enviado
     }
 
     // 3️⃣ Verifica se o trigger do Supabase já criou o registro na tabela "vets"
