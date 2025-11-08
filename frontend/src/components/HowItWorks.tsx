@@ -1,11 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  PressableStateCallbackType,
-} from 'react-native';
 import { Building2, Stethoscope, Heart } from 'lucide-react';
 import colors from '../styles/colors';
 import IconWrapper from './IconWrapper';
@@ -32,11 +25,6 @@ const useWindowDimensions = () => {
   }, []);
 
   return dimensions;
-};
-
-// Extend PressableStateCallbackType to include hover state (React Native Web)
-type PressableStateWithHover = PressableStateCallbackType & {
-  hovered?: boolean;
 };
 
 type AudienceCard = {
@@ -76,15 +64,15 @@ const HowItWorks: React.FC = () => {
   const isDesktop = width >= 1024;
 
   return (
-    <View style={styles.section}>
-      <View style={styles.wrapper}>
-        <Text style={styles.title}>Como o PetiVet funciona</Text>
-        <Text style={styles.subtitle}>
+    <section style={styles.section}>
+      <div style={styles.wrapper}>
+        <h2 style={styles.title}>Como o PetiVet funciona</h2>
+        <p style={styles.subtitle}>
           Uma plataforma feita para unir quem oferece cuidado e quem precisa dele. Tudo em um só lugar — simples, rápido e cheio de amor pelos pets.
-        </Text>
+        </p>
 
         {isDesktop ? (
-          <View style={styles.grid}>
+          <div style={styles.grid}>
             {cards.map((card) => (
               <HowItWorksCard
                 key={card.id}
@@ -92,9 +80,9 @@ const HowItWorks: React.FC = () => {
                 variant="grid"
               />
             ))}
-          </View>
+          </div>
         ) : (
-          <View style={styles.stack}>
+          <div style={styles.stack}>
             {cards.map((card) => (
               <HowItWorksCard
                 key={card.id}
@@ -102,10 +90,10 @@ const HowItWorks: React.FC = () => {
                 variant="stack"
               />
             ))}
-          </View>
+          </div>
         )}
-      </View>
-    </View>
+      </div>
+    </section>
   );
 };
 
@@ -115,143 +103,167 @@ type HowItWorksCardProps = {
 };
 
 const HowItWorksCard: React.FC<HowItWorksCardProps> = ({ card, variant }) => {
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
-    <Pressable
-      accessibilityRole="button"
-      style={({ hovered }: PressableStateWithHover) => [
-        styles.card,
-        variant === 'grid' ? styles.cardGrid : styles.cardStack,
-        hovered && styles.cardHovered,
-      ]}
+    <div
+      role="button"
+      tabIndex={0}
+      style={{
+        ...styles.card,
+        ...(variant === 'grid' ? styles.cardGrid : styles.cardStack),
+        ...(isHovered ? styles.cardHovered : {}),
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+        }
+      }}
     >
-      {({ hovered }: PressableStateWithHover) => (
-        <View style={styles.cardContent}>
-          <View
-            style={[
-              styles.iconBubble,
-              hovered && styles.iconBubbleHovered,
-            ]}
-          >
-            {card.icon}
-          </View>
-          <Text style={styles.cardLabel}>{card.title}</Text>
-          <Text
-            style={[
-              styles.cardEmphasis,
-              hovered && styles.cardEmphasisHovered,
-            ]}
-          >
-            {card.emphasis}
-          </Text>
-          <Text style={styles.cardDescription}>{card.description}</Text>
-        </View>
-      )}
-    </Pressable>
+      <div style={styles.cardContent}>
+        <div
+          style={{
+            ...styles.iconBubble,
+            ...(isHovered ? styles.iconBubbleHovered : {}),
+          }}
+        >
+          {card.icon}
+        </div>
+        <h3 style={styles.cardLabel}>{card.title}</h3>
+        <p
+          style={{
+            ...styles.cardEmphasis,
+            ...(isHovered ? styles.cardEmphasisHovered : {}),
+          }}
+        >
+          {card.emphasis}
+        </p>
+        <p style={styles.cardDescription}>{card.description}</p>
+      </div>
+    </div>
   );
 };
 
-const styles = StyleSheet.create({
+const styles: { [key: string]: React.CSSProperties } = {
   section: {
     backgroundColor: '#F6F6FF',
-    paddingVertical: 64,
-    paddingHorizontal: 16,
+    paddingTop: '64px',
+    paddingBottom: '64px',
+    paddingLeft: '16px',
+    paddingRight: '16px',
   },
   wrapper: {
-    maxWidth: 1080,
+    maxWidth: '1080px',
     width: '100%',
-    alignSelf: 'center',
+    margin: '0 auto',
   },
   title: {
     fontFamily: 'Poppins, sans-serif',
-    fontSize: 32,
+    fontSize: '32px',
     fontWeight: '600',
     color: '#2f1f69',
     textAlign: 'center',
+    margin: 0,
+    marginBottom: '16px',
   },
   subtitle: {
-    marginTop: 16,
     fontFamily: 'Inter, sans-serif',
-    fontSize: 18,
-    lineHeight: 26,
+    fontSize: '18px',
+    lineHeight: '26px',
     color: '#594a84',
     textAlign: 'center',
-    maxWidth: 720,
-    alignSelf: 'center',
+    maxWidth: '720px',
+    margin: '0 auto',
+    marginTop: '16px',
   },
   grid: {
-    marginTop: 40,
+    marginTop: '40px',
+    display: 'flex',
     flexDirection: 'row',
     flexWrap: 'nowrap',
     justifyContent: 'space-between',
+    gap: '20px',
   },
   stack: {
-    marginTop: 32,
+    marginTop: '32px',
+    display: 'flex',
     flexDirection: 'column',
+    gap: '20px',
   },
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 28,
-    paddingVertical: 28,
-    paddingHorizontal: 24,
-    shadowColor: '#7c3aed',
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    borderWidth: 1,
-    borderColor: '#e6e1ff',
+    borderRadius: '28px',
+    paddingTop: '28px',
+    paddingBottom: '28px',
+    paddingLeft: '24px',
+    paddingRight: '24px',
+    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.1)',
+    border: '1px solid #e6e1ff',
+    cursor: 'pointer',
+    transition: 'all 0.3s ease',
   },
   cardGrid: {
     width: '32%',
+    flex: '0 0 32%',
   },
   cardStack: {
     width: '100%',
-    marginBottom: 20,
   },
   cardHovered: {
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
-    transform: [{ translateY: -4 }],
+    boxShadow: '0 12px 24px rgba(124, 58, 237, 0.18)',
+    transform: 'translateY(-4px)',
     borderColor: '#c7b8ff',
   },
   cardContent: {
+    display: 'flex',
     flexDirection: 'column',
   },
   iconBubble: {
-    height: 56,
-    width: 56,
-    borderRadius: 28,
+    height: '56px',
+    width: '56px',
+    borderRadius: '28px',
     backgroundColor: '#ede9fe',
+    display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-start',
+    transition: 'background-color 0.3s ease',
   },
   iconBubbleHovered: {
     backgroundColor: '#dcd4ff',
   },
   cardLabel: {
     fontFamily: 'Poppins, sans-serif',
-    fontSize: 18,
+    fontSize: '18px',
     fontWeight: '600',
     color: '#27144b',
-    marginTop: 20,
+    marginTop: '20px',
+    marginBottom: '8px',
+    margin: 0,
   },
   cardEmphasis: {
     fontFamily: 'Poppins, sans-serif',
-    fontSize: 16,
+    fontSize: '16px',
     fontWeight: '500',
     color: '#6a5bb3',
-    marginTop: 8,
+    marginTop: '8px',
+    marginBottom: '8px',
+    margin: 0,
+    transition: 'color 0.3s ease',
   },
   cardEmphasisHovered: {
     color: '#7c3aed',
   },
   cardDescription: {
     fontFamily: 'Inter, sans-serif',
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: '15px',
+    lineHeight: '22px',
     color: '#4b3f75',
-    marginTop: 8,
+    marginTop: '8px',
+    margin: 0,
   },
-});
+};
 
 export default HowItWorks;
