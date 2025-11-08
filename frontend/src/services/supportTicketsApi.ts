@@ -75,8 +75,10 @@ export interface TicketsCount {
   total: number;
 }
 
-// =================================// API SERVICE
-// =================================export const supportTicketsApi = {
+// =================================
+// API SERVICE
+// =================================
+export const supportTicketsApi = {
   // Criar novo ticket de suporte
   create: async (data: CreateTicketData): Promise<{ ticket: SupportTicket }> => {
     return apiRequest('/support/tickets', {
