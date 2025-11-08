@@ -380,7 +380,7 @@ const NotificationsPage: React.FC = () => {
               disabled={page === totalPages}
               style={{
                 ...styles.paginationButton,
-                ...(page === totalPages ? styles.paginationButtonDisabled : ),
+                ...(page === totalPages ? styles.paginationButtonDisabled : {}),
               }}
             >
               Próxima

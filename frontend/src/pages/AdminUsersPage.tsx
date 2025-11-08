@@ -829,7 +829,7 @@ const AdminUsersPage: React.FC = () => {
                 <div style={styles.stepContainer}>
                   <div style={{
                     ...styles.stepCircle,
-                    ...(createUserStep >= 2 ? styles.stepCircleActive : )
+                    ...(createUserStep >= 2 ? styles.stepCircleActive : {})
                   }}>
                     2
                   </div>
