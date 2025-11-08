@@ -155,6 +155,27 @@ if (step === 2) {
     if (step > 1) setStep(step - 1);
   };
 
+  // Handler para teclado Enter
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    // Se Enter foi pressionado e botão está habilitado
+    if (e.key === 'Enter' && isStepValid() && !loading) {
+      // Para textarea (step 3 - endereço), Shift+Enter permite quebra de linha
+      if (step === 3 && e.currentTarget.tagName === 'TEXTAREA') {
+        if (e.shiftKey) {
+          // Shift+Enter: permite quebra de linha (comportamento padrão)
+          return;
+        }
+        // Enter sem Shift: aciona botão
+        e.preventDefault();
+        handleNext();
+      } else {
+        // Para inputs normais, Enter sempre aciona botão
+        e.preventDefault();
+        handleNext();
+      }
+    }
+  };
+
   // Submete cadastro da clínica
   const handleSignUp = async () => {
     try {
@@ -211,6 +232,7 @@ if (step === 2) {
               placeholder="Ex: Clínica Veterinária PetCare"
               value={formData.name}
               onChange={(e) => handleFieldChange('name', e.target.value)}
+              onKeyDown={handleKeyDown}
               className="input"
               autoFocus
             />
@@ -232,6 +254,7 @@ if (step === 2) {
                 placeholder="00.000.000/0000-00"
                 value={formData.cnpj}
                 onChange={(e) => handleFieldChange('cnpj', e.target.value)}
+                onKeyDown={handleKeyDown}
                 className={`input ${
                   errors?.cnpj
                     ? 'border-red-500'
@@ -262,6 +285,7 @@ if (step === 2) {
               placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP - CEP 01234-567"
               value={formData.address}
               onChange={(e) => handleFieldChange('address', e.target.value)}
+              onKeyDown={handleKeyDown}
               className="input"
               rows={3}
               autoFocus
@@ -294,6 +318,7 @@ if (step === 2) {
                 placeholder="contato@clinica.com"
                 value={formData.email}
                 onChange={(e) => handleFieldChange('email', e.target.value)}
+                onKeyDown={handleKeyDown}
                 className={`input ${
                   errors?.email
                     ? 'border-red-500'
@@ -322,6 +347,7 @@ if (step === 2) {
             <PasswordInput
               value={formData.password}
               onChange={(value) => handleFieldChange('password', value)}
+              onKeyDown={handleKeyDown}
               placeholder="Digite sua senha"
               showStrength={true}
             />

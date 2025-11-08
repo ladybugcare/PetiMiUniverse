@@ -7,6 +7,7 @@ interface PasswordInputProps {
   placeholder?: string;
   showStrength?: boolean;
   showRequirements?: boolean;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
 const PasswordInput: React.FC<PasswordInputProps> = ({ 
@@ -14,7 +15,8 @@ const PasswordInput: React.FC<PasswordInputProps> = ({
   onChange, 
   placeholder = 'Digite sua senha',
   showStrength = true,
-  showRequirements = true
+  showRequirements = true,
+  onKeyDown
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const validation = validatePassword(value);
@@ -42,6 +44,7 @@ const PasswordInput: React.FC<PasswordInputProps> = ({
           type={showPassword ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
           placeholder={placeholder}
           className="input password-input"
         />

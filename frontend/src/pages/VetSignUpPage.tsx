@@ -105,7 +105,7 @@ const VetSignUpPage: React.FC = () => {
       }
       setFormData((prev) => ({ ...prev, [field]: formattedValue }));
     } else {
-      setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
     }
 
     // Limpa erro ao digitar novamente
@@ -223,6 +223,27 @@ const VetSignUpPage: React.FC = () => {
     if (step > 1) setStep(step - 1);
   };
 
+  // Handler para teclado Enter
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    // Se Enter foi pressionado e botão está habilitado
+    if (e.key === 'Enter' && isStepValid() && !loading) {
+      // Para textarea (step 4 - endereço), Shift+Enter permite quebra de linha
+      if (step === 4 && e.currentTarget.tagName === 'TEXTAREA') {
+        if (e.shiftKey) {
+          // Shift+Enter: permite quebra de linha (comportamento padrão)
+          return;
+        }
+        // Enter sem Shift: aciona botão
+        e.preventDefault();
+        handleNext();
+      } else {
+        // Para inputs normais, Enter sempre aciona botão
+        e.preventDefault();
+        handleNext();
+      }
+    }
+  };
+
   // Enviar cadastro
   const handleSignUp = async () => {
     try {
@@ -283,6 +304,7 @@ const VetSignUpPage: React.FC = () => {
               placeholder="Ex: Dr. João Silva"
               value={formData.name}
               onChange={(e) => handleFieldChange('name', e.target.value)}
+              onKeyDown={handleKeyDown}
               className="input"
               autoFocus
             />
@@ -303,6 +325,7 @@ const VetSignUpPage: React.FC = () => {
               placeholder="Ex: 12345-SP"
               value={formData.crmv}
               onChange={(e) => handleFieldChange('crmv', e.target.value)}
+              onKeyDown={handleKeyDown}
               className={`input ${
                 errors?.crmv
                   ? 'border-red-500'
@@ -416,6 +439,7 @@ const VetSignUpPage: React.FC = () => {
                   placeholder={formData.document_type === 'CPF' ? '000.000.000-00' : '00.000.000/0000-00'}
                   value={formData.document_number}
                   onChange={(e) => handleFieldChange('document_number', e.target.value)}
+                  onKeyDown={handleKeyDown}
                   className={`input ${
                     errors?.document_number
                       ? 'border-red-500'
@@ -430,10 +454,10 @@ const VetSignUpPage: React.FC = () => {
                 {errors?.document_number && (
                   <p className="text-red-500 text-sm mt-2">{errors.document_number}</p>
                 )}
-                <p
-                  className="text-sm text-neutral-500 mt-2"
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
+            <p
+              className="text-sm text-neutral-500 mt-2"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
                   <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
                     <IconWrapper 
                       icon={Info} 
@@ -441,11 +465,11 @@ const VetSignUpPage: React.FC = () => {
                       color={colors.primary}
                       style={{ backgroundColor: 'transparent' }}
                     />
-                  </span>
+              </span>
                   {formData.document_type === 'CPF' 
                     ? 'Formato: 000.000.000-00'
                     : 'Formato: 00.000.000/0000-00'}
-                </p>
+            </p>
               </div>
             )}
           </div>
@@ -464,6 +488,7 @@ const VetSignUpPage: React.FC = () => {
               placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP - CEP 01234-567"
               value={formData.address}
               onChange={(e) => handleFieldChange('address', e.target.value)}
+              onKeyDown={handleKeyDown}
               className="input"
               rows={3}
               autoFocus
@@ -486,6 +511,7 @@ const VetSignUpPage: React.FC = () => {
                 placeholder="dr.joao@email.com"
                 value={formData.email}
                 onChange={(e) => handleFieldChange('email', e.target.value)}
+                onKeyDown={handleKeyDown}
                 className={`input ${
                   errors?.email
                     ? 'border-red-500'
@@ -516,6 +542,7 @@ const VetSignUpPage: React.FC = () => {
               onChange={(value) =>
                 handleFieldChange('password', value)
               }
+              onKeyDown={handleKeyDown}
               placeholder="Digite sua senha"
               showStrength={true}
             />
