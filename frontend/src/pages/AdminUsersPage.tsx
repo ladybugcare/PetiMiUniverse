@@ -864,7 +864,7 @@ const AdminUsersPage: React.FC = () => {
                               }
                               style={{
                                 ...styles.userTypeButton,
-                                ...(isSelected ? { ...styles.userTypeButtonSelected, borderColor: type.color } : ),
+                                ...(isSelected ? { ...styles.userTypeButtonSelected, borderColor: type.color } : {}),
                               }}
                             >
                               <div
