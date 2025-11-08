@@ -324,7 +324,7 @@ const NotificationsPage: React.FC = () => {
                 key={notification.id}
                 style={{
                   ...styles.notificationCard,
-                  ...(notification.read ? : styles.notificationCardUnread),
+                  ...(notification.read ? {} : styles.notificationCardUnread),
                 }}
               >
                 <div

@@ -111,7 +111,9 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
           if (session?.access_token) {
             console.warn('Token pode estar desatualizado. Considere fazer logout e login novamente.');
           }
-        } catch throw new Error(errorMessage);
+        } catch (error) {
+          throw new Error(errorMessage);
+        }
       }
     }
 
