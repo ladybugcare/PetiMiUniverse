@@ -897,7 +897,7 @@ const AdminUsersPage: React.FC = () => {
                         onClick={handleNextStep}
                         style={{
                           ...styles.saveButton,
-                          ...(!createUserFormData.user_type ? styles.buttonDisabled : )
+                          ...(!createUserFormData.user_type ? styles.buttonDisabled : {})
                         }}
                         disabled={!createUserFormData.user_type}
                       >
