@@ -2,23 +2,44 @@
 export type Role = 'ADMIN' | 'CADMIN' | 'CMANAGER' | 'VET' | 'UNKNOWN';
 
 export function getUserRole(user: any): Role {
-  if (!user) return 'UNKNOWN';
+  if (!user) {
+    console.warn('[getUserRole] User is null or undefined');
+    return 'UNKNOWN';
+  }
 
+  // Tentar múltiplos lugares onde a role pode estar armazenada
   const rawRole =
     user.user_metadata?.role ||
-    user.role ||
     user.user_metadata?.Role ||
-    user.Role;
+    user.role ||
+    user.Role ||
+    user.app_metadata?.role ||
+    user.app_metadata?.Role;
 
-  if (!rawRole) return 'UNKNOWN';
+  if (!rawRole) {
+    console.warn('[getUserRole] No role found in user object:', {
+      hasUserMetadata: !!user.user_metadata,
+      hasAppMetadata: !!user.app_metadata,
+      userKeys: Object.keys(user || {}),
+    });
+    return 'UNKNOWN';
+  }
 
-  const role = String(rawRole).toUpperCase();
+  // Normalizar para uppercase e remover espaços
+  const role = String(rawRole).trim().toUpperCase();
 
+  // Mapear variações comuns de roles
   if (role === 'ADMIN') return 'ADMIN';
-  if (role === 'CADMIN') return 'CADMIN';
-  if (role === 'CMANAGER') return 'CMANAGER';
-  if (role === 'VET') return 'VET';
+  if (role === 'CADMIN' || role === 'CLINIC_ADMIN' || role === 'CLINICADMIN') return 'CADMIN';
+  if (role === 'CMANAGER' || role === 'CLINIC_MANAGER' || role === 'CLINICMANAGER') return 'CMANAGER';
+  if (role === 'VET' || role === 'VETERINARIAN' || role === 'VETERINARIO') return 'VET';
+  if (role === 'CLINIC' || role === 'CLINICA') {
+    // Clinic pode ser CADMIN ou CMANAGER, mas por padrão retornamos CADMIN
+    console.log('[getUserRole] Role "clinic" detected, defaulting to CADMIN');
+    return 'CADMIN';
+  }
 
+  console.warn('[getUserRole] Unknown role detected:', role, 'from user:', user.id);
   return 'UNKNOWN';
 }
 

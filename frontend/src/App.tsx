@@ -80,9 +80,23 @@ function App() {
                 }
               />
 
-              {/* Signup — agora realmente públicas */}
-              <Route path="/clinic-signup" element={<ClinicSignUpPage />} />
-              <Route path="/vet-signup" element={<VetSignUpPage />} />
+              {/* Signup — protegidas: redirecionam se já logado */}
+              <Route
+                path="/clinic-signup"
+                element={
+                  <PublicRoute>
+                    <ClinicSignUpPage />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/vet-signup"
+                element={
+                  <PublicRoute>
+                    <VetSignUpPage />
+                  </PublicRoute>
+                }
+              />
 
               <Route path="/email-confirmed" element={<EmailConfirmedPage />} />
 

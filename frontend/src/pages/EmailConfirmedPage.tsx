@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { CheckCircle, XCircle, PartyPopper, Sparkles, LogIn, AlertCircle, Mail } from 'lucide-react';
+import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
 
 const EmailConfirmedPage: React.FC = () => {
   const navigate = useNavigate();
@@ -67,18 +68,51 @@ const EmailConfirmedPage: React.FC = () => {
         authListenerSubscription = null;
       }
 
-      // NÃO salvar sessão completa - apenas confirmar que email foi validado
-      // O usuário fará login depois para estabelecer sessão corretamente
-      // Limpar qualquer sessão anterior que possa ter sido salva
+      // Se temos uma sessão válida com usuário, redirecionar baseado na role
+      if (session?.user) {
+        const userRole = getUserRole(session.user);
+        const dashboardPath = getDashboardPathForRole(userRole);
+        
+        console.log('[EmailConfirmedPage] Email confirmado, redirecionando para:', dashboardPath, 'role:', userRole);
+        
+        // Salvar sessão para manter usuário logado após confirmação
+        localStorage.setItem('user', JSON.stringify(session.user));
+        if (session) {
+          localStorage.setItem('session', JSON.stringify(session));
+        }
+        
+        // Redirecionar para dashboard apropriado baseado na role
+        // VET vai para /vet-dashboard
+        // CLINIC vai para /clinic-dashboard ou /units/create-first se necessário
+        if (userRole === 'VET') {
+          navigate('/vet-dashboard', { replace: true });
+          return;
+        }
+        
+        if (userRole === 'CADMIN' || userRole === 'CMANAGER') {
+          // Para clínicas, verificar se precisa criar primeira unidade
+          // Por enquanto, redirecionar para dashboard (a lógica de primeira unidade será verificada lá)
+          navigate('/clinic-dashboard', { replace: true });
+          return;
+        }
+        
+        if (userRole === 'ADMIN') {
+          navigate('/admin-dashboard', { replace: true });
+          return;
+        }
+        
+        // Fallback: redirecionar para dashboard baseado na role
+        navigate(dashboardPath, { replace: true });
+        return;
+      }
+      
+      // Se não temos sessão válida, apenas mostrar sucesso e botão de login
       localStorage.removeItem('user');
       localStorage.removeItem('session');
       localStorage.removeItem('isFirstAccess');
       
-      // Apenas marcar que email foi confirmado (para referência, se necessário)
-      // Mas não manter sessão ativa
-      
       setStatus('success');
-      // NÃO redirecionar automaticamente - mostrar botão para login
+      // Não redirecionar automaticamente - mostrar botão para login
     };
 
     const handleError = (error?: any) => {

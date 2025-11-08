@@ -7,7 +7,7 @@ import { useAlert } from '../hooks/useAlert';
 import colors from '../styles/colors';
 import { Mail, Lock } from 'lucide-react';
 import { useAuth } from '../AuthContext';
-import { getDashboardPathForRole } from '../utils/authHelpers';
+import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -39,25 +39,31 @@ const LoginPage: React.FC = () => {
       // Centraliza persistência de auth (user/session/onboarding/etc)
       setAuthFromLogin(result);
 
+      // Usar getUserRole() para detecção robusta e consistente
+      const userRole = getUserRole(result.user);
       const onboardingInfo = result.onboarding;
-      const userRoleRaw =
-        result.user?.user_metadata?.role ||
-        result.user?.role;
-      const userRole = userRoleRaw ? String(userRoleRaw).toUpperCase() : 'UNKNOWN';
 
-      // Regras de redirecionamento pós-login
+      // Regras de redirecionamento pós-login baseadas na role
       if (userRole === 'ADMIN') {
         navigate('/admin-dashboard', { replace: true });
         return;
       }
 
+      // VET sempre vai direto para vet-dashboard, sem verificações adicionais
+      if (userRole === 'VET') {
+        navigate('/vet-dashboard', { replace: true });
+        return;
+      }
+
+      // Clínicas (CADMIN ou CMANAGER) têm lógica especial de onboarding
       if (userRole === 'CADMIN' || userRole === 'CMANAGER') {
-        // Onboarding de clínica
+        // Onboarding de clínica - verificar se precisa criar primeira unidade
         if (onboardingInfo?.shouldCompleteFirstUnit) {
           navigate('/units/create-first', { replace: true });
           return;
         }
 
+        // Verificar status da clínica para determinar se precisa criar unidade
         try {
           const response = await fetch(`${API_BASE_URL}/clinics/${result.user.id}`, {
             headers: {
@@ -73,22 +79,20 @@ const LoginPage: React.FC = () => {
               navigate('/clinic-dashboard', { replace: true });
             }
           } else {
+            // Se não conseguir verificar, vai para dashboard (pode ser primeira vez)
             navigate('/clinic-dashboard', { replace: true });
           }
         } catch (error) {
           console.error('Erro ao verificar status da clínica:', error);
+          // Em caso de erro, vai para dashboard
           navigate('/clinic-dashboard', { replace: true });
         }
         return;
       }
 
-      if (userRole === 'VET') {
-        navigate('/vet-dashboard', { replace: true });
-        return;
-      }
-
-      // Fallback para roles desconhecidas
-      const fallback = getDashboardPathForRole('UNKNOWN');
+      // Fallback para roles desconhecidas - usar getDashboardPathForRole
+      const fallback = getDashboardPathForRole(userRole);
+      console.warn('[LoginPage] Role desconhecida, redirecionando para:', fallback);
       navigate(fallback, { replace: true });
     } catch (error: any) {
       console.error('Erro no login:', error);

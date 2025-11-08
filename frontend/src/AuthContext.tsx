@@ -136,29 +136,59 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   /**
-   * 🔹 Logout global
+   * 🔹 Logout global - limpa sessão em todos os dispositivos e redireciona para login
    */
   const logout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
 
     try {
-      await supabase.auth.signOut();
+      // Limpar sessão do Supabase em todos os dispositivos (scope: 'global')
+      const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' });
+      
+      if (signOutError) {
+        console.error("[Logout] Erro ao fazer signOut do Supabase:", signOutError);
+        // Continuar com limpeza local mesmo se houver erro
+      }
 
-      // Limpa tudo
+      // Limpar todos os itens do localStorage relacionados a autenticação
       localStorage.removeItem("user");
       localStorage.removeItem("session");
       localStorage.removeItem("clinicOnboarding");
       localStorage.removeItem("clinic_user");
       localStorage.removeItem("isFirstAccess");
+      localStorage.removeItem("pendingEmail");
+      
+      // Limpar cookies de sessão se existirem (alguns navegadores podem usar cookies)
+      // Nota: Não podemos limpar cookies diretamente, mas o signOut do Supabase deve fazer isso
 
+      // Atualizar estados locais
       setUser(null);
       setSession(null);
       setRole("UNKNOWN");
 
+      // Verificar se a sessão foi realmente limpa antes de redirecionar
+      try {
+        const { data: { session: remainingSession } } = await supabase.auth.getSession();
+        if (remainingSession) {
+          console.warn("[Logout] Ainda há sessão após signOut, tentando limpar novamente...");
+          // Tentar limpar novamente
+          await supabase.auth.signOut({ scope: 'global' });
+        }
+      } catch (checkError) {
+        console.warn("[Logout] Erro ao verificar sessão restante:", checkError);
+        // Continuar mesmo se houver erro na verificação
+      }
+
+      // Redirecionar para login (usar replace: true para evitar voltar com botão voltar)
       navigate("/login", { replace: true });
     } catch (err) {
       console.error("[Logout] Erro ao encerrar sessão:", err);
+      // Mesmo com erro, limpar estados locais e redirecionar
+      setUser(null);
+      setSession(null);
+      setRole("UNKNOWN");
+      navigate("/login", { replace: true });
     } finally {
       setTimeout(() => setIsLoggingOut(false), 800);
     }

@@ -8,6 +8,8 @@ import DashboardBlockedOverlay from '../components/DashboardBlockedOverlay';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { usePermissions } from '../hooks/usePermissions';
 import { useUnit } from '../contexts/UnitContext';
+import { useAuth } from '../AuthContext';
+import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
 import { API_BASE_URL } from '../services/api';
 import { BarChart2, Building2, Users, ClipboardList, ShoppingCart, Search, User, LogOut, MessageSquare, Stethoscope, Star, FileText, MessageCircle } from 'lucide-react';
 import colors from '../styles/colors';
@@ -20,6 +22,7 @@ import VetInternalDashboard from '../components/dashboard/clinic/VetInternalDash
 
 const ClinicDashboardPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user, session, role: userRole, loading: authLoading } = useAuth();
   const { role: clinicRole, loading: permissionsLoading } = usePermissions();
   const { selectedUnit } = useUnit();
   const [activeSection, setActiveSection] = useState('resumo');
@@ -28,29 +31,40 @@ const ClinicDashboardPage: React.FC = () => {
 
   // Check authentication and clinic status
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '');
-    const session = JSON.parse(localStorage.getItem('session') || '');
-    const accessToken: string | undefined = session?.access_token;
-    const userRole = user?.user_metadata?.role || user?.role;
+    // Aguardar carregamento da autenticação
+    if (authLoading) return;
     
-    if (!user || !user.id) {
-      navigate('/login');
+    // Se não há usuário, redirecionar para login
+    if (!user) {
+      navigate('/login', { replace: true });
       return;
     }
     
-    // Allow both 'clinic' users and those with clinic_user roles
-    if (userRole !== 'clinic') {
-      // Check if user has a clinic_user role
-      const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '');
-      if (!clinicUser.role) {
-        navigate('/vet-dashboard');
+    // Usar getUserRole() para detecção robusta da role
+    const role = getUserRole(user);
+    
+    // Verificar se o usuário é clinic (CADMIN ou CMANAGER)
+    // Se não for clinic, redirecionar para dashboard apropriado
+    if (role !== 'CADMIN' && role !== 'CMANAGER') {
+      // Verificar se tem clinic_user (usuário pode ser vet que trabalha em clínica)
+      const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || 'null');
+      if (!clinicUser || !clinicUser.role) {
+        // Não é clinic e não tem clinic_user, redirecionar para dashboard correto
+        const dashboardPath = getDashboardPathForRole(role);
+        console.log('[ClinicDashboardPage] Usuário não é clinic, redirecionando para:', dashboardPath);
+        navigate(dashboardPath, { replace: true });
+        return;
       }
+      // Se tem clinic_user, pode continuar (é um vet trabalhando em clínica)
     }
 
     // Check clinic status
     const checkClinicStatus = async () => {
+      if (!user) return; // Se não há usuário, não fazer requisição
+      
       try {
         const headers: Record<string, string> = {};
+        const accessToken = session?.access_token;
         if (accessToken) {
           headers['Authorization'] = `Bearer ${accessToken}`;
         }
@@ -71,7 +85,7 @@ const ClinicDashboardPage: React.FC = () => {
     };
     
     checkClinicStatus();
-  }, [navigate]);
+  }, [navigate, user, session, authLoading]);
 
   // Get configuration based on clinic role
   const getDashboardConfig = () => {
