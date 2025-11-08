@@ -137,7 +137,7 @@ export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) =>
     // 5️⃣ Retorna sucesso
     res.status(201).json({
       message: 'Cadastro criado com sucesso. Verifique seu e-mail.',
-      user,
+      user: authData.user,
     })
   } catch (error: any) {
     console.error('Unexpected error:', error)
