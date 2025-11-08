@@ -4,12 +4,42 @@ import { API_BASE_URL } from '../services/api';
 import ProgressBar from '../components/ProgressBar';
 import PasswordInput from '../components/PasswordInput';
 import HomeHeader from '../components/HomeHeader';
-import { validateEmail, validatePassword, validateCRMV } from '../utils/validators';
+import { validateEmail, validatePassword, validateCRMV, validateCPF, validateCNPJ, formatCPF, formatCNPJ } from '../utils/validators';
 import colors from '../styles/colors';
-import { Info } from 'lucide-react';
+import { Info, HelpCircle } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
 import { supabase } from '../services/supabase';
 import SignUpSuccessModal from '../components/SignUpSuccessModal';
+
+// Componente customizado de ícone Info sem fundo preto
+const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, color = colors.primary }) => {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ backgroundColor: 'transparent' }}
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+      />
+      <path
+        d="M12 16v-4M12 8h.01"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </svg>
+  );
+};
 
 const VetSignUpPage: React.FC = () => {
   const [step, setStep] = useState(1);
@@ -20,8 +50,9 @@ const VetSignUpPage: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     crmv: '',
-    specialties: '',
-    experience: '',
+    document_type: '' as 'CPF' | 'CNPJ' | '',
+    document_number: '',
+    address: '',
     email: '',
     password: '',
   });
@@ -36,9 +67,16 @@ const VetSignUpPage: React.FC = () => {
       case 2:
         return validateCRMV(formData.crmv) && !errors?.crmv;
       case 3:
-        return formData.specialties.trim().length >= 3;
+        // Validar tipo de documento e número se tipo estiver selecionado
+        if (!formData.document_type) return false;
+        if (formData.document_type === 'CPF') {
+          return validateCPF(formData.document_number) && !errors?.document_number;
+        } else if (formData.document_type === 'CNPJ') {
+          return validateCNPJ(formData.document_number) && !errors?.document_number;
+        }
+        return false;
       case 4:
-        return formData.experience.trim().length > 0;
+        return formData.address.trim().length > 0;
       case 5:
         return validateEmail(formData.email) && !errors?.email;
       case 6:
@@ -50,7 +88,25 @@ const VetSignUpPage: React.FC = () => {
 
   // Handle campo change
   const handleFieldChange = (field: keyof typeof formData, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    // Se mudar o tipo de documento, limpa o número do documento
+    if (field === 'document_type') {
+      setFormData((prev) => ({ ...prev, document_type: value as 'CPF' | 'CNPJ', document_number: '' }));
+      setErrors((prev) => ({ ...prev, document_number: '' }));
+      return;
+    }
+
+    // Aplicar máscara para número do documento
+    if (field === 'document_number') {
+      let formattedValue = value;
+      if (formData.document_type === 'CPF') {
+        formattedValue = formatCPF(value);
+      } else if (formData.document_type === 'CNPJ') {
+        formattedValue = formatCNPJ(value);
+      }
+      setFormData((prev) => ({ ...prev, [field]: formattedValue }));
+    } else {
+      setFormData((prev) => ({ ...prev, [field]: value }));
+    }
 
     // Limpa erro ao digitar novamente
     if (errors?.[field]) {
@@ -61,6 +117,19 @@ const VetSignUpPage: React.FC = () => {
     if (field === 'crmv' && value.length > 0) {
       if (!validateCRMV(value)) {
         setErrors((prev) => ({ ...prev, crmv: 'Formato inválido. Exemplo: 12345-SP' }));
+      }
+    }
+
+    // Validação dinâmica para documento
+    if (field === 'document_number' && value.length > 0) {
+      if (formData.document_type === 'CPF') {
+        if (!validateCPF(value)) {
+          setErrors((prev) => ({ ...prev, document_number: 'CPF inválido' }));
+        }
+      } else if (formData.document_type === 'CNPJ') {
+        if (!validateCNPJ(value)) {
+          setErrors((prev) => ({ ...prev, document_number: 'CNPJ inválido' }));
+        }
       }
     }
 
@@ -76,12 +145,58 @@ const VetSignUpPage: React.FC = () => {
   const handleNext = async () => {
     if (!isStepValid()) return;
 
+    // Step 3 → Verificar documento duplicado
+    if (step === 3) {
+      try {
+        setLoading(true);
+        // Normalizar documento (remover formatação)
+        const normalizedDocument = formData.document_number.replace(/[^\d]/g, '');
+        
+        const response = await fetch(`${API_BASE_URL}/vets/check-document/${normalizedDocument}`);
+        
+        if (!response.ok) {
+          throw new Error('Erro ao verificar documento');
+        }
+
+        const text = await response.text();
+        if (!text) {
+          // Resposta vazia, assumir que documento não existe
+          setStep(step + 1);
+          return;
+        }
+
+        const data = JSON.parse(text);
+
+        if (data.exists) {
+          setErrors({ document_number: 'Este documento já está cadastrado na plataforma' });
+          return;
+        }
+      } catch (error) {
+        console.error('Erro ao verificar documento:', error);
+        setErrors({ document_number: 'Erro ao verificar documento. Tente novamente.' });
+        return;
+      } finally {
+        setLoading(false);
+      }
+    }
+
     // Step 5 → Verificar email duplicado
     if (step === 5) {
       try {
         setLoading(true);
         const response = await fetch(`${API_BASE_URL}/vets/check-email/${encodeURIComponent(formData.email)}`);
-        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error('Erro ao verificar email');
+        }
+
+        const text = await response.text();
+        if (!text) {
+          // Resposta vazia, assumir que email não existe
+          return;
+        }
+
+        const data = JSON.parse(text);
 
         if (data.exists) {
           setErrors({ email: 'Email já cadastrado na plataforma' });
@@ -116,8 +231,9 @@ const VetSignUpPage: React.FC = () => {
       await vetsApi.create({
         name: formData.name.trim(),
         crmv: formData.crmv.trim(),
-        specialties: formData.specialties.split(',').map((s) => s.trim()),
-        experience: formData.experience.trim(),
+        document_type: formData.document_type as 'CPF' | 'CNPJ',
+        document_number: formData.document_number,
+        address: formData.address.trim(),
         email: formData.email.trim(),
         password: formData.password,
         role: 'VET',
@@ -204,8 +320,8 @@ const VetSignUpPage: React.FC = () => {
               className="text-sm text-neutral-500 mt-2"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                <IconWrapper icon={Info} size={16} color={colors.primary} />
+              <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
+                <InfoIconNoBg size={16} color={colors.primary} />
               </span>
               Formato: número-UF (exemplo: 12345-SP)
             </p>
@@ -216,30 +332,122 @@ const VetSignUpPage: React.FC = () => {
         return (
           <div className="step-content">
             <h2 className="text-display text-2xl font-bold mb-2 text-neutral-800">
-              Quais são suas especialidades?
+              Qual o tipo do seu documento?
             </h2>
             <p className="text-neutral-600 mb-6">
-              Liste suas áreas de atuação separadas por vírgula
+              Selecione se você possui CPF ou CNPJ
             </p>
-            <textarea
-              placeholder="Ex: Cirurgia, Clínica Geral, Cardiologia"
-              value={formData.specialties}
-              onChange={(e) =>
-                handleFieldChange('specialties', e.target.value)
-              }
-              className="input"
-              rows={3}
-              autoFocus
-            />
-            <p
-              className="text-sm text-neutral-500 mt-2"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                <IconWrapper icon={Info} size={16} color={colors.primary} />
-              </span>
-              Separe múltiplas especialidades com vírgula
-            </p>
+            
+            {/* Botões de seleção (Combobox) */}
+            <div style={{ display: 'flex', gap: '12px', marginBottom: formData.document_type ? '24px' : '0' }}>
+              <button
+                type="button"
+                onClick={() => handleFieldChange('document_type', 'CPF')}
+                style={{
+                  flex: 1,
+                  padding: '16px 24px',
+                  borderRadius: '8px',
+                  border: `2px solid ${formData.document_type === 'CPF' ? colors.primary : colors.border}`,
+                  backgroundColor: formData.document_type === 'CPF' ? colors.primary : colors.surface,
+                  color: formData.document_type === 'CPF' ? colors.surface : colors.textSecondary,
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  if (formData.document_type !== 'CPF') {
+                    e.currentTarget.style.borderColor = colors.primary;
+                    e.currentTarget.style.backgroundColor = colors.neutral[50];
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (formData.document_type !== 'CPF') {
+                    e.currentTarget.style.borderColor = colors.border;
+                    e.currentTarget.style.backgroundColor = colors.surface;
+                  }
+                }}
+              >
+                CPF
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFieldChange('document_type', 'CNPJ')}
+                style={{
+                  flex: 1,
+                  padding: '16px 24px',
+                  borderRadius: '8px',
+                  border: `2px solid ${formData.document_type === 'CNPJ' ? colors.primary : colors.border}`,
+                  backgroundColor: formData.document_type === 'CNPJ' ? colors.primary : colors.surface,
+                  color: formData.document_type === 'CNPJ' ? colors.surface : colors.textSecondary,
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  if (formData.document_type !== 'CNPJ') {
+                    e.currentTarget.style.borderColor = colors.primary;
+                    e.currentTarget.style.backgroundColor = colors.neutral[50];
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (formData.document_type !== 'CNPJ') {
+                    e.currentTarget.style.borderColor = colors.border;
+                    e.currentTarget.style.backgroundColor = colors.surface;
+                  }
+                }}
+              >
+                CNPJ
+              </button>
+            </div>
+
+            {/* Campo de número do documento aparece quando tipo é selecionado */}
+            {formData.document_type && (
+              <div style={{ marginTop: '24px' }}>
+                <h3 className="text-display text-lg font-semibold mb-2 text-neutral-800">
+                  Qual o número do seu {formData.document_type}?
+                </h3>
+                <p className="text-neutral-600 mb-4">
+                  Digite o número do seu {formData.document_type}
+                </p>
+                <input
+                  type="text"
+                  placeholder={formData.document_type === 'CPF' ? '000.000.000-00' : '00.000.000/0000-00'}
+                  value={formData.document_number}
+                  onChange={(e) => handleFieldChange('document_number', e.target.value)}
+                  className={`input ${
+                    errors?.document_number
+                      ? 'border-red-500'
+                      : (formData.document_type === 'CPF' && validateCPF(formData.document_number)) ||
+                        (formData.document_type === 'CNPJ' && validateCNPJ(formData.document_number))
+                      ? 'border-green-500'
+                      : ''
+                  }`}
+                  maxLength={formData.document_type === 'CPF' ? 14 : 18}
+                  autoFocus
+                />
+                {errors?.document_number && (
+                  <p className="text-red-500 text-sm mt-2">{errors.document_number}</p>
+                )}
+                <p
+                  className="text-sm text-neutral-500 mt-2"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
+                    <IconWrapper 
+                      icon={Info} 
+                      size={16} 
+                      color={colors.primary}
+                      style={{ backgroundColor: 'transparent' }}
+                    />
+                  </span>
+                  {formData.document_type === 'CPF' 
+                    ? 'Formato: 000.000.000-00'
+                    : 'Formato: 00.000.000/0000-00'}
+                </p>
+              </div>
+            )}
           </div>
         );
 
@@ -247,19 +455,17 @@ const VetSignUpPage: React.FC = () => {
         return (
           <div className="step-content">
             <h2 className="text-display text-2xl font-bold mb-2 text-neutral-800">
-              Quantos anos de experiência você tem?
+              Qual o seu endereço?
             </h2>
             <p className="text-neutral-600 mb-6">
-              Conte-nos sobre sua trajetória profissional
+              Informe seu endereço completo
             </p>
-            <input
-              type="text"
-              placeholder="Ex: 5 anos"
-              value={formData.experience}
-              onChange={(e) =>
-                handleFieldChange('experience', e.target.value)
-              }
+            <textarea
+              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP - CEP 01234-567"
+              value={formData.address}
+              onChange={(e) => handleFieldChange('address', e.target.value)}
               className="input"
+              rows={3}
               autoFocus
             />
           </div>

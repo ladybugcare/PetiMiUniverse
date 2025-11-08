@@ -12,9 +12,39 @@ import {
   validatePassword,
 } from '../utils/validators';
 import colors from '../styles/colors';
-import { Info } from 'lucide-react';
+import { Info, HelpCircle } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
 import SignUpSuccessModal from '../components/SignUpSuccessModal';
+
+// Componente customizado de ícone Info sem fundo preto
+const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, color = colors.primary }) => {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ backgroundColor: 'transparent' }}
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+      />
+      <path
+        d="M12 16v-4M12 8h.01"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </svg>
+  );
+};
 
 const ClinicSignUpPage: React.FC = () => {
   const [step, setStep] = useState(1);
@@ -240,8 +270,8 @@ if (step === 2) {
               className="text-sm text-neutral-500 mt-2"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                <IconWrapper icon={Info} size={16} color={colors.primary} />
+              <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
+                <InfoIconNoBg size={16} color={colors.primary} />
               </span>
               Dica: Inclua CEP para facilitar que veterinários encontrem sua
               clínica

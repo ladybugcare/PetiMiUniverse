@@ -1,3 +1,48 @@
+// Validação de CPF
+export const validateCPF = (cpf: string): boolean => {
+  // Remove caracteres não numéricos
+  const cleanCPF = cpf.replace(/[^\d]/g, '');
+  
+  // Verifica se tem 11 dígitos
+  if (cleanCPF.length !== 11) return false;
+  
+  // Verifica CPFs inválidos conhecidos (todos os dígitos iguais)
+  if (/^(\d)\1+$/.test(cleanCPF)) return false;
+  
+  // Validação dos dígitos verificadores
+  let sum = 0;
+  let remainder;
+  
+  // Valida primeiro dígito verificador
+  for (let i = 1; i <= 9; i++) {
+    sum += parseInt(cleanCPF.substring(i - 1, i)) * (11 - i);
+  }
+  remainder = (sum * 10) % 11;
+  if (remainder === 10 || remainder === 11) remainder = 0;
+  if (remainder !== parseInt(cleanCPF.substring(9, 10))) return false;
+  
+  // Valida segundo dígito verificador
+  sum = 0;
+  for (let i = 1; i <= 10; i++) {
+    sum += parseInt(cleanCPF.substring(i - 1, i)) * (12 - i);
+  }
+  remainder = (sum * 10) % 11;
+  if (remainder === 10 || remainder === 11) remainder = 0;
+  if (remainder !== parseInt(cleanCPF.substring(10, 11))) return false;
+  
+  return true;
+};
+
+// Formatar CPF com máscara
+export const formatCPF = (value: string): string => {
+  const cleanValue = value.replace(/[^\d]/g, '');
+  
+  if (cleanValue.length <= 3) return cleanValue;
+  if (cleanValue.length <= 6) return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3)}`;
+  if (cleanValue.length <= 9) return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3, 6)}.${cleanValue.slice(6)}`;
+  return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3, 6)}.${cleanValue.slice(6, 9)}-${cleanValue.slice(9, 11)}`;
+};
+
 // Validação de CNPJ
 export const validateCNPJ = (cnpj: string): boolean => {
   // Remove caracteres não numéricos

@@ -5,6 +5,9 @@ export interface Vet {
   name: string;
   email: string;
   crmv: string; // obrigatório pra simplificar compatibilidade
+  document_type?: 'CPF' | 'CNPJ';
+  document_number?: string;
+  address?: string;
   phone?: string;
   specialties?: string[];
   certificates?: string[];

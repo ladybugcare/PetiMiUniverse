@@ -16,14 +16,16 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { vetsApi } from '../src/services/vetsApi';
 import EmailStatusModal from '../components/EmailStatusModal';
+import { validateCPF, validateCNPJ, formatCPF, formatCNPJ } from '../src/utils/validators';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const initialFormState = {
   name: '',
   crmv: '',
-  specialties: '',
-  experience: '',
+  document_type: '' as 'CPF' | 'CNPJ' | '',
+  document_number: '',
+  address: '',
   email: '',
   password: '',
 };
@@ -39,14 +41,54 @@ const VetSignUpScreen = () => {
   });
 
   const isSubmitDisabled = useMemo(() => {
-    return Object.values(form).some((value) => !value.trim());
+    const hasAllFields = form.name.trim() && 
+                        form.crmv.trim() && 
+                        (form.document_type === 'CPF' || form.document_type === 'CNPJ') &&
+                        form.document_number.trim() &&
+                        form.address.trim() &&
+                        form.email.trim() &&
+                        form.password.trim();
+    
+    // Validar documento
+    let documentValid = false;
+    if (form.document_type === 'CPF') {
+      documentValid = validateCPF(form.document_number);
+    } else if (form.document_type === 'CNPJ') {
+      documentValid = validateCNPJ(form.document_number);
+    }
+    
+    return !hasAllFields || !documentValid;
   }, [form]);
 
   const handleChange = (field: keyof typeof initialFormState) => (value: string) => {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
+    // Se mudar o tipo de documento, limpa o número do documento
+    if (field === 'document_type') {
+      setForm((current) => ({
+        ...current,
+        document_type: value as 'CPF' | 'CNPJ',
+        document_number: '',
+      }));
+      return;
+    }
+
+    // Aplicar máscara para número do documento
+    if (field === 'document_number') {
+      let formattedValue = value;
+      if (form.document_type === 'CPF') {
+        formattedValue = formatCPF(value);
+      } else if (form.document_type === 'CNPJ') {
+        formattedValue = formatCNPJ(value);
+      }
+      setForm((current) => ({
+        ...current,
+        [field]: formattedValue,
+      }));
+    } else {
+      setForm((current) => ({
+        ...current,
+        [field]: value,
+      }));
+    }
   };
 
   const handleSubmit = async () => {
@@ -58,14 +100,12 @@ const VetSignUpScreen = () => {
     try {
       setLoading(true);
       await vetsApi.create({
-        name: form.name,
-        crmv: form.crmv,
-        specialties: form.specialties
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean),
-        experience: form.experience,
-        email: form.email,
+        name: form.name.trim(),
+        crmv: form.crmv.trim(),
+        document_type: form.document_type as 'CPF' | 'CNPJ',
+        document_number: form.document_number,
+        address: form.address.trim(),
+        email: form.email.trim(),
         password: form.password,
       });
       setModal({
@@ -121,54 +161,79 @@ const VetSignUpScreen = () => {
           />
         </View>
 
-        <View
-          style={[
-            styles.formRow,
-            Platform.OS === 'web' ? styles.formRowHorizontal : styles.formRowVertical,
-          ]}
-        >
-          <View
-            style={[
-              styles.formField,
-              Platform.OS === 'web' ? styles.formFieldHorizontalLeft : undefined,
-            ]}
-          >
-            <Text style={styles.label}>CRMV</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="12345-SP"
-              placeholderTextColor="#9ca3af"
-              value={form.crmv}
-              onChangeText={handleChange('crmv')}
-              autoCapitalize="characters"
-            />
-          </View>
-
-          <View
-            style={[
-              styles.formField,
-              Platform.OS === 'web' ? styles.formFieldHorizontalRight : undefined,
-            ]}
-          >
-            <Text style={styles.label}>Anos de Experiência</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: 5 anos"
-              placeholderTextColor="#9ca3af"
-              value={form.experience}
-              onChangeText={handleChange('experience')}
-            />
-          </View>
+        <View style={styles.formField}>
+          <Text style={styles.label}>CRMV</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="12345-SP"
+            placeholderTextColor="#9ca3af"
+            value={form.crmv}
+            onChangeText={handleChange('crmv')}
+            autoCapitalize="characters"
+          />
         </View>
 
         <View style={styles.formField}>
-          <Text style={styles.label}>Especialidades</Text>
+          <Text style={styles.label}>Tipo de Documento</Text>
+          <View style={styles.documentTypeContainer}>
+            <Pressable
+              style={[
+                styles.documentTypeButton,
+                form.document_type === 'CPF' && styles.documentTypeButtonActive,
+              ]}
+              onPress={() => handleChange('document_type')('CPF')}
+            >
+              <Text
+                style={[
+                  styles.documentTypeButtonText,
+                  form.document_type === 'CPF' && styles.documentTypeButtonTextActive,
+                ]}
+              >
+                CPF
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.documentTypeButton,
+                form.document_type === 'CNPJ' && styles.documentTypeButtonActive,
+              ]}
+              onPress={() => handleChange('document_type')('CNPJ')}
+            >
+              <Text
+                style={[
+                  styles.documentTypeButtonText,
+                  form.document_type === 'CNPJ' && styles.documentTypeButtonTextActive,
+                ]}
+              >
+                CNPJ
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {form.document_type && (
+          <View style={styles.formField}>
+            <Text style={styles.label}>Número do {form.document_type}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={form.document_type === 'CPF' ? '000.000.000-00' : '00.000.000/0000-00'}
+              placeholderTextColor="#9ca3af"
+              value={form.document_number}
+              onChangeText={handleChange('document_number')}
+              keyboardType="numeric"
+              maxLength={form.document_type === 'CPF' ? 14 : 18}
+            />
+          </View>
+        )}
+
+        <View style={styles.formField}>
+          <Text style={styles.label}>Endereço</Text>
           <TextInput
             style={[styles.input, styles.multilineInput]}
-            placeholder="Cirurgia, Clínica Geral, Cardiologia (separadas por vírgula)"
+            placeholder="Rua, número, bairro, cidade, estado, CEP"
             placeholderTextColor="#9ca3af"
-            value={form.specialties}
-            onChangeText={handleChange('specialties')}
+            value={form.address}
+            onChangeText={handleChange('address')}
             multiline
             numberOfLines={Platform.OS === 'web' ? undefined : 3}
           />
@@ -348,6 +413,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#4c1d95',
+  },
+  documentTypeContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  documentTypeButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#c4b5fd',
+    backgroundColor: '#f5f3ff',
+    alignItems: 'center',
+  },
+  documentTypeButtonActive: {
+    backgroundColor: '#7c3aed',
+    borderColor: '#7c3aed',
+  },
+  documentTypeButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4c1d95',
+  },
+  documentTypeButtonTextActive: {
+    color: '#ffffff',
   },
 });
 

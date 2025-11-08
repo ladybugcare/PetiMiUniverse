@@ -4,19 +4,83 @@ import { supabase, supabaseAdmin } from '../config/supabase'
 interface VetBody {
   name: string
   crmv: string
-  specialties: string[]
-  certificates: string[]
-  experience: string
+  document_type: 'CPF' | 'CNPJ'
+  document_number: string
+  address: string
+  specialties?: string[]
+  certificates?: string[]
+  experience?: string
   email: string
   password: string
 }
 
+// Helper function to normalize document number (remove formatting)
+const normalizeDocument = (doc: string): string => {
+  return doc.replace(/[^\d]/g, '');
+};
+
+// Helper function to validate document number
+const validateDocumentNumber = (docType: string, docNumber: string): boolean => {
+  const normalized = normalizeDocument(docNumber);
+  if (docType === 'CPF') {
+    return normalized.length === 11;
+  } else if (docType === 'CNPJ') {
+    return normalized.length === 14;
+  }
+  return false;
+};
+
 export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) => {
-  const { name, crmv, specialties, certificates, experience, email, password } = req.body
+  const { name, crmv, document_type, document_number, address, specialties, certificates, experience, email, password } = req.body
   let newUserId: string | null = null
 
   try {
     console.log('Creating vet with email:', email)
+
+    // Validar campos obrigatórios
+    if (!name || !crmv || !document_type || !document_number || !address || !email || !password) {
+      return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos.' })
+    }
+
+    // Validar tipo de documento
+    if (document_type !== 'CPF' && document_type !== 'CNPJ') {
+      return res.status(400).json({ error: 'Tipo de documento deve ser CPF ou CNPJ.' })
+    }
+
+    // Validar número do documento
+    if (!validateDocumentNumber(document_type, document_number)) {
+      return res.status(400).json({ 
+        error: document_type === 'CPF' 
+          ? 'CPF deve ter 11 dígitos.' 
+          : 'CNPJ deve ter 14 dígitos.' 
+      })
+    }
+
+    // Normalizar número do documento
+    const normalizedDocument = normalizeDocument(document_number);
+
+    // Verificar se já existe veterinário com o mesmo documento
+    // Nota: Se a coluna document_number não existir ainda, ignoramos o erro e continuamos
+    const { data: existingDocument, error: existingDocError } = await supabaseAdmin
+      .from('vets')
+      .select('id')
+      .eq('document_number', normalizedDocument)
+      .maybeSingle()
+
+    if (existingDocError) {
+      // Se o erro for porque a coluna não existe, apenas logamos e continuamos
+      // (isso permite que a migration seja executada depois sem quebrar o cadastro)
+      if (existingDocError.message?.includes('column') || existingDocError.message?.includes('does not exist')) {
+        console.warn('Column document_number may not exist yet. Continuing without duplicate check:', existingDocError.message)
+      } else {
+        console.error('Error checking existing document:', existingDocError)
+        return res.status(500).json({ error: 'Erro ao verificar documento existente: ' + existingDocError.message })
+      }
+    }
+
+    if (existingDocument) {
+      return res.status(400).json({ error: 'Este documento já está cadastrado.' })
+    }
 
     // 🔍 Verifica se já existe veterinário com o mesmo e-mail
     const { data: existingVet, error: existingVetError } = await supabaseAdmin
@@ -113,33 +177,82 @@ export const createVet = async (req: Request<{}, {}, VetBody>, res: Response) =>
 
     // 4️⃣ Insere o perfil apenas se o trigger não tiver criado automaticamente
     if (!existingVetRecord) {
+      // Prepara os dados para inserção
+      const vetData: any = {
+        id: newUserId,
+        name,
+        crmv,
+        specialties: specialties || [],
+        certificates: certificates || [],
+        experience: experience || null,
+        email,
+        status: 'pending_verification',
+      };
+
+      // Adiciona campos novos se a migration já foi executada
+      try {
+        vetData.document_type = document_type;
+        vetData.document_number = normalizedDocument;
+        vetData.address = address;
+      } catch (e) {
+        console.warn('New fields may not exist in database yet:', e);
+      }
+
       const { data, error } = await supabase
         .from('vets')
-        .insert({
-          id: newUserId,
-          name,
-          crmv,
-          specialties: specialties || [],
-          certificates: certificates || [],
-          experience,
-          email,
-          status: 'pending_verification',
-        })
+        .insert(vetData)
         .select()
         .single()
 
       if (error) {
-        console.error('Insert error:', error)
-        try {
-          await supabaseAdmin.auth.admin.deleteUser(newUserId)
-          console.log('Rolled back auth user after vet profile error:', newUserId)
-        } catch (cleanupError) {
-          console.error('Failed to rollback auth user after vet profile error:', cleanupError)
-        }
-        return res.status(400).json({ error: error.message || JSON.stringify(error) })
-      }
+        // Se o erro for porque as colunas não existem, tenta inserir sem elas
+        if (error.message?.includes('column') || error.message?.includes('does not exist')) {
+          console.warn('New columns may not exist. Trying insert without them:', error.message);
+          
+          const fallbackData: any = {
+            id: newUserId,
+            name,
+            crmv,
+            specialties: specialties || [],
+            certificates: certificates || [],
+            experience: experience || null,
+            email,
+            status: 'pending_verification',
+          };
 
-      console.log('Vet profile inserted successfully')
+          const { data: fallbackVet, error: fallbackError } = await supabase
+            .from('vets')
+            .insert(fallbackData)
+            .select()
+            .single();
+
+          if (fallbackError || !fallbackVet) {
+            console.error('Insert error (fallback):', fallbackError);
+            try {
+              await supabaseAdmin.auth.admin.deleteUser(newUserId);
+              console.log('Rolled back auth user after vet profile error:', newUserId);
+            } catch (cleanupError) {
+              console.error('Failed to rollback auth user after vet profile error:', cleanupError);
+            }
+            return res.status(400).json({ 
+              error: 'Erro ao criar perfil. Execute a migration add_vet_document_and_address.sql primeiro.' 
+            });
+          }
+
+          console.log('Vet profile inserted successfully (without new fields - migration needed)');
+        } else {
+          console.error('Insert error:', error);
+          try {
+            await supabaseAdmin.auth.admin.deleteUser(newUserId);
+            console.log('Rolled back auth user after vet profile error:', newUserId);
+          } catch (cleanupError) {
+            console.error('Failed to rollback auth user after vet profile error:', cleanupError);
+          }
+          return res.status(400).json({ error: error.message || JSON.stringify(error) });
+        }
+      } else {
+        console.log('Vet profile inserted successfully');
+      }
     } else {
       console.log('Vet record already exists after Auth signup — skipping insert.')
     }

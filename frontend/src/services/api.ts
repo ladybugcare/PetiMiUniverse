@@ -136,7 +136,19 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
     }
 
     // ✅ Retornar JSON de sucesso
-    return response.json();
+    const text = await response.text();
+    if (!text) {
+      // Resposta vazia, retornar objeto vazio
+      return {};
+    }
+    
+    try {
+      return JSON.parse(text);
+    } catch (parseError) {
+      // Se não for JSON válido, retornar objeto vazio
+      console.warn('Resposta não é JSON válido:', text);
+      return {};
+    }
   } catch (error: any) {
     clearTimeout(timeoutId);
     

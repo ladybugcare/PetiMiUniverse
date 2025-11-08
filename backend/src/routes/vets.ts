@@ -2,6 +2,7 @@
 import express from 'express';
 import { createVetPublic } from '../controllers/vets/createVetPublic';
 import { checkVetEmail } from '../controllers/vets/checkVetEmail';
+import { checkVetDocument } from '../controllers/vets/checkVetDocument';
 import { getVets } from '../controllers/vets/getVets';
 import { getVetById } from '../controllers/vets/getVetById';
 import { authenticateUser } from '../middleware/authMiddleware';
@@ -20,7 +21,9 @@ router.post('/', createVetPublic);
  * 🔍 CONSULTAS E VALIDAÇÕES
  * ===========================================================
  */
+// IMPORTANTE: Rotas específicas devem vir ANTES das rotas com parâmetros dinâmicos
 router.get('/check-email/:email', checkVetEmail);
+router.get('/check-document/:document_number', checkVetDocument);
 router.get('/', getVets);
 router.get('/:id', getVetById);
 
