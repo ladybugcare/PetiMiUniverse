@@ -947,7 +947,7 @@ const AdminUsersPage: React.FC = () => {
                         }}
                         style={{
                           ...styles.input,
-                          ...(emailError ? { borderColor: '#ef4444', borderWidth: '2px' } : ),
+                          ...(emailError ? { borderColor: '#ef4444', borderWidth: '2px' } : {}),
                         }}
                         placeholder="email@exemplo.com"
                       />
