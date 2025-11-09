@@ -1,6 +1,5 @@
 import React from 'react';
 import { GrowthTrend } from '../../services/statisticsApi';
-import colors from '../../styles/colors';
 
 interface GrowthChartProps {
   trends: GrowthTrend[];
@@ -22,11 +21,10 @@ const GrowthChart: React.FC<GrowthChartProps> = ({ trends }) => {
     1
   );
 
-  const barHeight = 200;
+  const barHeight = 160;
 
   return (
     <div style={styles.container}>
-      <h3 style={styles.title}>Crescimento Mensal</h3>
       <div style={styles.chartContainer}>
         <div style={styles.chartWrapper}>
           {/* Y-axis labels */}
@@ -124,31 +122,34 @@ const GrowthChart: React.FC<GrowthChartProps> = ({ trends }) => {
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
-    marginTop: '32px',
-    marginBottom: '32px',
-  },
-  title: {
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#262626',
-    marginBottom: '16px',
-  },
-  chartContainer: {
     backgroundColor: '#ffffff',
     border: '1px solid #e5e5e5',
     borderRadius: '12px',
-    padding: '24px',
+    padding: '16px',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  chartContainer: {
+    padding: '0',
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '350px',
+    justifyContent: 'center',
   },
   chartWrapper: {
     display: 'flex',
     gap: '16px',
-    marginBottom: '24px',
+    marginBottom: '16px',
   },
   yAxis: {
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'space-between',
-    height: '220px',
+    height: '180px',
     fontSize: '12px',
     color: '#737373',
     minWidth: '40px',
@@ -160,7 +161,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   chartArea: {
     flex: 1,
     position: 'relative',
-    height: '220px',
+    height: '180px',
   },
   grid: {
     position: 'absolute',
@@ -183,7 +184,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '4px',
     alignItems: 'flex-end',
     height: '100%',
-    paddingTop: '20px',
+    paddingTop: '16px',
   },
   barGroup: {
     flex: 1,
@@ -196,7 +197,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     gap: '2px',
     alignItems: 'flex-end',
-    height: '200px',
+    height: '160px',
     width: '100%',
   },
   bar: {

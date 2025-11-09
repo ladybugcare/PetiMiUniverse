@@ -59,7 +59,6 @@ const SystemInsights: React.FC<SystemInsightsProps> = ({ insights }) => {
 
   return (
     <div style={styles.container}>
-      <h3 style={styles.title}>Visão Inteligente</h3>
       <div style={styles.grid}>
         {insights.map((insight, index) => {
           const typeStyles = getTypeStyles(insight.type);

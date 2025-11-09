@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { MenuItem } from '../components/DashboardSidebar';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, MessageCircle, Settings, Clock, Briefcase, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, MessageCircle, Settings, Clock, Briefcase, CheckCircle, AlertTriangle, XCircle, Activity } from 'lucide-react';
 import colors from '../styles/colors';
 import { adminApi } from '../services/adminApi';
 import PeriodFilter, { PeriodType } from '../components/admin/PeriodFilter';
@@ -14,6 +14,7 @@ import GrowthChart from '../components/admin/GrowthChart';
 import StatCard from '../components/admin/StatCard';
 import PendingCard from '../components/admin/PendingCard';
 import SkeletonLoader from '../components/admin/SkeletonLoader';
+import ActivityModal from '../components/admin/ActivityModal';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { useAlert } from '../hooks/useAlert';
 import { healthApi, SystemHealth } from '../services/healthApi';
@@ -227,6 +228,7 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
   const [adminName, setAdminName] = useState('');
   const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
+  const [showActivityModal, setShowActivityModal] = useState(false);
 
   // Get admin name
   useEffect(() => {
@@ -308,9 +310,22 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
         </div>
       </div>
 
-      <h3 style={styles.subsectionTitle}>Visão Geral do Sistema</h3>
+      {/* 1. Visão Inteligente */}
+      <h3 style={styles.subsectionTitle}>Visão Inteligente</h3>
+      {loading ? (
+        <div style={styles.loadingSection}>
+          <SkeletonLoader variant="statCard" count={2} />
+        </div>
+      ) : error ? (
+        <div style={styles.errorSection}>
+          <p style={styles.errorText}>Erro ao carregar insights. Tente novamente.</p>
+        </div>
+      ) : (
+        insights.length > 0 && <SystemInsights insights={insights} />
+      )}
 
-      {/* System Stats */}
+      {/* 2. Visão Geral do Sistema */}
+      <h3 style={styles.subsectionTitle}>Visão Geral do Sistema</h3>
       <div style={styles.statsGrid}>
         <StatCard
           icon={<Building2 />}
@@ -355,7 +370,7 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
         />
       </div>
 
-      {/* Pending Approvals Section */}
+      {/* 3. Aprovações Pendentes */}
       <div style={styles.pendingSection}>
         <h3 style={styles.subsectionTitle}>Aprovações Pendentes</h3>
         <div style={styles.pendingGrid}>
@@ -388,108 +403,105 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
         </div>
       </div>
 
-      {/* System Health */}
-      <div style={styles.healthSection}>
-        <h3 style={styles.subsectionTitle}>Saúde do Sistema</h3>
-        {healthLoading ? (
-          <div style={styles.healthCards}>
-            <SkeletonLoader variant="statCard" count={4} />
+      {/* 4. Crescimento Mensal / Saúde do Sistema */}
+      <div style={styles.twoColumnSection}>
+        {/* Left Column - Growth Chart */}
+        <div style={styles.leftColumn}>
+          <h3 style={{ ...styles.subsectionTitle, marginBottom: '16px' }}>Crescimento Mensal</h3>
+          <div style={styles.chartWrapper}>
+            {loading ? (
+              <div style={styles.loadingSection}>
+                <SkeletonLoader variant="chart" />
+              </div>
+            ) : (
+              growthTrends.length > 0 && <GrowthChart trends={growthTrends} />
+            )}
           </div>
-        ) : systemHealth ? (
-          <div style={styles.healthCards}>
-            <HealthCard
-              title="API Status"
-              status={systemHealth.api.status === 'healthy' ? 'Operacional' : systemHealth.api.status === 'degraded' ? 'Degradado' : 'Indisponível'}
-              statusColor={systemHealth.api.status === 'healthy' ? '#10b981' : systemHealth.api.status === 'degraded' ? '#f59e0b' : '#ef4444'}
-              icon={
-                systemHealth.api.status === 'healthy' ? (
-                  <CheckCircle size={32} color="#10b981" />
-                ) : systemHealth.api.status === 'degraded' ? (
-                  <AlertTriangle size={32} color="#f59e0b" />
-                ) : (
-                  <XCircle size={32} color="#ef4444" />
-                )
-              }
-              latency={systemHealth.api.latency}
-            />
-            <HealthCard
-              title="Database"
-              status={systemHealth.database.status === 'healthy' ? 'Operacional' : systemHealth.database.status === 'degraded' ? 'Degradado' : 'Indisponível'}
-              statusColor={systemHealth.database.status === 'healthy' ? '#10b981' : systemHealth.database.status === 'degraded' ? '#f59e0b' : '#ef4444'}
-              icon={
-                systemHealth.database.status === 'healthy' ? (
-                  <CheckCircle size={32} color="#10b981" />
-                ) : systemHealth.database.status === 'degraded' ? (
-                  <AlertTriangle size={32} color="#f59e0b" />
-                ) : (
-                  <XCircle size={32} color="#ef4444" />
-                )
-              }
-              latency={systemHealth.database.latency}
-            />
-            <HealthCard
-              title="Storage"
-              status={systemHealth.storage.status === 'healthy' ? 'Operacional' : systemHealth.storage.status === 'degraded' ? 'Degradado' : 'Indisponível'}
-              statusColor={systemHealth.storage.status === 'healthy' ? '#10b981' : systemHealth.storage.status === 'degraded' ? '#f59e0b' : '#ef4444'}
-              icon={
-                systemHealth.storage.status === 'healthy' ? (
-                  <CheckCircle size={32} color="#10b981" />
-                ) : systemHealth.storage.status === 'degraded' ? (
-                  <AlertTriangle size={32} color="#f59e0b" />
-                ) : (
-                  <XCircle size={32} color="#ef4444" />
-                )
-              }
-              latency={systemHealth.storage.latency}
-            />
-            <HealthCard
-              title="Email Service"
-              status={systemHealth.email.status === 'healthy' ? 'Operacional' : systemHealth.email.status === 'degraded' ? 'Degradado' : 'Indisponível'}
-              statusColor={systemHealth.email.status === 'healthy' ? '#10b981' : systemHealth.email.status === 'degraded' ? '#f59e0b' : '#ef4444'}
-              icon={
-                systemHealth.email.status === 'healthy' ? (
-                  <CheckCircle size={32} color="#10b981" />
-                ) : systemHealth.email.status === 'degraded' ? (
-                  <AlertTriangle size={32} color="#f59e0b" />
-                ) : (
-                  <XCircle size={32} color="#ef4444" />
-                )
-              }
-            />
+        </div>
+
+        {/* Right Column - System Health */}
+        <div style={styles.rightColumn}>
+          <h3 style={{ ...styles.subsectionTitle, marginBottom: '16px' }}>Saúde do Sistema</h3>
+          <div style={styles.healthSection}>
+            {healthLoading ? (
+              <div style={styles.healthCardsGrid}>
+                <SkeletonLoader variant="statCard" count={4} />
+              </div>
+            ) : systemHealth ? (
+              <div style={styles.healthCardsGrid}>
+                <HealthCard
+                  title="API Status"
+                  status={systemHealth.api.status === 'healthy' ? 'Operacional' : systemHealth.api.status === 'degraded' ? 'Degradado' : 'Indisponível'}
+                  statusColor={systemHealth.api.status === 'healthy' ? '#10b981' : systemHealth.api.status === 'degraded' ? '#f59e0b' : '#ef4444'}
+                  icon={
+                    systemHealth.api.status === 'healthy' ? (
+                      <CheckCircle size={32} color="#10b981" />
+                    ) : systemHealth.api.status === 'degraded' ? (
+                      <AlertTriangle size={32} color="#f59e0b" />
+                    ) : (
+                      <XCircle size={32} color="#ef4444" />
+                    )
+                  }
+                  latency={systemHealth.api.latency}
+                />
+                <HealthCard
+                  title="Database"
+                  status={systemHealth.database.status === 'healthy' ? 'Operacional' : systemHealth.database.status === 'degraded' ? 'Degradado' : 'Indisponível'}
+                  statusColor={systemHealth.database.status === 'healthy' ? '#10b981' : systemHealth.database.status === 'degraded' ? '#f59e0b' : '#ef4444'}
+                  icon={
+                    systemHealth.database.status === 'healthy' ? (
+                      <CheckCircle size={32} color="#10b981" />
+                    ) : systemHealth.database.status === 'degraded' ? (
+                      <AlertTriangle size={32} color="#f59e0b" />
+                    ) : (
+                      <XCircle size={32} color="#ef4444" />
+                    )
+                  }
+                  latency={systemHealth.database.latency}
+                />
+                <HealthCard
+                  title="Storage"
+                  status={systemHealth.storage.status === 'healthy' ? 'Operacional' : systemHealth.storage.status === 'degraded' ? 'Degradado' : 'Indisponível'}
+                  statusColor={systemHealth.storage.status === 'healthy' ? '#10b981' : systemHealth.storage.status === 'degraded' ? '#f59e0b' : '#ef4444'}
+                  icon={
+                    systemHealth.storage.status === 'healthy' ? (
+                      <CheckCircle size={32} color="#10b981" />
+                    ) : systemHealth.storage.status === 'degraded' ? (
+                      <AlertTriangle size={32} color="#f59e0b" />
+                    ) : (
+                      <XCircle size={32} color="#ef4444" />
+                    )
+                  }
+                  latency={systemHealth.storage.latency}
+                />
+                <HealthCard
+                  title="Email Service"
+                  status={systemHealth.email.status === 'healthy' ? 'Operacional' : systemHealth.email.status === 'degraded' ? 'Degradado' : 'Indisponível'}
+                  statusColor={systemHealth.email.status === 'healthy' ? '#10b981' : systemHealth.email.status === 'degraded' ? '#f59e0b' : '#ef4444'}
+                  icon={
+                    systemHealth.email.status === 'healthy' ? (
+                      <CheckCircle size={32} color="#10b981" />
+                    ) : systemHealth.email.status === 'degraded' ? (
+                      <AlertTriangle size={32} color="#f59e0b" />
+                    ) : (
+                      <XCircle size={32} color="#ef4444" />
+                    )
+                  }
+                />
+              </div>
+            ) : (
+              <div style={styles.errorSection}>
+                <p style={styles.errorText}>Erro ao carregar status do sistema</p>
+              </div>
+            )}
           </div>
-        ) : (
-          <div style={styles.errorSection}>
-            <p style={styles.errorText}>Erro ao carregar status do sistema</p>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* Quick Actions */}
+      {/* 5. Ações Rápidas */}
       <QuickActions pendingCount={pendingVetsCount + pendingFreelancersCount} />
 
-      {/* System Insights */}
-      {loading ? (
-        <div style={styles.loadingSection}>
-          <SkeletonLoader variant="statCard" count={2} />
-        </div>
-      ) : error ? (
-        <div style={styles.errorSection}>
-          <p style={styles.errorText}>Erro ao carregar insights. Tente novamente.</p>
-        </div>
-      ) : (
-        insights.length > 0 && <SystemInsights insights={insights} />
-      )}
-
-      {/* Growth Chart */}
-      {loading ? (
-        <div style={styles.loadingSection}>
-          <SkeletonLoader variant="chart" />
-        </div>
-      ) : (
-        growthTrends.length > 0 && <GrowthChart trends={growthTrends} />
-      )}
-
-      {/* Top Performers */}
+      {/* 6. Top Performers */}
       {loading ? (
         <div style={styles.loadingSection}>
           <SkeletonLoader variant="statCard" count={2} />
@@ -500,27 +512,54 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
         )
       )}
 
-      {/* Recent Activity */}
+      {/* 7. Atividade Recente */}
       <div style={styles.activitySection}>
         <h3 style={styles.subsectionTitle}>Atividade Recente</h3>
         <div style={styles.activityList}>
           {loading ? (
-            <SkeletonLoader variant="activity" count={3} />
+            <SkeletonLoader variant="activity" count={5} />
           ) : recentActivities.length > 0 ? (
-            recentActivities.map((activity) => (
-              <ActivityItem
-                key={activity.id}
-                icon={getActivityIcon(activity.icon, activity.color)}
-                title={activity.title}
-                description={activity.description}
-                time={formatTimeAgo(activity.timestamp)}
-              />
-            ))
+            <>
+              {recentActivities.slice(0, 5).map((activity) => (
+                <ActivityItem
+                  key={activity.id}
+                  icon={getActivityIcon(activity.icon, activity.color)}
+                  title={activity.title}
+                  description={activity.description}
+                  time={formatTimeAgo(activity.timestamp)}
+                />
+              ))}
+              {recentActivities.length > 5 && (
+                <button
+                  style={styles.seeMoreButton}
+                  onClick={() => setShowActivityModal(true)}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = colors.primaryDark || '#6d28d9';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = colors.primary;
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}
+                >
+                  Ver mais
+                </button>
+              )}
+            </>
           ) : (
             <p style={styles.emptyText}>Nenhuma atividade recente</p>
           )}
         </div>
       </div>
+
+      {/* Activity Modal */}
+      <ActivityModal
+        activities={recentActivities}
+        isOpen={showActivityModal}
+        onClose={() => setShowActivityModal(false)}
+        getActivityIcon={getActivityIcon}
+        formatTimeAgo={formatTimeAgo}
+      />
     </div>
   );
 };
@@ -621,8 +660,46 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
     marginTop: '4px',
   },
-  healthSection: {
+  twoColumnSection: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '24px',
+    marginTop: '32px',
     marginBottom: '32px',
+    alignItems: 'stretch',
+  },
+  leftColumn: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  rightColumn: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  chartWrapper: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '350px',
+    justifyContent: 'center',
+  },
+  healthSection: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    minHeight: '350px',
+    justifyContent: 'center',
+  },
+  healthCardsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gridTemplateRows: 'repeat(2, 1fr)',
+    gap: '16px',
+    flex: 1,
+    minHeight: '350px',
   },
   healthCards: {
     display: 'grid',
@@ -829,6 +906,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: 'center',
     color: '#737373',
     fontSize: '14px',
+  },
+  seeMoreButton: {
+    marginTop: '16px',
+    padding: '12px 24px',
+    backgroundColor: colors.primary,
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    alignSelf: 'center',
+    width: 'fit-content',
   },
   loadingSection: {
     backgroundColor: '#ffffff',
