@@ -453,7 +453,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '36px',
     height: '36px',
     borderRadius: '50%',
-    backgroundColor: '#f9fafb',
+    backgroundColor: 'transparent',
   },
   notificationContent: {
     flex: 1,

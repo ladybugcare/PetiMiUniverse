@@ -32,9 +32,14 @@ export const applicationsApi = {
     return apiRequest(`/applications/demand/${demandId}`);
   },
 
-  // Buscar candidaturas por veterinário
+  // Buscar candidaturas por veterinário ou freelancer
   getByVet: async (vetId: string): Promise<{ applications: Application[] }> => {
-    return apiRequest(`/applications/vet/${vetId}`);
+    return apiRequest(`/applications/user/${vetId}`);
+  },
+  
+  // Alias para compatibilidade - usa a mesma rota genérica
+  getByUser: async (userId: string): Promise<{ applications: Application[] }> => {
+    return apiRequest(`/applications/user/${userId}`);
   },
 
   // Atualizar status da candidatura

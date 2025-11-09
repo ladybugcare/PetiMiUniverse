@@ -15,11 +15,13 @@ import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ClinicSignUpPage from './pages/ClinicSignUpPage';
 import VetSignUpPage from './pages/VetSignUpPage';
+import FreelancerSignUpPage from './pages/FreelancerSignUpPage';
 import DemandsPage from './pages/DemandsPage';
 import CreateDemandPage from './pages/CreateDemandPage';
 import MyApplicationsPage from './pages/MyApplicationsPage';
 import ClinicDashboardPage from './pages/ClinicDashboardPage';
 import VetDashboardPage from './pages/VetDashboardPage';
+import FreelancerDashboardPage from './pages/FreelancerDashboardPage';
 import MarketplacePage from './pages/MarketplacePage';
 import CreateMarketplaceListingPage from './pages/CreateMarketplaceListingPage';
 import MarketplaceItemDetailPage from './pages/MarketplaceItemDetailPage';
@@ -31,6 +33,7 @@ import AcceptInvitationPage from './pages/AcceptInvitationPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import AdminClinicsPage from './pages/AdminClinicsPage';
 import AdminVetsPage from './pages/AdminVetsPage';
+import AdminFreelancersPage from './pages/AdminFreelancersPage';
 import AdminDemandsPage from './pages/AdminDemandsPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminSupportTicketsPage from './pages/AdminSupportTicketsPage';
@@ -45,6 +48,7 @@ import CreateFirstUnitPage from './pages/CreateFirstUnitPage';
 import CreateUnitPage from './pages/CreateUnitPage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
 import AdminPendingVetsPage from './pages/AdminPendingVetsPage';
+import AdminPendingFreelancersPage from './pages/AdminPendingFreelancersPage';
 import AdminSettingsPage from './pages/AdminSettingsPage';
 import EmailConfirmedPage from './pages/EmailConfirmedPage';
 
@@ -97,6 +101,14 @@ function App() {
                 element={
                   <PublicRoute>
                     <VetSignUpPage />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/freelancer-signup"
+                element={
+                  <PublicRoute>
+                    <FreelancerSignUpPage />
                   </PublicRoute>
                 }
               />
@@ -158,6 +170,14 @@ function App() {
                 }
               />
               <Route
+                path="/admin/freelancers"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminFreelancersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/admin/demands"
                 element={
                   <ProtectedRoute allowedRoles={['ADMIN']}>
@@ -194,6 +214,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['ADMIN']}>
                     <AdminPendingVetsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/pending-freelancers"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminPendingFreelancersPage />
                   </ProtectedRoute>
                 }
               />
@@ -294,6 +322,16 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['VET']}>
                     <VetProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* FREELANCER */}
+              <Route
+                path="/freelancer-dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={['FREELANCER']}>
+                    <FreelancerDashboardPage />
                   </ProtectedRoute>
                 }
               />

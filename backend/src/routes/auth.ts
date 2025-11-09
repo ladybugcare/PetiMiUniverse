@@ -30,6 +30,7 @@ router.post('/login', authLimiter, async (req, res) => {
 
     let onboarding: Record<string, any> | null = null;
     let vetOnboarding: Record<string, any> | null = null;
+    let freelancerOnboarding: Record<string, any> | null = null;
     let clinicUserRecord: any = null;
     const userRole = user?.user_metadata?.role || user?.role;
     const allowedRolesForOnboarding = ['CADMIN', 'CMANAGER'];
@@ -199,6 +200,49 @@ router.post('/login', authLimiter, async (req, res) => {
       console.error('[AUTH] Falha ao compor dados de onboarding do vet:', vetOnboardingError);
     }
 
+    // Verificar onboarding de freelancer (apenas se email estiver confirmado)
+    try {
+      if (user && (userRole === 'freelancer' || userRole === 'FREELANCER')) {
+        const { data: freelancer, error: freelancerError } = await supabaseAdmin
+          .from('freelancers')
+          .select('id, onboarding_completed, approval_status, status')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!freelancerError && freelancer) {
+          // Email já está confirmado (verificado acima), então sempre true
+          const emailConfirmed = true;
+          // REGRA CRÍTICA: Se onboarding_completed === true, NUNCA mostrar onboarding novamente
+          // Tratar NULL como false (freelancers criados antes da migration)
+          const needsOnboarding = freelancer.onboarding_completed !== true;
+          const isApproved = freelancer.approval_status === 'approved' && freelancer.status === 'active';
+
+          freelancerOnboarding = {
+            needsOnboarding,
+            emailConfirmed,
+            onboardingCompleted: freelancer.onboarding_completed || false,
+            approvalStatus: freelancer.approval_status || 'pending',
+            isApproved,
+            canAccessDashboard: isApproved,
+            canViewDemands: isApproved,
+          };
+        } else if (!freelancerError && !freelancer) {
+          // Freelancer não encontrado = precisa fazer onboarding
+          freelancerOnboarding = {
+            needsOnboarding: true,
+            emailConfirmed: true,
+            onboardingCompleted: false,
+            approvalStatus: 'pending',
+            isApproved: false,
+            canAccessDashboard: false,
+            canViewDemands: false,
+          };
+        }
+      }
+    } catch (freelancerOnboardingError: any) {
+      console.error('[AUTH] Falha ao compor dados de onboarding do freelancer:', freelancerOnboardingError);
+    }
+
     if (userRole === 'clinic' && clinicStatus === 'inactive') {
       return res.status(403).json({
         error: 'Conta da clínica inativada. Entre em contato com o suporte para reativação.',
@@ -230,6 +274,7 @@ router.post('/login', authLimiter, async (req, res) => {
       session,
       onboarding,
       vetOnboarding,
+      freelancerOnboarding,
       clinicUser: clinicUserPayload,
     });
   } catch (error: any) {

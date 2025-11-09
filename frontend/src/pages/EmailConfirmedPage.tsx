@@ -83,9 +83,15 @@ const EmailConfirmedPage: React.FC = () => {
         
         // Redirecionar para dashboard apropriado baseado na role
         // VET vai para /vet-dashboard
+        // FREELANCER vai para /freelancer-dashboard
         // CLINIC vai para /clinic-dashboard ou /units/create-first se necessário
         if (userRole === 'VET') {
           navigate('/vet-dashboard', { replace: true });
+          return;
+        }
+        
+        if (userRole === 'FREELANCER') {
+          navigate('/freelancer-dashboard', { replace: true });
           return;
         }
         

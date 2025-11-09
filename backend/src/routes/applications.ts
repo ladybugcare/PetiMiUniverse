@@ -4,7 +4,8 @@ import {
   getApplicationsByDemand,
   getApplicationsByClinic,
   getApplicationsByUnit,
-  getPendingApplicationsCount
+  getPendingApplicationsCount,
+  getApplicationsByUser
 } from '../controllers/applicationsController'
 
 const router = express.Router()
@@ -14,5 +15,9 @@ router.get('/demand/:demand_id', getApplicationsByDemand)
 router.get('/clinic', getApplicationsByClinic)
 router.get('/unit/:unitId', getApplicationsByUnit)
 router.get('/pending-count', getPendingApplicationsCount)
+// Generic route that works for both vets and freelancers
+router.get('/user/:userId', getApplicationsByUser)
+// Legacy route for backwards compatibility
+router.get('/vet/:vetId', getApplicationsByUser)
 
 export default router

@@ -70,6 +70,59 @@ export const getApplicationsByDemand = async (
   res.json({ applications: data })
 }
 
+// Get applications by vet or freelancer (generic route that works for both)
+export const getApplicationsByUser = async (
+  req: Request<{ userId: string }>,
+  res: Response
+) => {
+  const { userId } = req.params
+
+  try {
+    // Check if user is a vet or freelancer
+    const { data: vet } = await supabase
+      .from('vets')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle()
+
+    const { data: freelancer } = await supabase
+      .from('freelancers')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (!vet && !freelancer) {
+      return res.status(404).json({ error: 'User not found as vet or freelancer' })
+    }
+
+    // Get applications - the vet_id field can contain either vet or freelancer ID
+    const { data, error } = await supabase
+      .from('applications')
+      .select(`
+        *,
+        demands (
+          id,
+          title,
+          description,
+          clinic_id,
+          clinics (
+            id,
+            name
+          )
+        )
+      `)
+      .eq('vet_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    res.json({ applications: data || [] })
+  } catch (error: any) {
+    console.error('Error getting applications by user:', error)
+    res.status(500).json({ error: error.message || 'Failed to get applications' })
+  }
+}
+
 // Get applications by clinic (all applications for clinic's demands)
 export const getApplicationsByClinic = async (req: Request, res: Response) => {
   const { clinic_id } = req.query;

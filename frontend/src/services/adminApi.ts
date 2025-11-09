@@ -27,7 +27,7 @@ export interface PendingUnit {
 export interface CreateUserData {
   name: string;
   email: string;
-  user_type: 'clinic' | 'vet' | 'supplier' | 'tutor' | 'admin';
+  user_type: 'clinic' | 'vet' | 'freelancer' | 'supplier' | 'tutor' | 'admin';
   password?: string;
   generate_password?: boolean;
   status: 'active' | 'inactive';
@@ -35,6 +35,8 @@ export interface CreateUserData {
   cnpj?: string;
   clinic_role?: 'admin' | 'manager' | 'staff';
   crmv?: string;
+  document_type?: 'CPF' | 'CNPJ';
+  document_number?: string;
   phone?: string;
   address?: string;
   city?: string;
@@ -123,5 +125,28 @@ export const adminApi = {
     apiRequest(`/vets/${id}/request-changes`, {
       method: 'POST',
       body: JSON.stringify({ feedback }),
+    }),
+
+  // ===========================================================
+  // 💼 APROVAÇÃO DE FREELANCERS
+  // ===========================================================
+  
+  // Listar freelancers pendentes de aprovação
+  getPendingFreelancers: async (): Promise<{ success: boolean; freelancers: any[]; count: number }> =>
+    apiRequest('/freelancers/pending', {
+      method: 'GET',
+    }),
+
+  // Aprovar freelancer
+  approveFreelancer: async (id: string): Promise<{ success: boolean; message: string }> =>
+    apiRequest(`/freelancers/${id}/approve`, {
+      method: 'POST',
+    }),
+
+  // Rejeitar freelancer
+  rejectFreelancer: async (id: string, reason: string): Promise<{ success: boolean; message: string }> =>
+    apiRequest(`/freelancers/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ rejection_reason: reason }),
     }),
 };

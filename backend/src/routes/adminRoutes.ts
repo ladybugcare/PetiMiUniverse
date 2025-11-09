@@ -6,6 +6,7 @@ import { authenticateUser } from '../middleware/authMiddleware';
 import { createAdmin } from '../controllers/admin/createAdmin';
 import { createClinic } from '../controllers/admin/createClinic';
 import { createVet } from '../controllers/admin/createVet';
+import { createFreelancer } from '../controllers/admin/createFreelancer';
 import { getAdmins } from '../controllers/admin/getAdmins';
 
 // Controllers de unidades
@@ -28,6 +29,9 @@ router.post('/users/create/clinic', authenticateUser, createClinic);
 
 // Criar novo veterinário
 router.post('/users/create/vet', authenticateUser, createVet);
+
+// Criar novo freelancer
+router.post('/users/create/freelancer', authenticateUser, createFreelancer);
 
 // Criar novo administrador
 router.post('/users/create/admin', authenticateUser, createAdmin);

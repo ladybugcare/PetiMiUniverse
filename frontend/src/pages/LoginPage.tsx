@@ -46,6 +46,7 @@ const LoginPage: React.FC = () => {
       const userRole = getUserRole(result.user);
       const onboardingInfo = result.onboarding;
       const vetOnboardingInfo = result.vetOnboarding;
+      const freelancerOnboardingInfo = result.freelancerOnboarding;
 
       // Regras de redirecionamento pós-login baseadas na role
       if (userRole === 'ADMIN') {
@@ -84,6 +85,38 @@ const LoginPage: React.FC = () => {
 
         // Aprovado e onboarding completo: ir para dashboard
         navigate('/vet-dashboard', { replace: true });
+        return;
+      }
+
+      // FREELANCER: Verificar onboarding e aprovação
+      if (userRole === 'FREELANCER') {
+        // REGRA CRÍTICA: Se onboarding já foi completado (onboardingCompleted === true),
+        // NUNCA redirecionar para onboarding, mesmo se needsOnboarding for true
+        if (freelancerOnboardingInfo?.onboardingCompleted === true) {
+          // Onboarding já foi completado, ir para dashboard
+          navigate('/freelancer-dashboard', { replace: true });
+          return;
+        }
+        
+        // Se não tem dados de onboarding OU precisa completar onboarding
+        // Por enquanto, permitir acesso ao dashboard (onboarding pode ser opcional)
+        if (!freelancerOnboardingInfo || freelancerOnboardingInfo?.needsOnboarding) {
+          // Pode redirecionar para onboarding se necessário no futuro
+          // Por enquanto, ir para dashboard
+          navigate('/freelancer-dashboard', { replace: true });
+          return;
+        }
+
+        // Se não está aprovado, mostrar mensagem e redirecionar para página de aguardo
+        if (!freelancerOnboardingInfo?.isApproved) {
+          // Pode redirecionar para uma página de "aguardando aprovação" ou mostrar mensagem
+          // Por enquanto, vamos para o dashboard que vai verificar e mostrar mensagem
+          navigate('/freelancer-dashboard', { replace: true });
+          return;
+        }
+
+        // Aprovado e onboarding completo: ir para dashboard
+        navigate('/freelancer-dashboard', { replace: true });
         return;
       }
 

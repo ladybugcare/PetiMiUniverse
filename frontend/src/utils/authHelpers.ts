@@ -1,5 +1,5 @@
 // Tipos de role que o PetiVet usa hoje
-export type Role = 'ADMIN' | 'CADMIN' | 'CMANAGER' | 'VET' | 'UNKNOWN';
+export type Role = 'ADMIN' | 'CADMIN' | 'CMANAGER' | 'VET' | 'FREELANCER' | 'UNKNOWN';
 
 export function getUserRole(user: any): Role {
   if (!user) {
@@ -33,6 +33,7 @@ export function getUserRole(user: any): Role {
   if (role === 'CADMIN' || role === 'CLINIC_ADMIN' || role === 'CLINICADMIN') return 'CADMIN';
   if (role === 'CMANAGER' || role === 'CLINIC_MANAGER' || role === 'CLINICMANAGER') return 'CMANAGER';
   if (role === 'VET' || role === 'VETERINARIAN' || role === 'VETERINARIO') return 'VET';
+  if (role === 'FREELANCER' || role === 'FREELA') return 'FREELANCER';
   if (role === 'CLINIC' || role === 'CLINICA') {
     // Clinic pode ser CADMIN ou CMANAGER, mas por padrão retornamos CADMIN
     console.log('[getUserRole] Role "clinic" detected, defaulting to CADMIN');
@@ -52,6 +53,8 @@ export function getDashboardPathForRole(role: Role): string {
       return '/clinic-dashboard';
     case 'VET':
       return '/vet-dashboard';
+    case 'FREELANCER':
+      return '/freelancer-dashboard';
     default:
       // Conta sem role conhecida → leva para home/painel genérico
       return '/';

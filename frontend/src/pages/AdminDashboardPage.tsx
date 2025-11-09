@@ -3,9 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { MenuItem } from '../components/DashboardSidebar';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, CheckCircle, Settings, TrendingUp, Clock } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, CheckCircle, Settings, TrendingUp, Clock, Briefcase } from 'lucide-react';
 import colors from '../styles/colors';
 import { adminApi } from '../services/adminApi';
+import { statisticsApi, RecentActivity, SystemInsight, TopPerformer, GrowthTrend } from '../services/statisticsApi';
+import PeriodFilter, { PeriodType } from '../components/admin/PeriodFilter';
+import GrowthIndicator from '../components/admin/GrowthIndicator';
+import QuickActions from '../components/admin/QuickActions';
+import SystemInsights from '../components/admin/SystemInsights';
+import TopPerformersTable from '../components/admin/TopPerformersTable';
+import GrowthChart from '../components/admin/GrowthChart';
 
 const AdminDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -14,10 +21,12 @@ const AdminDashboardPage: React.FC = () => {
   const [stats, setStats] = useState({
     totalClinics: 0,
     totalVets: 0,
+    totalFreelancers: 0,
     totalDemands: 0,
     totalUsers: 0,
   });
   const [pendingVetsCount, setPendingVetsCount] = useState(0);
+  const [pendingFreelancersCount, setPendingFreelancersCount] = useState(0);
 
   // Check authentication
   useEffect(() => {
@@ -65,6 +74,7 @@ const AdminDashboardPage: React.FC = () => {
         setStats({
           totalClinics: systemStats.totalClinics,
           totalVets: systemStats.totalVets,
+          totalFreelancers: systemStats.totalFreelancers || 0,
           totalDemands: systemStats.activeDemands,
           totalUsers: systemStats.totalUsers,
         });
@@ -82,8 +92,18 @@ const AdminDashboardPage: React.FC = () => {
       }
     };
 
+    const loadPendingFreelancers = async () => {
+      try {
+        const { freelancers } = await adminApi.getPendingFreelancers();
+        setPendingFreelancersCount(freelancers.length);
+      } catch (error) {
+        console.error('Error loading pending freelancers:', error);
+      }
+    };
+
     loadSystemStats();
     loadPendingVets();
+    loadPendingFreelancers();
   }, []);
 
   const menuItems: MenuItem[] = [
@@ -107,6 +127,13 @@ const AdminDashboardPage: React.FC = () => {
       icon: <Stethoscope size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/admin/vets',
+    },
+    {
+      id: 'freelancers',
+      label: 'Freelancers',
+      icon: <Briefcase size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/admin/freelancers',
     },
     {
       id: 'demands',
@@ -147,7 +174,7 @@ const AdminDashboardPage: React.FC = () => {
   const renderSection = () => {
     switch (activeSection) {
       case 'overview':
-        return <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} />;
+        return <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} pendingFreelancersCount={pendingFreelancersCount} />;
       case 'clinics':
         return <ClinicsSection />;
       case 'vets':
@@ -159,7 +186,7 @@ const AdminDashboardPage: React.FC = () => {
       case 'settings':
         return <SettingsSection />;
       default:
-        return <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} />;
+        return <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} pendingFreelancersCount={pendingFreelancersCount} />;
     }
   };
 
@@ -176,12 +203,146 @@ const AdminDashboardPage: React.FC = () => {
   );
 };
 
+// Helper function to format time ago
+const formatTimeAgo = (timestamp: string): string => {
+  const now = new Date();
+  const time = new Date(timestamp);
+  const diffInSeconds = Math.floor((now.getTime() - time.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return 'Agora mesmo';
+  if (diffInSeconds < 3600) return `Há ${Math.floor(diffInSeconds / 60)} minuto(s)`;
+  if (diffInSeconds < 86400) return `Há ${Math.floor(diffInSeconds / 3600)} hora(s)`;
+  if (diffInSeconds < 604800) return `Há ${Math.floor(diffInSeconds / 86400)} dia(s)`;
+  return time.toLocaleDateString('pt-BR');
+};
+
+// Helper function to get icon component
+const getActivityIcon = (iconName: string, color: string) => {
+  const iconProps = { size: 20, color };
+  switch (iconName) {
+    case 'building':
+      return <Building2 {...iconProps} />;
+    case 'stethoscope':
+      return <Stethoscope {...iconProps} />;
+    case 'briefcase':
+      return <Briefcase {...iconProps} />;
+    case 'clipboard':
+      return <ClipboardList {...iconProps} />;
+    default:
+      return <Clock {...iconProps} />;
+  }
+};
+
+// Helper function to get greeting based on time
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Bom dia';
+  if (hour < 18) return 'Boa tarde';
+  return 'Boa noite';
+};
+
 // Overview Section
-const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number }> = ({ stats, pendingVetsCount }) => {
+const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingFreelancersCount: number }> = ({ stats, pendingVetsCount, pendingFreelancersCount }) => {
   const navigate = useNavigate();
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('30d');
+  const [periodStats, setPeriodStats] = useState<any>(null);
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
+  const [insights, setInsights] = useState<SystemInsight[]>([]);
+  const [topClinics, setTopClinics] = useState<TopPerformer[]>([]);
+  const [topVets, setTopVets] = useState<TopPerformer[]>([]);
+  const [growthTrends, setGrowthTrends] = useState<GrowthTrend[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [adminName, setAdminName] = useState('');
+
+  // Get admin name
+  useEffect(() => {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        setAdminName(user.user_metadata?.name || user.email?.split('@')[0] || 'Admin');
+      } catch (error) {
+        console.error('Error parsing user:', error);
+      }
+    }
+  }, []);
+
+  // Load data based on period
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        // Load period stats
+        const { stats: periodStatsData } = await statisticsApi.getSystemStatsWithPeriod(selectedPeriod);
+        setPeriodStats(periodStatsData);
+
+        // Load recent activity
+        const { activities } = await statisticsApi.getRecentActivity(10);
+        setRecentActivities(activities);
+
+        // Load insights
+        const { insights: insightsData } = await statisticsApi.getSystemInsights();
+        setInsights(insightsData);
+
+        // Load top performers
+        const [clinicsResult, vetsResult] = await Promise.all([
+          statisticsApi.getTopPerformers('clinics', 5),
+          statisticsApi.getTopPerformers('vets', 5),
+        ]);
+        setTopClinics(clinicsResult.performers);
+        setTopVets(vetsResult.performers);
+
+        // Load growth trends
+        const { trends } = await statisticsApi.getSystemGrowthTrends('30d');
+        setGrowthTrends(trends);
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [selectedPeriod]);
 
   return (
     <div style={styles.container}>
+      {/* Welcome Section */}
+      <div style={styles.welcomeSection}>
+        <h2 style={styles.sectionTitle}>
+          {getGreeting()}, {adminName} {getGreeting() === 'Boa noite' ? '🌙' : getGreeting() === 'Boa tarde' ? '☀️' : '🌅'}
+        </h2>
+        {pendingVetsCount + pendingFreelancersCount > 0 && (
+          <p style={styles.welcomeSubtitle}>
+            {pendingVetsCount + pendingFreelancersCount} cadastro(s) aguardando análise
+          </p>
+        )}
+      </div>
+
+      {/* Period Filter */}
+      <PeriodFilter selectedPeriod={selectedPeriod} onPeriodChange={setSelectedPeriod} />
+
+      {/* Growth Summary Card */}
+      {periodStats && (
+        <div style={styles.growthCard}>
+          <h3 style={styles.growthTitle}>Crescimento no Período</h3>
+          <div style={styles.growthGrid}>
+            <div style={styles.growthItem}>
+              <span style={styles.growthLabel}>Clínicas</span>
+              <GrowthIndicator growth={periodStats.clinicsGrowth} />
+            </div>
+            <div style={styles.growthItem}>
+              <span style={styles.growthLabel}>Veterinários</span>
+              <GrowthIndicator growth={periodStats.vetsGrowth} />
+            </div>
+            <div style={styles.growthItem}>
+              <span style={styles.growthLabel}>Freelancers</span>
+              <GrowthIndicator growth={periodStats.freelancersGrowth} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <h2 style={styles.sectionTitle}>Visão Geral do Sistema</h2>
 
       {/* System Stats */}
@@ -204,6 +365,14 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number }> = ({ s
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalClinics}</h3>
             <p style={styles.statLabel}>Clínicas Cadastradas</p>
+            {periodStats && (
+              <div style={styles.statSubtext}>
+                <span>{periodStats.newClinics} novos nos últimos {selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}</span>
+                {periodStats.clinicsGrowth !== 0 && (
+                  <GrowthIndicator growth={periodStats.clinicsGrowth} />
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -226,6 +395,43 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number }> = ({ s
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalVets}</h3>
             <p style={styles.statLabel}>Veterinários Cadastrados</p>
+            {periodStats && (
+              <div style={styles.statSubtext}>
+                <span>{periodStats.newVets} novos nos últimos {selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}</span>
+                {periodStats.vetsGrowth !== 0 && (
+                  <GrowthIndicator growth={periodStats.vetsGrowth} />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div 
+          style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#8b5cf6' }}
+          onClick={() => navigate('/admin/freelancers')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(139, 92, 246, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+          }}
+        >
+          <div style={styles.statIcon}>
+            <Briefcase size={36} color="#8b5cf6" />
+          </div>
+          <div style={styles.statContent}>
+            <h3 style={styles.statValue}>{stats.totalFreelancers || 0}</h3>
+            <p style={styles.statLabel}>Freelancers Cadastrados</p>
+            {periodStats && (
+              <div style={styles.statSubtext}>
+                <span>{periodStats.newFreelancers} novos nos últimos {selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}</span>
+                {periodStats.freelancersGrowth !== 0 && (
+                  <GrowthIndicator growth={periodStats.freelancersGrowth} />
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -332,6 +538,39 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number }> = ({ s
             </div>
             <div style={styles.pendingArrow}>→</div>
           </div>
+
+          <div 
+            style={{ 
+              ...styles.pendingCard, 
+              ...styles.statCardClickable,
+              ...(pendingFreelancersCount > 0 ? styles.pendingCardHighlight : {}),
+            }}
+            onClick={() => navigate('/admin/pending-freelancers')}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 10px 25px rgba(139, 92, 246, 0.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+            }}
+          >
+            <div style={styles.pendingIcon}>
+              <Briefcase size={32} color={colors.primary} />
+              {pendingFreelancersCount > 0 && (
+                <span style={styles.badge}>{pendingFreelancersCount}</span>
+              )}
+            </div>
+            <div style={styles.pendingContent}>
+              <h4 style={styles.pendingTitle}>Freelancers Pendentes</h4>
+              <p style={styles.pendingText}>
+                {pendingFreelancersCount > 0
+                  ? `${pendingFreelancersCount} ${pendingFreelancersCount === 1 ? 'freelancer' : 'freelancers'} aguardando aprovação`
+                  : 'Nenhum freelancer pendente'}
+              </p>
+            </div>
+            <div style={styles.pendingArrow}>→</div>
+          </div>
         </div>
       </div>
 
@@ -366,28 +605,39 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number }> = ({ s
         </div>
       </div>
 
+      {/* Quick Actions */}
+      <QuickActions pendingCount={pendingVetsCount + pendingFreelancersCount} />
+
+      {/* System Insights */}
+      {insights.length > 0 && <SystemInsights insights={insights} />}
+
+      {/* Growth Chart */}
+      {growthTrends.length > 0 && <GrowthChart trends={growthTrends} />}
+
+      {/* Top Performers */}
+      {(topClinics.length > 0 || topVets.length > 0) && (
+        <TopPerformersTable clinics={topClinics} vets={topVets} />
+      )}
+
       {/* Recent Activity */}
       <div style={styles.activitySection}>
         <h3 style={styles.subsectionTitle}>Atividade Recente</h3>
         <div style={styles.activityList}>
-          <ActivityItem
-            icon={<Building2 size={20} color="#7c3aed" />}
-            title="Nova clínica cadastrada"
-            description="Vet Care Alphaville"
-            time="Há 2 horas"
-          />
-          <ActivityItem
-            icon={<Stethoscope size={20} color="#7c3aed" />}
-            title="Novo veterinário registrado"
-            description="Dr. João Silva - CRMV 12345"
-            time="Há 5 horas"
-          />
-          <ActivityItem
-            icon={<ClipboardList size={20} color="#7c3aed" />}
-            title="Demanda criada"
-            description="Plantão emergencial - Clínica São Paulo"
-            time="Há 1 dia"
-          />
+          {loading ? (
+            <p style={styles.loadingText}>Carregando atividades...</p>
+          ) : recentActivities.length > 0 ? (
+            recentActivities.map((activity) => (
+              <ActivityItem
+                key={activity.id}
+                icon={getActivityIcon(activity.icon, activity.color)}
+                title={activity.title}
+                description={activity.description}
+                time={formatTimeAgo(activity.timestamp)}
+              />
+            ))
+          ) : (
+            <p style={styles.emptyText}>Nenhuma atividade recente</p>
+          )}
         </div>
       </div>
     </div>
@@ -749,6 +999,63 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '20px',
     color: colors.primary,
     fontWeight: '600',
+  },
+  welcomeSection: {
+    marginBottom: '24px',
+  },
+  welcomeSubtitle: {
+    fontSize: '14px',
+    color: '#737373',
+    marginTop: '8px',
+    margin: 0,
+  },
+  growthCard: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e5e5e5',
+    borderRadius: '12px',
+    padding: '20px',
+    marginBottom: '32px',
+  },
+  growthTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#262626',
+    margin: 0,
+    marginBottom: '16px',
+  },
+  growthGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gap: '16px',
+  },
+  growthItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  growthLabel: {
+    fontSize: '14px',
+    color: '#737373',
+  },
+  statSubtext: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginTop: '8px',
+    fontSize: '12px',
+    color: '#737373',
+  },
+  loadingText: {
+    padding: '20px',
+    textAlign: 'center',
+    color: '#737373',
+    fontSize: '14px',
+  },
+  emptyText: {
+    padding: '20px',
+    textAlign: 'center',
+    color: '#737373',
+    fontSize: '14px',
   },
 };
 

@@ -105,7 +105,7 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
                   disabled={option.disabled || !option.path}
                   style={{
                     ...styles.optionButton,
-                    backgroundColor: option.color,
+                    backgroundColor: 'transparent',
                     ...(option.disabled || !option.path ? styles.optionButtonDisabled : {}),
                   }}
                   onMouseEnter={(e) => {
@@ -147,9 +147,9 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
           aria-expanded={isOpen}
         >
           {isOpen ? (
-            <X size={28} color="#ffffff" strokeWidth={2.5} />
+            <X size={28} color="#262626" strokeWidth={2.5} />
           ) : (
-            <Plus size={28} color="#ffffff" strokeWidth={2.5} />
+            <Plus size={28} color="#262626" strokeWidth={2.5} />
           )}
         </button>
       </div>
@@ -178,13 +178,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '64px',
     height: '64px',
     borderRadius: '50%',
-    background: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)',
+    background: 'transparent',
     border: 'none',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2)',
+    boxShadow: 'none',
     transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
   },
   mainIcon: {
@@ -227,14 +227,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    boxShadow: 'none',
     transition: 'transform 0.2s ease',
   },
   optionIcon: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#ffffff',
+    color: '#262626',
   },
   optionButtonDisabled: {
     opacity: 0.5,

@@ -935,7 +935,7 @@ body {
 .icon-card-icon {
   width: 64px;
   height: 64px;
-  background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
+  background: transparent;
   border-radius: var(--radius-xl);
   display: flex;
   align-items: center;
@@ -950,7 +950,7 @@ body {
   position: absolute;
   inset: -4px;
   border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
+  background: transparent;
   opacity: 0;
   transition: opacity 0.3s;
   z-index: -1;
@@ -966,8 +966,8 @@ body {
 }
 
 .section-what-you-can-do .icon-card-icon {
-  background: #a855f7;
-  color: white;
+  background: transparent;
+  color: inherit;
   border-radius: 18px;
 }
 

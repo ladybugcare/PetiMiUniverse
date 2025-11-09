@@ -134,6 +134,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.removeItem("vetOnboarding");
       }
 
+      // Salvar informações de onboarding do freelancer
+      const freelancerOnboardingInfo = result?.freelancerOnboarding || null;
+      if (freelancerOnboardingInfo) {
+        localStorage.setItem("freelancerOnboarding", JSON.stringify(freelancerOnboardingInfo));
+      } else {
+        localStorage.removeItem("freelancerOnboarding");
+      }
+
       // Atualiza estados globais
       setUser(nextUser);
       setSession(nextSession);

@@ -61,6 +61,13 @@ const HomeHeader: React.FC = () => {
                   Cadastrar Veterinário
                 </Link>
                 <Link 
+                  to="/freelancer-signup" 
+                  className="dropdown-item"
+                  onClick={() => setSignUpOpen(false)}
+                >
+                  Cadastrar Freelancer
+                </Link>
+                <Link 
                   to="/clinic-signup" 
                   className="dropdown-item"
                   onClick={() => setSignUpOpen(false)}
