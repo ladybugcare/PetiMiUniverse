@@ -19,7 +19,16 @@ router.post('/login', rateLimiter_js_1.authLimiter, async (req, res) => {
             return res.status(401).json({ error: error.message });
         }
         const { user, session } = data;
+        // Verificar se email está confirmado antes de permitir login
+        if (!user.email_confirmed_at) {
+            return res.status(403).json({
+                error: 'EMAIL_NOT_CONFIRMED',
+                message: 'Email não confirmado. Verifique sua caixa de entrada ou reenvie o email de confirmação.'
+            });
+        }
         let onboarding = null;
+        let vetOnboarding = null;
+        let freelancerOnboarding = null;
         let clinicUserRecord = null;
         const userRole = user?.user_metadata?.role || user?.role;
         const allowedRolesForOnboarding = ['CADMIN', 'CMANAGER'];
@@ -119,6 +128,90 @@ router.post('/login', rateLimiter_js_1.authLimiter, async (req, res) => {
         catch (onboardingError) {
             console.error('[AUTH] Falha ao compor dados de onboarding:', onboardingError);
         }
+        // Verificar onboarding de veterinário (apenas se email estiver confirmado)
+        try {
+            if (user && (userRole === 'vet' || userRole === 'VET')) {
+                const { data: vet, error: vetError } = await supabase_1.supabaseAdmin
+                    .from('vets')
+                    .select('id, onboarding_completed, approval_status, status')
+                    .eq('id', user.id)
+                    .maybeSingle();
+                if (!vetError && vet) {
+                    // Email já está confirmado (verificado acima), então sempre true
+                    const emailConfirmed = true;
+                    // REGRA CRÍTICA: Se onboarding_completed === true, NUNCA mostrar onboarding novamente
+                    // Tratar NULL como false (vets criados antes da migration)
+                    const needsOnboarding = vet.onboarding_completed !== true;
+                    const isApproved = vet.approval_status === 'approved' && vet.status === 'active';
+                    vetOnboarding = {
+                        needsOnboarding,
+                        emailConfirmed,
+                        onboardingCompleted: vet.onboarding_completed || false,
+                        approvalStatus: vet.approval_status || 'pending',
+                        isApproved,
+                        canAccessDashboard: isApproved,
+                        canViewDemands: isApproved,
+                    };
+                }
+                else if (!vetError && !vet) {
+                    // Vet não encontrado = precisa fazer onboarding
+                    vetOnboarding = {
+                        needsOnboarding: true,
+                        emailConfirmed: true,
+                        onboardingCompleted: false,
+                        approvalStatus: 'pending',
+                        isApproved: false,
+                        canAccessDashboard: false,
+                        canViewDemands: false,
+                    };
+                }
+            }
+        }
+        catch (vetOnboardingError) {
+            console.error('[AUTH] Falha ao compor dados de onboarding do vet:', vetOnboardingError);
+        }
+        // Verificar onboarding de freelancer (apenas se email estiver confirmado)
+        try {
+            if (user && (userRole === 'freelancer' || userRole === 'FREELANCER')) {
+                const { data: freelancer, error: freelancerError } = await supabase_1.supabaseAdmin
+                    .from('freelancers')
+                    .select('id, onboarding_completed, approval_status, status')
+                    .eq('id', user.id)
+                    .maybeSingle();
+                if (!freelancerError && freelancer) {
+                    // Email já está confirmado (verificado acima), então sempre true
+                    const emailConfirmed = true;
+                    // REGRA CRÍTICA: Se onboarding_completed === true, NUNCA mostrar onboarding novamente
+                    // Tratar NULL como false (freelancers criados antes da migration)
+                    const needsOnboarding = freelancer.onboarding_completed !== true;
+                    const isApproved = freelancer.approval_status === 'approved' && freelancer.status === 'active';
+                    freelancerOnboarding = {
+                        needsOnboarding,
+                        emailConfirmed,
+                        onboardingCompleted: freelancer.onboarding_completed || false,
+                        approvalStatus: freelancer.approval_status || 'pending',
+                        isApproved,
+                        canAccessDashboard: isApproved,
+                        canViewDemands: isApproved,
+                    };
+                }
+                else if (!freelancerError && !freelancer) {
+                    // Freelancer não encontrado = precisa fazer onboarding
+                    freelancerOnboarding = {
+                        needsOnboarding: true,
+                        emailConfirmed: true,
+                        onboardingCompleted: false,
+                        approvalStatus: 'pending',
+                        isApproved: false,
+                        canAccessDashboard: false,
+                        canViewDemands: false,
+                    };
+                }
+            }
+        }
+        catch (freelancerOnboardingError) {
+            console.error('[AUTH] Falha ao compor dados de onboarding do freelancer:', freelancerOnboardingError);
+        }
         if (userRole === 'clinic' && clinicStatus === 'inactive') {
             return res.status(403).json({
                 error: 'Conta da clínica inativada. Entre em contato com o suporte para reativação.',
@@ -146,6 +239,8 @@ router.post('/login', rateLimiter_js_1.authLimiter, async (req, res) => {
             user,
             session,
             onboarding,
+            vetOnboarding,
+            freelancerOnboarding,
             clinicUser: clinicUserPayload,
         });
     }
@@ -177,6 +272,92 @@ router.post('/signup', rateLimiter_js_1.authLimiter, async (req, res) => {
     }
     catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+/**
+ * Reenviar email de confirmação
+ */
+router.post('/resend-confirmation', rateLimiter_js_1.authLimiter, async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ error: 'Email é obrigatório' });
+        }
+        // Verificar se o usuário existe
+        const { data: { users }, error: listError } = await supabase_1.supabaseAdmin.auth.admin.listUsers();
+        if (listError) {
+            console.error('Erro ao listar usuários:', listError);
+            return res.status(500).json({ error: 'Erro ao verificar usuário' });
+        }
+        const user = users.find(u => u.email === email);
+        if (!user) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+        // Se já está confirmado, não precisa reenviar
+        if (user.email_confirmed_at) {
+            return res.status(400).json({ error: 'Email já está confirmado' });
+        }
+        // Construir URL de redirecionamento
+        const rawFrontendUrl = process.env.FRONTEND_URL?.trim();
+        const FRONTEND_URL = rawFrontendUrl?.replace(/\/$/, '');
+        const emailRedirectTo = FRONTEND_URL ? `${FRONTEND_URL}/email-confirmed` : undefined;
+        // Para reenviar email de confirmação sem ter a senha:
+        // 1. Resetar email_confirmed_at para null usando updateUserById
+        // 2. Usar inviteUser que envia email de confirmação sem precisar de senha
+        //    (mesmo que o usuário já exista, o inviteUser pode ser usado para reenviar confirmação)
+        // Resetar email_confirmed_at para null
+        const { error: updateError } = await supabase_1.supabaseAdmin.auth.admin.updateUserById(user.id, { email_confirm: false });
+        if (updateError) {
+            console.error('Erro ao resetar confirmação de email:', updateError);
+            return res.status(500).json({
+                error: 'Erro ao reenviar email de confirmação',
+                message: updateError.message
+            });
+        }
+        // Usar inviteUser para enviar email de confirmação (não requer senha)
+        // Isso envia um email de convite que pode ser usado para confirmar o email
+        const { data: inviteData, error: inviteError } = await supabase_1.supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+            redirectTo: emailRedirectTo,
+            data: user.user_metadata || {},
+        });
+        if (inviteError) {
+            console.error('Erro ao enviar convite de confirmação:', inviteError);
+            // Se inviteUser falhar (por exemplo, se o usuário já existe), tentar generateLink com senha temporária
+            // Gerar senha temporária aleatória
+            const tempPassword = Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12) + 'A1!';
+            const { data: linkData, error: linkError } = await supabase_1.supabaseAdmin.auth.admin.generateLink({
+                type: 'signup',
+                email,
+                password: tempPassword,
+                options: {
+                    redirectTo: emailRedirectTo,
+                },
+            });
+            if (linkError) {
+                console.error('Erro ao gerar link de confirmação:', linkError);
+                return res.status(500).json({
+                    error: 'Erro ao reenviar email de confirmação',
+                    message: linkError.message
+                });
+            }
+            // Avisar que a senha foi alterada e o usuário precisará redefinir
+            return res.json({
+                success: true,
+                message: 'Email de confirmação reenviado com sucesso. Verifique sua caixa de entrada. Nota: Você precisará redefinir sua senha após confirmar o email.',
+                passwordChanged: true,
+            });
+        }
+        return res.json({
+            success: true,
+            message: 'Email de confirmação reenviado com sucesso. Verifique sua caixa de entrada.',
+        });
+    }
+    catch (error) {
+        console.error('Erro ao reenviar email de confirmação:', error);
+        return res.status(500).json({
+            error: 'Erro interno ao reenviar email de confirmação',
+            message: error.message
+        });
     }
 });
 exports.default = router;

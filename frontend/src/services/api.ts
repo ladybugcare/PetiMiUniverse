@@ -51,16 +51,48 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
     if (session) {
       authToken = session.access_token;
       
-      // Verificar se o token está próximo de expirar (menos de 5 minutos)
+      // Verificar se o token está expirado ou próximo de expirar
       const expiresAt = session.expires_at;
       if (expiresAt) {
-        const expiresIn = expiresAt - Math.floor(Date.now() / 1000);
-        if (expiresIn < 300) { // Menos de 5 minutos
-          console.log('Token próximo de expirar, renovando...');
+        const now = Math.floor(Date.now() / 1000);
+        const expiresIn = expiresAt - now;
+        // Renovar se expirado ou se faltar menos de 5 minutos
+        if (expiresIn <= 300) {
+          console.log('Token expirado ou próximo de expirar, renovando...', { expiresIn, expired: expiresIn <= 0 });
+          try {
+            const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
+            if (!refreshError && refreshedSession) {
+              authToken = refreshedSession.access_token;
+              console.log('Token renovado com sucesso');
+            } else {
+              console.warn('Erro ao renovar token:', refreshError);
+              // Se não conseguir renovar e o token estiver expirado, limpar sessão
+              if (expiresIn <= 0 || refreshError?.message?.includes('expired') || refreshError?.message?.includes('invalid') || refreshError?.message?.includes('JWT')) {
+                console.warn('Token expirado e não foi possível renovar. Limpando sessão.');
+                await supabase.auth.signOut();
+                // Não lançar erro aqui, deixar a requisição falhar normalmente
+                // O erro será tratado pelo backend e o frontend pode redirecionar
+              }
+            }
+          } catch (refreshErr: any) {
+            console.error('Erro ao tentar renovar sessão:', refreshErr);
+            // Se o token estiver expirado e não conseguir renovar, limpar sessão
+            if (expiresIn <= 0 || refreshErr?.message?.includes('expired') || refreshErr?.message?.includes('invalid') || refreshErr?.message?.includes('JWT')) {
+              console.warn('Token expirado e erro ao renovar. Limpando sessão.');
+              await supabase.auth.signOut();
+            }
+          }
+        }
+      } else {
+        // Se não tem expires_at, tentar renovar de qualquer forma para garantir token válido
+        try {
           const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
           if (!refreshError && refreshedSession) {
             authToken = refreshedSession.access_token;
+            console.log('Token renovado (sem expires_at)');
           }
+        } catch (refreshErr) {
+          console.warn('Erro ao tentar renovar sessão (sem expires_at):', refreshErr);
         }
       }
     }
@@ -135,20 +167,24 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
           throw new Error(errorMessage + ' (Dica: verifique se frontend e backend usam o mesmo projeto Supabase)');
         }
 
-        if (errorMessage?.includes('expirado') || errorMessage?.includes('inválido')) {
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.access_token) {
-              console.warn('Token pode estar desatualizado. Considere fazer logout e login novamente.');
-            }
-          } catch (error) {
-            throw new Error(errorMessage);
+        // Se o erro for de token expirado ou inválido, limpar sessão e redirecionar
+        if (errorMessage?.includes('expirado') || errorMessage?.includes('inválido') || 
+            errorMessage?.includes('Token inválido') || errorMessage?.includes('JWT') ||
+            /invalid|expirad|assinatura|signature|expired|token/i.test(String(errorText))) {
+          
+          console.warn('Token expirado ou inválido detectado. Limpando sessão...');
+          await handleInvalidToken();
+          
+          // Redirecionar para login apenas no web
+          if (Platform.OS === 'web' && typeof window !== 'undefined') {
+            // Usar setTimeout para evitar problemas de navegação durante o tratamento de erro
+            setTimeout(() => {
+              window.location.href = '/login';
+            }, 100);
           }
+          
+          throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
-      }
-
-      if (response.status === 401 && /invalid|expirad|assinatura|signature/i.test(String(errorText))) {
-        await handleInvalidToken();
       }
 
       throw new Error(errorData?.error || errorData?.message || errorText || `Erro ${response.status}`);

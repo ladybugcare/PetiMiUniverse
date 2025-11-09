@@ -69,30 +69,38 @@ const QuickActions: React.FC<QuickActionsProps> = ({ pendingCount = 0 }) => {
       <h3 style={styles.title}>Ações Rápidas</h3>
       <div style={styles.grid}>
         {actions.map((action) => (
-          <div
+          <button
             key={action.id}
             onClick={action.action}
-            style={{
-              ...styles.card,
-              borderLeftColor: action.color,
-            }}
+            style={styles.actionButton}
             onMouseEnter={(e) => {
+              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = `0 10px 25px ${action.color}15`;
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
+              e.currentTarget.style.borderColor = '#a855f7';
+              if (icon) {
+                icon.style.transform = 'scale(1.1) rotate(5deg)';
+              }
             }}
             onMouseLeave={(e) => {
+              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.borderColor = '#d7c7ff';
+              if (icon) {
+                icon.style.transform = 'scale(1) rotate(0deg)';
+              }
             }}
           >
-            <div style={{ ...styles.icon, color: action.color }}>
-              {action.icon}
+            <div className="action-icon-circle" style={styles.actionIconCircle}>
+              {React.cloneElement(action.icon as React.ReactElement, { 
+                size: 28, 
+                strokeWidth: 1.5, 
+                color: "white" 
+              })}
             </div>
-            <div style={styles.content}>
-              <h4 style={styles.cardTitle}>{action.title}</h4>
-              <p style={styles.cardDescription}>{action.description}</p>
-            </div>
-          </div>
+            <span style={styles.actionLabel}>{action.title}</span>
+          </button>
         ))}
       </div>
     </div>
@@ -112,38 +120,40 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '16px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+    gap: '20px',
   },
-  card: {
+  actionButton: {
     backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
-    borderLeft: '4px solid',
-    borderRadius: '12px',
-    padding: '20px',
+    border: '1px solid #d7c7ff',
+    borderRadius: '16px',
+    padding: '24px 16px',
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: '16px',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '12px',
     cursor: 'pointer',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.08)',
+    position: 'relative',
+    overflow: 'hidden',
   },
-  icon: {
-    flexShrink: 0,
+  actionIconCircle: {
+    width: '56px',
+    height: '56px',
+    background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+    borderRadius: '14px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    boxShadow: '0 4px 12px rgba(168, 85, 247, 0.3)',
   },
-  content: {
-    flex: 1,
-  },
-  cardTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#262626',
-    margin: 0,
-    marginBottom: '4px',
-  },
-  cardDescription: {
+  actionLabel: {
     fontSize: '14px',
-    color: '#737373',
-    margin: 0,
+    fontWeight: '600',
+    color: '#2d1b69',
+    textAlign: 'center',
   },
 };
 

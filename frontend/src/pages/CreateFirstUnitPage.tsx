@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BRAZILIAN_STATES } from '../utils/locationData';
-import { API_BASE_URL } from '../services/api';
+import { clinicsApi } from '../services/clinicsApi';
+import { useUnit } from '../contexts/UnitContext';
 import WelcomeModal from '../components/WelcomeModal';
+import PetiVetDropdown from '../components/PetiVetDropdown';
+import { SuccessModal } from '../components/SuccessModal';
 import colors from '../styles/colors';
-import { Heart, Info, Lightbulb, Building2 } from 'lucide-react';
+import { Heart, Info, Lightbulb, Building2, CheckCircle } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
 
 type Step = 'welcome' | 'clinic' | 'unit';
 
 const CreateFirstUnitPage: React.FC = () => {
   const navigate = useNavigate();
+  const { units, loadUnits } = useUnit();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasClinic, setHasClinic] = useState(false);
@@ -18,6 +22,8 @@ const CreateFirstUnitPage: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<Step>('welcome');
   const [showWelcomeModal, setShowWelcomeModal] = useState(true);
   const [dontShowAgain, setDontShowAgain] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   
   const [clinicData, setClinicData] = useState({
     name: '',
@@ -37,12 +43,29 @@ const CreateFirstUnitPage: React.FC = () => {
   });
 
   const userStr = localStorage.getItem('user');
-  const sessionStr = localStorage.getItem('session');
   
   const user = userStr ? JSON.parse(userStr) : null;
-  const session = sessionStr ? JSON.parse(sessionStr) : null;
-  const accessToken: string | undefined = session?.access_token;
-  const clinicId = user.id;
+  const clinicId = user?.id;
+
+  // Load units and redirect if user already has units
+  useEffect(() => {
+    const checkUnits = async () => {
+      try {
+        await loadUnits();
+      } catch (error) {
+        console.error('Error loading units:', error);
+      }
+    };
+    
+    checkUnits();
+  }, [loadUnits]);
+
+  // Redirect to /units/create if user already has units
+  useEffect(() => {
+    if (units.length > 0) {
+      navigate('/units/create', { replace: true });
+    }
+  }, [units, navigate]);
 
   // Check if clinic already exists and manage initial step
   useEffect(() => {
@@ -51,38 +74,29 @@ const CreateFirstUnitPage: React.FC = () => {
         const hideModal = localStorage.getItem('hideWelcomeModal');
         const isFirstAccess = localStorage.getItem('isFirstAccess');
         
-        const headers: Record<string, string> = {};
-        if (accessToken) {
-          headers['Authorization'] = `Bearer ${accessToken}`;
-        }
-
-        const response = await fetch(`${API_BASE_URL}/clinics/${clinicId}`, {
-          headers,
+        const { clinic } = await clinicsApi.getById(clinicId);
+        
+        setHasClinic(true);
+        setClinicData({
+          name: clinic.name || '',
+          cnpj: clinic.cnpj || '',
+          description: clinic.description || '',
         });
         
-        if (response.ok) {
-          const data = await response.json();
-          setHasClinic(true);
-          setClinicData({
-            name: data.clinic?.name || '',
-            cnpj: data.clinic?.cnpj || '',
-            description: data.clinic?.description || '',
-          });
-          
-          // Se o usuário já viu o modal antes e não é primeiro acesso, pula direto para o formulário da clínica
-          if (hideModal === 'true' && isFirstAccess !== 'true') {
-            setShowWelcomeModal(false);
-            setCurrentStep('clinic');
-          }
-        } else {
-          // Clínica ainda não existe
-          if (hideModal === 'true' && isFirstAccess !== 'true') {
-            setShowWelcomeModal(false);
-            setCurrentStep('clinic');
-          }
+        // Se o usuário já viu o modal antes e não é primeiro acesso, pula direto para o formulário da clínica
+        if (hideModal === 'true' && isFirstAccess !== 'true') {
+          setShowWelcomeModal(false);
+          setCurrentStep('clinic');
         }
-      } catch (err) {
+      } catch (err: any) {
+        // Clínica ainda não existe ou erro ao buscar
         console.log('No clinic found, will create new one');
+        const hideModal = localStorage.getItem('hideWelcomeModal');
+        const isFirstAccess = localStorage.getItem('isFirstAccess');
+        if (hideModal === 'true' && isFirstAccess !== 'true') {
+          setShowWelcomeModal(false);
+          setCurrentStep('clinic');
+        }
       } finally {
         setCheckingClinic(false);
       }
@@ -93,7 +107,7 @@ const CreateFirstUnitPage: React.FC = () => {
     } else {
       setCheckingClinic(false);
     }
-  }, [clinicId, accessToken]);
+  }, [clinicId]);
 
   const handleClinicChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setClinicData({
@@ -168,20 +182,9 @@ const CreateFirstUnitPage: React.FC = () => {
     // Save partial clinic data if provided
     if (clinicData.name.trim()) {
       try {
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        };
-        if (accessToken) {
-          headers['Authorization'] = `Bearer ${accessToken}`;
-        }
-
-        await fetch(`${API_BASE_URL}/clinics/register-with-unit`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            clinic: clinicData,
-            unit: null,
-          }),
+        await clinicsApi.registerWithUnit({
+          clinic: clinicData,
+          unit: null as any,
         });
       } catch (err) {
         console.error('Error saving clinic data:', err);
@@ -209,49 +212,21 @@ const CreateFirstUnitPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const payload = {
+      const data = await clinicsApi.registerWithUnit({
         clinic: !hasClinic && clinicData.name ? clinicData : null,
         unit: {
           clinic_id: clinicId,
           ...formData,
         },
-      };
-
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/clinics/register-with-unit`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
       });
-
-      // Check if response is JSON before parsing
-      const contentType = response.headers.get('content-type');
-      let data;
-      
-      if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
-      } else {
-        const text = await response.text();
-        throw new Error(`Erro ${response.status}: ${text || 'Resposta inválida do servidor'}`);
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || `Erro ${response.status}: Erro ao cadastrar clínica e unidade`);
-      }
 
       // Clear onboarding flags
       localStorage.removeItem('isFirstAccess');
       localStorage.removeItem('hideWelcomeModal');
 
-      // Success
-      alert(`✅ ${data.message}`);
-      navigate('/clinic-dashboard');
+      // Show success modal
+      setSuccessMessage(data.message || 'Clínica e unidade cadastradas! Aguarde aprovação do administrador.');
+      setShowSuccessModal(true);
     } catch (err: any) {
       console.error('Error creating first unit:', err);
       setError(err.message || 'Erro ao cadastrar. Tente novamente.');
@@ -261,6 +236,11 @@ const CreateFirstUnitPage: React.FC = () => {
   };
 
   const handleCancelUnit = () => {
+    navigate('/clinic-dashboard');
+  };
+
+  const handleSuccessModalClose = () => {
+    setShowSuccessModal(false);
     navigate('/clinic-dashboard');
   };
 
@@ -399,8 +379,17 @@ const CreateFirstUnitPage: React.FC = () => {
 
   // Step 3: Unit Data
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
+    <>
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <SuccessModal
+          isOpen={showSuccessModal}
+          message={successMessage}
+          onClose={handleSuccessModalClose}
+        />
+      )}
+      <div style={styles.container}>
+        <div style={styles.card}>
         <div style={styles.header}>
           <h1 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -510,19 +499,12 @@ const CreateFirstUnitPage: React.FC = () => {
               <label style={styles.label}>
                 Estado <span style={styles.required}>*</span>
               </label>
-              <select
-                name="state"
+              <PetiVetDropdown
+                options={BRAZILIAN_STATES}
                 value={formData.state}
-                onChange={handleChange}
-                style={styles.select}
-                required
-              >
-                {BRAZILIAN_STATES.map((state) => (
-                  <option key={state} value={state}>
-                    {state}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setFormData({ ...formData, state: value })}
+                placeholder="Selecione o estado"
+              />
             </div>
           </div>
 
@@ -596,8 +578,9 @@ const CreateFirstUnitPage: React.FC = () => {
             </button>
           </div>
         </form>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

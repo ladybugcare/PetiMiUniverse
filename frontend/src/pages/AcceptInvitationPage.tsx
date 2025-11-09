@@ -141,7 +141,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '80px',
     height: '80px',
     borderRadius: '50%',
-    backgroundColor: '#f5f3ff',
+    backgroundColor: 'transparent',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

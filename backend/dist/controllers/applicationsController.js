@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getPendingApplicationsCount = exports.getApplicationsByUnit = exports.getApplicationsByClinic = exports.getApplicationsByDemand = exports.applyToDemand = void 0;
+exports.getPendingApplicationsCount = exports.getApplicationsByUnit = exports.getApplicationsByClinic = exports.getApplicationsByUser = exports.getApplicationsByDemand = exports.applyToDemand = void 0;
 const supabase_1 = require("../config/supabase");
 const notificationsController_1 = require("./notificationsController");
 const applyToDemand = async (req, res) => {
@@ -57,6 +57,52 @@ const getApplicationsByDemand = async (req, res) => {
     res.json({ applications: data });
 };
 exports.getApplicationsByDemand = getApplicationsByDemand;
+// Get applications by vet or freelancer (generic route that works for both)
+const getApplicationsByUser = async (req, res) => {
+    const { userId } = req.params;
+    try {
+        // Check if user is a vet or freelancer
+        const { data: vet } = await supabase_1.supabase
+            .from('vets')
+            .select('id')
+            .eq('id', userId)
+            .maybeSingle();
+        const { data: freelancer } = await supabase_1.supabase
+            .from('freelancers')
+            .select('id')
+            .eq('id', userId)
+            .maybeSingle();
+        if (!vet && !freelancer) {
+            return res.status(404).json({ error: 'User not found as vet or freelancer' });
+        }
+        // Get applications - the vet_id field can contain either vet or freelancer ID
+        const { data, error } = await supabase_1.supabase
+            .from('applications')
+            .select(`
+        *,
+        demands (
+          id,
+          title,
+          description,
+          clinic_id,
+          clinics (
+            id,
+            name
+          )
+        )
+      `)
+            .eq('vet_id', userId)
+            .order('created_at', { ascending: false });
+        if (error)
+            throw error;
+        res.json({ applications: data || [] });
+    }
+    catch (error) {
+        console.error('Error getting applications by user:', error);
+        res.status(500).json({ error: error.message || 'Failed to get applications' });
+    }
+};
+exports.getApplicationsByUser = getApplicationsByUser;
 // Get applications by clinic (all applications for clinic's demands)
 const getApplicationsByClinic = async (req, res) => {
     const { clinic_id } = req.query;

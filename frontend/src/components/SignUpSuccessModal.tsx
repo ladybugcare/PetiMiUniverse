@@ -23,7 +23,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
           <>
             <h2 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                <IconWrapper icon={Heart} size={32} color={colors.primary} fill={colors.primary} />
+                <IconWrapper icon={Heart} size={32} color={colors.primary} />
                 <span>Tudo pronto!</span>
               </div>
             </h2>

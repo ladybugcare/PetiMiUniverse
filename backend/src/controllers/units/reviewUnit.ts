@@ -4,7 +4,8 @@ import { supabase } from '../../config/supabase';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
 
 /**
- * Permite que um administrador aprove ou rejeite uma unidade pendente.
+ * Permite que um administrador aprove ou rejeite uma unidade.
+ * Funciona tanto para unidades pendentes quanto já aprovadas.
  */
 export const reviewUnit = async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -12,10 +13,10 @@ export const reviewUnit = async (req: Request, res: Response) => {
   const adminId = req.user?.id || 'system';
 
   try {
-    // 1️⃣ Verifica se a unidade existe
+    // 1️⃣ Verifica se a unidade existe e obtém dados completos
     const { data: existing, error: fetchError } = await supabase
       .from('units')
-      .select('id, name, status')
+      .select('id, name, status, clinic_id, is_main')
       .eq('id', id)
       .maybeSingle();
 
@@ -39,7 +40,33 @@ export const reviewUnit = async (req: Request, res: Response) => {
 
     if (updateError) throw updateError;
 
-    // 4️⃣ Cria log de auditoria
+    // 4️⃣ Se aprovando e for unidade principal, ativa a clínica
+    if (approved && existing.is_main && existing.clinic_id) {
+      await supabase
+        .from('clinics')
+        .update({ status: 'active' })
+        .eq('id', existing.clinic_id);
+
+      // Ativa usuários da clínica
+      await supabase
+        .from('clinic_users')
+        .update({
+          status: 'active',
+          accepted_at: new Date().toISOString(),
+        })
+        .eq('clinic_id', existing.clinic_id)
+        .eq('status', 'pending_activation');
+    }
+
+    // 5️⃣ Se rejeitando e for unidade principal, volta clínica para pending_unit
+    if (!approved && existing.is_main && existing.clinic_id) {
+      await supabase
+        .from('clinics')
+        .update({ status: 'pending_unit' })
+        .eq('id', existing.clinic_id);
+    }
+
+    // 6️⃣ Cria log de auditoria
     const metadata = extractRequestMetadata(req);
     await createAuditLog({
       user_id: adminId,

@@ -8,7 +8,7 @@ const createAuthUser = async (email, password, name, role) => {
         email,
         password,
         email_confirm: true,
-        user_metadata: { role: 'VET', name },
+        user_metadata: { role: role, name }, // ✅ Usa o parâmetro role ao invés de 'VET' hardcoded
     });
     if (error || !data?.user) {
         console.error('Erro ao criar usuário no Supabase Auth:', error);

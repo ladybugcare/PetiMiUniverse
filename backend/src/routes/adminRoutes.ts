@@ -12,6 +12,7 @@ import { getAdmins } from '../controllers/admin/getAdmins';
 // Controllers de unidades
 import { getPendingUnits } from '../controllers/units/getPendingUnits';
 import { reviewUnit } from '../controllers/units/reviewUnit';
+import { getAllActiveUnits } from '../controllers/adminController';
 
 // Controllers de documentos
 import { getVetDocument } from '../controllers/admin/getVetDocument';
@@ -47,6 +48,9 @@ router.get('/users/admins', authenticateUser, getAdmins);
 
 // Listar unidades pendentes de aprovação
 router.get('/pending-units', authenticateUser, getPendingUnits);
+
+// Listar todas as unidades ativas (aprovadas ou ativas)
+router.get('/units', authenticateUser, getAllActiveUnits);
 
 // Aprovar ou rejeitar unidade
 router.patch('/units/:id/review', authenticateUser, reviewUnit);

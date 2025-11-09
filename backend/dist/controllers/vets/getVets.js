@@ -13,7 +13,7 @@ const getVets = async (_req, res) => {
             .order('created_at', { ascending: false });
         if (error)
             throw error;
-        return res.json(data);
+        return res.json({ vets: data || [] });
     }
     catch (err) {
         console.error('Erro ao buscar veterinários:', err);

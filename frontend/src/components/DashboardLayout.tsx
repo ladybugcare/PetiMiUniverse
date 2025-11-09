@@ -69,7 +69,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           marginLeft: isSidebarOpen ? '280px' : '0',
         }}
       >
-        {children}
+        <div style={styles.contentWrapper}>
+          {children}
+        </div>
       </main>
     </div>
   );
@@ -84,6 +86,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     paddingTop: '64px', // Height of header
     transition: 'margin-left 0.3s ease',
     minHeight: '100vh',
+  },
+  contentWrapper: {
+    width: '100%',
   },
 };
 

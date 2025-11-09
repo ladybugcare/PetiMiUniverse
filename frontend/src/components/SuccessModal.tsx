@@ -28,7 +28,16 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
         <p style={styles.message}>{message}</p>
 
         {/* Button */}
-        <button onClick={onClose} style={styles.button}>
+        <button 
+          onClick={onClose} 
+          style={styles.button}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = colors.primaryDark;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = colors.primary;
+          }}
+        >
           OK
         </button>
       </div>

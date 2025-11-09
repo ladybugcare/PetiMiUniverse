@@ -12,20 +12,36 @@ export const checkVetOnboarding = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Usuário não autenticado' });
     }
 
-    // Buscar dados do veterinário
+    // Buscar dados do veterinário (incluindo CRMV)
     const { data: vet, error: vetError } = await supabaseAdmin
       .from('vets')
-      .select('id, onboarding_completed, email')
+      .select('id, onboarding_completed, email, crmv')
       .eq('id', userId)
       .maybeSingle();
 
     if (vetError) {
       console.error('Erro ao buscar veterinário:', vetError);
-      return res.status(500).json({ error: 'Erro ao verificar status do onboarding' });
+      return res.status(500).json({ error: 'Erro ao verificar status do onboarding: ' + vetError.message });
     }
 
+    // Se o registro não existe, retornar que precisa fazer onboarding
     if (!vet) {
-      return res.status(404).json({ error: 'Veterinário não encontrado' });
+      // Verificar se email está confirmado no Supabase Auth
+      const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.getUserById(userId);
+      
+      if (authError) {
+        console.error('Erro ao buscar usuário auth:', authError);
+        return res.status(500).json({ error: 'Erro ao verificar confirmação de email' });
+      }
+
+      const emailConfirmed = !!authUser.user?.email_confirmed_at;
+      
+      return res.json({
+        needsOnboarding: emailConfirmed,
+        emailConfirmed,
+        onboardingCompleted: false,
+        crmv: null,
+      });
     }
 
     // Verificar se email está confirmado no Supabase Auth
@@ -45,6 +61,7 @@ export const checkVetOnboarding = async (req: Request, res: Response) => {
       needsOnboarding,
       emailConfirmed,
       onboardingCompleted: vet.onboarding_completed,
+      crmv: vet.crmv || null,
     });
   } catch (error: any) {
     console.error('Erro ao verificar onboarding:', error);

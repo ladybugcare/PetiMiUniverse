@@ -16,8 +16,8 @@ const createTicket = async (req, res) => {
         if (message.trim().length < 10) {
             return res.status(400).json({ error: 'A mensagem deve ter pelo menos 10 caracteres' });
         }
-        if (!['clinic', 'vet'].includes(user_role)) {
-            return res.status(400).json({ error: 'user_role deve ser clinic ou vet' });
+        if (!['clinic', 'vet', 'admin'].includes(user_role)) {
+            return res.status(400).json({ error: 'user_role deve ser clinic, vet ou admin' });
         }
         const now = new Date().toISOString();
         // Criar ticket
@@ -139,7 +139,45 @@ const getAllTickets = async (req, res) => {
             console.error('Error fetching all tickets:', error);
             return res.status(400).json({ error: error.message });
         }
-        res.json({ tickets: data });
+        // Buscar nome do usuário para cada ticket
+        const ticketsWithNames = await Promise.all((data || []).map(async (ticket) => {
+            let userName = 'Usuário';
+            try {
+                if (ticket.user_role === 'clinic') {
+                    // Buscar nome na tabela clinics
+                    const { data: clinic } = await supabase_1.supabase
+                        .from('clinics')
+                        .select('name')
+                        .eq('id', ticket.user_id)
+                        .single();
+                    userName = clinic?.name || 'Clínica';
+                }
+                else if (ticket.user_role === 'vet') {
+                    // Buscar nome na tabela vets
+                    const { data: vet } = await supabase_1.supabase
+                        .from('vets')
+                        .select('name')
+                        .eq('id', ticket.user_id)
+                        .single();
+                    userName = vet?.name || 'Veterinário';
+                }
+                else if (ticket.user_role === 'admin') {
+                    // Buscar nome no auth.users
+                    const { data: authUser } = await supabase_1.supabaseAdmin.auth.admin.getUserById(ticket.user_id);
+                    userName = authUser?.user?.user_metadata?.name ||
+                        authUser?.user?.email?.split('@')[0] ||
+                        'Administrador';
+                }
+            }
+            catch (err) {
+                console.warn(`Error fetching name for user ${ticket.user_id}:`, err);
+            }
+            return {
+                ...ticket,
+                user_name: userName,
+            };
+        }));
+        res.json({ tickets: ticketsWithNames });
     }
     catch (error) {
         console.error('Error in getAllTickets:', error);

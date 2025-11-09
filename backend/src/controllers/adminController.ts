@@ -5,6 +5,67 @@ import { sendWelcomeEmail } from '../utils/emailService';
 import crypto from 'crypto';
 
 // ===========================================================
+// 🔹 LISTAR TODAS AS UNIDADES ATIVAS
+// ===========================================================
+
+export const getAllActiveUnits = async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const userRole = user.role || (user as any).user_metadata?.role;
+    if (userRole !== 'admin') {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
+    const { data: units, error } = await supabase
+      .from('units')
+      .select(`
+        id,
+        name,
+        nickname,
+        address,
+        city,
+        state,
+        phone,
+        cnpj,
+        technical_manager,
+        is_main,
+        status,
+        created_at,
+        reviewed_at,
+        reviewed_by,
+        rejection_reason,
+        clinic:clinics!units_clinic_id_fkey(
+          id,
+          name,
+          email,
+          cnpj,
+          phone,
+          status
+        )
+      `)
+      .in('status', ['approved', 'active'])
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const metadata = extractRequestMetadata(req);
+    await createAuditLog({
+      user_id: user.id,
+      action: 'GET_ALL_ACTIVE_UNITS',
+      entity_type: 'unit',
+      entity_id: 'bulk',
+      new_values: { count: units?.length || 0 },
+      ...metadata,
+    });
+
+    res.json({ units: units || [] });
+  } catch (error: any) {
+    console.error('Error fetching active units:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ===========================================================
 // 🔹 LISTAR UNIDADES PENDENTES
 // ===========================================================
 

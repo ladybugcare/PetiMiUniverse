@@ -33,10 +33,13 @@ export const IconWrapper: React.FC<IconWrapperProps> = ({
   return React.createElement(Icon, {
     size,
     color,
-    fill,
+    fill: fill !== undefined ? fill : 'none', // Garante que o fill padrão seja 'none' (transparente)
     strokeWidth,
     className,
-    style,
+    style: {
+      backgroundColor: 'transparent', // Garante fundo transparente
+      ...style,
+    },
     ...props
   });
 };

@@ -20,7 +20,7 @@ export const getClinicById = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Clínica não encontrada' });
     }
 
-    return res.json(data);
+    return res.json({ clinic: data });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Erro interno do servidor' });

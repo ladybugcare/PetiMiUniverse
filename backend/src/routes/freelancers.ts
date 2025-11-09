@@ -7,6 +7,7 @@ import { getFreelancers } from '../controllers/freelancers/getFreelancers';
 import { getFreelancerById } from '../controllers/freelancers/getFreelancerById';
 import { checkFreelancerOnboarding } from '../controllers/freelancers/checkFreelancerOnboarding';
 import { completeFreelancerOnboarding } from '../controllers/freelancers/completeFreelancerOnboarding';
+import { uploadCertification } from '../controllers/freelancers/uploadCertification';
 import { getPendingFreelancers } from '../controllers/freelancers/getPendingFreelancers';
 import { approveFreelancer } from '../controllers/freelancers/approveFreelancer';
 import { rejectFreelancer } from '../controllers/freelancers/rejectFreelancer';
@@ -38,6 +39,7 @@ router.get('/', getFreelancers);
  */
 router.get('/onboarding/check', authenticateUser, checkFreelancerOnboarding);
 router.post('/onboarding/complete', authenticateUser, completeFreelancerOnboarding);
+router.post('/onboarding/upload-certification', authenticateUser, uploadCertification);
 
 /**
  * ===========================================================

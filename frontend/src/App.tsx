@@ -20,6 +20,7 @@ import DemandsPage from './pages/DemandsPage';
 import CreateDemandPage from './pages/CreateDemandPage';
 import MyApplicationsPage from './pages/MyApplicationsPage';
 import ClinicDashboardPage from './pages/ClinicDashboardPage';
+import ClinicReportsPage from './pages/ClinicReportsPage';
 import VetDashboardPage from './pages/VetDashboardPage';
 import FreelancerDashboardPage from './pages/FreelancerDashboardPage';
 import MarketplacePage from './pages/MarketplacePage';
@@ -38,6 +39,7 @@ import AdminDemandsPage from './pages/AdminDemandsPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminSupportTicketsPage from './pages/AdminSupportTicketsPage';
 import VetOnboardingPage from './pages/VetOnboardingPage';
+import FreelancerOnboardingPage from './pages/FreelancerOnboardingPage';
 import VetPositionsPage from './pages/VetPositionsPage';
 import VetProfilePage from './pages/VetProfilePage';
 import ClinicProfilePage from './pages/ClinicProfilePage';
@@ -300,6 +302,14 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/clinic-reports"
+                element={
+                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                    <ClinicReportsPage />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* VET */}
               <Route
@@ -336,6 +346,14 @@ function App() {
               />
 
               {/* FREELANCER */}
+              <Route
+                path="/freelancer-onboarding"
+                element={
+                  <ProtectedRoute allowedRoles={['FREELANCER']}>
+                    <FreelancerOnboardingPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/freelancer-dashboard"
                 element={

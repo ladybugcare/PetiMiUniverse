@@ -24,6 +24,32 @@ export interface PendingUnit {
   };
 }
 
+export interface ActiveUnit {
+  id: string;
+  name: string;
+  nickname?: string;
+  address: string;
+  city: string;
+  state: string;
+  phone?: string;
+  cnpj?: string;
+  technical_manager?: string;
+  is_main: boolean;
+  status: 'approved' | 'active';
+  created_at: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  rejection_reason?: string;
+  clinic: {
+    id: string;
+    name: string;
+    email: string;
+    cnpj?: string;
+    phone?: string;
+    status: string;
+  };
+}
+
 export interface CreateUserData {
   name: string;
   email: string;
@@ -72,6 +98,10 @@ export const adminApi = {
   // Listar unidades pendentes
   getPendingUnits: async (): Promise<{ units: PendingUnit[] }> =>
     apiRequest('/admin/pending-units'),
+
+  // Listar todas as unidades ativas
+  getAllActiveUnits: async (): Promise<{ units: ActiveUnit[] }> =>
+    apiRequest('/admin/units'),
 
   // Revisar unidade
   reviewUnit: async (

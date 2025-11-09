@@ -4,10 +4,21 @@ import { supabase, supabaseAdmin } from '../config/supabase';
 export const getSpecialties = async (req: Request, res: Response) => {
   const { category } = req.query;
 
-  let query = supabase.from('specialties').select('*');
+  let query = supabaseAdmin.from('specialties').select('*');
 
   if (category && typeof category === 'string') {
-    query = query.eq('category', category);
+    // Buscar tanto a versão minúscula quanto maiúscula da categoria
+    // Isso garante que encontre 'freelancer' e 'Freelancer'
+    const categoryLower = category.toLowerCase();
+    const categoryCapitalized = categoryLower.charAt(0).toUpperCase() + categoryLower.slice(1);
+    
+    // Se a categoria for 'freelancer', buscar tanto 'freelancer' quanto 'Freelancer'
+    if (categoryLower === 'freelancer') {
+      query = query.in('category', [categoryLower, categoryCapitalized]);
+    } else {
+      // Para outras categorias, usar busca exata (normalmente são minúsculas)
+      query = query.eq('category', categoryLower);
+    }
   }
 
   const { data, error } = await query.order('name');

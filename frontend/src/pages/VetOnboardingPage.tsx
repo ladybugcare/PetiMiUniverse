@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import CrmvFileUploader from '../components/CrmvFileUploader';
+import LogoutConfirmModal from '../components/LogoutConfirmModal';
+import RestoreProgressModal from '../components/RestoreProgressModal';
 import { vetOnboardingApi } from '../services/vetOnboardingApi';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { BRAZILIAN_STATES, getCitiesByState, STATE_NAMES } from '../utils/locationData';
@@ -15,7 +17,7 @@ import { useAuth } from '../AuthContext';
 const VetOnboardingPage: React.FC = () => {
   const navigate = useNavigate();
   const { showSuccess, showError } = useAlert();
-  const { logout, isLoggingOut } = useAuth();
+  const { logout, isLoggingOut, user } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -25,6 +27,9 @@ const VetOnboardingPage: React.FC = () => {
   const [ibgeCities, setIbgeCities] = useState<IBGECity[]>([]);
   const [loadingStates, setLoadingStates] = useState(false);
   const [loadingCities, setLoadingCities] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [savedProgress, setSavedProgress] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     specialties: [] as string[],
@@ -36,21 +41,33 @@ const VetOnboardingPage: React.FC = () => {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [crmvFile, setCrmvFile] = useState<File | null>(null);
+  const [crmv, setCrmv] = useState<string | null>(null);
 
   const totalSteps = 5;
   const currentYear = new Date().getFullYear();
   const minYear = 1980;
 
+  // Função para limpar progresso
+  const clearProgress = useCallback(() => {
+    localStorage.removeItem('vetOnboardingProgress');
+  }, []);
+
   // Verificar se o onboarding já foi completado - se sim, redirecionar
+  // Também buscar o CRMV para exibir no step 4
   useEffect(() => {
     const checkOnboardingStatus = async () => {
       try {
         const status = await vetOnboardingApi.checkOnboardingStatus();
         
-        // Se onboarding já foi completado, redirecionar para dashboard
-        // NUNCA permitir acesso ao onboarding se já foi completado
+        // Armazenar o CRMV se disponível
+        if (status.crmv) {
+          setCrmv(status.crmv);
+        }
+        
+        // Se onboarding já foi completado, limpar progresso e redirecionar
         if (status.onboardingCompleted === true) {
           console.log('[VetOnboardingPage] Onboarding já completado, redirecionando para dashboard');
+          clearProgress();
           navigate('/vet-dashboard', { replace: true });
           return;
         }
@@ -61,7 +78,7 @@ const VetOnboardingPage: React.FC = () => {
     };
     
     checkOnboardingStatus();
-  }, [navigate]);
+  }, [navigate, clearProgress]);
 
   // Carregar especialidades ao montar
   useEffect(() => {
@@ -134,31 +151,128 @@ const VetOnboardingPage: React.FC = () => {
     loadCities();
   }, [selectedState]);
 
-  // Carregar progresso salvo do localStorage
+  // Carregar progresso salvo do localStorage (validando userId)
   useEffect(() => {
+    if (!user?.id) return;
+
     const saved = localStorage.getItem('vetOnboardingProgress');
     if (saved && saved.trim() !== '') {
       try {
         const parsed = JSON.parse(saved);
-        setFormData(parsed);
-        if (parsed.selectedState) {
-          setSelectedState(parsed.selectedState);
+        
+        // Validar se o progresso pertence ao usuário atual
+        if (parsed.userId && parsed.userId !== user.id) {
+          // Progresso pertence a outro usuário, limpar
+          localStorage.removeItem('vetOnboardingProgress');
+          return;
+        }
+
+        // Se pertence ao usuário atual e tem step válido, mostrar modal de restauração
+        if (parsed.step && parsed.step > 1 && parsed.step < totalSteps) {
+          setSavedProgress(parsed);
+          setShowRestoreModal(true);
+        } else {
+          // Se não tem step válido, apenas restaurar dados sem mostrar modal
+          if (parsed.formData) {
+            setFormData(parsed.formData);
+          }
+          if (parsed.selectedState) {
+            setSelectedState(parsed.selectedState);
+          }
         }
       } catch (e) {
         console.error('Erro ao carregar progresso:', e);
+        localStorage.removeItem('vetOnboardingProgress');
       }
     }
-  }, []);
+  }, [user?.id, totalSteps]);
 
-  // Salvar progresso no localStorage
-  useEffect(() => {
-    if (step > 1 && step < totalSteps + 1) {
-      localStorage.setItem('vetOnboardingProgress', JSON.stringify({
-        ...formData,
-        selectedState,
-      }));
+  // Handler para continuar de onde parou
+  const handleContinueProgress = useCallback(() => {
+    if (savedProgress) {
+      if (savedProgress.formData) {
+        setFormData(savedProgress.formData);
+      }
+      if (savedProgress.selectedState) {
+        setSelectedState(savedProgress.selectedState);
+      }
+      if (savedProgress.step) {
+        setStep(savedProgress.step);
+      }
     }
-  }, [formData, selectedState, step, totalSteps]);
+    setShowRestoreModal(false);
+    setSavedProgress(null);
+  }, [savedProgress]);
+
+  // Função para salvar progresso manualmente
+  const saveProgress = useCallback(() => {
+    if (user?.id) {
+      const progressData = {
+        userId: user.id,
+        step,
+        formData,
+        selectedState,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem('vetOnboardingProgress', JSON.stringify(progressData));
+    }
+  }, [user?.id, step, formData, selectedState]);
+
+  // Handler para começar do zero
+  const handleStartOver = useCallback(() => {
+    clearProgress();
+    setFormData({
+      specialties: [],
+      service_regions: [],
+      experience_year: '',
+      bio: '',
+      crmv_file_url: '',
+    });
+    setSelectedState('');
+    setStep(1);
+    setShowRestoreModal(false);
+    setSavedProgress(null);
+  }, [clearProgress]);
+
+  // Salvar progresso no localStorage (com userId para validação)
+  useEffect(() => {
+    if (step > 1 && step < totalSteps + 1 && user?.id) {
+      const progressData = {
+        userId: user.id,
+        step,
+        formData,
+        selectedState,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem('vetOnboardingProgress', JSON.stringify(progressData));
+    }
+  }, [formData, selectedState, step, totalSteps, user?.id]);
+
+  // Handler para logout - verifica se está em onboarding
+  const handleLogoutClick = useCallback(() => {
+    // Se está no step de sucesso (5) ou não está em onboarding, fazer logout direto
+    if (step >= totalSteps) {
+      logout();
+      return;
+    }
+
+    // Se está em onboarding, mostrar modal
+    setShowLogoutModal(true);
+  }, [step, totalSteps, logout]);
+
+  // Handler para salvar e sair
+  const handleSaveAndExit = useCallback(async () => {
+    saveProgress();
+    setShowLogoutModal(false);
+    await logout();
+  }, [saveProgress, logout]);
+
+  // Handler para sair sem salvar
+  const handleExitWithoutSaving = useCallback(async () => {
+    clearProgress();
+    setShowLogoutModal(false);
+    await logout();
+  }, [clearProgress, logout]);
 
   // Validar step atual
   const isStepValid = (): boolean => {
@@ -268,8 +382,8 @@ const VetOnboardingPage: React.FC = () => {
 
       const result = await vetOnboardingApi.completeOnboarding(submitData);
 
-      // Limpar progresso salvo
-      localStorage.removeItem('vetOnboardingProgress');
+      // Limpar progresso salvo após completar onboarding
+      clearProgress();
 
       // Atualizar localStorage com status de onboarding completo
       // IMPORTANTE: Garantir que o onboarding nunca apareça novamente
@@ -579,6 +693,31 @@ const VetOnboardingPage: React.FC = () => {
           <div style={styles.stepContainer}>
             <h2 style={styles.stepTitle}>Upload de CRMV e Descrição</h2>
             
+            {/* Exibir CRMV registrado */}
+            {crmv && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>CRMV Registrado</label>
+                <div style={{
+                  padding: '12px 16px',
+                  backgroundColor: colors.background,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  color: colors.text,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}>
+                  <IconWrapper icon={Stethoscope} size={20} color={colors.primary} />
+                  <span>{crmv}</span>
+                </div>
+                <p style={{ ...styles.stepHint, marginTop: '8px' }}>
+                  Este é o CRMV cadastrado no seu perfil. Envie o arquivo do CRMV para validação.
+                </p>
+              </div>
+            )}
+            
             <div style={styles.formGroup}>
               <label style={styles.label}>Upload do CRMV <span style={styles.required}>*</span></label>
               <p style={styles.stepHint}>
@@ -705,7 +844,7 @@ const VetOnboardingPage: React.FC = () => {
               <span style={styles.logoText}>PetiVet</span>
             </div>
             <button
-              onClick={logout}
+              onClick={handleLogoutClick}
               disabled={isLoggingOut}
               style={{
                 ...styles.logoutButton,
@@ -734,7 +873,7 @@ const VetOnboardingPage: React.FC = () => {
             <span style={styles.logoText}>PetiVet</span>
           </div>
           <button
-            onClick={logout}
+            onClick={handleLogoutClick}
             disabled={isLoggingOut}
             style={{
               ...styles.logoutButton,
@@ -808,6 +947,32 @@ const VetOnboardingPage: React.FC = () => {
           )}
         </div>
       </div>
+      
+      {/* Modal de confirmação de logout */}
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onSaveAndExit={handleSaveAndExit}
+        onExitWithoutSaving={handleExitWithoutSaving}
+        currentStep={step}
+        totalSteps={totalSteps}
+      />
+
+      {/* Modal de restauração de progresso */}
+      {savedProgress && (
+        <RestoreProgressModal
+          isOpen={showRestoreModal}
+          onClose={() => {
+            setShowRestoreModal(false);
+            setSavedProgress(null);
+          }}
+          onContinue={handleContinueProgress}
+          onStartOver={handleStartOver}
+          currentStep={savedProgress.step || 1}
+          totalSteps={totalSteps}
+          progressPercent={savedProgress.step ? Math.round((savedProgress.step / totalSteps) * 100) : 0}
+        />
+      )}
     </div>
   );
 };
@@ -1114,3 +1279,4 @@ const styles: { [key: string]: React.CSSProperties } = {
 };
 
 export default VetOnboardingPage;
+

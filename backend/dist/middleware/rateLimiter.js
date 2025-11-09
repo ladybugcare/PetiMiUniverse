@@ -7,16 +7,24 @@ exports.createLimiter = exports.authLimiter = exports.generalLimiter = void 0;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 /**
  * Rate limiter geral para todas as rotas
- * Limita a 100 requisições por 15 minutos por IP
+ * Limites diferentes por ambiente:
+ * - Development: 1000 req/15min (para suportar StrictMode e desenvolvimento ativo)
+ * - Staging/Production: 100 req/15min (limite mais restritivo)
  */
+const isDevelopment = process.env.NODE_ENV === 'development';
+const maxRequests = isDevelopment ? 1000 : 100;
 exports.generalLimiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 100, // máximo de 100 requisições por IP
+    max: maxRequests, // máximo de requisições por IP (ajustado por ambiente)
     message: {
         error: 'Muitas requisições deste IP, tente novamente em alguns minutos.',
     },
     standardHeaders: true, // Retorna rate limit info nos headers `RateLimit-*`
     legacyHeaders: false, // Desabilita headers `X-RateLimit-*`
+    // Skip healthcheck endpoint para não contar requisições de monitoramento
+    skip: (req) => {
+        return req.path === '/' || req.path === '/health';
+    },
 });
 /**
  * Rate limiter mais restritivo para autenticação

@@ -12,7 +12,7 @@ const getClinics = async (_req, res) => {
             console.error('Erro ao buscar clínicas:', error);
             return res.status(500).json({ error: 'Erro ao buscar clínicas' });
         }
-        return res.json(data);
+        return res.json({ clinics: data || [] });
     }
     catch (err) {
         console.error(err);

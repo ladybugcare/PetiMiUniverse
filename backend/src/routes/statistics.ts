@@ -9,6 +9,11 @@ import {
   getTopPerformers,
   getSystemInsights
 } from '../controllers/statisticsController';
+import {
+  getClinicReportsOverview,
+  getClinicReportsDemands,
+  getClinicReportsProfessionals
+} from '../controllers/reportsController';
 import { authenticateUser } from '../middleware/authMiddleware';
 
 const router = express.Router();
@@ -36,6 +41,11 @@ router.get('/system/top-performers', authenticateUser, getTopPerformers);
 
 // Get system insights (admin only)
 router.get('/system/insights', authenticateUser, getSystemInsights);
+
+// Clinic reports (for CADMIN role)
+router.get('/clinic/:clinicId/reports/overview', authenticateUser, getClinicReportsOverview);
+router.get('/clinic/:clinicId/reports/demands', authenticateUser, getClinicReportsDemands);
+router.get('/clinic/:clinicId/reports/professionals', authenticateUser, getClinicReportsProfessionals);
 
 export default router;
 

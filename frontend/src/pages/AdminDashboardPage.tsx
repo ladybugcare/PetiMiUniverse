@@ -31,6 +31,7 @@ const AdminDashboardPage: React.FC = () => {
   });
   const [pendingVetsCount, setPendingVetsCount] = useState(0);
   const [pendingFreelancersCount, setPendingFreelancersCount] = useState(0);
+  const [pendingUnitsCount, setPendingUnitsCount] = useState(0);
 
   // Check authentication
   useEffect(() => {
@@ -105,9 +106,19 @@ const AdminDashboardPage: React.FC = () => {
       }
     };
 
+    const loadPendingUnits = async () => {
+      try {
+        const { units } = await adminApi.getPendingUnits();
+        setPendingUnitsCount(units.length);
+      } catch (error) {
+        console.error('Error loading pending units:', error);
+      }
+    };
+
     loadSystemStats();
     loadPendingVets();
     loadPendingFreelancers();
+    loadPendingUnits();
   }, []);
 
   const menuItems: MenuItem[] = [
@@ -175,7 +186,7 @@ const AdminDashboardPage: React.FC = () => {
         pageName="Painel do Administrador" 
         menuItems={menuItems}
       >
-        <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} pendingFreelancersCount={pendingFreelancersCount} />
+        <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} pendingFreelancersCount={pendingFreelancersCount} pendingUnitsCount={pendingUnitsCount} />
       </DashboardLayout>
       <LoadingOverlay visible={checkingAuth} />
     </>
@@ -221,7 +232,7 @@ const getGreeting = (): string => {
 };
 
 // Overview Section
-const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingFreelancersCount: number }> = ({ stats, pendingVetsCount, pendingFreelancersCount }) => {
+const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingFreelancersCount: number; pendingUnitsCount: number }> = ({ stats, pendingVetsCount, pendingFreelancersCount, pendingUnitsCount }) => {
   const navigate = useNavigate();
   const { showError } = useAlert();
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('30d');
@@ -377,7 +388,11 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
           <PendingCard
             icon={<Building2 />}
             title="Unidades Pendentes"
-            description="Clínicas aguardando aprovação"
+            description={pendingUnitsCount > 0
+              ? `${pendingUnitsCount} ${pendingUnitsCount === 1 ? 'unidade' : 'unidades'} aguardando aprovação`
+              : 'Nenhuma unidade pendente'}
+            count={pendingUnitsCount > 0 ? pendingUnitsCount : undefined}
+            highlight={pendingUnitsCount > 0}
             onClick={() => navigate('/admin/pending-units')}
           />
           <PendingCard

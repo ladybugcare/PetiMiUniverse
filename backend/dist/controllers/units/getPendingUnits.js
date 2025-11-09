@@ -24,7 +24,7 @@ const getPendingUnits = async (req, res) => {
         is_main,
         status,
         created_at,
-        clinic:clinics (
+        clinic:clinics!units_clinic_id_fkey (
           id,
           name,
           email,

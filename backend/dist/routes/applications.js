@@ -11,4 +11,8 @@ router.get('/demand/:demand_id', applicationsController_1.getApplicationsByDeman
 router.get('/clinic', applicationsController_1.getApplicationsByClinic);
 router.get('/unit/:unitId', applicationsController_1.getApplicationsByUnit);
 router.get('/pending-count', applicationsController_1.getPendingApplicationsCount);
+// Generic route that works for both vets and freelancers
+router.get('/user/:userId', applicationsController_1.getApplicationsByUser);
+// Legacy route for backwards compatibility
+router.get('/vet/:vetId', applicationsController_1.getApplicationsByUser);
 exports.default = router;

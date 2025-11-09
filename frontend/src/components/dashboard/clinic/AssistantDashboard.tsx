@@ -396,7 +396,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   actionIconCircle: {
     width: '56px',
     height: '56px',
-    background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
+    background: 'transparent',
     borderRadius: '14px',
     display: 'flex',
     alignItems: 'center',

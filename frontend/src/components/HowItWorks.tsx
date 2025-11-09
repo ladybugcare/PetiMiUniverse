@@ -52,7 +52,7 @@ const cards: AudienceCard[] = [
   },
   {
     id: 'freelancers',
-    icon: <IconWrapper icon={Heart} size={32} color={colors.primary} fill={colors.primary} />,
+    icon: <IconWrapper icon={Heart} size={32} color={colors.primary} />,
     title: 'Para Freelancers',
     description: 'Groomers, adestradores, cuidadores e outros profissionais encontram aqui espaço para se destacar.',
     emphasis: 'Ofereça seus serviços ao mundo pet.',
@@ -224,7 +224,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     height: '56px',
     width: '56px',
     borderRadius: '28px',
-    backgroundColor: '#ede9fe',
+    backgroundColor: 'transparent',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -232,7 +232,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'background-color 0.3s ease',
   },
   iconBubbleHovered: {
-    backgroundColor: '#dcd4ff',
+    backgroundColor: 'transparent',
   },
   cardLabel: {
     fontFamily: 'Poppins, sans-serif',

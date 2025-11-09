@@ -6,6 +6,7 @@ export interface OnboardingStatus {
   needsOnboarding: boolean;
   emailConfirmed: boolean;
   onboardingCompleted: boolean;
+  crmv?: string | null;
 }
 
 export interface CompleteOnboardingData {

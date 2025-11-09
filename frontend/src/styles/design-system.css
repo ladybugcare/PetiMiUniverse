@@ -129,6 +129,25 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Garantir que todos os ícones SVG tenham fundo transparente */
+svg {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* Específico para ícones do Lucide */
+svg[data-lucide] {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* Garantir que containers de ícones não tenham fundo branco */
+.icon-wrapper,
+.icon-container {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
 /* Classes utilitárias para cores */
 .bg-primary-50 { background-color: var(--color-primary-50); }
 .bg-primary-100 { background-color: var(--color-primary-100); }

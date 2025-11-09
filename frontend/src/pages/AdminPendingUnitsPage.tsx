@@ -5,9 +5,12 @@ import { MenuItem } from '../components/DashboardSidebar';
 import { Home, Building2, Stethoscope, ClipboardList, Clock, User, LogOut } from 'lucide-react';
 import colors from '../styles/colors';
 import { adminApi, PendingUnit } from '../services/adminApi';
+import { SuccessModal } from '../components/SuccessModal';
+import { useAlert } from '../hooks/useAlert';
 
 const AdminPendingUnitsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { showError } = useAlert();
   const [units, setUnits] = useState<PendingUnit[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUnit, setSelectedUnit] = useState<PendingUnit | null>(null);
@@ -15,6 +18,8 @@ const AdminPendingUnitsPage: React.FC = () => {
   const [modalAction, setModalAction] = useState<'approve' | 'reject'>('approve');
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const isLoadingRef = useRef(false);
 
   const menuItems: MenuItem[] = [
@@ -55,7 +60,7 @@ const AdminPendingUnitsPage: React.FC = () => {
       setUnits(pendingUnits);
     } catch (error) {
       console.error('Error loading pending units:', error);
-      alert('Erro ao carregar unidades pendentes.');
+      showError('Erro ao carregar unidades pendentes.');
     } finally {
       setLoading(false);
       isLoadingRef.current = false;
@@ -79,7 +84,7 @@ const AdminPendingUnitsPage: React.FC = () => {
     if (!selectedUnit) return;
 
     if (modalAction === 'reject' && !rejectionReason.trim()) {
-      alert('Por favor, informe o motivo da rejeição.');
+      showError('Por favor, informe o motivo da rejeição.');
       return;
     }
 
@@ -89,17 +94,18 @@ const AdminPendingUnitsPage: React.FC = () => {
       const approved = modalAction === 'approve';
       await adminApi.reviewUnit(selectedUnit.id, approved, rejectionReason);
 
-      alert(
+      setSuccessMessage(
         approved
-          ? '✅ Unidade aprovada com sucesso! A clínica foi ativada.'
-          : '❌ Unidade reprovada. A clínica foi notificada.'
+          ? 'Unidade aprovada com sucesso! A clínica foi ativada.'
+          : 'Unidade reprovada. A clínica foi notificada.'
       );
+      setShowSuccessModal(true);
 
       handleCloseModal();
       loadPendingUnits(); // Reload list
     } catch (error: any) {
       console.error('Error reviewing unit:', error);
-      alert(`Erro ao ${modalAction === 'approve' ? 'aprovar' : 'reprovar'} unidade: ${error.message}`);
+      showError(`Erro ao ${modalAction === 'approve' ? 'aprovar' : 'reprovar'} unidade: ${error.message}`);
     } finally {
       setProcessing(false);
     }
@@ -107,6 +113,15 @@ const AdminPendingUnitsPage: React.FC = () => {
 
   return (
     <>
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <SuccessModal
+          isOpen={showSuccessModal}
+          message={successMessage}
+          onClose={() => setShowSuccessModal(false)}
+        />
+      )}
+
       <DashboardLayout pageName="Aprovações Pendentes" menuItems={menuItems}>
         <div style={styles.container}>
           <div style={styles.header}>

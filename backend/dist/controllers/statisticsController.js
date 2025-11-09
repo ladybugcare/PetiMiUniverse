@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSystemStats = exports.getVetStats = exports.getClinicStats = void 0;
+exports.getSystemInsights = exports.getTopPerformers = exports.getRecentActivity = exports.getSystemGrowthTrends = exports.getSystemStatsWithPeriod = exports.getSystemStats = exports.getVetStats = exports.getClinicStats = void 0;
 const supabase_1 = require("../config/supabase");
 // Get clinic statistics (for CADMIN role)
 const getClinicStats = async (req, res) => {
@@ -161,12 +161,20 @@ exports.getVetStats = getVetStats;
 // Get system-wide statistics (admin only)
 const getSystemStats = async (req, res) => {
     try {
+        // Verificar se é admin
+        const user = req.user;
+        const userRole = user?.user_metadata?.role || user?.role;
+        if (userRole !== 'admin') {
+            return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar esta rota.' });
+        }
         // Get total clinics
         const { count: totalClinics, error: clinicsError } = await supabase_1.supabase
             .from('clinics')
             .select('*', { count: 'exact', head: true });
-        if (clinicsError)
+        if (clinicsError) {
+            console.error('Erro ao buscar clínicas:', clinicsError);
             throw clinicsError;
+        }
         // Get total vets
         const { count: totalVets, error: vetsError } = await supabase_1.supabase
             .from('vets')
@@ -218,3 +226,554 @@ const getSystemStats = async (req, res) => {
     }
 };
 exports.getSystemStats = getSystemStats;
+// Helper function to calculate date range based on period
+const getDateRange = (period, startDate, endDate) => {
+    const now = new Date();
+    let start;
+    let end = new Date(now);
+    if (period === 'custom' && startDate && endDate) {
+        start = new Date(startDate);
+        end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+    }
+    else if (period === 'today') {
+        start = new Date(now);
+        start.setHours(0, 0, 0, 0);
+    }
+    else if (period === '7d') {
+        start = new Date(now);
+        start.setDate(start.getDate() - 7);
+        start.setHours(0, 0, 0, 0);
+    }
+    else if (period === '30d') {
+        start = new Date(now);
+        start.setDate(start.getDate() - 30);
+        start.setHours(0, 0, 0, 0);
+    }
+    else {
+        // Default to 30 days
+        start = new Date(now);
+        start.setDate(start.getDate() - 30);
+        start.setHours(0, 0, 0, 0);
+    }
+    return { start, end };
+};
+// Get system statistics with period filter
+const getSystemStatsWithPeriod = async (req, res) => {
+    try {
+        // Verificar se é admin
+        const user = req.user;
+        const userRole = user?.user_metadata?.role || user?.role;
+        if (userRole !== 'admin') {
+            return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar esta rota.' });
+        }
+        const { period = '30d', startDate, endDate } = req.query;
+        const { start, end } = getDateRange(period, startDate, endDate);
+        // Calculate previous period for growth comparison
+        const periodDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        const previousStart = new Date(start);
+        previousStart.setDate(previousStart.getDate() - periodDays);
+        const previousEnd = new Date(start);
+        // Get new registrations in period
+        const { count: newClinics, error: newClinicsError } = await supabase_1.supabase
+            .from('clinics')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', start.toISOString())
+            .lte('created_at', end.toISOString());
+        if (newClinicsError)
+            throw newClinicsError;
+        const { count: newVets, error: newVetsError } = await supabase_1.supabase
+            .from('vets')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', start.toISOString())
+            .lte('created_at', end.toISOString());
+        if (newVetsError)
+            throw newVetsError;
+        const { count: newFreelancers, error: newFreelancersError } = await supabase_1.supabase
+            .from('freelancers')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', start.toISOString())
+            .lte('created_at', end.toISOString());
+        if (newFreelancersError)
+            throw newFreelancersError;
+        // Get previous period counts for growth calculation
+        const { count: prevClinics, error: prevClinicsError } = await supabase_1.supabase
+            .from('clinics')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', previousStart.toISOString())
+            .lte('created_at', previousEnd.toISOString());
+        if (prevClinicsError)
+            throw prevClinicsError;
+        const { count: prevVets, error: prevVetsError } = await supabase_1.supabase
+            .from('vets')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', previousStart.toISOString())
+            .lte('created_at', previousEnd.toISOString());
+        if (prevVetsError)
+            throw prevVetsError;
+        const { count: prevFreelancers, error: prevFreelancersError } = await supabase_1.supabase
+            .from('freelancers')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', previousStart.toISOString())
+            .lte('created_at', previousEnd.toISOString());
+        if (prevFreelancersError)
+            throw prevFreelancersError;
+        // Calculate growth percentages
+        const calculateGrowth = (current, previous) => {
+            if (previous === 0)
+                return current > 0 ? 100 : 0;
+            return ((current - previous) / previous) * 100;
+        };
+        const clinicsGrowth = calculateGrowth(newClinics || 0, prevClinics || 0);
+        const vetsGrowth = calculateGrowth(newVets || 0, prevVets || 0);
+        const freelancersGrowth = calculateGrowth(newFreelancers || 0, prevFreelancers || 0);
+        // Get approval rate (approved / total pending + approved)
+        const { count: totalPendingVets, error: pendingVetsError } = await supabase_1.supabase
+            .from('vets')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'pending');
+        if (pendingVetsError)
+            throw pendingVetsError;
+        const { count: totalApprovedVets, error: approvedVetsError } = await supabase_1.supabase
+            .from('vets')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'approved');
+        if (approvedVetsError)
+            throw approvedVetsError;
+        const totalVetsForApproval = (totalPendingVets || 0) + (totalApprovedVets || 0);
+        const approvalRate = totalVetsForApproval > 0
+            ? ((totalApprovedVets || 0) / totalVetsForApproval) * 100
+            : 0;
+        // Get completed demands in period
+        const { count: completedDemands, error: completedError } = await supabase_1.supabase
+            .from('demands')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'closed')
+            .gte('updated_at', start.toISOString())
+            .lte('updated_at', end.toISOString());
+        if (completedError)
+            throw completedError;
+        // Get active vets (vets with applications in period)
+        const { data: activeVetsData, error: activeVetsError } = await supabase_1.supabase
+            .from('position_applications')
+            .select('vet_id')
+            .gte('created_at', start.toISOString())
+            .lte('created_at', end.toISOString());
+        if (activeVetsError)
+            throw activeVetsError;
+        const uniqueActiveVets = new Set(activeVetsData?.map((a) => a.vet_id) || []).size;
+        // Get total counts
+        const { count: totalClinics } = await supabase_1.supabase
+            .from('clinics')
+            .select('*', { count: 'exact', head: true });
+        const { count: totalVets } = await supabase_1.supabase
+            .from('vets')
+            .select('*', { count: 'exact', head: true });
+        const { count: totalFreelancers } = await supabase_1.supabase
+            .from('freelancers')
+            .select('*', { count: 'exact', head: true });
+        res.json({
+            stats: {
+                totalClinics: totalClinics || 0,
+                totalVets: totalVets || 0,
+                totalFreelancers: totalFreelancers || 0,
+                newClinics: newClinics || 0,
+                newVets: newVets || 0,
+                newFreelancers: newFreelancers || 0,
+                clinicsGrowth: Math.round(clinicsGrowth * 100) / 100,
+                vetsGrowth: Math.round(vetsGrowth * 100) / 100,
+                freelancersGrowth: Math.round(freelancersGrowth * 100) / 100,
+                approvalRate: Math.round(approvalRate * 100) / 100,
+                completedDemands: completedDemands || 0,
+                activeVets: uniqueActiveVets,
+                period: {
+                    start: start.toISOString(),
+                    end: end.toISOString(),
+                },
+            },
+        });
+    }
+    catch (error) {
+        console.error('Error getting system stats with period:', error);
+        res.status(500).json({ error: error.message || 'Failed to get system statistics with period' });
+    }
+};
+exports.getSystemStatsWithPeriod = getSystemStatsWithPeriod;
+// Get system growth trends for charts
+const getSystemGrowthTrends = async (req, res) => {
+    try {
+        const user = req.user;
+        const userRole = user?.user_metadata?.role || user?.role;
+        if (userRole !== 'admin') {
+            return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar esta rota.' });
+        }
+        const { period = '30d' } = req.query;
+        const { start, end } = getDateRange(period);
+        // Calculate number of days
+        const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        const isWeekly = days > 14;
+        const trends = [];
+        // Generate data points
+        for (let i = 0; i < days; i++) {
+            const date = new Date(start);
+            date.setDate(date.getDate() + i);
+            const nextDate = new Date(date);
+            nextDate.setDate(nextDate.getDate() + 1);
+            const dateStr = date.toISOString().split('T')[0];
+            const nextDateStr = nextDate.toISOString();
+            // Get counts for this day
+            const { count: clinics } = await supabase_1.supabase
+                .from('clinics')
+                .select('*', { count: 'exact', head: true })
+                .gte('created_at', date.toISOString())
+                .lt('created_at', nextDateStr);
+            const { count: vets } = await supabase_1.supabase
+                .from('vets')
+                .select('*', { count: 'exact', head: true })
+                .gte('created_at', date.toISOString())
+                .lt('created_at', nextDateStr);
+            const { count: freelancers } = await supabase_1.supabase
+                .from('freelancers')
+                .select('*', { count: 'exact', head: true })
+                .gte('created_at', date.toISOString())
+                .lt('created_at', nextDateStr);
+            const { count: demands } = await supabase_1.supabase
+                .from('demands')
+                .select('*', { count: 'exact', head: true })
+                .gte('created_at', date.toISOString())
+                .lt('created_at', nextDateStr);
+            trends.push({
+                date: dateStr,
+                clinics: clinics || 0,
+                vets: vets || 0,
+                freelancers: freelancers || 0,
+                demands: demands || 0,
+            });
+        }
+        res.json({ trends });
+    }
+    catch (error) {
+        console.error('Error getting growth trends:', error);
+        res.status(500).json({ error: error.message || 'Failed to get growth trends' });
+    }
+};
+exports.getSystemGrowthTrends = getSystemGrowthTrends;
+// Get recent activity unified from multiple sources
+const getRecentActivity = async (req, res) => {
+    try {
+        const user = req.user;
+        const userRole = user?.user_metadata?.role || user?.role;
+        if (userRole !== 'admin') {
+            return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar esta rota.' });
+        }
+        const { limit = '20' } = req.query;
+        const limitNum = parseInt(limit, 10);
+        const activities = [];
+        // Get recent clinics
+        const { data: recentClinics, error: clinicsError } = await supabase_1.supabase
+            .from('clinics')
+            .select('id, name, created_at, status')
+            .order('created_at', { ascending: false })
+            .limit(limitNum);
+        if (!clinicsError && recentClinics) {
+            recentClinics.forEach((clinic) => {
+                activities.push({
+                    id: clinic.id,
+                    type: 'clinic_created',
+                    title: 'Nova clínica cadastrada',
+                    description: clinic.name,
+                    icon: 'building',
+                    color: '#7c3aed',
+                    timestamp: clinic.created_at,
+                });
+            });
+        }
+        // Get recent vets
+        const { data: recentVets, error: vetsError } = await supabase_1.supabase
+            .from('vets')
+            .select('id, name, crmv, created_at, status')
+            .order('created_at', { ascending: false })
+            .limit(limitNum);
+        if (!vetsError && recentVets) {
+            recentVets.forEach((vet) => {
+                activities.push({
+                    id: vet.id,
+                    type: vet.status === 'approved' ? 'vet_approved' : 'vet_created',
+                    title: vet.status === 'approved' ? 'Veterinário aprovado' : 'Novo veterinário registrado',
+                    description: `${vet.name}${vet.crmv ? ` - CRMV ${vet.crmv}` : ''}`,
+                    icon: 'stethoscope',
+                    color: vet.status === 'approved' ? '#10b981' : '#3b82f6',
+                    timestamp: vet.created_at,
+                });
+            });
+        }
+        // Get recent freelancers
+        const { data: recentFreelancers, error: freelancersError } = await supabase_1.supabase
+            .from('freelancers')
+            .select('id, name, created_at, status')
+            .order('created_at', { ascending: false })
+            .limit(limitNum);
+        if (!freelancersError && recentFreelancers) {
+            recentFreelancers.forEach((freelancer) => {
+                activities.push({
+                    id: freelancer.id,
+                    type: freelancer.status === 'approved' ? 'freelancer_approved' : 'freelancer_created',
+                    title: freelancer.status === 'approved' ? 'Freelancer aprovado' : 'Novo freelancer registrado',
+                    description: freelancer.name,
+                    icon: 'briefcase',
+                    color: freelancer.status === 'approved' ? '#10b981' : '#8b5cf6',
+                    timestamp: freelancer.created_at,
+                });
+            });
+        }
+        // Get recent demands
+        const { data: recentDemands, error: demandsError } = await supabase_1.supabase
+            .from('demands')
+            .select('id, title, created_at, status, clinic_id')
+            .order('created_at', { ascending: false })
+            .limit(limitNum);
+        if (!demandsError && recentDemands) {
+            // Get clinic names for demands
+            const clinicIds = [...new Set(recentDemands.map((d) => d.clinic_id).filter(Boolean))];
+            const clinicNamesMap = {};
+            if (clinicIds.length > 0) {
+                const { data: clinics } = await supabase_1.supabase
+                    .from('clinics')
+                    .select('id, name')
+                    .in('id', clinicIds);
+                if (clinics) {
+                    clinics.forEach((clinic) => {
+                        clinicNamesMap[clinic.id] = clinic.name;
+                    });
+                }
+            }
+            recentDemands.forEach((demand) => {
+                const clinicName = clinicNamesMap[demand.clinic_id] || 'Clínica';
+                activities.push({
+                    id: demand.id,
+                    type: demand.status === 'closed' ? 'demand_closed' : 'demand_created',
+                    title: demand.status === 'closed' ? 'Demanda concluída' : 'Demanda criada',
+                    description: `${demand.title} - ${clinicName}`,
+                    icon: 'clipboard',
+                    color: demand.status === 'closed' ? '#10b981' : '#3b82f6',
+                    timestamp: demand.created_at,
+                });
+            });
+        }
+        // Get audit logs
+        const { data: auditLogs, error: auditError } = await supabase_1.supabase
+            .from('audit_logs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(limitNum);
+        if (!auditError && auditLogs) {
+            auditLogs.forEach((log) => {
+                let title = '';
+                let color = '#3b82f6';
+                let icon = 'activity';
+                if (log.action.includes('block') || log.action.includes('reject')) {
+                    title = 'Usuário bloqueado/rejeitado';
+                    color = '#ef4444';
+                }
+                else if (log.action.includes('approve')) {
+                    title = 'Aprovação realizada';
+                    color = '#10b981';
+                }
+                else if (log.action.includes('create')) {
+                    title = 'Criação realizada';
+                }
+                activities.push({
+                    id: log.id,
+                    type: 'audit_log',
+                    title: title || log.action,
+                    description: log.entity_type || 'Ação do sistema',
+                    icon,
+                    color,
+                    timestamp: log.created_at,
+                });
+            });
+        }
+        // Sort by timestamp and limit
+        activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        const limitedActivities = activities.slice(0, limitNum);
+        res.json({ activities: limitedActivities });
+    }
+    catch (error) {
+        console.error('Error getting recent activity:', error);
+        res.status(500).json({ error: error.message || 'Failed to get recent activity' });
+    }
+};
+exports.getRecentActivity = getRecentActivity;
+// Get top performers (clinics or vets)
+const getTopPerformers = async (req, res) => {
+    try {
+        const user = req.user;
+        const userRole = user?.user_metadata?.role || user?.role;
+        if (userRole !== 'admin') {
+            return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar esta rota.' });
+        }
+        const { type = 'clinics', limit = '5' } = req.query;
+        const limitNum = parseInt(limit, 10);
+        if (type === 'clinics') {
+            // Get top clinics by number of demands created
+            const { data: clinics, error: clinicsError } = await supabase_1.supabase
+                .from('clinics')
+                .select('id, name, created_at, status');
+            if (clinicsError)
+                throw clinicsError;
+            const clinicsWithCounts = await Promise.all((clinics || []).map(async (clinic) => {
+                const { count } = await supabase_1.supabase
+                    .from('demands')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('clinic_id', clinic.id);
+                return {
+                    id: clinic.id,
+                    name: clinic.name,
+                    metric: count || 0,
+                    status: clinic.status,
+                    created_at: clinic.created_at,
+                };
+            }));
+            clinicsWithCounts.sort((a, b) => b.metric - a.metric);
+            const topClinics = clinicsWithCounts.slice(0, limitNum);
+            res.json({ performers: topClinics, type: 'clinics' });
+        }
+        else if (type === 'vets') {
+            // Get top vets by number of applications
+            const { data: vets, error: vetsError } = await supabase_1.supabase
+                .from('vets')
+                .select('id, name, crmv, created_at, status');
+            if (vetsError)
+                throw vetsError;
+            const vetsWithCounts = await Promise.all((vets || []).map(async (vet) => {
+                const { count } = await supabase_1.supabase
+                    .from('position_applications')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('vet_id', vet.id);
+                return {
+                    id: vet.id,
+                    name: vet.name,
+                    crmv: vet.crmv,
+                    metric: count || 0,
+                    status: vet.status,
+                    created_at: vet.created_at,
+                };
+            }));
+            vetsWithCounts.sort((a, b) => b.metric - a.metric);
+            const topVets = vetsWithCounts.slice(0, limitNum);
+            res.json({ performers: topVets, type: 'vets' });
+        }
+        else {
+            res.status(400).json({ error: 'Invalid type. Use "clinics" or "vets"' });
+        }
+    }
+    catch (error) {
+        console.error('Error getting top performers:', error);
+        res.status(500).json({ error: error.message || 'Failed to get top performers' });
+    }
+};
+exports.getTopPerformers = getTopPerformers;
+// Get system insights (automated insights based on data)
+const getSystemInsights = async (req, res) => {
+    try {
+        const user = req.user;
+        const userRole = user?.user_metadata?.role || user?.role;
+        if (userRole !== 'admin') {
+            return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar esta rota.' });
+        }
+        const insights = [];
+        // Get data for last 7 days and previous 7 days
+        const now = new Date();
+        const last7DaysStart = new Date(now);
+        last7DaysStart.setDate(last7DaysStart.getDate() - 7);
+        const prev7DaysStart = new Date(last7DaysStart);
+        prev7DaysStart.setDate(prev7DaysStart.getDate() - 7);
+        // Compare vet registrations
+        const { count: vetsLast7Days } = await supabase_1.supabase
+            .from('vets')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', last7DaysStart.toISOString())
+            .lte('created_at', now.toISOString());
+        const { count: vetsPrev7Days } = await supabase_1.supabase
+            .from('vets')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', prev7DaysStart.toISOString())
+            .lt('created_at', last7DaysStart.toISOString());
+        if (vetsLast7Days && vetsPrev7Days) {
+            const growth = vetsPrev7Days > 0
+                ? ((vetsLast7Days - vetsPrev7Days) / vetsPrev7Days) * 100
+                : (vetsLast7Days > 0 ? 100 : 0);
+            if (Math.abs(growth) > 20) {
+                insights.push({
+                    type: growth > 0 ? 'positive' : 'warning',
+                    title: `Crescimento de ${Math.round(growth)}% em cadastros de veterinários`,
+                    message: `Esta semana houve ${vetsLast7Days} novos cadastros de veterinários, ${growth > 0 ? 'aumento' : 'redução'} de ${Math.round(Math.abs(growth))}% em relação à semana anterior.`,
+                    icon: 'trending-up',
+                });
+            }
+        }
+        // Check for new demands
+        const { count: demandsLast7Days } = await supabase_1.supabase
+            .from('demands')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', last7DaysStart.toISOString())
+            .lte('created_at', now.toISOString());
+        // Insight: High vet growth but no new demands
+        if (vetsLast7Days && vetsLast7Days > 0 && demandsLast7Days === 0) {
+            insights.push({
+                type: 'warning',
+                title: 'Aumento de cadastros sem novas demandas',
+                message: `Esta semana houve um aumento de ${vetsLast7Days} cadastros de veterinários, mas nenhuma nova demanda criada. Pode indicar baixa adesão das clínicas.`,
+                icon: 'alert-triangle',
+            });
+        }
+        // Check approval rate
+        const { count: pendingVets } = await supabase_1.supabase
+            .from('vets')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'pending');
+        const { count: approvedVets } = await supabase_1.supabase
+            .from('vets')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'approved');
+        if (pendingVets && pendingVets > 5) {
+            insights.push({
+                type: 'info',
+                title: `${pendingVets} veterinários aguardando aprovação`,
+                message: `Há ${pendingVets} cadastros de veterinários pendentes de análise. Considere revisar as aprovações pendentes.`,
+                icon: 'clock',
+            });
+        }
+        // Check for inactive clinics (no demands in last 30 days)
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const { data: allClinics } = await supabase_1.supabase
+            .from('clinics')
+            .select('id, name');
+        if (allClinics) {
+            const inactiveClinics = await Promise.all(allClinics.map(async (clinic) => {
+                const { count } = await supabase_1.supabase
+                    .from('demands')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('clinic_id', clinic.id)
+                    .gte('created_at', thirtyDaysAgo.toISOString());
+                return { clinic, hasActivity: (count || 0) > 0 };
+            }));
+            const inactive = inactiveClinics.filter((c) => !c.hasActivity);
+            if (inactive.length > 0 && inactive.length <= 10) {
+                insights.push({
+                    type: 'info',
+                    title: `${inactive.length} clínica(s) inativa(s)`,
+                    message: `${inactive.length} clínica(s) não criaram demandas nos últimos 30 dias. Considere verificar o engajamento.`,
+                    icon: 'building',
+                });
+            }
+        }
+        res.json({ insights });
+    }
+    catch (error) {
+        console.error('Error getting system insights:', error);
+        res.status(500).json({ error: error.message || 'Failed to get system insights' });
+    }
+};
+exports.getSystemInsights = getSystemInsights;

@@ -21,7 +21,7 @@ const getVetById = async (req, res) => {
         if (!data) {
             return res.status(404).json({ error: 'Veterinário não encontrado.' });
         }
-        return res.json(data);
+        return res.json({ vet: data });
     }
     catch (err) {
         console.error('Erro ao buscar veterinário por ID:', err);

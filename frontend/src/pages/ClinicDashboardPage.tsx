@@ -63,22 +63,49 @@ const ClinicDashboardPage: React.FC = () => {
       if (!user) return; // Se não há usuário, não fazer requisição
       
       try {
+        // Get clinic ID - same logic as other components
+        const userRole = getUserRole(user);
+        let clinicId: string | null = null;
+        
+        if (userRole === 'CADMIN' || (user as any)?.user_metadata?.role === 'clinic') {
+          clinicId = user.id;
+        } else {
+          const clinicUserStr = localStorage.getItem('clinic_user');
+          if (clinicUserStr) {
+            try {
+              const clinicUser = JSON.parse(clinicUserStr);
+              clinicId = clinicUser?.clinic_id;
+            } catch (error) {
+              console.warn('Failed to parse clinic_user:', error);
+            }
+          }
+        }
+        
+        if (!clinicId) {
+          setCheckingStatus(false);
+          return;
+        }
+        
         const headers: Record<string, string> = {};
         const accessToken = session?.access_token;
         if (accessToken) {
           headers['Authorization'] = `Bearer ${accessToken}`;
         }
 
-        const response = await fetch(`${API_BASE_URL}/clinics/${user.id}`, {
+        const response = await fetch(`${API_BASE_URL}/clinics/${clinicId}`, {
           headers,
         });
         
         if (response.ok) {
           const data = await response.json();
           setClinicStatus(data.clinic?.status || null);
+        } else if (response.status === 404) {
+          // Clinic doesn't exist yet, that's okay
+          setClinicStatus(null);
         }
       } catch (error) {
-        console.error('Error checking clinic status:', error);
+        // Silently handle errors - clinic might not exist yet
+        console.warn('Error checking clinic status:', error);
       } finally {
         setCheckingStatus(false);
       }
@@ -529,12 +556,14 @@ const ClinicDashboardPage: React.FC = () => {
 
   return (
     <>
-      <ClinicStatusBanner />
       <DashboardLayout 
         pageName={config.title}
         menuItems={config.menuItems}
       >
-        {config.component}
+        <div style={{ width: '100%' }}>
+          <ClinicStatusBanner />
+          {config.component}
+        </div>
         <FloatingActionButton options={config.fabOptions} />
       </DashboardLayout>
       <LoadingOverlay visible={permissionsLoading || checkingStatus} />

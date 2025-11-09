@@ -99,11 +99,9 @@ const LoginPage: React.FC = () => {
         }
         
         // Se não tem dados de onboarding OU precisa completar onboarding
-        // Por enquanto, permitir acesso ao dashboard (onboarding pode ser opcional)
         if (!freelancerOnboardingInfo || freelancerOnboardingInfo?.needsOnboarding) {
-          // Pode redirecionar para onboarding se necessário no futuro
-          // Por enquanto, ir para dashboard
-          navigate('/freelancer-dashboard', { replace: true });
+          // Redirecionar para onboarding
+          navigate('/freelancer-onboarding', { replace: true });
           return;
         }
 

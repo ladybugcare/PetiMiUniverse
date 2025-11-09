@@ -6,6 +6,7 @@ interface CompleteOnboardingBody {
   service_regions?: string[];
   experience_year?: number;
   bio?: string;
+  certifications?: string[];
 }
 
 /**
@@ -20,7 +21,7 @@ export const completeFreelancerOnboarding = async (req: Request<{}, {}, Complete
       return res.status(401).json({ error: 'Usuário não autenticado' });
     }
 
-    const { specialties, service_regions, experience_year, bio } = req.body;
+    const { specialties, service_regions, experience_year, bio, certifications } = req.body;
 
     // Verificar se o onboarding já foi completado anteriormente
     // REGRA CRÍTICA: Se já foi completado, não permitir alterações
@@ -57,18 +58,21 @@ export const completeFreelancerOnboarding = async (req: Request<{}, {}, Complete
         return res.status(400).json({ error: 'Ano de experiência inválido (deve ser entre 1980 e o ano atual)' });
       }
       updateData.experience_year = experience_year;
-      // Calcular anos de experiência automaticamente
-      const currentYear = new Date().getFullYear();
-      const yearsOfExperience = currentYear - experience_year;
-      const experienceText = yearsOfExperience === 1 ? '1 ano' : `${yearsOfExperience} anos`;
-      updateData.experience = experienceText;
     }
 
     if (bio && bio.trim().length > 0) {
-      if (bio.trim().length < 30) {
-        return res.status(400).json({ error: 'A descrição deve ter no mínimo 30 caracteres' });
+      const bioLength = bio.trim().length;
+      if (bioLength < 100) {
+        return res.status(400).json({ error: 'A descrição deve ter no mínimo 100 caracteres' });
+      }
+      if (bioLength > 600) {
+        return res.status(400).json({ error: 'A descrição deve ter no máximo 600 caracteres' });
       }
       updateData.bio = bio.trim();
+    }
+
+    if (certifications && Array.isArray(certifications) && certifications.length > 0) {
+      updateData.certifications = certifications;
     }
 
     const { data: updatedFreelancer, error: updateError } = await supabaseAdmin

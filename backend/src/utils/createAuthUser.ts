@@ -5,13 +5,21 @@ export const createAuthUser = async (
   email: string,
   password: string,
   name: string,
-  role: string
+  role: string,
+  additionalMetadata?: Record<string, any>
 ) => {
+  const user_metadata: Record<string, any> = { role: role, name };
+  
+  // Adicionar metadata adicionais se fornecidos
+  if (additionalMetadata) {
+    Object.assign(user_metadata, additionalMetadata);
+  }
+
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
-    user_metadata: { role: role, name }, // ✅ Usa o parâmetro role ao invés de 'VET' hardcoded
+    user_metadata,
   });
 
   if (error || !data?.user) {

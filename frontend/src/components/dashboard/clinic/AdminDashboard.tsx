@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useUnit } from '../../../contexts/UnitContext';
+import { useAlert } from '../../../hooks/useAlert';
 import { statisticsApi } from '../../../services/statisticsApi';
 import { clinicUsersApi } from '../../../services/clinicUsersApi';
 import { Building2, Users, ClipboardList, AlertCircle, BarChart2, UserPlus } from 'lucide-react';
+import { Role } from '../../../types/units';
 import colors from '../../../styles/colors';
 
 interface AdminDashboardProps {
@@ -75,6 +78,107 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
 
 // Resumo Section for CADMIN
 const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units }) => {
+  const navigate = useNavigate();
+  const { showSuccess, showError, showWarning } = useAlert();
+  const { units: contextUnits, selectedUnit } = useUnit();
+  
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteForm, setInviteForm] = useState({
+    email: '',
+    unit_id: '',
+    role: 'CASSISTANT' as Role,
+  });
+
+  // Get clinic ID from localStorage
+  const getClinicId = () => {
+    const userStr = localStorage.getItem('user');
+    const clinicUserStr = localStorage.getItem('clinic_user');
+    
+    if (!userStr || !clinicUserStr) return null;
+    
+    const user = JSON.parse(userStr);
+    const clinicUser = JSON.parse(clinicUserStr);
+    return clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
+  };
+
+  // Handlers for button actions
+  const handleNewUnit = () => {
+    // Se não tem unidades, vai para o fluxo de primeira unidade
+    const availableUnits = contextUnits.length > 0 ? contextUnits : units;
+    if (availableUnits.length === 0) {
+      navigate('/units/create-first');
+    } else {
+      navigate('/units/create');
+    }
+  };
+
+  const handleInviteUser = () => {
+    const availableUnits = contextUnits.length > 0 ? contextUnits : units;
+    if (availableUnits.length === 0) {
+      showWarning('Você precisa ter pelo menos uma unidade cadastrada para convidar usuários.');
+      return;
+    }
+    setInviteForm({
+      email: '',
+      unit_id: selectedUnit?.id || availableUnits[0]?.id || '',
+      role: 'CASSISTANT',
+    });
+    setShowInviteModal(true);
+  };
+
+  const handleNewDemand = () => {
+    navigate('/create-demand');
+  };
+
+  const handleReports = () => {
+    navigate('/clinic-reports');
+  };
+
+  // Modal handlers
+  const handleCloseInviteModal = () => {
+    setShowInviteModal(false);
+    setInviteForm({
+      email: '',
+      unit_id: '',
+      role: 'CASSISTANT',
+    });
+  };
+
+  const handleInviteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!inviteForm.email || !inviteForm.unit_id || !inviteForm.role) {
+      showError('Por favor, preencha todos os campos');
+      return;
+    }
+
+    const clinicId = getClinicId();
+    if (!clinicId) {
+      showError('Erro ao identificar a clínica');
+      return;
+    }
+
+    try {
+      setInviteLoading(true);
+      await clinicUsersApi.invite({
+        email: inviteForm.email,
+        clinic_id: clinicId,
+        unit_id: inviteForm.unit_id,
+        role: inviteForm.role,
+      });
+
+      showSuccess('Convite enviado com sucesso!');
+      handleCloseInviteModal();
+    } catch (error: any) {
+      showError('Erro ao enviar convite: ' + (error.message || ''));
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const availableUnits = contextUnits.length > 0 ? contextUnits : units;
+
   return (
     <div style={styles.section}>
       <h2 style={styles.sectionTitle}>Visão Geral - Todas as Unidades</h2>
@@ -189,6 +293,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
         <div style={styles.actionsGrid}>
           <button 
             style={styles.actionButton}
+            onClick={handleNewUnit}
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
@@ -209,13 +314,13 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             }}
           >
               <div className="action-icon-circle" style={styles.actionIconCircle}>
-                {}
                 <Building2 size={28} strokeWidth={1.5} color="white" />
               </div>
             <span style={styles.actionLabel}>Nova Unidade</span>
           </button>
           <button 
             style={styles.actionButton}
+            onClick={handleInviteUser}
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
@@ -236,13 +341,13 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             }}
           >
               <div className="action-icon-circle" style={styles.actionIconCircle}>
-                {}
                 <UserPlus size={28} strokeWidth={1.5} color="white" />
               </div>
             <span style={styles.actionLabel}>Convidar Usuário</span>
           </button>
           <button 
             style={styles.actionButton}
+            onClick={handleNewDemand}
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
@@ -263,13 +368,13 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             }}
           >
               <div className="action-icon-circle" style={styles.actionIconCircle}>
-                {}
                 <ClipboardList size={28} strokeWidth={1.5} color="white" />
               </div>
             <span style={styles.actionLabel}>Nova Demanda</span>
           </button>
           <button 
             style={styles.actionButton}
+            onClick={handleReports}
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
@@ -290,13 +395,122 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             }}
           >
               <div className="action-icon-circle" style={styles.actionIconCircle}>
-                {}
                 <BarChart2 size={28} strokeWidth={1.5} color="white" />
               </div>
             <span style={styles.actionLabel}>Relatórios</span>
           </button>
         </div>
       </div>
+
+      {/* Invite Modal */}
+      {showInviteModal && (
+        <div style={styles.modalOverlay} onClick={handleCloseInviteModal}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={styles.modalTitle}>Convidar Usuário</h2>
+            <form onSubmit={handleInviteSubmit} style={styles.form}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Email *</label>
+                <input
+                  type="email"
+                  value={inviteForm.email}
+                  onChange={(e) =>
+                    setInviteForm({ ...inviteForm, email: e.target.value })
+                  }
+                  style={styles.input}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = '#7c3aed';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = '#e5e5e5';
+                  }}
+                  required
+                />
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Unidade *</label>
+                <select
+                  value={inviteForm.unit_id}
+                  onChange={(e) =>
+                    setInviteForm({ ...inviteForm, unit_id: e.target.value })
+                  }
+                  style={styles.input}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = '#7c3aed';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = '#e5e5e5';
+                  }}
+                  required
+                >
+                  <option value="">Selecione uma unidade</option>
+                  {availableUnits.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Role *</label>
+                <select
+                  value={inviteForm.role}
+                  onChange={(e) =>
+                    setInviteForm({ ...inviteForm, role: e.target.value as Role })
+                  }
+                  style={styles.input}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = '#7c3aed';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = '#e5e5e5';
+                  }}
+                  required
+                >
+                  <option value="CADMIN">Administrador da Clínica</option>
+                  <option value="CMANAGER">Gestor de Unidade</option>
+                  <option value="CASSISTANT">Assistente/Secretário</option>
+                  <option value="CVET_INTERNAL">Veterinário Interno</option>
+                </select>
+              </div>
+              <div style={styles.modalActions}>
+                <button 
+                  type="button" 
+                  onClick={handleCloseInviteModal} 
+                  style={styles.cancelButton}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#e5e5e5';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f5f5f5';
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={inviteLoading} 
+                  style={{
+                    ...styles.submitButton,
+                    ...(inviteLoading && { opacity: 0.6, cursor: 'not-allowed' })
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!inviteLoading) {
+                      e.currentTarget.style.backgroundColor = '#6d28d9';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!inviteLoading) {
+                      e.currentTarget.style.backgroundColor = '#7c3aed';
+                    }
+                  }}
+                >
+                  {inviteLoading ? 'Enviando...' : 'Enviar Convite'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -442,7 +656,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   actionIconCircle: {
     width: '56px',
     height: '56px',
-    background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
+    background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
     borderRadius: '14px',
     display: 'flex',
     alignItems: 'center',
@@ -471,6 +685,87 @@ const styles: { [key: string]: React.CSSProperties } = {
   placeholderSubtext: {
     fontSize: '14px',
     color: '#737373',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    backgroundColor: '#ffffff',
+    borderRadius: '16px',
+    padding: '32px',
+    maxWidth: '500px',
+    width: '90%',
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+  },
+  modalTitle: {
+    fontSize: '24px',
+    fontWeight: '600',
+    fontFamily: 'Poppins, sans-serif',
+    color: '#262626',
+    marginBottom: '24px',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  inputGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  label: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#525252',
+  },
+  input: {
+    padding: '12px',
+    border: '1px solid #e5e5e5',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontFamily: 'Inter, sans-serif',
+    color: '#262626',
+    outline: 'none',
+    transition: 'border-color 0.2s ease',
+  },
+  modalActions: {
+    display: 'flex',
+    gap: '12px',
+    marginTop: '24px',
+  },
+  cancelButton: {
+    flex: '1',
+    padding: '12px',
+    backgroundColor: '#f5f5f5',
+    color: '#525252',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease',
+  },
+  submitButton: {
+    flex: '1',
+    padding: '12px',
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease',
   },
 };
 

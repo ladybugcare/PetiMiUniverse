@@ -68,17 +68,24 @@ const FreelancerDashboardPage: React.FC = () => {
             approvalStatus: freelancerOnboarding.approvalStatus ?? 'pending',
           });
 
-          // Se precisa completar onboarding, redirecionar (se houver página de onboarding)
-          // Por enquanto, permitir acesso ao dashboard mesmo sem onboarding completo
-          // if (freelancerOnboarding.needsOnboarding !== false) {
-          //   navigate('/freelancer-onboarding', { replace: true });
-          //   return;
-          // }
+          // Se precisa completar onboarding, redirecionar
+          if (freelancerOnboarding.needsOnboarding !== false) {
+            navigate('/freelancer-onboarding', { replace: true });
+            return;
+          }
         }
       } catch (e) {
         console.error('Erro ao parsear freelancerOnboarding:', e);
-        // Se der erro, assumir que está ok
+        // Se der erro, verificar no backend antes de redirecionar
+        // Por enquanto, assumir que precisa fazer onboarding
+        navigate('/freelancer-onboarding', { replace: true });
+        return;
       }
+    } else {
+      // Se não tem dados no localStorage, verificar no backend antes de redirecionar
+      // Por enquanto, redirecionar para onboarding
+      navigate('/freelancer-onboarding', { replace: true });
+      return;
     }
     
     setCheckingAuth(false);

@@ -14,6 +14,7 @@ const rateLimiter_js_1 = require("./middleware/rateLimiter.js");
 const pets_js_1 = __importDefault(require("./routes/pets.js"));
 const clinics_js_1 = __importDefault(require("./routes/clinics.js"));
 const vets_js_1 = __importDefault(require("./routes/vets.js"));
+const freelancers_js_1 = __importDefault(require("./routes/freelancers.js"));
 const demands_js_1 = __importDefault(require("./routes/demands.js"));
 const applications_js_1 = __importDefault(require("./routes/applications.js"));
 const auth_js_1 = __importDefault(require("./routes/auth.js"));
@@ -27,6 +28,7 @@ const demandPositions_js_1 = __importDefault(require("./routes/demandPositions.j
 const adminRoutes_js_1 = __importDefault(require("./routes/adminRoutes.js"));
 const supportTickets_js_1 = __importDefault(require("./routes/supportTickets.js"));
 const notifications_js_1 = __importDefault(require("./routes/notifications.js"));
+const health_js_1 = __importDefault(require("./routes/health.js"));
 // 🔹 Carrega variáveis de ambiente
 dotenv_1.default.config();
 // 🔹 Inicializa o Express
@@ -37,8 +39,10 @@ const allowedOrigins = [
     'http://localhost:3000', // Backend local (caso frontend rode na mesma porta)
     'http://localhost:3001', // Frontend local - porta alternativa
     'http://localhost:3002', // Frontend local - porta padrão React dev server
-    'https://peti-vet-git-staging-petivet.vercel.app', // Staging
-    'https://peti-vet-petivet.vercel.app', // Vercel production
+    'https://peti-vet-git-staging-petivet.vercel.app', // Staging (Vercel preview)
+    'https://staging.petivet.com.br', // Staging (domínio customizado)
+    'https://peti-vet-petivet.vercel.app', // Vercel production (preview)
+    'https://petivet.com.br', // Produção (domínio customizado)
     process.env.FRONTEND_URL, // Variável de ambiente (permite configuração flexível)
 ].filter((origin) => Boolean(origin));
 const normalizedOrigins = allowedOrigins.map((origin) => origin.replace(/\/$/, ''));
@@ -88,6 +92,7 @@ app.use('/auth', auth_js_1.default);
 app.use('/pets', pets_js_1.default);
 app.use('/clinics', clinics_js_1.default);
 app.use('/vets', vets_js_1.default);
+app.use('/freelancers', freelancers_js_1.default);
 app.use('/demands', demands_js_1.default);
 app.use('/applications', applications_js_1.default);
 app.use('/specialties', specialties_js_1.default);
@@ -100,6 +105,7 @@ app.use('/demand-positions', demandPositions_js_1.default);
 app.use('/admin', adminRoutes_js_1.default);
 app.use('/support', supportTickets_js_1.default);
 app.use('/notifications', notifications_js_1.default);
+app.use('/health', health_js_1.default);
 // 🔹 Healthcheck melhorado (verifica dependências)
 app.get('/', async (req, res) => {
     try {
