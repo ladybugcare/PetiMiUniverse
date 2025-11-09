@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clinicsApi } from '../services/clinicsApi';
+import { unitsApi } from '../services/unitsApi';
 import { Construction, Clock, AlertTriangle } from 'lucide-react';
 import IconWrapper from './IconWrapper';
 import colors from '../styles/colors';
 
 const ClinicStatusBanner: React.FC = () => {
   const [status, setStatus] = useState<string | null>(null);
+  const [hasApprovedUnit, setHasApprovedUnit] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   
@@ -50,14 +52,28 @@ const ClinicStatusBanner: React.FC = () => {
         }
         
         const { clinic } = await clinicsApi.getById(clinicId);
-        setStatus(clinic.status || 'active');
+        const clinicStatus = clinic.status || 'active';
+        
+        // Check if there are any approved units
+        try {
+          const { units } = await unitsApi.getByClinic(clinicId);
+          const approvedUnits = units.filter((unit: any) => 
+            unit.status === 'approved' || unit.status === 'active'
+          );
+          setHasApprovedUnit(approvedUnits.length > 0);
+        } catch (error) {
+          console.warn('Error loading units:', error);
+          setHasApprovedUnit(false);
+        }
+        
+        setStatus(clinicStatus);
       } catch (error: any) {
         // Silently handle 404 - clinic might not exist yet
         if (error.message?.includes('não encontrada') || error.message?.includes('Not Found')) {
           // Clinic doesn't exist yet, that's okay
           setStatus(null);
         } else {
-          console.error('Error loading clinic status:', error);
+        console.error('Error loading clinic status:', error);
         }
       } finally {
         setLoading(false);
@@ -91,7 +107,7 @@ const ClinicStatusBanner: React.FC = () => {
     );
   }
   
-  if (status === 'pending_approval') {
+  if (status === 'pending_approval' && !hasApprovedUnit) {
     return (
       <div style={styles.bannerInfo}>
         <div style={styles.bannerContent}>

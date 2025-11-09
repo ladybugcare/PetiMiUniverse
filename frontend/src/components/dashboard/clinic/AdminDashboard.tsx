@@ -4,8 +4,9 @@ import { useUnit } from '../../../contexts/UnitContext';
 import { useAlert } from '../../../hooks/useAlert';
 import { statisticsApi } from '../../../services/statisticsApi';
 import { clinicUsersApi } from '../../../services/clinicUsersApi';
+import { unitsApi } from '../../../services/unitsApi';
 import { Building2, Users, ClipboardList, AlertCircle, BarChart2, UserPlus } from 'lucide-react';
-import { Role } from '../../../types/units';
+import { Role, Unit } from '../../../types/units';
 import colors from '../../../styles/colors';
 
 interface AdminDashboardProps {
@@ -13,7 +14,7 @@ interface AdminDashboardProps {
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
-  const { units } = useUnit();
+  const { units, loadUnits } = useUnit();
   const [stats, setStats] = useState({
     totalUnits: 0,
     totalUsers: 0,
@@ -23,6 +24,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+
     const loadStats = async () => {
       try {
         setLoading(true);
@@ -37,14 +40,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
 
         console.log('Loading stats for clinic:', { clinicId, userId: user.id });
 
+        // Get fresh units count directly from API to ensure accuracy
+        const { units: allClinicUnits } = await unitsApi.getByClinic(clinicId);
+        const activeUnitsCount = allClinicUnits.filter(u => 
+          u.status === 'active' || u.status === 'approved'
+        ).length;
+
         // Fetch clinic statistics
         const { stats: clinicStats } = await statisticsApi.getClinicStats(clinicId);
 
         // Fetch clinic users count
         const { clinic_users } = await clinicUsersApi.getClinicUsers(clinicId);
 
+        if (!isMounted) return;
+
         setStats({
-          totalUnits: units.length,
+          totalUnits: activeUnitsCount,
           totalUsers: clinic_users?.length || 0,
           totalDemands: clinicStats.totalDemands,
           pendingApplications: clinicStats.pendingApplications,
@@ -53,14 +64,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
         console.error('Error loading stats:', error);
         console.error('Error details:', error.message);
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
-    if (units.length > 0) {
-      loadStats();
-    }
-  }, [units]);
+    loadStats();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Empty dependency array - only run once on mount
 
   const renderSection = () => {
     switch (activeSection) {
@@ -81,6 +96,11 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
   const navigate = useNavigate();
   const { showSuccess, showError, showWarning } = useAlert();
   const { units: contextUnits, selectedUnit } = useUnit();
+  // Use units from context or props - no need to fetch again
+  const allUnits = contextUnits.length > 0 ? contextUnits : units.filter(u => 
+    u.status === 'active' || u.status === 'approved'
+  );
+  const [loadingUnits] = useState(false);
   
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -91,7 +111,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
   });
 
   // Get clinic ID from localStorage
-  const getClinicId = () => {
+  const getClinicId = React.useCallback(() => {
     const userStr = localStorage.getItem('user');
     const clinicUserStr = localStorage.getItem('clinic_user');
     
@@ -100,7 +120,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
     const user = JSON.parse(userStr);
     const clinicUser = JSON.parse(clinicUserStr);
     return clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
-  };
+  }, []);
 
   // Handlers for button actions
   const handleNewUnit = () => {
@@ -187,6 +207,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
       <div style={styles.statsGrid}>
         <div 
           style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          onClick={() => navigate('/units')}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
             e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
@@ -274,16 +295,58 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
       <div style={styles.unitsSection}>
         <h3 style={styles.subsectionTitle}>Suas Unidades</h3>
         <div style={styles.unitsList}>
-          {units.map((unit) => (
-            <div key={unit.id} style={styles.unitCard}>
-              {unit.is_main && <span style={styles.mainBadge}>⭐ Principal</span>}
-              <h4 style={styles.unitName}>{unit.name}</h4>
-              <p style={styles.unitLocation}>
-                📍 {unit.city}, {unit.state}
-              </p>
-              <p style={styles.unitAddress}>{unit.address}</p>
-            </div>
-          ))}
+          {loadingUnits ? (
+            <p style={styles.loadingText}>Carregando unidades...</p>
+          ) : allUnits.length === 0 ? (
+            <p style={styles.emptyText}>Nenhuma unidade cadastrada</p>
+          ) : (
+            allUnits.map((unit) => {
+              const getStatusLabel = (status: string) => {
+                switch (status) {
+                  case 'approved':
+                  case 'active':
+                    return { label: 'Aprovada', color: '#10b981' };
+                  case 'pending_review':
+                    return { label: 'Pendente', color: '#f59e0b' };
+                  case 'rejected':
+                    return { label: 'Rejeitada', color: '#ef4444' };
+                  case 'inactive':
+                    return { label: 'Inativa', color: '#737373' };
+                  default:
+                    return { label: status, color: '#737373' };
+                }
+              };
+              const statusInfo = getStatusLabel(unit.status);
+              
+              return (
+                <div 
+                  key={unit.id} 
+                  style={{ ...styles.unitCard, cursor: 'pointer' }}
+                  onClick={() => navigate(`/units/${unit.id}`)}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.boxShadow = '0 8px 16px rgba(0, 0, 0, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.05)';
+                  }}
+                >
+                  {unit.is_main && <span style={styles.mainBadge}>⭐ Principal</span>}
+                  <div style={styles.unitHeader}>
+                    <h4 style={styles.unitName}>{unit.name}</h4>
+                    <span style={{ ...styles.statusBadge, backgroundColor: `${statusInfo.color}20`, color: statusInfo.color, borderColor: statusInfo.color }}>
+                      {statusInfo.label}
+                    </span>
+                  </div>
+                  <p style={styles.unitLocation}>
+                    📍 {unit.city}, {unit.state}
+                  </p>
+                  <p style={styles.unitAddress}>{unit.address}</p>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -570,6 +633,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '16px',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
     cursor: 'pointer',
+    userSelect: 'none',
   },
   statIcon: {
     fontSize: '36px',
@@ -606,7 +670,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   mainBadge: {
     position: 'absolute',
-    top: '12px',
+    bottom: '12px',
     right: '12px',
     backgroundColor: '#fef3c7',
     color: '#92400e',
@@ -615,11 +679,39 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '12px',
     fontWeight: '600',
   },
+  unitHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '8px',
+    gap: '12px',
+  },
   unitName: {
     fontSize: '18px',
     fontWeight: '600',
     color: '#262626',
-    marginBottom: '8px',
+    margin: 0,
+    flex: 1,
+  },
+  statusBadge: {
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    border: '1px solid',
+    whiteSpace: 'nowrap',
+  },
+  loadingText: {
+    fontSize: '14px',
+    color: '#737373',
+    textAlign: 'center',
+    padding: '20px',
+  },
+  emptyText: {
+    fontSize: '14px',
+    color: '#737373',
+    textAlign: 'center',
+    padding: '20px',
   },
   unitLocation: {
     fontSize: '14px',

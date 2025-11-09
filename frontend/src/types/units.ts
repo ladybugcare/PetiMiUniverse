@@ -12,7 +12,7 @@ export interface Unit {
   phone?: string;
   technical_manager?: string;
   is_main: boolean;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'pending_review' | 'approved' | 'rejected';
   created_at: string;
   updated_at: string;
 }

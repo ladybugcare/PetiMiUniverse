@@ -48,6 +48,7 @@ import AdminProfilePage from './pages/AdminProfilePage';
 import NotificationsPage from './pages/NotificationsPage';
 import CreateFirstUnitPage from './pages/CreateFirstUnitPage';
 import CreateUnitPage from './pages/CreateUnitPage';
+import UnitProfilePage from './pages/UnitProfilePage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
 import AdminPendingVetsPage from './pages/AdminPendingVetsPage';
 import AdminPendingFreelancersPage from './pages/AdminPendingFreelancersPage';
@@ -283,6 +284,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
                     <CreateUnitPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/units/:unitId"
+                element={
+                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                    <UnitProfilePage />
                   </ProtectedRoute>
                 }
               />

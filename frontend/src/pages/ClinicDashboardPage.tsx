@@ -562,7 +562,7 @@ const ClinicDashboardPage: React.FC = () => {
       >
         <div style={{ width: '100%' }}>
           <ClinicStatusBanner />
-          {config.component}
+        {config.component}
         </div>
         <FloatingActionButton options={config.fabOptions} />
       </DashboardLayout>

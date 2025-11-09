@@ -277,16 +277,16 @@ const AdminClinicsPage: React.FC = () => {
         />
       )}
 
-      <DashboardLayout pageName="Clínicas Cadastradas" menuItems={menuItems}>
-        <div style={styles.container}>
-          {/* Header */}
-          <div style={styles.header}>
-            <h2 style={styles.title}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <Building2 size={28} color={colors.primary} />
+    <DashboardLayout pageName="Clínicas Cadastradas" menuItems={menuItems}>
+      <div style={styles.container}>
+        {/* Header */}
+        <div style={styles.header}>
+          <h2 style={styles.title}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Building2 size={28} color={colors.primary} />
                 <span>Clínicas e Unidades</span>
-              </div>
-            </h2>
+            </div>
+          </h2>
           </div>
 
           {/* Tabs */}
@@ -313,7 +313,7 @@ const AdminClinicsPage: React.FC = () => {
 
           {/* Search Bar */}
           <div style={styles.searchContainer}>
-            <SearchBar
+          <SearchBar
               placeholder={
                 activeTab === 'clinics'
                   ? 'Buscar por nome, email ou CNPJ...'
@@ -321,90 +321,90 @@ const AdminClinicsPage: React.FC = () => {
               }
               value={activeTab === 'clinics' ? searchQuery : unitsSearchQuery}
               onChange={activeTab === 'clinics' ? setSearchQuery : setUnitsSearchQuery}
-            />
-          </div>
+          />
+        </div>
 
-          {/* Stats */}
-          <div style={styles.stats}>
-            <div style={styles.statItem}>
-              <span style={styles.statLabel}>Total:</span>
+        {/* Stats */}
+        <div style={styles.stats}>
+          <div style={styles.statItem}>
+            <span style={styles.statLabel}>Total:</span>
               <span style={styles.statValue}>
                 {activeTab === 'clinics' ? filteredClinics.length : filteredUnits.length}
               </span>
-            </div>
           </div>
+        </div>
 
           {/* Clinics Tab Content */}
           {activeTab === 'clinics' && (
             <>
-              {loading ? (
-                <div style={styles.loading}>Carregando...</div>
-              ) : currentClinics.length === 0 ? (
-                <div style={styles.emptyState}>
-                  <p>Nenhuma clínica encontrada</p>
-                </div>
-              ) : (
-                <>
-                  <div style={styles.tableContainer}>
-                    <table style={styles.table}>
-                      <thead>
-                        <tr style={styles.tableHeaderRow}>
-                          <th style={styles.tableHeader}>Nome</th>
-                          <th style={styles.tableHeader}>E-mail</th>
-                          <th style={styles.tableHeader}>CNPJ</th>
-                          <th style={styles.tableHeader}>Telefone</th>
-                          <th style={styles.tableHeader}>Cidade/Estado</th>
-                          <th style={styles.tableHeader}>Data Cadastro</th>
-                          <th style={styles.tableHeader}>Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {currentClinics.map((clinic) => (
-                          <tr key={clinic.id} style={styles.tableRow}>
-                            <td style={styles.tableCell}>{clinic.name}</td>
-                            <td style={styles.tableCell}>{clinic.email}</td>
-                            <td style={styles.tableCell}>{clinic.cnpj || 'N/A'}</td>
-                            <td style={styles.tableCell}>{clinic.phone || 'N/A'}</td>
-                            <td style={styles.tableCell}>
-                              {clinic.city && clinic.state ? `${clinic.city}/${clinic.state}` : 'N/A'}
-                            </td>
-                            <td style={styles.tableCell}>{formatDate(clinic.created_at)}</td>
-                            <td style={styles.tableCell}>
-                              <div style={styles.actions}>
-                                <button
-                                  onClick={() => handleView(clinic)}
-                                  style={{ ...styles.actionButton, ...styles.viewButton }}
-                                  title="Ver detalhes"
-                                >
-                                  <Eye size={16} color="#3b82f6" />
-                                </button>
-                                <button
-                                  onClick={() => handleEdit(clinic)}
-                                  style={{ ...styles.actionButton, ...styles.editButton }}
-                                  title="Editar"
-                                >
-                                  <Edit size={16} color="#f59e0b" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeactivate(clinic)}
-                                  style={{ ...styles.actionButton, ...styles.deleteButton }}
-                                  title="Inativar"
-                                >
-                                  <Trash2 size={16} color="#ef4444" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+        {loading ? (
+          <div style={styles.loading}>Carregando...</div>
+        ) : currentClinics.length === 0 ? (
+          <div style={styles.emptyState}>
+            <p>Nenhuma clínica encontrada</p>
+          </div>
+        ) : (
+          <>
+            <div style={styles.tableContainer}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.tableHeaderRow}>
+                    <th style={styles.tableHeader}>Nome</th>
+                    <th style={styles.tableHeader}>E-mail</th>
+                    <th style={styles.tableHeader}>CNPJ</th>
+                    <th style={styles.tableHeader}>Telefone</th>
+                    <th style={styles.tableHeader}>Cidade/Estado</th>
+                    <th style={styles.tableHeader}>Data Cadastro</th>
+                    <th style={styles.tableHeader}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentClinics.map((clinic) => (
+                    <tr key={clinic.id} style={styles.tableRow}>
+                      <td style={styles.tableCell}>{clinic.name}</td>
+                      <td style={styles.tableCell}>{clinic.email}</td>
+                      <td style={styles.tableCell}>{clinic.cnpj || 'N/A'}</td>
+                      <td style={styles.tableCell}>{clinic.phone || 'N/A'}</td>
+                      <td style={styles.tableCell}>
+                        {clinic.city && clinic.state ? `${clinic.city}/${clinic.state}` : 'N/A'}
+                      </td>
+                      <td style={styles.tableCell}>{formatDate(clinic.created_at)}</td>
+                      <td style={styles.tableCell}>
+                        <div style={styles.actions}>
+                          <button
+                            onClick={() => handleView(clinic)}
+                            style={{ ...styles.actionButton, ...styles.viewButton }}
+                            title="Ver detalhes"
+                          >
+                            <Eye size={16} color="#3b82f6" />
+                          </button>
+                          <button
+                            onClick={() => handleEdit(clinic)}
+                            style={{ ...styles.actionButton, ...styles.editButton }}
+                            title="Editar"
+                          >
+                            <Edit size={16} color="#f59e0b" />
+                          </button>
+                          <button
+                            onClick={() => handleDeactivate(clinic)}
+                            style={{ ...styles.actionButton, ...styles.deleteButton }}
+                            title="Inativar"
+                          >
+                            <Trash2 size={16} color="#ef4444" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-                  <Pagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    onPageChange={setCurrentPage}
-                  />
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
                 </>
               )}
             </>
@@ -497,8 +497,8 @@ const AdminClinicsPage: React.FC = () => {
                   />
                 </>
               )}
-            </>
-          )}
+          </>
+        )}
 
         {/* View Modal */}
         {showViewModal && selectedClinic && (
@@ -636,13 +636,13 @@ const AdminClinicsPage: React.FC = () => {
                       ? 'Confirmar Aprovação'
                       : 'Confirmar Rejeição'}
                   </button>
-                </div>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Edit Modal */}
-          {showEditModal && selectedClinic && (
+        {/* Edit Modal */}
+        {showEditModal && selectedClinic && (
           <div style={styles.modalOverlay} onClick={() => setShowEditModal(false)}>
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
@@ -709,8 +709,8 @@ const AdminClinicsPage: React.FC = () => {
             </div>
           </div>
         )}
-        </div>
-      </DashboardLayout>
+      </div>
+    </DashboardLayout>
     </>
   );
 };

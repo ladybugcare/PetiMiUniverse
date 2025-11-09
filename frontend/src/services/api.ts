@@ -83,18 +83,8 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
             }
           }
         }
-      } else {
-        // Se não tem expires_at, tentar renovar de qualquer forma para garantir token válido
-        try {
-          const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
-          if (!refreshError && refreshedSession) {
-            authToken = refreshedSession.access_token;
-            console.log('Token renovado (sem expires_at)');
-          }
-        } catch (refreshErr) {
-          console.warn('Erro ao tentar renovar sessão (sem expires_at):', refreshErr);
-        }
       }
+      // Removed automatic refresh when expires_at is missing to avoid unnecessary calls
     }
   } catch (error) {
     console.error('Erro ao obter/renovar sessão:', error);

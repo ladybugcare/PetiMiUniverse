@@ -11,8 +11,11 @@ export const unitsApi = {
   },
 
   // Get units by clinic ID
-  getByClinic: async (clinicId: string): Promise<{ units: Unit[] }> => {
-    return apiRequest(`/units/clinic/${clinicId}`);
+  getByClinic: async (clinicId: string, includeAll: boolean = false): Promise<{ units: Unit[] }> => {
+    const url = includeAll 
+      ? `/units/clinic/${clinicId}?all=true`
+      : `/units/clinic/${clinicId}`;
+    return apiRequest(url);
   },
 
   // Get unit by ID

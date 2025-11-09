@@ -76,27 +76,27 @@ const CreateFirstUnitPage: React.FC = () => {
         
         const { clinic } = await clinicsApi.getById(clinicId);
         
-        setHasClinic(true);
-        setClinicData({
+          setHasClinic(true);
+          setClinicData({
           name: clinic.name || '',
           cnpj: clinic.cnpj || '',
           description: clinic.description || '',
-        });
-        
-        // Se o usuário já viu o modal antes e não é primeiro acesso, pula direto para o formulário da clínica
-        if (hideModal === 'true' && isFirstAccess !== 'true') {
-          setShowWelcomeModal(false);
-          setCurrentStep('clinic');
-        }
+          });
+          
+          // Se o usuário já viu o modal antes e não é primeiro acesso, pula direto para o formulário da clínica
+          if (hideModal === 'true' && isFirstAccess !== 'true') {
+            setShowWelcomeModal(false);
+            setCurrentStep('clinic');
+          }
       } catch (err: any) {
         // Clínica ainda não existe ou erro ao buscar
         console.log('No clinic found, will create new one');
         const hideModal = localStorage.getItem('hideWelcomeModal');
         const isFirstAccess = localStorage.getItem('isFirstAccess');
-        if (hideModal === 'true' && isFirstAccess !== 'true') {
-          setShowWelcomeModal(false);
-          setCurrentStep('clinic');
-        }
+          if (hideModal === 'true' && isFirstAccess !== 'true') {
+            setShowWelcomeModal(false);
+            setCurrentStep('clinic');
+          }
       } finally {
         setCheckingClinic(false);
       }
@@ -183,7 +183,7 @@ const CreateFirstUnitPage: React.FC = () => {
     if (clinicData.name.trim()) {
       try {
         await clinicsApi.registerWithUnit({
-          clinic: clinicData,
+            clinic: clinicData,
           unit: null as any,
         });
       } catch (err) {
@@ -388,8 +388,8 @@ const CreateFirstUnitPage: React.FC = () => {
           onClose={handleSuccessModalClose}
         />
       )}
-      <div style={styles.container}>
-        <div style={styles.card}>
+    <div style={styles.container}>
+      <div style={styles.card}>
         <div style={styles.header}>
           <h1 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -578,8 +578,8 @@ const CreateFirstUnitPage: React.FC = () => {
             </button>
           </div>
         </form>
-        </div>
       </div>
+    </div>
     </>
   );
 };

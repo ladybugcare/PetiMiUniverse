@@ -70,7 +70,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         }}
       >
         <div style={styles.contentWrapper}>
-          {children}
+        {children}
         </div>
       </main>
     </div>
