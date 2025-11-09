@@ -4,7 +4,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, User, LogOut, MessageCircle, Edit, Crown } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, User, LogOut, MessageCircle, Edit, Crown, Settings } from 'lucide-react';
 import colors from '../styles/colors';
 
 interface AdminUser {
@@ -64,6 +64,13 @@ const AdminProfilePage: React.FC = () => {
       icon: <MessageCircle size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/admin/support-tickets',
+    },
+    {
+      id: 'settings',
+      label: 'Configurações',
+      icon: <Settings size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/admin/settings',
     },
     {
       id: 'perfil',

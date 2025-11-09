@@ -34,6 +34,7 @@ import AdminVetsPage from './pages/AdminVetsPage';
 import AdminDemandsPage from './pages/AdminDemandsPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminSupportTicketsPage from './pages/AdminSupportTicketsPage';
+import VetOnboardingPage from './pages/VetOnboardingPage';
 import VetPositionsPage from './pages/VetPositionsPage';
 import VetProfilePage from './pages/VetProfilePage';
 import ClinicProfilePage from './pages/ClinicProfilePage';
@@ -43,6 +44,8 @@ import NotificationsPage from './pages/NotificationsPage';
 import CreateFirstUnitPage from './pages/CreateFirstUnitPage';
 import CreateUnitPage from './pages/CreateUnitPage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
+import AdminPendingVetsPage from './pages/AdminPendingVetsPage';
+import AdminSettingsPage from './pages/AdminSettingsPage';
 import EmailConfirmedPage from './pages/EmailConfirmedPage';
 
 
@@ -187,10 +190,26 @@ function App() {
                 }
               />
               <Route
+                path="/admin/pending-vets"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminPendingVetsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/admin-profile"
                 element={
                   <ProtectedRoute allowedRoles={['ADMIN']}>
                     <AdminProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/settings"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminSettingsPage />
                   </ProtectedRoute>
                 }
               />
@@ -246,6 +265,14 @@ function App() {
               />
 
               {/* VET */}
+              <Route
+                path="/vet-onboarding"
+                element={
+                  <ProtectedRoute allowedRoles={['VET']}>
+                    <VetOnboardingPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/vet-dashboard"
                 element={

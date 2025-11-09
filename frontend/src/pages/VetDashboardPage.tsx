@@ -4,19 +4,26 @@ import DashboardLayout from '../components/DashboardLayout';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { MenuItem } from '../components/DashboardSidebar';
 import FloatingActionButton from '../components/FloatingActionButton';
-import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut, ShoppingCart, Clock, CheckCircle, Building2, Bell, Lock, Smartphone, Globe, MessageCircle, Settings } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut, ShoppingCart, Clock, CheckCircle, Building2, Bell, Lock, Smartphone, Globe, MessageCircle, Settings, AlertCircle } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
 import { useAuth } from '../AuthContext';
 import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
+import { useAlert } from '../hooks/useAlert';
 import colors from '../styles/colors';
 
 const VetDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, role, loading: authLoading } = useAuth();
+  const { showWarning } = useAlert();
   const [activeSection, setActiveSection] = useState('resumo');
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [vetStatus, setVetStatus] = useState<{
+    needsOnboarding?: boolean;
+    isApproved?: boolean;
+    approvalStatus?: string;
+  } | null>(null);
 
-  // Check authentication
+  // Check authentication and vet status
   useEffect(() => {
     // Aguardar carregamento da autenticação
     if (authLoading) return;
@@ -39,9 +46,53 @@ const VetDashboardPage: React.FC = () => {
       setCheckingAuth(false);
       return;
     }
+
+    // Verificar status do vet do localStorage (vem do login)
+    const vetOnboardingStr = localStorage.getItem('vetOnboarding');
+    if (vetOnboardingStr && vetOnboardingStr.trim() !== '') {
+      try {
+        const vetOnboarding = JSON.parse(vetOnboardingStr);
+        
+        // REGRA CRÍTICA: Se onboarding já foi completado, NUNCA redirecionar para onboarding
+        if (vetOnboarding.onboardingCompleted === true) {
+          setVetStatus({
+            needsOnboarding: false, // Forçar false se já completou
+            isApproved: vetOnboarding.isApproved ?? false,
+            approvalStatus: vetOnboarding.approvalStatus ?? 'pending',
+          });
+          // Não redirecionar, permitir acesso ao dashboard
+        } else {
+          setVetStatus({
+            needsOnboarding: vetOnboarding.needsOnboarding ?? true,
+            isApproved: vetOnboarding.isApproved ?? false,
+            approvalStatus: vetOnboarding.approvalStatus ?? 'pending',
+          });
+
+          // Se precisa completar onboarding, redirecionar
+          if (vetOnboarding.needsOnboarding !== false) {
+            navigate('/vet-onboarding', { replace: true });
+            return;
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao parsear vetOnboarding:', e);
+        // Se der erro, verificar no backend antes de redirecionar
+        // Por enquanto, assumir que precisa fazer onboarding
+        navigate('/vet-onboarding', { replace: true });
+        return;
+      }
+    } else {
+      // Se não tem dados no localStorage, verificar no backend antes de redirecionar
+      // Por enquanto, redirecionar para onboarding
+      navigate('/vet-onboarding', { replace: true });
+      return;
+    }
     
     setCheckingAuth(false);
   }, [navigate, user, authLoading]);
+
+  // Verificar se está aprovado
+  const isApproved = vetStatus?.isApproved ?? false;
 
   // Floating Action Button options
   const fabOptions = [
@@ -49,8 +100,9 @@ const VetDashboardPage: React.FC = () => {
       id: 'view-demands',
       label: 'Ver Demandas',
       icon: <IconWrapper icon={ClipboardList} size={20} color="#ffffff" />,
-      path: '/demands',
+      path: isApproved ? '/demands' : undefined,
       color: '#7c3aed',
+      disabled: !isApproved,
     },
     {
       id: 'create-listing',
@@ -69,13 +121,14 @@ const VetDashboardPage: React.FC = () => {
       action: 'section',
       sectionId: 'resumo',
     },
-    {
+    // Só incluir o item de demandas se estiver aprovado
+    ...(isApproved ? [{
       id: 'demandas',
       label: 'Demandas Disponíveis',
       icon: <IconWrapper icon={ClipboardList} size={20} color={colors.primary} />,
-      action: 'navigate',
+      action: 'navigate' as const,
       path: '/demands',
-    },
+    }] : []),
     {
       id: 'candidaturas',
       label: 'Minhas Candidaturas',
@@ -148,6 +201,38 @@ const VetDashboardPage: React.FC = () => {
     }
   };
 
+  // Mostrar aviso se não estiver aprovado
+  const renderApprovalWarning = () => {
+    if (isApproved || checkingAuth) return null;
+
+    const approvalStatus = vetStatus?.approvalStatus;
+    let message = '';
+    let title = '';
+
+    if (approvalStatus === 'pending_approval') {
+      title = 'Cadastro em Análise';
+      message = 'Seu cadastro está em análise pela nossa equipe. Você receberá um e-mail assim que for aprovado. Enquanto isso, você pode explorar o marketplace.';
+    } else if (approvalStatus === 'rejected') {
+      title = 'Cadastro Rejeitado';
+      message = 'Seu cadastro foi rejeitado. Verifique seu e-mail para mais informações ou entre em contato com o suporte.';
+    } else {
+      title = 'Aguardando Aprovação';
+      message = 'Seu cadastro precisa ser aprovado antes de você poder ver e se candidatar às demandas.';
+    }
+
+    return (
+      <div style={styles.warningBanner}>
+        <div style={styles.warningContent}>
+          <AlertCircle size={24} style={styles.warningIcon} />
+          <div style={styles.warningText}>
+            <strong style={styles.warningTitle}>{title}</strong>
+            <p style={styles.warningMessage}>{message}</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       <DashboardLayout
@@ -157,6 +242,7 @@ const VetDashboardPage: React.FC = () => {
         onSectionChange={setActiveSection}
       >
         <div style={styles.container}>
+          {renderApprovalWarning()}
           {renderContent()}
         </div>
       </DashboardLayout>
@@ -768,6 +854,39 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     color: '#737373',
     margin: 0,
+  },
+  warningBanner: {
+    backgroundColor: colors.warningLight,
+    border: `1px solid ${colors.warning}`,
+    borderRadius: '12px',
+    padding: '16px 20px',
+    marginBottom: '24px',
+  },
+  warningContent: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+  },
+  warningIcon: {
+    color: colors.warning,
+    flexShrink: 0,
+    marginTop: '2px',
+  },
+  warningText: {
+    flex: 1,
+  },
+  warningTitle: {
+    display: 'block',
+    fontSize: '16px',
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: '4px',
+  },
+  warningMessage: {
+    fontSize: '14px',
+    color: colors.textSecondary,
+    margin: 0,
+    lineHeight: '1.5',
   },
 };
 

@@ -39,8 +39,37 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
   let authToken: string | null = null;
 
-  // 🔍 Buscar token local (web)
-  if (Platform.OS === 'web') {
+  // 🪄 Sempre buscar token fresco do Supabase (renova automaticamente se necessário)
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError) {
+      console.error('Erro ao obter sessão do Supabase:', sessionError);
+    }
+    
+    // Se a sessão existe mas o token pode estar expirado, tentar renovar
+    if (session) {
+      authToken = session.access_token;
+      
+      // Verificar se o token está próximo de expirar (menos de 5 minutos)
+      const expiresAt = session.expires_at;
+      if (expiresAt) {
+        const expiresIn = expiresAt - Math.floor(Date.now() / 1000);
+        if (expiresIn < 300) { // Menos de 5 minutos
+          console.log('Token próximo de expirar, renovando...');
+          const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
+          if (!refreshError && refreshedSession) {
+            authToken = refreshedSession.access_token;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Erro ao obter/renovar sessão:', error);
+  }
+
+  // Fallback: buscar token do localStorage se Supabase não retornar
+  if (!authToken && Platform.OS === 'web') {
     const userStr = getStorageItem('user');
     const sessionStr = getStorageItem('session');
 
@@ -60,16 +89,6 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
       } catch {
         /* ignora */
       }
-    }
-  }
-
-  // 🪄 Buscar token do Supabase (mobile/web)
-  if (!authToken) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      authToken = session?.access_token || null;
-    } catch {
-      /* ignora */
     }
   }
 
@@ -175,6 +194,13 @@ export const login = async (data: LoginData) => {
   return apiRequest('/auth/login', {
     method: 'POST',
     body: JSON.stringify(data),
+  });
+};
+
+export const resendConfirmationEmail = async (email: string) => {
+  return apiRequest('/auth/resend-confirmation', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
   });
 };
 

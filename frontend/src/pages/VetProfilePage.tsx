@@ -67,13 +67,21 @@ const VetProfilePage: React.FC = () => {
 
   const loadProfile = useCallback(async () => {
     try {
-      const user = JSON.parse(localStorage.getItem('user') || '');
+      const userStr = localStorage.getItem('user');
+      if (!userStr || userStr.trim() === '') {
+        navigate('/login');
+        return;
+      }
+
+      const user = JSON.parse(userStr);
       if (!user || !user.id) {
         navigate('/login');
         return;
       }
 
-      const { vet: vetData } = await vetsApi.getById(user.id);
+      const response = await vetsApi.getById(user.id);
+      // Extrair o objeto Vet corretamente (response sempre retorna { vet: Vet })
+      const vetData: Vet = response.vet;
       setVet(vetData);
       setFormData({
         name: vetData.name,
@@ -82,7 +90,8 @@ const VetProfilePage: React.FC = () => {
         experience: vetData.experience || '', // ✅ fallback seguro
       });
     } catch (error: any) {
-      showError('Erro ao carregar perfil: ' + error.message);
+      console.error('Erro ao carregar perfil:', error);
+      showError('Erro ao carregar perfil: ' + (error.message || 'Erro desconhecido'));
     } finally {
       setLoading(false);
     }

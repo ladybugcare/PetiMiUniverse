@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { login, API_BASE_URL } from '../services/api';
+import { login, resendConfirmationEmail, API_BASE_URL } from '../services/api';
 import HomeHeader from '../components/HomeHeader';
 import PasswordInput from '../components/PasswordInput';
+import EmailNotConfirmedModal from '../components/EmailNotConfirmedModal';
 import { useAlert } from '../hooks/useAlert';
 import colors from '../styles/colors';
 import { Mail, Lock } from 'lucide-react';
@@ -13,8 +14,10 @@ const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showEmailNotConfirmedModal, setShowEmailNotConfirmedModal] = useState(false);
+  const [emailForResend, setEmailForResend] = useState('');
   const navigate = useNavigate();
-  const { showError, showWarning } = useAlert();
+  const { showError, showWarning, showSuccess } = useAlert();
   const { setAuthFromLogin } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -42,6 +45,7 @@ const LoginPage: React.FC = () => {
       // Usar getUserRole() para detecção robusta e consistente
       const userRole = getUserRole(result.user);
       const onboardingInfo = result.onboarding;
+      const vetOnboardingInfo = result.vetOnboarding;
 
       // Regras de redirecionamento pós-login baseadas na role
       if (userRole === 'ADMIN') {
@@ -49,8 +53,36 @@ const LoginPage: React.FC = () => {
         return;
       }
 
-      // VET sempre vai direto para vet-dashboard, sem verificações adicionais
+      // VET: Verificar onboarding e aprovação
       if (userRole === 'VET') {
+        // REGRA CRÍTICA: Se onboarding já foi completado (onboardingCompleted === true),
+        // NUNCA redirecionar para onboarding, mesmo se needsOnboarding for true
+        if (vetOnboardingInfo?.onboardingCompleted === true) {
+          // Onboarding já foi completado, ir para dashboard
+          if (!vetOnboardingInfo?.isApproved) {
+            navigate('/vet-dashboard', { replace: true });
+            return;
+          }
+          navigate('/vet-dashboard', { replace: true });
+          return;
+        }
+        
+        // Se não tem dados de onboarding OU precisa completar onboarding, redirecionar
+        // (email já está confirmado, verificado no backend)
+        if (!vetOnboardingInfo || vetOnboardingInfo?.needsOnboarding) {
+          navigate('/vet-onboarding', { replace: true });
+          return;
+        }
+
+        // Se não está aprovado, mostrar mensagem e redirecionar para página de aguardo
+        if (!vetOnboardingInfo?.isApproved) {
+          // Pode redirecionar para uma página de "aguardando aprovação" ou mostrar mensagem
+          // Por enquanto, vamos para o dashboard que vai verificar e mostrar mensagem
+          navigate('/vet-dashboard', { replace: true });
+          return;
+        }
+
+        // Aprovado e onboarding completo: ir para dashboard
         navigate('/vet-dashboard', { replace: true });
         return;
       }
@@ -96,9 +128,30 @@ const LoginPage: React.FC = () => {
       navigate(fallback, { replace: true });
     } catch (error: any) {
       console.error('Erro no login:', error);
-      showError('Erro no login: ' + (error.message || 'Tente novamente.'));
+      
+      // Verificar se é erro de email não confirmado
+      // O erro pode vir como string na mensagem ou como propriedade error
+      const errorMessage = error?.message || error?.error || '';
+      if (errorMessage.includes('EMAIL_NOT_CONFIRMED') || errorMessage === 'EMAIL_NOT_CONFIRMED') {
+        setEmailForResend(email);
+        setShowEmailNotConfirmedModal(true);
+        setLoading(false);
+        return;
+      }
+      
+      showError('Erro no login: ' + (error.message || error.error || 'Tente novamente.'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendEmail = async (emailToResend: string) => {
+    try {
+      await resendConfirmationEmail(emailToResend);
+      showSuccess('Email de confirmação reenviado! Verifique sua caixa de entrada.');
+    } catch (error: any) {
+      showError('Erro ao reenviar email: ' + (error.message || 'Tente novamente.'));
+      throw error;
     }
   };
 
@@ -279,6 +332,13 @@ const LoginPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <EmailNotConfirmedModal
+        isOpen={showEmailNotConfirmedModal}
+        onClose={() => setShowEmailNotConfirmedModal(false)}
+        email={emailForResend}
+        onResendEmail={handleResendEmail}
+      />
     </>
   );
 };

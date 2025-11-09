@@ -30,6 +30,24 @@ const DemandsPage: React.FC = () => {
   const user = JSON.parse(localStorage.getItem('user') || '');
   const userRole = user?.user_metadata?.role || user?.role;
 
+  // Verificar se vet está aprovado
+  useEffect(() => {
+    if (userRole === 'vet' || userRole === 'VET') {
+      const vetOnboardingStr = localStorage.getItem('vetOnboarding');
+      if (vetOnboardingStr && vetOnboardingStr.trim() !== '') {
+        try {
+          const vetOnboarding = JSON.parse(vetOnboardingStr);
+          if (!vetOnboarding.isApproved) {
+            showWarning('Você precisa estar aprovado para visualizar e se candidatar às demandas. Seu cadastro está em análise.');
+            navigate('/vet-dashboard', { replace: true });
+          }
+        } catch (e) {
+          console.error('Erro ao verificar aprovação:', e);
+        }
+      }
+    }
+  }, [userRole, navigate, showWarning]);
+
   // Menu items based on user role
   const getMenuItems = (): MenuItem[] => {
     if (userRole === 'clinic') {

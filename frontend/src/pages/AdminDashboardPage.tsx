@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { MenuItem } from '../components/DashboardSidebar';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, CheckCircle, Settings, TrendingUp } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, CheckCircle, Settings, TrendingUp, Clock } from 'lucide-react';
 import colors from '../styles/colors';
+import { adminApi } from '../services/adminApi';
 
 const AdminDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -16,6 +17,7 @@ const AdminDashboardPage: React.FC = () => {
     totalDemands: 0,
     totalUsers: 0,
   });
+  const [pendingVetsCount, setPendingVetsCount] = useState(0);
 
   // Check authentication
   useEffect(() => {
@@ -58,7 +60,17 @@ const AdminDashboardPage: React.FC = () => {
       }
     };
 
+    const loadPendingVets = async () => {
+      try {
+        const { vets } = await adminApi.getPendingVets();
+        setPendingVetsCount(vets.length);
+      } catch (error) {
+        console.error('Error loading pending vets:', error);
+      }
+    };
+
     loadSystemStats();
+    loadPendingVets();
   }, []);
 
   const menuItems: MenuItem[] = [
@@ -104,6 +116,13 @@ const AdminDashboardPage: React.FC = () => {
       action: 'navigate',
       path: '/admin/users',
     },
+    {
+      id: 'settings',
+      label: 'Configurações',
+      icon: <Settings size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/admin/settings',
+    },
     // {
     //   id: 'logout',
     //   label: 'Sair',
@@ -115,7 +134,7 @@ const AdminDashboardPage: React.FC = () => {
   const renderSection = () => {
     switch (activeSection) {
       case 'overview':
-        return <OverviewSection stats={stats} />;
+        return <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} />;
       case 'clinics':
         return <ClinicsSection />;
       case 'vets':
@@ -127,7 +146,7 @@ const AdminDashboardPage: React.FC = () => {
       case 'settings':
         return <SettingsSection />;
       default:
-        return <OverviewSection stats={stats} />;
+        return <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} />;
     }
   };
 
@@ -145,7 +164,7 @@ const AdminDashboardPage: React.FC = () => {
 };
 
 // Overview Section
-const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
+const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number }> = ({ stats, pendingVetsCount }) => {
   const navigate = useNavigate();
 
   return (
@@ -238,6 +257,67 @@ const OverviewSection: React.FC<{ stats: any }> = ({ stats }) => {
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalUsers}</h3>
             <p style={styles.statLabel}>Usuários Totais</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Pending Approvals Section */}
+      <div style={styles.pendingSection}>
+        <h3 style={styles.subsectionTitle}>Aprovações Pendentes</h3>
+        <div style={styles.pendingGrid}>
+          <div 
+            style={{ ...styles.pendingCard, ...styles.statCardClickable }}
+            onClick={() => navigate('/admin/pending-units')}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+            }}
+          >
+            <div style={styles.pendingIcon}>
+              <Building2 size={32} color={colors.primary} />
+            </div>
+            <div style={styles.pendingContent}>
+              <h4 style={styles.pendingTitle}>Unidades Pendentes</h4>
+              <p style={styles.pendingText}>Clínicas aguardando aprovação</p>
+            </div>
+            <div style={styles.pendingArrow}>→</div>
+          </div>
+
+          <div 
+            style={{ 
+              ...styles.pendingCard, 
+              ...styles.statCardClickable,
+              ...(pendingVetsCount > 0 ? styles.pendingCardHighlight : {}),
+            }}
+            onClick={() => navigate('/admin/pending-vets')}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 10px 25px rgba(59, 130, 246, 0.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
+            }}
+          >
+            <div style={styles.pendingIcon}>
+              <Stethoscope size={32} color={colors.primary} />
+              {pendingVetsCount > 0 && (
+                <span style={styles.badge}>{pendingVetsCount}</span>
+              )}
+            </div>
+            <div style={styles.pendingContent}>
+              <h4 style={styles.pendingTitle}>Veterinários Pendentes</h4>
+              <p style={styles.pendingText}>
+                {pendingVetsCount > 0 
+                  ? `${pendingVetsCount} ${pendingVetsCount === 1 ? 'veterinário' : 'veterinários'} aguardando aprovação`
+                  : 'Nenhum veterinário pendente'}
+              </p>
+            </div>
+            <div style={styles.pendingArrow}>→</div>
           </div>
         </div>
       </div>
@@ -591,6 +671,71 @@ const styles: { [key: string]: React.CSSProperties } = {
   placeholderSubtext: {
     fontSize: '14px',
     color: '#737373',
+  },
+  pendingSection: {
+    marginTop: '32px',
+    marginBottom: '32px',
+  },
+  pendingGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '20px',
+  },
+  pendingCard: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e5e5e5',
+    borderRadius: '12px',
+    padding: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  },
+  pendingCardHighlight: {
+    borderColor: colors.primary,
+    borderWidth: '2px',
+    backgroundColor: colors.primaryBg,
+  },
+  pendingIcon: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    top: '-8px',
+    right: '-8px',
+    backgroundColor: colors.danger,
+    color: '#ffffff',
+    borderRadius: '50%',
+    width: '24px',
+    height: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '12px',
+    fontWeight: '700',
+  },
+  pendingContent: {
+    flex: 1,
+  },
+  pendingTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#262626',
+    margin: 0,
+    marginBottom: '4px',
+  },
+  pendingText: {
+    fontSize: '14px',
+    color: '#737373',
+    margin: 0,
+  },
+  pendingArrow: {
+    fontSize: '20px',
+    color: colors.primary,
+    fontWeight: '600',
   },
 };
 

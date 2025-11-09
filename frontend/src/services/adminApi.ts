@@ -94,4 +94,34 @@ export const adminApi = {
   // Buscar administradores
   getAdmins: async (): Promise<{ admins: Admin[] }> =>
     apiRequest('/admin/users/admins'),
+
+  // ===========================================================
+  // 🩺 APROVAÇÃO DE VETERINÁRIOS
+  // ===========================================================
+  
+  // Listar veterinários pendentes de aprovação
+  getPendingVets: async (): Promise<{ success: boolean; vets: any[]; count: number }> =>
+    apiRequest('/vets/pending', {
+      method: 'GET',
+    }),
+
+  // Aprovar veterinário
+  approveVet: async (id: string): Promise<{ success: boolean; message: string }> =>
+    apiRequest(`/vets/${id}/approve`, {
+      method: 'POST',
+    }),
+
+  // Rejeitar veterinário
+  rejectVet: async (id: string, reason: string): Promise<{ success: boolean; message: string }> =>
+    apiRequest(`/vets/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ rejection_reason: reason }),
+    }),
+
+  // Solicitar ajustes (opcional)
+  requestVetChanges: async (id: string, feedback: string): Promise<{ success: boolean; message: string }> =>
+    apiRequest(`/vets/${id}/request-changes`, {
+      method: 'POST',
+      body: JSON.stringify({ feedback }),
+    }),
 };

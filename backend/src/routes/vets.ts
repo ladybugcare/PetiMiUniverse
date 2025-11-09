@@ -5,6 +5,12 @@ import { checkVetEmail } from '../controllers/vets/checkVetEmail';
 import { checkVetDocument } from '../controllers/vets/checkVetDocument';
 import { getVets } from '../controllers/vets/getVets';
 import { getVetById } from '../controllers/vets/getVetById';
+import { checkVetOnboarding } from '../controllers/vets/checkVetOnboarding';
+import { completeVetOnboarding } from '../controllers/vets/completeVetOnboarding';
+import { uploadCrmvFile } from '../controllers/vets/uploadCrmvFile';
+import { getPendingVets } from '../controllers/vets/getPendingVets';
+import { approveVet } from '../controllers/vets/approveVet';
+import { rejectVet } from '../controllers/vets/rejectVet';
 import { authenticateUser } from '../middleware/authMiddleware';
 
 const router = express.Router();
@@ -25,7 +31,31 @@ router.post('/', createVetPublic);
 router.get('/check-email/:email', checkVetEmail);
 router.get('/check-document/:document_number', checkVetDocument);
 router.get('/', getVets);
+
+/**
+ * ===========================================================
+ * 📋 ONBOARDING DE VETERINÁRIOS
+ * ===========================================================
+ */
+router.get('/onboarding/check', authenticateUser, checkVetOnboarding);
+router.post('/onboarding/complete', authenticateUser, completeVetOnboarding);
+router.post('/onboarding/upload-crmv', authenticateUser, uploadCrmvFile);
+
+/**
+ * ===========================================================
+ * ✅ APROVAÇÃO DE VETERINÁRIOS (ADMIN)
+ * ===========================================================
+ */
+router.get('/pending', authenticateUser, getPendingVets);
+
+/**
+ * ===========================================================
+ * 🔍 ROTAS COM PARÂMETROS DINÂMICOS (devem vir por último)
+ * ===========================================================
+ */
 router.get('/:id', getVetById);
+router.post('/:id/approve', authenticateUser, approveVet);
+router.post('/:id/reject', authenticateUser, rejectVet);
 
 /**
  * (Opcional) rotas futuras com autenticação

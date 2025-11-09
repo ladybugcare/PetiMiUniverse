@@ -39,8 +39,13 @@ const ResumoSection: React.FC = () => {
     const loadData = async () => {
       try {
         setLoading(true);
-        const user = JSON.parse(localStorage.getItem('user') || '');
-        const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '');
+        const userStr = localStorage.getItem('user');
+        const clinicUserStr = localStorage.getItem('clinic_user');
+        
+        if (!userStr || !clinicUserStr) return;
+        
+        const user = JSON.parse(userStr);
+        const clinicUser = JSON.parse(clinicUserStr);
         const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
 
         console.log('Loading assistant data for clinic:', { clinicId, userId: user.id });

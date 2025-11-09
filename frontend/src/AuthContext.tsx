@@ -126,6 +126,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.setItem("clinic_user", JSON.stringify(clinicUserInfo));
       else localStorage.removeItem("clinic_user");
 
+      // Salvar informações de onboarding do vet
+      const vetOnboardingInfo = result?.vetOnboarding || null;
+      if (vetOnboardingInfo) {
+        localStorage.setItem("vetOnboarding", JSON.stringify(vetOnboardingInfo));
+      } else {
+        localStorage.removeItem("vetOnboarding");
+      }
+
       // Atualiza estados globais
       setUser(nextUser);
       setSession(nextSession);

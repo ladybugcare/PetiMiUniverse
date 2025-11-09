@@ -36,8 +36,11 @@ const CreateFirstUnitPage: React.FC = () => {
     technical_manager: '',
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '');
-  const session = JSON.parse(localStorage.getItem('session') || '');
+  const userStr = localStorage.getItem('user');
+  const sessionStr = localStorage.getItem('session');
+  
+  const user = userStr ? JSON.parse(userStr) : null;
+  const session = sessionStr ? JSON.parse(sessionStr) : null;
   const accessToken: string | undefined = session?.access_token;
   const clinicId = user.id;
 

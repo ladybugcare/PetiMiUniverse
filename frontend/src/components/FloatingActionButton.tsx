@@ -6,8 +6,9 @@ export interface FABOption {
   id: string;
   label: string;
   icon: React.ReactNode;
-  path: string;
+  path?: string;
   color: string;
+  disabled?: boolean;
 }
 
 interface FloatingActionButtonProps {
@@ -19,8 +20,9 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
   const navigate = useNavigate();
   const fabRef = useRef<HTMLDivElement>(null);
 
-  const handleOptionClick = (path: string) => {
-    navigate(path);
+  const handleOptionClick = (option: FABOption) => {
+    if (option.disabled || !option.path) return;
+    navigate(option.path);
     setIsOpen(false);
   };
 
@@ -99,18 +101,23 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
               >
                 <span style={styles.optionLabel}>{option.label}</span>
                 <button
-                  onClick={() => handleOptionClick(option.path)}
+                  onClick={() => handleOptionClick(option)}
+                  disabled={option.disabled || !option.path}
                   style={{
                     ...styles.optionButton,
                     backgroundColor: option.color,
+                    ...(option.disabled || !option.path ? styles.optionButtonDisabled : {}),
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.1)';
+                    if (!option.disabled && option.path) {
+                      e.currentTarget.style.transform = 'scale(1.1)';
+                    }
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.transform = 'scale(1)';
                   }}
                   aria-label={option.label}
+                  title={option.disabled ? 'Ação desabilitada' : option.label}
                 >
                   <div style={styles.optionIcon}>{option.icon}</div>
                 </button>
@@ -228,6 +235,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     justifyContent: 'center',
     color: '#ffffff',
+  },
+  optionButtonDisabled: {
+    opacity: 0.5,
+    cursor: 'not-allowed',
   },
 };
 

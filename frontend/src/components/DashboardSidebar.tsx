@@ -40,6 +40,11 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
   };
 
   const handleMenuItemClick = (item: MenuItem) => {
+    // Verificar se o item está desabilitado (propriedade customizada)
+    if ((item as any).disabled) {
+      return; // Não faz nada se estiver desabilitado
+    }
+    
     if (item.action === 'navigate' && item.path) {
       navigate(item.path);
       onClose();

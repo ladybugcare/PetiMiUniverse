@@ -179,12 +179,23 @@ export const getVetStats = async (req: Request<{ vetId: string }>, res: Response
 // Get system-wide statistics (admin only)
 export const getSystemStats = async (req: Request, res: Response) => {
   try {
+    // Verificar se é admin
+    const user = req.user;
+    const userRole = (user as any)?.user_metadata?.role || (user as any)?.role;
+
+    if (userRole !== 'admin') {
+      return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar esta rota.' });
+    }
+
     // Get total clinics
     const { count: totalClinics, error: clinicsError } = await supabase
       .from('clinics')
       .select('*', { count: 'exact', head: true });
 
-    if (clinicsError) throw clinicsError;
+    if (clinicsError) {
+      console.error('Erro ao buscar clínicas:', clinicsError);
+      throw clinicsError;
+    }
 
     // Get total vets
     const { count: totalVets, error: vetsError } = await supabase

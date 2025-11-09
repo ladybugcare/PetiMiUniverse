@@ -1,5 +1,6 @@
 import express from 'express';
 import { getClinicStats, getVetStats, getSystemStats } from '../controllers/statisticsController';
+import { authenticateUser } from '../middleware/authMiddleware';
 
 const router = express.Router();
 
@@ -10,7 +11,7 @@ router.get('/clinic/:clinicId', getClinicStats);
 router.get('/vet/:vetId', getVetStats);
 
 // Get system-wide statistics (admin only)
-router.get('/system', getSystemStats);
+router.get('/system', authenticateUser, getSystemStats);
 
 export default router;
 

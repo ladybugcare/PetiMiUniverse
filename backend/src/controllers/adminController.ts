@@ -20,7 +20,7 @@ export const getPendingUnits = async (req: Request, res: Response) => {
       .from('units')
       .select(`
         *,
-        clinic:clinics!inner(id, name, email, cnpj, phone)
+        clinic:clinics!units_clinic_id_fkey(id, name, email, cnpj, phone)
       `)
       .eq('status', 'pending_review')
       .order('created_at', { ascending: false });

@@ -20,7 +20,16 @@ router.post('/login', authLimiter, async (req, res) => {
 
     const { user, session } = data;
 
+    // Verificar se email está confirmado antes de permitir login
+    if (!user.email_confirmed_at) {
+      return res.status(403).json({ 
+        error: 'EMAIL_NOT_CONFIRMED',
+        message: 'Email não confirmado. Verifique sua caixa de entrada ou reenvie o email de confirmação.'
+      });
+    }
+
     let onboarding: Record<string, any> | null = null;
+    let vetOnboarding: Record<string, any> | null = null;
     let clinicUserRecord: any = null;
     const userRole = user?.user_metadata?.role || user?.role;
     const allowedRolesForOnboarding = ['CADMIN', 'CMANAGER'];
@@ -147,6 +156,49 @@ router.post('/login', authLimiter, async (req, res) => {
       console.error('[AUTH] Falha ao compor dados de onboarding:', onboardingError);
     }
 
+    // Verificar onboarding de veterinário (apenas se email estiver confirmado)
+    try {
+      if (user && (userRole === 'vet' || userRole === 'VET')) {
+        const { data: vet, error: vetError } = await supabaseAdmin
+          .from('vets')
+          .select('id, onboarding_completed, approval_status, status')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!vetError && vet) {
+          // Email já está confirmado (verificado acima), então sempre true
+          const emailConfirmed = true;
+          // REGRA CRÍTICA: Se onboarding_completed === true, NUNCA mostrar onboarding novamente
+          // Tratar NULL como false (vets criados antes da migration)
+          const needsOnboarding = vet.onboarding_completed !== true;
+          const isApproved = vet.approval_status === 'approved' && vet.status === 'active';
+
+          vetOnboarding = {
+            needsOnboarding,
+            emailConfirmed,
+            onboardingCompleted: vet.onboarding_completed || false,
+            approvalStatus: vet.approval_status || 'pending',
+            isApproved,
+            canAccessDashboard: isApproved,
+            canViewDemands: isApproved,
+          };
+        } else if (!vetError && !vet) {
+          // Vet não encontrado = precisa fazer onboarding
+          vetOnboarding = {
+            needsOnboarding: true,
+            emailConfirmed: true,
+            onboardingCompleted: false,
+            approvalStatus: 'pending',
+            isApproved: false,
+            canAccessDashboard: false,
+            canViewDemands: false,
+          };
+        }
+      }
+    } catch (vetOnboardingError: any) {
+      console.error('[AUTH] Falha ao compor dados de onboarding do vet:', vetOnboardingError);
+    }
+
     if (userRole === 'clinic' && clinicStatus === 'inactive') {
       return res.status(403).json({
         error: 'Conta da clínica inativada. Entre em contato com o suporte para reativação.',
@@ -177,6 +229,7 @@ router.post('/login', authLimiter, async (req, res) => {
       user,
       session,
       onboarding,
+      vetOnboarding,
       clinicUser: clinicUserPayload,
     });
   } catch (error: any) {
@@ -210,6 +263,71 @@ router.post('/signup', authLimiter, async (req, res) => {
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Reenviar email de confirmação
+ */
+router.post('/resend-confirmation', authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email é obrigatório' });
+    }
+
+    // Verificar se o usuário existe
+    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+    
+    if (listError) {
+      console.error('Erro ao listar usuários:', listError);
+      return res.status(500).json({ error: 'Erro ao verificar usuário' });
+    }
+
+    const user = users.find(u => u.email === email);
+
+    if (!user) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    // Se já está confirmado, não precisa reenviar
+    if (user.email_confirmed_at) {
+      return res.status(400).json({ error: 'Email já está confirmado' });
+    }
+
+    // Construir URL de redirecionamento
+    const rawFrontendUrl = process.env.FRONTEND_URL?.trim();
+    const FRONTEND_URL = rawFrontendUrl?.replace(/\/$/, '');
+    const emailRedirectTo = FRONTEND_URL ? `${FRONTEND_URL}/email-confirmed` : undefined;
+
+    // Gerar link de confirmação (isso envia o email automaticamente)
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'signup',
+      email,
+      options: {
+        redirectTo: emailRedirectTo,
+      },
+    });
+
+    if (linkError) {
+      console.error('Erro ao gerar link de confirmação:', linkError);
+      return res.status(500).json({ 
+        error: 'Erro ao reenviar email de confirmação',
+        message: linkError.message 
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Email de confirmação reenviado com sucesso. Verifique sua caixa de entrada.',
+    });
+  } catch (error: any) {
+    console.error('Erro ao reenviar email de confirmação:', error);
+    return res.status(500).json({ 
+      error: 'Erro interno ao reenviar email de confirmação',
+      message: error.message 
+    });
   }
 });
 

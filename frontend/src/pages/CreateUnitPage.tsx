@@ -21,9 +21,13 @@ const CreateUnitPage: React.FC = () => {
     technical_manager: '',
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '');
-  const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '');
-  const session = JSON.parse(localStorage.getItem('session') || '');
+  const userStr = localStorage.getItem('user');
+  const clinicUserStr = localStorage.getItem('clinic_user');
+  const sessionStr = localStorage.getItem('session');
+  
+  const user = userStr ? JSON.parse(userStr) : null;
+  const clinicUser = clinicUserStr ? JSON.parse(clinicUserStr) : null;
+  const session = sessionStr ? JSON.parse(sessionStr) : null;
   const accessToken: string | undefined = session?.access_token;
   const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
 
