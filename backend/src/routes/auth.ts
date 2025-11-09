@@ -301,20 +301,63 @@ router.post('/resend-confirmation', authLimiter, async (req, res) => {
     const FRONTEND_URL = rawFrontendUrl?.replace(/\/$/, '');
     const emailRedirectTo = FRONTEND_URL ? `${FRONTEND_URL}/email-confirmed` : undefined;
 
-    // Gerar link de confirmação (isso envia o email automaticamente)
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'signup',
-      email,
-      options: {
-        redirectTo: emailRedirectTo,
-      },
-    });
+    // Para reenviar email de confirmação sem ter a senha:
+    // 1. Resetar email_confirmed_at para null usando updateUserById
+    // 2. Usar inviteUser que envia email de confirmação sem precisar de senha
+    //    (mesmo que o usuário já exista, o inviteUser pode ser usado para reenviar confirmação)
+    
+    // Resetar email_confirmed_at para null
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+      user.id,
+      { email_confirm: false }
+    );
 
-    if (linkError) {
-      console.error('Erro ao gerar link de confirmação:', linkError);
+    if (updateError) {
+      console.error('Erro ao resetar confirmação de email:', updateError);
       return res.status(500).json({ 
         error: 'Erro ao reenviar email de confirmação',
-        message: linkError.message 
+        message: updateError.message 
+      });
+    }
+
+    // Usar inviteUser para enviar email de confirmação (não requer senha)
+    // Isso envia um email de convite que pode ser usado para confirmar o email
+    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+      email,
+      {
+        redirectTo: emailRedirectTo,
+        data: user.user_metadata || {},
+      }
+    );
+
+    if (inviteError) {
+      console.error('Erro ao enviar convite de confirmação:', inviteError);
+      // Se inviteUser falhar (por exemplo, se o usuário já existe), tentar generateLink com senha temporária
+      // Gerar senha temporária aleatória
+      const tempPassword = Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12) + 'A1!';
+      
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'signup',
+        email,
+        password: tempPassword,
+        options: {
+          redirectTo: emailRedirectTo,
+        },
+      });
+
+      if (linkError) {
+        console.error('Erro ao gerar link de confirmação:', linkError);
+        return res.status(500).json({ 
+          error: 'Erro ao reenviar email de confirmação',
+          message: linkError.message 
+        });
+      }
+      
+      // Avisar que a senha foi alterada e o usuário precisará redefinir
+      return res.json({
+        success: true,
+        message: 'Email de confirmação reenviado com sucesso. Verifique sua caixa de entrada. Nota: Você precisará redefinir sua senha após confirmar o email.',
+        passwordChanged: true,
       });
     }
 

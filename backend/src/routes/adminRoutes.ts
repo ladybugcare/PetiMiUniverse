@@ -12,6 +12,9 @@ import { getAdmins } from '../controllers/admin/getAdmins';
 import { getPendingUnits } from '../controllers/units/getPendingUnits';
 import { reviewUnit } from '../controllers/units/reviewUnit';
 
+// Controllers de documentos
+import { getVetDocument } from '../controllers/admin/getVetDocument';
+
 const router = express.Router();
 
 /**
@@ -43,5 +46,14 @@ router.get('/pending-units', authenticateUser, getPendingUnits);
 
 // Aprovar ou rejeitar unidade
 router.patch('/units/:id/review', authenticateUser, reviewUnit);
+
+/**
+ * ==============================================
+ * 🔹 VET DOCUMENTS
+ * ==============================================
+ */
+
+// Servir documento CRMV de veterinário (apenas para admins)
+router.get('/vets/:vetId/document', authenticateUser, getVetDocument);
 
 export default router;

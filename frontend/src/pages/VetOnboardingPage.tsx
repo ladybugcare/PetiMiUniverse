@@ -7,13 +7,15 @@ import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { BRAZILIAN_STATES, getCitiesByState, STATE_NAMES } from '../utils/locationData';
 import { ibgeApi, IBGEState, IBGECity } from '../services/ibgeApi';
 import colors from '../styles/colors';
-import { Heart, ArrowRight, ArrowLeft, CheckCircle, AlertCircle, Stethoscope, MapPin, Calendar, FileText, Info, Lightbulb } from 'lucide-react';
+import { Heart, ArrowRight, ArrowLeft, CheckCircle, AlertCircle, Stethoscope, MapPin, Calendar, FileText, Info, Lightbulb, LogOut } from 'lucide-react';
 import { useAlert } from '../hooks/useAlert';
 import IconWrapper from '../components/IconWrapper';
+import { useAuth } from '../AuthContext';
 
 const VetOnboardingPage: React.FC = () => {
   const navigate = useNavigate();
   const { showSuccess, showError } = useAlert();
+  const { logout, isLoggingOut } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -696,6 +698,26 @@ const VetOnboardingPage: React.FC = () => {
   if (step === 5) {
     return (
       <div style={styles.container}>
+        <div style={styles.topHeader}>
+          <div style={styles.headerContent}>
+            <div style={styles.logoSection}>
+              <Heart size={24} color={colors.primary} />
+              <span style={styles.logoText}>PetiVet</span>
+            </div>
+            <button
+              onClick={logout}
+              disabled={isLoggingOut}
+              style={{
+                ...styles.logoutButton,
+                ...(isLoggingOut ? styles.buttonDisabled : {}),
+              }}
+              title="Sair"
+            >
+              <LogOut size={18} />
+              <span>Sair</span>
+            </button>
+          </div>
+        </div>
         <div style={styles.card}>
           {renderStepContent()}
         </div>
@@ -705,6 +727,26 @@ const VetOnboardingPage: React.FC = () => {
 
   return (
     <div style={styles.container}>
+      <div style={styles.topHeader}>
+        <div style={styles.headerContent}>
+          <div style={styles.logoSection}>
+            <Heart size={24} color={colors.primary} />
+            <span style={styles.logoText}>PetiVet</span>
+          </div>
+          <button
+            onClick={logout}
+            disabled={isLoggingOut}
+            style={{
+              ...styles.logoutButton,
+              ...(isLoggingOut ? styles.buttonDisabled : {}),
+            }}
+            title="Sair"
+          >
+            <LogOut size={18} />
+            <span>Sair</span>
+          </button>
+        </div>
+      </div>
       <div style={styles.card}>
         <div style={styles.header}>
           <h1 style={styles.title}>
@@ -775,9 +817,53 @@ const styles: { [key: string]: React.CSSProperties } = {
     minHeight: '100vh',
     backgroundColor: '#f3f4f6',
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     padding: '40px 20px',
+    paddingTop: '100px',
+  },
+  topHeader: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    borderBottom: '1px solid #e5e7eb',
+    padding: '12px 20px',
+    zIndex: 1000,
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+  },
+  headerContent: {
+    maxWidth: '700px',
+    margin: '0 auto',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  logoSection: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  logoText: {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  logoutButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 16px',
+    backgroundColor: 'transparent',
+    color: '#6b7280',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
   },
   card: {
     backgroundColor: '#ffffff',

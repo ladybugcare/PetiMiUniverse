@@ -1,3 +1,5 @@
+import { apiRequest } from './api';
+
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
 // =================================// INTERFACES
@@ -74,24 +76,24 @@ export const getNotifications = async (
 
 /**
  * Contar notificações não lidas
+ * Usa apiRequest para ter retry/throttling automático
  */
 export const getUnreadCount = async (userId: string): Promise<number> => {
-  const response = await fetch(
-    `${API_BASE_URL}/notifications/unread-count?user_id=${userId}`,
-    {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+  try {
+    const data: UnreadCountResponse = await apiRequest(
+      `/notifications/unread-count?user_id=${userId}`,
+      {
+        method: 'GET',
+      }
+    );
+    return data.unread_count;
+  } catch (error: any) {
+    // Melhorar mensagem de erro para incluir status 429
+    if (error?.message?.includes('429') || error?.status === 429) {
+      throw new Error('Muitas requisições. Aguarde alguns minutos.');
     }
-  );
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch unread count');
+    throw new Error(error?.message || 'Failed to fetch unread count');
   }
-
-  const data: UnreadCountResponse = await response.json();
-  return data.unread_count;
 };
 
 /**

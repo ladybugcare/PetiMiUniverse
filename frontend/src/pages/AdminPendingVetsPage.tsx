@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { adminApi } from '../services/adminApi';
+import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
-import { Home, Building2, Stethoscope, ClipboardList, Clock, User, LogOut, Eye, CheckCircle, XCircle, FileText } from 'lucide-react';
+import { API_BASE_URL } from '../services/api';
+import { supabase } from '../services/supabase';
+import { Home, Building2, Stethoscope, ClipboardList, Clock, User, LogOut, Eye, CheckCircle, XCircle, FileText, Download } from 'lucide-react';
 import colors from '../styles/colors';
 
 interface PendingVet {
@@ -36,6 +39,8 @@ const AdminPendingVetsPage: React.FC = () => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState<'pending' | 'all'>('pending');
+  const [specialtiesMap, setSpecialtiesMap] = useState<Map<string, string>>(new Map());
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
 
   const menuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
@@ -49,8 +54,22 @@ const AdminPendingVetsPage: React.FC = () => {
   ];
 
   useEffect(() => {
+    loadSpecialties();
     loadPendingVets();
   }, []);
+
+  const loadSpecialties = async () => {
+    try {
+      const { specialties } = await specialtiesApi.getAll();
+      const map = new Map<string, string>();
+      specialties.forEach((spec: Specialty) => {
+        map.set(spec.id, spec.name);
+      });
+      setSpecialtiesMap(map);
+    } catch (error) {
+      console.error('Erro ao carregar especialidades:', error);
+    }
+  };
 
   const loadPendingVets = async () => {
     try {
@@ -117,6 +136,103 @@ const AdminPendingVetsPage: React.FC = () => {
     });
   };
 
+  // Extrair path da URL do Supabase Storage
+  const extractDocumentPath = (crmvFileUrl: string): string | null => {
+    try {
+      const url = new URL(crmvFileUrl);
+      const pathMatch = url.pathname.match(/\/vet-documents\/(.+)$/);
+      
+      if (pathMatch && pathMatch[1]) {
+        return decodeURIComponent(pathMatch[1]);
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Erro ao extrair path da URL:', error);
+      return null;
+    }
+  };
+
+  // Fazer download do documento
+  const handleDownloadDocument = async (crmvFileUrl: string, vetId: string) => {
+    if (downloadingDocId === vetId) return; // Evitar múltiplos cliques
+    
+    setDownloadingDocId(vetId);
+    
+    try {
+      const filePath = extractDocumentPath(crmvFileUrl);
+      
+      if (!filePath) {
+        showError('Não foi possível extrair o caminho do documento.');
+        return;
+      }
+
+      // Obter token de autenticação
+      const { data: { session } } = await supabase.auth.getSession();
+      const authToken = session?.access_token;
+
+      if (!authToken) {
+        showError('Você precisa estar autenticado para baixar o documento.');
+        return;
+      }
+
+      // Fazer requisição para baixar o arquivo
+      const url = `${API_BASE_URL}/admin/vets/${vetId}/document?path=${encodeURIComponent(filePath)}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || `Erro ${response.status}`);
+      }
+
+      // Obter o blob do arquivo
+      const blob = await response.blob();
+      
+      // Extrair nome do arquivo do header Content-Disposition ou usar padrão
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let fileName = 'documento.pdf';
+      
+      if (contentDisposition) {
+        // Suporta: filename="arquivo.pdf" ou filename=arquivo.pdf
+        const fileNameMatch = contentDisposition.match(/filename[*]?=['"]?([^'";]+)['"]?/i);
+        if (fileNameMatch && fileNameMatch[1]) {
+          fileName = fileNameMatch[1].trim();
+        }
+      }
+      
+      // Fallback: usar nome do path se não conseguir extrair do header
+      if (fileName === 'documento.pdf') {
+        const pathParts = filePath.split('/');
+        const pathFileName = pathParts[pathParts.length - 1];
+        if (pathFileName) {
+          fileName = pathFileName;
+        }
+      }
+
+      // Criar link temporário para download
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+
+      showSuccess('Documento baixado com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao baixar documento:', error);
+      showError(`Erro ao baixar documento: ${error.message || 'Tente novamente'}`);
+    } finally {
+      setDownloadingDocId(null);
+    }
+  };
+
   return (
     <>
       <DashboardLayout pageName="Aprovações de Veterinários" menuItems={menuItems}>
@@ -166,11 +282,14 @@ const AdminPendingVetsPage: React.FC = () => {
                       <div style={styles.section}>
                         <h4 style={styles.sectionTitle}>📋 Especialidades</h4>
                         <div style={styles.badgesContainer}>
-                          {vet.specialties.map((spec, idx) => (
-                            <span key={idx} style={styles.badge}>
-                              {spec}
-                            </span>
-                          ))}
+                          {vet.specialties.map((specId, idx) => {
+                            const specName = specialtiesMap.get(specId) || specId;
+                            return (
+                              <span key={idx} style={styles.badge}>
+                                {specName}
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -211,15 +330,17 @@ const AdminPendingVetsPage: React.FC = () => {
                     {vet.crmv_file_url && (
                       <div style={styles.section}>
                         <h4 style={styles.sectionTitle}>📄 CRMV</h4>
-                        <a
-                          href={vet.crmv_file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={styles.fileLink}
+                        <button
+                          onClick={() => handleDownloadDocument(vet.crmv_file_url!, vet.id)}
+                          disabled={downloadingDocId === vet.id}
+                          style={{
+                            ...styles.downloadButton,
+                            ...(downloadingDocId === vet.id ? styles.downloadButtonDisabled : {}),
+                          }}
                         >
-                          <FileText size={16} />
-                          Ver Documento
-                        </a>
+                          <Download size={16} />
+                          {downloadingDocId === vet.id ? 'Baixando...' : 'Baixar Documento'}
+                        </button>
                       </div>
                     )}
 
@@ -487,8 +608,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   badge: {
     padding: '4px 10px',
-    backgroundColor: colors.primaryLight,
+    backgroundColor: '#ffffff',
     color: colors.primary,
+    border: `1px solid ${colors.primary}`,
     borderRadius: '12px',
     fontSize: '12px',
     fontWeight: '500',
@@ -524,6 +646,24 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '500',
     textDecoration: 'none',
     transition: 'all 0.2s',
+  },
+  downloadButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 12px',
+    backgroundColor: colors.primaryLight,
+    color: colors.primary,
+    border: `1px solid ${colors.primary}`,
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  downloadButtonDisabled: {
+    opacity: 0.6,
+    cursor: 'not-allowed',
   },
   divider: {
     height: '1px',

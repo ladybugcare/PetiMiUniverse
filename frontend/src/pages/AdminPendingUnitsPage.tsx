@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
@@ -15,6 +15,7 @@ const AdminPendingUnitsPage: React.FC = () => {
   const [modalAction, setModalAction] = useState<'approve' | 'reject'>('approve');
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
+  const isLoadingRef = useRef(false);
 
   const menuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
@@ -27,10 +28,27 @@ const AdminPendingUnitsPage: React.FC = () => {
   ];
 
   useEffect(() => {
+    // Prevenir requisições duplicadas causadas por React.StrictMode
+    if (isLoadingRef.current) {
+      return;
+    }
+    
     loadPendingUnits();
+    
+    // Cleanup: resetar flag quando componente desmontar
+    return () => {
+      isLoadingRef.current = false;
+    };
   }, []);
 
   const loadPendingUnits = async () => {
+    // Prevenir requisições simultâneas
+    if (isLoadingRef.current) {
+      return;
+    }
+    
+    isLoadingRef.current = true;
+    
     try {
       setLoading(true);
       const { units: pendingUnits } = await adminApi.getPendingUnits();
@@ -40,6 +58,7 @@ const AdminPendingUnitsPage: React.FC = () => {
       alert('Erro ao carregar unidades pendentes.');
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   };
 

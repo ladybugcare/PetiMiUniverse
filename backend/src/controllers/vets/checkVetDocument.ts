@@ -44,9 +44,9 @@ export const checkVetDocument = async (req: Request, res: Response) => {
     // Timeout de 10 segundos para evitar que o servidor trave
     const { data, error } = await withTimeout(
       supabase
-        .from('vets')
-        .select('id')
-        .eq('document_number', normalizedDocument)
+      .from('vets')
+      .select('id')
+      .eq('document_number', normalizedDocument)
         .maybeSingle(),
       10000 // 10 segundos
     );

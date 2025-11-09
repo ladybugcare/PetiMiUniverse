@@ -27,17 +27,29 @@ const NotificationBell: React.FC = () => {
   const isLoadingRef = useRef(false);
   const lastRequestTimeRef = useRef(0);
   const errorCountRef = useRef(0);
+  const pollingPausedRef = useRef(false);
 
   // Memoizar userId para evitar re-renders desnecessários
   const userId = useMemo(() => user?.id, [user?.id]);
+
+  // Detectar se está em desenvolvimento
+  const isDevelopment = process.env.NODE_ENV === 'development' || 
+                        process.env.REACT_APP_ENV === 'development' ||
+                        window.location.hostname === 'localhost';
 
   // Load unread count com throttling e tratamento de erro
   const loadUnreadCount = useCallback(async () => {
     if (!userId) return;
     
-    // Throttle: não fazer requisição se a última foi há menos de 2 segundos
+    // Se polling está pausado devido a muitos erros 429, não fazer requisição
+    if (pollingPausedRef.current) {
+      return;
+    }
+    
+    // Throttle: não fazer requisição se a última foi há menos de 3 segundos
     const now = Date.now();
-    if (now - lastRequestTimeRef.current < 2000) {
+    const throttleMs = isDevelopment ? 3000 : 2000;
+    if (now - lastRequestTimeRef.current < throttleMs) {
       return;
     }
     
@@ -46,13 +58,12 @@ const NotificationBell: React.FC = () => {
       return;
     }
     
-    // Se houve muitos erros (429), aumentar o throttle
-    if (errorCountRef.current > 3) {
-      if (now - lastRequestTimeRef.current < 10000) {
+    // Se houve muitos erros (429), aumentar o throttle significativamente
+    if (errorCountRef.current > 2) {
+      const backoffMs = errorCountRef.current > 5 ? 60000 : 30000; // 60s se muitos erros, 30s se alguns
+      if (now - lastRequestTimeRef.current < backoffMs) {
         return;
       }
-      // Reset error count após 10 segundos
-      errorCountRef.current = 0;
     }
     
     isLoadingRef.current = true;
@@ -62,21 +73,31 @@ const NotificationBell: React.FC = () => {
       const count = await notificationsApi.getUnreadCount(userId);
       setUnreadCount(count);
       errorCountRef.current = 0; // Reset error count em caso de sucesso
+      pollingPausedRef.current = false; // Retomar polling se estava pausado
     } catch (error: any) {
       console.error('Error loading unread count:', error);
       
-      // Se for erro 429, incrementar contador de erros
-      if (error?.message?.includes('429') || error?.status === 429) {
+      // Se for erro 429, incrementar contador de erros e pausar polling
+      if (error?.message?.includes('429') || error?.status === 429 || error?.message?.includes('Muitas requisições')) {
         errorCountRef.current += 1;
-        // Se muitos erros, parar polling temporariamente
-        if (errorCountRef.current > 5) {
-          console.warn('[NotificationBell] Muitos erros 429, pausando polling temporariamente');
+        
+        // Se muitos erros 429, pausar polling temporariamente (5 minutos)
+        if (errorCountRef.current > 3) {
+          pollingPausedRef.current = true;
+          console.warn('[NotificationBell] Muitos erros 429, pausando polling por 5 minutos');
+          
+          // Retomar após 5 minutos
+          setTimeout(() => {
+            pollingPausedRef.current = false;
+            errorCountRef.current = 0;
+            console.log('[NotificationBell] Polling retomado após pausa');
+          }, 5 * 60 * 1000);
         }
       }
     } finally {
       isLoadingRef.current = false;
     }
-  }, [userId]);
+  }, [userId, isDevelopment]);
 
   // Load notifications list
   const loadNotifications = useCallback(async () => {
@@ -92,20 +113,23 @@ const NotificationBell: React.FC = () => {
     }
   }, [userId]);
 
-  // Polling: Update unread count every 30 seconds (com tratamento de erro)
+  // Polling: Update unread count (intervalo maior em desenvolvimento devido ao StrictMode)
   useEffect(() => {
     if (!userId) return;
     
     // Carregar imediatamente apenas uma vez
     loadUnreadCount();
     
-    // Polling a cada 30 segundos (aumentado de 30s para evitar muitos requests)
+    // Intervalo maior em desenvolvimento (60s) para compensar StrictMode que duplica requisições
+    // Em produção/staging: 30s é suficiente
+    const pollingInterval = isDevelopment ? 60000 : 30000;
+    
     const interval = setInterval(() => {
       loadUnreadCount();
-    }, 30000);
+    }, pollingInterval);
     
     return () => clearInterval(interval);
-  }, [userId, loadUnreadCount]);
+  }, [userId, loadUnreadCount, isDevelopment]);
 
   // Close dropdown when clicking outside
   useEffect(() => {

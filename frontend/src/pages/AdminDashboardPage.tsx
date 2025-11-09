@@ -21,7 +21,20 @@ const AdminDashboardPage: React.FC = () => {
 
   // Check authentication
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '');
+    const userStr = localStorage.getItem('user');
+    let user = null;
+    
+    if (userStr && userStr.trim() !== '') {
+      try {
+        user = JSON.parse(userStr);
+      } catch (error) {
+        console.error('Erro ao fazer parse do usuário:', error);
+        localStorage.removeItem('user');
+        navigate('/login');
+        return setCheckingAuth(false);
+      }
+    }
+    
     const userRole = user?.user_metadata?.role || user?.role;
     
     if (!user || !user.id) {

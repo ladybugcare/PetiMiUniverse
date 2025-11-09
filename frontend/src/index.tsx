@@ -9,6 +9,9 @@ const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
 );
 
+// Nota: React.StrictMode em desenvolvimento causa double render dos useEffect,
+// o que pode duplicar requisições. Isso é esperado e ajuda a detectar problemas.
+// O rate limiter no backend foi ajustado para suportar isso em desenvolvimento.
 root.render(
   <React.StrictMode>
     <BrowserRouter>
