@@ -113,6 +113,13 @@ const ClinicReportsPage: React.FC = () => {
       path: '/users',
     },
     {
+      id: 'my-demands',
+      label: 'Minhas Demandas',
+      icon: <ClipboardList size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/clinic-demands',
+    },
+    {
       id: 'demands',
       label: 'Ver Todas Demandas',
       icon: <ClipboardList size={20} color={colors.primary} />,

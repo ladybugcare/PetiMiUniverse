@@ -50,12 +50,14 @@ import CreateFirstUnitPage from './pages/CreateFirstUnitPage';
 import CreateUnitPage from './pages/CreateUnitPage';
 import UnitProfilePage from './pages/UnitProfilePage';
 import ClinicApplicationsPage from './pages/ClinicApplicationsPage';
+import ClinicDemandsPage from './pages/ClinicDemandsPage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
 import AdminPendingVetsPage from './pages/AdminPendingVetsPage';
 import AdminPendingFreelancersPage from './pages/AdminPendingFreelancersPage';
 import AdminPendingAllPage from './pages/AdminPendingAllPage';
 import AdminSettingsPage from './pages/AdminSettingsPage';
 import EmailConfirmedPage from './pages/EmailConfirmedPage';
+import DemandDetailPage from './pages/DemandDetailPage';
 
 
 if (!process.env.REACT_APP_SUPABASE_URL) {
@@ -129,6 +131,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <DemandsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/demands/:id"
+                element={
+                  <ProtectedRoute>
+                    <DemandDetailPage />
                   </ProtectedRoute>
                 }
               />
@@ -325,6 +335,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
                     <ClinicApplicationsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/clinic-demands"
+                element={
+                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                    <ClinicDemandsPage />
                   </ProtectedRoute>
                 }
               />

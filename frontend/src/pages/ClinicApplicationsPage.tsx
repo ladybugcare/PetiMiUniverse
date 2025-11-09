@@ -44,6 +44,13 @@ const ClinicApplicationsPage: React.FC = () => {
       path: '/clinic-dashboard',
     },
     {
+      id: 'my-demands',
+      label: 'Minhas Demandas',
+      icon: <ClipboardList size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/clinic-demands',
+    },
+    {
       id: 'demandas',
       label: 'Ver Todas Demandas',
       icon: <ClipboardList size={20} color={colors.primary} />,

@@ -1,14 +1,28 @@
 import React, { useState, useMemo } from 'react';
 import { Demand } from '../services/demandsApi';
+import { Clock, MapPin, DollarSign, X } from 'lucide-react';
 
 interface CalendarViewProps {
   demands: Demand[];
   onDemandClick?: (demand: Demand) => void;
+  getClinicName?: (clinicId: string) => string;
 }
 
-const CalendarView: React.FC<CalendarViewProps> = ({ demands, onDemandClick }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ demands, onDemandClick, getClinicName }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  const goToToday = () => {
+    setCurrentDate(new Date());
+    const today = new Date().toISOString().split('T')[0];
+    const todayDemands = demands.filter(d => {
+      const date = new Date(d.demand_date).toISOString().split('T')[0];
+      return date === today;
+    });
+    if (todayDemands.length > 0) {
+      setSelectedDay(today);
+    }
+  };
 
   // Get demands grouped by date
   const demandsByDate = useMemo(() => {
@@ -134,14 +148,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({ demands, onDemandClick }) =
     <div style={styles.container}>
       {/* Calendar Header */}
       <div style={styles.header}>
-        <button onClick={previousMonth} style={styles.navButton}>
-          ◀
-        </button>
-        <h2 style={styles.monthYear}>
-          {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-        </h2>
-        <button onClick={nextMonth} style={styles.navButton}>
-          ▶
+        <div style={styles.headerLeft}>
+          <button onClick={previousMonth} style={styles.navButton} title="Mês anterior">
+            ◀
+          </button>
+          <h2 style={styles.monthYear}>
+            {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+          </h2>
+          <button onClick={nextMonth} style={styles.navButton} title="Próximo mês">
+            ▶
+          </button>
+        </div>
+        <button onClick={goToToday} style={styles.todayButton} title="Ir para hoje">
+          Hoje
         </button>
       </div>
 
@@ -164,10 +183,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({ demands, onDemandClick }) =
         <div style={styles.selectedDayPanel}>
           <div style={styles.panelHeader}>
             <h3 style={styles.panelTitle}>
-              Demandas de {new Date(selectedDay + 'T00:00:00').toLocaleDateString('pt-BR')}
+              Demandas de {new Date(selectedDay + 'T00:00:00').toLocaleDateString('pt-BR', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+              })}
             </h3>
-            <button onClick={() => setSelectedDay(null)} style={styles.closeButton}>
-              ✕
+            <button onClick={() => setSelectedDay(null)} style={styles.closeButton} title="Fechar">
+              <X size={20} />
             </button>
           </div>
           
@@ -179,19 +203,72 @@ const CalendarView: React.FC<CalendarViewProps> = ({ demands, onDemandClick }) =
                   key={demand.id}
                   style={styles.demandCard}
                   onClick={() => onDemandClick?.(demand)}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateX(4px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateX(0)';
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
+                  }}
                 >
-                  <div style={styles.demandTime}>
-                    ⏰ {demand.start_time} ({demand.duration_hours}h)
+                  <div style={styles.demandCardHeader}>
+                    <div style={styles.demandTitle}>{demand.title}</div>
+                    <div
+                      style={{
+                        ...styles.statusBadge,
+                        backgroundColor: getStatusColor(demand.status),
+                      }}
+                    >
+                      {getStatusLabel(demand.status)}
+                    </div>
                   </div>
-                  <div style={styles.demandTitle}>{demand.title}</div>
-                  <div
-                    style={{
-                      ...styles.statusBadge,
-                      backgroundColor: getStatusColor(demand.status),
-                    }}
-                  >
-                    {getStatusLabel(demand.status)}
+                  
+                  {demand.description && (
+                    <p style={styles.demandDescription}>{demand.description}</p>
+                  )}
+                  
+                  <div style={styles.demandDetails}>
+                    <div style={styles.detailItem}>
+                      <Clock size={14} style={styles.detailIcon} />
+                      <span style={styles.detailText}>
+                        {demand.start_time} ({demand.duration_hours}h)
+                      </span>
+                    </div>
+                    
+                    {getClinicName && (
+                      <div style={styles.detailItem}>
+                        <MapPin size={14} style={styles.detailIcon} />
+                        <span style={styles.detailText}>
+                          {getClinicName(demand.clinic_id)}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {demand.payment && (
+                      <div style={styles.detailItem}>
+                        <DollarSign size={14} style={styles.detailIcon} />
+                        <span style={styles.detailText}>
+                          R$ {demand.payment.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
                   </div>
+                  
+                  {demand.required_specialties && demand.required_specialties.length > 0 && (
+                    <div style={styles.specialtiesContainer}>
+                      {demand.required_specialties.slice(0, 3).map((spec, idx) => (
+                        <span key={idx} style={styles.specialtyBadge}>
+                          {spec}
+                        </span>
+                      ))}
+                      {demand.required_specialties.length > 3 && (
+                        <span style={styles.specialtyBadge}>
+                          +{demand.required_specialties.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
           </div>
@@ -233,6 +310,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '24px',
+    flexWrap: 'wrap',
+    gap: '12px',
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
   },
   navButton: {
     padding: '8px 16px',
@@ -242,7 +326,22 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Inter, sans-serif',
     fontSize: '18px',
     cursor: 'pointer',
-    transition: 'background-color 0.2s ease',
+    transition: 'all 0.2s ease',
+  },
+  navButtonHover: {
+    backgroundColor: '#e5e5e5',
+  },
+  todayButton: {
+    padding: '10px 20px',
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
   },
   monthYear: {
     fontFamily: 'Poppins, sans-serif',
@@ -341,6 +440,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '20px',
     marginTop: '24px',
     border: '1px solid #e5e5e5',
+    maxHeight: '500px',
+    overflowY: 'auto',
   },
   panelHeader: {
     display: 'flex',
@@ -358,11 +459,14 @@ const styles: { [key: string]: React.CSSProperties } = {
   closeButton: {
     backgroundColor: 'transparent',
     border: 'none',
-    fontSize: '24px',
     color: '#737373',
     cursor: 'pointer',
     padding: '4px',
-    lineHeight: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '4px',
+    transition: 'all 0.2s ease',
   },
   demandsList: {
     display: 'flex',
@@ -376,19 +480,66 @@ const styles: { [key: string]: React.CSSProperties } = {
     border: '1px solid #e5e5e5',
     cursor: 'pointer',
     transition: 'all 0.2s ease',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
   },
-  demandTime: {
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '13px',
-    color: '#737373',
-    marginBottom: '4px',
+  demandCardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '12px',
   },
   demandTitle: {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '16px',
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#262626',
-    marginBottom: '8px',
+    flex: 1,
+    margin: 0,
+  },
+  demandDescription: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '13px',
+    color: '#525252',
+    lineHeight: '1.5',
+    margin: 0,
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+  },
+  demandDetails: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  detailItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  detailIcon: {
+    color: '#737373',
+  },
+  detailText: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '13px',
+    color: '#525252',
+  },
+  specialtiesContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+  },
+  specialtyBadge: {
+    padding: '4px 10px',
+    backgroundColor: '#f3f4f6',
+    color: '#525252',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontFamily: 'Inter, sans-serif',
+    fontWeight: '500',
   },
   statusBadge: {
     display: 'inline-block',

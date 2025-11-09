@@ -184,6 +184,13 @@ const ClinicDashboardPage: React.FC = () => {
       path: '/users',
     },
     {
+      id: 'my-demands',
+      label: 'Minhas Demandas',
+      icon: <ClipboardList size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/clinic-demands',
+    },
+    {
       id: 'demandas',
       label: 'Todas as Demandas',
       icon: <ClipboardList size={20} color={colors.primary} />,
@@ -432,6 +439,13 @@ const ClinicDashboardPage: React.FC = () => {
       icon: <Users size={20} color={colors.primary} />,
       action: 'navigate',
       path: '/users',
+    },
+    {
+      id: 'my-demands',
+      label: 'Minhas Demandas',
+      icon: <ClipboardList size={20} color={colors.primary} />,
+      action: 'navigate',
+      path: '/clinic-demands',
     },
     {
       id: 'demandas',

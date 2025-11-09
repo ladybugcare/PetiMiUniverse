@@ -4,8 +4,11 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import CollapsibleSection from '../components/admin/CollapsibleSection';
 import { adminApi, PendingUnit } from '../services/adminApi';
+import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, Briefcase, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { API_BASE_URL } from '../services/api';
+import { supabase } from '../services/supabase';
+import { BarChart2, Building2, Stethoscope, Briefcase, Clock, CheckCircle, XCircle, Download } from 'lucide-react';
 import colors from '../styles/colors';
 
 interface PendingVet {
@@ -14,6 +17,7 @@ interface PendingVet {
   email: string;
   crmv: string;
   specialties?: string[];
+  crmv_file_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -41,6 +45,8 @@ const AdminPendingAllPage: React.FC = () => {
   const [modalType, setModalType] = useState<'unit' | 'vet' | 'freelancer'>('unit');
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [specialtiesMap, setSpecialtiesMap] = useState<Map<string, string>>(new Map());
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
 
   const menuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
@@ -51,8 +57,22 @@ const AdminPendingAllPage: React.FC = () => {
   ];
 
   useEffect(() => {
+    loadSpecialties();
     loadAllPending();
   }, []);
+
+  const loadSpecialties = async () => {
+    try {
+      const { specialties } = await specialtiesApi.getAll();
+      const map = new Map<string, string>();
+      specialties.forEach((spec: Specialty) => {
+        map.set(spec.id, spec.name);
+      });
+      setSpecialtiesMap(map);
+    } catch (error) {
+      console.error('Error loading specialties:', error);
+    }
+  };
 
   const loadAllPending = async () => {
     try {
@@ -130,6 +150,111 @@ const AdminPendingAllPage: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR');
+  };
+
+  // Extrair o path do documento da URL do Supabase
+  const extractDocumentPath = (url: string): string | null => {
+    try {
+      // Formato esperado: https://[project].supabase.co/storage/v1/object/public/vet-documents/[path]
+      const publicUrlPattern = /\/vet-documents\/(.+)$/;
+      const match = url.match(publicUrlPattern);
+      
+      if (match && match[1]) {
+        return decodeURIComponent(match[1]);
+      }
+      
+      // Tentar formato alternativo com signed URL
+      const signedUrlPattern = /\/vet-documents\/(.+?)(\?|$)/;
+      const signedMatch = url.match(signedUrlPattern);
+      
+      if (signedMatch && signedMatch[1]) {
+        return decodeURIComponent(signedMatch[1]);
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Erro ao extrair path do documento:', error);
+      return null;
+    }
+  };
+
+  // Fazer download do documento CRMV
+  const handleDownloadDocument = async (crmvFileUrl: string, vetId: string) => {
+    if (downloadingDocId === vetId) return; // Evitar múltiplos cliques
+    
+    setDownloadingDocId(vetId);
+    
+    try {
+      const filePath = extractDocumentPath(crmvFileUrl);
+      
+      if (!filePath) {
+        showError('Não foi possível extrair o caminho do documento.');
+        return;
+      }
+
+      // Obter token de autenticação
+      const { data: { session } } = await supabase.auth.getSession();
+      const authToken = session?.access_token;
+
+      if (!authToken) {
+        showError('Você precisa estar autenticado para baixar o documento.');
+        return;
+      }
+
+      // Fazer requisição para baixar o arquivo
+      const url = `${API_BASE_URL}/admin/vets/${vetId}/document?path=${encodeURIComponent(filePath)}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || `Erro ${response.status}`);
+      }
+
+      // Obter o blob do arquivo
+      const blob = await response.blob();
+      
+      // Extrair nome do arquivo do header Content-Disposition ou usar padrão
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let fileName = 'crmv-documento.pdf';
+      
+      if (contentDisposition) {
+        const fileNameMatch = contentDisposition.match(/filename[*]?=['"]?([^'";]+)['"]?/i);
+        if (fileNameMatch && fileNameMatch[1]) {
+          fileName = fileNameMatch[1].trim();
+        }
+      }
+      
+      // Fallback: usar nome do path se não conseguir extrair do header
+      if (fileName === 'crmv-documento.pdf') {
+        const pathParts = filePath.split('/');
+        const pathFileName = pathParts[pathParts.length - 1];
+        if (pathFileName) {
+          fileName = pathFileName;
+        }
+      }
+
+      // Criar link temporário para download
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+
+      showSuccess('Documento baixado com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao baixar documento:', error);
+      showError('Erro ao baixar documento: ' + (error.message || 'Tente novamente'));
+    } finally {
+      setDownloadingDocId(null);
+    }
   };
 
   return (
@@ -243,10 +368,42 @@ const AdminPendingAllPage: React.FC = () => {
                           <div style={styles.infoRow}>
                             <strong>Email:</strong> {vet.email}
                           </div>
+                          {vet.crmv_file_url && (
+                            <div style={styles.infoRow}>
+                              <strong>Documento CRMV:</strong>
+                              <button
+                                onClick={() => handleDownloadDocument(vet.crmv_file_url!, vet.id)}
+                                disabled={downloadingDocId === vet.id}
+                                style={styles.downloadButton}
+                                title="Baixar arquivo CRMV"
+                              >
+                                {downloadingDocId === vet.id ? (
+                                  <>
+                                    <div style={styles.spinnerSmall}></div>
+                                    Baixando...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Download size={16} />
+                                    Baixar CRMV
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
                           {vet.specialties && vet.specialties.length > 0 && (
                             <div style={styles.infoRow}>
-                              <strong>Especialidades:</strong> {vet.specialties.slice(0, 3).join(', ')}
-                              {vet.specialties.length > 3 && '...'}
+                              <strong>Especialidades:</strong>
+                              <div style={styles.specialtiesContainer}>
+                                {vet.specialties.map((specId, idx) => {
+                                  const specName = specialtiesMap.get(specId) || specId;
+                                  return (
+                                    <span key={idx} style={styles.specialtyChip}>
+                                      {specName}
+                                    </span>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                           <div style={styles.infoRow}>
@@ -544,6 +701,47 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#525252',
     marginBottom: '12px',
     lineHeight: '1.5',
+  },
+  specialtiesContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    marginTop: '8px',
+  },
+  specialtyChip: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    backgroundColor: '#ede9fe',
+    color: '#7c3aed',
+    borderRadius: '16px',
+    fontSize: '12px',
+    fontWeight: '500',
+    fontFamily: 'Inter, sans-serif',
+  },
+  downloadButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 16px',
+    marginTop: '8px',
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '13px',
+    fontWeight: '500',
+    fontFamily: 'Inter, sans-serif',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  },
+  spinnerSmall: {
+    width: '14px',
+    height: '14px',
+    border: '2px solid #ffffff',
+    borderTop: '2px solid transparent',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+    display: 'inline-block',
   },
   cardFooter: {
     padding: '16px 20px',
