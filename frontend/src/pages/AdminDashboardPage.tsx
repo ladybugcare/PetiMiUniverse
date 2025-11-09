@@ -3,20 +3,23 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { MenuItem } from '../components/DashboardSidebar';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, CheckCircle, Settings, TrendingUp, Clock, Briefcase } from 'lucide-react';
+import { BarChart2, Building2, Stethoscope, ClipboardList, Users, MessageCircle, Settings, Clock, Briefcase, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import colors from '../styles/colors';
 import { adminApi } from '../services/adminApi';
-import { statisticsApi, RecentActivity, SystemInsight, TopPerformer, GrowthTrend } from '../services/statisticsApi';
 import PeriodFilter, { PeriodType } from '../components/admin/PeriodFilter';
-import GrowthIndicator from '../components/admin/GrowthIndicator';
 import QuickActions from '../components/admin/QuickActions';
 import SystemInsights from '../components/admin/SystemInsights';
 import TopPerformersTable from '../components/admin/TopPerformersTable';
 import GrowthChart from '../components/admin/GrowthChart';
+import StatCard from '../components/admin/StatCard';
+import PendingCard from '../components/admin/PendingCard';
+import SkeletonLoader from '../components/admin/SkeletonLoader';
+import { useDashboardData } from '../hooks/useDashboardData';
+import { useAlert } from '../hooks/useAlert';
+import { healthApi, SystemHealth } from '../services/healthApi';
 
 const AdminDashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState('overview');
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [stats, setStats] = useState({
     totalClinics: 0,
@@ -111,8 +114,8 @@ const AdminDashboardPage: React.FC = () => {
       id: 'overview',
       label: 'Dashboard',
       icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'section',
-      sectionId: 'overview',
+      action: 'navigate',
+      path: '/admin-dashboard',
     },
     {
       id: 'clinics',
@@ -163,32 +166,7 @@ const AdminDashboardPage: React.FC = () => {
       action: 'navigate',
       path: '/admin/settings',
     },
-    // {
-    //   id: 'logout',
-    //   label: 'Sair',
-    //   icon: <LogOut size={20} color={colors.primary} />,
-    //   action: 'logout',
-    // },
   ];
-
-  const renderSection = () => {
-    switch (activeSection) {
-      case 'overview':
-        return <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} pendingFreelancersCount={pendingFreelancersCount} />;
-      case 'clinics':
-        return <ClinicsSection />;
-      case 'vets':
-        return <VetsSection />;
-      case 'demands':
-        return <DemandsSection />;
-      case 'reports':
-        return <ReportsSection />;
-      case 'settings':
-        return <SettingsSection />;
-      default:
-        return <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} pendingFreelancersCount={pendingFreelancersCount} />;
-    }
-  };
 
   return (
     <>
@@ -196,7 +174,7 @@ const AdminDashboardPage: React.FC = () => {
         pageName="Painel do Administrador" 
         menuItems={menuItems}
       >
-        {renderSection()}
+        <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} pendingFreelancersCount={pendingFreelancersCount} />
       </DashboardLayout>
       <LoadingOverlay visible={checkingAuth} />
     </>
@@ -244,15 +222,11 @@ const getGreeting = (): string => {
 // Overview Section
 const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingFreelancersCount: number }> = ({ stats, pendingVetsCount, pendingFreelancersCount }) => {
   const navigate = useNavigate();
+  const { showError } = useAlert();
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('30d');
-  const [periodStats, setPeriodStats] = useState<any>(null);
-  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
-  const [insights, setInsights] = useState<SystemInsight[]>([]);
-  const [topClinics, setTopClinics] = useState<TopPerformer[]>([]);
-  const [topVets, setTopVets] = useState<TopPerformer[]>([]);
-  const [growthTrends, setGrowthTrends] = useState<GrowthTrend[]>([]);
-  const [loading, setLoading] = useState(false);
   const [adminName, setAdminName] = useState('');
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
 
   // Get admin name
   useEffect(() => {
@@ -267,68 +241,53 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
     }
   }, []);
 
-  // Load data based on period
+  // Load system health
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
+    const loadHealth = async () => {
       try {
-        // Load period stats
-        try {
-          const { stats: periodStatsData } = await statisticsApi.getSystemStatsWithPeriod(selectedPeriod);
-          setPeriodStats(periodStatsData);
-        } catch (error) {
-          console.error('Error loading period stats:', error);
-        }
-
-        // Load recent activity
-        try {
-          const { activities } = await statisticsApi.getRecentActivity(10);
-          setRecentActivities(activities || []);
-        } catch (error) {
-          console.error('Error loading recent activity:', error);
-          setRecentActivities([]);
-        }
-
-        // Load insights
-        try {
-          const { insights: insightsData } = await statisticsApi.getSystemInsights();
-          setInsights(insightsData || []);
-        } catch (error) {
-          console.error('Error loading insights:', error);
-          setInsights([]);
-        }
-
-        // Load top performers
-        try {
-          const [clinicsResult, vetsResult] = await Promise.all([
-            statisticsApi.getTopPerformers('clinics', 5),
-            statisticsApi.getTopPerformers('vets', 5),
-          ]);
-          setTopClinics(clinicsResult?.performers || []);
-          setTopVets(vetsResult?.performers || []);
-        } catch (error) {
-          console.error('Error loading top performers:', error);
-          setTopClinics([]);
-          setTopVets([]);
-        }
-
-        // Load growth trends
-        try {
-          const { trends } = await statisticsApi.getSystemGrowthTrends('30d');
-          setGrowthTrends(trends || []);
-        } catch (error) {
-          console.error('Error loading growth trends:', error);
-          setGrowthTrends([]);
-        }
-      } catch (error) {
-        console.error('Error loading dashboard data:', error);
+        setHealthLoading(true);
+        const health = await healthApi.getSystemHealth();
+        setSystemHealth(health);
+      } catch (error: any) {
+        console.error('Error loading system health:', error);
+        // Set default unhealthy state on error
+        setSystemHealth({
+          api: { status: 'unhealthy', message: 'Erro ao verificar' },
+          database: { status: 'unknown', message: 'Não verificado' },
+          storage: { status: 'unknown', message: 'Não verificado' },
+          email: { status: 'unknown', message: 'Não verificado' },
+          overall: 'unhealthy',
+          timestamp: new Date().toISOString(),
+        });
       } finally {
-        setLoading(false);
+        setHealthLoading(false);
       }
     };
 
-    loadData();
-  }, [selectedPeriod]);
+    loadHealth();
+    // Refresh health every 30 seconds
+    const interval = setInterval(loadHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Use custom hook for dashboard data
+  const {
+    periodStats,
+    recentActivities,
+    insights,
+    topClinics,
+    topVets,
+    growthTrends,
+    loading,
+    error,
+  } = useDashboardData(selectedPeriod);
+
+  // Show error notification if any
+  useEffect(() => {
+    if (error) {
+      showError(error);
+    }
+  }, [error, showError]);
 
   return (
     <div style={styles.container}>
@@ -353,262 +312,156 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
 
       {/* System Stats */}
       <div style={styles.statsGrid}>
-        <div 
-          style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#7c3aed' }}
+        <StatCard
+          icon={<Building2 />}
+          value={stats.totalClinics}
+          label="Clínicas Cadastradas"
+          color="#7c3aed"
           onClick={() => navigate('/admin/clinics')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-          }}
-        >
-          <div style={styles.statIcon}>
-            <Building2 size={36} color="#7c3aed" />
-          </div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statValue}>{stats.totalClinics}</h3>
-            <p style={styles.statLabel}>Clínicas Cadastradas</p>
-            {periodStats && (
-              <div style={styles.statSubtext}>
-                <span>{periodStats.newClinics} novos nos últimos {selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}</span>
-                {periodStats.clinicsGrowth !== 0 && (
-                  <GrowthIndicator growth={periodStats.clinicsGrowth} />
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div 
-          style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#3b82f6' }}
+          subtext={periodStats ? `${periodStats.newClinics} novos nos últimos ${selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}` : null}
+          growth={periodStats?.clinicsGrowth}
+        />
+        <StatCard
+          icon={<Stethoscope />}
+          value={stats.totalVets}
+          label="Veterinários Cadastrados"
+          color="#3b82f6"
           onClick={() => navigate('/admin/vets')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(59, 130, 246, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-          }}
-        >
-          <div style={styles.statIcon}>
-            {}
-            <Stethoscope size={36} color="#3b82f6" />
-          </div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statValue}>{stats.totalVets}</h3>
-            <p style={styles.statLabel}>Veterinários Cadastrados</p>
-            {periodStats && (
-              <div style={styles.statSubtext}>
-                <span>{periodStats.newVets} novos nos últimos {selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}</span>
-                {periodStats.vetsGrowth !== 0 && (
-                  <GrowthIndicator growth={periodStats.vetsGrowth} />
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div 
-          style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#8b5cf6' }}
+          subtext={periodStats ? `${periodStats.newVets} novos nos últimos ${selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}` : null}
+          growth={periodStats?.vetsGrowth}
+        />
+        <StatCard
+          icon={<Briefcase />}
+          value={stats.totalFreelancers || 0}
+          label="Freelancers Cadastrados"
+          color="#8b5cf6"
           onClick={() => navigate('/admin/freelancers')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(139, 92, 246, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-          }}
-        >
-          <div style={styles.statIcon}>
-            <Briefcase size={36} color="#8b5cf6" />
-          </div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statValue}>{stats.totalFreelancers || 0}</h3>
-            <p style={styles.statLabel}>Freelancers Cadastrados</p>
-            {periodStats && (
-              <div style={styles.statSubtext}>
-                <span>{periodStats.newFreelancers} novos nos últimos {selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}</span>
-                {periodStats.freelancersGrowth !== 0 && (
-                  <GrowthIndicator growth={periodStats.freelancersGrowth} />
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div 
-          style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#10b981' }}
+          subtext={periodStats ? `${periodStats.newFreelancers} novos nos últimos ${selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}` : null}
+          growth={periodStats?.freelancersGrowth}
+        />
+        <StatCard
+          icon={<ClipboardList />}
+          value={stats.totalDemands}
+          label="Demandas Ativas"
+          color="#10b981"
           onClick={() => navigate('/admin/demands')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(16, 185, 129, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-          }}
-        >
-          <div style={styles.statIcon}>
-            {}
-            <ClipboardList size={36} color="#10b981" />
-          </div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statValue}>{stats.totalDemands}</h3>
-            <p style={styles.statLabel}>Demandas Ativas</p>
-          </div>
-        </div>
-
-        <div 
-          style={{ ...styles.statCard, ...styles.statCardClickable, borderLeftColor: '#f59e0b' }}
+        />
+        <StatCard
+          icon={<Users />}
+          value={stats.totalUsers}
+          label="Usuários Totais"
+          color="#f59e0b"
           onClick={() => navigate('/admin/users')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(245, 158, 11, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-          }}
-        >
-          <div style={styles.statIcon}>
-            {}
-            <Users size={36} color="#f59e0b" />
-          </div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statValue}>{stats.totalUsers}</h3>
-            <p style={styles.statLabel}>Usuários Totais</p>
-          </div>
-        </div>
+        />
       </div>
 
       {/* Pending Approvals Section */}
       <div style={styles.pendingSection}>
         <h3 style={styles.subsectionTitle}>Aprovações Pendentes</h3>
         <div style={styles.pendingGrid}>
-          <div 
-            style={{ ...styles.pendingCard, ...styles.statCardClickable }}
+          <PendingCard
+            icon={<Building2 />}
+            title="Unidades Pendentes"
+            description="Clínicas aguardando aprovação"
             onClick={() => navigate('/admin/pending-units')}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-            }}
-          >
-            <div style={styles.pendingIcon}>
-              <Building2 size={32} color={colors.primary} />
-            </div>
-            <div style={styles.pendingContent}>
-              <h4 style={styles.pendingTitle}>Unidades Pendentes</h4>
-              <p style={styles.pendingText}>Clínicas aguardando aprovação</p>
-            </div>
-            <div style={styles.pendingArrow}>→</div>
-          </div>
-
-          <div 
-            style={{ 
-              ...styles.pendingCard, 
-              ...styles.statCardClickable,
-              ...(pendingVetsCount > 0 ? styles.pendingCardHighlight : {}),
-            }}
-            onClick={() => navigate('/admin/pending-vets')}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 10px 25px rgba(59, 130, 246, 0.15)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-            }}
-          >
-            <div style={styles.pendingIcon}>
-              <Stethoscope size={32} color={colors.primary} />
-              {pendingVetsCount > 0 && (
-                <span style={styles.badge}>{pendingVetsCount}</span>
-              )}
-            </div>
-            <div style={styles.pendingContent}>
-              <h4 style={styles.pendingTitle}>Veterinários Pendentes</h4>
-              <p style={styles.pendingText}>
-                {pendingVetsCount > 0 
-                  ? `${pendingVetsCount} ${pendingVetsCount === 1 ? 'veterinário' : 'veterinários'} aguardando aprovação`
-                  : 'Nenhum veterinário pendente'}
-              </p>
-            </div>
-            <div style={styles.pendingArrow}>→</div>
-          </div>
-
-          <div 
-            style={{ 
-              ...styles.pendingCard, 
-              ...styles.statCardClickable,
-              ...(pendingFreelancersCount > 0 ? styles.pendingCardHighlight : {}),
-            }}
-            onClick={() => navigate('/admin/pending-freelancers')}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 10px 25px rgba(139, 92, 246, 0.15)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-            }}
-          >
-            <div style={styles.pendingIcon}>
-              <Briefcase size={32} color={colors.primary} />
-              {pendingFreelancersCount > 0 && (
-                <span style={styles.badge}>{pendingFreelancersCount}</span>
-              )}
-            </div>
-            <div style={styles.pendingContent}>
-              <h4 style={styles.pendingTitle}>Freelancers Pendentes</h4>
-              <p style={styles.pendingText}>
-                {pendingFreelancersCount > 0
-                  ? `${pendingFreelancersCount} ${pendingFreelancersCount === 1 ? 'freelancer' : 'freelancers'} aguardando aprovação`
-                  : 'Nenhum freelancer pendente'}
-              </p>
-            </div>
-            <div style={styles.pendingArrow}>→</div>
-          </div>
+          />
+          <PendingCard
+            icon={<Stethoscope />}
+            title="Veterinários Pendentes"
+            description={pendingVetsCount > 0 
+              ? `${pendingVetsCount} ${pendingVetsCount === 1 ? 'veterinário' : 'veterinários'} aguardando aprovação`
+              : 'Nenhum veterinário pendente'}
+            count={pendingVetsCount > 0 ? pendingVetsCount : undefined}
+            highlight={pendingVetsCount > 0}
+            onClick={() => navigate('/admin/pending-all')}
+          />
+          <PendingCard
+            icon={<Briefcase />}
+            title="Freelancers Pendentes"
+            description={pendingFreelancersCount > 0
+              ? `${pendingFreelancersCount} ${pendingFreelancersCount === 1 ? 'freelancer' : 'freelancers'} aguardando aprovação`
+              : 'Nenhum freelancer pendente'}
+            count={pendingFreelancersCount > 0 ? pendingFreelancersCount : undefined}
+            highlight={pendingFreelancersCount > 0}
+            onClick={() => navigate('/admin/pending-all')}
+          />
         </div>
       </div>
 
       {/* System Health */}
       <div style={styles.healthSection}>
         <h3 style={styles.subsectionTitle}>Saúde do Sistema</h3>
-        <div style={styles.healthCards}>
-          <HealthCard
-            title="API Status"
-            status="Operacional"
-            statusColor="#10b981"
-            icon={<CheckCircle size={32} color="#10b981" />}
-          />
-          <HealthCard
-            title="Database"
-            status="Operacional"
-            statusColor="#10b981"
-            icon={<CheckCircle size={32} color="#10b981" />}
-          />
-          <HealthCard
-            title="Storage"
-            status="Operacional"
-            statusColor="#10b981"
-            icon={<CheckCircle size={32} color="#10b981" />}
-          />
-          <HealthCard
-            title="Email Service"
-            status="Operacional"
-            statusColor="#10b981"
-            icon={<CheckCircle size={32} color="#10b981" />}
-          />
-        </div>
+        {healthLoading ? (
+          <div style={styles.healthCards}>
+            <SkeletonLoader variant="statCard" count={4} />
+          </div>
+        ) : systemHealth ? (
+          <div style={styles.healthCards}>
+            <HealthCard
+              title="API Status"
+              status={systemHealth.api.status === 'healthy' ? 'Operacional' : systemHealth.api.status === 'degraded' ? 'Degradado' : 'Indisponível'}
+              statusColor={systemHealth.api.status === 'healthy' ? '#10b981' : systemHealth.api.status === 'degraded' ? '#f59e0b' : '#ef4444'}
+              icon={
+                systemHealth.api.status === 'healthy' ? (
+                  <CheckCircle size={32} color="#10b981" />
+                ) : systemHealth.api.status === 'degraded' ? (
+                  <AlertTriangle size={32} color="#f59e0b" />
+                ) : (
+                  <XCircle size={32} color="#ef4444" />
+                )
+              }
+              latency={systemHealth.api.latency}
+            />
+            <HealthCard
+              title="Database"
+              status={systemHealth.database.status === 'healthy' ? 'Operacional' : systemHealth.database.status === 'degraded' ? 'Degradado' : 'Indisponível'}
+              statusColor={systemHealth.database.status === 'healthy' ? '#10b981' : systemHealth.database.status === 'degraded' ? '#f59e0b' : '#ef4444'}
+              icon={
+                systemHealth.database.status === 'healthy' ? (
+                  <CheckCircle size={32} color="#10b981" />
+                ) : systemHealth.database.status === 'degraded' ? (
+                  <AlertTriangle size={32} color="#f59e0b" />
+                ) : (
+                  <XCircle size={32} color="#ef4444" />
+                )
+              }
+              latency={systemHealth.database.latency}
+            />
+            <HealthCard
+              title="Storage"
+              status={systemHealth.storage.status === 'healthy' ? 'Operacional' : systemHealth.storage.status === 'degraded' ? 'Degradado' : 'Indisponível'}
+              statusColor={systemHealth.storage.status === 'healthy' ? '#10b981' : systemHealth.storage.status === 'degraded' ? '#f59e0b' : '#ef4444'}
+              icon={
+                systemHealth.storage.status === 'healthy' ? (
+                  <CheckCircle size={32} color="#10b981" />
+                ) : systemHealth.storage.status === 'degraded' ? (
+                  <AlertTriangle size={32} color="#f59e0b" />
+                ) : (
+                  <XCircle size={32} color="#ef4444" />
+                )
+              }
+              latency={systemHealth.storage.latency}
+            />
+            <HealthCard
+              title="Email Service"
+              status={systemHealth.email.status === 'healthy' ? 'Operacional' : systemHealth.email.status === 'degraded' ? 'Degradado' : 'Indisponível'}
+              statusColor={systemHealth.email.status === 'healthy' ? '#10b981' : systemHealth.email.status === 'degraded' ? '#f59e0b' : '#ef4444'}
+              icon={
+                systemHealth.email.status === 'healthy' ? (
+                  <CheckCircle size={32} color="#10b981" />
+                ) : systemHealth.email.status === 'degraded' ? (
+                  <AlertTriangle size={32} color="#f59e0b" />
+                ) : (
+                  <XCircle size={32} color="#ef4444" />
+                )
+              }
+            />
+          </div>
+        ) : (
+          <div style={styles.errorSection}>
+            <p style={styles.errorText}>Erro ao carregar status do sistema</p>
+          </div>
+        )}
       </div>
 
       {/* Quick Actions */}
@@ -617,7 +470,11 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
       {/* System Insights */}
       {loading ? (
         <div style={styles.loadingSection}>
-          <p style={styles.loadingText}>Carregando insights...</p>
+          <SkeletonLoader variant="statCard" count={2} />
+        </div>
+      ) : error ? (
+        <div style={styles.errorSection}>
+          <p style={styles.errorText}>Erro ao carregar insights. Tente novamente.</p>
         </div>
       ) : (
         insights.length > 0 && <SystemInsights insights={insights} />
@@ -626,7 +483,7 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
       {/* Growth Chart */}
       {loading ? (
         <div style={styles.loadingSection}>
-          <p style={styles.loadingText}>Carregando gráfico...</p>
+          <SkeletonLoader variant="chart" />
         </div>
       ) : (
         growthTrends.length > 0 && <GrowthChart trends={growthTrends} />
@@ -635,7 +492,7 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
       {/* Top Performers */}
       {loading ? (
         <div style={styles.loadingSection}>
-          <p style={styles.loadingText}>Carregando top performers...</p>
+          <SkeletonLoader variant="statCard" count={2} />
         </div>
       ) : (
         (topClinics.length > 0 || topVets.length > 0) && (
@@ -648,7 +505,7 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
         <h3 style={styles.subsectionTitle}>Atividade Recente</h3>
         <div style={styles.activityList}>
           {loading ? (
-            <p style={styles.loadingText}>Carregando atividades...</p>
+            <SkeletonLoader variant="activity" count={3} />
           ) : recentActivities.length > 0 ? (
             recentActivities.map((activity) => (
               <ActivityItem
@@ -668,122 +525,22 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
   );
 };
 
-// Clinics Section
-const ClinicsSection: React.FC = () => {
-  return (
-    <div style={styles.container}>
-      <h2 style={styles.sectionTitle}>Gerenciar Clínicas</h2>
-      <div style={styles.placeholder}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          <Building2 size={48} color="#a3a3a3" />
-        </div>
-        <p style={styles.placeholderText}>
-          Lista de clínicas cadastradas no sistema
-        </p>
-        <p style={styles.placeholderSubtext}>
-          Aqui você poderá visualizar, editar e gerenciar todas as clínicas
-        </p>
-      </div>
-    </div>
-  );
-};
-
-// Vets Section
-const VetsSection: React.FC = () => {
-  return (
-    <div style={styles.container}>
-      <h2 style={styles.sectionTitle}>Gerenciar Veterinários</h2>
-      <div style={styles.placeholder}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          {}
-          <Stethoscope size={48} color="#a3a3a3" />
-        </div>
-        <p style={styles.placeholderText}>
-          Lista de veterinários cadastrados no sistema
-        </p>
-        <p style={styles.placeholderSubtext}>
-          Aqui você poderá visualizar, editar e gerenciar todos os veterinários
-        </p>
-      </div>
-    </div>
-  );
-};
-
-// Demands Section
-const DemandsSection: React.FC = () => {
-  return (
-    <div style={styles.container}>
-      <h2 style={styles.sectionTitle}>Demandas do Sistema</h2>
-      <div style={styles.placeholder}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          {}
-          <ClipboardList size={48} color="#a3a3a3" />
-        </div>
-        <p style={styles.placeholderText}>
-          Visão geral de todas as demandas do sistema
-        </p>
-        <p style={styles.placeholderSubtext}>
-          Acompanhe estatísticas e métricas de demandas
-        </p>
-      </div>
-    </div>
-  );
-};
-
-// Reports Section
-const ReportsSection: React.FC = () => {
-  return (
-    <div style={styles.container}>
-      <h2 style={styles.sectionTitle}>Relatórios e Analytics</h2>
-      <div style={styles.placeholder}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          {}
-          <TrendingUp size={48} color="#a3a3a3" />
-        </div>
-        <p style={styles.placeholderText}>
-          Relatórios e análises do sistema
-        </p>
-        <p style={styles.placeholderSubtext}>
-          Visualize métricas, gráficos e insights do negócio
-        </p>
-      </div>
-    </div>
-  );
-};
-
-// Settings Section
-const SettingsSection: React.FC = () => {
-  return (
-    <div style={styles.container}>
-      <h2 style={styles.sectionTitle}>Configurações do Sistema</h2>
-      <div style={styles.placeholder}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          {}
-          <Settings size={48} color="#a3a3a3" />
-        </div>
-        <p style={styles.placeholderText}>
-          Configurações gerais do sistema
-        </p>
-        <p style={styles.placeholderSubtext}>
-          Gerencie configurações, integrações e parâmetros do sistema
-        </p>
-      </div>
-    </div>
-  );
-};
-
 // Helper Components
 const HealthCard: React.FC<{
   title: string;
   status: string;
   statusColor: string;
   icon: React.ReactNode;
-}> = ({ title, status, statusColor, icon }) => {
+  latency?: number;
+}> = ({ title, status, statusColor, icon, latency }) => {
   return (
     <div style={styles.healthCard}>
       <div style={styles.healthIcon}>{icon}</div>
       <h4 style={styles.healthTitle}>{title}</h4>
       <p style={{ ...styles.healthStatus, color: statusColor }}>{status}</p>
+      {latency !== undefined && (
+        <p style={styles.healthLatency}>{latency}ms</p>
+      )}
     </div>
   );
 };
@@ -894,6 +651,12 @@ const styles: { [key: string]: React.CSSProperties } = {
   healthStatus: {
     fontSize: '14px',
     fontWeight: '600',
+    margin: 0,
+    marginBottom: '4px',
+  },
+  healthLatency: {
+    fontSize: '12px',
+    color: '#737373',
     margin: 0,
   },
   activitySection: {
@@ -1075,6 +838,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: 'center',
     marginTop: '32px',
     marginBottom: '32px',
+  },
+  errorSection: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #ef4444',
+    borderRadius: '12px',
+    padding: '24px',
+    marginTop: '32px',
+    marginBottom: '32px',
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: '14px',
+    margin: 0,
+    textAlign: 'center',
   },
 };
 
