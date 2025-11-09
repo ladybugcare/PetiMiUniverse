@@ -49,6 +49,7 @@ import CreateUnitPage from './pages/CreateUnitPage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
 import AdminPendingVetsPage from './pages/AdminPendingVetsPage';
 import AdminPendingFreelancersPage from './pages/AdminPendingFreelancersPage';
+import AdminPendingAllPage from './pages/AdminPendingAllPage';
 import AdminSettingsPage from './pages/AdminSettingsPage';
 import EmailConfirmedPage from './pages/EmailConfirmedPage';
 
@@ -222,6 +223,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['ADMIN']}>
                     <AdminPendingFreelancersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/pending-all"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminPendingAllPage />
                   </ProtectedRoute>
                 }
               />

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import SpecialtiesManager from '../components/admin/SpecialtiesManager';
@@ -10,7 +10,22 @@ type SettingsTab = 'cadastros' | 'localizacao' | 'planos' | 'marketplace' | 'usu
 
 const AdminSettingsPage: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('cadastros');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab') as SettingsTab | null;
+  const [activeTab, setActiveTab] = useState<SettingsTab>(tabParam || 'cadastros');
+
+  // Update active tab when URL param changes
+  useEffect(() => {
+    if (tabParam && ['cadastros', 'localizacao', 'planos', 'marketplace', 'usuarios', 'documentos', 'sistema'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
+  // Update URL when tab changes
+  const handleTabChange = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
 
   const menuItems: MenuItem[] = [
     {
@@ -290,7 +305,7 @@ const AdminSettingsPage: React.FC = () => {
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               style={{
                 ...styles.tab,
                 ...(activeTab === tab.id ? styles.tabActive : {}),

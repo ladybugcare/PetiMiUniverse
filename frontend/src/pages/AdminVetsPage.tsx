@@ -232,21 +232,21 @@ const AdminVetsPage: React.FC = () => {
                             style={{ ...styles.actionButton, ...styles.viewButton }}
                             title="Ver detalhes"
                           >
-                            <Eye size={16} />
+                            <Eye size={16} color="#3b82f6" />
                           </button>
                           <button
                             onClick={() => handleEdit(vet)}
                             style={{ ...styles.actionButton, ...styles.editButton }}
                             title="Editar"
                           >
-                            <Edit size={16} />
+                            <Edit size={16} color="#f59e0b" />
                           </button>
                           <button
                             onClick={() => handleDelete(vet)}
                             style={{ ...styles.actionButton, ...styles.deleteButton }}
                             title="Excluir"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={16} color="#ef4444" />
                           </button>
                         </div>
                       </td>
@@ -494,20 +494,24 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   actionButton: {
     padding: '6px 10px',
-    border: 'none',
+    border: '2px solid',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '16px',
     transition: 'all 0.2s',
+    backgroundColor: 'transparent',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   viewButton: {
-    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
   },
   editButton: {
-    backgroundColor: '#f59e0b',
+    borderColor: '#f59e0b',
   },
   deleteButton: {
-    backgroundColor: '#ef4444',
+    borderColor: '#ef4444',
   },
   modalOverlay: {
     position: 'fixed',

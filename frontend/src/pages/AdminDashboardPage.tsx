@@ -273,28 +273,53 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
       setLoading(true);
       try {
         // Load period stats
-        const { stats: periodStatsData } = await statisticsApi.getSystemStatsWithPeriod(selectedPeriod);
-        setPeriodStats(periodStatsData);
+        try {
+          const { stats: periodStatsData } = await statisticsApi.getSystemStatsWithPeriod(selectedPeriod);
+          setPeriodStats(periodStatsData);
+        } catch (error) {
+          console.error('Error loading period stats:', error);
+        }
 
         // Load recent activity
-        const { activities } = await statisticsApi.getRecentActivity(10);
-        setRecentActivities(activities);
+        try {
+          const { activities } = await statisticsApi.getRecentActivity(10);
+          setRecentActivities(activities || []);
+        } catch (error) {
+          console.error('Error loading recent activity:', error);
+          setRecentActivities([]);
+        }
 
         // Load insights
-        const { insights: insightsData } = await statisticsApi.getSystemInsights();
-        setInsights(insightsData);
+        try {
+          const { insights: insightsData } = await statisticsApi.getSystemInsights();
+          setInsights(insightsData || []);
+        } catch (error) {
+          console.error('Error loading insights:', error);
+          setInsights([]);
+        }
 
         // Load top performers
-        const [clinicsResult, vetsResult] = await Promise.all([
-          statisticsApi.getTopPerformers('clinics', 5),
-          statisticsApi.getTopPerformers('vets', 5),
-        ]);
-        setTopClinics(clinicsResult.performers);
-        setTopVets(vetsResult.performers);
+        try {
+          const [clinicsResult, vetsResult] = await Promise.all([
+            statisticsApi.getTopPerformers('clinics', 5),
+            statisticsApi.getTopPerformers('vets', 5),
+          ]);
+          setTopClinics(clinicsResult?.performers || []);
+          setTopVets(vetsResult?.performers || []);
+        } catch (error) {
+          console.error('Error loading top performers:', error);
+          setTopClinics([]);
+          setTopVets([]);
+        }
 
         // Load growth trends
-        const { trends } = await statisticsApi.getSystemGrowthTrends('30d');
-        setGrowthTrends(trends);
+        try {
+          const { trends } = await statisticsApi.getSystemGrowthTrends('30d');
+          setGrowthTrends(trends || []);
+        } catch (error) {
+          console.error('Error loading growth trends:', error);
+          setGrowthTrends([]);
+        }
       } catch (error) {
         console.error('Error loading dashboard data:', error);
       } finally {
@@ -307,43 +332,24 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
 
   return (
     <div style={styles.container}>
-      {/* Welcome Section */}
-      <div style={styles.welcomeSection}>
-        <h2 style={styles.sectionTitle}>
-          {getGreeting()}, {adminName} {getGreeting() === 'Boa noite' ? '🌙' : getGreeting() === 'Boa tarde' ? '☀️' : '🌅'}
-        </h2>
-        {pendingVetsCount + pendingFreelancersCount > 0 && (
-          <p style={styles.welcomeSubtitle}>
-            {pendingVetsCount + pendingFreelancersCount} cadastro(s) aguardando análise
-          </p>
-        )}
+      {/* Header with Welcome and Period Filter */}
+      <div style={styles.headerSection}>
+        <div style={styles.welcomeSection}>
+          <h2 style={styles.sectionTitle}>
+            {getGreeting()}, {adminName} {getGreeting() === 'Boa noite' ? '🌙' : getGreeting() === 'Boa tarde' ? '☀️' : '🌅'}
+          </h2>
+          {pendingVetsCount + pendingFreelancersCount > 0 && (
+            <p style={styles.welcomeSubtitle}>
+              {pendingVetsCount + pendingFreelancersCount} cadastro(s) aguardando análise
+            </p>
+          )}
+        </div>
+        <div style={styles.filterSection}>
+          <PeriodFilter selectedPeriod={selectedPeriod} onPeriodChange={setSelectedPeriod} />
+        </div>
       </div>
 
-      {/* Period Filter */}
-      <PeriodFilter selectedPeriod={selectedPeriod} onPeriodChange={setSelectedPeriod} />
-
-      {/* Growth Summary Card */}
-      {periodStats && (
-        <div style={styles.growthCard}>
-          <h3 style={styles.growthTitle}>Crescimento no Período</h3>
-          <div style={styles.growthGrid}>
-            <div style={styles.growthItem}>
-              <span style={styles.growthLabel}>Clínicas</span>
-              <GrowthIndicator growth={periodStats.clinicsGrowth} />
-            </div>
-            <div style={styles.growthItem}>
-              <span style={styles.growthLabel}>Veterinários</span>
-              <GrowthIndicator growth={periodStats.vetsGrowth} />
-            </div>
-            <div style={styles.growthItem}>
-              <span style={styles.growthLabel}>Freelancers</span>
-              <GrowthIndicator growth={periodStats.freelancersGrowth} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      <h2 style={styles.sectionTitle}>Visão Geral do Sistema</h2>
+      <h3 style={styles.subsectionTitle}>Visão Geral do Sistema</h3>
 
       {/* System Stats */}
       <div style={styles.statsGrid}>
@@ -609,14 +615,32 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
       <QuickActions pendingCount={pendingVetsCount + pendingFreelancersCount} />
 
       {/* System Insights */}
-      {insights.length > 0 && <SystemInsights insights={insights} />}
+      {loading ? (
+        <div style={styles.loadingSection}>
+          <p style={styles.loadingText}>Carregando insights...</p>
+        </div>
+      ) : (
+        insights.length > 0 && <SystemInsights insights={insights} />
+      )}
 
       {/* Growth Chart */}
-      {growthTrends.length > 0 && <GrowthChart trends={growthTrends} />}
+      {loading ? (
+        <div style={styles.loadingSection}>
+          <p style={styles.loadingText}>Carregando gráfico...</p>
+        </div>
+      ) : (
+        growthTrends.length > 0 && <GrowthChart trends={growthTrends} />
+      )}
 
       {/* Top Performers */}
-      {(topClinics.length > 0 || topVets.length > 0) && (
-        <TopPerformersTable clinics={topClinics} vets={topVets} />
+      {loading ? (
+        <div style={styles.loadingSection}>
+          <p style={styles.loadingText}>Carregando top performers...</p>
+        </div>
+      ) : (
+        (topClinics.length > 0 || topVets.length > 0) && (
+          <TopPerformersTable clinics={topClinics} vets={topVets} />
+        )
       )}
 
       {/* Recent Activity */}
@@ -1000,8 +1024,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: colors.primary,
     fontWeight: '600',
   },
-  welcomeSection: {
+  headerSection: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: '24px',
+    gap: '24px',
+    flexWrap: 'wrap',
+  },
+  welcomeSection: {
+    flex: 1,
+    minWidth: '200px',
   },
   welcomeSubtitle: {
     fontSize: '14px',
@@ -1009,33 +1042,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginTop: '8px',
     margin: 0,
   },
-  growthCard: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
-    borderRadius: '12px',
-    padding: '20px',
-    marginBottom: '32px',
-  },
-  growthTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#262626',
-    margin: 0,
-    marginBottom: '16px',
-  },
-  growthGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: '16px',
-  },
-  growthItem: {
+  filterSection: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  growthLabel: {
-    fontSize: '14px',
-    color: '#737373',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   statSubtext: {
     display: 'flex',
@@ -1056,6 +1066,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: 'center',
     color: '#737373',
     fontSize: '14px',
+  },
+  loadingSection: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e5e5e5',
+    borderRadius: '12px',
+    padding: '40px',
+    textAlign: 'center',
+    marginTop: '32px',
+    marginBottom: '32px',
   },
 };
 
