@@ -86,13 +86,26 @@ exports.checkPermission = checkPermission;
 // Check if user has access to clinic
 const checkClinicAccess = async (user_id, clinic_id) => {
     try {
+        // First check if user is the clinic owner (clinic.id === user_id)
+        if (user_id === clinic_id) {
+            // Verify clinic exists
+            const { data: clinic, error: clinicError } = await supabase_1.supabase
+                .from('clinics')
+                .select('id')
+                .eq('id', clinic_id)
+                .single();
+            if (!clinicError && clinic) {
+                return true;
+            }
+        }
+        // Also check if user has a clinic_users entry
         const { data, error } = await supabase_1.supabase
             .from('clinic_users')
             .select('id')
             .eq('user_id', user_id)
             .eq('clinic_id', clinic_id)
             .eq('status', 'active')
-            .single();
+            .maybeSingle();
         return !error && !!data;
     }
     catch (error) {

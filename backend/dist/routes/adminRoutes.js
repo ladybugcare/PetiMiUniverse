@@ -15,6 +15,7 @@ const getAdmins_1 = require("../controllers/admin/getAdmins");
 // Controllers de unidades
 const getPendingUnits_1 = require("../controllers/units/getPendingUnits");
 const reviewUnit_1 = require("../controllers/units/reviewUnit");
+const adminController_1 = require("../controllers/adminController");
 // Controllers de documentos
 const getVetDocument_1 = require("../controllers/admin/getVetDocument");
 const router = express_1.default.Router();
@@ -40,6 +41,8 @@ router.get('/users/admins', authMiddleware_1.authenticateUser, getAdmins_1.getAd
  */
 // Listar unidades pendentes de aprovação
 router.get('/pending-units', authMiddleware_1.authenticateUser, getPendingUnits_1.getPendingUnits);
+// Listar todas as unidades ativas (aprovadas ou ativas)
+router.get('/units', authMiddleware_1.authenticateUser, adminController_1.getAllActiveUnits);
 // Aprovar ou rejeitar unidade
 router.patch('/units/:id/review', authMiddleware_1.authenticateUser, reviewUnit_1.reviewUnit);
 /**

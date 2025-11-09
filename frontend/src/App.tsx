@@ -49,6 +49,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import CreateFirstUnitPage from './pages/CreateFirstUnitPage';
 import CreateUnitPage from './pages/CreateUnitPage';
 import UnitProfilePage from './pages/UnitProfilePage';
+import ClinicApplicationsPage from './pages/ClinicApplicationsPage';
 import AdminPendingUnitsPage from './pages/AdminPendingUnitsPage';
 import AdminPendingVetsPage from './pages/AdminPendingVetsPage';
 import AdminPendingFreelancersPage from './pages/AdminPendingFreelancersPage';
@@ -316,6 +317,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
                     <ClinicReportsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/clinic-applications"
+                element={
+                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                    <ClinicApplicationsPage />
                   </ProtectedRoute>
                 }
               />

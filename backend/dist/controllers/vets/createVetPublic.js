@@ -78,10 +78,55 @@ const createVetPublic = async (req, res) => {
                 error: 'Este documento já está cadastrado.',
             });
         }
-        // 1️⃣ Cria usuário no Auth
-        const authUser = await (0, createAuthUser_1.createAuthUser)(email, password, name, 'vet');
+        // 1️⃣ Cria usuário no Auth com metadata incluindo CRMV
+        // Isso permite que o trigger crie o registro com o CRMV correto
+        const authUser = await (0, createAuthUser_1.createAuthUser)(email, password, name, 'vet', {
+            crmv,
+            document_type,
+            document_number: normalizedDocument,
+            address,
+            ...(specialties && { specialties }),
+            ...(experience && { experience }),
+        });
         const newUserId = authUser.id;
-        // 2️⃣ Cria registro em "vets"
+        // 2️⃣ Verificar se o registro já foi criado pelo trigger
+        // Aguardar um pouco para dar tempo do trigger executar
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const { data: existingVet } = await supabase_1.supabaseAdmin
+            .from('vets')
+            .select('id, crmv, name, email')
+            .eq('id', newUserId)
+            .maybeSingle();
+        // Se o registro já existe (criado pelo trigger), apenas validar
+        if (existingVet) {
+            // Verificar se o CRMV foi salvo corretamente
+            if (!existingVet.crmv || existingVet.crmv !== crmv) {
+                // Atualizar o CRMV se não foi salvo corretamente pelo trigger
+                const { error: updateError } = await supabase_1.supabaseAdmin
+                    .from('vets')
+                    .update({ crmv })
+                    .eq('id', newUserId);
+                if (updateError) {
+                    console.error('Erro ao atualizar CRMV:', updateError);
+                }
+            }
+            // Buscar o registro completo para retornar
+            const { data: vet, error: fetchError } = await supabase_1.supabaseAdmin
+                .from('vets')
+                .select('*')
+                .eq('id', newUserId)
+                .single();
+            if (fetchError || !vet) {
+                await supabase_1.supabaseAdmin.auth.admin.deleteUser(newUserId);
+                throw new Error('Erro ao buscar registro criado pelo trigger');
+            }
+            return res.status(201).json({
+                success: true,
+                message: 'Veterinário cadastrado com sucesso!',
+                vet,
+            });
+        }
+        // 3️⃣ Se o trigger não criou, criar manualmente
         // Prepara os dados para inserção, incluindo apenas campos que existem
         const vetData = {
             id: newUserId,

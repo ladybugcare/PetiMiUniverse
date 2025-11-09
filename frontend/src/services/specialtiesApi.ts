@@ -4,6 +4,7 @@ export interface Specialty {
   id: string;
   name: string;
   category: string;
+  role?: string; // 'vet', 'freelancer', 'clinic', 'other'
   description?: string;
   created_at?: string;
 }

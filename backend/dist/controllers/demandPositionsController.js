@@ -5,13 +5,17 @@ const supabase_1 = require("../config/supabase");
 const notificationsController_1 = require("./notificationsController");
 // Criar demanda composta com posições
 const createCompositeDemand = async (req, res) => {
-    const { title, description, clinic_id, unit_id, demand_date, start_time, end_time, category, positions, // [{specialties: ["Anestesista", "Cirurgião"], slots: 2, payment: 500, description: ""}, ...]
+    const { title, description, clinic_id, unit_id, demand_date, start_time, end_time, category, is_overnight, positions, // [{specialties: ["Anestesista", "Cirurgião"], slots: 2, payment: 500, description: ""}, ...]
      } = req.body;
     try {
         // Validar horários
-        if (end_time <= start_time) {
-            return res.status(400).json({ error: 'Horário final deve ser após horário inicial' });
+        if (!is_overnight) {
+            // Se não for demanda noturna, validar que end_time > start_time
+            if (end_time <= start_time) {
+                return res.status(400).json({ error: 'Horário final deve ser após horário inicial' });
+            }
         }
+        // Se for demanda noturna, permite end_time < start_time (cruza meia-noite)
         // Validar que há pelo menos uma posição
         if (!positions || positions.length === 0) {
             return res.status(400).json({ error: 'É necessário especificar pelo menos uma posição' });

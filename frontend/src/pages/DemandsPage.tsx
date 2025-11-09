@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import CalendarView from '../components/CalendarView';
@@ -18,6 +18,7 @@ interface Clinic {
 
 const DemandsPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { showSuccess, showError, showWarning } = useAlert();
   const [demands, setDemands] = useState<Demand[]>([]);
   const [clinics, setClinics] = useState<Clinic[]>([]);
@@ -26,9 +27,13 @@ const DemandsPage: React.FC = () => {
   const [applicationMessage, setApplicationMessage] = useState('');
   const [isApplying, setIsApplying] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [fabHovered, setFabHovered] = useState(false);
 
   const user = JSON.parse(localStorage.getItem('user') || '');
   const userRole = user?.user_metadata?.role || user?.role;
+  
+  // Get status filter from query params
+  const statusFilter = searchParams.get('status');
 
   // Verificar se vet está aprovado
   useEffect(() => {
@@ -223,17 +228,25 @@ const DemandsPage: React.FC = () => {
           </div>
         </div>
 
-        {demands.length === 0 ? (
-          <div style={styles.emptyState}>
-            <div style={styles.emptyIcon}>📋</div>
-            <h3 style={styles.emptyTitle}>Nenhuma demanda aberta</h3>
-            <p style={styles.emptyText}>
-              No momento não há demandas disponíveis. Volte mais tarde!
-            </p>
-          </div>
-        ) : viewMode === 'list' ? (
-          <div style={styles.demandsGrid}>
-            {demands.map((demand) => (
+        {(() => {
+          // Filter demands by status if statusFilter is provided
+          const filteredDemands = statusFilter === 'open' 
+            ? demands.filter(demand => demand.status === 'open')
+            : demands;
+          
+          return filteredDemands.length === 0 ? (
+            <div style={styles.emptyState}>
+              <div style={styles.emptyIcon}>📋</div>
+              <h3 style={styles.emptyTitle}>
+                {statusFilter === 'open' ? 'Nenhuma demanda aberta' : 'Nenhuma demanda disponível'}
+              </h3>
+              <p style={styles.emptyText}>
+                No momento não há demandas disponíveis. Volte mais tarde!
+              </p>
+            </div>
+          ) : viewMode === 'list' ? (
+            <div style={styles.demandsGrid}>
+              {filteredDemands.map((demand) => (
               <div key={demand.id} style={styles.demandCard}>
                 <div style={styles.cardHeader}>
                   <h2 style={styles.demandTitle}>{demand.title}</h2>
@@ -276,14 +289,15 @@ const DemandsPage: React.FC = () => {
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        ) : (
-          <CalendarView
-            demands={demands}
-            onDemandClick={(demand) => handleApply(demand)}
-          />
-        )}
+              ))}
+            </div>
+          ) : (
+            <CalendarView
+              demands={filteredDemands}
+              onDemandClick={(demand) => handleApply(demand)}
+            />
+          );
+        })()}
       </div>
 
       {/* Application Modal */}
@@ -342,6 +356,23 @@ const DemandsPage: React.FC = () => {
       )}
     </DashboardLayout>
     <LoadingOverlay visible={loading} label="Carregando demandas..." />
+    
+    {/* Floating Action Button - Only show for clinic users */}
+    {userRole === 'clinic' && (
+      <button
+        onClick={() => navigate('/create-demand')}
+        onMouseEnter={() => setFabHovered(true)}
+        onMouseLeave={() => setFabHovered(false)}
+        style={{
+          ...styles.fab,
+          backgroundColor: fabHovered ? colors.primaryDark : colors.primary,
+          transform: fabHovered ? 'scale(1.1)' : 'scale(1)',
+        }}
+        title="Criar nova demanda"
+      >
+        <PlusCircle size={24} color="#ffffff" />
+      </button>
+    )}
   </>
   );
 };
@@ -616,6 +647,23 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: '#fafafa',
     color: '#525252',
     border: '1px solid #e5e5e5',
+  },
+  fab: {
+    position: 'fixed',
+    bottom: '32px',
+    right: '32px',
+    width: '64px',
+    height: '64px',
+    borderRadius: '50%',
+    backgroundColor: colors.primary,
+    border: 'none',
+    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.4)',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.3s ease',
+    zIndex: 999,
   },
 };
 

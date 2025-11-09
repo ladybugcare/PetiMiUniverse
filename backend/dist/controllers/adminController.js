@@ -1,9 +1,67 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAdmins = exports.createUser = exports.reviewUnit = exports.getPendingUnits = void 0;
+exports.getAdmins = exports.createUser = exports.reviewUnit = exports.getPendingUnits = exports.getAllActiveUnits = void 0;
 const supabase_1 = require("../config/supabase");
 const auditLog_1 = require("../utils/auditLog");
 const emailService_1 = require("../utils/emailService");
+// ===========================================================
+// 🔹 LISTAR TODAS AS UNIDADES ATIVAS
+// ===========================================================
+const getAllActiveUnits = async (req, res) => {
+    try {
+        const user = req.user;
+        const userRole = user.role || user.user_metadata?.role;
+        if (userRole !== 'admin') {
+            return res.status(403).json({ error: 'Acesso negado' });
+        }
+        const { data: units, error } = await supabase_1.supabase
+            .from('units')
+            .select(`
+        id,
+        name,
+        nickname,
+        address,
+        city,
+        state,
+        phone,
+        cnpj,
+        technical_manager,
+        is_main,
+        status,
+        created_at,
+        reviewed_at,
+        reviewed_by,
+        rejection_reason,
+        clinic:clinics!units_clinic_id_fkey(
+          id,
+          name,
+          email,
+          cnpj,
+          phone,
+          status
+        )
+      `)
+            .in('status', ['approved', 'active'])
+            .order('created_at', { ascending: false });
+        if (error)
+            throw error;
+        const metadata = (0, auditLog_1.extractRequestMetadata)(req);
+        await (0, auditLog_1.createAuditLog)({
+            user_id: user.id,
+            action: 'GET_ALL_ACTIVE_UNITS',
+            entity_type: 'unit',
+            entity_id: 'bulk',
+            new_values: { count: units?.length || 0 },
+            ...metadata,
+        });
+        res.json({ units: units || [] });
+    }
+    catch (error) {
+        console.error('Error fetching active units:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+exports.getAllActiveUnits = getAllActiveUnits;
 // ===========================================================
 // 🔹 LISTAR UNIDADES PENDENTES
 // ===========================================================

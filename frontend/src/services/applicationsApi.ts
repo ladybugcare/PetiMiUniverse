@@ -5,10 +5,16 @@ export interface Application {
   id: string;
   demand_id: string;
   vet_id: string;
-  status: 'applied' | 'accepted' | 'rejected';
+  status: 'pending' | 'accepted' | 'rejected';
   message?: string;
   created_at: string;
   updated_at: string;
+  vets?: {
+    id: string;
+    name: string;
+    email: string;
+    crmv?: string;
+  } | null;
 }
 
 export interface CreateApplicationData {

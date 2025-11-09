@@ -119,7 +119,12 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
                   aria-label={option.label}
                   title={option.disabled ? 'Ação desabilitada' : option.label}
                 >
-                  <div style={styles.optionIcon}>{option.icon}</div>
+                  <div style={{
+                    ...styles.optionIcon,
+                    backgroundColor: option.color,
+                  }}>
+                    {option.icon}
+                  </div>
                 </button>
               </div>
             ))}
@@ -231,12 +236,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'center',
     boxShadow: 'none',
     transition: 'transform 0.2s ease',
+    padding: 0,
   },
   optionIcon: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#262626',
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
+    color: '#ffffff',
+    flexShrink: 0,
   },
   optionButtonDisabled: {
     opacity: 0.5,

@@ -122,14 +122,33 @@ const getApplicationsByClinic = async (req, res) => {
             return res.json({ applications: [] });
         }
         // Then get all applications for those demands
-        const { data, error } = await supabase_1.supabase
+        const { data: applications, error } = await supabase_1.supabase
             .from('applications')
             .select('*')
             .in('demand_id', demandIds)
             .order('created_at', { ascending: false });
         if (error)
             throw error;
-        res.json({ applications: data || [] });
+        // Fetch vet information for each application
+        const vetIds = [...new Set((applications || []).map(app => app.vet_id))];
+        const vetMap = new Map();
+        if (vetIds.length > 0) {
+            const { data: vets, error: vetsError } = await supabase_1.supabase
+                .from('vets')
+                .select('id, name, email, crmv')
+                .in('id', vetIds);
+            if (!vetsError && vets) {
+                vets.forEach(vet => {
+                    vetMap.set(vet.id, vet);
+                });
+            }
+        }
+        // Map applications with vet information
+        const applicationsWithVets = (applications || []).map(app => ({
+            ...app,
+            vets: vetMap.get(app.vet_id) || null,
+        }));
+        res.json({ applications: applicationsWithVets });
     }
     catch (error) {
         console.error('Error getting applications by clinic:', error);

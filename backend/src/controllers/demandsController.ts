@@ -151,6 +151,8 @@ export const getDemandsByUnit = async (req: Request<{ unitId: string }>, res: Re
       .from('demands')
       .select('*')
       .eq('unit_id', unitId)
+      .eq('status', 'open') // Apenas demandas ativas
+      .is('deleted_at', null) // Excluir demandas deletadas
       .order('demand_date', { ascending: true });
 
     if (error) throw error;

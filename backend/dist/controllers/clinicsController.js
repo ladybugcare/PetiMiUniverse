@@ -451,7 +451,27 @@ const registerClinicWithUnit = async (req, res) => {
                 error: 'Dados da unidade incompletos. Nome, apelido, endereço, cidade e estado são obrigatórios.'
             });
         }
-        const { data: newUnit, error: unitError } = await supabase_1.supabase
+        // Validar tamanho do nickname (máximo 100 caracteres)
+        if (unit.nickname.length > 100) {
+            return res.status(400).json({ error: 'O apelido deve ter no máximo 100 caracteres' });
+        }
+        // Verificar se nickname é único para esta clínica
+        const { data: existingUnit, error: existingError } = await supabase_1.supabase
+            .from('units')
+            .select('id, name')
+            .eq('clinic_id', clinicId)
+            .eq('nickname', unit.nickname.trim())
+            .maybeSingle();
+        if (existingError) {
+            console.error('Error checking nickname uniqueness:', existingError);
+        }
+        if (existingUnit) {
+            return res.status(400).json({
+                error: `Já existe uma unidade com o apelido "${unit.nickname}" nesta clínica. Por favor, escolha outro apelido.`
+            });
+        }
+        // Try to insert with pending_review status first
+        let { data: newUnit, error: unitError } = await supabase_1.supabase
             .from('units')
             .insert({
             clinic_id: clinicId,
@@ -468,8 +488,46 @@ const registerClinicWithUnit = async (req, res) => {
         })
             .select()
             .single();
-        if (unitError)
+        // If pending_review fails (constraint not updated), try with 'active' as fallback
+        if (unitError && unitError.message?.includes('units_status_check')) {
+            console.warn('Constraint units_status_check does not allow pending_review, using active as fallback. Please run migration fix_units_status_constraint.sql');
+            const { data: fallbackUnit, error: fallbackError } = await supabase_1.supabase
+                .from('units')
+                .insert({
+                clinic_id: clinicId,
+                name: unit.name,
+                nickname: unit.nickname.trim(),
+                cnpj: unit.cnpj ? (0, cnpjUtils_1.normalizeCNPJ)(unit.cnpj) : null,
+                address: unit.address,
+                city: unit.city,
+                state: unit.state,
+                phone: unit.phone || null,
+                technical_manager: unit.technical_manager || null,
+                is_main: true,
+                status: 'active' // Fallback to active if constraint doesn't support pending_review
+            })
+                .select()
+                .single();
+            if (fallbackError) {
+                // Verificar se é erro de nickname duplicado
+                if (fallbackError.message?.includes('idx_units_clinic_nickname') || fallbackError.message?.includes('duplicate key')) {
+                    return res.status(400).json({
+                        error: `Já existe uma unidade com o apelido "${unit.nickname}" nesta clínica. Por favor, escolha outro apelido.`
+                    });
+                }
+                throw fallbackError;
+            }
+            newUnit = fallbackUnit;
+        }
+        else if (unitError) {
+            // Verificar se é erro de nickname duplicado
+            if (unitError.message?.includes('idx_units_clinic_nickname') || unitError.message?.includes('duplicate key')) {
+                return res.status(400).json({
+                    error: `Já existe uma unidade com o apelido "${unit.nickname}" nesta clínica. Por favor, escolha outro apelido.`
+                });
+            }
             throw unitError;
+        }
         // ✅ 5. Atualizar status da clínica para pending_approval
         await supabase_1.supabase
             .from('clinics')

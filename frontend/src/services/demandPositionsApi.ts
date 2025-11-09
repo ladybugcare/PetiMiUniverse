@@ -58,6 +58,7 @@ export interface CreateCompositeDemandData {
   start_time: string;
   end_time: string;
   category: 'vet' | 'freelancer' | 'clinic' | 'other';
+  is_overnight?: boolean;
   positions: CreatePositionData[];
 }
 

@@ -318,51 +318,130 @@ export const getUnitStats = async (req: Request<{ unitId: string }>, res: Respon
     const { count: totalDemands, error: demandsError } = await supabase
       .from('demands')
       .select('*', { count: 'exact', head: true })
-      .eq('unit_id', unitId);
+      .eq('unit_id', unitId)
+      .is('deleted_at', null);
 
-    if (demandsError) throw demandsError;
+    if (demandsError) {
+      console.error('Error getting total demands count:', demandsError);
+      throw demandsError;
+    }
 
     // Get open demands count
     const { count: openDemands, error: openError } = await supabase
       .from('demands')
       .select('*', { count: 'exact', head: true })
       .eq('unit_id', unitId)
-      .eq('status', 'open');
+      .eq('status', 'open')
+      .is('deleted_at', null);
 
-    if (openError) throw openError;
+    if (openError) {
+      console.error('Error getting open demands count:', openError);
+      throw openError;
+    }
 
     // Get demand IDs for this unit
     const { data: unitDemands, error: unitDemandsError } = await supabase
       .from('demands')
       .select('id')
-      .eq('unit_id', unitId);
+      .eq('unit_id', unitId)
+      .is('deleted_at', null);
 
-    if (unitDemandsError) throw unitDemandsError;
+    if (unitDemandsError) {
+      console.error('Error getting unit demands:', unitDemandsError);
+      throw unitDemandsError;
+    }
 
-    const demandIds = unitDemands?.map(d => d.id) || [];
+    const demandIds = unitDemands?.map(d => d.id).filter((id): id is string => !!id) || [];
 
     let applicationsCount = 0;
     let pendingApplicationsCount = 0;
 
     if (demandIds.length > 0) {
-      // Get applications for unit's demands
-      const { count: totalApps, error: appsError } = await supabase
-        .from('applications')
-        .select('*', { count: 'exact', head: true })
-        .in('demand_id', demandIds);
+      try {
+        // Separar demandas compostas e simples
+        const { data: demandsData, error: demandsDataError } = await supabase
+          .from('demands')
+          .select('id, is_composite')
+          .in('id', demandIds);
 
-      if (appsError) throw appsError;
-      applicationsCount = totalApps || 0;
+        if (demandsDataError) {
+          console.error('Error getting demands data:', JSON.stringify(demandsDataError, null, 2));
+        } else {
+          const compositeDemandIds = demandsData?.filter(d => d.is_composite).map(d => d.id) || [];
+          const simpleDemandIds = demandsData?.filter(d => !d.is_composite).map(d => d.id) || [];
 
-      // Get pending applications
-      const { count: pendingApps, error: pendingError } = await supabase
-        .from('applications')
-        .select('*', { count: 'exact', head: true })
-        .in('demand_id', demandIds)
-        .eq('status', 'applied');
+          // Para demandas simples: buscar em applications
+          if (simpleDemandIds.length > 0) {
+            const { count: simpleApps, error: simpleAppsError } = await supabase
+              .from('applications')
+              .select('*', { count: 'exact', head: true })
+              .in('demand_id', simpleDemandIds);
 
-      if (pendingError) throw pendingError;
-      pendingApplicationsCount = pendingApps || 0;
+            if (simpleAppsError) {
+              console.warn('Error getting simple applications (table may not exist):', JSON.stringify(simpleAppsError, null, 2));
+            } else {
+              applicationsCount += simpleApps || 0;
+            }
+
+            const { count: simplePending, error: simplePendingError } = await supabase
+              .from('applications')
+              .select('*', { count: 'exact', head: true })
+              .in('demand_id', simpleDemandIds)
+              .eq('status', 'pending');
+
+            if (simplePendingError) {
+              console.warn('Error getting simple pending applications:', JSON.stringify(simplePendingError, null, 2));
+            } else {
+              pendingApplicationsCount += simplePending || 0;
+            }
+          }
+
+          // Para demandas compostas: buscar em position_applications através de demand_positions
+          if (compositeDemandIds.length > 0) {
+            // Primeiro, buscar os position_ids das demandas compostas
+            const { data: positions, error: positionsError } = await supabase
+              .from('demand_positions')
+              .select('id')
+              .in('master_demand_id', compositeDemandIds);
+
+            if (positionsError) {
+              console.warn('Error getting positions for composite demands:', JSON.stringify(positionsError, null, 2));
+            } else {
+              const positionIds = positions?.map(p => p.id) || [];
+              
+              if (positionIds.length > 0) {
+                const { count: compositeApps, error: compositeAppsError } = await supabase
+                  .from('position_applications')
+                  .select('*', { count: 'exact', head: true })
+                  .in('position_id', positionIds);
+
+                if (compositeAppsError) {
+                  console.warn('Error getting composite applications:', JSON.stringify(compositeAppsError, null, 2));
+                } else {
+                  applicationsCount += compositeApps || 0;
+                }
+
+                const { count: compositePending, error: compositePendingError } = await supabase
+                  .from('position_applications')
+                  .select('*', { count: 'exact', head: true })
+                  .in('position_id', positionIds)
+                  .eq('status', 'pending');
+
+                if (compositePendingError) {
+                  console.warn('Error getting composite pending applications:', JSON.stringify(compositePendingError, null, 2));
+                } else {
+                  pendingApplicationsCount += compositePending || 0;
+                }
+              }
+            }
+          }
+        }
+      } catch (appsErr: any) {
+        console.error('Exception while getting applications:', JSON.stringify(appsErr, null, 2));
+        // Continuar com valores 0 se houver erro
+        applicationsCount = 0;
+        pendingApplicationsCount = 0;
+      }
     }
 
     res.json({
@@ -375,7 +454,16 @@ export const getUnitStats = async (req: Request<{ unitId: string }>, res: Respon
     });
   } catch (error: any) {
     console.error('Error getting unit stats:', error);
-    res.status(500).json({ error: 'Erro ao buscar estatísticas da unidade' });
+    console.error('Error details:', {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+    });
+    res.status(500).json({ 
+      error: 'Erro ao buscar estatísticas da unidade',
+      details: error?.message || 'Erro desconhecido'
+    });
   }
 };
 

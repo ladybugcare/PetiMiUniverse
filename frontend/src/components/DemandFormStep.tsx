@@ -7,6 +7,7 @@ import { demandsApi } from '../services/demandsApi';
 import { demandPositionsApi } from '../services/demandPositionsApi';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
+import { useUnit } from '../contexts/UnitContext';
 
 type CategoryType = 'vet' | 'freelancer' | 'clinic' | 'other';
 
@@ -47,8 +48,18 @@ const getCategoryInfo = (category: CategoryType) => {
 const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => {
   const navigate = useNavigate();
   const { showSuccess, showError, showWarning } = useAlert();
+  const { units, selectedUnit, loading: unitsLoading } = useUnit();
   const [loading, setLoading] = useState(false);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+
+  // Initialize with selected unit or main unit or first unit
+  const getInitialUnitId = (availableUnits: typeof units, currentSelectedUnit: typeof selectedUnit) => {
+    if (currentSelectedUnit) return currentSelectedUnit.id;
+    const mainUnit = availableUnits.find((u) => u.is_main);
+    if (mainUnit) return mainUnit.id;
+    if (availableUnits.length > 0) return availableUnits[0].id;
+    return '';
+  };
 
   const [formData, setFormData] = useState({
     title: '',
@@ -57,6 +68,8 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
     demand_date: '',
     start_time: '09:00',
     end_time: '17:00',
+    isOvernight: false,
+    selectedUnitId: '',
   });
 
   const [positions, setPositions] = useState<Array<{
@@ -89,12 +102,33 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
     loadSpecialties();
   }, [category]);
 
+  // Initialize and update selectedUnitId when units are loaded
+  useEffect(() => {
+    if (!unitsLoading && units.length > 0) {
+      setFormData((prev) => {
+        const currentUnitId = prev.selectedUnitId;
+        const unitExists = units.some((u) => u.id === currentUnitId);
+        
+        // If no unit selected or current unit doesn't exist, set to initial unit
+        if (!currentUnitId || !unitExists) {
+          const newUnitId = getInitialUnitId(units, selectedUnit);
+          if (newUnitId) {
+            return { ...prev, selectedUnitId: newUnitId };
+          }
+        }
+        return prev;
+      });
+    }
+  }, [units, selectedUnit, unitsLoading]);
+
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
+    const target = e.target;
+    const value = target.type === 'checkbox' ? (target as HTMLInputElement).checked : target.value;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [target.name]: value,
     });
   };
 
@@ -121,10 +155,14 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
     }
 
     // Validar horários
-    if (formData.end_time <= formData.start_time) {
-      showWarning('O horário final deve ser posterior ao horário inicial.');
-      return;
+    if (!formData.isOvernight) {
+      // Se não for demanda noturna, validar que end_time > start_time
+      if (formData.end_time <= formData.start_time) {
+        showWarning('O horário final deve ser posterior ao horário inicial.');
+        return;
+      }
     }
+    // Se for demanda noturna, permite end_time < start_time (cruza meia-noite)
 
     // Validar posições
     const invalidPosition = positions.find(
@@ -132,6 +170,12 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
     );
     if (invalidPosition) {
       showWarning('Por favor, preencha corretamente todas as posições profissionais (incluindo pelo menos uma especialidade).');
+      return;
+    }
+
+    // Validar unidade (obrigatória se houver múltiplas unidades)
+    if (units.length > 1 && !formData.selectedUnitId) {
+      showWarning('Por favor, selecione a unidade que abrirá esta demanda.');
       return;
     }
 
@@ -146,10 +190,12 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
         title: formData.title,
         description: formData.description,
         clinic_id: clinicId,
+        unit_id: formData.selectedUnitId || undefined,
         demand_date: formData.demand_date,
         start_time: formData.start_time,
         end_time: formData.end_time,
         category,
+        is_overnight: formData.isOvernight,
         positions: positions.map((p) => ({
           specialties: p.specialties,
           slots: p.slots,
@@ -209,6 +255,32 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
             />
           </div>
 
+          {/* Unit Selection - Only show for clinic users with multiple units */}
+          {!unitsLoading && units.length > 1 && (
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Unidade *</label>
+              <select
+                name="selectedUnitId"
+                value={formData.selectedUnitId}
+                onChange={handleChange}
+                style={styles.select}
+                required
+              >
+                <option value="">Selecione uma unidade</option>
+                {units.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.is_main && '⭐ '}
+                    {unit.name}
+                    {unit.nickname && ` (${unit.nickname})`}
+                  </option>
+                ))}
+              </select>
+              <small style={styles.hint}>
+                Selecione qual unidade abrirá esta demanda
+              </small>
+            </div>
+          )}
+
           {/* Calendar and Time Selection */}
           <div style={styles.dateTimeContainer}>
             <div style={styles.calendarSection}>
@@ -243,6 +315,22 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
                   style={styles.input}
                   required
                 />
+              </div>
+
+              <div style={styles.checkboxGroup}>
+                <label style={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    name="isOvernight"
+                    checked={formData.isOvernight}
+                    onChange={handleChange}
+                    style={styles.checkbox}
+                  />
+                  <span style={styles.checkboxText}>Demanda noturna</span>
+                </label>
+                <small style={styles.hint}>
+                  Marque se a demanda começa em um dia e termina no dia seguinte
+                </small>
               </div>
             </div>
           </div>
@@ -405,6 +493,50 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#737373',
     marginTop: '8px',
     fontStyle: 'italic',
+  },
+  hint: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '12px',
+    color: '#737373',
+    marginTop: '2px',
+  },
+  checkboxGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    marginTop: '8px',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    cursor: 'pointer',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#404040',
+  },
+  checkbox: {
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer',
+    accentColor: '#7c3aed',
+  },
+  checkboxText: {
+    userSelect: 'none',
+  },
+  select: {
+    width: '100%',
+    padding: '12px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    color: '#262626',
+    backgroundColor: '#fafafa',
+    border: '1px solid #e5e5e5',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    outline: 'none',
+    transition: 'border-color 0.2s ease',
   },
 };
 

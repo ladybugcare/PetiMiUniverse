@@ -228,7 +228,8 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
         </div>
 
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#3b82f6' }}
+          style={{ ...styles.statCard, borderLeftColor: '#3b82f6', cursor: 'pointer' }}
+          onClick={() => navigate('/users?status=active')}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
             e.currentTarget.style.boxShadow = '0 10px 25px rgba(59, 130, 246, 0.15)';
@@ -249,7 +250,8 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
         </div>
 
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#10b981' }}
+          style={{ ...styles.statCard, borderLeftColor: '#10b981', cursor: 'pointer' }}
+          onClick={() => navigate('/demands?status=open')}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
             e.currentTarget.style.boxShadow = '0 10px 25px rgba(16, 185, 129, 0.15)';
@@ -270,7 +272,8 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
         </div>
 
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#f59e0b' }}
+          style={{ ...styles.statCard, borderLeftColor: '#f59e0b', cursor: 'pointer' }}
+          onClick={() => navigate('/clinic-applications?status=pending')}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
             e.currentTarget.style.boxShadow = '0 10px 25px rgba(245, 158, 11, 0.15)';

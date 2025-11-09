@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { supabase } from '../config/supabase'
+import { supabase, supabaseAdmin } from '../config/supabase'
 import { createNotification } from './notificationsController'
 
 interface ApplicationBody {
@@ -14,7 +14,7 @@ export const applyToDemand = async (req: Request<{}, {}, ApplicationBody>, res: 
     // Create application
     const { data, error } = await supabase
       .from('applications')
-      .insert([{ demand_id, vet_id, status: 'applied' }])
+      .insert([{ demand_id, vet_id, status: 'pending' }])
       .select()
 
     if (error) return res.status(400).json({ error })
@@ -147,7 +147,7 @@ export const getApplicationsByClinic = async (req: Request, res: Response) => {
     }
 
     // Then get all applications for those demands
-    const { data, error } = await supabase
+    const { data: applications, error } = await supabase
       .from('applications')
       .select('*')
       .in('demand_id', demandIds)
@@ -155,7 +155,30 @@ export const getApplicationsByClinic = async (req: Request, res: Response) => {
 
     if (error) throw error;
 
-    res.json({ applications: data || [] });
+    // Fetch vet information for each application
+    const vetIds = [...new Set((applications || []).map(app => app.vet_id))];
+    const vetMap = new Map();
+    
+    if (vetIds.length > 0) {
+      const { data: vets, error: vetsError } = await supabase
+        .from('vets')
+        .select('id, name, email, crmv')
+        .in('id', vetIds);
+      
+      if (!vetsError && vets) {
+        vets.forEach(vet => {
+          vetMap.set(vet.id, vet);
+        });
+      }
+    }
+
+    // Map applications with vet information
+    const applicationsWithVets = (applications || []).map(app => ({
+      ...app,
+      vets: vetMap.get(app.vet_id) || null,
+    }));
+
+    res.json({ applications: applicationsWithVets });
   } catch (error: any) {
     console.error('Error getting applications by clinic:', error);
     res.status(500).json({ error: error.message || 'Failed to get applications' });
@@ -231,7 +254,7 @@ export const getPendingApplicationsCount = async (req: Request, res: Response) =
       .from('applications')
       .select('*', { count: 'exact', head: true })
       .in('demand_id', demandIds)
-      .eq('status', 'applied');
+      .eq('status', 'pending');
 
     if (error) throw error;
 

@@ -4,27 +4,71 @@ import { supabase, supabaseAdmin } from '../config/supabase';
 export const getSpecialties = async (req: Request, res: Response) => {
   const { category } = req.query;
 
-  let query = supabaseAdmin.from('specialties').select('*');
+  try {
+    // Construir query base
+    let query = supabaseAdmin.from('specialties').select('*');
 
-  if (category && typeof category === 'string') {
-    // Buscar tanto a versão minúscula quanto maiúscula da categoria
-    // Isso garante que encontre 'freelancer' e 'Freelancer'
-    const categoryLower = category.toLowerCase();
-    const categoryCapitalized = categoryLower.charAt(0).toUpperCase() + categoryLower.slice(1);
-    
-    // Se a categoria for 'freelancer', buscar tanto 'freelancer' quanto 'Freelancer'
-    if (categoryLower === 'freelancer') {
-      query = query.in('category', [categoryLower, categoryCapitalized]);
+    // Se uma categoria específica foi solicitada, filtrar por role
+    if (category && typeof category === 'string') {
+      const categoryLower = category.toLowerCase();
+      
+      // Nunca retornar especialidades de freelancer, mesmo se solicitado
+      if (categoryLower === 'freelancer') {
+        console.log(`[getSpecialties] Categoria 'freelancer' solicitada - retornando array vazio`);
+        return res.json({ specialties: [] });
+      }
+      
+      // Filtrar por role (vet, clinic, other)
+      query = query.eq('role', categoryLower);
+      console.log(`[getSpecialties] Buscando especialidades com role='${categoryLower}'`);
     } else {
-      // Para outras categorias, usar busca exata (normalmente são minúsculas)
-      query = query.eq('category', categoryLower);
+      console.log(`[getSpecialties] Buscando todas as especialidades (sem filtro de categoria)`);
     }
+
+    // Sempre excluir freelancer na query
+    query = query.neq('role', 'freelancer');
+
+    const { data, error } = await query.order('name');
+
+    if (error) {
+      console.error('[getSpecialties] Error fetching specialties:', error);
+      return res.status(400).json({ error: error.message });
+    }
+
+    console.log(`[getSpecialties] Total de especialidades retornadas: ${data?.length || 0}`);
+    
+    // Filtro adicional no código para garantir que nenhum freelancer escape
+    const filteredData = (data || []).filter((s: any) => {
+      const specialtyRole = (s.role || '').toLowerCase();
+      
+      // Sempre excluir freelancer
+      if (specialtyRole === 'freelancer') {
+        return false;
+      }
+      
+      // Se uma categoria específica foi solicitada, garantir que corresponde
+      if (category && typeof category === 'string') {
+        const requestedCategory = category.toLowerCase();
+        if (requestedCategory === 'freelancer') {
+          return false; // Nunca retornar freelancer
+        }
+        return specialtyRole === requestedCategory;
+      }
+      
+      // Se não há filtro de categoria, retornar todas exceto freelancer
+      return true;
+    });
+    
+    console.log(`[getSpecialties] Retornando ${filteredData.length} especialidades após filtro (categoria solicitada: ${category || 'todas'})`);
+    if (filteredData.length > 0) {
+      console.log(`[getSpecialties] Primeiras 3 especialidades:`, filteredData.slice(0, 3).map((s: any) => ({ name: s.name, role: s.role, category: s.category })));
+    }
+    
+    res.json({ specialties: filteredData });
+  } catch (error: any) {
+    console.error('[getSpecialties] Erro inesperado:', error);
+    return res.status(500).json({ error: error.message || 'Erro ao buscar especialidades' });
   }
-
-  const { data, error } = await query.order('name');
-
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ specialties: data });
 };
 
 /**
@@ -39,7 +83,7 @@ export const createSpecialty = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem criar especialidades.' });
     }
 
-    const { name, category, description } = req.body;
+    const { name, category, role, description } = req.body;
 
     // Validações
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -50,11 +94,25 @@ export const createSpecialty = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Categoria é obrigatória' });
     }
 
-    const validCategories = ['vet', 'freelancer', 'clinic', 'other'];
-    if (!validCategories.includes(category)) {
-      return res.status(400).json({ 
-        error: `Categoria inválida. Valores permitidos: ${validCategories.join(', ')}` 
-      });
+    // Validar role se fornecido
+    if (role) {
+      const validRoles = ['vet', 'freelancer', 'clinic', 'other'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ 
+          error: `Role inválido. Valores permitidos: ${validRoles.join(', ')}` 
+        });
+      }
+    }
+
+    // Se role não foi fornecido, determinar baseado na category
+    let finalRole = role;
+    if (!finalRole) {
+      const categoryLower = (category || '').toLowerCase();
+      if (categoryLower === 'freelancer' || categoryLower === 'estética' || categoryLower === 'estetica') {
+        finalRole = 'freelancer';
+      } else {
+        finalRole = 'vet'; // Default para vet
+      }
     }
 
     // Verificar se já existe especialidade com o mesmo nome
@@ -79,6 +137,7 @@ export const createSpecialty = async (req: Request, res: Response) => {
       .insert({
         name: name.trim(),
         category,
+        role: finalRole,
         description: description?.trim() || null,
       })
       .select()
@@ -109,7 +168,7 @@ export const updateSpecialty = async (req: Request, res: Response) => {
     }
 
     const { id } = req.params;
-    const { name, category, description } = req.body;
+    const { name, category, role, description } = req.body;
 
     if (!id) {
       return res.status(400).json({ error: 'ID da especialidade é obrigatório' });
@@ -125,6 +184,16 @@ export const updateSpecialty = async (req: Request, res: Response) => {
       if (!validCategories.includes(category)) {
         return res.status(400).json({ 
           error: `Categoria inválida. Valores permitidos: ${validCategories.join(', ')}` 
+        });
+      }
+    }
+
+    // Validar role se fornecido
+    if (role !== undefined) {
+      const validRoles = ['vet', 'freelancer', 'clinic', 'other'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ 
+          error: `Role inválido. Valores permitidos: ${validRoles.join(', ')}` 
         });
       }
     }
@@ -168,6 +237,17 @@ export const updateSpecialty = async (req: Request, res: Response) => {
     const updateData: any = {};
     if (name !== undefined) updateData.name = name.trim();
     if (category !== undefined) updateData.category = category;
+    if (role !== undefined) {
+      updateData.role = role;
+    } else if (category !== undefined) {
+      // Se category foi atualizada mas role não, recalcular role baseado na category
+      const categoryLower = (category || '').toLowerCase();
+      if (categoryLower === 'freelancer' || categoryLower === 'estética' || categoryLower === 'estetica') {
+        updateData.role = 'freelancer';
+      } else {
+        updateData.role = 'vet'; // Default para vet
+      }
+    }
     if (description !== undefined) updateData.description = description?.trim() || null;
 
     // Atualizar especialidade

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { useAlert } from '../hooks/useAlert';
@@ -13,6 +13,7 @@ import colors from '../styles/colors';
 
 const UsersManagementPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { showSuccess, showError, showConfirm } = useAlert();
   const { canInviteUser, canEditUser, canDeleteUser } = usePermissions();
   const { units, selectedUnit } = useUnit();
@@ -22,6 +23,9 @@ const UsersManagementPage: React.FC = () => {
   const [invitations, setInvitations] = useState<UserInvitation[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'users' | 'invitations'>('users');
+  
+  // Get status filter from query params
+  const statusFilter = searchParams.get('status');
 
   const [inviteForm, setInviteForm] = useState({
     email: '',
@@ -195,20 +199,28 @@ const UsersManagementPage: React.FC = () => {
         {/* Users Tab */}
         {activeTab === 'users' && (
           <>
-            {users.length === 0 ? (
-              <div style={styles.emptyState}>
-                <p style={styles.emptyText}>Nenhum usuário cadastrado</p>
-              </div>
-            ) : (
-              <div style={styles.table}>
-                <div style={styles.tableHeader}>
-                  <div style={styles.tableCell}>Email</div>
-                  <div style={styles.tableCell}>Unidade</div>
-                  <div style={styles.tableCell}>Role</div>
-                  <div style={styles.tableCell}>Status</div>
-                  <div style={styles.tableCell}>Ações</div>
+            {(() => {
+              // Filter users by status if statusFilter is provided
+              const filteredUsers = statusFilter === 'active' 
+                ? users.filter(user => user.status === 'active')
+                : users;
+              
+              return filteredUsers.length === 0 ? (
+                <div style={styles.emptyState}>
+                  <p style={styles.emptyText}>
+                    {statusFilter === 'active' ? 'Nenhum usuário ativo' : 'Nenhum usuário cadastrado'}
+                  </p>
                 </div>
-                {users.map((clinicUser) => (
+              ) : (
+                <div style={styles.table}>
+                  <div style={styles.tableHeader}>
+                    <div style={styles.tableCell}>Email</div>
+                    <div style={styles.tableCell}>Unidade</div>
+                    <div style={styles.tableCell}>Role</div>
+                    <div style={styles.tableCell}>Status</div>
+                    <div style={styles.tableCell}>Ações</div>
+                  </div>
+                  {filteredUsers.map((clinicUser) => (
                   <div key={clinicUser.id} style={styles.tableRow}>
                     <div style={styles.tableCell}>{clinicUser.user?.email || 'N/A'}</div>
                     <div style={styles.tableCell}>{getUnitName(clinicUser.unit_id)}</div>
@@ -244,9 +256,10 @@ const UsersManagementPage: React.FC = () => {
                       )}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              );
+            })()}
           </>
         )}
 

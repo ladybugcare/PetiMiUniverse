@@ -43,11 +43,6 @@ const completeFreelancerOnboarding = async (req, res) => {
                 return res.status(400).json({ error: 'Ano de experiência inválido (deve ser entre 1980 e o ano atual)' });
             }
             updateData.experience_year = experience_year;
-            // Calcular anos de experiência automaticamente
-            const currentYear = new Date().getFullYear();
-            const yearsOfExperience = currentYear - experience_year;
-            const experienceText = yearsOfExperience === 1 ? '1 ano' : `${yearsOfExperience} anos`;
-            updateData.experience = experienceText;
         }
         if (bio && bio.trim().length > 0) {
             const bioLength = bio.trim().length;

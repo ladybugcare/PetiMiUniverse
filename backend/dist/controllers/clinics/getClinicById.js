@@ -17,7 +17,7 @@ const getClinicById = async (req, res) => {
         if (!data) {
             return res.status(404).json({ error: 'Clínica não encontrada' });
         }
-        return res.json(data);
+        return res.json({ clinic: data });
     }
     catch (err) {
         console.error(err);

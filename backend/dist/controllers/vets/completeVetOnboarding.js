@@ -29,14 +29,56 @@ const completeVetOnboarding = async (req, res) => {
         if (!crmv_file_url) {
             return res.status(400).json({ error: 'É necessário enviar o arquivo do CRMV' });
         }
+        // Verificar se o registro do veterinário existe
+        // IMPORTANTE: O registro deve existir com o CRMV preenchido do cadastro público
+        const { data: existingVet, error: fetchError } = await supabase_1.supabaseAdmin
+            .from('vets')
+            .select('id, onboarding_completed, email, name, crmv')
+            .eq('id', userId)
+            .maybeSingle();
+        if (fetchError) {
+            console.error('Erro ao buscar veterinário:', fetchError);
+            return res.status(500).json({
+                error: 'Erro ao verificar registro do veterinário: ' + fetchError.message
+            });
+        }
+        // Se o registro não existe, significa que o cadastro público não foi completado
+        if (!existingVet) {
+            console.error('[completeVetOnboarding] Registro do veterinário não encontrado', {
+                userId,
+                timestamp: new Date().toISOString(),
+            });
+            // Verificar se o usuário existe no auth
+            const { data: authUser, error: authError } = await supabase_1.supabaseAdmin.auth.admin.getUserById(userId);
+            if (authError) {
+                console.error('[completeVetOnboarding] Erro ao buscar usuário no auth:', authError);
+            }
+            else if (authUser?.user) {
+                console.error('[completeVetOnboarding] Usuário existe no auth mas não na tabela vets', {
+                    userId,
+                    email: authUser.user.email,
+                    role: authUser.user.user_metadata?.role,
+                });
+            }
+            return res.status(400).json({
+                error: 'Registro do veterinário não encontrado. Por favor, complete o cadastro público primeiro.'
+            });
+        }
+        // Verificar se o CRMV está preenchido (deve vir do cadastro público)
+        if (!existingVet.crmv || existingVet.crmv.trim() === '') {
+            console.error('CRMV não encontrado para o veterinário:', userId);
+            return res.status(400).json({
+                error: 'CRMV não encontrado. Por favor, complete o cadastro público com o CRMV primeiro.'
+            });
+        }
         // Verificar se o onboarding já foi completado anteriormente
         // REGRA CRÍTICA: Se já foi completado, não permitir alterações
-        const { data: existingVet } = await supabase_1.supabaseAdmin
+        const { data: currentVet } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('onboarding_completed')
             .eq('id', userId)
             .maybeSingle();
-        if (existingVet?.onboarding_completed === true) {
+        if (currentVet?.onboarding_completed === true) {
             return res.status(400).json({
                 error: 'Onboarding já foi completado anteriormente e não pode ser alterado.'
             });

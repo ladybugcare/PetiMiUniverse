@@ -18,15 +18,35 @@ interface DemandPositionsFormProps {
 
 const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, onChange, category }) => {
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [loadingSpecialties, setLoadingSpecialties] = useState(true);
 
   // Load specialties filtered by category
   useEffect(() => {
     const loadSpecialties = async () => {
       try {
+        setLoadingSpecialties(true);
+        console.log(`[DemandPositionsForm] Carregando especialidades para categoria: ${category}`);
+        
+        // Buscar especialidades filtradas por categoria
         const result = await specialtiesApi.getByCategory(category);
-        setSpecialties(result.specialties);
+        console.log(`[DemandPositionsForm] Resultado da API por categoria:`, result);
+        console.log(`[DemandPositionsForm] Total de especialidades retornadas: ${result.specialties?.length || 0}`);
+        
+        // O backend já filtra por categoria e exclui freelancer
+        // Usar diretamente o resultado do backend sem filtro adicional
+        const specialtiesList = result.specialties || [];
+        
+        console.log(`[DemandPositionsForm] ${specialtiesList.length} especialidades retornadas do backend para categoria "${category}"`);
+        console.log(`[DemandPositionsForm] Especialidades:`, specialtiesList.map(s => ({ name: s.name, category: s.category })));
+        
+        setSpecialties(specialtiesList);
       } catch (error) {
-        console.error('Error loading specialties:', error);
+        console.error('[DemandPositionsForm] Error loading specialties:', error);
+        console.error('[DemandPositionsForm] Error details:', error);
+        // Em caso de erro, não buscar todas as especialidades - apenas deixar vazio
+        setSpecialties([]);
+      } finally {
+        setLoadingSpecialties(false);
       }
     };
     loadSpecialties();
@@ -89,7 +109,8 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
                 options={specialties.map(s => ({ value: s.name, label: s.name }))}
                 selectedValues={position.specialties}
                 onChange={(values) => updatePosition(position.id, 'specialties', values)}
-                placeholder="Selecione uma ou mais especialidades..."
+                placeholder={loadingSpecialties ? "Carregando especialidades..." : "Selecione uma ou mais especialidades..."}
+                disabled={loadingSpecialties}
               />
               <small style={styles.hint}>
                 Selecione todas as especialidades necessárias para este profissional
