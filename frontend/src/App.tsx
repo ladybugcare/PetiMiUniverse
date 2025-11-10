@@ -323,6 +323,14 @@ function App() {
                 }
               />
               <Route
+                path="/clinic-profile/:id"
+                element={
+                  <ProtectedRoute>
+                    <ClinicProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/clinic-reports"
                 element={
                   <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>

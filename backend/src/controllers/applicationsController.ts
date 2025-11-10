@@ -112,7 +112,7 @@ export const getApplicationsByUser = async (
         )
       `)
       .eq('vet_id', userId)
-      .order('created_at', { ascending: false })
+      .order('applied_at', { ascending: false })
 
     if (error) throw error
 
@@ -151,7 +151,7 @@ export const getApplicationsByClinic = async (req: Request, res: Response) => {
       .from('applications')
       .select('*')
       .in('demand_id', demandIds)
-      .order('created_at', { ascending: false });
+      .order('applied_at', { ascending: false });
 
     if (error) throw error;
 
@@ -209,7 +209,7 @@ export const getApplicationsByUnit = async (req: Request<{ unitId: string }>, re
       .from('applications')
       .select('*')
       .in('demand_id', demandIds)
-      .order('created_at', { ascending: false });
+      .order('applied_at', { ascending: false });
 
     if (error) throw error;
 

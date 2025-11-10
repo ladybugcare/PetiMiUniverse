@@ -254,6 +254,7 @@ const VetDashboardPage: React.FC = () => {
 
 // Section Components
 const ResumoSection: React.FC = () => {
+  const navigate = useNavigate();
   const [stats, setStats] = React.useState({
     totalApplications: 0,
     activeJobs: 0,
@@ -261,6 +262,7 @@ const ResumoSection: React.FC = () => {
     averageRating: 0,
   });
   const [opportunities, setOpportunities] = React.useState<any[]>([]);
+  const [clinics, setClinics] = React.useState<Map<string, string>>(new Map());
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
@@ -270,17 +272,29 @@ const ResumoSection: React.FC = () => {
         const user = JSON.parse(localStorage.getItem('user') || '');
         const vetId = user.id;
 
-        // Import statisticsApi and demandsApi dynamically
+        // Import statisticsApi, demandsApi and clinicsApi dynamically
         const { statisticsApi } = await import('../services/statisticsApi');
         const { demandsApi } = await import('../services/demandsApi');
+        const { clinicsApi } = await import('../services/clinicsApi');
 
-        // Fetch vet statistics
-        const { stats: vetStats } = await statisticsApi.getVetStats(vetId);
-        setStats(vetStats);
+        // Fetch vet statistics and opportunities in parallel
+        const [vetStatsResult, demandsResult, clinicsResult] = await Promise.all([
+          statisticsApi.getVetStats(vetId),
+          demandsApi.getOpen('vet'),
+          clinicsApi.getAll().catch(() => ({ clinics: [] })),
+        ]);
+
+        setStats(vetStatsResult.stats);
+
+        // Create clinics map
+        const clinicsMap = new Map<string, string>();
+        clinicsResult.clinics.forEach((clinic: any) => {
+          clinicsMap.set(clinic.id, clinic.name);
+        });
+        setClinics(clinicsMap);
 
         // Fetch available opportunities
-        const { demands } = await demandsApi.getOpen('vet');
-        setOpportunities(demands.slice(0, 3));
+        setOpportunities(demandsResult.demands.slice(0, 3));
       } catch (error) {
         console.error('Error loading vet data:', error);
       } finally {
@@ -382,16 +396,36 @@ const ResumoSection: React.FC = () => {
           {loading ? (
             <p>Carregando...</p>
           ) : opportunities.length > 0 ? (
-            opportunities.map((opportunity) => (
-              <OpportunityItem
-                key={opportunity.id}
-                icon={<Building2 size={20} color="#7c3aed" />}
-                title={opportunity.title}
-                clinic={opportunity.clinic_id}
-                payment={opportunity.payment ? `R$ ${opportunity.payment}` : 'A combinar'}
-                urgent={opportunity.category === 'emergency'}
-              />
-            ))
+            opportunities.map((opportunity) => {
+              const clinicName = clinics.get(opportunity.clinic_id) || 'Clínica não encontrada';
+              const formatDate = (dateString: string) => {
+                return new Date(dateString).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                });
+              };
+              const formatTime = (timeString: string) => {
+                if (!timeString) return '';
+                return timeString.substring(0, 5);
+              };
+              
+              return (
+                <OpportunityItem
+                  key={opportunity.id}
+                  demandId={opportunity.id}
+                  icon={<Building2 size={20} color="#7c3aed" />}
+                  title={opportunity.title}
+                  clinicName={clinicName}
+                  specialties={opportunity.required_specialties || []}
+                  date={formatDate(opportunity.demand_date)}
+                  time={formatTime(opportunity.start_time)}
+                  payment={opportunity.payment}
+                  urgent={opportunity.category === 'emergency'}
+                  onViewDetails={() => navigate(`/demands/${opportunity.id}`)}
+                />
+              );
+            })
           ) : (
             <p>Nenhuma oportunidade disponível no momento</p>
           )}
@@ -503,14 +537,29 @@ const ConfiguracoesSection: React.FC = () => (
 
 // Utility Components
 interface OpportunityItemProps {
+  demandId: string;
   icon: React.ReactNode;
   title: string;
-  clinic: string;
-  payment: string;
+  clinicName: string;
+  specialties: string[];
+  date: string;
+  time: string;
+  payment?: number;
   urgent: boolean;
+  onViewDetails: () => void;
 }
 
-const OpportunityItem: React.FC<OpportunityItemProps> = ({ icon, title, clinic, payment, urgent }) => (
+const OpportunityItem: React.FC<OpportunityItemProps> = ({ 
+  icon, 
+  title, 
+  clinicName, 
+  specialties,
+  date,
+  time,
+  payment,
+  urgent, 
+  onViewDetails 
+}) => (
   <div style={styles.opportunityItem}>
     <div style={styles.opportunityIcon}>{icon}</div>
     <div style={styles.opportunityContent}>
@@ -518,10 +567,48 @@ const OpportunityItem: React.FC<OpportunityItemProps> = ({ icon, title, clinic, 
         <h4 style={styles.opportunityTitle}>{title}</h4>
         {urgent && <span style={styles.urgentBadge}>Urgente</span>}
       </div>
-      <p style={styles.opportunityClinic}>{clinic}</p>
-      <p style={styles.opportunityPayment}>{payment}</p>
+      
+      {/* Especialidades */}
+      {specialties && specialties.length > 0 && (
+        <div style={styles.specialtiesContainer}>
+          {specialties.slice(0, 3).map((spec, idx) => (
+            <span key={idx} style={styles.specialtyBadge}>
+              {spec}
+            </span>
+          ))}
+          {specialties.length > 3 && (
+            <span style={styles.specialtyBadge}>
+              +{specialties.length - 3}
+            </span>
+          )}
+        </div>
+      )}
+      
+      {/* Nome da Clínica */}
+      <p style={styles.opportunityClinic}>
+        <Building2 size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+        {clinicName}
+      </p>
+      
+      {/* Data e Horário */}
+      <div style={styles.dateTimeContainer}>
+        <span style={styles.dateTimeItem}>
+          <Clock size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+          {date} às {time}
+        </span>
+      </div>
+      
+      {/* Preço */}
+      <p style={styles.opportunityPayment}>
+        {payment ? `R$ ${payment.toFixed(2)}` : 'A combinar'}
+      </p>
     </div>
-    <button style={styles.applyButton}>Ver Detalhes</button>
+    <button 
+      style={styles.applyButton}
+      onClick={onViewDetails}
+    >
+      Ver Detalhes
+    </button>
   </div>
 );
 
@@ -699,14 +786,44 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px',
     color: '#525252',
-    margin: '0 0 4px 0',
+    margin: '8px 0 4px 0',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  specialtiesContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    margin: '8px 0',
+  },
+  specialtyBadge: {
+    padding: '4px 10px',
+    backgroundColor: '#ede9fe',
+    color: '#7c3aed',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '500',
+    fontFamily: 'Inter, sans-serif',
+  },
+  dateTimeContainer: {
+    display: 'flex',
+    gap: '12px',
+    margin: '8px 0',
+    flexWrap: 'wrap',
+  },
+  dateTimeItem: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '13px',
+    color: '#737373',
+    display: 'flex',
+    alignItems: 'center',
   },
   opportunityPayment: {
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px',
     color: '#7c3aed',
     fontWeight: '600',
-    margin: 0,
+    margin: '8px 0 0 0',
   },
   applyButton: {
     padding: '8px 16px',

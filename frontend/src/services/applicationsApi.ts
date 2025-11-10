@@ -7,8 +7,9 @@ export interface Application {
   vet_id: string;
   status: 'pending' | 'accepted' | 'rejected';
   message?: string;
-  created_at: string;
-  updated_at: string;
+  applied_at?: string; // Campo usado na tabela applications
+  created_at?: string; // Campo usado em outras tabelas (position_applications)
+  updated_at?: string;
   vets?: {
     id: string;
     name: string;

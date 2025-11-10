@@ -8,6 +8,7 @@ import SearchBar from '../components/SearchBar';
 import { demandsApi, clinicsApi, applicationsApi, specialtiesApi } from '../services';
 import { Demand } from '../services/demandsApi';
 import { useAlert } from '../hooks/useAlert';
+import { getUserRole, type Role as AuthRole } from '../utils/authHelpers';
 import { BarChart2, ClipboardList, PlusCircle, User, LogOut, FileText, Search, Filter, X, Clock, MapPin, DollarSign } from 'lucide-react';
 import colors from '../styles/colors';
 
@@ -56,14 +57,15 @@ const DemandsPage: React.FC = () => {
   const itemsPerPage = 20;
 
   const user = JSON.parse(localStorage.getItem('user') || '');
-  const userRole = user?.user_metadata?.role || user?.role;
+  const userRole: AuthRole | null = user ? getUserRole(user) : null;
+  const rawUserRole = user?.user_metadata?.role || user?.role;
   
   // Get status filter from query params (legacy support)
   const queryStatusFilter = searchParams.get('status');
 
   // Verificar se vet está aprovado
   useEffect(() => {
-    if (userRole === 'vet' || userRole === 'VET') {
+    if (userRole === 'VET') {
       const vetOnboardingStr = localStorage.getItem('vetOnboarding');
       if (vetOnboardingStr && vetOnboardingStr.trim() !== '') {
         try {
@@ -117,7 +119,7 @@ const DemandsPage: React.FC = () => {
 
   // Menu items based on user role
   const getMenuItems = (): MenuItem[] => {
-    if (userRole === 'clinic') {
+    if ((userRole === 'CADMIN' || userRole === 'CMANAGER') || rawUserRole?.toLowerCase() === 'clinic') {
       return [
         {
           id: 'dashboard',
@@ -223,7 +225,7 @@ const DemandsPage: React.FC = () => {
       }
       
       // Carregar aplicações do usuário (para vets)
-      if (userRole === 'vet' && user.id) {
+      if (userRole === 'VET' && user?.id) {
         try {
           const applicationsResult = await applicationsApi.getByVet(user.id);
           setUserApplications(applicationsResult.applications.map(app => app.demand_id));
@@ -372,7 +374,12 @@ const DemandsPage: React.FC = () => {
     selectedSpecialties.length > 0 || minPayment !== '' || maxPayment !== '';
 
   const handleApply = async (demand: Demand) => {
-    if (userRole !== 'vet') {
+    if (userRole !== 'VET') {
+      // Se for clínica (CADMIN ou CMANAGER), navegar para página de detalhes para gerenciar candidaturas
+      if (userRole === 'CADMIN' || userRole === 'CMANAGER' || rawUserRole?.toLowerCase() === 'clinic') {
+        navigate(`/demands/${demand.id}`);
+        return;
+      }
       showWarning('Apenas veterinários podem se candidatar a demandas');
       return;
     }
@@ -395,7 +402,7 @@ const DemandsPage: React.FC = () => {
       setApplicationMessage('');
       
       // Reload user applications
-      if (userRole === 'vet' && user.id) {
+      if (userRole === 'VET' && user.id) {
         try {
           const applicationsResult = await applicationsApi.getByVet(user.id);
           setUserApplications(applicationsResult.applications.map(app => app.demand_id));
@@ -750,7 +757,7 @@ const DemandsPage: React.FC = () => {
                             ✓ Candidatura enviada
                           </span>
                         )}
-                        {userRole === 'vet' && !hasApplied && (
+                        {userRole === 'VET' && !hasApplied && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -826,7 +833,14 @@ const DemandsPage: React.FC = () => {
         ) : (
           <CalendarView
             demands={filteredAndSortedDemands}
-            onDemandClick={(demand) => handleApply(demand)}
+            onDemandClick={(demand) => {
+              // Se for clínica (CADMIN ou CMANAGER), navegar diretamente para detalhes
+              if (userRole === 'CADMIN' || userRole === 'CMANAGER' || rawUserRole?.toLowerCase() === 'clinic') {
+                navigate(`/demands/${demand.id}`);
+              } else {
+                handleApply(demand);
+              }
+            }}
             getClinicName={getClinicName}
           />
         )}
@@ -890,7 +904,7 @@ const DemandsPage: React.FC = () => {
     <LoadingOverlay visible={loading} label="Carregando demandas..." />
     
     {/* Floating Action Button - Only show for clinic users */}
-    {userRole === 'clinic' && (
+    {(userRole === 'CADMIN' || userRole === 'CMANAGER' || rawUserRole?.toLowerCase() === 'clinic') && (
       <button
         onClick={() => navigate('/create-demand')}
         onMouseEnter={() => setFabHovered(true)}

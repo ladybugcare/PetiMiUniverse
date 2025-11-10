@@ -1,23 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { clinicsApi, Clinic } from '../services/clinicsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, ShoppingCart, User, LogOut, Edit } from 'lucide-react';
+import { BarChart2, ClipboardList, ShoppingCart, User, LogOut, Edit, ArrowLeft, Building2 } from 'lucide-react';
 import colors from '../styles/colors';
 import { supabase } from '../services/supabase';
+import { useAuth } from '../AuthContext';
 
 const ClinicProfilePage: React.FC = () => {
+  const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { showSuccess, showError, showConfirm } = useAlert();
+  const { user } = useAuth();
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
+  
+  // Se há um ID na URL, é visualização pública (não edição)
+  const isPublicView = !!id;
+  const isOwnProfile = !isPublicView || (user?.id === id);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -64,17 +71,28 @@ const ClinicProfilePage: React.FC = () => {
 
   useEffect(() => {
     loadProfile();
-  }, []);
+  }, [id]);
 
   const loadProfile = async () => {
     try {
-      const user = JSON.parse(localStorage.getItem('user') || '');
-      if (!user || !user.id) {
-        navigate('/login');
-        return;
+      setLoading(true);
+      
+      // Se há um ID na URL, carrega aquele perfil (visualização pública)
+      // Caso contrário, carrega o perfil do usuário logado
+      const clinicId = id || user?.id;
+      
+      if (!clinicId) {
+        if (!isPublicView) {
+          navigate('/login');
+          return;
+        } else {
+          showError('Clínica não encontrada');
+          navigate('/demands');
+          return;
+        }
       }
 
-      const { clinic: clinicData } = await clinicsApi.getById(user.id);
+      const { clinic: clinicData } = await clinicsApi.getById(clinicId);
       setClinic(clinicData);
       setFormData({
         name: clinicData.name,
@@ -83,6 +101,9 @@ const ClinicProfilePage: React.FC = () => {
       });
     } catch (error: any) {
       showError('Erro ao carregar perfil: ' + error.message);
+      if (isPublicView) {
+        navigate('/demands');
+      }
     } finally {
       setLoading(false);
     }
@@ -160,7 +181,7 @@ const ClinicProfilePage: React.FC = () => {
 
   if (loading) {
     return (
-      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
+      <DashboardLayout pageName={isPublicView ? "Perfil da Clínica" : "Meu Perfil"} menuItems={isPublicView ? [] : menuItems}>
         <div style={styles.loading}>Carregando...</div>
       </DashboardLayout>
     );
@@ -168,27 +189,34 @@ const ClinicProfilePage: React.FC = () => {
 
   if (!clinic) {
     return (
-      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
+      <DashboardLayout pageName={isPublicView ? "Perfil da Clínica" : "Meu Perfil"} menuItems={isPublicView ? [] : menuItems}>
         <div style={styles.error}>Erro ao carregar perfil</div>
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
+    <DashboardLayout pageName={isPublicView ? "Perfil da Clínica" : "Meu Perfil"} menuItems={isPublicView ? [] : menuItems}>
       <div style={styles.container}>
+        {isPublicView && (
+          <button onClick={() => navigate('/demands')} style={styles.backButton}>
+            <ArrowLeft size={20} />
+            Voltar
+          </button>
+        )}
         <div style={styles.card}>
           {/* Header */}
           <div style={styles.header}>
-            <h1 style={styles.title}>Meu Perfil</h1>
-            {!isEditing ? (
+            <h1 style={styles.title}>{isPublicView ? clinic.name : 'Meu Perfil'}</h1>
+            {!isPublicView && !isEditing && (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Edit size={16} />
-                <span>Editar Perfil</span>
-              </div>
+                  <Edit size={16} />
+                  <span>Editar Perfil</span>
+                </div>
               </button>
-            ) : (
+            )}
+            {!isPublicView && isEditing && (
               <div style={styles.buttonGroup}>
                 <button onClick={handleCancel} style={styles.cancelButton} disabled={saving}>
                   Cancelar
@@ -202,11 +230,23 @@ const ClinicProfilePage: React.FC = () => {
 
           {/* Photo */}
           <div style={styles.photoSection}>
-            <ProfilePhotoUploader
-              currentPhotoUrl={clinic.photo_url}
-              onPhotoSelect={handlePhotoSelect}
-              isUploading={uploadingPhoto}
-            />
+            {isPublicView ? (
+              <div style={styles.photoDisplay}>
+                {clinic.photo_url ? (
+                  <img src={clinic.photo_url} alt={clinic.name} style={styles.photoImage} />
+                ) : (
+                  <div style={styles.photoPlaceholder}>
+                    <Building2 size={48} color="#9ca3af" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <ProfilePhotoUploader
+                currentPhotoUrl={clinic.photo_url}
+                onPhotoSelect={handlePhotoSelect}
+                isUploading={uploadingPhoto}
+              />
+            )}
           </div>
 
           {/* Form */}
@@ -262,23 +302,27 @@ const ClinicProfilePage: React.FC = () => {
               )}
             </div>
           </div>
-          <div style={styles.dangerSection}>
-            <h2 style={styles.dangerTitle}>Inativar conta da clínica</h2>
-            <p style={styles.dangerDescription}>
-              Inativar a conta encerra imediatamente o acesso de todos os usuários da clínica. Um
-              administrador do sistema deve reativar a conta para restabelecer o acesso.
-            </p>
-            <button
-              onClick={handleDeactivateAccount}
-              style={{
-                ...styles.dangerButton,
-                ...(deactivating ? styles.dangerButtonDisabled : {}),
-              }}
-              disabled={deactivating}
-            >
-              {deactivating ? 'Inativando...' : 'Inativar clínica'}
-            </button>
-          </div>
+          
+          {/* Danger Section - Apenas para o próprio perfil */}
+          {!isPublicView && (
+            <div style={styles.dangerSection}>
+              <h2 style={styles.dangerTitle}>Inativar conta da clínica</h2>
+              <p style={styles.dangerDescription}>
+                Inativar a conta encerra imediatamente o acesso de todos os usuários da clínica. Um
+                administrador do sistema deve reativar a conta para restabelecer o acesso.
+              </p>
+              <button
+                onClick={handleDeactivateAccount}
+                style={{
+                  ...styles.dangerButton,
+                  ...(deactivating ? styles.dangerButtonDisabled : {}),
+                }}
+                disabled={deactivating}
+              >
+                {deactivating ? 'Inativando...' : 'Inativar clínica'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </DashboardLayout>
@@ -452,6 +496,44 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Inter, sans-serif',
     fontSize: '16px',
     color: '#dc2626',
+  },
+  backButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 20px',
+    backgroundColor: '#f3f4f6',
+    color: '#262626',
+    border: 'none',
+    borderRadius: '8px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    marginBottom: '24px',
+  },
+  photoDisplay: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoImage: {
+    width: '150px',
+    height: '150px',
+    borderRadius: '50%',
+    objectFit: 'cover',
+    border: '4px solid #e5e5e5',
+  },
+  photoPlaceholder: {
+    width: '150px',
+    height: '150px',
+    borderRadius: '50%',
+    backgroundColor: '#f3f4f6',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '4px solid #e5e5e5',
   },
 };
 
