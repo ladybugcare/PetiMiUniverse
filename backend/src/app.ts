@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { supabase } from './config/supabase.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { generalLimiter } from './middleware/rateLimiter.js';
+import { correlationIdMiddleware } from './middleware/correlationId.js';
 
 // 🔹 Importa rotas
 import petRoutes from './routes/pets.js';
@@ -24,6 +25,8 @@ import demandPositionsRoutes from './routes/demandPositions.js';
 import adminRoutes from './routes/adminRoutes.js';
 import supportTicketsRoutes from './routes/supportTickets.js';
 import notificationsRoutes from './routes/notifications.js';
+import messagesRoutes from './routes/messages.js';
+import messageReportsRoutes from './routes/messageReports.js';
 import healthRoutes from './routes/health.js';
 
 // 🔹 Carrega variáveis de ambiente
@@ -91,6 +94,9 @@ app.use(
   })
 );
 
+// 🔹 Correlation ID middleware (deve ser um dos primeiros)
+app.use(correlationIdMiddleware);
+
 // 🔹 Aumenta limite de payload (para imagens base64)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -116,6 +122,8 @@ app.use('/demand-positions', demandPositionsRoutes);
 app.use('/admin', adminRoutes);
 app.use('/support', supportTicketsRoutes);
 app.use('/notifications', notificationsRoutes);
+app.use('/api/messages', messagesRoutes);
+app.use('/api/messages/admin', messageReportsRoutes);
 app.use('/health', healthRoutes);
 
 // 🔹 Healthcheck melhorado (verifica dependências)

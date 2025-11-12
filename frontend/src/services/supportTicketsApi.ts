@@ -7,10 +7,13 @@ import { apiRequest } from './api';
 export interface SupportTicket {
   id: string;
   user_id: string;
-  user_role: 'clinic' | 'vet' | 'admin';
-  user_name?: string; // Nome do usuário (clínica, veterinário ou admin)
+  user_role: 'clinic' | 'vet' | 'freelancer' | 'admin';
+  user_name?: string; // Nome do usuário (clínica, veterinário, freelancer ou admin)
   message: string;
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
+  category?: 'técnico' | 'financeiro' | 'conta_perfil' | 'demanda' | 'marketplace' | 'outro';
+  priority?: 'baixa' | 'normal' | 'alta' | 'urgente';
+  attachments?: string[];
   admin_reply: string | null;
   admin_id: string | null;
   user_read: boolean;
@@ -44,8 +47,11 @@ export interface TicketEvaluation {
 
 export interface CreateTicketData {
   user_id: string;
-  user_role: 'clinic' | 'vet' | 'admin';
+  user_role: 'clinic' | 'vet' | 'freelancer' | 'admin';
   message: string;
+  category?: 'técnico' | 'financeiro' | 'conta_perfil' | 'demanda' | 'marketplace' | 'outro';
+  priority?: 'baixa' | 'normal' | 'alta' | 'urgente';
+  attachments?: string[];
 }
 
 export interface AddMessageData {
@@ -93,10 +99,14 @@ export const supportTicketsApi = {
     return apiRequest(`/support/tickets/my?user_id=${userId}`);
   },
 
-  // Obter todos os tickets (admin) com filtro opcional de status
-  getAllTickets: async (status?: string): Promise<{ tickets: SupportTicket[] }> => {
-    const statusParam = status ? `?status=${status}` : '';
-    return apiRequest(`/support/tickets${statusParam}`);
+  // Obter todos os tickets (admin) com filtros opcionais
+  getAllTickets: async (status?: string, category?: string, priority?: string): Promise<{ tickets: SupportTicket[] }> => {
+    const params = new URLSearchParams();
+    if (status && status !== 'all') params.append('status', status);
+    if (category && category !== 'all') params.append('category', category);
+    if (priority && priority !== 'all') params.append('priority', priority);
+    const queryString = params.toString();
+    return apiRequest(`/support/tickets${queryString ? `?${queryString}` : ''}`);
   },
 
   // Responder a um ticket (admin)

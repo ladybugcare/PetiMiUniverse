@@ -5,8 +5,11 @@ import { createNotification } from './notificationsController';
 // Tipos
 interface CreateTicketBody {
   user_id: string;
-  user_role: 'clinic' | 'vet' | 'admin';
+  user_role: 'clinic' | 'vet' | 'freelancer' | 'admin';
   message: string;
+  category?: 'técnico' | 'financeiro' | 'conta_perfil' | 'demanda' | 'marketplace' | 'outro';
+  priority?: 'baixa' | 'normal' | 'alta' | 'urgente';
+  attachments?: string[];
 }
 
 interface ReplyToTicketBody {
@@ -48,8 +51,8 @@ export const createTicket = async (
       return res.status(400).json({ error: 'A mensagem deve ter pelo menos 10 caracteres' });
     }
 
-    if (!['clinic', 'vet', 'admin'].includes(user_role)) {
-      return res.status(400).json({ error: 'user_role deve ser clinic, vet ou admin' });
+    if (!['clinic', 'vet', 'freelancer', 'admin'].includes(user_role)) {
+      return res.status(400).json({ error: 'user_role deve ser clinic, vet, freelancer ou admin' });
     }
 
     const now = new Date().toISOString();
@@ -65,6 +68,9 @@ export const createTicket = async (
           status: 'open',
           last_message_at: now,
           last_message_by: 'user',
+          category: req.body.category || 'outro',
+          priority: req.body.priority || 'normal',
+          attachments: req.body.attachments || [],
         },
       ])
       .select()
@@ -171,17 +177,30 @@ export const getUserTickets = async (req: Request, res: Response) => {
 // ========================================
 export const getAllTickets = async (req: Request, res: Response) => {
   try {
-    const { status } = req.query;
+    const { status, category, priority } = req.query;
 
     let query = supabase
       .from('support_tickets')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*');
 
     // Filtrar por status se fornecido
     if (status && status !== 'all') {
       query = query.eq('status', status);
     }
+
+    // Filtrar por categoria se fornecido
+    if (category && category !== 'all') {
+      query = query.eq('category', category);
+    }
+
+    // Filtrar por prioridade se fornecido
+    if (priority && priority !== 'all') {
+      query = query.eq('priority', priority);
+    }
+
+    // Ordenar por prioridade (urgente > alta > normal > baixa) e depois por data
+    query = query.order('priority', { ascending: false })
+                 .order('created_at', { ascending: false });
 
     const { data, error } = await query;
 
@@ -212,6 +231,14 @@ export const getAllTickets = async (req: Request, res: Response) => {
               .eq('id', ticket.user_id)
               .single();
             userName = vet?.name || 'Veterinário';
+          } else if (ticket.user_role === 'freelancer') {
+            // Buscar nome na tabela freelancers
+            const { data: freelancer } = await supabase
+              .from('freelancers')
+              .select('name')
+              .eq('id', ticket.user_id)
+              .single();
+            userName = freelancer?.name || 'Freelancer';
           } else if (ticket.user_role === 'admin') {
             // Buscar nome no auth.users
             const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(ticket.user_id);

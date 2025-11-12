@@ -150,13 +150,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ demands, onDemandClick, get
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <button onClick={previousMonth} style={styles.navButton} title="Mês anterior">
-            ◀
-          </button>
-          <h2 style={styles.monthYear}>
-            {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-          </h2>
+          ◀
+        </button>
+        <h2 style={styles.monthYear}>
+          {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+        </h2>
           <button onClick={nextMonth} style={styles.navButton} title="Próximo mês">
-            ▶
+          ▶
           </button>
         </div>
         <button onClick={goToToday} style={styles.todayButton} title="Ir para hoje">
@@ -213,15 +213,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({ demands, onDemandClick, get
                   }}
                 >
                   <div style={styles.demandCardHeader}>
-                    <div style={styles.demandTitle}>{demand.title}</div>
-                    <div
-                      style={{
-                        ...styles.statusBadge,
-                        backgroundColor: getStatusColor(demand.status),
-                      }}
-                    >
-                      {getStatusLabel(demand.status)}
-                    </div>
+                  <div style={styles.demandTitle}>{demand.title}</div>
+                  <div
+                    style={{
+                      ...styles.statusBadge,
+                      backgroundColor: getStatusColor(demand.status),
+                    }}
+                  >
+                    {getStatusLabel(demand.status)}
+                  </div>
                   </div>
                   
                   {demand.description && (

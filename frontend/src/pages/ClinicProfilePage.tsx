@@ -83,8 +83,8 @@ const ClinicProfilePage: React.FC = () => {
       
       if (!clinicId) {
         if (!isPublicView) {
-          navigate('/login');
-          return;
+        navigate('/login');
+        return;
         } else {
           showError('Clínica não encontrada');
           navigate('/demands');
@@ -211,9 +211,9 @@ const ClinicProfilePage: React.FC = () => {
             {!isPublicView && !isEditing && (
               <button onClick={() => setIsEditing(true)} style={styles.editButton}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Edit size={16} />
-                  <span>Editar Perfil</span>
-                </div>
+                <Edit size={16} />
+                <span>Editar Perfil</span>
+              </div>
               </button>
             )}
             {!isPublicView && isEditing && (
@@ -241,11 +241,11 @@ const ClinicProfilePage: React.FC = () => {
                 )}
               </div>
             ) : (
-              <ProfilePhotoUploader
-                currentPhotoUrl={clinic.photo_url}
-                onPhotoSelect={handlePhotoSelect}
-                isUploading={uploadingPhoto}
-              />
+            <ProfilePhotoUploader
+              currentPhotoUrl={clinic.photo_url}
+              onPhotoSelect={handlePhotoSelect}
+              isUploading={uploadingPhoto}
+            />
             )}
           </div>
 
@@ -305,23 +305,23 @@ const ClinicProfilePage: React.FC = () => {
           
           {/* Danger Section - Apenas para o próprio perfil */}
           {!isPublicView && (
-            <div style={styles.dangerSection}>
-              <h2 style={styles.dangerTitle}>Inativar conta da clínica</h2>
-              <p style={styles.dangerDescription}>
-                Inativar a conta encerra imediatamente o acesso de todos os usuários da clínica. Um
-                administrador do sistema deve reativar a conta para restabelecer o acesso.
-              </p>
-              <button
-                onClick={handleDeactivateAccount}
-                style={{
-                  ...styles.dangerButton,
-                  ...(deactivating ? styles.dangerButtonDisabled : {}),
-                }}
-                disabled={deactivating}
-              >
-                {deactivating ? 'Inativando...' : 'Inativar clínica'}
-              </button>
-            </div>
+          <div style={styles.dangerSection}>
+            <h2 style={styles.dangerTitle}>Inativar conta da clínica</h2>
+            <p style={styles.dangerDescription}>
+              Inativar a conta encerra imediatamente o acesso de todos os usuários da clínica. Um
+              administrador do sistema deve reativar a conta para restabelecer o acesso.
+            </p>
+            <button
+              onClick={handleDeactivateAccount}
+              style={{
+                ...styles.dangerButton,
+                ...(deactivating ? styles.dangerButtonDisabled : {}),
+              }}
+              disabled={deactivating}
+            >
+              {deactivating ? 'Inativando...' : 'Inativar clínica'}
+            </button>
+          </div>
           )}
         </div>
       </div>

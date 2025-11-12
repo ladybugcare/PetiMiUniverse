@@ -321,10 +321,6 @@ const DemandDetailPage: React.FC = () => {
     ? positions.reduce((sum, p) => sum + (p.individual_payment || 0), 0)
     : demand?.payment || 0;
   
-  // Calcular valor líquido (assumindo 10% de taxa da plataforma)
-  const platformFee = 0.1;
-  const netPayment = totalPayment * (1 - platformFee);
-  
   // Verificar se é demanda premium (pagamento acima da média - assumindo R$ 200 como média)
   const isPremium = totalPayment > 200;
   
@@ -642,24 +638,15 @@ const DemandDetailPage: React.FC = () => {
               <div style={styles.paymentDetails}>
                 <div style={styles.paymentRow}>
                   <span style={styles.paymentLabel}>Valor total da vaga</span>
-                  <span style={styles.paymentValue}>R$ {totalPayment.toFixed(2)}</span>
+                  <span style={styles.paymentValueBold}>R$ {totalPayment.toFixed(2)}</span>
                 </div>
                 <div style={styles.paymentRow}>
                   <span style={styles.paymentLabel}>Forma de pagamento</span>
-                  <span style={styles.paymentValue}>Via PetiVet</span>
-                </div>
-                <div style={styles.paymentRow}>
-                  <span style={styles.paymentLabel}>Taxa da plataforma (10%)</span>
-                  <span style={styles.paymentValue}>- R$ {(totalPayment * platformFee).toFixed(2)}</span>
-                </div>
-                <div style={styles.paymentDivider}></div>
-                <div style={styles.paymentRow}>
-                  <span style={styles.paymentLabelBold}>Valor líquido estimado</span>
-                  <span style={styles.paymentValueBold}>R$ {netPayment.toFixed(2)}</span>
+                  <span style={styles.paymentValue}>Direto com a clínica</span>
                 </div>
                 <div style={styles.paymentNote}>
                   <Info size={14} />
-                  <span>Repasse previsto em até 5 dias após conclusão</span>
+                  <span>O pagamento será combinado e efetuado diretamente entre você e a clínica</span>
                 </div>
               </div>
             </div>
@@ -864,8 +851,8 @@ const DemandDetailPage: React.FC = () => {
               <div style={styles.transparencyItem}>
                 <CreditCard size={20} color={colors.primary} />
                 <div>
-                  <strong>Pagamentos via PetiVet</strong>
-                  <p>Processamento seguro e garantido</p>
+                  <strong>Pagamento direto com a clínica</strong>
+                  <p>O pagamento é combinado e efetuado diretamente entre você e a clínica</p>
                 </div>
               </div>
               

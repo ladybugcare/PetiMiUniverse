@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   Star
 } from 'lucide-react';
+import PriorityBadge from '../components/PriorityBadge';
 import { 
   supportTicketsApi, 
   SupportTicket, 
@@ -38,7 +39,7 @@ const MySupportTicketsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [userRole, setUserRole] = useState<'clinic' | 'vet'>('clinic');
+  const [userRole, setUserRole] = useState<'clinic' | 'vet' | 'freelancer'>('clinic');
   const [showEvaluationModal, setShowEvaluationModal] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -187,7 +188,7 @@ const MySupportTicketsPage: React.FC = () => {
         { id: 'perfil', label: 'Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-profile' },
         { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
       ];
-    } else {
+    } else if (userRole === 'vet') {
       return [
         { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/vet-dashboard' },
         { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
@@ -195,6 +196,17 @@ const MySupportTicketsPage: React.FC = () => {
         { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
         { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
         { id: 'perfil', label: 'Meu Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/vet-profile' },
+        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
+      ];
+    } else {
+      // freelancer
+      return [
+        { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/freelancer-dashboard' },
+        { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
+        { id: 'candidaturas', label: 'Minhas Candidaturas', icon: <FileText size={20} color={colors.primary} />, action: 'navigate', path: '/my-applications' },
+        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
+        { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
+        { id: 'perfil', label: 'Meu Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/freelancer-profile' },
         { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
       ];
     }
@@ -283,6 +295,12 @@ const MySupportTicketsPage: React.FC = () => {
                   <div style={styles.ticketHeader}>
                     <div style={styles.ticketMeta}>
                       {getStatusBadge(ticket.status)}
+                      {ticket.priority && (
+                        <PriorityBadge priority={ticket.priority} />
+                      )}
+                      {ticket.category && (
+                        <span style={styles.categoryBadge}>{ticket.category}</span>
+                      )}
                       {ticket.unread_count && ticket.unread_count > 0 && (
                         <span style={styles.unreadBadge}>
                           {ticket.unread_count} nova{ticket.unread_count > 1 ? 's' : ''}
@@ -559,6 +577,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: '16px',
     display: 'inline-flex',
     alignItems: 'center',
+  },
+  categoryBadge: {
+    padding: '4px 10px',
+    fontSize: '12px',
+    fontWeight: '500',
+    borderRadius: '12px',
+    backgroundColor: colors.primaryBg,
+    color: colors.primary,
+    fontFamily: 'Inter, sans-serif',
   },
   unreadBadge: {
     padding: '4px 10px',

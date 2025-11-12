@@ -21,6 +21,8 @@ import demandPositionsRoutes from './routes/demandPositions.js';
 import adminRoutes from './routes/adminRoutes.js';
 import supportTicketsRoutes from './routes/supportTickets.js';
 import notificationsRoutes from './routes/notifications.js';
+import messagesRoutes from './routes/messages.js';
+import messageReportsRoutes from './routes/messageReports.js';
 
 // 🔹 Carrega variáveis de ambiente
 dotenv.config();
@@ -106,6 +108,8 @@ app.use('/demand-positions', demandPositionsRoutes);
 app.use('/admin', adminRoutes);
 app.use('/support', supportTicketsRoutes);
 app.use('/notifications', notificationsRoutes);
+app.use('/api/messages', messagesRoutes);
+app.use('/api/messages/admin', messageReportsRoutes);
 
 // 🔹 Healthcheck
 app.get('/', (req, res) => {

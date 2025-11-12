@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { demandPositionsApi } from '../services/demandPositionsApi';
+import { messagesApi } from '../services/messagesApi';
 import { useAlert } from '../hooks/useAlert';
+import { useAuth } from '../AuthContext';
+import { MessageCircle } from 'lucide-react';
+import colors from '../styles/colors';
 
 interface PositionApplicationsManagerProps {
   positionId: string;
@@ -17,6 +22,8 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
   positionDetails,
   onApplicationAccepted,
 }) => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
   const [loading, setLoading] = useState(true);
   const [applications, setApplications] = useState<any[]>([]);
@@ -73,6 +80,28 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
         setProcessingId(null);
       }
     });
+  };
+
+  const handleSendMessage = async (vetId: string) => {
+    if (!vetId || !user?.id) {
+      showError('Erro ao identificar usuário ou veterinário');
+      return;
+    }
+
+    try {
+      // Criar ou buscar conversa existente
+      const result = await messagesApi.createConversation({
+        participant1_id: user.id,
+        participant1_type: 'clinic',
+        participant2_id: vetId,
+        participant2_type: 'vet',
+      });
+
+      // Navegar para página de mensagens com a conversa selecionada
+      navigate(`/messages?conversation=${result.conversation.id}`);
+    } catch (error: any) {
+      showError('Erro ao criar conversa: ' + (error.message || 'Erro desconhecido'));
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -180,6 +209,16 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                 )}
               </div>
               <div style={styles.actions}>
+                {app.vets?.id && (
+                  <button
+                    onClick={() => handleSendMessage(app.vets.id)}
+                    style={styles.messageButton}
+                    title="Enviar mensagem"
+                  >
+                    <MessageCircle size={16} color={colors.primary} />
+                    Mensagem
+                  </button>
+                )}
                 <button
                   onClick={() => handleAccept(app.id)}
                   style={styles.acceptButton}
@@ -224,6 +263,18 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                   </p>
                 )}
               </div>
+              {app.vets?.id && (
+                <div style={styles.actions}>
+                  <button
+                    onClick={() => handleSendMessage(app.vets.id)}
+                    style={styles.messageButton}
+                    title="Enviar mensagem"
+                  >
+                    <MessageCircle size={16} color={colors.primary} />
+                    Mensagem
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -249,6 +300,18 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                   </p>
                 )}
               </div>
+              {app.vets?.id && (
+                <div style={styles.actions}>
+                  <button
+                    onClick={() => handleSendMessage(app.vets.id)}
+                    style={styles.messageButton}
+                    title="Enviar mensagem"
+                  >
+                    <MessageCircle size={16} color={colors.primary} />
+                    Mensagem
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -371,6 +434,22 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
+  },
+  messageButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 16px',
+    backgroundColor: '#ffffff',
+    color: colors.primary,
+    border: `1px solid ${colors.primary}`,
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
   },
   loading: {
     display: 'flex',

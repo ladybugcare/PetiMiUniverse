@@ -6,11 +6,14 @@ import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
 import { clinicsApi } from '../services';
 import { vetsApi, Vet } from '../services/vetsApi';
+import { freelancersApi, Freelancer } from '../services/freelancersApi';
 import { adminApi, CreateUserData } from '../services/adminApi';
 import { useAlert } from '../hooks/useAlert';
 import { formatCRMV } from '../utils/validators';
 import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, EyeOff, Edit, Trash2, UserCog, Truck, UserPlus, Plus, Shield } from 'lucide-react';
 import colors from '../styles/colors';
+import { messagesApi } from '../services/messagesApi';
+import { useAuth } from '../AuthContext';
 
 interface Clinic {
   id: string;
@@ -34,24 +37,31 @@ interface Admin {
 const AdminUsersPage: React.FC = () => {
   const navigate = useNavigate();
   const { showSuccess, showError, showConfirm } = useAlert();
-  const [activeTab, setActiveTab] = useState<'clinics' | 'vets' | 'admins'>('clinics');
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'clinics' | 'vets' | 'freelancers' | 'admins'>('clinics');
   const [clinics, setClinics] = useState<Clinic[]>([]);
   const [vets, setVets] = useState<Vet[]>([]);
+  const [freelancers, setFreelancers] = useState<Freelancer[]>([]);
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [filteredClinics, setFilteredClinics] = useState<Clinic[]>([]);
   const [filteredVets, setFilteredVets] = useState<Vet[]>([]);
+  const [filteredFreelancers, setFilteredFreelancers] = useState<Freelancer[]>([]);
   const [filteredAdmins, setFilteredAdmins] = useState<Admin[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedClinic, setSelectedClinic] = useState<Clinic | null>(null);
   const [selectedVet, setSelectedVet] = useState<Vet | null>(null);
+  const [selectedFreelancer, setSelectedFreelancer] = useState<Freelancer | null>(null);
   const [showViewClinicModal, setShowViewClinicModal] = useState(false);
   const [showViewVetModal, setShowViewVetModal] = useState(false);
+  const [showViewFreelancerModal, setShowViewFreelancerModal] = useState(false);
   const [showEditClinicModal, setShowEditClinicModal] = useState(false);
   const [showEditVetModal, setShowEditVetModal] = useState(false);
+  const [showEditFreelancerModal, setShowEditFreelancerModal] = useState(false);
   const [editClinicFormData, setEditClinicFormData] = useState<Partial<Clinic>>();
   const [editVetFormData, setEditVetFormData] = useState<Partial<Vet>>();
+  const [editFreelancerFormData, setEditFreelancerFormData] = useState<Partial<Freelancer>>();
 
   // Create user form states
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
@@ -111,15 +121,17 @@ const AdminUsersPage: React.FC = () => {
       setLoading(true);
       console.log('[AdminUsersPage] Carregando dados...');
       
-      const [clinicsResult, vetsResult, adminsResult] = await Promise.all([
+      const [clinicsResult, vetsResult, freelancersResult, adminsResult] = await Promise.all([
         clinicsApi.getAll(),
         vetsApi.getAll(),
+        freelancersApi.getAll(),
         adminApi.getAdmins(),
       ]);
       
       console.log('[AdminUsersPage] Resultados recebidos:', {
         clinics: clinicsResult?.clinics?.length || 0,
         vets: vetsResult?.vets?.length || 0,
+        freelancers: freelancersResult?.freelancers?.length || 0,
         admins: adminsResult?.admins?.length || 0,
       });
 
@@ -131,18 +143,24 @@ const AdminUsersPage: React.FC = () => {
       const vetsWithoutAdmins = (vetsResult?.vets || []).filter(
         (vet) => !adminIds.has(vet.id)
       );
+      const freelancersWithoutAdmins = (freelancersResult?.freelancers || []).filter(
+        (freelancer) => !adminIds.has(freelancer.id)
+      );
 
       console.log('[AdminUsersPage] Após filtragem:', {
         clinics: clinicsWithoutAdmins.length,
         vets: vetsWithoutAdmins.length,
+        freelancers: freelancersWithoutAdmins.length,
         admins: adminsResult?.admins?.length || 0,
       });
 
       setClinics(clinicsWithoutAdmins);
       setVets(vetsWithoutAdmins);
+      setFreelancers(freelancersWithoutAdmins);
       setAdmins(adminsResult?.admins || []);
       setFilteredClinics(clinicsWithoutAdmins);
       setFilteredVets(vetsWithoutAdmins);
+      setFilteredFreelancers(freelancersWithoutAdmins);
       setFilteredAdmins(adminsResult?.admins || []);
     } catch (error: any) {
       console.error('[AdminUsersPage] Erro ao carregar usuários:', error);
@@ -175,6 +193,18 @@ const AdminUsersPage: React.FC = () => {
       setCurrentPage(1);
     }
   }, [searchQuery, vets, activeTab]);
+
+  // Search for freelancers
+  useEffect(() => {
+    if (activeTab === 'freelancers') {
+      const filtered = freelancers.filter((freelancer) =>
+        freelancer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        freelancer.email.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredFreelancers(filtered);
+      setCurrentPage(1);
+    }
+  }, [searchQuery, freelancers, activeTab]);
 
   // Search for admins
   useEffect(() => {
@@ -286,11 +316,74 @@ const AdminUsersPage: React.FC = () => {
     }
   };
 
+  // Freelancer handlers
+  const handleViewFreelancer = (freelancer: Freelancer) => {
+    setSelectedFreelancer(freelancer);
+    setShowViewFreelancerModal(true);
+  };
+
+  const handleEditFreelancer = (freelancer: Freelancer) => {
+    setSelectedFreelancer(freelancer);
+    setEditFreelancerFormData(freelancer);
+    setShowEditFreelancerModal(true);
+  };
+
+  const handleDeleteFreelancer = (freelancer: Freelancer) => {
+    showConfirm(
+      `Tem certeza que deseja excluir o freelancer "${freelancer.name}"? Esta ação não pode ser desfeita.`,
+      async () => {
+        try {
+          await freelancersApi.delete(freelancer.id);
+          showSuccess('Freelancer excluído com sucesso!');
+          loadData();
+        } catch (error: any) {
+          showError('Erro ao excluir freelancer: ' + error.message);
+        }
+      },
+      'Confirmar Exclusão'
+    );
+  };
+
+  const handleSaveEditFreelancer = async () => {
+    if (!selectedFreelancer) return;
+
+    try {
+      await freelancersApi.update(selectedFreelancer.id, editFreelancerFormData);
+      showSuccess('Freelancer atualizado com sucesso!');
+      setShowEditFreelancerModal(false);
+      loadData();
+    } catch (error: any) {
+      showError('Erro ao atualizar freelancer: ' + error.message);
+    }
+  };
+
   const formatDate = (dateString?: string) => {
   if (!dateString) return '—';
   return new Date(dateString).toLocaleDateString('pt-BR');
 };
 
+  // Handler para criar conversa com usuário
+  const handleSendMessage = async (userId: string, userType: 'clinic' | 'vet' | 'freelancer') => {
+    if (!user?.id) {
+      showError('Usuário não autenticado');
+      return;
+    }
+
+    try {
+      // Criar ou buscar conversa existente
+      const result = await messagesApi.createConversation({
+        participant1_id: user.id,
+        participant1_type: 'admin',
+        participant2_id: userId,
+        participant2_type: userType,
+      });
+
+      // Navegar para página de mensagens com a conversa selecionada
+      navigate(`/messages?conversation=${result.conversation.id}`);
+    } catch (error: any) {
+      showError('Erro ao criar conversa: ' + (error.message || 'Erro desconhecido'));
+    }
+  };
 
   // Handle next step in create user form
   const handleNextStep = () => {
@@ -374,7 +467,9 @@ const AdminUsersPage: React.FC = () => {
     ? filteredClinics
     : activeTab === 'vets'
       ? filteredVets
-      : filteredAdmins;
+      : activeTab === 'freelancers'
+        ? filteredFreelancers
+        : filteredAdmins;
   const totalPages = Math.ceil(currentData.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
@@ -427,6 +522,18 @@ const AdminUsersPage: React.FC = () => {
             </div>
           </button>
           <button
+            onClick={() => setActiveTab('freelancers')}
+            style={{
+              ...styles.tab,
+              ...(activeTab === 'freelancers' ? styles.activeTab : {}),
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Truck size={18} />
+              <span>Freelancers ({freelancers.length})</span>
+            </div>
+          </button>
+          <button
             onClick={() => setActiveTab('admins')}
             style={{
               ...styles.tab,
@@ -448,7 +555,9 @@ const AdminUsersPage: React.FC = () => {
                 ? 'Buscar clínicas...'
                 : activeTab === 'vets'
                   ? 'Buscar veterinários...'
-                  : 'Buscar administradores...'
+                  : activeTab === 'freelancers'
+                    ? 'Buscar freelancers...'
+                    : 'Buscar administradores...'
             }
             value={searchQuery}
             onChange={setSearchQuery}
@@ -493,7 +602,7 @@ const AdminUsersPage: React.FC = () => {
                           <td style={styles.tableCell}>{clinic.name}</td>
                           <td style={styles.tableCell}>{clinic.email}</td>
                           <td style={styles.tableCell}>
-                            <span style={{ ...styles.typeBadge, backgroundColor: '#7c3aed' }}>
+                            <span style={{ ...styles.typeBadge, backgroundColor: '#86efac' }}>
                               Clínica
                             </span>
                           </td>
@@ -510,6 +619,13 @@ const AdminUsersPage: React.FC = () => {
                           <td style={styles.tableCell}>{formatDate(clinic.created_at)}</td>
                           <td style={styles.tableCell}>
                             <div style={styles.actions}>
+                              <button
+                                onClick={() => handleSendMessage(clinic.id, 'clinic')}
+                                style={{ ...styles.actionButton, ...styles.messageButton }}
+                                title="Enviar mensagem"
+                              >
+                                <MessageCircle size={16} color={colors.primary} />
+                              </button>
                               <button
                                 onClick={() => handleViewClinic(clinic)}
                                 style={{ ...styles.actionButton, ...styles.viewButton }}
@@ -560,7 +676,7 @@ const AdminUsersPage: React.FC = () => {
                           <td style={styles.tableCell}>{vet.name}</td>
                           <td style={styles.tableCell}>{vet.email}</td>
                           <td style={styles.tableCell}>
-                            <span style={{ ...styles.typeBadge, backgroundColor: '#3b82f6' }}>
+                            <span style={{ ...styles.typeBadge, backgroundColor: '#a78bfa' }}>
                               Veterinário
                             </span>
                           </td>
@@ -578,6 +694,13 @@ const AdminUsersPage: React.FC = () => {
                           <td style={styles.tableCell}>
                             <div style={styles.actions}>
                               <button
+                                onClick={() => handleSendMessage(vet.id, 'vet')}
+                                style={{ ...styles.actionButton, ...styles.messageButton }}
+                                title="Enviar mensagem"
+                              >
+                                <MessageCircle size={16} color={colors.primary} />
+                              </button>
+                              <button
                                 onClick={() => handleViewVet(vet)}
                                 style={{ ...styles.actionButton, ...styles.viewButton }}
                                 title="Ver detalhes"
@@ -593,6 +716,80 @@ const AdminUsersPage: React.FC = () => {
                               </button>
                               <button
                                 onClick={() => handleDeleteVet(vet)}
+                                style={{ ...styles.actionButton, ...styles.deleteButton }}
+                                title="Excluir"
+                              >
+                                <Trash2 size={16} color="#ef4444" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : activeTab === 'freelancers' ? (
+              <div style={styles.tableContainer}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.tableHeaderRow}>
+                      <th style={styles.tableHeader}>Nome</th>
+                      <th style={styles.tableHeader}>E-mail</th>
+                      <th style={styles.tableHeader}>Tipo</th>
+                      <th style={styles.tableHeader}>Status</th>
+                      <th style={styles.tableHeader}>Data Cadastro</th>
+                      <th style={styles.tableHeader}>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(currentItems as Freelancer[]).map((freelancer) => {
+                      const statusMeta = getStatusMeta(freelancer.status);
+                      return (
+                        <tr key={freelancer.id} style={styles.tableRow}>
+                          <td style={styles.tableCell}>{freelancer.name}</td>
+                          <td style={styles.tableCell}>{freelancer.email}</td>
+                          <td style={styles.tableCell}>
+                            <span style={{ ...styles.typeBadge, backgroundColor: '#93c5fd' }}>
+                              Freelancer
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span
+                              style={{
+                                ...styles.statusBadge,
+                                backgroundColor: statusMeta.color,
+                              }}
+                            >
+                              {statusMeta.label}
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>{formatDate(freelancer.created_at)}</td>
+                          <td style={styles.tableCell}>
+                            <div style={styles.actions}>
+                              <button
+                                onClick={() => handleSendMessage(freelancer.id, 'freelancer')}
+                                style={{ ...styles.actionButton, ...styles.messageButton }}
+                                title="Enviar mensagem"
+                              >
+                                <MessageCircle size={16} color={colors.primary} />
+                              </button>
+                              <button
+                                onClick={() => handleViewFreelancer(freelancer)}
+                                style={{ ...styles.actionButton, ...styles.viewButton }}
+                                title="Ver detalhes"
+                              >
+                                <Eye size={16} color="#3b82f6" />
+                              </button>
+                              <button
+                                onClick={() => handleEditFreelancer(freelancer)}
+                                style={{ ...styles.actionButton, ...styles.editButton }}
+                                title="Editar"
+                              >
+                                <Edit size={16} color="#f59e0b" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteFreelancer(freelancer)}
                                 style={{ ...styles.actionButton, ...styles.deleteButton }}
                                 title="Excluir"
                               >
@@ -760,6 +957,83 @@ const AdminUsersPage: React.FC = () => {
           </div>
         )}
 
+        {/* Freelancer View Modal */}
+        {showViewFreelancerModal && selectedFreelancer && (
+          <div style={styles.modalOverlay} onClick={() => setShowViewFreelancerModal(false)}>
+            <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <h3 style={styles.modalTitle}>Detalhes do Freelancer</h3>
+                <button onClick={() => setShowViewFreelancerModal(false)} style={styles.closeButton}>
+                  ✕
+                </button>
+              </div>
+              <div style={styles.modalBody}>
+                <div style={styles.detailRow}>
+                  <strong>Nome:</strong> {selectedFreelancer.name}
+                </div>
+                <div style={styles.detailRow}>
+                  <strong>E-mail:</strong> {selectedFreelancer.email}
+                </div>
+                <div style={styles.detailRow}>
+                  <strong>Documento:</strong> {selectedFreelancer.document_number || 'N/A'}
+                </div>
+                <div style={styles.detailRow}>
+                  <strong>Telefone:</strong> {selectedFreelancer.phone || 'N/A'}
+                </div>
+                <div style={styles.detailRow}>
+                  <strong>Data de Cadastro:</strong> {formatDate(selectedFreelancer.created_at)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Freelancer Edit Modal */}
+        {showEditFreelancerModal && selectedFreelancer && (
+          <div style={styles.modalOverlay} onClick={() => setShowEditFreelancerModal(false)}>
+            <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <h3 style={styles.modalTitle}>Editar Freelancer</h3>
+                <button onClick={() => setShowEditFreelancerModal(false)} style={styles.closeButton}>
+                  ✕
+                </button>
+              </div>
+              <div style={styles.modalBody}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Nome:</label>
+                  <input
+                    type="text"
+                    value={editFreelancerFormData.name || ''}
+                    onChange={(e) =>
+                      setEditFreelancerFormData({ ...editFreelancerFormData, name: e.target.value })
+                    }
+                    style={styles.input}
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>E-mail:</label>
+                  <input
+                    type="email"
+                    value={editFreelancerFormData.email || ''}
+                    onChange={(e) =>
+                      setEditFreelancerFormData({ ...editFreelancerFormData, email: e.target.value })
+                    }
+                    style={styles.input}
+                  />
+                </div>
+                <div style={styles.formActions}>
+                  <button onClick={() => setShowEditFreelancerModal(false)} style={styles.cancelButton}>
+                    Cancelar
+                  </button>
+                  <button onClick={handleSaveEditFreelancer} style={styles.saveButton}>
+                    Salvar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Vet Edit Modal */}
         {showEditVetModal && selectedVet && (
           <div style={styles.modalOverlay} onClick={() => setShowEditVetModal(false)}>
@@ -862,9 +1136,9 @@ const AdminUsersPage: React.FC = () => {
                     <div style={styles.formGroup}>
                       <div style={styles.userTypeButtons}>
                         {[
-                          { id: 'admin', label: 'Administrador', icon: UserCog, color: '#7c3aed' },
-                          { id: 'clinic', label: 'Clínica', icon: Building2, color: '#3b82f6' },
-                          { id: 'vet', label: 'Veterinário', icon: Stethoscope, color: '#10b981' },
+                          { id: 'admin', label: 'Administrador', icon: UserCog, color: '#f59e0b' },
+                          { id: 'clinic', label: 'Clínica', icon: Building2, color: '#86efac' },
+                          { id: 'vet', label: 'Veterinário', icon: Stethoscope, color: '#a78bfa' },
                           { id: 'supplier', label: 'Fornecedor', icon: Truck, color: '#f59e0b' },
                           { id: 'tutor', label: 'Tutor', icon: UserPlus, color: '#ef4444' },
                         ].map((type) => {
@@ -1330,6 +1604,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   deleteButton: {
     borderColor: '#ef4444',
+  },
+  messageButton: {
+    borderColor: colors.primary,
   },
   modalOverlay: {
     position: 'fixed',

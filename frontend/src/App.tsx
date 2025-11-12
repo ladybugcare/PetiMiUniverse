@@ -6,6 +6,7 @@ import { AuthProvider } from './AuthContext';
 import ProtectedRoute from './routes/ProtectedRoute';
 import PublicRoute from './routes/PublicRoute';
 import AuthListener from './components/AuthListener';
+import ErrorBoundary from './components/ErrorBoundary';
 import { enforceEnvConsistency } from './utils/envGuard';
 import './App.css';
 
@@ -58,6 +59,7 @@ import AdminPendingAllPage from './pages/AdminPendingAllPage';
 import AdminSettingsPage from './pages/AdminSettingsPage';
 import EmailConfirmedPage from './pages/EmailConfirmedPage';
 import DemandDetailPage from './pages/DemandDetailPage';
+import MessagesPage from './pages/MessagesPage';
 
 
 if (!process.env.REACT_APP_SUPABASE_URL) {
@@ -70,12 +72,13 @@ function App() {
   }, []);
 
   return (
-    <AlertProvider>
-      <UnitProvider>
-        <AuthProvider>
-          <AuthListener />
-          <div className="App">
-            <Routes>
+    <ErrorBoundary>
+      <AlertProvider>
+        <UnitProvider>
+          <AuthProvider>
+            <AuthListener />
+            <div className="App">
+              <Routes>
               {/* ROTAS PÚBLICAS */}
               <Route
                 path="/login"
@@ -474,11 +477,20 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/messages"
+                element={
+                  <ProtectedRoute>
+                    <MessagesPage />
+                  </ProtectedRoute>
+                }
+              />
             </Routes>
           </div>
         </AuthProvider>
       </UnitProvider>
     </AlertProvider>
+    </ErrorBoundary>
   );
 }
 

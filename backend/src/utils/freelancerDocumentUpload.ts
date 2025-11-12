@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '../config/supabase';
+import { validateFile, sanitizeFilename } from './fileValidation.js';
+import { logger } from './logger.js';
 
 export interface UploadedDocument {
   url: string;
@@ -19,20 +21,18 @@ export const uploadFreelancerCertification = async (
   userToken?: string
 ): Promise<UploadedDocument> => {
   try {
-    // Validar tipo de arquivo
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
-    if (!allowedTypes.includes(file.mimetype)) {
-      throw new Error(`Tipo de arquivo inválido: ${file.mimetype}. Tipos permitidos: PNG, JPG, PDF`);
-    }
+    // Validação robusta usando magic numbers
+    validateFile(file.buffer, file.mimetype, file.originalname, {
+      allowedTypes: ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'],
+      maxSize: 5 * 1024 * 1024, // 5MB
+      requireSignature: true,
+    });
 
-    // Validar tamanho (max 5MB)
-    const maxSize = 5 * 1024 * 1024; // 5MB em bytes
-    if (file.buffer.length > maxSize) {
-      throw new Error('Tamanho do arquivo excede o limite de 5MB');
-    }
+    // Sanitizar nome do arquivo
+    const sanitizedName = sanitizeFilename(file.originalname);
 
     // Gerar nome único do arquivo
-    const fileExt = file.originalname.split('.').pop()?.toLowerCase() || 'pdf';
+    const fileExt = sanitizedName.split('.').pop()?.toLowerCase() || 'pdf';
     const fileName = `${userId}/certification-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
     // Criar cliente Supabase com token do usuário se fornecido, senão usar admin
@@ -67,7 +67,10 @@ export const uploadFreelancerCertification = async (
     if (error) {
       // Se o bucket não existir, tentar criar ou usar fallback
       if (error.message.includes('not found') || error.message.includes('Bucket')) {
-        console.warn(`Bucket ${bucketName} não encontrado. Usando vet-documents como fallback.`);
+        logger.warn(`Bucket ${bucketName} não encontrado. Usando vet-documents como fallback.`, {
+          userId,
+          fileName,
+        });
         const { data: fallbackData, error: fallbackError } = await supabaseClient.storage
           .from('vet-documents')
           .upload(fileName, file.buffer, {
@@ -81,6 +84,12 @@ export const uploadFreelancerCertification = async (
           data: { publicUrl },
         } = supabaseAdmin.storage.from('vet-documents').getPublicUrl(fileName);
         
+        logger.info('Certificação de freelancer enviada com sucesso (fallback)', {
+          userId,
+          fileName,
+          fileSize: file.buffer.length,
+        });
+
         return {
           url: publicUrl,
           path: fileName,
@@ -94,13 +103,23 @@ export const uploadFreelancerCertification = async (
       data: { publicUrl },
     } = supabaseAdmin.storage.from(bucketName).getPublicUrl(fileName);
 
+    logger.info('Certificação de freelancer enviada com sucesso', {
+      userId,
+      fileName,
+      fileSize: file.buffer.length,
+    });
+
     return {
       url: publicUrl,
       path: fileName,
     };
   } catch (error: any) {
-    console.error('Erro ao fazer upload de certificação:', error);
-    throw new Error(`Falha no upload da certificação: ${error.message}`);
+    logger.error('Erro ao fazer upload de certificação de freelancer', {
+      userId,
+      error: error.message,
+      fileName: file.originalname,
+    });
+    throw error; // Re-throw para manter o tipo de erro (ValidationError, etc)
   }
 };
 
@@ -118,11 +137,18 @@ export const deleteFreelancerCertification = async (filePath: string): Promise<v
       // Se o bucket não existir, tentar deletar do vet-documents (fallback)
       const { error: fallbackError } = await supabaseAdmin.storage.from('vet-documents').remove([filePath]);
       if (fallbackError) throw fallbackError;
+      
+      logger.info('Certificação de freelancer deletada (fallback)', { filePath });
     } else if (error) {
       throw error;
+    } else {
+      logger.info('Certificação de freelancer deletada', { filePath });
     }
   } catch (error: any) {
-    console.error('Erro ao deletar certificação:', error);
+    logger.error('Erro ao deletar certificação de freelancer', {
+      filePath,
+      error: error.message,
+    });
     throw new Error(`Falha ao deletar certificação: ${error.message}`);
   }
 };

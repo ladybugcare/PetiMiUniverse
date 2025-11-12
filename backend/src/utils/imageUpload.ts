@@ -1,4 +1,6 @@
 import { supabase } from '../config/supabase';
+import { validateFile, sanitizeFilename } from './fileValidation.js';
+import { logger } from './logger.js';
 
 export interface UploadedImage {
   url: string;
@@ -19,20 +21,18 @@ export const uploadMarketplaceImages = async (
 
   for (const file of files) {
     try {
-      // Validate file type
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-      if (!allowedTypes.includes(file.mimetype)) {
-        throw new Error(`Invalid file type: ${file.mimetype}`);
-      }
+      // Validação robusta usando magic numbers
+      validateFile(file.buffer, file.mimetype, file.originalname, {
+        allowedTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
+        maxSize: 5 * 1024 * 1024, // 5MB
+        requireSignature: true,
+      });
 
-      // Validate file size (max 5MB)
-      const maxSize = 5 * 1024 * 1024; // 5MB in bytes
-      if (file.buffer.length > maxSize) {
-        throw new Error('File size exceeds 5MB limit');
-      }
+      // Sanitizar nome do arquivo
+      const sanitizedName = sanitizeFilename(file.originalname);
 
       // Generate unique filename
-      const fileExt = file.originalname.split('.').pop();
+      const fileExt = sanitizedName.split('.').pop()?.toLowerCase() || 'jpg';
       const fileName = `${userId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
       // Upload to Supabase Storage
@@ -54,9 +54,19 @@ export const uploadMarketplaceImages = async (
         url: publicUrl,
         path: fileName,
       });
+
+      logger.info('Imagem do marketplace enviada com sucesso', {
+        userId,
+        fileName,
+        fileSize: file.buffer.length,
+      });
     } catch (error: any) {
-      console.error('Error uploading image:', error);
-      throw new Error(`Image upload failed: ${error.message}`);
+      logger.error('Erro ao fazer upload de imagem do marketplace', {
+        userId,
+        error: error.message,
+        fileName: file.originalname,
+      });
+      throw error; // Re-throw para manter o tipo de erro (ValidationError, etc)
     }
   }
 
@@ -76,8 +86,13 @@ export const deleteMarketplaceImages = async (
       .remove(imagePaths);
 
     if (error) throw error;
+
+    logger.info('Imagens do marketplace deletadas', { imagePaths });
   } catch (error: any) {
-    console.error('Error deleting images:', error);
+    logger.error('Erro ao deletar imagens do marketplace', {
+      imagePaths,
+      error: error.message,
+    });
     throw new Error(`Image deletion failed: ${error.message}`);
   }
 };

@@ -411,19 +411,19 @@ const ResumoSection: React.FC = () => {
               };
               
               return (
-                <OpportunityItem
-                  key={opportunity.id}
+              <OpportunityItem
+                key={opportunity.id}
                   demandId={opportunity.id}
-                  icon={<Building2 size={20} color="#7c3aed" />}
-                  title={opportunity.title}
+                icon={<Building2 size={20} color="#7c3aed" />}
+                title={opportunity.title}
                   clinicName={clinicName}
                   specialties={opportunity.required_specialties || []}
                   date={formatDate(opportunity.demand_date)}
                   time={formatTime(opportunity.start_time)}
                   payment={opportunity.payment}
-                  urgent={opportunity.category === 'emergency'}
+                urgent={opportunity.category === 'emergency'}
                   onViewDetails={() => navigate(`/demands/${opportunity.id}`)}
-                />
+              />
               );
             })
           ) : (
@@ -581,7 +581,7 @@ const OpportunityItem: React.FC<OpportunityItemProps> = ({
               +{specialties.length - 3}
             </span>
           )}
-        </div>
+    </div>
       )}
       
       {/* Nome da Clínica */}
