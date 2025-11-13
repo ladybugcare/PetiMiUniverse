@@ -62,6 +62,8 @@ const DemandDetailPage: React.FC = () => {
   
   const userRole = user ? getUserRole(user) : null;
   const isVet = userRole === 'VET';
+  const isFreelancer = userRole === 'FREELANCER';
+  const canSendMessage = isVet || isFreelancer;
 
   // Get menu items using hook
   const { menuItems } = useSidebarMenu(userRole || 'VET');
@@ -184,15 +186,24 @@ const DemandDetailPage: React.FC = () => {
       return;
     }
 
+    // Determinar o tipo do participante (vet ou freelancer)
+    const participantType = isVet ? 'vet' : isFreelancer ? 'freelancer' : 'vet';
+    
+    if (!isVet && !isFreelancer) {
+      showError('Apenas veterinários e freelancers podem enviar mensagens');
+      return;
+    }
+
     try {
       const result = await messagesApi.createConversation({
         participant1_id: user.id,
-        participant1_type: 'vet',
+        participant1_type: participantType,
         participant2_id: demand.clinic_id,
         participant2_type: 'clinic',
+        demand_id: demand.id,
       });
 
-      navigate(`/messages?conversation=${result.conversation.id}`);
+      navigate(`/messages?conversation=${result.conversation.id}&demand_id=${demand.id}`);
     } catch (error: any) {
       showError('Erro ao criar conversa: ' + (error.message || 'Erro desconhecido'));
     }
@@ -554,7 +565,7 @@ const DemandDetailPage: React.FC = () => {
             </div>
             
             <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
-              {isVet && (
+              {canSendMessage && (
                 <button
                   onClick={handleSendMessageToClinic}
                   style={{
@@ -572,20 +583,22 @@ const DemandDetailPage: React.FC = () => {
                   Enviar mensagem
                 </button>
               )}
-              <button
-                onClick={() => navigate(`/clinic-profile/${demand.clinic_id}`)}
-                style={{
-                  ...styles.viewProfileButton,
-                  flex: isVet ? 1 : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                }}
-              >
-                Ver perfil da clínica
-                <ExternalLink size={16} />
-              </button>
+              {demand.unit_id && (
+                <button
+                  onClick={() => navigate(`/units/${demand.unit_id}`)}
+                  style={{
+                    ...styles.viewProfileButton,
+                    flex: canSendMessage ? 1 : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  Ver perfil da unidade
+                  <ExternalLink size={16} />
+                </button>
+              )}
             </div>
           </div>
 

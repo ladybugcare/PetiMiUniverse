@@ -9,14 +9,16 @@ import { useAlert } from '../hooks/useAlert';
 import { Unit, UpdateUnitData } from '../types/units';
 import { Demand } from '../services/demandsApi';
 import { ClinicUser } from '../types/units';
-import { Edit, ArrowLeft, MapPin, Phone, User, Calendar, FileText, CheckCircle, XCircle, Clock, Users } from 'lucide-react';
+import { Edit, ArrowLeft, MapPin, Phone, User, Calendar, FileText, CheckCircle, XCircle, Clock, Users, MessageCircle, Plus, ClipboardList } from 'lucide-react';
 import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
+import UnitProfileVetView from '../components/UnitProfileVetView';
+import UnitProfileAdminView from '../components/UnitProfileAdminView';
 
 const UnitProfilePage: React.FC = () => {
-  const { unitId } = useParams<{ unitId: string }>();
+  const { unitId } = useParams<{ unitId?: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { showSuccess, showError } = useAlert();
@@ -24,6 +26,34 @@ const UnitProfilePage: React.FC = () => {
   // Get menu items using hook
   const userRole = user ? getUserRole(user) : 'CADMIN';
   const { menuItems } = useSidebarMenu(userRole);
+  
+  // Detectar contexto do visualizador
+  const viewerRole = user ? getUserRole(user) : null;
+  const isPublicView = !!unitId;
+  
+  // Função para obter clinic_id do usuário
+  const getUserClinicId = (): string | null => {
+    if (!user) return null;
+    const userRole = getUserRole(user);
+    
+    // Se for clinic owner, clinic_id é o próprio user.id
+    if (userRole === 'CADMIN' || (user as any)?.user_metadata?.role === 'clinic') {
+      return user.id;
+    }
+    
+    // Caso contrário, tentar obter do clinic_user
+    const clinicUserStr = localStorage.getItem('clinic_user');
+    if (clinicUserStr) {
+      try {
+        const clinicUser = JSON.parse(clinicUserStr);
+        return clinicUser?.clinic_id || null;
+      } catch (error) {
+        console.warn('Failed to parse clinic_user:', error);
+      }
+    }
+    
+    return null;
+  };
   
   const [unit, setUnit] = useState<Unit | null>(null);
   const [stats, setStats] = useState({
@@ -49,6 +79,16 @@ const UnitProfilePage: React.FC = () => {
   });
 
   const isCADMIN = userRole === 'CADMIN';
+  
+  // Detectar se é própria unidade
+  const userClinicId = getUserClinicId();
+  const isOwnUnit = !isPublicView || (unit && userClinicId === unit.clinic_id);
+  const isVetView = isPublicView && viewerRole === 'VET';
+  const isAdminView = isPublicView && viewerRole === 'ADMIN';
+  const isClinicView = isOwnUnit && !isPublicView;
+  
+  // Layout de duas colunas apenas para próprio perfil da clínica
+  const useTwoColumnLayout = isClinicView;
 
   useEffect(() => {
     if (unitId) {
@@ -76,18 +116,48 @@ const UnitProfilePage: React.FC = () => {
         technical_manager: unitData.technical_manager || '',
       });
 
-      // Load statistics
-      const { stats: unitStats } = await unitsApi.getUnitStats(unitId);
-      setStats(unitStats);
+      // Load statistics (apenas se não for vet)
+      // Vets não têm acesso a estatísticas, então não tentar carregar
+      if (viewerRole !== 'VET') {
+        try {
+          const { stats: unitStats } = await unitsApi.getUnitStats(unitId);
+          setStats(unitStats);
+        } catch (statsError: any) {
+          // Erro ao carregar estatísticas - não mostrar popup se for 403 (acesso negado)
+          // Isso é esperado para usuários sem permissão
+          if (statsError.message?.includes('Acesso negado a estatísticas') || 
+              statsError.message?.includes('Acesso negado') ||
+              statsError.message?.includes('403') ||
+              statsError.status === 403) {
+            console.log('Estatísticas não disponíveis para este usuário (esperado)');
+          } else {
+            console.error('Error loading statistics:', statsError);
+            // Só mostrar erro se não for erro de permissão
+          }
+        }
+      }
 
       // Load demands
       const { demands: unitDemands } = await demandsApi.getDemandsByUnit(unitId);
       setDemands(unitDemands);
 
-      // Load users
-      if (unitData.clinic_id) {
-        const { clinic_users } = await clinicUsersApi.getClinicUsers(unitData.clinic_id, unitId);
-        setUnitUsers(clinic_users || []);
+      // Load users (apenas se for própria unidade)
+      // Verificar se é própria unidade após carregar unitData
+      const isUnitOwner = !isPublicView || (unitData && userClinicId === unitData.clinic_id);
+      if (isUnitOwner && unitData.clinic_id) {
+        try {
+          const { clinic_users } = await clinicUsersApi.getClinicUsers(unitData.clinic_id, unitId);
+          setUnitUsers(clinic_users || []);
+        } catch (usersError: any) {
+          // Erro ao carregar usuários - não mostrar popup se for 403
+          if (usersError.message?.includes('Acesso negado') || 
+              usersError.message?.includes('403') ||
+              usersError.status === 403) {
+            console.log('Lista de usuários não disponível para este usuário (esperado)');
+          } else {
+            console.error('Error loading users:', usersError);
+          }
+        }
       }
     } catch (error: any) {
       console.error('Error loading unit data:', error);
@@ -99,6 +169,13 @@ const UnitProfilePage: React.FC = () => {
 
   const handleSave = async () => {
     if (!unitId) return;
+
+    // Proteção: só permitir edição se for própria unidade
+    if (!isOwnUnit || isPublicView) {
+      showError('Você não tem permissão para editar esta unidade.');
+      setIsEditing(false);
+      return;
+    }
 
     try {
       setSaving(true);
@@ -135,6 +212,25 @@ const UnitProfilePage: React.FC = () => {
       month: '2-digit',
       year: 'numeric',
     });
+  };
+
+  // Função para mascarar telefone quando não é própria unidade
+  const maskPhone = (phone?: string): string => {
+    if (!phone) return 'Não informado';
+    if (isOwnUnit) return phone;
+    // Mostrar apenas indicativo de que existe telefone
+    return 'Telefone disponível (contato via mensagem)';
+  };
+
+  // Função para mostrar apenas cidade/estado do endereço quando não é própria unidade
+  const getLocationDisplay = (): string => {
+    if (isOwnUnit) {
+      return unit?.address || 'Não informado';
+    }
+    if (unit?.city && unit?.state) {
+      return `${unit.city}/${unit.state}`;
+    }
+    return unit?.address ? 'Endereço disponível' : 'Não informado';
   };
 
   const formatCNPJ = (cnpj?: string) => {
@@ -213,8 +309,395 @@ const UnitProfilePage: React.FC = () => {
 
   const statusBadge = getStatusBadge(unit.status);
 
+  // Renderizar visão específica baseada no contexto
   return (
     <DashboardLayout pageName={`Unidade: ${unit.name}`} menuItems={menuItems}>
+      {isVetView ? (
+        <UnitProfileVetView unit={unit} />
+      ) : isAdminView ? (
+        <UnitProfileAdminView unit={unit} />
+      ) : useTwoColumnLayout ? (
+        // Layout de duas colunas para próprio perfil da clínica
+        <div style={styles.twoColumnContainer}>
+          {/* Lado Esquerdo Fixo */}
+          <aside style={styles.leftSidebar}>
+            {/* Nome e Status */}
+            <div style={styles.profileHeader}>
+              <h2 style={styles.profileName}>
+                {unit.name}
+                {unit.is_main && <span style={styles.mainBadgeInline}>⭐ Principal</span>}
+              </h2>
+              {unit.nickname && <p style={styles.profileSubtitle}>{unit.nickname}</p>}
+              <div style={{ marginTop: '8px' }}>
+                <div style={{ ...styles.statusBadge, backgroundColor: statusBadge.bg, color: statusBadge.color }}>
+                  {statusBadge.label}
+                </div>
+              </div>
+            </div>
+            {/* Estatísticas - Só mostrar quando é própria unidade */}
+            {isOwnUnit && (
+              <div style={styles.statsSection}>
+                <h3 style={styles.statsTitle}>Estatísticas</h3>
+                <div style={styles.statsGrid}>
+                  <div style={styles.statCardTwoColumn}>
+                    <FileText size={20} color="#7c3aed" />
+                    <div style={styles.statContentTwoColumn}>
+                      <h4 style={styles.statValueTwoColumn}>{stats.totalDemands}</h4>
+                      <p style={styles.statLabelTwoColumn}>Total Demandas</p>
+                    </div>
+                  </div>
+                  <div style={styles.statCardTwoColumn}>
+                    <Clock size={20} color="#0ea5e9" />
+                    <div style={styles.statContentTwoColumn}>
+                      <h4 style={styles.statValueTwoColumn}>{stats.openDemands}</h4>
+                      <p style={styles.statLabelTwoColumn}>Abertas</p>
+                    </div>
+                  </div>
+                  <div style={styles.statCardTwoColumn}>
+                    <ClipboardList size={20} color="#f59e0b" />
+                    <div style={styles.statContentTwoColumn}>
+                      <h4 style={styles.statValueTwoColumn}>{stats.totalApplications}</h4>
+                      <p style={styles.statLabelTwoColumn}>Candidaturas</p>
+                    </div>
+                  </div>
+                  <div style={styles.statCardTwoColumn}>
+                    <CheckCircle size={20} color="#22c55e" />
+                    <div style={styles.statContentTwoColumn}>
+                      <h4 style={styles.statValueTwoColumn}>{stats.pendingApplications}</h4>
+                      <p style={styles.statLabelTwoColumn}>Pendentes</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* Ações Rápidas - Só mostrar quando é própria unidade */}
+            {isOwnUnit && (
+            <div style={styles.quickActionsSection}>
+              <h3 style={styles.quickActionsTitle}>Ações Rápidas</h3>
+              <div style={styles.quickActionsList}>
+                <button
+                  onClick={() => navigate('/create-demand')}
+                  style={styles.quickActionButton}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f3f4f6';
+                    e.currentTarget.style.borderColor = '#7c3aed';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#ffffff';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }}
+                >
+                  <Plus size={18} />
+                  <span>Criar Demanda</span>
+                </button>
+                <button
+                  onClick={() => navigate('/clinic-demands')}
+                  style={styles.quickActionButton}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f3f4f6';
+                    e.currentTarget.style.borderColor = '#7c3aed';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#ffffff';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }}
+                >
+                  <FileText size={18} />
+                  <span>Ver Demandas</span>
+                </button>
+                <button
+                  onClick={() => navigate('/clinic-applications')}
+                  style={styles.quickActionButton}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f3f4f6';
+                    e.currentTarget.style.borderColor = '#7c3aed';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#ffffff';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }}
+                >
+                  <ClipboardList size={18} />
+                  <span>Ver Candidaturas</span>
+                </button>
+                <button
+                  onClick={() => navigate('/messages')}
+                  style={styles.quickActionButton}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f3f4f6';
+                    e.currentTarget.style.borderColor = '#7c3aed';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#ffffff';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }}
+                >
+                  <MessageCircle size={18} />
+                  <span>Mensagens</span>
+                </button>
+              </div>
+            </div>
+            )}
+          </aside>
+          {/* Lado Direito Scrollável */}
+          <main style={styles.rightContent}>
+            {/* Header com botão editar */}
+            <div style={styles.contentHeader}>
+              <h1 style={styles.title}>Perfil da Unidade</h1>
+              {isOwnUnit && !isPublicView && (
+                <>
+                  {!isEditing ? (
+                    <button onClick={() => setIsEditing(true)} style={styles.editButton}>
+                      <Edit size={16} />
+                      <span>Editar Unidade</span>
+                    </button>
+                  ) : (
+                    <div style={styles.buttonGroup}>
+                      <button onClick={handleCancel} style={styles.cancelButton} disabled={saving}>
+                        Cancelar
+                      </button>
+                      <button onClick={handleSave} style={styles.saveButton} disabled={saving}>
+                        {saving ? 'Salvando...' : 'Salvar'}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            {/* Form */}
+            <div style={styles.form}>
+              {/* Nome */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Nome</label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    style={styles.input}
+                  />
+                ) : (
+                  <p style={styles.value}>{unit.name}</p>
+                )}
+              </div>
+              {/* Apelido */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Apelido</label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={formData.nickname}
+                    onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
+                    placeholder="Opcional"
+                    style={styles.input}
+                  />
+                ) : (
+                  <p style={styles.value}>{unit.nickname || 'N/A'}</p>
+                )}
+              </div>
+              {/* CNPJ */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>CNPJ</label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={formData.cnpj}
+                    onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                    placeholder="Opcional"
+                    style={styles.input}
+                  />
+                ) : (
+                  <p style={styles.value}>{formatCNPJ(unit.cnpj)}</p>
+                )}
+              </div>
+              {/* Endereço */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>
+                  <MapPin size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                  Endereço
+                </label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    style={styles.input}
+                  />
+                ) : (
+                  <p style={styles.value}>{getLocationDisplay()}</p>
+                )}
+              </div>
+              {/* Cidade */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Cidade</label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    style={styles.input}
+                  />
+                ) : (
+                  <p style={styles.value}>{unit.city}</p>
+                )}
+              </div>
+              {/* Estado */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Estado</label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={formData.state}
+                    onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                    maxLength={2}
+                    placeholder="Ex: SP"
+                    style={styles.input}
+                  />
+                ) : (
+                  <p style={styles.value}>{unit.state}</p>
+                )}
+              </div>
+              {/* Telefone */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>
+                  <Phone size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                  Telefone
+                </label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="Opcional"
+                    style={styles.input}
+                  />
+                ) : (
+                  <p style={styles.value}>{maskPhone(unit.phone)}</p>
+                )}
+              </div>
+              {/* Responsável Técnico */}
+              <div style={styles.formGroup}>
+                <label style={styles.label}>
+                  <User size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                  Responsável Técnico
+                </label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={formData.technical_manager}
+                    onChange={(e) => setFormData({ ...formData, technical_manager: e.target.value })}
+                    placeholder="Opcional"
+                    style={styles.input}
+                  />
+                ) : (
+                  <p style={styles.value}>{unit.technical_manager || 'N/A'}</p>
+                )}
+              </div>
+              {/* Data de Criação */}
+              {/* Data de Criação - Só mostrar quando é própria unidade */}
+              {isOwnUnit && (
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>
+                    <Calendar size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                    Data de Criação
+                  </label>
+                  <p style={styles.valueReadOnly}>{formatDate(unit.created_at)}</p>
+                </div>
+              )}
+            </div>
+            {/* Demandas */}
+            <div style={styles.section}>
+              <h2 style={styles.sectionTitle}>Demandas</h2>
+              {demands.length === 0 ? (
+                <p style={styles.emptyMessage}>Nenhuma demanda encontrada para esta unidade.</p>
+              ) : (
+                <div style={styles.tableContainer}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr style={styles.tableHeaderRow}>
+                        <th style={styles.tableHeader}>Título</th>
+                        <th style={styles.tableHeader}>Status</th>
+                        <th style={styles.tableHeader}>Data de Criação</th>
+                        <th style={styles.tableHeader}>Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {demands.map((demand) => {
+                        const demandStatus = getDemandStatusBadge(demand.status);
+                        return (
+                          <tr key={demand.id} style={styles.tableRow}>
+                            <td style={styles.tableCell}>{demand.title}</td>
+                            <td style={styles.tableCell}>
+                              <span style={{ ...styles.demandStatusBadge, backgroundColor: demandStatus.bg, color: demandStatus.color }}>
+                                {demandStatus.icon}
+                                {demandStatus.label}
+                              </span>
+                            </td>
+                            <td style={styles.tableCell}>{formatDate(demand.created_at)}</td>
+                            <td style={styles.tableCell}>
+                              <button
+                                onClick={() => navigate(`/demands/${demand.id}`)}
+                                style={styles.viewButton}
+                              >
+                                Ver Detalhes
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            {/* Usuários - Só mostrar quando é própria unidade */}
+            {isOwnUnit && (
+              <div style={styles.section}>
+                <h2 style={styles.sectionTitle}>Usuários</h2>
+                {unitUsers.length === 0 ? (
+                  <p style={styles.emptyMessage}>Nenhum usuário associado a esta unidade.</p>
+                ) : (
+                  <div style={styles.tableContainer}>
+                    <table style={styles.table}>
+                      <thead>
+                        <tr style={styles.tableHeaderRow}>
+                          <th style={styles.tableHeader}>Email</th>
+                          <th style={styles.tableHeader}>Role</th>
+                          <th style={styles.tableHeader}>Status</th>
+                          <th style={styles.tableHeader}>Data de Convite</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {unitUsers.map((clinicUser) => (
+                          <tr key={clinicUser.id} style={styles.tableRow}>
+                            <td style={styles.tableCell}>{clinicUser.user?.email || 'N/A'}</td>
+                            <td style={styles.tableCell}>
+                              <span style={styles.roleBadge}>{getRoleLabel(clinicUser.role)}</span>
+                            </td>
+                            <td style={styles.tableCell}>
+                              <span style={{
+                                ...styles.statusBadgeSmall,
+                                backgroundColor: clinicUser.status === 'active' ? '#d1fae5' : '#fef3c7',
+                                color: clinicUser.status === 'active' ? '#10b981' : '#f59e0b',
+                              }}>
+                              {clinicUser.status === 'active' ? 'Ativo' : clinicUser.status === 'pending' ? 'Pendente' : 'Inativo'}
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            {clinicUser.invited_at ? formatDate(clinicUser.invited_at) : 'N/A'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              </div>
+            )}
+          </main>
+        </div>
+      ) : (
+        // Layout simples de coluna única (fallback)
       <div style={styles.container}>
         {/* Header */}
         <div style={styles.header}>
@@ -318,7 +801,7 @@ const UnitProfilePage: React.FC = () => {
                   style={styles.input}
                 />
               ) : (
-                <p style={styles.infoValue}>{unit.address}</p>
+                <p style={styles.infoValue}>{getLocationDisplay()}</p>
               )}
             </div>
 
@@ -366,7 +849,7 @@ const UnitProfilePage: React.FC = () => {
                   placeholder="Opcional"
                 />
               ) : (
-                <p style={styles.infoValue}>{formatPhone(unit.phone)}</p>
+                <p style={styles.infoValue}>{maskPhone(unit.phone)}</p>
               )}
             </div>
 
@@ -388,13 +871,16 @@ const UnitProfilePage: React.FC = () => {
               )}
             </div>
 
-            <div style={styles.infoItem}>
-              <label style={styles.infoLabel}>
-                <Calendar size={16} style={{ display: 'inline', marginRight: '4px' }} />
-                Data de Criação
-              </label>
-              <p style={styles.infoValue}>{formatDate(unit.created_at)}</p>
-            </div>
+            {/* Data de Criação - Só mostrar quando é própria unidade */}
+            {isOwnUnit && (
+              <div style={styles.infoItem}>
+                <label style={styles.infoLabel}>
+                  <Calendar size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                  Data de Criação
+                </label>
+                <p style={styles.infoValue}>{formatDate(unit.created_at)}</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -522,6 +1008,7 @@ const UnitProfilePage: React.FC = () => {
           )}
         </div>
       </div>
+      )}
     </DashboardLayout>
   );
 };
@@ -788,6 +1275,177 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '40px',
     color: '#737373',
     fontSize: '14px',
+  },
+  // Estilos para layout de duas colunas
+  twoColumnContainer: {
+    display: 'flex',
+    gap: '32px',
+    padding: '24px',
+    fontFamily: 'Inter, sans-serif',
+    maxWidth: '1400px',
+    margin: '0 auto',
+  },
+  leftSidebar: {
+    width: '320px',
+    flexShrink: 0,
+    position: 'sticky' as const,
+    top: '24px',
+    height: 'fit-content',
+    backgroundColor: '#ffffff',
+    borderRadius: '12px',
+    padding: '24px',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+    border: '1px solid #e5e7eb',
+  },
+  profileHeader: {
+    marginBottom: '24px',
+    paddingBottom: '24px',
+    borderBottom: '1px solid #e5e7eb',
+  },
+  profileName: {
+    fontFamily: 'Poppins, sans-serif',
+    fontSize: '22px',
+    fontWeight: '700',
+    color: '#262626',
+    margin: '0 0 8px 0',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap' as const,
+  },
+  profileSubtitle: {
+    fontSize: '14px',
+    color: '#737373',
+    margin: '0 0 8px 0',
+    fontStyle: 'italic',
+  },
+  mainBadgeInline: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#92400e',
+    backgroundColor: '#fef3c7',
+    padding: '4px 10px',
+    borderRadius: '12px',
+  },
+  statsSection: {
+    marginBottom: '24px',
+    paddingBottom: '24px',
+    borderBottom: '1px solid #e5e7eb',
+  },
+  statsTitle: {
+    fontFamily: 'Poppins, sans-serif',
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#262626',
+    marginBottom: '16px',
+  },
+  statCardTwoColumn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px',
+    backgroundColor: '#f9fafb',
+    borderRadius: '8px',
+    marginBottom: '8px',
+  },
+  statContentTwoColumn: {
+    flex: 1,
+  },
+  statValueTwoColumn: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#262626',
+    margin: '0 0 2px 0',
+  },
+  statLabelTwoColumn: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '12px',
+    color: '#737373',
+    margin: 0,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+  },
+  quickActionsSection: {
+    marginTop: '24px',
+  },
+  quickActionsTitle: {
+    fontFamily: 'Poppins, sans-serif',
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#262626',
+    marginBottom: '16px',
+  },
+  quickActionsList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
+  },
+  quickActionButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 16px',
+    backgroundColor: '#ffffff',
+    color: '#262626',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    fontFamily: 'Inter, sans-serif',
+    width: '100%',
+    textAlign: 'left' as const,
+  },
+  rightContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  contentHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '32px',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '24px',
+    marginBottom: '32px',
+  },
+  formGroup: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
+  },
+  label: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#262626',
+  },
+  value: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    color: '#262626',
+    margin: 0,
+    padding: '12px',
+    backgroundColor: '#f9fafb',
+    borderRadius: '8px',
+  },
+  valueReadOnly: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    color: '#737373',
+    margin: 0,
+    padding: '12px',
+    backgroundColor: '#f9fafb',
+    borderRadius: '8px',
+  },
+  buttonGroup: {
+    display: 'flex',
+    gap: '12px',
   },
 };
 

@@ -8,7 +8,7 @@ import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
 import { API_BASE_URL } from '../services/api';
 import { supabase } from '../services/supabase';
-import { CheckCircle, XCircle, Download, Building2, Stethoscope, Briefcase } from 'lucide-react';
+import { CheckCircle, XCircle, Download, Building2, Stethoscope, Briefcase, User, ExternalLink } from 'lucide-react';
 import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
@@ -321,18 +321,49 @@ const AdminPendingAllPage: React.FC = () => {
                         </div>
                         <div style={styles.cardFooter}>
                           <button
+                            onClick={() => window.open(`/unit-profile/${unit.id}`, '_blank')}
+                            style={styles.viewProfileButton}
+                            title="Ver perfil completo da unidade"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#2563eb';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#3b82f6';
+                            }}
+                          >
+                            <User size={16} />
+                            Ver Perfil
+                            <ExternalLink size={14} />
+                          </button>
+                          <button
                             onClick={() => handleOpenModal(unit, 'unit', 'reject')}
                             style={styles.rejectButton}
+                            title="Reprovar"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ef4444';
+                              e.currentTarget.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ffffff';
+                              e.currentTarget.style.color = '#ef4444';
+                            }}
                           >
-                            <XCircle size={16} />
-                            Reprovar
+                            <XCircle size={20} />
                           </button>
                           <button
                             onClick={() => handleOpenModal(unit, 'unit', 'approve')}
                             style={styles.approveButton}
+                            title="Aprovar"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#10b981';
+                              e.currentTarget.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ffffff';
+                              e.currentTarget.style.color = '#10b981';
+                            }}
                           >
-                            <CheckCircle size={16} />
-                            Aprovar
+                            <CheckCircle size={20} />
                           </button>
                         </div>
                       </div>
@@ -413,18 +444,49 @@ const AdminPendingAllPage: React.FC = () => {
                         </div>
                         <div style={styles.cardFooter}>
                           <button
+                            onClick={() => window.open(`/vet-profile/${vet.id}`, '_blank')}
+                            style={styles.viewProfileButton}
+                            title="Ver perfil completo do veterinário"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#2563eb';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#3b82f6';
+                            }}
+                          >
+                            <User size={16} />
+                            Ver Perfil
+                            <ExternalLink size={14} />
+                          </button>
+                          <button
                             onClick={() => handleOpenModal(vet, 'vet', 'reject')}
                             style={styles.rejectButton}
+                            title="Reprovar"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ef4444';
+                              e.currentTarget.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ffffff';
+                              e.currentTarget.style.color = '#ef4444';
+                            }}
                           >
-                            <XCircle size={16} />
-                            Reprovar
+                            <XCircle size={20} />
                           </button>
                           <button
                             onClick={() => handleOpenModal(vet, 'vet', 'approve')}
                             style={styles.approveButton}
+                            title="Aprovar"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#10b981';
+                              e.currentTarget.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ffffff';
+                              e.currentTarget.style.color = '#10b981';
+                            }}
                           >
-                            <CheckCircle size={16} />
-                            Aprovar
+                            <CheckCircle size={20} />
                           </button>
                         </div>
                       </div>
@@ -467,18 +529,49 @@ const AdminPendingAllPage: React.FC = () => {
                         </div>
                         <div style={styles.cardFooter}>
                           <button
+                            onClick={() => window.open(`/admin/users?freelancer_id=${freelancer.id}`, '_blank')}
+                            style={styles.viewProfileButton}
+                            title="Ver perfil completo do freelancer"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#2563eb';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#3b82f6';
+                            }}
+                          >
+                            <User size={16} />
+                            Ver Perfil
+                            <ExternalLink size={14} />
+                          </button>
+                          <button
                             onClick={() => handleOpenModal(freelancer, 'freelancer', 'reject')}
                             style={styles.rejectButton}
+                            title="Reprovar"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ef4444';
+                              e.currentTarget.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ffffff';
+                              e.currentTarget.style.color = '#ef4444';
+                            }}
                           >
-                            <XCircle size={16} />
-                            Reprovar
+                            <XCircle size={20} />
                           </button>
                           <button
                             onClick={() => handleOpenModal(freelancer, 'freelancer', 'approve')}
                             style={styles.approveButton}
+                            title="Aprovar"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#10b981';
+                              e.currentTarget.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ffffff';
+                              e.currentTarget.style.color = '#10b981';
+                            }}
                           >
-                            <CheckCircle size={16} />
-                            Aprovar
+                            <CheckCircle size={20} />
                           </button>
                         </div>
                       </div>
@@ -750,13 +843,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     gap: '12px',
     justifyContent: 'flex-end',
+    flexWrap: 'wrap',
   },
-  approveButton: {
+  viewProfileButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
+    gap: '6px',
     padding: '10px 20px',
-    backgroundColor: '#10b981',
+    backgroundColor: '#3b82f6',
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -764,18 +858,34 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
+    flex: '1',
+    justifyContent: 'center',
+  },
+  approveButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '44px',
+    height: '44px',
+    padding: '0',
+    backgroundColor: '#ffffff',
+    color: '#10b981',
+    border: '2px solid #10b981',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
   },
   rejectButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    padding: '10px 20px',
-    backgroundColor: '#ef4444',
-    color: '#ffffff',
-    border: 'none',
+    justifyContent: 'center',
+    width: '44px',
+    height: '44px',
+    padding: '0',
+    backgroundColor: '#ffffff',
+    color: '#ef4444',
+    border: '2px solid #ef4444',
     borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
   },

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { demandPositionsApi } from '../services/demandPositionsApi';
 import { messagesApi } from '../services/messagesApi';
 import { useAlert } from '../hooks/useAlert';
 import { useAuth } from '../AuthContext';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, CheckCircle, XCircle, User } from 'lucide-react';
 import colors from '../styles/colors';
+import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 
 interface PositionApplicationsManagerProps {
   positionId: string;
@@ -28,9 +29,39 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
   const [loading, setLoading] = useState(true);
   const [applications, setApplications] = useState<any[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [specialtiesMap, setSpecialtiesMap] = useState<Map<string, string>>(new Map());
+
+  // Função para verificar se uma string é um UUID
+  const isUUID = (str: string): boolean => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
+  };
+
+  // Carregar nomes das especialidades
+  const loadSpecialtiesNames = useCallback(async () => {
+    try {
+      const { specialties } = await specialtiesApi.getAll();
+      const map = new Map<string, string>();
+      specialties.forEach((spec: Specialty) => {
+        map.set(spec.id, spec.name);
+      });
+      setSpecialtiesMap(map);
+    } catch (error: any) {
+      console.error('Erro ao carregar nomes das especialidades:', error);
+    }
+  }, []);
+
+  // Função para obter o nome da especialidade
+  const getSpecialtyName = (spec: string): string => {
+    if (isUUID(spec)) {
+      return specialtiesMap.get(spec) || spec;
+    }
+    return spec;
+  };
 
   useEffect(() => {
     loadApplications();
+    loadSpecialtiesNames();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positionId]);
 
@@ -193,9 +224,18 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                 <p style={styles.vetDetail}>
                   <strong>Email:</strong> {app.vets?.email}
                 </p>
-                <p style={styles.vetDetail}>
-                  <strong>Especialidades:</strong> {app.vets?.specialties?.join(', ')}
-                </p>
+                {app.vets?.specialties && app.vets.specialties.length > 0 && (
+                  <div style={styles.specialtiesContainer}>
+                    <strong style={styles.vetDetailLabel}>Especialidades:</strong>
+                    <div style={styles.specialtiesList}>
+                      {app.vets.specialties.map((spec: string, idx: number) => (
+                        <span key={idx} style={styles.specialtyBadge}>
+                          {getSpecialtyName(spec)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {app.vets?.experience && (
                   <p style={styles.vetDetail}>
                     <strong>Experiência:</strong> {app.vets.experience}
@@ -210,28 +250,40 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
               </div>
               <div style={styles.actions}>
                 {app.vets?.id && (
-                  <button
-                    onClick={() => handleSendMessage(app.vets.id)}
-                    style={styles.messageButton}
-                    title="Enviar mensagem"
-                  >
-                    <MessageCircle size={16} color={colors.primary} />
-                    Mensagem
-                  </button>
+                  <>
+                    <button
+                      onClick={() => navigate(`/vet-profile/${app.vets.id}`)}
+                      style={styles.viewProfileButton}
+                      title="Ver perfil do veterinário"
+                    >
+                      <User size={16} color={colors.primary} />
+                      Ver Perfil
+                    </button>
+                    <button
+                      onClick={() => handleSendMessage(app.vets.id)}
+                      style={styles.messageButton}
+                      title="Enviar mensagem"
+                    >
+                      <MessageCircle size={16} color={colors.primary} />
+                      Mensagem
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => handleAccept(app.id)}
                   style={styles.acceptButton}
                   disabled={!!processingId}
                 >
-                  {processingId === app.id ? 'Processando...' : '✅ Aceitar'}
+                  <CheckCircle size={16} color="#ffffff" />
+                  {processingId === app.id ? 'Processando...' : 'Aceitar'}
                 </button>
                 <button
                   onClick={() => handleReject(app.id)}
                   style={styles.rejectButton}
                   disabled={!!processingId}
                 >
-                  ❌ Rejeitar
+                  <XCircle size={16} color="#dc2626" />
+                  {processingId === app.id ? 'Processando...' : 'Rejeitar'}
                 </button>
               </div>
             </div>
@@ -265,6 +317,14 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
               </div>
               {app.vets?.id && (
                 <div style={styles.actions}>
+                  <button
+                    onClick={() => navigate(`/vet-profile/${app.vets.id}`)}
+                    style={styles.viewProfileButton}
+                    title="Ver perfil do veterinário"
+                  >
+                    <User size={16} color={colors.primary} />
+                    Ver Perfil
+                  </button>
                   <button
                     onClick={() => handleSendMessage(app.vets.id)}
                     style={styles.messageButton}
@@ -302,6 +362,14 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
               </div>
               {app.vets?.id && (
                 <div style={styles.actions}>
+                  <button
+                    onClick={() => navigate(`/vet-profile/${app.vets.id}`)}
+                    style={styles.viewProfileButton}
+                    title="Ver perfil do veterinário"
+                  >
+                    <User size={16} color={colors.primary} />
+                    Ver Perfil
+                  </button>
                   <button
                     onClick={() => handleSendMessage(app.vets.id)}
                     style={styles.messageButton}
@@ -411,9 +479,28 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     gap: '12px',
   },
+  viewProfileButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 16px',
+    backgroundColor: '#ffffff',
+    color: colors.primary,
+    border: `1px solid ${colors.primary}`,
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
+  },
   acceptButton: {
-    flex: 1,
-    padding: '10px 20px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 16px',
     backgroundColor: '#10b981',
     color: '#ffffff',
     border: 'none',
@@ -422,10 +509,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
   },
   rejectButton: {
-    flex: 1,
-    padding: '10px 20px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 16px',
     backgroundColor: '#ffffff',
     color: '#dc2626',
     border: '1px solid #dc2626',
@@ -434,6 +525,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
   },
   messageButton: {
     display: 'flex',
@@ -478,6 +570,31 @@ const styles: { [key: string]: React.CSSProperties } = {
   emptyText: {
     fontSize: '16px',
     color: '#737373',
+  },
+  specialtiesContainer: {
+    marginTop: '8px',
+    marginBottom: '8px',
+  },
+  vetDetailLabel: {
+    fontSize: '14px',
+    color: '#525252',
+    marginBottom: '6px',
+    display: 'block',
+  },
+  specialtiesList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    marginTop: '4px',
+  },
+  specialtyBadge: {
+    padding: '4px 10px',
+    backgroundColor: '#f3f4f6',
+    color: '#525252',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontFamily: 'Inter, sans-serif',
+    fontWeight: '500',
   },
 };
 

@@ -148,6 +148,7 @@ export const getUnitsByClinic = async (req: Request, res: Response) => {
 export const getUnitById = async (req: Request, res: Response) => {
   const { id } = req.params;
   const user_id = req.user!.id;
+  const userRole = req.user!.role?.toLowerCase();
 
   try {
     const { data: unit, error } = await supabase
@@ -158,9 +159,25 @@ export const getUnitById = async (req: Request, res: Response) => {
 
     if (error) return res.status(404).json({ error: 'Unidade não encontrada' });
 
-    // Verify clinic access
+    // Permitir acesso público (read-only) para vets e admins
+    // Clínicas precisam verificar acesso
+    if (userRole === 'vet' || userRole === 'admin') {
+      // Vets e admins podem ver o perfil da unidade (visualização pública)
+      res.json({ unit });
+      return;
+    }
+
+    // Se não tem role definido, verificar se é clínica
+    // Se não for clínica, permitir acesso de leitura (pode ser vet sem role definido)
     const hasAccess = await checkClinicAccess(user_id, unit.clinic_id);
     if (!hasAccess) {
+      // Se não tem acesso à clínica e não é vet/admin, negar acesso
+      // Mas se não tem role definido, pode ser um vet - permitir leitura
+      if (!userRole) {
+        // Sem role definido - assumir que pode ser acesso público de leitura
+        res.json({ unit });
+        return;
+      }
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
@@ -297,6 +314,7 @@ export const deleteUnit = async (req: Request, res: Response) => {
 export const getUnitStats = async (req: Request<{ unitId: string }>, res: Response) => {
   const { unitId } = req.params;
   const user_id = req.user!.id;
+  const userRole = req.user!.role;
 
   try {
     // Get unit to verify access
@@ -308,10 +326,23 @@ export const getUnitStats = async (req: Request<{ unitId: string }>, res: Respon
 
     if (unitError) return res.status(404).json({ error: 'Unidade não encontrada' });
 
-    // Verify clinic access
-    const hasAccess = await checkClinicAccess(user_id, unit.clinic_id);
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'Acesso negado' });
+    const normalizedRole = userRole?.toLowerCase();
+
+    // Estatísticas são sensíveis - só permitir para própria clínica ou admin
+    // Vets não devem ver estatísticas
+    if (normalizedRole === 'vet') {
+      return res.status(403).json({ error: 'Acesso negado a estatísticas' });
+    }
+
+    // Admins podem ver tudo
+    if (normalizedRole === 'admin') {
+      // Continuar para retornar estatísticas
+    } else {
+      // Para clínicas, verificar acesso
+      const hasAccess = await checkClinicAccess(user_id, unit.clinic_id);
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Acesso negado' });
+      }
     }
 
     // Get demands count for this unit

@@ -11,6 +11,7 @@ import { uploadCrmvFile } from '../controllers/vets/uploadCrmvFile';
 import { getPendingVets } from '../controllers/vets/getPendingVets';
 import { approveVet } from '../controllers/vets/approveVet';
 import { rejectVet } from '../controllers/vets/rejectVet';
+import { getVetCompletedDemands } from '../controllers/vets/getVetCompletedDemands';
 import { authenticateUser } from '../middleware/authMiddleware';
 
 const router = express.Router();
@@ -54,6 +55,7 @@ router.get('/pending', authenticateUser, getPendingVets);
  * ===========================================================
  */
 router.get('/:id', getVetById);
+router.get('/:id/completed-demands', getVetCompletedDemands);
 router.post('/:id/approve', authenticateUser, approveVet);
 router.post('/:id/reject', authenticateUser, rejectVet);
 

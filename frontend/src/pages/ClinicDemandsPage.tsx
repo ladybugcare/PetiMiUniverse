@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
@@ -14,6 +14,7 @@ import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
+import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 
 interface DemandWithPositions {
   id: string;
@@ -45,10 +46,39 @@ const ClinicDemandsPage: React.FC = () => {
   const [expandedDemands, setExpandedDemands] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'this_week' | 'this_month'>('all');
+  const [specialtiesMap, setSpecialtiesMap] = useState<Map<string, string>>(new Map());
 
   // Get menu items using hook
   const userRole = user ? getUserRole(user) : 'CADMIN';
   const { menuItems } = useSidebarMenu(userRole);
+
+  // Função para verificar se uma string é um UUID
+  const isUUID = (str: string): boolean => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
+  };
+
+  // Carregar nomes das especialidades
+  const loadSpecialtiesNames = useCallback(async () => {
+    try {
+      const { specialties } = await specialtiesApi.getAll();
+      const map = new Map<string, string>();
+      specialties.forEach((spec: Specialty) => {
+        map.set(spec.id, spec.name);
+      });
+      setSpecialtiesMap(map);
+    } catch (error: any) {
+      console.error('Erro ao carregar nomes das especialidades:', error);
+    }
+  }, []);
+
+  // Função para obter o nome da especialidade
+  const getSpecialtyName = (spec: string): string => {
+    if (isUUID(spec)) {
+      return specialtiesMap.get(spec) || spec;
+    }
+    return spec;
+  };
 
   // Get clinic ID
   const clinicUserStr = localStorage.getItem('clinic_user');
@@ -62,6 +92,8 @@ const ClinicDemandsPage: React.FC = () => {
       return;
     }
     loadData();
+    loadSpecialtiesNames();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicId]);
 
   const loadData = async () => {
@@ -367,9 +399,17 @@ const ClinicDemandsPage: React.FC = () => {
                                 <div style={styles.positionHeader}>
                                   <div style={styles.positionHeaderLeft}>
                                     <h4 style={styles.positionTitle}>
-                                      {position.specialties && position.specialties.length > 0
-                                        ? position.specialties.join(', ')
-                                        : position.specialty || 'Posição'}
+                                      {position.specialties && position.specialties.length > 0 ? (
+                                        <div style={styles.specialtiesContainer}>
+                                          {position.specialties.map((spec: string, idx: number) => (
+                                            <span key={idx} style={styles.specialtyBadge}>
+                                              {getSpecialtyName(spec)}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        position.specialty || 'Posição'
+                                      )}
                                     </h4>
                                     <div style={styles.positionMeta}>
                                       <span style={styles.positionBadge}>
@@ -414,7 +454,7 @@ const ClinicDemandsPage: React.FC = () => {
                                     positionDetails={{
                                       specialty:
                                         position.specialties && position.specialties.length > 0
-                                          ? position.specialties.join(', ')
+                                          ? position.specialties.map((spec: string) => getSpecialtyName(spec)).join(', ')
                                           : position.specialty || 'Posição',
                                       total_slots: position.total_slots,
                                       filled_slots: position.filled_slots,
@@ -764,6 +804,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginTop: '8px',
     fontSize: '13px',
     color: '#a3a3a3',
+  },
+  specialtiesContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+  },
+  specialtyBadge: {
+    padding: '4px 10px',
+    backgroundColor: '#f3f4f6',
+    color: '#525252',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontFamily: 'Inter, sans-serif',
+    fontWeight: '500',
   },
 };
 

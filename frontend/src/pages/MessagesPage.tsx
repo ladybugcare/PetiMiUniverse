@@ -24,6 +24,7 @@ const MessagesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [pendingDemandId, setPendingDemandId] = useState<string | null>(null);
 
   const userRole = user ? getUserRole(user) : 'UNKNOWN';
   
@@ -41,13 +42,24 @@ const MessagesPage: React.FC = () => {
   // Abrir conversa se houver parâmetro na URL
   useEffect(() => {
     const conversationId = searchParams.get('conversation');
+    const demandId = searchParams.get('demand_id');
+    
+    // Armazenar demand_id se existir
+    if (demandId) {
+      setPendingDemandId(demandId);
+    }
+    
     if (conversationId && !selectedConversation) {
       // Primeiro, tentar encontrar na lista de conversas já carregadas
       const conversation = conversations.find(c => c.id === conversationId);
       if (conversation) {
         setSelectedConversation(conversation);
-        // Remover parâmetro da URL após abrir
-        setSearchParams({});
+        // Remover parâmetros da URL após abrir (mas manter demand_id no estado)
+        const newParams = new URLSearchParams();
+        if (demandId) {
+          newParams.set('demand_id', demandId);
+        }
+        setSearchParams(newParams);
       } else if (!loading && conversations.length >= 0) {
         // Se não encontrou na lista mas já terminou de carregar, buscar diretamente
         // (pode ser uma conversa recém-criada que ainda não está na lista)
@@ -55,13 +67,22 @@ const MessagesPage: React.FC = () => {
           .then((result) => {
             if (result.conversation) {
               setSelectedConversation(result.conversation);
-              setSearchParams({});
+              // Remover conversation da URL mas manter demand_id se existir
+              const newParams = new URLSearchParams();
+              if (demandId) {
+                newParams.set('demand_id', demandId);
+              }
+              setSearchParams(newParams);
             }
           })
           .catch((error) => {
             console.error('Error loading conversation from URL:', error);
             // Remover parâmetro mesmo se der erro
-            setSearchParams({});
+            const newParams = new URLSearchParams();
+            if (demandId) {
+              newParams.set('demand_id', demandId);
+            }
+            setSearchParams(newParams);
           });
       }
     }
@@ -109,7 +130,17 @@ const MessagesPage: React.FC = () => {
     if (!selectedConversation) return;
     
     try {
-      await messagesApi.sendMessage(selectedConversation.id, { message });
+      // Incluir demand_id se houver um pendente (vindo da URL)
+      const messageData: { message: string; demand_id?: string } = { message };
+      if (pendingDemandId) {
+        messageData.demand_id = pendingDemandId;
+        // Limpar demand_id após usar (só usar na primeira mensagem)
+        setPendingDemandId(null);
+        // Remover da URL também
+        setSearchParams({});
+      }
+      
+      await messagesApi.sendMessage(selectedConversation.id, messageData);
       await loadMessages(selectedConversation.id);
       await loadConversations();
     } catch (error: any) {

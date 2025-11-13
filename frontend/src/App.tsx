@@ -304,7 +304,7 @@ function App() {
               <Route
                 path="/units/:unitId"
                 element={
-                  <ProtectedRoute allowedRoles={['CADMIN', 'CMANAGER']}>
+                  <ProtectedRoute>
                     <UnitProfilePage />
                   </ProtectedRoute>
                 }
@@ -387,6 +387,14 @@ function App() {
                 path="/vet-profile"
                 element={
                   <ProtectedRoute allowedRoles={['VET']}>
+                    <VetProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/vet-profile/:id"
+                element={
+                  <ProtectedRoute>
                     <VetProfilePage />
                   </ProtectedRoute>
                 }

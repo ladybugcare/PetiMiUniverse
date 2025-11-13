@@ -27,6 +27,10 @@ export interface Conversation {
     created_at: string;
     sender_id: string;
   };
+  demand?: {
+    id: string;
+    title: string;
+  };
 }
 
 export interface Message {
@@ -40,6 +44,10 @@ export interface Message {
   created_at: string;
   sender_name?: string;
   sender_photo_url?: string;
+  demand?: {
+    id: string;
+    title: string;
+  };
 }
 
 export interface CreateConversationData {
@@ -53,6 +61,7 @@ export interface CreateConversationData {
 
 export interface SendMessageData {
   message: string;
+  demand_id?: string;
 }
 
 export interface ReportMessageData {

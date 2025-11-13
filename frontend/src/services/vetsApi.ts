@@ -9,6 +9,7 @@ export interface Vet {
   document_number?: string;
   address?: string;
   phone?: string;
+  bio?: string;
   specialties?: string[];
   certificates?: string[];
   experience?: string;
@@ -16,6 +17,14 @@ export interface Vet {
   status?: 'active' | 'inactive' | 'pending' | string;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface CompletedDemand {
+  id: string;
+  clinicName: string;
+  title: string;
+  specialty?: string;
+  completedAt: string;
 }
 
 export const vetsApi = {
@@ -43,5 +52,24 @@ export const vetsApi = {
     apiRequest(`/vets/${id}/photo`, {
       method: 'PATCH',
       body: JSON.stringify({ photo_url }),
+    }),
+
+  getCompletedDemands: async (id: string, clinicId?: string): Promise<{ completedDemands: CompletedDemand[] }> => {
+    let url = `/vets/${id}/completed-demands`;
+    if (clinicId) {
+      url += `?clinic_id=${clinicId}`;
+    }
+    return apiRequest(url);
+  },
+
+  approve: async (id: string): Promise<{ success: boolean; message: string }> =>
+    apiRequest(`/vets/${id}/approve`, {
+      method: 'POST',
+    }),
+
+  reject: async (id: string, reason: string): Promise<{ success: boolean; message: string }> =>
+    apiRequest(`/vets/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ rejection_reason: reason }),
     }),
 };

@@ -194,8 +194,8 @@ const UnitsManagementPage: React.FC = () => {
                 </div>
                 <div style={styles.actions}>
                   {canEditUnit && (
-                    <button onClick={() => handleOpenModal(unit)} style={styles.editButton}>
-                      Editar
+                    <button onClick={() => navigate(`/units/${unit.id}`)} style={styles.editButton}>
+                      Visualizar
                     </button>
                   )}
                   {canDeleteUnit && !unit.is_main && (

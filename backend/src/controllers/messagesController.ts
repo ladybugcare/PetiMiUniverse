@@ -15,6 +15,7 @@ interface CreateConversationBody {
 
 interface SendMessageBody {
   message: string;
+  demand_id?: string;
 }
 
 interface ReportMessageBody {
@@ -348,6 +349,22 @@ export const getMyConversations = async (req: Request, res: Response) => {
           .limit(1)
           .single();
 
+        // Buscar dados da demanda se existir
+        let demand = null;
+        if (conv.demand_id) {
+          const { data: demandData } = await supabase
+            .from('demands')
+            .select('id, title')
+            .eq('id', conv.demand_id)
+            .single();
+          if (demandData) {
+            demand = {
+              id: demandData.id,
+              title: demandData.title,
+            };
+          }
+        }
+
         return {
           ...conv,
           other_participant: {
@@ -358,6 +375,7 @@ export const getMyConversations = async (req: Request, res: Response) => {
           },
           unread_count: unreadCount || 0,
           last_message: lastMessage || null,
+          demand: demand || undefined,
         };
       })
     );
@@ -410,7 +428,7 @@ export const getConversation = async (req: Request, res: Response) => {
       return res.status(400).json({ error: msgError.message });
     }
 
-    // Enriquecer mensagens com informações do remetente
+    // Enriquecer mensagens com informações do remetente e demanda
     const enrichedMessages = await Promise.all(
       (messages || []).map(async (msg) => {
         let sender: any = null;
@@ -433,15 +451,54 @@ export const getConversation = async (req: Request, res: Response) => {
           };
         }
 
+        // Buscar dados da demanda se existir
+        let demand = null;
+        if (msg.demand_id) {
+          const { data: demandData } = await supabase
+            .from('demands')
+            .select('id, title')
+            .eq('id', msg.demand_id)
+            .single();
+          if (demandData) {
+            demand = {
+              id: demandData.id,
+              title: demandData.title,
+            };
+          }
+        }
+
         return {
           ...msg,
           sender_name: sender?.name || 'Usuário',
           sender_photo_url: sender?.photo_url || null,
+          demand: demand || undefined,
         };
       })
     );
 
-    res.json({ conversation, messages: enrichedMessages });
+    // Buscar dados da demanda se existir
+    let demand = null;
+    if (conversation.demand_id) {
+      const { data: demandData } = await supabase
+        .from('demands')
+        .select('id, title')
+        .eq('id', conversation.demand_id)
+        .single();
+      if (demandData) {
+        demand = {
+          id: demandData.id,
+          title: demandData.title,
+        };
+      }
+    }
+
+    res.json({ 
+      conversation: {
+        ...conversation,
+        demand: demand || undefined,
+      }, 
+      messages: enrichedMessages 
+    });
   } catch (error: any) {
     console.error('Error in getConversation:', error);
     res.status(500).json({ error: 'Erro ao buscar conversa' });
@@ -457,7 +514,7 @@ export const sendMessage = async (
 ) => {
   try {
     const { id: conversationId } = req.params;
-    const { message } = req.body;
+    const { message, demand_id } = req.body;
     const user_id = req.user?.id;
 
     if (!user_id) {
@@ -502,6 +559,7 @@ export const sendMessage = async (
           sender_id: user_id,
           sender_type,
           message: message.trim(),
+          demand_id: demand_id || null,
         },
       ])
       .select()

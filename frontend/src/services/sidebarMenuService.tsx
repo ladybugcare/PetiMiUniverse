@@ -309,15 +309,6 @@ export class SidebarMenuService {
         group: 'Suporte',
         order: 1,
       },
-      {
-        id: 'profile',
-        label: 'Perfil',
-        icon: <User size={20} color={colors.primary} />,
-        action: 'navigate',
-        path: '/clinic-profile',
-        group: 'Perfil',
-        order: 1,
-      },
     ];
   }
 
@@ -442,15 +433,6 @@ export class SidebarMenuService {
         group: 'Suporte',
         order: 1,
       },
-      {
-        id: 'profile',
-        label: 'Perfil',
-        icon: <User size={20} color={colors.primary} />,
-        action: 'navigate',
-        path: '/clinic-profile',
-        group: 'Perfil',
-        order: 1,
-      },
     ];
   }
 
@@ -558,22 +540,13 @@ export class SidebarMenuService {
         order: 1,
       },
       {
-        id: 'profile',
-        label: 'Perfil',
-        icon: <User size={20} color={colors.primary} />,
-        action: 'navigate',
-        path: '/vet-profile',
-        group: 'Perfil',
-        order: 1,
-      },
-      {
         id: 'settings',
         label: 'Configurações',
         icon: <Settings size={20} color={colors.primary} />,
         action: 'section',
         sectionId: 'configuracoes',
         group: 'Perfil',
-        order: 2,
+        order: 1,
       },
     ];
   }
@@ -654,15 +627,6 @@ export class SidebarMenuService {
         group: 'Suporte',
         order: 1,
       },
-      {
-        id: 'profile',
-        label: 'Perfil',
-        icon: <User size={20} color={colors.primary} />,
-        action: 'navigate',
-        path: '/clinic-profile',
-        group: 'Perfil',
-        order: 1,
-      },
     ];
   }
 
@@ -723,15 +687,6 @@ export class SidebarMenuService {
         action: 'navigate',
         path: '/my-support-tickets',
         group: 'Suporte',
-        order: 1,
-      },
-      {
-        id: 'profile',
-        label: 'Meu Perfil',
-        icon: <User size={20} color={colors.primary} />,
-        action: 'navigate',
-        path: '/clinic-profile',
-        group: 'Perfil',
         order: 1,
       },
     ];
