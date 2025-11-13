@@ -5,8 +5,11 @@ import { MenuItem } from '../components/DashboardSidebar';
 import { adminApi } from '../services/adminApi';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
-import { Home, Building2, Stethoscope, ClipboardList, Clock, User, LogOut, CheckCircle, XCircle, Briefcase } from 'lucide-react';
+import { CheckCircle, XCircle, Briefcase } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 interface PendingFreelancer {
   id: string;
@@ -29,7 +32,13 @@ interface PendingFreelancer {
 
 const AdminPendingFreelancersPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError } = useAlert();
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
+  
   const [freelancers, setFreelancers] = useState<PendingFreelancer[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFreelancer, setSelectedFreelancer] = useState<PendingFreelancer | null>(null);
@@ -38,19 +47,6 @@ const AdminPendingFreelancersPage: React.FC = () => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
   const [specialtiesMap, setSpecialtiesMap] = useState<Map<string, string>>(new Map());
-
-  const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    { id: 'freelancers', label: 'Freelancers', icon: <Briefcase size={20} color={colors.primary} />, action: 'navigate', path: '/admin/freelancers' },
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    { id: 'pending-units', label: 'Aprovações Pendentes', icon: <Clock size={20} color={colors.primary} />, action: 'navigate', path: '/admin/pending-units' },
-    { id: 'pending-vets', label: 'Vets Pendentes', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/pending-vets' },
-    { id: 'pending-freelancers', label: 'Freelancers Pendentes', icon: <Briefcase size={20} color={colors.primary} />, action: 'navigate', path: '/admin/pending-freelancers' },
-    { id: 'profile', label: 'Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/admin-profile' },
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-  ];
 
   useEffect(() => {
     loadSpecialties();

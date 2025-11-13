@@ -2,16 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
-import { Home, ClipboardList, ShoppingCart, Building2, Users, LogOut } from 'lucide-react';
 import colors from '../styles/colors';
 import { useAlert } from '../hooks/useAlert';
 import { usePermissions } from '../hooks/usePermissions';
 import { useUnit } from '../contexts/UnitContext';
 import { unitsApi } from '../services/unitsApi';
 import { Unit, CreateUnitData } from '../types/units';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const UnitsManagementPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
   const { canCreateUnit, canEditUnit, canDeleteUnit } = usePermissions();
   const { units, loadUnits } = useUnit();
@@ -30,8 +33,9 @@ const UnitsManagementPage: React.FC = () => {
     technical_manager: '',
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '');
-  const userRole = user?.user_metadata?.role || user?.role;
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
   // Redirect to CreateFirstUnitPage if no units exist
   useEffect(() => {
@@ -39,23 +43,6 @@ const UnitsManagementPage: React.FC = () => {
       navigate('/units/create-first');
     }
   }, [units, loading, navigate]);
-
-  const getMenuItems = (): MenuItem[] => {
-    const baseItems: MenuItem[] = [];
-
-    if (userRole === 'clinic') {
-      baseItems.push(
-        { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
-        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-        { id: 'units', label: 'Gerenciar Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
-        { id: 'users', label: 'Gerenciar Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' }
-      );
-    }
-
-    return baseItems;
-  };
 
   const handleOpenModal = (unit?: Unit) => {
     // If trying to create a new unit but no units exist, redirect to first unit flow
@@ -166,7 +153,7 @@ const UnitsManagementPage: React.FC = () => {
 
   return (
     <>
-      <DashboardLayout pageName="Gerenciar Unidades" menuItems={getMenuItems()}>
+      <DashboardLayout pageName="Gerenciar Unidades" menuItems={menuItems}>
         <div style={styles.container}>
         <div style={styles.header}>
           <div>

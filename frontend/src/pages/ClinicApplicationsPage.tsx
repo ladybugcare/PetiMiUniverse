@@ -6,8 +6,11 @@ import LoadingOverlay from '../components/LoadingOverlay';
 import { applicationsApi, Application } from '../services/applicationsApi';
 import { demandsApi } from '../services/demandsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, Users, Home, Settings } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 interface DemandWithApplications {
   demandId: string;
@@ -19,6 +22,7 @@ interface DemandWithApplications {
 
 const ClinicApplicationsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const { showSuccess, showError, showConfirm } = useAlert();
   
@@ -28,43 +32,14 @@ const ClinicApplicationsPage: React.FC = () => {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [hoveredManageButton, setHoveredManageButton] = useState<string | null>(null);
 
-  const user = JSON.parse(localStorage.getItem('user') || '');
-  const userRole = user?.user_metadata?.role || user?.role;
-  const clinicId = user.id;
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
+
+  const clinicId = user?.id || '';
   
   // Get status filter from query params
   const statusFilter = searchParams.get('status');
-
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-dashboard',
-    },
-    {
-      id: 'my-demands',
-      label: 'Minhas Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-demands',
-    },
-    {
-      id: 'demandas',
-      label: 'Ver Todas Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/demands',
-    },
-    {
-      id: 'candidaturas',
-      label: 'Candidaturas',
-      icon: <Users size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-applications',
-    },
-  ];
 
   useEffect(() => {
     loadData();

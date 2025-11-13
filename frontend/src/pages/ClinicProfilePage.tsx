@@ -5,10 +5,13 @@ import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { clinicsApi, Clinic } from '../services/clinicsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, ShoppingCart, User, LogOut, Edit, ArrowLeft, Building2 } from 'lucide-react';
+import { Edit, ArrowLeft, Building2, MessageCircle } from 'lucide-react';
 import colors from '../styles/colors';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../AuthContext';
+import { messagesApi } from '../services/messagesApi';
+import { getUserRole } from '../utils/authHelpers';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
 
 const ClinicProfilePage: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
@@ -26,48 +29,15 @@ const ClinicProfilePage: React.FC = () => {
   const isPublicView = !!id;
   const isOwnProfile = !isPublicView || (user?.id === id);
 
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
+
   const [formData, setFormData] = useState({
     name: '',
     address: '',
     cnpj: '',
   });
-
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-dashboard',
-    },
-    {
-      id: 'demandas',
-      label: 'Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/demands',
-    },
-    {
-      id: 'marketplace',
-      label: 'Marketplace',
-      icon: <ShoppingCart size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace',
-    },
-    {
-      id: 'perfil',
-      label: 'Meu Perfil',
-      icon: <User size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-profile',
-    },
-    // {
-    //   id: 'logout',
-    //   label: 'Sair',
-    //   icon: <LogOut size={20} color={colors.primary} />,
-    //   action: 'logout',
-    // },
-  ];
 
   useEffect(() => {
     loadProfile();
@@ -130,6 +100,32 @@ const ClinicProfilePage: React.FC = () => {
       cnpj: clinic!.cnpj,
     });
     setIsEditing(false);
+  };
+
+  const handleSendMessage = async () => {
+    if (!user?.id || !clinic?.id) {
+      showError('Erro ao identificar usuário ou clínica');
+      return;
+    }
+
+    const userRole = getUserRole(user);
+    if (userRole !== 'VET') {
+      showError('Apenas veterinários podem enviar mensagens para clínicas');
+      return;
+    }
+
+    try {
+      const result = await messagesApi.createConversation({
+        participant1_id: user.id,
+        participant1_type: 'vet',
+        participant2_id: clinic.id,
+        participant2_type: 'clinic',
+      });
+
+      navigate(`/messages?conversation=${result.conversation.id}`);
+    } catch (error: any) {
+      showError('Erro ao criar conversa: ' + (error.message || 'Erro desconhecido'));
+    }
   };
 
   const handlePhotoSelect = async (file: File) => {
@@ -302,6 +298,32 @@ const ClinicProfilePage: React.FC = () => {
               )}
             </div>
           </div>
+          
+          {/* Botão de mensagem para veterinários (apenas em visualização pública) */}
+          {isPublicView && !isOwnProfile && user && getUserRole(user) === 'VET' && (
+            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'center' }}>
+              <button
+                onClick={handleSendMessage}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '12px 24px',
+                  backgroundColor: colors.primary,
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <MessageCircle size={18} />
+                Enviar mensagem
+              </button>
+            </div>
+          )}
           
           {/* Danger Section - Apenas para o próprio perfil */}
           {!isPublicView && (

@@ -5,11 +5,15 @@ import { MenuItem } from '../components/DashboardSidebar';
 import { useUnit } from '../contexts/UnitContext';
 import { useAlert } from '../hooks/useAlert';
 import { reportsApi, PeriodType, ReportsOverview, ReportsDemands, ReportsProfessionals } from '../services/reportsApi';
-import { BarChart2, Building2, Users, ClipboardList, Home, TrendingUp, Clock, CheckCircle, XCircle, AlertCircle, FileText } from 'lucide-react';
+import { ClipboardList, CheckCircle, Users, Clock } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const ClinicReportsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showError } = useAlert();
   const { units } = useUnit();
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('30d');
@@ -19,6 +23,10 @@ const ClinicReportsPage: React.FC = () => {
   const [demands, setDemands] = useState<ReportsDemands | null>(null);
   const [professionals, setProfessionals] = useState<ReportsProfessionals | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'demands' | 'professionals'>('overview');
+
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
   // Get clinic ID
   const getClinicId = () => {
@@ -83,50 +91,6 @@ const ClinicReportsPage: React.FC = () => {
     loadReports();
   }, [selectedPeriod, selectedUnits]);
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-dashboard',
-    },
-    {
-      id: 'reports',
-      label: 'Relatórios',
-      icon: <FileText size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-reports',
-    },
-    {
-      id: 'units',
-      label: 'Gerenciar Unidades',
-      icon: <Building2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/units',
-    },
-    {
-      id: 'users',
-      label: 'Gerenciar Usuários',
-      icon: <Users size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/users',
-    },
-    {
-      id: 'my-demands',
-      label: 'Minhas Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-demands',
-    },
-    {
-      id: 'demands',
-      label: 'Ver Todas Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/demands',
-    },
-  ];
 
   const handleUnitToggle = (unitId: string) => {
     setSelectedUnits(prev => 

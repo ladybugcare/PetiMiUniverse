@@ -11,8 +11,9 @@ import { useUnit } from '../contexts/UnitContext';
 import { useAuth } from '../AuthContext';
 import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
 import { API_BASE_URL } from '../services/api';
-import { BarChart2, Building2, Users, ClipboardList, ShoppingCart, Search, User, LogOut, MessageSquare, Stethoscope, Star, FileText, MessageCircle } from 'lucide-react';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import colors from '../styles/colors';
+import { BarChart2, Building2, Users, ClipboardList, ShoppingCart, Search, User, MessageSquare, Stethoscope, Star, FileText, MessageCircle } from 'lucide-react';
 
 // Import role-specific dashboard components
 import AdminDashboard from '../components/dashboard/clinic/AdminDashboard';
@@ -63,21 +64,26 @@ const ClinicDashboardPage: React.FC = () => {
       if (!user) return; // Se não há usuário, não fazer requisição
       
       try {
-        // Get clinic ID - same logic as other components
-        const userRole = getUserRole(user);
+        // Get clinic ID - usar clinic_user primeiro, depois fallback para user.id
         let clinicId: string | null = null;
         
-        if (userRole === 'CADMIN' || (user as any)?.user_metadata?.role === 'clinic') {
-          clinicId = user.id;
-        } else {
-          const clinicUserStr = localStorage.getItem('clinic_user');
-          if (clinicUserStr) {
-            try {
-              const clinicUser = JSON.parse(clinicUserStr);
-              clinicId = clinicUser?.clinic_id;
-            } catch (error) {
-              console.warn('Failed to parse clinic_user:', error);
-            }
+        // Tentar obter clinic_id do clinic_user primeiro
+        const clinicUserStr = localStorage.getItem('clinic_user');
+        if (clinicUserStr) {
+          try {
+            const clinicUser = JSON.parse(clinicUserStr);
+            clinicId = clinicUser?.clinic_id;
+          } catch (error) {
+            console.warn('Failed to parse clinic_user:', error);
+          }
+        }
+        
+        // Se não encontrou clinic_id no clinic_user, usar user.id como fallback
+        // (apenas para clinic owners, não para CADMIN/CMANAGER que têm clinic_user)
+        if (!clinicId) {
+          const userRole = getUserRole(user);
+          if (userRole === 'CADMIN' || (user as any)?.user_metadata?.role === 'clinic') {
+            clinicId = user.id;
           }
         }
         
@@ -100,12 +106,20 @@ const ClinicDashboardPage: React.FC = () => {
           const data = await response.json();
           setClinicStatus(data.clinic?.status || null);
         } else if (response.status === 404) {
-          // Clinic doesn't exist yet, that's okay
+          // Clinic doesn't exist yet, that's okay - não logar erro
           setClinicStatus(null);
+        } else {
+          // Outros erros (403, 500, etc) - logar apenas em modo debug
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('Error checking clinic status:', response.status);
+          }
         }
       } catch (error) {
         // Silently handle errors - clinic might not exist yet
-        console.warn('Error checking clinic status:', error);
+        // Não logar erro para evitar spam no console
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Error checking clinic status:', error);
+        }
       } finally {
         setCheckingStatus(false);
       }
@@ -114,13 +128,18 @@ const ClinicDashboardPage: React.FC = () => {
     checkClinicStatus();
   }, [navigate, user, session, authLoading]);
 
+  // Get menu items using hook
+  // clinicRole vem do usePermissions e pode ser CADMIN, CMANAGER, CASSISTANT, CVET_INTERNAL
+  // Se não tiver clinicRole, usar getUserRole que retorna CADMIN/CMANAGER/VET
+  const role = clinicRole || getUserRole(user);
+  const { menuItems } = useSidebarMenu(role as any);
+
   // Get configuration based on clinic role
   const getDashboardConfig = () => {
     switch (clinicRole) {
       case 'CADMIN':
         return {
           title: 'Painel do Administrador',
-          menuItems: getAdminMenuItems(),
           fabOptions: getAdminFabOptions(),
           component: <AdminDashboard activeSection={activeSection} />,
         };
@@ -128,7 +147,6 @@ const ClinicDashboardPage: React.FC = () => {
       case 'CMANAGER':
         return {
           title: selectedUnit ? `Painel - ${selectedUnit.name}` : 'Painel do Gestor',
-          menuItems: getManagerMenuItems(),
           fabOptions: getManagerFabOptions(),
           component: <ManagerDashboard activeSection={activeSection} />,
         };
@@ -136,7 +154,6 @@ const ClinicDashboardPage: React.FC = () => {
       case 'CASSISTANT':
         return {
           title: 'Painel do Assistente',
-          menuItems: getAssistantMenuItems(),
           fabOptions: getAssistantFabOptions(),
           component: <AssistantDashboard activeSection={activeSection} />,
         };
@@ -144,7 +161,6 @@ const ClinicDashboardPage: React.FC = () => {
       case 'CVET_INTERNAL':
         return {
           title: 'Meu Painel',
-          menuItems: getVetInternalMenuItems(),
           fabOptions: getVetInternalFabOptions(),
           component: <VetInternalDashboard activeSection={activeSection} />,
         };
@@ -153,7 +169,6 @@ const ClinicDashboardPage: React.FC = () => {
         // Default for clinic owners without specific clinic_user role
         return {
           title: 'Dashboard da Clínica',
-          menuItems: getDefaultMenuItems(),
           fabOptions: getDefaultFabOptions(),
           component: <AdminDashboard activeSection={activeSection} />,
         };
@@ -572,7 +587,9 @@ const ClinicDashboardPage: React.FC = () => {
     <>
       <DashboardLayout 
         pageName={config.title}
-        menuItems={config.menuItems}
+        menuItems={menuItems}
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
       >
         <div style={{ width: '100%' }}>
           <ClinicStatusBanner />

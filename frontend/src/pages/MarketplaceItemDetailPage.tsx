@@ -4,12 +4,15 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { marketplaceApi, MarketplaceItem } from '../services/marketplaceApi';
 import { marketplaceMessagesApi } from '../services/marketplaceMessagesApi';
-import { ShoppingCart, PlusCircle, Package } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const MarketplaceItemDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [item, setItem] = useState<MarketplaceItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -17,29 +20,9 @@ const MarketplaceItemDetailPage: React.FC = () => {
   const [message, setMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'marketplace',
-      label: 'Voltar ao Marketplace',
-      icon: <ShoppingCart size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace',
-    },
-    {
-      id: 'criar-anuncio',
-      label: 'Criar Anúncio',
-      icon: <PlusCircle size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/create',
-    },
-    {
-      id: 'meus-anuncios',
-      label: 'Meus Anúncios',
-      icon: <Package size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/my-listings',
-    },
-  ];
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
     if (id) {
@@ -119,8 +102,7 @@ const MarketplaceItemDetailPage: React.FC = () => {
     ? item.images
     : ['https://via.placeholder.com/800x600?text=Sem+Imagem'];
 
-  const user = JSON.parse(localStorage.getItem('user') || '');
-  const isOwner = user.id === item.seller_id;
+  const isOwner = user?.id === item.seller_id;
 
   return (
     <DashboardLayout pageName={item.title} menuItems={menuItems}>

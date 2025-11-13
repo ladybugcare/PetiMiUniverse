@@ -9,8 +9,11 @@ import { demandPositionsApi, DemandPosition } from '../services/demandPositionsA
 import { unitsApi } from '../services/unitsApi';
 import { Unit } from '../types/units';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, ClipboardList, PlusCircle, User, Clock, ChevronDown, ChevronUp, Calendar, MapPin, DollarSign } from 'lucide-react';
+import { PlusCircle, Clock, ChevronDown, ChevronUp, Calendar, MapPin, DollarSign } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 interface DemandWithPositions {
   id: string;
@@ -34,6 +37,7 @@ interface DemandWithPositions {
 
 const ClinicDemandsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showError } = useAlert();
   const [demands, setDemands] = useState<DemandWithPositions[]>([]);
   const [units, setUnits] = useState<Map<string, Unit>>(new Map());
@@ -42,47 +46,14 @@ const ClinicDemandsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'this_week' | 'this_month'>('all');
 
-  const user = JSON.parse(localStorage.getItem('user') || '');
-  const clinicId = user?.id;
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
-  // Menu items
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-dashboard',
-    },
-    {
-      id: 'my-demands',
-      label: 'Minhas Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-demands',
-    },
-    {
-      id: 'all-demands',
-      label: 'Ver Todas Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/demands',
-    },
-    {
-      id: 'create-demand',
-      label: 'Criar Nova Demanda',
-      icon: <PlusCircle size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/create-demand',
-    },
-    {
-      id: 'perfil',
-      label: 'Perfil',
-      icon: <User size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-profile',
-    },
-  ];
+  // Get clinic ID
+  const clinicUserStr = localStorage.getItem('clinic_user');
+  const clinicUser = clinicUserStr ? JSON.parse(clinicUserStr) : null;
+  const clinicId = clinicUser?.clinic_id || user?.user_metadata?.clinic_id || user?.id;
 
   useEffect(() => {
     if (!clinicId) {
@@ -98,8 +69,9 @@ const ClinicDemandsPage: React.FC = () => {
       setLoading(true);
       
       // Carregar demandas e unidades em paralelo
+      // Usar getRecentActivity como alternativa já que /demands/clinic/:id não existe
       const [demandsResult, unitsResult] = await Promise.all([
-        demandsApi.getByClinic(clinicId),
+        demandsApi.getRecentActivity(clinicId, undefined, 1000).catch(() => ({ demands: [] })),
         unitsApi.getByClinic(clinicId).catch(() => ({ units: [] })),
       ]);
       

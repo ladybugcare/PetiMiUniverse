@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import LoadingOverlay from '../components/LoadingOverlay';
-import { MenuItem } from '../components/DashboardSidebar';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, MessageCircle, Settings, Clock, Briefcase, CheckCircle, AlertTriangle, XCircle, Activity } from 'lucide-react';
-import colors from '../styles/colors';
+import { Clock, CheckCircle, AlertTriangle, XCircle, Activity, Building2, Stethoscope, Briefcase, ClipboardList, Users } from 'lucide-react';
 import { adminApi } from '../services/adminApi';
 import PeriodFilter, { PeriodType } from '../components/admin/PeriodFilter';
 import QuickActions from '../components/admin/QuickActions';
@@ -18,6 +16,9 @@ import ActivityModal from '../components/admin/ActivityModal';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { useAlert } from '../hooks/useAlert';
 import { healthApi, SystemHealth } from '../services/healthApi';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import colors from '../styles/colors';
 
 const AdminDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -32,15 +33,17 @@ const AdminDashboardPage: React.FC = () => {
   const [pendingVetsCount, setPendingVetsCount] = useState(0);
   const [pendingFreelancersCount, setPendingFreelancersCount] = useState(0);
   const [pendingUnitsCount, setPendingUnitsCount] = useState(0);
+  const [user, setUser] = useState<any>(null);
 
-  // Check authentication
+  // Check authentication and get user role
   useEffect(() => {
     const userStr = localStorage.getItem('user');
-    let user = null;
+    let userData = null;
     
     if (userStr && userStr.trim() !== '') {
       try {
-        user = JSON.parse(userStr);
+        userData = JSON.parse(userStr);
+        setUser(userData);
       } catch (error) {
         console.error('Erro ao fazer parse do usuário:', error);
         localStorage.removeItem('user');
@@ -49,9 +52,9 @@ const AdminDashboardPage: React.FC = () => {
       }
     }
     
-    const userRole = user?.user_metadata?.role || user?.role;
+    const userRole = userData?.user_metadata?.role || userData?.role;
     
-    if (!user || !user.id) {
+    if (!userData || !userData.id) {
       navigate('/login');
       return setCheckingAuth(false);
     }
@@ -69,6 +72,10 @@ const AdminDashboardPage: React.FC = () => {
     }
     setCheckingAuth(false);
   }, [navigate]);
+
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
     const loadSystemStats = async () => {
@@ -121,64 +128,6 @@ const AdminDashboardPage: React.FC = () => {
     loadPendingUnits();
   }, []);
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'overview',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin-dashboard',
-    },
-    {
-      id: 'clinics',
-      label: 'Clínicas',
-      icon: <Building2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/clinics',
-    },
-    {
-      id: 'vets',
-      label: 'Veterinários',
-      icon: <Stethoscope size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/vets',
-    },
-    {
-      id: 'freelancers',
-      label: 'Freelancers',
-      icon: <Briefcase size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/freelancers',
-    },
-    {
-      id: 'demands',
-      label: 'Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/demands',
-    },
-    {
-      id: 'support',
-      label: 'Tickets de Suporte',
-      icon: <MessageCircle size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/support-tickets',
-    },
-    {
-      id: 'users',
-      label: 'Usuários',
-      icon: <Users size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/users',
-    },
-    {
-      id: 'settings',
-      label: 'Configurações',
-      icon: <Settings size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/settings',
-    },
-  ];
 
   return (
     <>

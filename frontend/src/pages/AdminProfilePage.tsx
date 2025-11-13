@@ -4,8 +4,11 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, User, LogOut, MessageCircle, Edit, Crown, Settings } from 'lucide-react';
+import { Edit, Crown } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 interface AdminUser {
   id: string;
@@ -18,7 +21,13 @@ interface AdminUser {
 
 const AdminProfilePage: React.FC = () => {
   const navigate = useNavigate();
+  const { user: authUser } = useAuth();
   const { showSuccess, showError } = useAlert();
+  
+  // Get menu items using hook
+  const userRole = authUser ? getUserRole(authUser) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
+  
   const [user, setUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -28,64 +37,6 @@ const AdminProfilePage: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
   });
-
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin-dashboard',
-    },
-    {
-      id: 'clinicas',
-      label: 'Clínicas',
-      icon: <Building2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/clinics',
-    },
-    {
-      id: 'veterinarios',
-      label: 'Veterinários',
-      icon: <Stethoscope size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/vets',
-    },
-    {
-      id: 'demandas',
-      label: 'Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/demands',
-    },
-    {
-      id: 'support',
-      label: 'Tickets de Suporte',
-      icon: <MessageCircle size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/support-tickets',
-    },
-    {
-      id: 'settings',
-      label: 'Configurações',
-      icon: <Settings size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/settings',
-    },
-    {
-      id: 'perfil',
-      label: 'Meu Perfil',
-      icon: <User size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin-profile',
-    },
-    // {
-    //   id: 'logout',
-    //   label: 'Sair',
-    //   icon: <LogOut size={20} color={colors.primary} />,
-    //   action: 'logout',
-    // },
-  ];
 
   useEffect(() => {
     loadProfile();

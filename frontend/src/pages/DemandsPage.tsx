@@ -9,7 +9,8 @@ import { demandsApi, clinicsApi, applicationsApi, specialtiesApi } from '../serv
 import { Demand } from '../services/demandsApi';
 import { useAlert } from '../hooks/useAlert';
 import { getUserRole, type Role as AuthRole } from '../utils/authHelpers';
-import { BarChart2, ClipboardList, PlusCircle, User, LogOut, FileText, Search, Filter, X, Clock, MapPin, DollarSign } from 'lucide-react';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { Search, Filter, X, Clock, MapPin, DollarSign, PlusCircle } from 'lucide-react';
 import colors from '../styles/colors';
 
 interface Clinic {
@@ -117,92 +118,9 @@ const DemandsPage: React.FC = () => {
     localStorage.setItem('demandsFilters', JSON.stringify(filters));
   }, [statusFilter, dateFilter, selectedSpecialties, minPayment, maxPayment, sortBy]);
 
-  // Menu items based on user role
-  const getMenuItems = (): MenuItem[] => {
-    if ((userRole === 'CADMIN' || userRole === 'CMANAGER') || rawUserRole?.toLowerCase() === 'clinic') {
-      return [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: <BarChart2 size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/clinic-dashboard',
-        },
-        {
-          id: 'my-demands',
-          label: 'Minhas Demandas',
-          icon: <ClipboardList size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/clinic-demands',
-        },
-        {
-          id: 'demandas',
-          label: 'Ver Todas Demandas',
-          icon: <ClipboardList size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/demands',
-        },
-        {
-          id: 'criar-demanda',
-          label: 'Criar Nova Demanda',
-          icon: <PlusCircle size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/create-demand',
-        },
-        {
-          id: 'perfil',
-          label: 'Perfil',
-          icon: <User size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/clinic-profile',
-        },
-        // {
-        //   id: 'logout',
-        //   label: 'Sair',
-        //   icon: <LogOut size={20} color={colors.primary} />,
-        //   action: 'logout',
-        // },
-      ];
-    } else {
-      // Vet menu
-      return [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: <BarChart2 size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/vet-dashboard',
-        },
-        {
-          id: 'demandas',
-          label: 'Demandas Disponíveis',
-          icon: <ClipboardList size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/demands',
-        },
-        {
-          id: 'candidaturas',
-          label: 'Minhas Candidaturas',
-          icon: <FileText size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/my-applications',
-        },
-        {
-          id: 'perfil',
-          label: 'Meu Perfil',
-          icon: <User size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/vet-profile',
-        },
-        // {
-        //   id: 'logout',
-        //   label: 'Sair',
-        //   icon: <LogOut size={20} color={colors.primary} />,
-        //   action: 'logout',
-        // },
-      ];
-    }
-  };
+  // Get menu items using hook
+  const roleForMenu = userRole || rawUserRole || 'UNKNOWN';
+  const { menuItems } = useSidebarMenu(roleForMenu);
 
   const loadData = async () => {
     try {
@@ -421,7 +339,7 @@ const DemandsPage: React.FC = () => {
     <>
     <DashboardLayout
       pageName="Demandas"
-      menuItems={getMenuItems()}
+      menuItems={menuItems}
     >
       <div style={styles.container}>
         <div style={styles.header}>
@@ -455,186 +373,188 @@ const DemandsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Search and Filters Bar */}
-        <div style={styles.searchFiltersBar}>
-          <div style={styles.searchContainer}>
-            <SearchBar
-              placeholder="Buscar por título, descrição ou clínica..."
-              value={searchQuery}
-              onChange={setSearchQuery}
-            />
-          </div>
-          
-          <div style={styles.controlsRow}>
-            <div style={styles.controlsLeft}>
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                style={{
-                  ...styles.filterButton,
-                  ...(showFilters && styles.filterButtonActive),
-                }}
-              >
-                <Filter size={16} />
-                Filtros
-                {hasActiveFilters && (
-                  <span style={styles.filterBadge}>
-                    {[
-                      statusFilter !== 'all' ? 1 : 0,
-                      dateFilter !== 'all' ? 1 : 0,
-                      selectedSpecialties.length,
-                      minPayment !== '' ? 1 : 0,
-                      maxPayment !== '' ? 1 : 0,
-                    ].reduce((a, b) => a + b, 0)}
-                  </span>
-                )}
-              </button>
-              
-              {hasActiveFilters && (
-                <button onClick={clearFilters} style={styles.clearFiltersButton}>
-                  <X size={14} />
-                  Limpar filtros
+        {/* Search and Filters Bar - Only show in list mode */}
+        {viewMode === 'list' && (
+          <div style={styles.searchFiltersBar}>
+            <div style={styles.searchContainer}>
+              <SearchBar
+                placeholder="Buscar por título, descrição ou clínica..."
+                value={searchQuery}
+                onChange={setSearchQuery}
+              />
+            </div>
+            
+            <div style={styles.controlsRow}>
+              <div style={styles.controlsLeft}>
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  style={{
+                    ...styles.filterButton,
+                    ...(showFilters && styles.filterButtonActive),
+                  }}
+                >
+                  <Filter size={16} />
+                  Filtros
+                  {hasActiveFilters && (
+                    <span style={styles.filterBadge}>
+                      {[
+                        statusFilter !== 'all' ? 1 : 0,
+                        dateFilter !== 'all' ? 1 : 0,
+                        selectedSpecialties.length,
+                        minPayment !== '' ? 1 : 0,
+                        maxPayment !== '' ? 1 : 0,
+                      ].reduce((a, b) => a + b, 0)}
+                    </span>
+                  )}
                 </button>
-              )}
-            </div>
-
-            <div style={styles.sortContainer}>
-              <label style={styles.sortLabel}>Ordenar por:</label>
-              <select
-                value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value as SortOption);
-                  setCurrentPage(1);
-                }}
-                style={styles.sortSelect}
-              >
-                <option value="date_asc">Data (mais antiga)</option>
-                <option value="date_desc">Data (mais recente)</option>
-                <option value="payment_desc">Pagamento (maior)</option>
-                <option value="payment_asc">Pagamento (menor)</option>
-                <option value="title_asc">Título (A-Z)</option>
-                <option value="title_desc">Título (Z-A)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Filters Panel */}
-          {showFilters && (
-            <div style={styles.filtersPanel}>
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Status</label>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => {
-                    setStatusFilter(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  style={styles.filterSelect}
-                >
-                  <option value="all">Todos</option>
-                  <option value="open">Aberta</option>
-                  <option value="in_progress">Em Andamento</option>
-                  <option value="closed">Fechada</option>
-                  <option value="cancelled">Cancelada</option>
-                </select>
-              </div>
-
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Data</label>
-                <select
-                  value={dateFilter}
-                  onChange={(e) => {
-                    setDateFilter(e.target.value as DateFilter);
-                    setCurrentPage(1);
-                  }}
-                  style={styles.filterSelect}
-                >
-                  <option value="all">Todas</option>
-                  <option value="today">Hoje</option>
-                  <option value="this_week">Esta Semana</option>
-                  <option value="this_month">Este Mês</option>
-                </select>
-              </div>
-
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Especialidades</label>
-                <select
-                  multiple
-                  value={selectedSpecialties}
-                  onChange={(e) => {
-                    const selected = Array.from(e.target.selectedOptions, option => option.value);
-                    setSelectedSpecialties(selected);
-                    setCurrentPage(1);
-                  }}
-                  style={styles.filterSelectMultiple}
-                >
-                  {specialties.map(spec => (
-                    <option key={spec.id} value={spec.name}>{spec.name}</option>
-                  ))}
-                </select>
-                {selectedSpecialties.length > 0 && (
-                  <div style={styles.selectedSpecialties}>
-                    {selectedSpecialties.map(spec => (
-                      <span key={spec} style={styles.specialtyTag}>
-                        {spec}
-                        <button
-                          onClick={() => {
-                            setSelectedSpecialties(selectedSpecialties.filter(s => s !== spec));
-                            setCurrentPage(1);
-                          }}
-                          style={styles.tagRemove}
-                        >
-                          <X size={12} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
+                
+                {hasActiveFilters && (
+                  <button onClick={clearFilters} style={styles.clearFiltersButton}>
+                    <X size={14} />
+                    Limpar filtros
+                  </button>
                 )}
               </div>
 
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Pagamento</label>
-                <div style={styles.paymentRange}>
-                  <input
-                    type="number"
-                    placeholder="Mínimo"
-                    value={minPayment}
+              <div style={styles.sortContainer}>
+                <label style={styles.sortLabel}>Ordenar por:</label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => {
+                    setSortBy(e.target.value as SortOption);
+                    setCurrentPage(1);
+                  }}
+                  style={styles.sortSelect}
+                >
+                  <option value="date_asc">Data (mais antiga)</option>
+                  <option value="date_desc">Data (mais recente)</option>
+                  <option value="payment_desc">Pagamento (maior)</option>
+                  <option value="payment_asc">Pagamento (menor)</option>
+                  <option value="title_asc">Título (A-Z)</option>
+                  <option value="title_desc">Título (Z-A)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Filters Panel */}
+            {showFilters && (
+              <div style={styles.filtersPanel}>
+                <div style={styles.filterGroup}>
+                  <label style={styles.filterLabel}>Status</label>
+                  <select
+                    value={statusFilter}
                     onChange={(e) => {
-                      setMinPayment(e.target.value === '' ? '' : Number(e.target.value));
+                      setStatusFilter(e.target.value);
                       setCurrentPage(1);
                     }}
-                    style={styles.paymentInput}
-                    min="0"
-                  />
-                  <span style={styles.paymentSeparator}>-</span>
-                  <input
-                    type="number"
-                    placeholder="Máximo"
-                    value={maxPayment}
+                    style={styles.filterSelect}
+                  >
+                    <option value="all">Todos</option>
+                    <option value="open">Aberta</option>
+                    <option value="in_progress">Em Andamento</option>
+                    <option value="closed">Fechada</option>
+                    <option value="cancelled">Cancelada</option>
+                  </select>
+                </div>
+
+                <div style={styles.filterGroup}>
+                  <label style={styles.filterLabel}>Data</label>
+                  <select
+                    value={dateFilter}
                     onChange={(e) => {
-                      setMaxPayment(e.target.value === '' ? '' : Number(e.target.value));
+                      setDateFilter(e.target.value as DateFilter);
                       setCurrentPage(1);
                     }}
-                    style={styles.paymentInput}
-                    min="0"
-                  />
+                    style={styles.filterSelect}
+                  >
+                    <option value="all">Todas</option>
+                    <option value="today">Hoje</option>
+                    <option value="this_week">Esta Semana</option>
+                    <option value="this_month">Este Mês</option>
+                  </select>
+                </div>
+
+                <div style={styles.filterGroup}>
+                  <label style={styles.filterLabel}>Especialidades</label>
+                  <select
+                    multiple
+                    value={selectedSpecialties}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions, option => option.value);
+                      setSelectedSpecialties(selected);
+                      setCurrentPage(1);
+                    }}
+                    style={styles.filterSelectMultiple}
+                  >
+                    {specialties.map(spec => (
+                      <option key={spec.id} value={spec.name}>{spec.name}</option>
+                    ))}
+                  </select>
+                  {selectedSpecialties.length > 0 && (
+                    <div style={styles.selectedSpecialties}>
+                      {selectedSpecialties.map(spec => (
+                        <span key={spec} style={styles.specialtyTag}>
+                          {spec}
+                          <button
+                            onClick={() => {
+                              setSelectedSpecialties(selectedSpecialties.filter(s => s !== spec));
+                              setCurrentPage(1);
+                            }}
+                            style={styles.tagRemove}
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={styles.filterGroup}>
+                  <label style={styles.filterLabel}>Pagamento</label>
+                  <div style={styles.paymentRange}>
+                    <input
+                      type="number"
+                      placeholder="Mínimo"
+                      value={minPayment}
+                      onChange={(e) => {
+                        setMinPayment(e.target.value === '' ? '' : Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      style={styles.paymentInput}
+                      min="0"
+                    />
+                    <span style={styles.paymentSeparator}>-</span>
+                    <input
+                      type="number"
+                      placeholder="Máximo"
+                      value={maxPayment}
+                      onChange={(e) => {
+                        setMaxPayment(e.target.value === '' ? '' : Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      style={styles.paymentInput}
+                      min="0"
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Results count */}
-          <div style={styles.resultsCount}>
-            {filteredAndSortedDemands.length === 0 ? (
-              <span>Nenhuma demanda encontrada</span>
-            ) : (
-              <span>
-                Mostrando {((currentPage - 1) * itemsPerPage) + 1}-
-                {Math.min(currentPage * itemsPerPage, filteredAndSortedDemands.length)} de{' '}
-                {filteredAndSortedDemands.length} demanda{filteredAndSortedDemands.length !== 1 ? 's' : ''}
-              </span>
             )}
+
+            {/* Results count */}
+            <div style={styles.resultsCount}>
+              {filteredAndSortedDemands.length === 0 ? (
+                <span>Nenhuma demanda encontrada</span>
+              ) : (
+                <span>
+                  Mostrando {((currentPage - 1) * itemsPerPage) + 1}-
+                  {Math.min(currentPage * itemsPerPage, filteredAndSortedDemands.length)} de{' '}
+                  {filteredAndSortedDemands.length} demanda{filteredAndSortedDemands.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {filteredAndSortedDemands.length === 0 ? (
           <div style={styles.emptyState}>
@@ -667,9 +587,7 @@ const DemandsPage: React.FC = () => {
                     style={{
                       ...styles.demandCard,
                       ...(hasApplied && styles.demandCardApplied),
-                      cursor: 'pointer',
                     }}
-                    onClick={() => navigate(`/demands/${demand.id}`)}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.transform = 'translateY(-4px)';
                       e.currentTarget.style.boxShadow = '0 8px 16px rgba(0, 0, 0, 0.15)';
@@ -757,15 +675,39 @@ const DemandsPage: React.FC = () => {
                             ✓ Candidatura enviada
                           </span>
                         )}
-                        {userRole === 'VET' && !hasApplied && (
+                        {userRole === 'VET' && (
+                          <div style={styles.actionButtonsContainer}>
+                            {!hasApplied && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleApply(demand);
+                                }}
+                                style={styles.applyButton}
+                              >
+                                Candidatar-se
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/demands/${demand.id}`);
+                              }}
+                              style={styles.viewDetailsButton}
+                            >
+                              Ver Detalhes
+                            </button>
+                          </div>
+                        )}
+                        {userRole !== 'VET' && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleApply(demand);
+                              navigate(`/demands/${demand.id}`);
                             }}
-                            style={styles.applyButton}
+                            style={styles.viewDetailsButton}
                           >
-                            Candidatar-se
+                            Ver Detalhes
                           </button>
                         )}
                       </div>
@@ -831,18 +773,190 @@ const DemandsPage: React.FC = () => {
             )}
           </>
         ) : (
-          <CalendarView
-            demands={filteredAndSortedDemands}
-            onDemandClick={(demand) => {
-              // Se for clínica (CADMIN ou CMANAGER), navegar diretamente para detalhes
-              if (userRole === 'CADMIN' || userRole === 'CMANAGER' || rawUserRole?.toLowerCase() === 'clinic') {
-                navigate(`/demands/${demand.id}`);
-              } else {
-                handleApply(demand);
+          <>
+            {/* Search Bar - Show above calendar in calendar mode */}
+            <div style={{ marginBottom: '24px' }}>
+              <SearchBar
+                placeholder="Buscar por título, descrição ou clínica..."
+                value={searchQuery}
+                onChange={setSearchQuery}
+              />
+            </div>
+            <CalendarView
+              demands={filteredAndSortedDemands}
+              getClinicName={getClinicName}
+              userRole={userRole || undefined}
+              userApplications={userApplications}
+              onApply={(demand) => {
+                if (userRole === 'VET') {
+                  handleApply(demand);
+                }
+              }}
+              onViewDetails={(demandId) => {
+                navigate(`/demands/${demandId}`);
+              }}
+              filters={
+                <div style={styles.searchFiltersBar}>
+                  <div style={styles.controlsRow}>
+                    <div style={styles.controlsLeft}>
+                      <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        style={{
+                          ...styles.filterButton,
+                          ...(showFilters && styles.filterButtonActive),
+                        }}
+                      >
+                        <Filter size={16} />
+                        Filtros
+                        {hasActiveFilters && (
+                          <span style={styles.filterBadge}>
+                            {[
+                              statusFilter !== 'all' ? 1 : 0,
+                              dateFilter !== 'all' ? 1 : 0,
+                              selectedSpecialties.length,
+                              minPayment !== '' ? 1 : 0,
+                              maxPayment !== '' ? 1 : 0,
+                            ].reduce((a, b) => a + b, 0)}
+                          </span>
+                        )}
+                      </button>
+                      
+                      {hasActiveFilters && (
+                        <button onClick={clearFilters} style={styles.clearFiltersButton}>
+                          <X size={14} />
+                          Limpar filtros
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={styles.sortContainer}>
+                      <label style={styles.sortLabel}>Ordenar por:</label>
+                      <select
+                        value={sortBy}
+                        onChange={(e) => {
+                          setSortBy(e.target.value as SortOption);
+                          setCurrentPage(1);
+                        }}
+                        style={styles.sortSelect}
+                      >
+                        <option value="date_asc">Data (mais antiga)</option>
+                        <option value="date_desc">Data (mais recente)</option>
+                        <option value="payment_desc">Pagamento (maior)</option>
+                        <option value="payment_asc">Pagamento (menor)</option>
+                        <option value="title_asc">Título (A-Z)</option>
+                        <option value="title_desc">Título (Z-A)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Filters Panel */}
+                  {showFilters && (
+                    <div style={styles.filtersPanel}>
+                      <div style={styles.filterGroup}>
+                        <label style={styles.filterLabel}>Status</label>
+                        <select
+                          value={statusFilter}
+                          onChange={(e) => {
+                            setStatusFilter(e.target.value);
+                            setCurrentPage(1);
+                          }}
+                          style={styles.filterSelect}
+                        >
+                          <option value="all">Todos</option>
+                          <option value="open">Aberta</option>
+                          <option value="in_progress">Em Andamento</option>
+                          <option value="closed">Fechada</option>
+                          <option value="cancelled">Cancelada</option>
+                        </select>
+                      </div>
+
+                      <div style={styles.filterGroup}>
+                        <label style={styles.filterLabel}>Data</label>
+                        <select
+                          value={dateFilter}
+                          onChange={(e) => {
+                            setDateFilter(e.target.value as DateFilter);
+                            setCurrentPage(1);
+                          }}
+                          style={styles.filterSelect}
+                        >
+                          <option value="all">Todas</option>
+                          <option value="today">Hoje</option>
+                          <option value="this_week">Esta Semana</option>
+                          <option value="this_month">Este Mês</option>
+                        </select>
+                      </div>
+
+                      <div style={styles.filterGroup}>
+                        <label style={styles.filterLabel}>Especialidades</label>
+                        <select
+                          multiple
+                          value={selectedSpecialties}
+                          onChange={(e) => {
+                            const selected = Array.from(e.target.selectedOptions, option => option.value);
+                            setSelectedSpecialties(selected);
+                            setCurrentPage(1);
+                          }}
+                          style={styles.filterSelectMultiple}
+                        >
+                          {specialties.map(spec => (
+                            <option key={spec.id} value={spec.name}>{spec.name}</option>
+                          ))}
+                        </select>
+                        {selectedSpecialties.length > 0 && (
+                          <div style={styles.selectedSpecialties}>
+                            {selectedSpecialties.map(spec => (
+                              <span key={spec} style={styles.specialtyTag}>
+                                {spec}
+                                <button
+                                  onClick={() => {
+                                    setSelectedSpecialties(selectedSpecialties.filter(s => s !== spec));
+                                    setCurrentPage(1);
+                                  }}
+                                  style={styles.tagRemove}
+                                >
+                                  <X size={12} />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={styles.filterGroup}>
+                        <label style={styles.filterLabel}>Pagamento</label>
+                        <div style={styles.paymentRange}>
+                          <input
+                            type="number"
+                            placeholder="Mínimo"
+                            value={minPayment}
+                            onChange={(e) => {
+                              setMinPayment(e.target.value === '' ? '' : Number(e.target.value));
+                              setCurrentPage(1);
+                            }}
+                            style={styles.paymentInput}
+                            min="0"
+                          />
+                          <span style={styles.paymentSeparator}>-</span>
+                          <input
+                            type="number"
+                            placeholder="Máximo"
+                            value={maxPayment}
+                            onChange={(e) => {
+                              setMaxPayment(e.target.value === '' ? '' : Number(e.target.value));
+                              setCurrentPage(1);
+                            }}
+                            style={styles.paymentInput}
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               }
-            }}
-            getClinicName={getClinicName}
-          />
+            />
+          </>
         )}
       </div>
 
@@ -1086,6 +1200,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '8px',
+  },
+  actionButtonsContainer: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
   },
   date: {
     fontFamily: 'Inter, sans-serif',
@@ -1103,6 +1225,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '500',
     cursor: 'pointer',
     transition: 'background-color 0.2s ease',
+  },
+  viewDetailsButton: {
+    padding: '8px 16px',
+    backgroundColor: '#ffffff',
+    color: '#7c3aed',
+    border: '1px solid #7c3aed',
+    borderRadius: '8px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
   },
   modalOverlay: {
     position: 'fixed',

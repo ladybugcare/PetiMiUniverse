@@ -9,13 +9,21 @@ import { useAlert } from '../hooks/useAlert';
 import { Unit, UpdateUnitData } from '../types/units';
 import { Demand } from '../services/demandsApi';
 import { ClinicUser } from '../types/units';
-import { BarChart2, ClipboardList, ShoppingCart, Building2, Users, LogOut, Edit, ArrowLeft, MapPin, Phone, User, Calendar, FileText, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Edit, ArrowLeft, MapPin, Phone, User, Calendar, FileText, CheckCircle, XCircle, Clock, Users } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const UnitProfilePage: React.FC = () => {
   const { unitId } = useParams<{ unitId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError } = useAlert();
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
   
   const [unit, setUnit] = useState<Unit | null>(null);
   const [stats, setStats] = useState({
@@ -40,18 +48,7 @@ const UnitProfilePage: React.FC = () => {
     technical_manager: '',
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const userRole = user?.user_metadata?.role || user?.role;
   const isCADMIN = userRole === 'CADMIN';
-
-  const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-    { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-    { id: 'units', label: 'Gerenciar Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
-    { id: 'users', label: 'Gerenciar Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-  ];
 
   useEffect(() => {
     if (unitId) {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Demand } from '../services/demandsApi';
 import { Clock, MapPin, DollarSign, X } from 'lucide-react';
 
@@ -6,11 +6,36 @@ interface CalendarViewProps {
   demands: Demand[];
   onDemandClick?: (demand: Demand) => void;
   getClinicName?: (clinicId: string) => string;
+  filters?: React.ReactNode;
+  userRole?: string;
+  userApplications?: string[];
+  onApply?: (demand: Demand) => void;
+  onViewDetails?: (demandId: string) => void;
 }
 
-const CalendarView: React.FC<CalendarViewProps> = ({ demands, onDemandClick, getClinicName }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ 
+  demands, 
+  onDemandClick, 
+  getClinicName, 
+  filters,
+  userRole,
+  userApplications = [],
+  onApply,
+  onViewDetails,
+}) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 1024);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const goToToday = () => {
     setCurrentDate(new Date());
@@ -146,152 +171,238 @@ const CalendarView: React.FC<CalendarViewProps> = ({ demands, onDemandClick, get
 
   return (
     <div style={styles.container}>
-      {/* Calendar Header */}
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <button onClick={previousMonth} style={styles.navButton} title="Mês anterior">
-          ◀
-        </button>
-        <h2 style={styles.monthYear}>
-          {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-        </h2>
-          <button onClick={nextMonth} style={styles.navButton} title="Próximo mês">
-          ▶
-          </button>
-        </div>
-        <button onClick={goToToday} style={styles.todayButton} title="Ir para hoje">
-          Hoje
-        </button>
-      </div>
-
-      {/* Weekday Headers */}
-      <div style={styles.weekdaysHeader}>
-        {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
-          <div key={day} style={styles.weekday}>
-            {day}
-          </div>
-        ))}
-      </div>
-
-      {/* Calendar Grid */}
-      <div style={styles.calendarGrid}>
-        {renderCalendarDays()}
-      </div>
-
-      {/* Selected Day Panel */}
-      {selectedDay && selectedDayDemands.length > 0 && (
-        <div style={styles.selectedDayPanel}>
-          <div style={styles.panelHeader}>
-            <h3 style={styles.panelTitle}>
-              Demandas de {new Date(selectedDay + 'T00:00:00').toLocaleDateString('pt-BR', {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric'
-              })}
-            </h3>
-            <button onClick={() => setSelectedDay(null)} style={styles.closeButton} title="Fechar">
-              <X size={20} />
+      <div style={{
+        ...styles.contentWrapper,
+        flexDirection: isMobile ? 'column' : 'row',
+      }}>
+        {/* Calendar Section - Left Side */}
+        <div style={{
+          ...styles.calendarSection,
+          width: isMobile ? '100%' : '40%',
+          marginBottom: isMobile ? '24px' : 0,
+        }}>
+          {/* Calendar Header */}
+          <div style={styles.header}>
+            <div style={styles.headerLeft}>
+              <button onClick={previousMonth} style={styles.navButton} title="Mês anterior">
+                ◀
+              </button>
+              <h2 style={styles.monthYear}>
+                {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+              </h2>
+              <button onClick={nextMonth} style={styles.navButton} title="Próximo mês">
+                ▶
+              </button>
+            </div>
+            <button onClick={goToToday} style={styles.todayButton} title="Ir para hoje">
+              Hoje
             </button>
           </div>
-          
-          <div style={styles.demandsList}>
-            {selectedDayDemands
-              .sort((a, b) => a.start_time.localeCompare(b.start_time))
-              .map((demand) => (
-                <div
-                  key={demand.id}
-                  style={styles.demandCard}
-                  onClick={() => onDemandClick?.(demand)}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateX(4px)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateX(0)';
-                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
-                  }}
-                >
-                  <div style={styles.demandCardHeader}>
-                  <div style={styles.demandTitle}>{demand.title}</div>
-                  <div
-                    style={{
-                      ...styles.statusBadge,
-                      backgroundColor: getStatusColor(demand.status),
-                    }}
-                  >
-                    {getStatusLabel(demand.status)}
-                  </div>
-                  </div>
-                  
-                  {demand.description && (
-                    <p style={styles.demandDescription}>{demand.description}</p>
-                  )}
-                  
-                  <div style={styles.demandDetails}>
-                    <div style={styles.detailItem}>
-                      <Clock size={14} style={styles.detailIcon} />
-                      <span style={styles.detailText}>
-                        {demand.start_time} ({demand.duration_hours}h)
-                      </span>
-                    </div>
-                    
-                    {getClinicName && (
-                      <div style={styles.detailItem}>
-                        <MapPin size={14} style={styles.detailIcon} />
-                        <span style={styles.detailText}>
-                          {getClinicName(demand.clinic_id)}
-                        </span>
-                      </div>
-                    )}
-                    
-                    {demand.payment && (
-                      <div style={styles.detailItem}>
-                        <DollarSign size={14} style={styles.detailIcon} />
-                        <span style={styles.detailText}>
-                          R$ {demand.payment.toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {demand.required_specialties && demand.required_specialties.length > 0 && (
-                    <div style={styles.specialtiesContainer}>
-                      {demand.required_specialties.slice(0, 3).map((spec, idx) => (
-                        <span key={idx} style={styles.specialtyBadge}>
-                          {spec}
-                        </span>
-                      ))}
-                      {demand.required_specialties.length > 3 && (
-                        <span style={styles.specialtyBadge}>
-                          +{demand.required_specialties.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+
+          {/* Weekday Headers */}
+          <div style={styles.weekdaysHeader}>
+            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
+              <div key={day} style={styles.weekday}>
+                {day}
+              </div>
+            ))}
+          </div>
+
+          {/* Calendar Grid */}
+          <div style={styles.calendarGrid}>
+            {renderCalendarDays()}
+          </div>
+
+          {/* Legend */}
+          <div style={styles.legend}>
+            <div style={styles.legendItem}>
+              <div style={{...styles.legendDot, backgroundColor: '#10b981'}} />
+              <span>Aberta</span>
+            </div>
+            <div style={styles.legendItem}>
+              <div style={{...styles.legendDot, backgroundColor: '#f59e0b'}} />
+              <span>Em Andamento</span>
+            </div>
+            <div style={styles.legendItem}>
+              <div style={{...styles.legendDot, backgroundColor: '#6b7280'}} />
+              <span>Fechada</span>
+            </div>
+            <div style={styles.legendItem}>
+              <div style={{...styles.legendDot, backgroundColor: '#ef4444'}} />
+              <span>Cancelada</span>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Legend */}
-      <div style={styles.legend}>
-        <div style={styles.legendItem}>
-          <div style={{...styles.legendDot, backgroundColor: '#10b981'}} />
-          <span>Aberta</span>
-        </div>
-        <div style={styles.legendItem}>
-          <div style={{...styles.legendDot, backgroundColor: '#f59e0b'}} />
-          <span>Em Andamento</span>
-        </div>
-        <div style={styles.legendItem}>
-          <div style={{...styles.legendDot, backgroundColor: '#6b7280'}} />
-          <span>Fechada</span>
-        </div>
-        <div style={styles.legendItem}>
-          <div style={{...styles.legendDot, backgroundColor: '#ef4444'}} />
-          <span>Cancelada</span>
+        {/* Demands Section - Right Side */}
+        <div style={{
+          ...styles.demandsSection,
+          width: isMobile ? '100%' : '60%',
+        }}>
+          {/* Filters */}
+          {filters && (
+            <div style={styles.filtersContainer}>
+              {filters}
+            </div>
+          )}
+
+          {/* Selected Day Title */}
+          {selectedDay ? (
+            <div style={styles.selectedDayTitle}>
+              <h3 style={styles.selectedDayTitleText}>
+                Demandas de {new Date(selectedDay + 'T00:00:00').toLocaleDateString('pt-BR', {
+                  weekday: 'long',
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </h3>
+              <button onClick={() => setSelectedDay(null)} style={styles.closeButton} title="Fechar">
+                <X size={20} />
+              </button>
+            </div>
+          ) : (
+            <div style={styles.noSelectionMessage}>
+              <p>Selecione uma data no calendário para ver as demandas</p>
+            </div>
+          )}
+
+          {/* Demands List */}
+          {selectedDay && selectedDayDemands.length > 0 ? (
+            <div style={styles.demandsListContainer}>
+              <div style={styles.demandsList}>
+                {selectedDayDemands
+                  .sort((a, b) => a.start_time.localeCompare(b.start_time))
+                  .map((demand) => (
+                    <div
+                      key={demand.id}
+                      style={styles.demandCard}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
+                      }}
+                    >
+                      <div style={styles.demandCardHeader}>
+                        <div style={styles.demandTitle}>{demand.title}</div>
+                        <div
+                          style={{
+                            ...styles.statusBadge,
+                            backgroundColor: getStatusColor(demand.status),
+                          }}
+                        >
+                          {getStatusLabel(demand.status)}
+                        </div>
+                      </div>
+                      
+                      {demand.description && (
+                        <p style={styles.demandDescription}>{demand.description}</p>
+                      )}
+                      
+                      <div style={styles.demandDetails}>
+                        <div style={styles.detailItem}>
+                          <Clock size={14} style={styles.detailIcon} />
+                          <span style={styles.detailText}>
+                            {demand.start_time} ({demand.duration_hours}h)
+                          </span>
+                        </div>
+                        
+                        {getClinicName && (
+                          <div style={styles.detailItem}>
+                            <MapPin size={14} style={styles.detailIcon} />
+                            <span style={styles.detailText}>
+                              {getClinicName(demand.clinic_id)}
+                            </span>
+                          </div>
+                        )}
+                        
+                        {demand.payment && (
+                          <div style={styles.detailItem}>
+                            <DollarSign size={14} style={styles.detailIcon} />
+                            <span style={styles.detailText}>
+                              R$ {demand.payment.toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {demand.required_specialties && demand.required_specialties.length > 0 && (
+                        <div style={styles.specialtiesContainer}>
+                          {demand.required_specialties.slice(0, 3).map((spec, idx) => (
+                            <span key={idx} style={styles.specialtyBadge}>
+                              {spec}
+                            </span>
+                          ))}
+                          {demand.required_specialties.length > 3 && (
+                            <span style={styles.specialtyBadge}>
+                              +{demand.required_specialties.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div style={styles.demandActions}>
+                        {userRole === 'VET' && userApplications.includes(demand.id) && (
+                          <span style={styles.appliedBadge}>
+                            ✓ Candidatura enviada
+                          </span>
+                        )}
+                        {userRole === 'VET' ? (
+                          <div style={styles.actionButtonsContainer}>
+                            {!userApplications.includes(demand.id) && onApply && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onApply(demand);
+                                }}
+                                style={styles.applyButton}
+                              >
+                                Candidatar-se
+                              </button>
+                            )}
+                            {onViewDetails && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onViewDetails(demand.id);
+                                }}
+                                style={styles.viewDetailsButton}
+                              >
+                                Ver Detalhes
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          (onViewDetails || onDemandClick) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onViewDetails) {
+                                  onViewDetails(demand.id);
+                                } else if (onDemandClick) {
+                                  onDemandClick(demand);
+                                }
+                              }}
+                              style={styles.viewDetailsButton}
+                            >
+                              Ver Detalhes
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          ) : selectedDay && selectedDayDemands.length === 0 ? (
+            <div style={styles.emptyDemandsMessage}>
+              <p>Nenhuma demanda encontrada para esta data</p>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -304,6 +415,23 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: '12px',
     padding: '24px',
     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+    width: '100%',
+  },
+  contentWrapper: {
+    display: 'flex',
+    gap: '24px',
+    width: '100%',
+  },
+  calendarSection: {
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  demandsSection: {
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  filtersContainer: {
+    marginBottom: '20px',
   },
   header: {
     display: 'flex',
@@ -373,7 +501,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   dayCell: {
     aspectRatio: '1',
-    border: '1px solid #e5e5e5',
+    border: '1px solid #f0f0f0',
     borderRadius: '8px',
     padding: '8px',
     position: 'relative',
@@ -382,6 +510,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'flex-start',
     transition: 'all 0.2s ease',
     backgroundColor: '#ffffff',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: '#f0f0f0',
   },
   emptyDay: {
     aspectRatio: '1',
@@ -398,11 +529,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: '#ede9fe',
     borderColor: '#7c3aed',
     borderWidth: '2px',
+    borderStyle: 'solid',
   },
   selected: {
     backgroundColor: '#dcd4ff',
     borderColor: '#7c3aed',
     borderWidth: '2px',
+    borderStyle: 'solid',
   },
   demandsBadge: {
     position: 'absolute',
@@ -434,27 +567,35 @@ const styles: { [key: string]: React.CSSProperties } = {
     height: '6px',
     borderRadius: '50%',
   },
-  selectedDayPanel: {
-    backgroundColor: '#f9fafb',
-    borderRadius: '12px',
-    padding: '20px',
-    marginTop: '24px',
-    border: '1px solid #e5e5e5',
-    maxHeight: '500px',
-    overflowY: 'auto',
-  },
-  panelHeader: {
+  selectedDayTitle: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '16px',
+    marginBottom: '20px',
+    paddingBottom: '16px',
+    borderBottom: '1px solid #e5e5e5',
   },
-  panelTitle: {
+  selectedDayTitleText: {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '18px',
     fontWeight: '600',
     color: '#262626',
     margin: 0,
+    textTransform: 'capitalize',
+  },
+  noSelectionMessage: {
+    padding: '40px 20px',
+    textAlign: 'center',
+    color: '#737373',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+  },
+  emptyDemandsMessage: {
+    padding: '40px 20px',
+    textAlign: 'center',
+    color: '#737373',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
   },
   closeButton: {
     backgroundColor: 'transparent',
@@ -468,6 +609,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: '4px',
     transition: 'all 0.2s ease',
   },
+  demandsListContainer: {
+    flex: 1,
+    overflowY: 'auto',
+    maxHeight: 'calc(100vh - 400px)',
+    minHeight: '300px',
+  },
   demandsList: {
     display: 'flex',
     flexDirection: 'column',
@@ -478,11 +625,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '16px',
     borderRadius: '8px',
     border: '1px solid #e5e5e5',
-    cursor: 'pointer',
     transition: 'all 0.2s ease',
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
   },
   demandCardHeader: {
     display: 'flex',
@@ -570,6 +717,53 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '12px',
     height: '12px',
     borderRadius: '50%',
+  },
+  demandActions: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginTop: '4px',
+  },
+  actionButtonsContainer: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  applyButton: {
+    padding: '8px 16px',
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease',
+  },
+  viewDetailsButton: {
+    padding: '8px 16px',
+    backgroundColor: '#ffffff',
+    color: '#7c3aed',
+    border: '1px solid #7c3aed',
+    borderRadius: '8px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  },
+  appliedBadge: {
+    padding: '6px 12px',
+    backgroundColor: '#22c55e',
+    color: '#ffffff',
+    borderRadius: '16px',
+    fontSize: '12px',
+    fontFamily: 'Inter, sans-serif',
+    fontWeight: '600',
   },
 };
 

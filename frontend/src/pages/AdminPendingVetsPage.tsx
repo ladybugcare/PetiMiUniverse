@@ -7,8 +7,11 @@ import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
 import { API_BASE_URL } from '../services/api';
 import { supabase } from '../services/supabase';
-import { Home, Building2, Stethoscope, ClipboardList, Clock, User, LogOut, Eye, CheckCircle, XCircle, FileText, Download } from 'lucide-react';
+import { Eye, CheckCircle, XCircle, FileText, Download, Stethoscope } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 interface PendingVet {
   id: string;
@@ -30,7 +33,13 @@ interface PendingVet {
 
 const AdminPendingVetsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
+  
   const [vets, setVets] = useState<PendingVet[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedVet, setSelectedVet] = useState<PendingVet | null>(null);
@@ -41,17 +50,6 @@ const AdminPendingVetsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'pending' | 'all'>('pending');
   const [specialtiesMap, setSpecialtiesMap] = useState<Map<string, string>>(new Map());
   const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
-
-  const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    { id: 'pending-units', label: 'Aprovações Pendentes', icon: <Clock size={20} color={colors.primary} />, action: 'navigate', path: '/admin/pending-units' },
-    { id: 'pending-vets', label: 'Vets Pendentes', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/pending-vets' },
-    { id: 'profile', label: 'Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/admin-profile' },
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-  ];
 
   useEffect(() => {
     loadSpecialties();

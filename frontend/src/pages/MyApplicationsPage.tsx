@@ -5,9 +5,12 @@ import { MenuItem } from '../components/DashboardSidebar';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { applicationsApi, Application } from '../services/applicationsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, FileText, User, LogOut, Clock, Edit } from 'lucide-react';
+import { Clock, Edit } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 interface ApplicationWithDemand extends Application {
   demand?: {
@@ -21,46 +24,14 @@ interface ApplicationWithDemand extends Application {
 
 const MyApplicationsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showError } = useAlert();
   const [applications, setApplications] = useState<ApplicationWithDemand[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/vet-dashboard',
-    },
-    {
-      id: 'demandas',
-      label: 'Demandas Disponíveis',
-      icon: <IconWrapper icon={ClipboardList} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/demands',
-    },
-    {
-      id: 'candidaturas',
-      label: 'Minhas Candidaturas',
-      icon: <IconWrapper icon={FileText} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/my-applications',
-    },
-    {
-      id: 'perfil',
-      label: 'Meu Perfil',
-      icon: <IconWrapper icon={User} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/vet-profile',
-    },
-    // {
-    //   id: 'logout',
-    //   label: 'Sair',
-    //   icon: <LogOut size={20} color={colors.primary} />,
-    //   action: 'logout',
-    // },
-  ];
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
     loadApplications();

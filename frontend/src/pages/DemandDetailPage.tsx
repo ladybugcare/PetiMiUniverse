@@ -14,8 +14,10 @@ import { statisticsApi } from '../services/statisticsApi';
 import { useAlert } from '../hooks/useAlert';
 import { useAuth } from '../AuthContext';
 import { getUserRole } from '../utils/authHelpers';
-import { BarChart2, ClipboardList, ArrowLeft, Clock, Calendar, MapPin, DollarSign, User, Building2, CheckCircle2, AlertCircle, XCircle, ExternalLink, Star, Shield, CreditCard, Info } from 'lucide-react';
+import { ArrowLeft, Clock, Calendar, MapPin, DollarSign, User, Building2, CheckCircle2, AlertCircle, XCircle, ExternalLink, Star, Shield, CreditCard, Info, MessageCircle, ClipboardList } from 'lucide-react';
 import colors from '../styles/colors';
+import { messagesApi } from '../services/messagesApi';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
 
 interface DemandDetail {
   id: string;
@@ -61,22 +63,8 @@ const DemandDetailPage: React.FC = () => {
   const userRole = user ? getUserRole(user) : null;
   const isVet = userRole === 'VET';
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'back',
-      label: 'Voltar para Demandas',
-      icon: <ArrowLeft size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/demands',
-    },
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/demands',
-    },
-  ];
+  // Get menu items using hook
+  const { menuItems } = useSidebarMenu(userRole || 'VET');
 
   useEffect(() => {
     if (id) {
@@ -187,6 +175,26 @@ const DemandDetailPage: React.FC = () => {
       navigate('/demands');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendMessageToClinic = async () => {
+    if (!user?.id || !demand?.clinic_id) {
+      showError('Erro ao identificar usuário ou clínica');
+      return;
+    }
+
+    try {
+      const result = await messagesApi.createConversation({
+        participant1_id: user.id,
+        participant1_type: 'vet',
+        participant2_id: demand.clinic_id,
+        participant2_type: 'clinic',
+      });
+
+      navigate(`/messages?conversation=${result.conversation.id}`);
+    } catch (error: any) {
+      showError('Erro ao criar conversa: ' + (error.message || 'Erro desconhecido'));
     }
   };
 
@@ -545,13 +553,40 @@ const DemandDetailPage: React.FC = () => {
               )}
             </div>
             
-            <button
-              onClick={() => navigate(`/clinic-profile/${demand.clinic_id}`)}
-              style={styles.viewProfileButton}
-            >
-              Ver perfil da clínica
-              <ExternalLink size={16} />
-            </button>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+              {isVet && (
+                <button
+                  onClick={handleSendMessageToClinic}
+                  style={{
+                    ...styles.viewProfileButton,
+                    backgroundColor: colors.primary,
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    flex: 1,
+                  }}
+                >
+                  <MessageCircle size={16} />
+                  Enviar mensagem
+                </button>
+              )}
+              <button
+                onClick={() => navigate(`/clinic-profile/${demand.clinic_id}`)}
+                style={{
+                  ...styles.viewProfileButton,
+                  flex: isVet ? 1 : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}
+              >
+                Ver perfil da clínica
+                <ExternalLink size={16} />
+              </button>
+            </div>
           </div>
 
           {/* 4. Seção de Requisitos da Vaga (apenas para veterinários) */}

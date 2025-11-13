@@ -8,11 +8,14 @@ import { useUnit } from '../contexts/UnitContext';
 import { clinicUsersApi } from '../services/clinicUsersApi';
 import { ClinicUser, UserInvitation, Role } from '../types/units';
 import { getRoleDisplayName, getRoleColor } from '../utils/permissions';
-import { Home, ClipboardList, ShoppingCart, Building2, Users, LogOut } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const UsersManagementPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const { showSuccess, showError, showConfirm } = useAlert();
   const { canInviteUser, canEditUser, canDeleteUser } = usePermissions();
@@ -33,26 +36,11 @@ const UsersManagementPage: React.FC = () => {
     role: 'CASSISTANT' as Role,
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '');
-  const userRole = user?.user_metadata?.role || user?.role;
-  const clinicId = user.id;
+  const clinicId = user?.id || '';
 
-  const getMenuItems = (): MenuItem[] => {
-    const baseItems: MenuItem[] = [];
-
-    if (userRole === 'clinic') {
-      baseItems.push(
-        { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
-        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-        { id: 'units', label: 'Gerenciar Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
-        { id: 'users', label: 'Gerenciar Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' }
-      );
-    }
-
-    return baseItems;
-  };
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
   const loadData = async () => {
     try {
@@ -160,7 +148,7 @@ const UsersManagementPage: React.FC = () => {
   };
 
   return (
-    <DashboardLayout pageName="Gerenciar Usuários" menuItems={getMenuItems()}>
+    <DashboardLayout pageName="Gerenciar Usuários" menuItems={menuItems}>
       <div style={styles.container}>
         <div style={styles.header}>
           <div>

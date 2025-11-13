@@ -81,8 +81,18 @@ export const UnitProvider: React.FC<UnitProviderProps> = ({ children }) => {
       }
 
       setSelectedUnitState(mainUnit || null);
-    } catch (error) {
-      console.error('Error loading units:', error);
+    } catch (error: any) {
+      // Não logar erro 403/404 - são esperados em alguns casos
+      if (error?.message?.includes('403') || error?.message?.includes('404')) {
+        // Silently handle - usuário pode não ter acesso ou clínica pode não existir
+        setUnits([]);
+        setSelectedUnitState(null);
+      } else {
+        // Logar apenas erros inesperados
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Error loading units:', error);
+        }
+      }
     } finally {
       setLoading(false);
     }

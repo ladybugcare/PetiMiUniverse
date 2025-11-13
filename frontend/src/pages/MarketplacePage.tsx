@@ -6,14 +6,22 @@ import FloatingActionButton from '../components/FloatingActionButton';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { marketplaceApi, MarketplaceItem, MarketplaceFilters } from '../services/marketplaceApi';
 import { BRAZILIAN_STATES } from '../utils/locationData';
-import { BarChart2, ShoppingCart, PlusCircle, Package, MessageSquare, User, LogOut, Search } from 'lucide-react';
+import { Search, PlusCircle, Package } from 'lucide-react';
 import colors from '../styles/colors';
 import IconWrapper from '../components/IconWrapper';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const MarketplacePage: React.FC = () => {
+  const { user } = useAuth();
   const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
   
   const [filters, setFilters] = useState<MarketplaceFilters>({
     listing_type: '',
@@ -26,57 +34,6 @@ const MarketplacePage: React.FC = () => {
     search: '',
     sort_by: 'recent',
   });
-
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-dashboard',
-    },
-    {
-      id: 'marketplace',
-      label: 'Ver Marketplace',
-      icon: <IconWrapper icon={ShoppingCart} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace',
-    },
-    {
-      id: 'criar-anuncio',
-      label: 'Criar Anúncio',
-      icon: <IconWrapper icon={PlusCircle} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/create',
-    },
-    {
-      id: 'meus-anuncios',
-      label: 'Meus Anúncios',
-      icon: <IconWrapper icon={Package} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/my-listings',
-    },
-    {
-      id: 'mensagens',
-      label: 'Mensagens',
-      icon: <IconWrapper icon={MessageSquare} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/messages',
-    },
-    {
-      id: 'perfil',
-      label: 'Perfil',
-      icon: <User size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-profile',
-    },
-    // {
-    //   id: 'logout',
-    //   label: 'Sair',
-    //   icon: <LogOut size={20} color={colors.primary} />,
-    //   action: 'logout',
-    // },
-  ];
 
   useEffect(() => {
     loadItems();

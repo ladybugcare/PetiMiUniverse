@@ -4,10 +4,14 @@ import DashboardSidebar from '../components/DashboardSidebar';
 import PositionCard from '../components/PositionCard';
 import { demandPositionsApi, PositionWithAvailability } from '../services/demandPositionsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Briefcase, ClipboardList, User, LogOut } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
+import { MenuItem } from '../components/DashboardSidebar';
 
 const VetPositionsPage: React.FC = () => {
+  const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -22,8 +26,11 @@ const VetPositionsPage: React.FC = () => {
   const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [selectedPositionId, setSelectedPositionId] = useState<string | null>(null);
 
-  const user = JSON.parse(localStorage.getItem('user') || '');
-  const vetId = user.id;
+  const vetId = user?.id || '';
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
     loadPositions();
@@ -121,42 +128,6 @@ const VetPositionsPage: React.FC = () => {
     return Array.from(specialties).sort();
   };
 
-  const menuItems = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate' as const,
-      path: '/vet-dashboard',
-    },
-    {
-      id: 'positions',
-      label: 'Posições Disponíveis',
-      icon: <Briefcase size={20} color={colors.primary} />,
-      action: 'navigate' as const,
-      path: '/vet-positions',
-    },
-    {
-      id: 'applications',
-      label: 'Minhas Candidaturas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate' as const,
-      path: '/vet-applications',
-    },
-    {
-      id: 'profile',
-      label: 'Meu Perfil',
-      icon: <User size={20} color={colors.primary} />,
-      action: 'navigate' as const,
-      path: '/vet-profile',
-    },
-    // {
-    //   id: 'logout',
-    //   label: 'Sair',
-    //   icon: <LogOut size={20} color={colors.primary} />,
-    //   action: 'logout' as const,
-    // },
-  ];
 
   return (
     <div style={styles.container}>

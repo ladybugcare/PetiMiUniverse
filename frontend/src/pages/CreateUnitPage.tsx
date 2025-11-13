@@ -5,9 +5,14 @@ import { API_BASE_URL } from '../services/api';
 import colors from '../styles/colors';
 import { AlertTriangle, Lightbulb, Info, Building2 } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
+import DashboardLayout from '../components/DashboardLayout';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const CreateUnitPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -21,15 +26,17 @@ const CreateUnitPage: React.FC = () => {
     technical_manager: '',
   });
 
-  const userStr = localStorage.getItem('user');
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
+
   const clinicUserStr = localStorage.getItem('clinic_user');
   const sessionStr = localStorage.getItem('session');
   
-  const user = userStr ? JSON.parse(userStr) : null;
   const clinicUser = clinicUserStr ? JSON.parse(clinicUserStr) : null;
   const session = sessionStr ? JSON.parse(sessionStr) : null;
   const accessToken: string | undefined = session?.access_token;
-  const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
+  const clinicId = clinicUser?.clinic_id || user?.user_metadata?.clinic_id || user?.id;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
@@ -100,8 +107,9 @@ const CreateUnitPage: React.FC = () => {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
+    <DashboardLayout pageName="Nova Unidade" menuItems={menuItems}>
+      <div style={styles.container}>
+        <div style={styles.card}>
         <div style={styles.header}>
           <h1 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -286,13 +294,12 @@ const CreateUnitPage: React.FC = () => {
         </form>
       </div>
     </div>
+    </DashboardLayout>
   );
 };
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
-    minHeight: '100vh',
-    backgroundColor: '#f3f4f6',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

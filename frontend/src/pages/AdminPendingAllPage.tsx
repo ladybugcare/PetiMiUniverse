@@ -8,8 +8,11 @@ import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
 import { API_BASE_URL } from '../services/api';
 import { supabase } from '../services/supabase';
-import { BarChart2, Building2, Stethoscope, Briefcase, Clock, CheckCircle, XCircle, Download } from 'lucide-react';
+import { CheckCircle, XCircle, Download, Building2, Stethoscope, Briefcase } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 interface PendingVet {
   id: string;
@@ -34,7 +37,13 @@ interface PendingFreelancer {
 
 const AdminPendingAllPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
+  
   const [units, setUnits] = useState<PendingUnit[]>([]);
   const [vets, setVets] = useState<PendingVet[]>([]);
   const [freelancers, setFreelancers] = useState<PendingFreelancer[]>([]);
@@ -47,14 +56,6 @@ const AdminPendingAllPage: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [specialtiesMap, setSpecialtiesMap] = useState<Map<string, string>>(new Map());
   const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
-
-  const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    { id: 'freelancers', label: 'Freelancers', icon: <Briefcase size={20} color={colors.primary} />, action: 'navigate', path: '/admin/freelancers' },
-    { id: 'pending-all', label: 'Todos Pendentes', icon: <Clock size={20} color={colors.primary} />, action: 'navigate', path: '/admin/pending-all' },
-  ];
 
   useEffect(() => {
     loadSpecialties();

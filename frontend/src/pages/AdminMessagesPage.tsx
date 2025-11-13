@@ -5,29 +5,31 @@ import { MenuItem } from '../components/DashboardSidebar';
 import AdminReportedMessage from '../components/AdminReportedMessage';
 import AdminConversationView from '../components/AdminConversationView';
 import AdminMessagesStats from '../components/AdminMessagesStats';
-import { 
-  BarChart2, 
-  Building2, 
-  Stethoscope, 
-  ClipboardList, 
-  Users, 
-  Settings,
-  MessageCircle,
-  Shield,
+import {
   AlertTriangle,
   FileText,
   TrendingUp,
+  Shield,
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { messagesApi } from '../services/messagesApi';
 import { useAlert } from '../hooks/useAlert';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 type TabType = 'reported' | 'tickets' | 'stats';
 
 const AdminMessagesPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showError, showSuccess } = useAlert();
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
+  
   const [activeTab, setActiveTab] = useState<TabType>('reported');
   const [reportedMessages, setReportedMessages] = useState<any[]>([]);
   const [ticketConversations, setTicketConversations] = useState<any[]>([]);
@@ -38,65 +40,6 @@ const AdminMessagesPage: React.FC = () => {
     context: 'report' | 'support_ticket';
     ticketId?: string;
   } | null>(null);
-
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin-dashboard',
-    },
-    {
-      id: 'clinics',
-      label: 'Clínicas',
-      icon: <Building2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/clinics',
-    },
-    {
-      id: 'vets',
-      label: 'Veterinários',
-      icon: <Stethoscope size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/vets',
-    },
-    {
-      id: 'demands',
-      label: 'Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/demands',
-    },
-    {
-      id: 'messages',
-      label: 'Moderação de Mensagens',
-      icon: <Shield size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/messages',
-    },
-    {
-      id: 'support',
-      label: 'Tickets de Suporte',
-      icon: <MessageCircle size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/support-tickets',
-    },
-    {
-      id: 'users',
-      label: 'Usuários',
-      icon: <Users size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/users',
-    },
-    {
-      id: 'settings',
-      label: 'Configurações',
-      icon: <Settings size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/settings',
-    },
-  ];
 
   useEffect(() => {
     loadData();

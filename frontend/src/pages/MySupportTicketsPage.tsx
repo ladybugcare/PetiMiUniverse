@@ -28,6 +28,9 @@ import {
 } from '../services/supportTicketsApi';
 import { EvaluationModal } from '../components/EvaluationModal';
 import { SuccessModal } from '../components/SuccessModal';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 import colors from '../styles/colors';
 
 const MySupportTicketsPage: React.FC = () => {
@@ -38,8 +41,8 @@ const MySupportTicketsPage: React.FC = () => {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [user, setUser] = useState<any>(null);
-  const [userRole, setUserRole] = useState<'clinic' | 'vet' | 'freelancer'>('clinic');
+  const { user } = useAuth();
+  const userRole = user ? getUserRole(user) : 'UNKNOWN';
   const [showEvaluationModal, setShowEvaluationModal] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -48,10 +51,10 @@ const MySupportTicketsPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Get menu items using hook
+  const { menuItems } = useSidebarMenu(userRole);
+
   useEffect(() => {
-    const userData = JSON.parse(localStorage.getItem('user') || '');
-    setUser(userData);
-    setUserRole(userData?.user_metadata?.role || userData?.role);
     loadTickets();
   }, []);
 
@@ -175,42 +178,6 @@ const MySupportTicketsPage: React.FC = () => {
     setNewMessage('');
   };
 
-  // Menu items baseado no papel do usuário
-  const getMenuItems = (): MenuItem[] => {
-    if (userRole === 'clinic') {
-      return [
-        { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
-        { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-        { id: 'units', label: 'Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
-        { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
-        { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
-        { id: 'perfil', label: 'Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-profile' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-      ];
-    } else if (userRole === 'vet') {
-      return [
-        { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/vet-dashboard' },
-        { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-        { id: 'candidaturas', label: 'Minhas Candidaturas', icon: <FileText size={20} color={colors.primary} />, action: 'navigate', path: '/my-applications' },
-        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-        { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
-        { id: 'perfil', label: 'Meu Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/vet-profile' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-      ];
-    } else {
-      // freelancer
-      return [
-        { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/freelancer-dashboard' },
-        { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-        { id: 'candidaturas', label: 'Minhas Candidaturas', icon: <FileText size={20} color={colors.primary} />, action: 'navigate', path: '/my-applications' },
-        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-        { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
-        { id: 'perfil', label: 'Meu Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/freelancer-profile' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-      ];
-    }
-  };
 
   const getStatusBadge = (status: SupportTicket['status']) => {
     const statusConfig: { [key: string]: { label: string; icon: React.ReactNode; color: string; bgColor: string } } = {
@@ -261,7 +228,7 @@ const MySupportTicketsPage: React.FC = () => {
     return (
       <DashboardLayout
         pageName="Meus Tickets de Suporte"
-        menuItems={getMenuItems()}
+        menuItems={menuItems}
       >
         <div style={styles.container}>
           <div style={styles.header}>
@@ -351,7 +318,7 @@ const MySupportTicketsPage: React.FC = () => {
   return (
     <DashboardLayout
       pageName="Ticket de Suporte"
-      menuItems={getMenuItems()}
+      menuItems={menuItems}
     >
       <div style={styles.container}>
         {/* Header da conversação */}

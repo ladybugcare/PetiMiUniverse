@@ -10,6 +10,7 @@ import { useAuth } from '../AuthContext';
 import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
 import { useAlert } from '../hooks/useAlert';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
 
 const VetDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -113,78 +114,24 @@ const VetDashboardPage: React.FC = () => {
     },
   ];
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'resumo',
-      label: 'Meu Resumo',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'section',
-      sectionId: 'resumo',
-    },
-    // Só incluir o item de demandas se estiver aprovado
-    ...(isApproved ? [{
-      id: 'demandas',
-      label: 'Demandas Disponíveis',
-      icon: <IconWrapper icon={ClipboardList} size={20} color={colors.primary} />,
-      action: 'navigate' as const,
-      path: '/demands',
-    }] : []),
-    {
-      id: 'candidaturas',
-      label: 'Minhas Candidaturas',
-      icon: <IconWrapper icon={FileText} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/my-applications',
-    },
-    {
-      id: 'mensagens',
-      label: 'Mensagens',
-      icon: <IconWrapper icon={MessageSquare} size={20} color={colors.primary} />,
-      action: 'section',
-      sectionId: 'mensagens',
-    },
-    {
-      id: 'avaliacoes',
-      label: 'Minhas Avaliações',
-      icon: <IconWrapper icon={Star} size={20} color={colors.primary} />,
-      action: 'section',
-      sectionId: 'avaliacoes',
-    },
-    {
-      id: 'marketplace',
-      label: 'Marketplace',
-      icon: <IconWrapper icon={ShoppingCart} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace',
-    },
-    {
-      id: 'support',
-      label: 'Meus Tickets',
-      icon: <IconWrapper icon={MessageCircle} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/my-support-tickets',
-    },
-    {
-      id: 'perfil',
-      label: 'Meu Perfil',
-      icon: <IconWrapper icon={User} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/vet-profile',
-    },
-    {
-      id: 'configuracoes',
-      label: 'Configurações',
-      icon: <IconWrapper icon={Settings} size={20} color={colors.primary} />,
-      action: 'section',
-      sectionId: 'configuracoes',
-    },
-    // {
-    //   id: 'logout',
-    //   label: 'Sair',
-    //   icon: <LogOut size={20} color={colors.primary} />,
-    //   action: 'logout',
-    // },
-  ];
+  // Get menu items using hook
+  const userRole = getUserRole(user);
+  const { menuItems: baseMenuItems } = useSidebarMenu(userRole);
+  
+  // Filtrar itens desabilitados baseado em aprovação
+  const menuItems = baseMenuItems.map(item => {
+    // Se o item é "Demandas Disponíveis" e o vet não está aprovado, desabilitar
+    if (item.id === 'demands' && !isApproved) {
+      const updatedSubItems = item.subItems?.map(subItem => {
+        if (subItem.id === 'demands-available') {
+          return { ...subItem, disabled: true, tooltip: 'Complete seu cadastro para acessar' };
+        }
+        return subItem;
+      });
+      return { ...item, subItems: updatedSubItems };
+    }
+    return item;
+  });
 
   const renderContent = () => {
     switch (activeSection) {

@@ -5,45 +5,21 @@ import { MenuItem } from '../components/DashboardSidebar';
 import MarketplaceCard from '../components/MarketplaceCard';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { marketplaceApi, MarketplaceItem } from '../services/marketplaceApi';
-import { ShoppingCart, PlusCircle, Package, MessageSquare } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const MyMarketplaceListingsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'active' | 'sold' | 'inactive'>('all');
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'marketplace',
-      label: 'Ver Marketplace',
-      icon: <ShoppingCart size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace',
-    },
-    {
-      id: 'criar-anuncio',
-      label: 'Criar Anúncio',
-      icon: <PlusCircle size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/create',
-    },
-    {
-      id: 'meus-anuncios',
-      label: 'Meus Anúncios',
-      icon: <Package size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/my-listings',
-    },
-    {
-      id: 'mensagens',
-      label: 'Mensagens',
-      icon: <MessageSquare size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/messages',
-    },
-  ];
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
     loadMyListings();

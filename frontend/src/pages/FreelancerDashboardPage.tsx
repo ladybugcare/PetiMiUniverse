@@ -4,12 +4,13 @@ import DashboardLayout from '../components/DashboardLayout';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { MenuItem } from '../components/DashboardSidebar';
 import FloatingActionButton from '../components/FloatingActionButton';
-import { BarChart2, ClipboardList, FileText, MessageSquare, Star, User, LogOut, ShoppingCart, Clock, CheckCircle, Building2, Bell, Lock, Smartphone, Globe, MessageCircle, Settings, AlertCircle } from 'lucide-react';
+import { Clock, CheckCircle, Building2, Bell, Lock, Smartphone, Globe, MessageCircle, Settings, AlertCircle, Star, ClipboardList, ShoppingCart, FileText } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
 import { useAuth } from '../AuthContext';
 import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
 import { useAlert } from '../hooks/useAlert';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
 
 const FreelancerDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -113,72 +114,20 @@ const FreelancerDashboardPage: React.FC = () => {
     },
   ];
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'resumo',
-      label: 'Meu Resumo',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'section',
-      sectionId: 'resumo',
-    },
-    // Só incluir o item de demandas se estiver aprovado
-    ...(isApproved ? [{
-      id: 'demandas',
-      label: 'Demandas Disponíveis',
-      icon: <IconWrapper icon={ClipboardList} size={20} color={colors.primary} />,
-      action: 'navigate' as const,
-      path: '/demands',
-    }] : []),
-    {
-      id: 'candidaturas',
-      label: 'Minhas Candidaturas',
-      icon: <IconWrapper icon={FileText} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/my-applications',
-    },
-    {
-      id: 'mensagens',
-      label: 'Mensagens',
-      icon: <IconWrapper icon={MessageSquare} size={20} color={colors.primary} />,
-      action: 'section',
-      sectionId: 'mensagens',
-    },
-    {
-      id: 'avaliacoes',
-      label: 'Minhas Avaliações',
-      icon: <IconWrapper icon={Star} size={20} color={colors.primary} />,
-      action: 'section',
-      sectionId: 'avaliacoes',
-    },
-    {
-      id: 'marketplace',
-      label: 'Marketplace',
-      icon: <IconWrapper icon={ShoppingCart} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace',
-    },
-    {
-      id: 'support',
-      label: 'Meus Tickets',
-      icon: <IconWrapper icon={MessageCircle} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/my-support-tickets',
-    },
-    {
-      id: 'perfil',
-      label: 'Meu Perfil',
-      icon: <IconWrapper icon={User} size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/freelancer-profile',
-    },
-    {
-      id: 'configuracoes',
-      label: 'Configurações',
-      icon: <IconWrapper icon={Settings} size={20} color={colors.primary} />,
-      action: 'section',
-      sectionId: 'configuracoes',
-    },
-  ];
+  // Get menu items using hook
+  const { menuItems: baseMenuItems } = useSidebarMenu('FREELANCER');
+  
+  // Map menu items to conditionally disable "Demandas Disponíveis" if not approved
+  const menuItems = baseMenuItems.map(item => {
+    if (item.id === 'demands-available' && !isApproved) {
+      return {
+        ...item,
+        disabled: true,
+        tooltip: 'Você precisa ser aprovado para ver demandas disponíveis',
+      };
+    }
+    return item;
+  });
 
   const renderContent = () => {
     switch (activeSection) {

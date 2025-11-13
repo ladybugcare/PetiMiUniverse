@@ -3,16 +3,24 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import SpecialtiesManager from '../components/admin/SpecialtiesManager';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, Settings, MapPin, CreditCard, ShoppingCart, Shield, FileText, Server } from 'lucide-react';
+import { Users, Settings, MapPin, CreditCard, ShoppingCart, Shield, FileText, Server } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 type SettingsTab = 'cadastros' | 'localizacao' | 'planos' | 'marketplace' | 'usuarios' | 'documentos' | 'sistema';
 
 const AdminSettingsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab') as SettingsTab | null;
   const [activeTab, setActiveTab] = useState<SettingsTab>(tabParam || 'cadastros');
+
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
   // Update active tab when URL param changes
   useEffect(() => {
@@ -26,51 +34,6 @@ const AdminSettingsPage: React.FC = () => {
     setActiveTab(tab);
     setSearchParams({ tab });
   };
-
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin-dashboard',
-    },
-    {
-      id: 'clinics',
-      label: 'Clínicas',
-      icon: <Building2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/clinics',
-    },
-    {
-      id: 'vets',
-      label: 'Veterinários',
-      icon: <Stethoscope size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/vets',
-    },
-    {
-      id: 'demands',
-      label: 'Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/demands',
-    },
-    {
-      id: 'users',
-      label: 'Usuários',
-      icon: <Users size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/users',
-    },
-    {
-      id: 'settings',
-      label: 'Configurações',
-      icon: <Settings size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/admin/settings',
-    },
-  ];
 
   const tabs = [
     {

@@ -6,12 +6,20 @@ import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
 import { freelancersApi, Freelancer } from '../services/freelancersApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, Edit, Trash2, Briefcase } from 'lucide-react';
+import { Eye, Edit, Trash2, Briefcase } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const AdminFreelancersPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
   const [freelancers, setFreelancers] = useState<Freelancer[]>([]);
   const [filteredFreelancers, setFilteredFreelancers] = useState<Freelancer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -74,16 +82,6 @@ const AdminFreelancersPage: React.FC = () => {
   const endIndex = startIndex + itemsPerPage;
   const currentFreelancers = filteredFreelancers.slice(startIndex, endIndex);
 
-  const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    { id: 'freelancers', label: 'Freelancers', icon: <Briefcase size={20} color={colors.primary} />, action: 'navigate', path: '/admin/freelancers' },
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-    { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-  ];
 
   const handleView = (freelancer: Freelancer) => {
     setSelectedFreelancer(freelancer);

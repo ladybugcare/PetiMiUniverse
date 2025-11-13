@@ -10,10 +10,12 @@ import { freelancersApi, Freelancer } from '../services/freelancersApi';
 import { adminApi, CreateUserData } from '../services/adminApi';
 import { useAlert } from '../hooks/useAlert';
 import { formatCRMV } from '../utils/validators';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, EyeOff, Edit, Trash2, UserCog, Truck, UserPlus, Plus, Shield } from 'lucide-react';
+import { Eye, EyeOff, Edit, Trash2, UserCog, Truck, UserPlus, Plus, Shield, Users, Building2, Stethoscope, MessageCircle } from 'lucide-react';
 import colors from '../styles/colors';
 import { messagesApi } from '../services/messagesApi';
 import { useAuth } from '../AuthContext';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
 
 interface Clinic {
   id: string;
@@ -224,15 +226,9 @@ const AdminUsersPage: React.FC = () => {
     setCurrentPage(1);
   }, [activeTab]);
 
-  const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-    { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-  ];
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
   // Clinic handlers
   const handleViewClinic = (clinic: Clinic) => {

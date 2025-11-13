@@ -1,61 +1,22 @@
 import React, { useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
-import { MenuItem } from '../components/DashboardSidebar';
 import CategorySelectionStep from '../components/CategorySelectionStep';
 import DemandFormStep from '../components/DemandFormStep';
-import { BarChart2, ClipboardList, PlusCircle, User, LogOut } from 'lucide-react';
-import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 type CategoryType = 'vet' | 'freelancer' | 'clinic' | 'other';
 type StepType = 'category' | 'form';
 
 const CreateDemandPage: React.FC = () => {
+  const { user } = useAuth();
   const [step, setStep] = useState<StepType>('category');
   const [selectedCategory, setSelectedCategory] = useState<CategoryType | null>(null);
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-dashboard',
-    },
-    {
-      id: 'my-demands',
-      label: 'Minhas Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-demands',
-    },
-    {
-      id: 'demandas',
-      label: 'Ver Todas Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/demands',
-    },
-    {
-      id: 'criar-demanda',
-      label: 'Criar Nova Demanda',
-      icon: <PlusCircle size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/create-demand',
-    },
-    {
-      id: 'perfil',
-      label: 'Perfil',
-      icon: <User size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-profile',
-    },
-    // {
-    //   id: 'logout',
-    //   label: 'Sair',
-    //   icon: <LogOut size={20} color={colors.primary} />,
-    //   action: 'logout',
-    // },
-  ];
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
   const handleCategorySelect = (category: CategoryType) => {
     setSelectedCategory(category);

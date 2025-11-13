@@ -5,12 +5,20 @@ import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { vetsApi, Vet } from '../services/vetsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, FileText, ShoppingCart, User, Edit } from 'lucide-react';
+import { Edit } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const VetProfilePage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError } = useAlert();
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
   const [vet, setVet] = useState<Vet | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,44 +34,6 @@ const VetProfilePage: React.FC = () => {
 
   const [specialtyInput, setSpecialtyInput] = useState('');
   const [certificateInput, setCertificateInput] = useState('');
-
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/vet-dashboard',
-    },
-    {
-      id: 'demandas',
-      label: 'Demandas',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/demands',
-    },
-    {
-      id: 'candidaturas',
-      label: 'Minhas Candidaturas',
-      icon: <FileText size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/my-applications',
-    },
-    {
-      id: 'marketplace',
-      label: 'Marketplace',
-      icon: <ShoppingCart size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace',
-    },
-    {
-      id: 'perfil',
-      label: 'Meu Perfil',
-      icon: <User size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/vet-profile',
-    },
-  ];
 
   const loadProfile = useCallback(async () => {
     try {

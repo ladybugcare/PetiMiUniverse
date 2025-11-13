@@ -7,8 +7,9 @@ import ConversationThread from '../components/ConversationThread';
 import { messagesApi, Conversation, Message } from '../services/messagesApi';
 import { useAuth } from '../AuthContext';
 import { getUserRole } from '../utils/authHelpers';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { useAlert } from '../hooks/useAlert';
-import { MessageSquare, ArrowLeft, Archive, ArchiveRestore } from 'lucide-react';
+import { ArrowLeft, Archive, ArchiveRestore, MessageSquare } from 'lucide-react';
 import colors from '../styles/colors';
 import Avatar from '../components/Avatar';
 
@@ -25,6 +26,9 @@ const MessagesPage: React.FC = () => {
   const [showArchived, setShowArchived] = useState(false);
 
   const userRole = user ? getUserRole(user) : 'UNKNOWN';
+  
+  // Get menu items using hook
+  const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
     if (!user) {
@@ -157,71 +161,11 @@ const MessagesPage: React.FC = () => {
     (selectedConversation.participant2_id === user.id && selectedConversation.archived_by_participant2)
   ) : false;
 
-  // Menu items baseado no role
-  const getMenuItems = (): MenuItem[] => {
-    const baseItems: MenuItem[] = [
-      {
-        id: 'messages',
-        label: 'Mensagens',
-        icon: <MessageSquare size={20} color={colors.primary} />,
-        action: 'navigate',
-        path: '/messages',
-      },
-    ];
-
-    if (userRole === 'ADMIN') {
-      return [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: <MessageSquare size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/admin-dashboard',
-        },
-        ...baseItems,
-      ];
-    } else if (userRole === 'CADMIN' || userRole === 'CMANAGER') {
-      return [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: <MessageSquare size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/clinic-dashboard',
-        },
-        ...baseItems,
-      ];
-    } else if (userRole === 'VET') {
-      return [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: <MessageSquare size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/vet-dashboard',
-        },
-        ...baseItems,
-      ];
-    } else if (userRole === 'FREELANCER') {
-      return [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: <MessageSquare size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/freelancer-dashboard',
-        },
-        ...baseItems,
-      ];
-    }
-
-    return baseItems;
-  };
 
   // Se não há conversa selecionada, mostrar lista
   if (!selectedConversation) {
     return (
-      <DashboardLayout pageName="Mensagens" menuItems={getMenuItems()}>
+      <DashboardLayout pageName="Mensagens" menuItems={menuItems}>
         <div style={styles.container}>
           <div style={styles.header}>
             <h1 style={styles.title}>Mensagens</h1>
@@ -251,7 +195,7 @@ const MessagesPage: React.FC = () => {
   const otherParticipant = selectedConversation.other_participant;
 
   return (
-    <DashboardLayout pageName="Mensagens" menuItems={getMenuItems()}>
+    <DashboardLayout pageName="Mensagens" menuItems={menuItems}>
       <div style={styles.container}>
         <div style={styles.listContainer}>
           <ConversationList

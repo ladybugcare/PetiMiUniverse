@@ -36,7 +36,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
         
         const user = JSON.parse(userStr);
         const clinicUser = JSON.parse(clinicUserStr);
-        const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
+        // Sempre usar clinic_id do clinic_user quando disponível
+        // Fallback para user.id apenas se não houver clinic_user (clinic owner direto)
+        const clinicId = clinicUser?.clinic_id || user.user_metadata?.clinic_id || user.id;
 
         console.log('Loading stats for clinic:', { clinicId, userId: user.id });
 
@@ -61,8 +63,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
           pendingApplications: clinicStats.pendingApplications,
         });
       } catch (error: any) {
-        console.error('Error loading stats:', error);
-        console.error('Error details:', error.message);
+        // Não logar erro 403/404 - são esperados em alguns casos
+        if (error?.message?.includes('403') || error?.message?.includes('404')) {
+          // Silently handle - usuário pode não ter acesso ou dados podem não existir
+          setStats({
+            totalUnits: 0,
+            totalUsers: 0,
+            totalDemands: 0,
+            pendingApplications: 0,
+          });
+        } else {
+          // Logar apenas erros inesperados
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Error loading stats:', error);
+            console.error('Error details:', error.message);
+          }
+        }
       } finally {
         if (isMounted) {
           setLoading(false);
