@@ -8,9 +8,9 @@ const normalizeDocument = (doc: string): string => {
 };
 
 // Timeout helper para evitar requisições que demoram muito
-const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+const withTimeout = <T>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> => {
   return Promise.race([
-    promise,
+    Promise.resolve(promise),
     new Promise<T>((_, reject) =>
       setTimeout(() => reject(new Error('Timeout: requisição demorou muito')), timeoutMs)
     ),
