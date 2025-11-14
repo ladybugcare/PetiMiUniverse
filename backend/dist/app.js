@@ -10,6 +10,7 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const supabase_js_1 = require("./config/supabase.js");
 const errorHandler_js_1 = require("./middleware/errorHandler.js");
 const rateLimiter_js_1 = require("./middleware/rateLimiter.js");
+const correlationId_js_1 = require("./middleware/correlationId.js");
 // 🔹 Importa rotas
 const pets_js_1 = __importDefault(require("./routes/pets.js"));
 const clinics_js_1 = __importDefault(require("./routes/clinics.js"));
@@ -28,6 +29,8 @@ const demandPositions_js_1 = __importDefault(require("./routes/demandPositions.j
 const adminRoutes_js_1 = __importDefault(require("./routes/adminRoutes.js"));
 const supportTickets_js_1 = __importDefault(require("./routes/supportTickets.js"));
 const notifications_js_1 = __importDefault(require("./routes/notifications.js"));
+const messages_js_1 = __importDefault(require("./routes/messages.js"));
+const messageReports_js_1 = __importDefault(require("./routes/messageReports.js"));
 const health_js_1 = __importDefault(require("./routes/health.js"));
 // 🔹 Carrega variáveis de ambiente
 dotenv_1.default.config();
@@ -82,6 +85,8 @@ app.use((0, cors_1.default)({
     exposedHeaders: ['Content-Range', 'X-Content-Range'],
     maxAge: 86400, // 24h
 }));
+// 🔹 Correlation ID middleware (deve ser um dos primeiros)
+app.use(correlationId_js_1.correlationIdMiddleware);
 // 🔹 Aumenta limite de payload (para imagens base64)
 app.use(express_1.default.json({ limit: '50mb' }));
 app.use(express_1.default.urlencoded({ limit: '50mb', extended: true }));
@@ -105,6 +110,8 @@ app.use('/demand-positions', demandPositions_js_1.default);
 app.use('/admin', adminRoutes_js_1.default);
 app.use('/support', supportTickets_js_1.default);
 app.use('/notifications', notifications_js_1.default);
+app.use('/api/messages', messages_js_1.default);
+app.use('/api/messages/admin', messageReports_js_1.default);
 app.use('/health', health_js_1.default);
 // 🔹 Healthcheck melhorado (verifica dependências)
 app.get('/', async (req, res) => {

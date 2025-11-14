@@ -16,6 +16,7 @@ const uploadCrmvFile_1 = require("../controllers/vets/uploadCrmvFile");
 const getPendingVets_1 = require("../controllers/vets/getPendingVets");
 const approveVet_1 = require("../controllers/vets/approveVet");
 const rejectVet_1 = require("../controllers/vets/rejectVet");
+const getVetCompletedDemands_1 = require("../controllers/vets/getVetCompletedDemands");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
 /**
@@ -53,6 +54,7 @@ router.get('/pending', authMiddleware_1.authenticateUser, getPendingVets_1.getPe
  * ===========================================================
  */
 router.get('/:id', getVetById_1.getVetById);
+router.get('/:id/completed-demands', getVetCompletedDemands_1.getVetCompletedDemands);
 router.post('/:id/approve', authMiddleware_1.authenticateUser, approveVet_1.approveVet);
 router.post('/:id/reject', authMiddleware_1.authenticateUser, rejectVet_1.rejectVet);
 /**

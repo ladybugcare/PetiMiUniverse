@@ -9,7 +9,7 @@ const applyToDemand = async (req, res) => {
         // Create application
         const { data, error } = await supabase_1.supabase
             .from('applications')
-            .insert([{ demand_id, vet_id, status: 'applied' }])
+            .insert([{ demand_id, vet_id, status: 'pending' }])
             .select();
         if (error)
             return res.status(400).json({ error });
@@ -92,7 +92,7 @@ const getApplicationsByUser = async (req, res) => {
         )
       `)
             .eq('vet_id', userId)
-            .order('created_at', { ascending: false });
+            .order('applied_at', { ascending: false });
         if (error)
             throw error;
         res.json({ applications: data || [] });
@@ -126,7 +126,7 @@ const getApplicationsByClinic = async (req, res) => {
             .from('applications')
             .select('*')
             .in('demand_id', demandIds)
-            .order('created_at', { ascending: false });
+            .order('applied_at', { ascending: false });
         if (error)
             throw error;
         // Fetch vet information for each application
@@ -176,7 +176,7 @@ const getApplicationsByUnit = async (req, res) => {
             .from('applications')
             .select('*')
             .in('demand_id', demandIds)
-            .order('created_at', { ascending: false });
+            .order('applied_at', { ascending: false });
         if (error)
             throw error;
         res.json({ applications: data || [] });
@@ -214,7 +214,7 @@ const getPendingApplicationsCount = async (req, res) => {
             .from('applications')
             .select('*', { count: 'exact', head: true })
             .in('demand_id', demandIds)
-            .eq('status', 'applied');
+            .eq('status', 'pending');
         if (error)
             throw error;
         res.json({ count: count || 0 });

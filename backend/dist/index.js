@@ -25,6 +25,8 @@ const demandPositions_js_1 = __importDefault(require("./routes/demandPositions.j
 const adminRoutes_js_1 = __importDefault(require("./routes/adminRoutes.js"));
 const supportTickets_js_1 = __importDefault(require("./routes/supportTickets.js"));
 const notifications_js_1 = __importDefault(require("./routes/notifications.js"));
+const messages_js_1 = __importDefault(require("./routes/messages.js"));
+const messageReports_js_1 = __importDefault(require("./routes/messageReports.js"));
 // 🔹 Carrega variáveis de ambiente
 dotenv_1.default.config();
 // 🔹 Inicializa o Express
@@ -96,6 +98,8 @@ app.use('/demand-positions', demandPositions_js_1.default);
 app.use('/admin', adminRoutes_js_1.default);
 app.use('/support', supportTickets_js_1.default);
 app.use('/notifications', notifications_js_1.default);
+app.use('/api/messages', messages_js_1.default);
+app.use('/api/messages/admin', messageReports_js_1.default);
 // 🔹 Healthcheck
 app.get('/', (req, res) => {
     res.json({ message: '🐾 PetiVet API is running!' });

@@ -6,358 +6,426 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const supabase_1 = require("../config/supabase");
 const rateLimiter_js_1 = require("../middleware/rateLimiter.js");
+const errorHandler_js_1 = require("../middleware/errorHandler.js");
+const errors_js_1 = require("../utils/errors.js");
+const logger_js_1 = require("../utils/logger.js");
 const router = express_1.default.Router();
 // Login (com rate limiting mais restritivo)
-router.post('/login', rateLimiter_js_1.authLimiter, async (req, res) => {
-    try {
-        const { email, password } = req.body;
-        const { data, error } = await supabase_1.supabase.auth.signInWithPassword({
+router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncHandler)(async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        throw new errors_js_1.ValidationError('Email e senha são obrigatórios');
+    }
+    const { data, error } = await supabase_1.supabase.auth.signInWithPassword({
+        email,
+        password,
+    });
+    if (error) {
+        logger_js_1.logger.warn('Tentativa de login falhou', {
             email,
-            password,
+            error: error.message,
+            correlationId: req.correlationId,
         });
-        if (error) {
-            return res.status(401).json({ error: error.message });
-        }
-        const { user, session } = data;
-        // Verificar se email está confirmado antes de permitir login
-        if (!user.email_confirmed_at) {
-            return res.status(403).json({
-                error: 'EMAIL_NOT_CONFIRMED',
-                message: 'Email não confirmado. Verifique sua caixa de entrada ou reenvie o email de confirmação.'
-            });
-        }
-        let onboarding = null;
-        let vetOnboarding = null;
-        let freelancerOnboarding = null;
-        let clinicUserRecord = null;
-        const userRole = user?.user_metadata?.role || user?.role;
-        const allowedRolesForOnboarding = ['CADMIN', 'CMANAGER'];
-        let clinicStatus = null;
-        let clinicUserStatus = null;
-        try {
-            if (user) {
-                const { data: clinicUser, error: clinicUserError, } = await supabase_1.supabaseAdmin
-                    .from('clinic_users')
-                    .select('id, clinic_id, user_id, role, status, unit_id, first_login_at, first_login_completed_at, onboarding_state')
-                    .eq('user_id', user.id)
-                    .in('role', allowedRolesForOnboarding)
-                    .order('created_at', { ascending: true })
-                    .limit(1)
-                    .maybeSingle();
-                clinicUserRecord = clinicUser;
-                const clinicUserRole = clinicUser?.role;
-                clinicUserStatus = clinicUser?.status;
-                // ✅ clinic_id pode ser NULL (usuário ainda não criou clínica)
-                const clinicId = clinicUser?.clinic_id || null;
-                const isEligibleClinicUser = clinicUserRole ? allowedRolesForOnboarding.includes(clinicUserRole) : false;
-                const isClinicOwner = userRole === 'clinic';
-                // ✅ Ajustar: considerar usuários sem clínica (clinic_id NULL)
-                if ((isEligibleClinicUser || isClinicOwner) && clinicUser) {
-                    // Garantir que first_login_at seja registrado na primeira autenticação
-                    if (!clinicUser.first_login_at) {
-                        const updateData = { first_login_at: new Date().toISOString() };
-                        // Só adicionar clinic_id na query se não for NULL
-                        if (clinicId) {
-                            await supabase_1.supabaseAdmin
-                                .from('clinic_users')
-                                .update(updateData)
-                                .eq('user_id', user.id)
-                                .eq('clinic_id', clinicId);
-                        }
-                        else {
-                            await supabase_1.supabaseAdmin
-                                .from('clinic_users')
-                                .update(updateData)
-                                .eq('user_id', user.id)
-                                .is('clinic_id', null);
-                        }
-                    }
-                    let hasUnits = false;
-                    let clinicStatusValue = null;
-                    // ✅ Só buscar clinic e units se clinic_id não for NULL
+        throw new errors_js_1.UnauthorizedError(error.message);
+    }
+    const { user, session } = data;
+    // Verificar se email está confirmado antes de permitir login
+    if (!user.email_confirmed_at) {
+        logger_js_1.logger.warn('Tentativa de login com email não confirmado', {
+            email,
+            userId: user.id,
+            correlationId: req.correlationId,
+        });
+        throw new errors_js_1.UnauthorizedError('Email não confirmado. Verifique sua caixa de entrada ou reenvie o email de confirmação.', { code: 'EMAIL_NOT_CONFIRMED' });
+    }
+    let onboarding = null;
+    let vetOnboarding = null;
+    let freelancerOnboarding = null;
+    let clinicUserRecord = null;
+    const userRole = user?.user_metadata?.role || user?.role;
+    const allowedRolesForOnboarding = ['CADMIN', 'CMANAGER'];
+    let clinicStatus = null;
+    let clinicUserStatus = null;
+    try {
+        if (user) {
+            const { data: clinicUser, error: clinicUserError, } = await supabase_1.supabaseAdmin
+                .from('clinic_users')
+                .select('id, clinic_id, user_id, role, status, unit_id, first_login_at, first_login_completed_at, onboarding_state')
+                .eq('user_id', user.id)
+                .in('role', allowedRolesForOnboarding)
+                .order('created_at', { ascending: true })
+                .limit(1)
+                .maybeSingle();
+            clinicUserRecord = clinicUser;
+            const clinicUserRole = clinicUser?.role;
+            clinicUserStatus = clinicUser?.status;
+            // ✅ clinic_id pode ser NULL (usuário ainda não criou clínica)
+            const clinicId = clinicUser?.clinic_id || null;
+            const isEligibleClinicUser = clinicUserRole ? allowedRolesForOnboarding.includes(clinicUserRole) : false;
+            const isClinicOwner = userRole === 'clinic';
+            // ✅ Ajustar: considerar usuários sem clínica (clinic_id NULL)
+            if ((isEligibleClinicUser || isClinicOwner) && clinicUser) {
+                // Garantir que first_login_at seja registrado na primeira autenticação
+                if (!clinicUser.first_login_at) {
+                    const updateData = { first_login_at: new Date().toISOString() };
+                    // Só adicionar clinic_id na query se não for NULL
                     if (clinicId) {
-                        // Buscar status da clínica
-                        const { data: clinic, error: clinicError, } = await supabase_1.supabaseAdmin
-                            .from('clinics')
-                            .select('status')
-                            .eq('id', clinicId)
-                            .maybeSingle();
-                        if (clinicError) {
-                            console.error('[AUTH] Erro ao buscar clínica:', clinicError.message);
-                        }
-                        // Contar unidades cadastradas
-                        const { count: unitCount, error: unitsError, } = await supabase_1.supabaseAdmin
-                            .from('units')
-                            .select('id', { count: 'exact', head: true })
+                        await supabase_1.supabaseAdmin
+                            .from('clinic_users')
+                            .update(updateData)
+                            .eq('user_id', user.id)
                             .eq('clinic_id', clinicId);
-                        if (unitsError) {
-                            console.error('[AUTH] Erro ao contar unidades:', unitsError.message);
-                        }
-                        hasUnits = (unitCount ?? 0) > 0;
-                        clinicStatusValue = clinic?.status || null;
                     }
                     else {
-                        // ✅ Se clinic_id é NULL, usuário precisa criar clínica (primeira unidade)
-                        clinicStatusValue = null;
-                        hasUnits = false;
+                        await supabase_1.supabaseAdmin
+                            .from('clinic_users')
+                            .update(updateData)
+                            .eq('user_id', user.id)
+                            .is('clinic_id', null);
                     }
-                    const firstLoginCompletedAt = clinicUser?.first_login_completed_at || null;
-                    const firstLoginAt = clinicUser?.first_login_at || null;
-                    // ✅ needsOnboarding se:
-                    // - clinic_id é NULL (não tem clínica ainda)
-                    // - clinic_status é 'pending_unit' (tem clínica mas não tem unidade)
-                    // - não tem unidades
-                    const needsOnboarding = !clinicId || clinicStatusValue === 'pending_unit' || !hasUnits;
-                    const shouldCompleteFirstUnit = needsOnboarding && (isEligibleClinicUser || isClinicOwner);
-                    onboarding = {
-                        clinicId, // Pode ser null
-                        clinicStatus: clinicStatusValue,
-                        hasUnits,
-                        isFirstLogin: !firstLoginCompletedAt,
-                        needsOnboarding,
-                        shouldCompleteFirstUnit,
-                        firstLoginAt,
-                        firstLoginCompletedAt,
-                        onboardingState: clinicUser?.onboarding_state || {},
-                        clinicUserRole: clinicUserRole || (isClinicOwner ? 'CADMIN' : null),
-                        clinicUserStatus,
-                    };
                 }
+                let hasUnits = false;
+                let clinicStatusValue = null;
+                // ✅ Só buscar clinic e units se clinic_id não for NULL
+                if (clinicId) {
+                    // Buscar status da clínica
+                    const { data: clinic, error: clinicError, } = await supabase_1.supabaseAdmin
+                        .from('clinics')
+                        .select('status')
+                        .eq('id', clinicId)
+                        .maybeSingle();
+                    if (clinicError) {
+                        logger_js_1.logger.warn('Erro ao buscar clínica durante login', {
+                            clinicId,
+                            userId: user.id,
+                            error: clinicError.message,
+                            correlationId: req.correlationId,
+                        });
+                    }
+                    // Contar unidades cadastradas
+                    const { count: unitCount, error: unitsError, } = await supabase_1.supabaseAdmin
+                        .from('units')
+                        .select('id', { count: 'exact', head: true })
+                        .eq('clinic_id', clinicId);
+                    if (unitsError) {
+                        logger_js_1.logger.warn('Erro ao contar unidades durante login', {
+                            clinicId,
+                            userId: user.id,
+                            error: unitsError.message,
+                            correlationId: req.correlationId,
+                        });
+                    }
+                    hasUnits = (unitCount ?? 0) > 0;
+                    clinicStatusValue = clinic?.status || null;
+                }
+                else {
+                    // ✅ Se clinic_id é NULL, usuário precisa criar clínica (primeira unidade)
+                    clinicStatusValue = null;
+                    hasUnits = false;
+                }
+                const firstLoginCompletedAt = clinicUser?.first_login_completed_at || null;
+                const firstLoginAt = clinicUser?.first_login_at || null;
+                // ✅ needsOnboarding se:
+                // - clinic_id é NULL (não tem clínica ainda)
+                // - clinic_status é 'pending_unit' (tem clínica mas não tem unidade)
+                // - não tem unidades
+                const needsOnboarding = !clinicId || clinicStatusValue === 'pending_unit' || !hasUnits;
+                const shouldCompleteFirstUnit = needsOnboarding && (isEligibleClinicUser || isClinicOwner);
+                onboarding = {
+                    clinicId, // Pode ser null
+                    clinicStatus: clinicStatusValue,
+                    hasUnits,
+                    isFirstLogin: !firstLoginCompletedAt,
+                    needsOnboarding,
+                    shouldCompleteFirstUnit,
+                    firstLoginAt,
+                    firstLoginCompletedAt,
+                    onboardingState: clinicUser?.onboarding_state || {},
+                    clinicUserRole: clinicUserRole || (isClinicOwner ? 'CADMIN' : null),
+                    clinicUserStatus,
+                };
             }
         }
-        catch (onboardingError) {
-            console.error('[AUTH] Falha ao compor dados de onboarding:', onboardingError);
-        }
-        // Verificar onboarding de veterinário (apenas se email estiver confirmado)
-        try {
-            if (user && (userRole === 'vet' || userRole === 'VET')) {
-                const { data: vet, error: vetError } = await supabase_1.supabaseAdmin
-                    .from('vets')
-                    .select('id, onboarding_completed, approval_status, status')
-                    .eq('id', user.id)
-                    .maybeSingle();
-                if (!vetError && vet) {
-                    // Email já está confirmado (verificado acima), então sempre true
-                    const emailConfirmed = true;
-                    // REGRA CRÍTICA: Se onboarding_completed === true, NUNCA mostrar onboarding novamente
-                    // Tratar NULL como false (vets criados antes da migration)
-                    const needsOnboarding = vet.onboarding_completed !== true;
-                    const isApproved = vet.approval_status === 'approved' && vet.status === 'active';
-                    vetOnboarding = {
-                        needsOnboarding,
-                        emailConfirmed,
-                        onboardingCompleted: vet.onboarding_completed || false,
-                        approvalStatus: vet.approval_status || 'pending',
-                        isApproved,
-                        canAccessDashboard: isApproved,
-                        canViewDemands: isApproved,
-                    };
-                }
-                else if (!vetError && !vet) {
-                    // Vet não encontrado = precisa fazer onboarding
-                    vetOnboarding = {
-                        needsOnboarding: true,
-                        emailConfirmed: true,
-                        onboardingCompleted: false,
-                        approvalStatus: 'pending',
-                        isApproved: false,
-                        canAccessDashboard: false,
-                        canViewDemands: false,
-                    };
-                }
-            }
-        }
-        catch (vetOnboardingError) {
-            console.error('[AUTH] Falha ao compor dados de onboarding do vet:', vetOnboardingError);
-        }
-        // Verificar onboarding de freelancer (apenas se email estiver confirmado)
-        try {
-            if (user && (userRole === 'freelancer' || userRole === 'FREELANCER')) {
-                const { data: freelancer, error: freelancerError } = await supabase_1.supabaseAdmin
-                    .from('freelancers')
-                    .select('id, onboarding_completed, approval_status, status')
-                    .eq('id', user.id)
-                    .maybeSingle();
-                if (!freelancerError && freelancer) {
-                    // Email já está confirmado (verificado acima), então sempre true
-                    const emailConfirmed = true;
-                    // REGRA CRÍTICA: Se onboarding_completed === true, NUNCA mostrar onboarding novamente
-                    // Tratar NULL como false (freelancers criados antes da migration)
-                    const needsOnboarding = freelancer.onboarding_completed !== true;
-                    const isApproved = freelancer.approval_status === 'approved' && freelancer.status === 'active';
-                    freelancerOnboarding = {
-                        needsOnboarding,
-                        emailConfirmed,
-                        onboardingCompleted: freelancer.onboarding_completed || false,
-                        approvalStatus: freelancer.approval_status || 'pending',
-                        isApproved,
-                        canAccessDashboard: isApproved,
-                        canViewDemands: isApproved,
-                    };
-                }
-                else if (!freelancerError && !freelancer) {
-                    // Freelancer não encontrado = precisa fazer onboarding
-                    freelancerOnboarding = {
-                        needsOnboarding: true,
-                        emailConfirmed: true,
-                        onboardingCompleted: false,
-                        approvalStatus: 'pending',
-                        isApproved: false,
-                        canAccessDashboard: false,
-                        canViewDemands: false,
-                    };
-                }
-            }
-        }
-        catch (freelancerOnboardingError) {
-            console.error('[AUTH] Falha ao compor dados de onboarding do freelancer:', freelancerOnboardingError);
-        }
-        if (userRole === 'clinic' && clinicStatus === 'inactive') {
-            return res.status(403).json({
-                error: 'Conta da clínica inativada. Entre em contato com o suporte para reativação.',
-            });
-        }
-        if (clinicUserStatus === 'inactive') {
-            return res.status(403).json({
-                error: 'Seu acesso como membro da clínica foi inativado. Solicite reativação ao administrador.',
-            });
-        }
-        const clinicUserPayload = clinicUserRecord
-            ? {
-                id: clinicUserRecord.id,
-                clinic_id: clinicUserRecord.clinic_id,
-                user_id: clinicUserRecord.user_id,
-                role: clinicUserRecord.role,
-                status: clinicUserRecord.status,
-                unit_id: clinicUserRecord.unit_id,
-                first_login_at: clinicUserRecord.first_login_at,
-                first_login_completed_at: clinicUserRecord.first_login_completed_at,
-                onboarding_state: clinicUserRecord.onboarding_state,
-            }
-            : null;
-        res.json({
-            user,
-            session,
-            onboarding,
-            vetOnboarding,
-            freelancerOnboarding,
-            clinicUser: clinicUserPayload,
+    }
+    catch (onboardingError) {
+        logger_js_1.logger.error('Falha ao compor dados de onboarding durante login', {
+            userId: user?.id,
+            error: onboardingError.message,
+            correlationId: req.correlationId,
         });
+        // Não falha o login se onboarding falhar, apenas loga o erro
     }
-    catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-// Signup (com rate limiting mais restritivo)
-router.post('/signup', rateLimiter_js_1.authLimiter, async (req, res) => {
+    // Verificar onboarding de veterinário (apenas se email estiver confirmado)
     try {
-        const { email, password, name, role } = req.body;
-        const { data, error } = await supabase_1.supabase.auth.signUp({
-            email,
-            password,
-            options: {
-                data: {
-                    name,
-                    role,
-                }
+        if (user && (userRole === 'vet' || userRole === 'VET')) {
+            const { data: vet, error: vetError } = await supabase_1.supabaseAdmin
+                .from('vets')
+                .select('id, onboarding_completed, approval_status, status')
+                .eq('id', user.id)
+                .maybeSingle();
+            if (!vetError && vet) {
+                // Email já está confirmado (verificado acima), então sempre true
+                const emailConfirmed = true;
+                // REGRA CRÍTICA: Se onboarding_completed === true, NUNCA mostrar onboarding novamente
+                // Tratar NULL como false (vets criados antes da migration)
+                const needsOnboarding = vet.onboarding_completed !== true;
+                const isApproved = vet.approval_status === 'approved' && vet.status === 'active';
+                vetOnboarding = {
+                    needsOnboarding,
+                    emailConfirmed,
+                    onboardingCompleted: vet.onboarding_completed || false,
+                    approvalStatus: vet.approval_status || 'pending',
+                    isApproved,
+                    canAccessDashboard: isApproved,
+                    canViewDemands: isApproved,
+                };
             }
-        });
-        if (error) {
-            return res.status(400).json({ error: error.message });
+            else if (!vetError && !vet) {
+                // Vet não encontrado = precisa fazer onboarding
+                vetOnboarding = {
+                    needsOnboarding: true,
+                    emailConfirmed: true,
+                    onboardingCompleted: false,
+                    approvalStatus: 'pending',
+                    isApproved: false,
+                    canAccessDashboard: false,
+                    canViewDemands: false,
+                };
+            }
         }
-        res.json({
-            user: data.user,
-            session: data.session
+    }
+    catch (vetOnboardingError) {
+        logger_js_1.logger.error('Falha ao compor dados de onboarding do vet durante login', {
+            userId: user?.id,
+            error: vetOnboardingError.message,
+            correlationId: req.correlationId,
         });
+        // Não falha o login se onboarding falhar, apenas loga o erro
     }
-    catch (error) {
-        res.status(500).json({ error: error.message });
+    // Verificar onboarding de freelancer (apenas se email estiver confirmado)
+    try {
+        if (user && (userRole === 'freelancer' || userRole === 'FREELANCER')) {
+            const { data: freelancer, error: freelancerError } = await supabase_1.supabaseAdmin
+                .from('freelancers')
+                .select('id, onboarding_completed, approval_status, status')
+                .eq('id', user.id)
+                .maybeSingle();
+            if (!freelancerError && freelancer) {
+                // Email já está confirmado (verificado acima), então sempre true
+                const emailConfirmed = true;
+                // REGRA CRÍTICA: Se onboarding_completed === true, NUNCA mostrar onboarding novamente
+                // Tratar NULL como false (freelancers criados antes da migration)
+                const needsOnboarding = freelancer.onboarding_completed !== true;
+                const isApproved = freelancer.approval_status === 'approved' && freelancer.status === 'active';
+                freelancerOnboarding = {
+                    needsOnboarding,
+                    emailConfirmed,
+                    onboardingCompleted: freelancer.onboarding_completed || false,
+                    approvalStatus: freelancer.approval_status || 'pending',
+                    isApproved,
+                    canAccessDashboard: isApproved,
+                    canViewDemands: isApproved,
+                };
+            }
+            else if (!freelancerError && !freelancer) {
+                // Freelancer não encontrado = precisa fazer onboarding
+                freelancerOnboarding = {
+                    needsOnboarding: true,
+                    emailConfirmed: true,
+                    onboardingCompleted: false,
+                    approvalStatus: 'pending',
+                    isApproved: false,
+                    canAccessDashboard: false,
+                    canViewDemands: false,
+                };
+            }
+        }
     }
-});
+    catch (freelancerOnboardingError) {
+        logger_js_1.logger.error('Falha ao compor dados de onboarding do freelancer durante login', {
+            userId: user?.id,
+            error: freelancerOnboardingError.message,
+            correlationId: req.correlationId,
+        });
+        // Não falha o login se onboarding falhar, apenas loga o erro
+    }
+    if (userRole === 'clinic' && clinicStatus === 'inactive') {
+        logger_js_1.logger.warn('Tentativa de login com clínica inativa', {
+            userId: user.id,
+            clinicStatus,
+            correlationId: req.correlationId,
+        });
+        throw new errors_js_1.UnauthorizedError('Conta da clínica inativada. Entre em contato com o suporte para reativação.');
+    }
+    if (clinicUserStatus === 'inactive') {
+        logger_js_1.logger.warn('Tentativa de login com usuário de clínica inativo', {
+            userId: user.id,
+            clinicUserStatus,
+            correlationId: req.correlationId,
+        });
+        throw new errors_js_1.UnauthorizedError('Seu acesso como membro da clínica foi inativado. Solicite reativação ao administrador.');
+    }
+    const clinicUserPayload = clinicUserRecord
+        ? {
+            id: clinicUserRecord.id,
+            clinic_id: clinicUserRecord.clinic_id,
+            user_id: clinicUserRecord.user_id,
+            role: clinicUserRecord.role,
+            status: clinicUserRecord.status,
+            unit_id: clinicUserRecord.unit_id,
+            first_login_at: clinicUserRecord.first_login_at,
+            first_login_completed_at: clinicUserRecord.first_login_completed_at,
+            onboarding_state: clinicUserRecord.onboarding_state,
+        }
+        : null;
+    logger_js_1.logger.info('Login realizado com sucesso', {
+        userId: user.id,
+        email: user.email,
+        role: userRole,
+        correlationId: req.correlationId,
+    });
+    res.json({
+        user,
+        session,
+        onboarding,
+        vetOnboarding,
+        freelancerOnboarding,
+        clinicUser: clinicUserPayload,
+    });
+}));
+// Signup (com rate limiting mais restritivo)
+router.post('/signup', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncHandler)(async (req, res) => {
+    const { email, password, name, role } = req.body;
+    if (!email || !password) {
+        throw new errors_js_1.ValidationError('Email e senha são obrigatórios');
+    }
+    const { data, error } = await supabase_1.supabase.auth.signUp({
+        email,
+        password,
+        options: {
+            data: {
+                name,
+                role,
+            }
+        }
+    });
+    if (error) {
+        logger_js_1.logger.warn('Tentativa de signup falhou', {
+            email,
+            error: error.message,
+            correlationId: req.correlationId,
+        });
+        throw new errors_js_1.ValidationError(error.message);
+    }
+    logger_js_1.logger.info('Signup realizado com sucesso', {
+        userId: data.user?.id,
+        email: data.user?.email,
+        role,
+        correlationId: req.correlationId,
+    });
+    res.json({
+        user: data.user,
+        session: data.session
+    });
+}));
 /**
  * Reenviar email de confirmação
  */
-router.post('/resend-confirmation', rateLimiter_js_1.authLimiter, async (req, res) => {
-    try {
-        const { email } = req.body;
-        if (!email) {
-            return res.status(400).json({ error: 'Email é obrigatório' });
-        }
-        // Verificar se o usuário existe
-        const { data: { users }, error: listError } = await supabase_1.supabaseAdmin.auth.admin.listUsers();
-        if (listError) {
-            console.error('Erro ao listar usuários:', listError);
-            return res.status(500).json({ error: 'Erro ao verificar usuário' });
-        }
-        const user = users.find(u => u.email === email);
-        if (!user) {
-            return res.status(404).json({ error: 'Usuário não encontrado' });
-        }
-        // Se já está confirmado, não precisa reenviar
-        if (user.email_confirmed_at) {
-            return res.status(400).json({ error: 'Email já está confirmado' });
-        }
-        // Construir URL de redirecionamento
-        const rawFrontendUrl = process.env.FRONTEND_URL?.trim();
-        const FRONTEND_URL = rawFrontendUrl?.replace(/\/$/, '');
-        const emailRedirectTo = FRONTEND_URL ? `${FRONTEND_URL}/email-confirmed` : undefined;
-        // Para reenviar email de confirmação sem ter a senha:
-        // 1. Resetar email_confirmed_at para null usando updateUserById
-        // 2. Usar inviteUser que envia email de confirmação sem precisar de senha
-        //    (mesmo que o usuário já exista, o inviteUser pode ser usado para reenviar confirmação)
-        // Resetar email_confirmed_at para null
-        const { error: updateError } = await supabase_1.supabaseAdmin.auth.admin.updateUserById(user.id, { email_confirm: false });
-        if (updateError) {
-            console.error('Erro ao resetar confirmação de email:', updateError);
-            return res.status(500).json({
-                error: 'Erro ao reenviar email de confirmação',
-                message: updateError.message
-            });
-        }
-        // Usar inviteUser para enviar email de confirmação (não requer senha)
-        // Isso envia um email de convite que pode ser usado para confirmar o email
-        const { data: inviteData, error: inviteError } = await supabase_1.supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-            redirectTo: emailRedirectTo,
-            data: user.user_metadata || {},
+router.post('/resend-confirmation', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncHandler)(async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        throw new errors_js_1.ValidationError('Email é obrigatório');
+    }
+    // Verificar se o usuário existe
+    const { data: { users }, error: listError } = await supabase_1.supabaseAdmin.auth.admin.listUsers();
+    if (listError) {
+        logger_js_1.logger.error('Erro ao listar usuários para reenvio de confirmação', {
+            email,
+            error: listError.message,
+            correlationId: req.correlationId,
         });
-        if (inviteError) {
-            console.error('Erro ao enviar convite de confirmação:', inviteError);
-            // Se inviteUser falhar (por exemplo, se o usuário já existe), tentar generateLink com senha temporária
-            // Gerar senha temporária aleatória
-            const tempPassword = Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12) + 'A1!';
-            const { data: linkData, error: linkError } = await supabase_1.supabaseAdmin.auth.admin.generateLink({
-                type: 'signup',
+        throw new errors_js_1.DatabaseError('Erro ao verificar usuário', listError);
+    }
+    const user = users.find(u => u.email === email);
+    if (!user) {
+        throw new errors_js_1.ValidationError('Usuário não encontrado');
+    }
+    // Se já está confirmado, não precisa reenviar
+    if (user.email_confirmed_at) {
+        throw new errors_js_1.ValidationError('Email já está confirmado');
+    }
+    // Construir URL de redirecionamento
+    const rawFrontendUrl = process.env.FRONTEND_URL?.trim();
+    const FRONTEND_URL = rawFrontendUrl?.replace(/\/$/, '');
+    const emailRedirectTo = FRONTEND_URL ? `${FRONTEND_URL}/email-confirmed` : undefined;
+    // Para reenviar email de confirmação sem ter a senha:
+    // 1. Resetar email_confirmed_at para null usando updateUserById
+    // 2. Usar inviteUser que envia email de confirmação sem precisar de senha
+    //    (mesmo que o usuário já exista, o inviteUser pode ser usado para reenviar confirmação)
+    // Resetar email_confirmed_at para null
+    const { error: updateError } = await supabase_1.supabaseAdmin.auth.admin.updateUserById(user.id, { email_confirm: false });
+    if (updateError) {
+        logger_js_1.logger.error('Erro ao resetar confirmação de email', {
+            userId: user.id,
+            email,
+            error: updateError.message,
+            correlationId: req.correlationId,
+        });
+        throw new errors_js_1.DatabaseError('Erro ao reenviar email de confirmação', updateError);
+    }
+    // Usar inviteUser para enviar email de confirmação (não requer senha)
+    // Isso envia um email de convite que pode ser usado para confirmar o email
+    const { data: inviteData, error: inviteError } = await supabase_1.supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+        redirectTo: emailRedirectTo,
+        data: user.user_metadata || {},
+    });
+    if (inviteError) {
+        logger_js_1.logger.warn('Erro ao enviar convite de confirmação, tentando generateLink', {
+            userId: user.id,
+            email,
+            error: inviteError.message,
+            correlationId: req.correlationId,
+        });
+        // Se inviteUser falhar (por exemplo, se o usuário já existe), tentar generateLink com senha temporária
+        // Gerar senha temporária aleatória
+        const tempPassword = Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12) + 'A1!';
+        const { data: linkData, error: linkError } = await supabase_1.supabaseAdmin.auth.admin.generateLink({
+            type: 'signup',
+            email,
+            password: tempPassword,
+            options: {
+                redirectTo: emailRedirectTo,
+            },
+        });
+        if (linkError) {
+            logger_js_1.logger.error('Erro ao gerar link de confirmação', {
+                userId: user.id,
                 email,
-                password: tempPassword,
-                options: {
-                    redirectTo: emailRedirectTo,
-                },
+                error: linkError.message,
+                correlationId: req.correlationId,
             });
-            if (linkError) {
-                console.error('Erro ao gerar link de confirmação:', linkError);
-                return res.status(500).json({
-                    error: 'Erro ao reenviar email de confirmação',
-                    message: linkError.message
-                });
-            }
-            // Avisar que a senha foi alterada e o usuário precisará redefinir
-            return res.json({
-                success: true,
-                message: 'Email de confirmação reenviado com sucesso. Verifique sua caixa de entrada. Nota: Você precisará redefinir sua senha após confirmar o email.',
-                passwordChanged: true,
-            });
+            throw new errors_js_1.DatabaseError('Erro ao reenviar email de confirmação', linkError);
         }
+        logger_js_1.logger.info('Email de confirmação reenviado via generateLink', {
+            userId: user.id,
+            email,
+            correlationId: req.correlationId,
+        });
+        // Avisar que a senha foi alterada e o usuário precisará redefinir
         return res.json({
             success: true,
-            message: 'Email de confirmação reenviado com sucesso. Verifique sua caixa de entrada.',
+            message: 'Email de confirmação reenviado com sucesso. Verifique sua caixa de entrada. Nota: Você precisará redefinir sua senha após confirmar o email.',
+            passwordChanged: true,
         });
     }
-    catch (error) {
-        console.error('Erro ao reenviar email de confirmação:', error);
-        return res.status(500).json({
-            error: 'Erro interno ao reenviar email de confirmação',
-            message: error.message
-        });
-    }
-});
+    logger_js_1.logger.info('Email de confirmação reenviado com sucesso', {
+        userId: user.id,
+        email,
+        correlationId: req.correlationId,
+    });
+    return res.json({
+        success: true,
+        message: 'Email de confirmação reenviado com sucesso. Verifique sua caixa de entrada.',
+    });
+}));
 exports.default = router;

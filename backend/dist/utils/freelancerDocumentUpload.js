@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteFreelancerCertification = exports.uploadFreelancerCertification = void 0;
 const supabase_js_1 = require("@supabase/supabase-js");
 const supabase_1 = require("../config/supabase");
+const fileValidation_js_1 = require("./fileValidation.js");
+const logger_js_1 = require("./logger.js");
 /**
  * Upload de certificações de freelancer para Supabase Storage
  * @param file - Buffer do arquivo com metadata
@@ -12,18 +14,16 @@ const supabase_1 = require("../config/supabase");
  */
 const uploadFreelancerCertification = async (file, userId, userToken) => {
     try {
-        // Validar tipo de arquivo
-        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
-        if (!allowedTypes.includes(file.mimetype)) {
-            throw new Error(`Tipo de arquivo inválido: ${file.mimetype}. Tipos permitidos: PNG, JPG, PDF`);
-        }
-        // Validar tamanho (max 5MB)
-        const maxSize = 5 * 1024 * 1024; // 5MB em bytes
-        if (file.buffer.length > maxSize) {
-            throw new Error('Tamanho do arquivo excede o limite de 5MB');
-        }
+        // Validação robusta usando magic numbers
+        (0, fileValidation_js_1.validateFile)(file.buffer, file.mimetype, file.originalname, {
+            allowedTypes: ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'],
+            maxSize: 5 * 1024 * 1024, // 5MB
+            requireSignature: true,
+        });
+        // Sanitizar nome do arquivo
+        const sanitizedName = (0, fileValidation_js_1.sanitizeFilename)(file.originalname);
         // Gerar nome único do arquivo
-        const fileExt = file.originalname.split('.').pop()?.toLowerCase() || 'pdf';
+        const fileExt = sanitizedName.split('.').pop()?.toLowerCase() || 'pdf';
         const fileName = `${userId}/certification-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
         // Criar cliente Supabase com token do usuário se fornecido, senão usar admin
         // O token do usuário permite que o RLS funcione corretamente
@@ -54,7 +54,10 @@ const uploadFreelancerCertification = async (file, userId, userToken) => {
         if (error) {
             // Se o bucket não existir, tentar criar ou usar fallback
             if (error.message.includes('not found') || error.message.includes('Bucket')) {
-                console.warn(`Bucket ${bucketName} não encontrado. Usando vet-documents como fallback.`);
+                logger_js_1.logger.warn(`Bucket ${bucketName} não encontrado. Usando vet-documents como fallback.`, {
+                    userId,
+                    fileName,
+                });
                 const { data: fallbackData, error: fallbackError } = await supabaseClient.storage
                     .from('vet-documents')
                     .upload(fileName, file.buffer, {
@@ -64,6 +67,11 @@ const uploadFreelancerCertification = async (file, userId, userToken) => {
                 if (fallbackError)
                     throw fallbackError;
                 const { data: { publicUrl }, } = supabase_1.supabaseAdmin.storage.from('vet-documents').getPublicUrl(fileName);
+                logger_js_1.logger.info('Certificação de freelancer enviada com sucesso (fallback)', {
+                    userId,
+                    fileName,
+                    fileSize: file.buffer.length,
+                });
                 return {
                     url: publicUrl,
                     path: fileName,
@@ -73,14 +81,23 @@ const uploadFreelancerCertification = async (file, userId, userToken) => {
         }
         // Obter URL pública (usar admin para garantir acesso)
         const { data: { publicUrl }, } = supabase_1.supabaseAdmin.storage.from(bucketName).getPublicUrl(fileName);
+        logger_js_1.logger.info('Certificação de freelancer enviada com sucesso', {
+            userId,
+            fileName,
+            fileSize: file.buffer.length,
+        });
         return {
             url: publicUrl,
             path: fileName,
         };
     }
     catch (error) {
-        console.error('Erro ao fazer upload de certificação:', error);
-        throw new Error(`Falha no upload da certificação: ${error.message}`);
+        logger_js_1.logger.error('Erro ao fazer upload de certificação de freelancer', {
+            userId,
+            error: error.message,
+            fileName: file.originalname,
+        });
+        throw error; // Re-throw para manter o tipo de erro (ValidationError, etc)
     }
 };
 exports.uploadFreelancerCertification = uploadFreelancerCertification;
@@ -98,13 +115,20 @@ const deleteFreelancerCertification = async (filePath) => {
             const { error: fallbackError } = await supabase_1.supabaseAdmin.storage.from('vet-documents').remove([filePath]);
             if (fallbackError)
                 throw fallbackError;
+            logger_js_1.logger.info('Certificação de freelancer deletada (fallback)', { filePath });
         }
         else if (error) {
             throw error;
         }
+        else {
+            logger_js_1.logger.info('Certificação de freelancer deletada', { filePath });
+        }
     }
     catch (error) {
-        console.error('Erro ao deletar certificação:', error);
+        logger_js_1.logger.error('Erro ao deletar certificação de freelancer', {
+            filePath,
+            error: error.message,
+        });
         throw new Error(`Falha ao deletar certificação: ${error.message}`);
     }
 };

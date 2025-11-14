@@ -26,12 +26,11 @@ const getVetDocument = async (req, res) => {
         if (error) {
             console.error('Erro ao baixar documento do Supabase:', {
                 error: error.message,
-                code: error.statusCode,
                 path,
                 vetId,
             });
             // Erro específico para arquivo não encontrado
-            if (error.statusCode === '404' || error.message?.includes('not found') || error.message?.includes('No such key')) {
+            if (error.message?.includes('not found') || error.message?.includes('No such key')) {
                 return res.status(404).json({ error: 'Documento não encontrado no storage' });
             }
             return res.status(500).json({ error: 'Erro ao acessar documento no storage' });

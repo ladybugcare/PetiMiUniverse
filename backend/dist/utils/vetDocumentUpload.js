@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteVetDocument = exports.uploadVetDocument = void 0;
 const supabase_js_1 = require("@supabase/supabase-js");
 const supabase_1 = require("../config/supabase");
+const fileValidation_js_1 = require("./fileValidation.js");
+const logger_js_1 = require("./logger.js");
 /**
  * Upload de documentos de veterinário (CRMV) para Supabase Storage
  * @param file - Buffer do arquivo com metadata
@@ -12,18 +14,16 @@ const supabase_1 = require("../config/supabase");
  */
 const uploadVetDocument = async (file, userId, userToken) => {
     try {
-        // Validar tipo de arquivo
-        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
-        if (!allowedTypes.includes(file.mimetype)) {
-            throw new Error(`Tipo de arquivo inválido: ${file.mimetype}. Tipos permitidos: PNG, JPG, PDF`);
-        }
-        // Validar tamanho (max 5MB)
-        const maxSize = 5 * 1024 * 1024; // 5MB em bytes
-        if (file.buffer.length > maxSize) {
-            throw new Error('Tamanho do arquivo excede o limite de 5MB');
-        }
+        // Validação robusta usando magic numbers
+        (0, fileValidation_js_1.validateFile)(file.buffer, file.mimetype, file.originalname, {
+            allowedTypes: ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'],
+            maxSize: 5 * 1024 * 1024, // 5MB
+            requireSignature: true,
+        });
+        // Sanitizar nome do arquivo
+        const sanitizedName = (0, fileValidation_js_1.sanitizeFilename)(file.originalname);
         // Gerar nome único do arquivo
-        const fileExt = file.originalname.split('.').pop()?.toLowerCase() || 'pdf';
+        const fileExt = sanitizedName.split('.').pop()?.toLowerCase() || 'pdf';
         const fileName = `${userId}/crmv-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
         // Criar cliente Supabase com token do usuário se fornecido, senão usar admin
         // O token do usuário permite que o RLS funcione corretamente
@@ -53,14 +53,23 @@ const uploadVetDocument = async (file, userId, userToken) => {
             throw error;
         // Obter URL pública (usar admin para garantir acesso)
         const { data: { publicUrl }, } = supabase_1.supabaseAdmin.storage.from('vet-documents').getPublicUrl(fileName);
+        logger_js_1.logger.info('Documento CRMV enviado com sucesso', {
+            userId,
+            fileName,
+            fileSize: file.buffer.length,
+        });
         return {
             url: publicUrl,
             path: fileName,
         };
     }
     catch (error) {
-        console.error('Erro ao fazer upload de documento:', error);
-        throw new Error(`Falha no upload do documento: ${error.message}`);
+        logger_js_1.logger.error('Erro ao fazer upload de documento CRMV', {
+            userId,
+            error: error.message,
+            fileName: file.originalname,
+        });
+        throw error; // Re-throw para manter o tipo de erro (ValidationError, etc)
     }
 };
 exports.uploadVetDocument = uploadVetDocument;
@@ -70,12 +79,16 @@ exports.uploadVetDocument = uploadVetDocument;
  */
 const deleteVetDocument = async (filePath) => {
     try {
-        const { error } = await supabase.storage.from('vet-documents').remove([filePath]);
+        const { error } = await supabase_1.supabaseAdmin.storage.from('vet-documents').remove([filePath]);
         if (error)
             throw error;
+        logger_js_1.logger.info('Documento CRMV deletado', { filePath });
     }
     catch (error) {
-        console.error('Erro ao deletar documento:', error);
+        logger_js_1.logger.error('Erro ao deletar documento CRMV', {
+            filePath,
+            error: error.message,
+        });
         throw new Error(`Falha ao deletar documento: ${error.message}`);
     }
 };
