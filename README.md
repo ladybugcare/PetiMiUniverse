@@ -102,6 +102,9 @@ REACT_APP_SUPABASE_ANON_KEY=your_supabase_anon_key
 # Backend API URL
 REACT_APP_API_URL=http://localhost:3000
 
+# Google Places API (for address autocomplete)
+REACT_APP_GOOGLE_PLACES_API_KEY=your_google_places_api_key
+
 # Alternative for Expo (if using Expo build)
 EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key

@@ -5,6 +5,7 @@ import { supabase } from '../services/supabase';
 import ProgressBar from '../components/ProgressBar';
 import PasswordInput from '../components/PasswordInput';
 import HomeHeader from '../components/HomeHeader';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 import {
   validateCNPJ,
   formatCNPJ,
@@ -279,15 +280,14 @@ if (step === 2) {
               Onde sua clínica está localizada?
             </h2>
             <p className="text-neutral-600 mb-6">
-              Endereço completo com rua, número, bairro e cidade
+              Digite o endereço e selecione uma sugestão do Google
             </p>
-            <textarea
-              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP - CEP 01234-567"
+            <AddressAutocomplete
               value={formData.address}
-              onChange={(e) => handleFieldChange('address', e.target.value)}
+              onChange={(address) => handleFieldChange('address', address)}
               onKeyDown={handleKeyDown}
               className="input"
-              rows={3}
+              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
               autoFocus
             />
             <p
@@ -297,8 +297,7 @@ if (step === 2) {
               <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
                 <InfoIconNoBg size={16} color={colors.primary} />
               </span>
-              Dica: Inclua CEP para facilitar que veterinários encontrem sua
-              clínica
+              Digite o endereço e selecione uma sugestão do Google para preenchimento automático
             </p>
           </div>
         );
