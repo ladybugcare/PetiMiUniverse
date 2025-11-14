@@ -51,6 +51,7 @@ const DemandsPage: React.FC = () => {
   const [minPayment, setMinPayment] = useState<number | ''>('');
   const [maxPayment, setMaxPayment] = useState<number | ''>('');
   const [showFilters, setShowFilters] = useState(false);
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('date_asc');
   
   // Pagination
@@ -117,6 +118,13 @@ const DemandsPage: React.FC = () => {
     };
     localStorage.setItem('demandsFilters', JSON.stringify(filters));
   }, [statusFilter, dateFilter, selectedSpecialties, minPayment, maxPayment, sortBy]);
+
+  // Keep search expanded if there's text
+  useEffect(() => {
+    if (searchQuery && !isSearchExpanded) {
+      setIsSearchExpanded(true);
+    }
+  }, [searchQuery]);
 
   // Get menu items using hook
   const roleForMenu = userRole || rawUserRole || 'UNKNOWN';
@@ -774,14 +782,6 @@ const DemandsPage: React.FC = () => {
           </>
         ) : (
           <>
-            {/* Search Bar - Show above calendar in calendar mode */}
-            <div style={{ marginBottom: '24px' }}>
-              <SearchBar
-                placeholder="Buscar por título, descrição ou clínica..."
-                value={searchQuery}
-                onChange={setSearchQuery}
-              />
-            </div>
             <CalendarView
               demands={filteredAndSortedDemands}
               getClinicName={getClinicName}
@@ -799,6 +799,76 @@ const DemandsPage: React.FC = () => {
                 <div style={styles.searchFiltersBar}>
                   <div style={styles.controlsRow}>
                     <div style={styles.controlsLeft}>
+                      {/* Expandable Search */}
+                      <div style={{
+                        ...styles.expandableSearchContainer,
+                        width: isSearchExpanded ? '300px' : '40px',
+                        transition: 'width 0.3s ease',
+                      }}>
+                        {isSearchExpanded ? (
+                          <div style={styles.searchInputWrapper}>
+                            <Search size={16} style={styles.searchIcon} />
+                            <input
+                              type="text"
+                              placeholder="Buscar por título, descrição ou clínica..."
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              onBlur={(e) => {
+                                // Não fechar se o usuário clicar no botão de limpar
+                                const relatedTarget = e.relatedTarget as HTMLElement;
+                                if (!relatedTarget || !relatedTarget.closest('.clear-search-button')) {
+                                  if (!searchQuery) {
+                                    setIsSearchExpanded(false);
+                                  }
+                                }
+                              }}
+                              autoFocus
+                              style={styles.expandableSearchInput}
+                            />
+                            {searchQuery && (
+                              <button
+                                className="clear-search-button"
+                                onClick={() => {
+                                  setSearchQuery('');
+                                  setIsSearchExpanded(false);
+                                }}
+                                style={styles.clearSearchButton}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#fee2e2';
+                                  e.currentTarget.style.color = '#dc2626';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'transparent';
+                                  e.currentTarget.style.color = '#737373';
+                                }}
+                                title="Limpar busca"
+                              >
+                                <X size={14} />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setIsSearchExpanded(true)}
+                            style={{
+                              ...styles.searchToggleButton,
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ede9fe';
+                              e.currentTarget.style.color = '#7c3aed';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f5f5f5';
+                              e.currentTarget.style.color = '#737373';
+                            }}
+                            title="Buscar"
+                          >
+                            <Search size={16} />
+                          </button>
+                        )}
+                      </div>
+
                       <button
                         onClick={() => setShowFilters(!showFilters)}
                         style={{
@@ -1367,6 +1437,62 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     gap: '12px',
     alignItems: 'center',
+  },
+  expandableSearchContainer: {
+    position: 'relative',
+    height: '40px',
+    overflow: 'hidden',
+    borderRadius: '8px',
+  },
+  searchInputWrapper: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    height: '100%',
+    padding: '0 12px',
+    backgroundColor: '#f5f5f5',
+    borderRadius: '8px',
+    border: '1px solid #e5e5e5',
+  },
+  searchIcon: {
+    color: '#737373',
+    flexShrink: 0,
+  },
+  expandableSearchInput: {
+    flex: 1,
+    border: 'none',
+    outline: 'none',
+    backgroundColor: 'transparent',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    color: '#262626',
+    padding: 0,
+  },
+  clearSearchButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '4px',
+    backgroundColor: 'transparent',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    color: '#737373',
+    transition: 'all 0.2s ease',
+  },
+  searchToggleButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '40px',
+    height: '40px',
+    padding: 0,
+    backgroundColor: '#f5f5f5',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    color: '#737373',
+    transition: 'all 0.2s ease',
   },
   filterButton: {
     display: 'flex',
