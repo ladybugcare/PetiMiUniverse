@@ -19,6 +19,14 @@ export interface ReportsOverview {
     totalPositionsFilled: number;
     professionalsHired: number;
     averageFillTime: number; // days
+    totalApplicationsReceived: number;
+    conversionRate: number; // percentage
+    averageResponseTime: number; // hours
+    cancellationRate: number; // percentage
+    mostDemandedSpecialties: Array<{
+      specialty: string;
+      count: number;
+    }>;
   };
 }
 
@@ -86,6 +94,19 @@ export interface ReportsProfessionals {
   averageHireTime: number; // days
 }
 
+export interface Trend {
+  value: number; // percentual de mudança
+  isPositive: boolean; // true se aumento é positivo para essa métrica
+}
+
+export interface ReportsOverviewWithComparison {
+  current: ReportsOverview;
+  previous: ReportsOverview | null;
+  trends: {
+    [key: string]: Trend | null;
+  };
+}
+
 export const reportsApi = {
   // Get clinic reports overview
   getOverview: async (
@@ -148,6 +169,160 @@ export const reportsApi = {
     }
     
     return apiRequest(url);
+  },
+
+  // Get clinic reports overview with comparison to previous period
+  getOverviewWithComparison: async (
+    clinicId: string,
+    period: PeriodType = '30d',
+    unitIds?: string[],
+    startDate?: string,
+    endDate?: string
+  ): Promise<ReportsOverviewWithComparison> => {
+    // Calculate previous period dates
+    const calculatePreviousPeriod = (
+      period: PeriodType,
+      startDate?: string,
+      endDate?: string
+    ): { prevStartDate: string; prevEndDate: string } | null => {
+      if (period === 'custom' && startDate && endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const duration = end.getTime() - start.getTime();
+        const prevEnd = new Date(start);
+        prevEnd.setTime(prevEnd.getTime() - 1); // 1ms before current start
+        const prevStart = new Date(prevEnd);
+        prevStart.setTime(prevStart.getTime() - duration);
+        return {
+          prevStartDate: prevStart.toISOString().split('T')[0],
+          prevEndDate: prevEnd.toISOString().split('T')[0],
+        };
+      } else {
+        // For fixed periods, we need to fetch current period first to get the actual end date
+        // This will be handled by making the current call first, then calculating previous
+        // For now, calculate based on today
+        const now = new Date();
+        let prevEnd: Date;
+        let prevStart: Date;
+        let daysBack: number;
+
+        switch (period) {
+          case '7d':
+            daysBack = 7;
+            break;
+          case '30d':
+            daysBack = 30;
+            break;
+          case '90d':
+            daysBack = 90;
+            break;
+          default:
+            return null;
+        }
+
+        // Calculate previous period: end is 1 day before current period would start
+        // For fixed periods, we assume current period ends today
+        prevEnd = new Date(now);
+        prevEnd.setDate(prevEnd.getDate() - 1);
+        prevStart = new Date(prevEnd);
+        prevStart.setDate(prevStart.getDate() - daysBack + 1); // +1 to include the end day
+
+        return {
+          prevStartDate: prevStart.toISOString().split('T')[0],
+          prevEndDate: prevEnd.toISOString().split('T')[0],
+        };
+      }
+    };
+
+    const previousPeriod = calculatePreviousPeriod(period, startDate, endDate);
+
+    // Fetch current and previous period data in parallel
+    const [currentData, previousData] = await Promise.all([
+      reportsApi.getOverview(clinicId, period, unitIds, startDate, endDate),
+      previousPeriod
+        ? reportsApi.getOverview(
+            clinicId,
+            'custom',
+            unitIds,
+            previousPeriod.prevStartDate,
+            previousPeriod.prevEndDate
+          ).catch(() => null) // If previous period fails, return null
+        : Promise.resolve(null),
+    ]);
+
+    // Calculate trends
+    const trends: { [key: string]: Trend | null } = {};
+
+    if (previousData) {
+      const calculateTrend = (
+        current: number,
+        previous: number,
+        isPositiveIncrease: boolean
+      ): Trend | null => {
+        if (previous === 0) {
+          // If previous is 0, can't calculate percentage change
+          return current > 0 ? { value: 100, isPositive: isPositiveIncrease } : null;
+        }
+
+        const change = ((current - previous) / previous) * 100;
+        const isPositive = isPositiveIncrease ? change > 0 : change < 0;
+
+        return {
+          value: change,
+          isPositive,
+        };
+      };
+
+      const currentSummary = currentData.summary;
+      const previousSummary = previousData.summary;
+
+      trends.totalDemandsCreated = calculateTrend(
+        currentSummary.totalDemandsCreated,
+        previousSummary.totalDemandsCreated,
+        true
+      );
+      trends.totalApplicationsReceived = calculateTrend(
+        currentSummary.totalApplicationsReceived,
+        previousSummary.totalApplicationsReceived,
+        true
+      );
+      trends.totalPositionsFilled = calculateTrend(
+        currentSummary.totalPositionsFilled,
+        previousSummary.totalPositionsFilled,
+        true
+      );
+      trends.professionalsHired = calculateTrend(
+        currentSummary.professionalsHired,
+        previousSummary.professionalsHired,
+        true
+      );
+      trends.conversionRate = calculateTrend(
+        currentSummary.conversionRate,
+        previousSummary.conversionRate,
+        true
+      );
+      trends.averageResponseTime = calculateTrend(
+        currentSummary.averageResponseTime,
+        previousSummary.averageResponseTime,
+        false // Lower is better
+      );
+      trends.averageFillTime = calculateTrend(
+        currentSummary.averageFillTime,
+        previousSummary.averageFillTime,
+        false // Lower is better
+      );
+      trends.cancellationRate = calculateTrend(
+        currentSummary.cancellationRate,
+        previousSummary.cancellationRate,
+        false // Lower is better
+      );
+    }
+
+    return {
+      current: currentData,
+      previous: previousData,
+      trends,
+    };
   },
 };
 

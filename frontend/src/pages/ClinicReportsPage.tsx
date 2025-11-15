@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { useUnit } from '../contexts/UnitContext';
 import { useAlert } from '../hooks/useAlert';
-import { reportsApi, PeriodType, ReportsOverview, ReportsDemands, ReportsProfessionals } from '../services/reportsApi';
+import { reportsApi, PeriodType, ReportsOverview, ReportsDemands, ReportsProfessionals, ReportsOverviewWithComparison } from '../services/reportsApi';
 import { ClipboardList, CheckCircle, Users, Clock, FileText, TrendingUp, XCircle, Award, ChevronDown, ChevronUp } from 'lucide-react';
 import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
@@ -13,6 +13,9 @@ import { useAuth } from '../AuthContext';
 import StatusPieChart from '../components/reports/StatusPieChart';
 import SpecialtyBarChart from '../components/reports/SpecialtyBarChart';
 import MetricTooltip from '../components/reports/MetricTooltip';
+import SpecialtySuccessCard from '../components/reports/SpecialtySuccessCard';
+import MetricCard from '../components/reports/MetricCard';
+import SpecialtyHireCard from '../components/reports/SpecialtyHireCard';
 
 const ClinicReportsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +26,7 @@ const ClinicReportsPage: React.FC = () => {
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<ReportsOverview | null>(null);
+  const [overviewWithComparison, setOverviewWithComparison] = useState<ReportsOverviewWithComparison | null>(null);
   const [demands, setDemands] = useState<ReportsDemands | null>(null);
   const [professionals, setProfessionals] = useState<ReportsProfessionals | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'demands' | 'professionals'>('overview');
@@ -92,13 +96,14 @@ const ClinicReportsPage: React.FC = () => {
         const startDate = selectedPeriod === 'custom' ? customStartDate : undefined;
         const endDate = selectedPeriod === 'custom' ? customEndDate : undefined;
 
-        const [overviewData, demandsData, professionalsData] = await Promise.all([
-          reportsApi.getOverview(clinicId, selectedPeriod, unitIds, startDate, endDate),
+        const [overviewComparisonData, demandsData, professionalsData] = await Promise.all([
+          reportsApi.getOverviewWithComparison(clinicId, selectedPeriod, unitIds, startDate, endDate),
           reportsApi.getDemands(clinicId, selectedPeriod, unitIds, startDate, endDate),
           reportsApi.getProfessionals(clinicId, selectedPeriod, unitIds, startDate, endDate),
         ]);
 
-        setOverview(overviewData);
+        setOverview(overviewComparisonData.current);
+        setOverviewWithComparison(overviewComparisonData);
         setDemands(demandsData);
         setProfessionals(professionalsData);
       } catch (error: any) {
@@ -128,8 +133,49 @@ const ClinicReportsPage: React.FC = () => {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
         @media (max-width: 768px) {
           .charts-container {
+            grid-template-columns: 1fr !important;
+          }
+          .status-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+          }
+          .summary-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+        @media (min-width: 769px) and (max-width: 1024px) {
+          .summary-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+          }
+        }
+        @media (min-width: 1025px) {
+          .summary-grid {
+            grid-template-columns: repeat(3, 1fr) !important;
+          }
+        }
+        @media (min-width: 769px) {
+          .status-grid {
+            grid-template-columns: repeat(4, 1fr) !important;
+          }
+        }
+        @media (max-width: 1024px) {
+          .specialty-success-grid {
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+          }
+        }
+        @media (max-width: 768px) {
+          .specialty-success-grid {
             grid-template-columns: 1fr !important;
           }
         }
@@ -165,7 +211,7 @@ const ClinicReportsPage: React.FC = () => {
           
           {filtersExpanded && (
             <div style={styles.filtersContent}>
-              <div style={styles.filterGroup}>
+          <div style={styles.filterGroup}>
             <label style={styles.filterLabel}>Período</label>
             <div style={styles.periodButtons}>
               {(['7d', '30d', '90d', 'custom'] as PeriodType[]).map(period => (
@@ -291,8 +337,8 @@ const ClinicReportsPage: React.FC = () => {
           </div>
         ) : (
           <>
-            {activeTab === 'overview' && overview && (
-              <OverviewTab overview={overview} />
+            {activeTab === 'overview' && overview && overviewWithComparison && (
+              <OverviewTab overview={overview} overviewWithComparison={overviewWithComparison} />
             )}
             {activeTab === 'demands' && demands && (
               <DemandsTab demands={demands} />
@@ -312,8 +358,392 @@ const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('pt-BR');
 };
 
+// Helper function to generate status insight
+const generateStatusInsight = (data: {
+  open: number;
+  in_progress: number;
+  closed: number;
+  cancelled: number;
+}): React.ReactNode => {
+  // Tratar valores nulos/undefined
+  const open = data.open || 0;
+  const inProgress = data.in_progress || 0;
+  const closed = data.closed || 0;
+  const cancelled = data.cancelled || 0;
+  
+  const total = open + inProgress + closed + cancelled;
+  
+  // Caso especial: sem demandas
+  if (total === 0) {
+    return 'Nenhuma demanda encontrada no período selecionado.';
+  }
+
+  // Calcular percentuais com proteção contra divisão por zero
+  const openPercent = total > 0 ? (open / total) * 100 : 0;
+  const inProgressPercent = total > 0 ? (inProgress / total) * 100 : 0;
+  const closedPercent = total > 0 ? (closed / total) * 100 : 0;
+  const cancelledPercent = total > 0 ? (cancelled / total) * 100 : 0;
+  
+  // Validar percentuais (NaN, Infinity)
+  const safeOpenPercent = isNaN(openPercent) || !isFinite(openPercent) ? 0 : openPercent;
+  const safeInProgressPercent = isNaN(inProgressPercent) || !isFinite(inProgressPercent) ? 0 : inProgressPercent;
+  const safeClosedPercent = isNaN(closedPercent) || !isFinite(closedPercent) ? 0 : closedPercent;
+  const safeCancelledPercent = isNaN(cancelledPercent) || !isFinite(cancelledPercent) ? 0 : cancelledPercent;
+
+  // Verificar se há apenas uma categoria
+  const categoriesWithData = [
+    { name: 'abertas', count: open, percent: safeOpenPercent },
+    { name: 'em andamento', count: inProgress, percent: safeInProgressPercent },
+    { name: 'concluídas', count: closed, percent: safeClosedPercent },
+    { name: 'canceladas', count: cancelled, percent: safeCancelledPercent },
+  ].filter(cat => cat.count > 0);
+
+  // Caso: apenas uma categoria
+  if (categoriesWithData.length === 1) {
+    const category = categoriesWithData[0];
+    if (category.name === 'abertas') {
+      return <>Todas as <strong>{total}</strong> demandas estão em aberto no período.</>;
+    }
+    if (category.name === 'concluídas') {
+      return <>Todas as <strong>{total}</strong> demandas foram concluídas com sucesso.</>;
+    }
+    if (category.name === 'canceladas') {
+      return <>Todas as <strong>{total}</strong> demandas foram canceladas no período.</>;
+    }
+    if (category.name === 'em andamento') {
+      return <>Todas as <strong>{total}</strong> demandas estão em andamento.</>;
+    }
+  }
+
+  // Prioridade 1: Cancelamentos significativos (>20%)
+  if (safeCancelledPercent > 20) {
+    return (
+      <>
+        Atenção: <strong>{safeCancelledPercent.toFixed(1)}%</strong> das demandas foram canceladas 
+        ({cancelled} de {total}).
+      </>
+    );
+  }
+
+  // Prioridade 2: Maioria clara (>50%)
+  if (safeClosedPercent > 50) {
+    return (
+      <>
+        A maioria das demandas (<strong>{safeClosedPercent.toFixed(1)}%</strong>) foi concluída com sucesso 
+        ({closed} de {total}).
+      </>
+    );
+  }
+
+  if (safeCancelledPercent > 50) {
+    return (
+      <>
+        A maioria das demandas (<strong>{safeCancelledPercent.toFixed(1)}%</strong>) foi cancelada 
+        ({cancelled} de {total}).
+      </>
+    );
+  }
+
+  if (safeOpenPercent > 50) {
+    return (
+      <>
+        A maioria das demandas (<strong>{safeOpenPercent.toFixed(1)}%</strong>) está em aberto 
+        ({open} de {total}).
+      </>
+    );
+  }
+
+  if (safeInProgressPercent > 50) {
+    return (
+      <>
+        A maioria das demandas (<strong>{safeInProgressPercent.toFixed(1)}%</strong>) está em andamento 
+        ({inProgress} de {total}).
+      </>
+    );
+  }
+
+  // Caso 3: Distribuição equilibrada
+  const parts: React.ReactNode[] = [];
+  parts.push('As demandas estão distribuídas entre: ');
+  
+  const distributionParts: string[] = [];
+  if (open > 0) {
+    distributionParts.push(`${safeOpenPercent.toFixed(1)}% abertas`);
+  }
+  if (inProgress > 0) {
+    distributionParts.push(`${safeInProgressPercent.toFixed(1)}% em andamento`);
+  }
+  if (closed > 0) {
+    distributionParts.push(`${safeClosedPercent.toFixed(1)}% concluídas`);
+  }
+  if (cancelled > 0) {
+    distributionParts.push(`${safeCancelledPercent.toFixed(1)}% canceladas`);
+  }
+
+  if (distributionParts.length > 0) {
+    const lastPart = distributionParts.pop();
+    if (distributionParts.length > 0) {
+      parts.push(distributionParts.join(', '));
+      parts.push(' e ');
+    }
+    parts.push(<strong key="last">{lastPart}</strong>);
+    parts.push('.');
+  }
+
+  return <>{parts}</>;
+};
+
+// Helper function to generate specialties insight
+const generateSpecialtiesInsight = (
+  specialties: Array<{ specialty: string; count: number }>,
+  totalPositions: number
+): React.ReactNode => {
+  if (!specialties || specialties.length === 0) {
+    return 'Nenhuma especialidade registrada no período.';
+  }
+
+  // Tratar valores nulos/undefined
+  const safeTotalPositions = totalPositions || 0;
+  
+  if (safeTotalPositions === 0) {
+    return 'Nenhuma posição registrada no período.';
+  }
+
+  // Calcular total das top especialidades mostradas (tratando valores nulos)
+  const topSpecialtiesCount = specialties.reduce((sum, item) => {
+    const count = item.count || 0;
+    return sum + count;
+  }, 0);
+  
+  // Proteção contra divisão por zero e valores inválidos
+  const percentage = safeTotalPositions > 0 
+    ? (topSpecialtiesCount / safeTotalPositions) * 100 
+    : 0;
+  
+  const safePercentage = isNaN(percentage) || !isFinite(percentage) ? 0 : percentage;
+
+  // Caso: apenas uma especialidade
+  if (specialties.length === 1) {
+    const specialty = specialties[0];
+    const specialtyCount = specialty.count || 0;
+    if (specialtyCount === safeTotalPositions) {
+      return (
+        <>
+          Todas as posições são da especialidade <strong>{specialty.specialty}</strong>.
+        </>
+      );
+    }
+    const specialtyPercent = safeTotalPositions > 0 
+      ? (specialtyCount / safeTotalPositions) * 100 
+      : 0;
+    const safeSpecialtyPercent = isNaN(specialtyPercent) || !isFinite(specialtyPercent) ? 0 : specialtyPercent;
+    
+    return (
+      <>
+        A especialidade <strong>{specialty.specialty}</strong> concentra{' '}
+        <strong>{safeSpecialtyPercent.toFixed(1)}%</strong> das posições ({specialtyCount} de {safeTotalPositions}).
+      </>
+    );
+  }
+
+  // Caso: especialidade dominante (>50%)
+  const topSpecialty = specialties[0];
+  const topSpecialtyCount = topSpecialty.count || 0;
+  const topSpecialtyPercent = safeTotalPositions > 0 
+    ? (topSpecialtyCount / safeTotalPositions) * 100 
+    : 0;
+  const safeTopSpecialtyPercent = isNaN(topSpecialtyPercent) || !isFinite(topSpecialtyPercent) ? 0 : topSpecialtyPercent;
+  
+  if (safeTopSpecialtyPercent > 50) {
+    return (
+      <>
+        A especialidade <strong>{topSpecialty.specialty}</strong> concentra{' '}
+        <strong>{safeTopSpecialtyPercent.toFixed(1)}%</strong> das posições ({topSpecialtyCount} de {safeTotalPositions}).
+      </>
+    );
+  }
+
+  // Caso: top 2-3 dominantes (>70% combinado)
+  const top2Count = specialties.slice(0, 2).reduce((sum, item) => sum + (item.count || 0), 0);
+  const top2Percent = safeTotalPositions > 0 
+    ? (top2Count / safeTotalPositions) * 100 
+    : 0;
+  const safeTop2Percent = isNaN(top2Percent) || !isFinite(top2Percent) ? 0 : top2Percent;
+  
+  if (safeTop2Percent > 70 && specialties.length >= 2) {
+    return (
+      <>
+        As especialidades <strong>{specialties[0].specialty}</strong> e <strong>{specialties[1].specialty}</strong>{' '}
+        concentram <strong>{safeTop2Percent.toFixed(1)}%</strong> das posições.
+      </>
+    );
+  }
+
+  const top3Count = specialties.slice(0, 3).reduce((sum, item) => sum + (item.count || 0), 0);
+  const top3Percent = safeTotalPositions > 0 
+    ? (top3Count / safeTotalPositions) * 100 
+    : 0;
+  const safeTop3Percent = isNaN(top3Percent) || !isFinite(top3Percent) ? 0 : top3Percent;
+  
+  if (safeTop3Percent > 70 && specialties.length >= 3) {
+    return (
+      <>
+        As especialidades <strong>{specialties[0].specialty}</strong>, <strong>{specialties[1].specialty}</strong>{' '}
+        e <strong>{specialties[2].specialty}</strong> concentram <strong>{safeTop3Percent.toFixed(1)}%</strong> das posições.
+      </>
+    );
+  }
+
+  // Caso: poucas especialidades (≤3)
+  if (specialties.length <= 3) {
+    return (
+      <>
+        As <strong>{specialties.length}</strong> especialidades mais procuradas representam{' '}
+        <strong>{safePercentage.toFixed(1)}%</strong> das posições ({topSpecialtiesCount} de {safeTotalPositions}).
+      </>
+    );
+  }
+
+  // Caso: distribuição equilibrada (top 5 <50% combinado)
+  if (safePercentage < 50) {
+    return 'A demanda está distribuída de forma equilibrada entre as especialidades.';
+  }
+
+  // Caso padrão: muitas especialidades
+  return (
+    <>
+      As <strong>5</strong> especialidades mais procuradas representam{' '}
+      <strong>{safePercentage.toFixed(1)}%</strong> das posições totais ({topSpecialtiesCount} de {safeTotalPositions}).
+    </>
+  );
+};
+
+// Helper function to get card color based on metric and value
+const getCardColor = (metric: string, value: number): string => {
+  switch (metric) {
+    case 'conversionRate':
+      // Taxa de Conversão: > 30% = verde, 10-30% = roxo, < 10% = laranja
+      if (value >= 30) return colors.success;
+      if (value >= 10) return colors.primary;
+      return colors.warning;
+    
+    case 'cancellationRate':
+      // Taxa de Cancelamento: < 5% = verde, 5-15% = laranja, > 15% = vermelho
+      if (value < 5) return colors.success;
+      if (value <= 15) return colors.warning;
+      return colors.danger;
+    
+    case 'averageResponseTime':
+      // Tempo Médio de Resposta: < 24h = verde, 24-48h = laranja, > 48h = vermelho
+      if (value < 24) return colors.success;
+      if (value <= 48) return colors.warning;
+      return colors.danger;
+    
+    case 'averageFillTime':
+      // Média de Preenchimento: < 7 dias = verde, 7-14 dias = laranja, > 14 dias = vermelho
+      if (value < 7) return colors.success;
+      if (value <= 14) return colors.warning;
+      return colors.danger;
+    
+    case 'totalDemandsCreated':
+    case 'totalApplicationsReceived':
+    case 'totalPositionsFilled':
+    case 'professionalsHired':
+      // Métricas de volume: sempre roxo (informativo)
+      return colors.primary;
+    
+    default:
+      return colors.primary;
+  }
+};
+
 // Overview Tab Component
-const OverviewTab: React.FC<{ overview: ReportsOverview }> = ({ overview }) => {
+const OverviewTab: React.FC<{ 
+  overview: ReportsOverview;
+  overviewWithComparison: ReportsOverviewWithComparison;
+}> = ({ overview, overviewWithComparison }) => {
+  const summary = overview.summary;
+  const { trends } = overviewWithComparison;
+  
+  // Calcular período para o texto do insight
+  const periodDays = Math.ceil(
+    (new Date(overview.period.end).getTime() - new Date(overview.period.start).getTime()) / (1000 * 60 * 60 * 24)
+  );
+  const periodText = periodDays === 7 ? 'última semana' : 
+                     periodDays === 30 ? 'último mês' : 
+                     periodDays === 90 ? 'últimos 3 meses' : 
+                     'período selecionado';
+
+  // Generate improved insight text with trends
+  const generateInsightText = () => {
+    const parts: React.ReactNode[] = [];
+    
+    parts.push('No ');
+    parts.push(<strong key="period">{periodText}</strong>);
+    parts.push(', sua clínica criou ');
+    parts.push(<strong key="demands">{summary.totalDemandsCreated}</strong>);
+    parts.push(` ${summary.totalDemandsCreated === 1 ? 'demanda' : 'demandas'}`);
+    
+    // Add trend for demands if significant
+    if (trends.totalDemandsCreated && Math.abs(trends.totalDemandsCreated.value) > 10) {
+      const trend = trends.totalDemandsCreated;
+      const trendText = trend.isPositive ? 'aumentou' : 'diminuiu';
+      parts.push(` (${trendText} ${Math.abs(trend.value).toFixed(1)}%`);
+      if (overviewWithComparison.previous) {
+        parts.push(' em relação ao período anterior');
+      }
+      parts.push(')');
+    }
+    
+    parts.push(', recebeu ');
+    parts.push(<strong key="applications">{summary.totalApplicationsReceived}</strong>);
+    parts.push(` ${summary.totalApplicationsReceived === 1 ? 'candidatura' : 'candidaturas'}`);
+    
+    // Add trend for applications if significant
+    if (trends.totalApplicationsReceived && Math.abs(trends.totalApplicationsReceived.value) > 10) {
+      const trend = trends.totalApplicationsReceived;
+      const trendText = trend.isPositive ? 'aumentou' : 'diminuiu';
+      parts.push(` (${trendText} ${Math.abs(trend.value).toFixed(1)}%`);
+      if (overviewWithComparison.previous) {
+        parts.push(' em relação ao período anterior');
+      }
+      parts.push(')');
+    }
+    
+    parts.push(' e contratou ');
+    parts.push(<strong key="hired">{summary.professionalsHired}</strong>);
+    parts.push(` ${summary.professionalsHired === 1 ? 'profissional' : 'profissionais'}`);
+    
+    // Add trend for hired if significant
+    if (trends.professionalsHired && Math.abs(trends.professionalsHired.value) > 10) {
+      const trend = trends.professionalsHired;
+      const trendText = trend.isPositive ? 'aumentou' : 'diminuiu';
+      parts.push(` (${trendText} ${Math.abs(trend.value).toFixed(1)}%`);
+      if (overviewWithComparison.previous) {
+        parts.push(' em relação ao período anterior');
+      }
+      parts.push(')');
+    }
+    
+    parts.push(' — uma taxa de conversão de ');
+    parts.push(<strong key="conversion">{summary.conversionRate.toFixed(1)}%</strong>);
+    
+    // Add trend for conversion rate if significant
+    if (trends.conversionRate && Math.abs(trends.conversionRate.value) > 10) {
+      const trend = trends.conversionRate;
+      const trendText = trend.isPositive ? 'aumentou' : 'diminuiu';
+      parts.push(` (${trendText} ${Math.abs(trend.value).toFixed(1)}%`);
+      if (overviewWithComparison.previous) {
+        parts.push(' em relação ao período anterior');
+      }
+      parts.push(')');
+    }
+    
+    parts.push('.');
+    
+    return <>{parts}</>;
+  };
+
   return (
     <div style={styles.tabContent}>
       <div style={styles.periodInfo}>
@@ -322,140 +752,146 @@ const OverviewTab: React.FC<{ overview: ReportsOverview }> = ({ overview }) => {
         </p>
       </div>
 
-      {/* Summary Cards */}
-      <div style={styles.summaryGrid}>
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryIcon}>
-            <ClipboardList size={24} color={colors.primary} />
-          </div>
-          <div style={styles.summaryContent}>
-            <MetricTooltip text="Total de demandas criadas no período selecionado">
-              <h3 style={styles.summaryValue}>{overview.summary.totalDemandsCreated}</h3>
-            </MetricTooltip>
-            <p style={styles.summaryLabel}>Demandas Criadas</p>
-          </div>
+      {/* Insight Box */}
+      <div style={styles.overviewInsightBox}>
+        <div style={styles.overviewInsightIcon}>
+          <TrendingUp size={16} color={colors.primary} />
         </div>
+        <p style={styles.overviewInsightText}>
+          {generateInsightText()}
+        </p>
+      </div>
 
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryIcon}>
-            <FileText size={24} color="#8b5cf6" />
-          </div>
-          <div style={styles.summaryContent}>
-            <MetricTooltip text="Total de candidaturas recebidas no período selecionado">
-              <h3 style={styles.summaryValue}>{overview.summary.totalApplicationsReceived}</h3>
-            </MetricTooltip>
-            <p style={styles.summaryLabel}>Candidaturas Recebidas</p>
-          </div>
+      {/* Summary Cards - Grouped by Category */}
+      
+      {/* Bloco 1: Volume de Atividade */}
+      <div style={styles.cardGroup}>
+        <h4 style={styles.cardGroupTitle}>Volume de Atividade</h4>
+        <div style={styles.summaryGrid} className="summary-grid">
+          <MetricCard
+            label="Demandas Criadas"
+            value={summary.totalDemandsCreated}
+            icon={ClipboardList}
+            tooltip="Total de demandas criadas no período selecionado"
+            trend={trends.totalDemandsCreated || null}
+            color={getCardColor('totalDemandsCreated', summary.totalDemandsCreated)}
+          />
+          
+          <MetricCard
+            label="Candidaturas Recebidas"
+            value={summary.totalApplicationsReceived}
+            icon={FileText}
+            tooltip="Total de candidaturas recebidas no período selecionado"
+            trend={trends.totalApplicationsReceived || null}
+            color={getCardColor('totalApplicationsReceived', summary.totalApplicationsReceived)}
+          />
+          
+          <MetricCard
+            label="Posições Preenchidas"
+            value={summary.totalPositionsFilled}
+            icon={CheckCircle}
+            tooltip="Total de posições preenchidas no período selecionado"
+            trend={trends.totalPositionsFilled || null}
+            color={getCardColor('totalPositionsFilled', summary.totalPositionsFilled)}
+          />
         </div>
+      </div>
 
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryIcon}>
-            <CheckCircle size={24} color="#10b981" />
-          </div>
-          <div style={styles.summaryContent}>
-            <h3 style={styles.summaryValue}>{overview.summary.totalPositionsFilled}</h3>
-            <p style={styles.summaryLabel}>Posições Preenchidas</p>
-          </div>
+      {/* Bloco 2: Eficiência de Contratação */}
+      <div style={styles.cardGroup}>
+        <h4 style={styles.cardGroupTitle}>Eficiência de Contratação</h4>
+        <div style={styles.summaryGrid} className="summary-grid">
+          <MetricCard
+            label="Profissionais Contratados"
+            value={summary.professionalsHired}
+            icon={Users}
+            tooltip="Total de profissionais contratados no período selecionado"
+            trend={trends.professionalsHired || null}
+            color={getCardColor('professionalsHired', summary.professionalsHired)}
+          />
+          
+          <MetricCard
+            label="Taxa de Conversão"
+            value={summary.conversionRate}
+            icon={TrendingUp}
+            tooltip="Percentual de candidaturas que foram aceitas (aceitas / total recebidas)"
+            trend={trends.conversionRate || null}
+            color={getCardColor('conversionRate', summary.conversionRate)}
+            formatValue={(v) => `${v.toFixed(1)}%`}
+          />
+          
+          <MetricCard
+            label="Tempo Médio de Resposta"
+            value={summary.averageResponseTime}
+            icon={Clock}
+            tooltip="Tempo médio entre a criação da demanda e a primeira candidatura recebida"
+            trend={trends.averageResponseTime || null}
+            color={getCardColor('averageResponseTime', summary.averageResponseTime)}
+            formatValue={(v) => `${v.toFixed(1)}h`}
+          />
         </div>
+      </div>
 
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryIcon}>
-            <Users size={24} color="#3b82f6" />
-          </div>
-          <div style={styles.summaryContent}>
-            <h3 style={styles.summaryValue}>{overview.summary.professionalsHired}</h3>
-            <p style={styles.summaryLabel}>Profissionais Contratados</p>
-          </div>
-        </div>
-
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryIcon}>
-            <TrendingUp size={24} color="#10b981" />
-          </div>
-          <div style={styles.summaryContent}>
-            <MetricTooltip text="Percentual de candidaturas que foram aceitas (aceitas / total recebidas)">
-              <h3 style={styles.summaryValue}>{overview.summary.conversionRate.toFixed(1)}%</h3>
-            </MetricTooltip>
-            <p style={styles.summaryLabel}>Taxa de Conversão</p>
-          </div>
-        </div>
-
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryIcon}>
-            <Clock size={24} color="#f59e0b" />
-          </div>
-          <div style={styles.summaryContent}>
-            <MetricTooltip text="Tempo médio em dias entre a criação da posição e o preenchimento (aceitação do primeiro candidato)">
-              <h3 style={styles.summaryValue}>{overview.summary.averageFillTime.toFixed(1)}</h3>
-            </MetricTooltip>
-            <p style={styles.summaryLabel}>Dias (média de preenchimento)</p>
-          </div>
-        </div>
-
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryIcon}>
-            <Clock size={24} color="#06b6d4" />
-          </div>
-          <div style={styles.summaryContent}>
-            <MetricTooltip text="Tempo médio entre a criação da demanda e a primeira candidatura recebida">
-              <h3 style={styles.summaryValue}>{overview.summary.averageResponseTime.toFixed(1)}h</h3>
-            </MetricTooltip>
-            <p style={styles.summaryLabel}>Tempo Médio de Resposta</p>
-          </div>
-        </div>
-
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryIcon}>
-            <XCircle size={24} color="#ef4444" />
-          </div>
-          <div style={styles.summaryContent}>
-            <MetricTooltip text="Percentual de demandas canceladas em relação ao total criado">
-              <h3 style={styles.summaryValue}>{overview.summary.cancellationRate.toFixed(1)}%</h3>
-            </MetricTooltip>
-            <p style={styles.summaryLabel}>Taxa de Cancelamento</p>
-          </div>
+      {/* Bloco 3: Performance Operacional */}
+      <div style={styles.cardGroup}>
+        <h4 style={styles.cardGroupTitle}>Performance Operacional</h4>
+        <div style={styles.summaryGrid} className="summary-grid">
+          <MetricCard
+            label="Média de Preenchimento"
+            value={summary.averageFillTime}
+            icon={Clock}
+            tooltip="Tempo médio em dias entre a criação da posição e o preenchimento (aceitação do primeiro candidato)"
+            trend={trends.averageFillTime || null}
+            color={getCardColor('averageFillTime', summary.averageFillTime)}
+            formatValue={(v) => `${v.toFixed(1)} dias`}
+          />
+          
+          <MetricCard
+            label="Taxa de Cancelamento"
+            value={summary.cancellationRate}
+            icon={XCircle}
+            tooltip="Percentual de demandas canceladas em relação ao total criado"
+            trend={trends.cancellationRate || null}
+            color={getCardColor('cancellationRate', summary.cancellationRate)}
+            formatValue={(v) => `${v.toFixed(1)}%`}
+          />
         </div>
       </div>
 
       {/* Charts Side by Side */}
       <div style={styles.chartsContainer} className="charts-container">
-        {/* Status Breakdown */}
+      {/* Status Breakdown */}
         <div style={styles.chartSection}>
-          <h3 style={styles.sectionTitle}>Status das Demandas</h3>
+        <h3 style={styles.sectionTitle}>Status das Demandas</h3>
           
           {/* Insight Box */}
-          {(() => {
-            const totalAbertas = overview.summary.demandsByStatus.open;
-            const totalConcluidas = overview.summary.demandsByStatus.closed;
-            
+          {useMemo(() => {
+            const insight = generateStatusInsight(overview.summary.demandsByStatus);
             return (
               <div style={styles.statusInsightBox}>
                 <div style={styles.statusInsightIcon}>
                   <TrendingUp size={16} color={colors.primary} />
                 </div>
                 <p style={styles.statusInsightText}>
-                  Das <strong>{totalAbertas}</strong> demandas abertas,{' '}
-                  {totalConcluidas > 0 ? (
-                    <> <strong>{totalConcluidas}</strong> foram concluídas.</>
-                  ) : (
-                    <> nenhuma foi concluída até o momento.</>
-                  )}
+                  {insight}
                 </p>
               </div>
             );
-          })()}
+          }, [overview.summary.demandsByStatus])}
 
           <div style={styles.chartContainer}>
             <StatusPieChart data={overview.summary.demandsByStatus} />
-          </div>
         </div>
+      </div>
 
-        {/* Most Demanded Specialties */}
-        {overview.summary.mostDemandedSpecialties && overview.summary.mostDemandedSpecialties.length > 0 && (() => {
+      {/* Most Demanded Specialties */}
+        {useMemo(() => {
+          if (!overview.summary.mostDemandedSpecialties || overview.summary.mostDemandedSpecialties.length === 0) {
+            return null;
+          }
+
           const specialties = overview.summary.mostDemandedSpecialties;
-          const totalSpecialtiesCount = specialties.reduce((sum, item) => sum + item.count, 0);
-          const totalDemands = overview.summary.totalDemandsCreated;
-          const percentageOfTotal = totalDemands > 0 ? (totalSpecialtiesCount / totalDemands) * 100 : 0;
+          const totalPositions = overview.summary.totalPositionsCreated;
           
           return (
             <div style={styles.chartSection}>
@@ -467,21 +903,20 @@ const OverviewTab: React.FC<{ overview: ReportsOverview }> = ({ overview }) => {
                   <TrendingUp size={16} color={colors.primary} />
                 </div>
                 <p style={styles.analyticalSummaryText}>
-                  As <strong>{specialties.length}</strong> especialidades mais procuradas representam{' '}
-                  <strong>{percentageOfTotal.toFixed(1)}%</strong> das demandas totais no período.
+                  {generateSpecialtiesInsight(specialties, totalPositions)}
                 </p>
               </div>
 
               <div style={styles.chartContainer}>
                 <SpecialtyBarChart 
                   data={specialties} 
-                  totalDemands={totalDemands}
+                  totalDemands={overview.summary.totalDemandsCreated}
                 />
               </div>
             </div>
           );
-        })()}
-      </div>
+        }, [overview.summary.mostDemandedSpecialties, overview.summary.totalPositionsCreated, overview.summary.totalDemandsCreated])}
+        </div>
     </div>
   );
 };
@@ -499,7 +934,7 @@ const DemandsTab: React.FC<{ demands: ReportsDemands }> = ({ demands }) => {
       {/* By Status */}
       <div style={styles.section}>
         <h3 style={styles.sectionTitle}>Demandas por Status</h3>
-        <div style={styles.statusGrid}>
+        <div style={styles.statusGrid} className="status-grid">
           <div style={styles.statusCard}>
             <div style={{ ...styles.statusIndicator, backgroundColor: '#3b82f6' }} />
             <div style={styles.statusContent}>
@@ -531,33 +966,95 @@ const DemandsTab: React.FC<{ demands: ReportsDemands }> = ({ demands }) => {
         </div>
       </div>
 
-      {/* By Specialty */}
-      {Object.keys(demands.bySpecialty).length > 0 && (
+      {/* By Specialty - Taxa de Sucesso */}
+      {Object.keys(demands.bySpecialty).length > 0 && (() => {
+        // Process and sort specialties by success rate
+        const specialtiesArray = Object.entries(demands.bySpecialty)
+          .map(([specialty, data]) => {
+            const created = Math.max(data.created || 0, 0);
+            const filled = Math.max(Math.min(data.filled || 0, created), 0); // Ensure filled <= created
+            let successRate = isNaN(data.successRate) || !isFinite(data.successRate) ? 0 : data.successRate;
+            successRate = Math.max(Math.min(successRate, 100), 0); // Clamp between 0 and 100
+            
+            return {
+              specialty,
+              created,
+              filled,
+              successRate,
+            };
+          })
+          .filter(item => item.created > 0) // Filter out specialties with no created positions
+          .sort((a, b) => b.successRate - a.successRate); // Sort by success rate descending
+
+        // Identify top 2 performers
+        const topPerformers = specialtiesArray.slice(0, 2);
+        const topPerformerSpecialties = new Set(
+          topPerformers.map(item => item.specialty)
+        );
+
+        // Generate insight text for top performers
+        const getTopPerformersText = () => {
+          if (topPerformers.length === 0) {
+            return 'Nenhuma especialidade com dados suficientes no período.';
+          }
+          if (topPerformers.length === 1) {
+            return (
+              <>
+                Especialidade com melhor desempenho: <strong>{topPerformers[0].specialty}</strong> ({topPerformers[0].successRate.toFixed(1)}%)
+              </>
+            );
+          }
+          return (
+            <>
+              Especialidades com melhor desempenho: <strong>{topPerformers[0].specialty}</strong> ({topPerformers[0].successRate.toFixed(1)}%) e <strong>{topPerformers[1].specialty}</strong> ({topPerformers[1].successRate.toFixed(1)}%)
+            </>
+          );
+        };
+
+        return (
         <div style={styles.section}>
           <h3 style={styles.sectionTitle}>Taxa de Sucesso por Especialidade</h3>
-          <div style={styles.specialtyGrid}>
-            {Object.entries(demands.bySpecialty).map(([specialty, data]) => (
-              <div key={specialty} style={styles.specialtyCard}>
-                <h4 style={styles.specialtyName}>{specialty}</h4>
-                <div style={styles.specialtyStats}>
-                  <div style={styles.specialtyStat}>
-                    <span style={styles.specialtyLabel}>Criadas:</span>
-                    <span style={styles.specialtyValue}>{data.created}</span>
+            
+            {/* Insight Box */}
+            <div style={styles.analyticalSummary}>
+              <div style={styles.analyticalSummaryIcon}>
+                <TrendingUp size={16} color={colors.primary} />
                   </div>
-                  <div style={styles.specialtyStat}>
-                    <span style={styles.specialtyLabel}>Preenchidas:</span>
-                    <span style={styles.specialtyValue}>{data.filled}</span>
+              <p style={styles.analyticalSummaryText}>
+                {getTopPerformersText()}
+              </p>
                   </div>
-                  <div style={styles.specialtyStat}>
-                    <span style={styles.specialtyLabel}>Taxa de Sucesso:</span>
-                    <span style={styles.specialtyValue}>{data.successRate.toFixed(1)}%</span>
-                  </div>
-                </div>
+
+            {/* Specialty Cards Grid */}
+            {specialtiesArray.length > 0 ? (
+              <div style={styles.specialtySuccessGrid} className="specialty-success-grid">
+                {specialtiesArray.map((item, index) => (
+                  <div
+                    key={item.specialty}
+                    style={{
+                      ...styles.specialtyCardWrapper,
+                      animationDelay: `${index * 0.1}s`,
+                    }}
+                  >
+                    <SpecialtySuccessCard
+                      specialty={item.specialty}
+                      created={item.created}
+                      filled={item.filled}
+                      successRate={item.successRate}
+                      isTopPerformer={topPerformerSpecialties.has(item.specialty)}
+                    />
               </div>
             ))}
           </div>
+            ) : (
+              <div style={styles.emptyState}>
+                <p style={styles.emptyText}>Nenhuma especialidade encontrada no período selecionado</p>
+                <p style={styles.emptySubtext}>Tente alterar o período ou os filtros de unidade para ver mais resultados</p>
         </div>
       )}
+          </div>
+        );
+      })()}
 
       {/* Demands List */}
       <div style={styles.section}>
@@ -618,8 +1115,124 @@ const DemandsTab: React.FC<{ demands: ReportsDemands }> = ({ demands }) => {
   );
 };
 
+// Helper function to generate professionals insight
+const generateProfessionalsInsight = (
+  hiredCount: number,
+  bySpecialty: { [key: string]: number },
+  averageHireTime: number
+): React.ReactNode => {
+  // Tratar valores nulos/undefined
+  const safeHiredCount = hiredCount || 0;
+  const safeAverageHireTime = averageHireTime || 0;
+  const safeBySpecialty = bySpecialty || {};
+  
+  // Caso: nenhuma contratação
+  if (safeHiredCount === 0) {
+    return 'Nenhum profissional contratado neste período.';
+  }
+
+  const specialties = Object.keys(safeBySpecialty).filter(s => (safeBySpecialty[s] || 0) > 0);
+  const totalSpecialties = specialties.length;
+
+  // Caso: uma única especialidade
+  if (totalSpecialties === 1) {
+    const specialty = specialties[0];
+    const count = safeBySpecialty[specialty] || 0;
+    const parts: React.ReactNode[] = [];
+    
+    parts.push('Todas as ');
+    parts.push(<strong key="count">{count}</strong>);
+    parts.push(` ${count === 1 ? 'contratação foi' : 'contratações foram'} para `);
+    parts.push(<strong key="specialty">{specialty}</strong>);
+    parts.push('.');
+    
+    if (safeAverageHireTime > 0 && !isNaN(safeAverageHireTime) && isFinite(safeAverageHireTime)) {
+      parts.push(' Tempo médio de contratação de ');
+      parts.push(<strong key="time">{safeAverageHireTime.toFixed(1)}</strong>);
+      parts.push(' dias.');
+    }
+    
+    return <>{parts}</>;
+  }
+
+  // Caso: múltiplas especialidades
+  const parts: React.ReactNode[] = [];
+  
+  // Ordenar especialidades por volume
+  const sortedSpecialties = specialties
+    .map(s => ({ name: s, count: safeBySpecialty[s] || 0 }))
+    .sort((a, b) => b.count - a.count);
+  
+  const topSpecialty = sortedSpecialties[0];
+  const secondSpecialty = sortedSpecialties.length > 1 ? sortedSpecialties[1] : null;
+  
+  parts.push('No período analisado, sua clínica contratou ');
+  parts.push(<strong key="count">{safeHiredCount}</strong>);
+  parts.push(` ${safeHiredCount === 1 ? 'profissional' : 'profissionais'} em `);
+  parts.push(<strong key="specialties">{totalSpecialties}</strong>);
+  parts.push(` ${totalSpecialties === 1 ? 'especialidade' : 'especialidades'}.`);
+  
+  if (topSpecialty) {
+    parts.push(' A especialidade mais contratada foi ');
+    parts.push(<strong key="top">{topSpecialty.name}</strong>);
+    parts.push(` (${topSpecialty.count} ${topSpecialty.count === 1 ? 'profissional' : 'profissionais'})`);
+    
+    if (secondSpecialty && secondSpecialty.count === topSpecialty.count) {
+      parts.push(', empatada com ');
+      parts.push(<strong key="second">{secondSpecialty.name}</strong>);
+    }
+    
+    parts.push('.');
+  }
+  
+  if (safeAverageHireTime > 0 && !isNaN(safeAverageHireTime) && isFinite(safeAverageHireTime)) {
+    parts.push(' Tempo médio de contratação de ');
+    parts.push(<strong key="time">{safeAverageHireTime.toFixed(1)}</strong>);
+    parts.push(' dias.');
+  }
+  
+  return <>{parts}</>;
+};
+
 // Professionals Tab Component
 const ProfessionalsTab: React.FC<{ professionals: ReportsProfessionals }> = ({ professionals }) => {
+  const hiredCount = professionals.hired.length;
+  const totalHired = hiredCount;
+  
+  // Processar especialidades: calcular percentuais e ordenar
+  const specialtiesData = useMemo(() => {
+    if (totalHired === 0) {
+      return [];
+    }
+
+    return Object.entries(professionals.bySpecialty)
+      .map(([specialty, count]) => {
+        const safeCount = count || 0;
+        const percentage = totalHired > 0 ? (safeCount / totalHired) * 100 : 0;
+        const safePercentage = isNaN(percentage) || !isFinite(percentage) ? 0 : percentage;
+        
+        return {
+          specialty,
+          count: safeCount,
+          percentage: safePercentage,
+        };
+      })
+      .filter(item => item.count > 0)
+      .sort((a, b) => b.count - a.count); // Ordenar por volume (maior para menor)
+  }, [professionals.bySpecialty, totalHired]);
+
+  // Identificar especialidade mais contratada
+  const topHiredSpecialty = specialtiesData.length > 0 ? specialtiesData[0].specialty : null;
+
+  // Gerar insight
+  const insight = useMemo(() => {
+    return generateProfessionalsInsight(
+      hiredCount,
+      professionals.bySpecialty,
+      professionals.averageHireTime
+    );
+  }, [hiredCount, professionals.bySpecialty, professionals.averageHireTime]);
+
   return (
     <div style={styles.tabContent}>
       <div style={styles.periodInfo}>
@@ -628,38 +1241,56 @@ const ProfessionalsTab: React.FC<{ professionals: ReportsProfessionals }> = ({ p
         </p>
       </div>
 
-      {/* Summary */}
-      <div style={styles.summaryGrid}>
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryIcon}>
-            <Users size={24} color={colors.primary} />
-          </div>
-          <div style={styles.summaryContent}>
-            <h3 style={styles.summaryValue}>{professionals.hired.length}</h3>
-            <p style={styles.summaryLabel}>Profissionais Contratados</p>
-          </div>
+      {/* Bloco 1: Panorama Geral */}
+      {/* Insight Box */}
+      <div style={styles.overviewInsightBox}>
+        <div style={styles.overviewInsightIcon}>
+          <TrendingUp size={16} color={colors.primary} />
         </div>
-
-        <div style={styles.summaryCard}>
-          <div style={styles.summaryIcon}>
-            <Clock size={24} color="#f59e0b" />
-          </div>
-          <div style={styles.summaryContent}>
-            <h3 style={styles.summaryValue}>{professionals.averageHireTime.toFixed(1)}</h3>
-            <p style={styles.summaryLabel}>Dias (tempo médio de contratação)</p>
-          </div>
-        </div>
+        <p style={styles.overviewInsightText}>
+          {insight}
+        </p>
       </div>
 
-      {/* By Specialty */}
-      {Object.keys(professionals.bySpecialty).length > 0 && (
+      {/* Summary Cards */}
+      <div style={styles.summaryGrid} className="summary-grid">
+        <MetricCard
+          label="Profissionais Contratados"
+          value={hiredCount}
+          icon={Users}
+          tooltip="Total de profissionais contratados no período selecionado"
+          color={getCardColor('professionalsHired', hiredCount)}
+        />
+
+        <MetricCard
+          label="Tempo Médio de Contratação"
+          value={professionals.averageHireTime}
+          icon={Clock}
+          tooltip="Tempo médio em dias entre a criação da posição e a aceitação da candidatura"
+          color={getCardColor('averageFillTime', professionals.averageHireTime)}
+          formatValue={(v) => `${v.toFixed(1)} dias`}
+        />
+      </div>
+
+      {/* Bloco 2: Contratações por Especialidade */}
+      {specialtiesData.length > 0 && (
         <div style={styles.section}>
           <h3 style={styles.sectionTitle}>Contratações por Especialidade</h3>
-          <div style={styles.specialtyGrid}>
-            {Object.entries(professionals.bySpecialty).map(([specialty, count]) => (
-              <div key={specialty} style={styles.specialtyCard}>
-                <h4 style={styles.specialtyName}>{specialty}</h4>
-                <p style={styles.specialtyCount}>{count} profissional(is)</p>
+          <div style={styles.specialtySuccessGrid} className="specialty-success-grid">
+            {specialtiesData.map((item, index) => (
+              <div
+                key={item.specialty}
+                style={{
+                  ...styles.specialtyCardWrapper,
+                  animationDelay: `${index * 0.1}s`,
+                }}
+              >
+                <SpecialtyHireCard
+                  specialty={item.specialty}
+                  count={item.count}
+                  percentage={item.percentage}
+                  isTopHired={item.specialty === topHiredSpecialty}
+                />
               </div>
             ))}
           </div>
@@ -911,7 +1542,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
     gap: '20px',
-    marginBottom: '32px',
     position: 'relative',
     overflow: 'visible',
   },
@@ -991,6 +1621,36 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
     lineHeight: '1.5',
   },
+  overviewInsightBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '16px 20px',
+    backgroundColor: colors.primaryBg,
+    border: `1px solid ${colors.primaryLighter}`,
+    borderRadius: '12px',
+    marginBottom: '32px',
+  },
+  overviewInsightIcon: {
+    flexShrink: 0,
+  },
+  overviewInsightText: {
+    fontSize: '14px',
+    color: colors.primaryDark,
+    margin: 0,
+    lineHeight: '1.6',
+  },
+  cardGroup: {
+    marginBottom: '32px',
+  },
+  cardGroupTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#262626',
+    marginBottom: '16px',
+    paddingBottom: '8px',
+    borderBottom: '2px solid #e5e5e5',
+  },
   chartsContainer: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
@@ -1016,6 +1676,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     boxSizing: 'border-box',
     minHeight: '400px',
     flex: 1,
+  },
+  statusGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '20px',
+    marginTop: '16px',
   },
   statusCard: {
     backgroundColor: '#fafafa',
@@ -1054,6 +1720,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '16px',
     height: '100%',
     alignContent: 'stretch',
+  },
+  specialtySuccessGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '20px',
+  },
+  specialtyCardWrapper: {
+    animation: 'fadeInUp 0.5s ease-out forwards',
+    opacity: 0,
   },
   specialtyCard: {
     backgroundColor: '#fafafa',
