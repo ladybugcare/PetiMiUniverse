@@ -31,16 +31,19 @@ router.post('/login', authLimiter, asyncHandler(async (req, res) => {
 
   const { user, session } = data;
 
-  // 🔍 Verifica se é ambiente local (não precisa confirmar email)
+  // 🔍 Verifica se é ambiente local ou staging (não precisa confirmar email)
   // Local: URL contém localhost ou 127.0.0.1
-  // Staging/Production: URL é https:// (não localhost)
+  // Staging: NODE_ENV === 'staging'
+  // Production: NODE_ENV === 'production' (precisa confirmar email)
   const rawFrontendUrl = process.env.FRONTEND_URL?.trim();
   const FRONTEND_URL = rawFrontendUrl?.replace(/\/$/, '');
   const isLocalEnv = FRONTEND_URL?.includes('localhost') || 
                     FRONTEND_URL?.includes('127.0.0.1');
+  const isStaging = process.env.NODE_ENV === 'staging';
+  const skipEmailConfirmation = isLocalEnv || isStaging;
 
-  // Verificar se email está confirmado antes de permitir login (apenas em staging/prod)
-  if (!isLocalEnv && !user.email_confirmed_at) {
+  // Verificar se email está confirmado antes de permitir login (apenas em produção)
+  if (!skipEmailConfirmation && !user.email_confirmed_at) {
     logger.warn('Tentativa de login com email não confirmado', {
       email,
       userId: user.id,
