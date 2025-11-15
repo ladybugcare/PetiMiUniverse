@@ -5,11 +5,14 @@ import { MenuItem } from '../components/DashboardSidebar';
 import { useUnit } from '../contexts/UnitContext';
 import { useAlert } from '../hooks/useAlert';
 import { reportsApi, PeriodType, ReportsOverview, ReportsDemands, ReportsProfessionals } from '../services/reportsApi';
-import { ClipboardList, CheckCircle, Users, Clock } from 'lucide-react';
+import { ClipboardList, CheckCircle, Users, Clock, FileText, TrendingUp, XCircle, Award, ChevronDown, ChevronUp } from 'lucide-react';
 import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
+import StatusPieChart from '../components/reports/StatusPieChart';
+import SpecialtyBarChart from '../components/reports/SpecialtyBarChart';
+import MetricTooltip from '../components/reports/MetricTooltip';
 
 const ClinicReportsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +26,10 @@ const ClinicReportsPage: React.FC = () => {
   const [demands, setDemands] = useState<ReportsDemands | null>(null);
   const [professionals, setProfessionals] = useState<ReportsProfessionals | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'demands' | 'professionals'>('overview');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState<boolean>(true);
 
   // Get menu items using hook
   const userRole = user ? getUserRole(user) : 'CADMIN';
@@ -67,14 +74,28 @@ const ClinicReportsPage: React.FC = () => {
         return;
       }
 
+      // Don't load if custom period is selected but dates are not set
+      if (selectedPeriod === 'custom' && (!customStartDate || !customEndDate)) {
+        return;
+      }
+
+      // Don't load if custom dates are invalid
+      if (selectedPeriod === 'custom' && customStartDate && customEndDate) {
+        if (new Date(customStartDate) > new Date(customEndDate)) {
+          return;
+        }
+      }
+
       try {
         setLoading(true);
         const unitIds = selectedUnits.length > 0 ? selectedUnits : undefined;
+        const startDate = selectedPeriod === 'custom' ? customStartDate : undefined;
+        const endDate = selectedPeriod === 'custom' ? customEndDate : undefined;
 
         const [overviewData, demandsData, professionalsData] = await Promise.all([
-          reportsApi.getOverview(clinicId, selectedPeriod, unitIds),
-          reportsApi.getDemands(clinicId, selectedPeriod, unitIds),
-          reportsApi.getProfessionals(clinicId, selectedPeriod, unitIds),
+          reportsApi.getOverview(clinicId, selectedPeriod, unitIds, startDate, endDate),
+          reportsApi.getDemands(clinicId, selectedPeriod, unitIds, startDate, endDate),
+          reportsApi.getProfessionals(clinicId, selectedPeriod, unitIds, startDate, endDate),
         ]);
 
         setOverview(overviewData);
@@ -89,7 +110,7 @@ const ClinicReportsPage: React.FC = () => {
     };
 
     loadReports();
-  }, [selectedPeriod, selectedUnits]);
+  }, [selectedPeriod, selectedUnits, customStartDate, customEndDate]);
 
 
   const handleUnitToggle = (unitId: string) => {
@@ -102,6 +123,17 @@ const ClinicReportsPage: React.FC = () => {
 
   return (
     <DashboardLayout pageName="Relatórios" menuItems={menuItems}>
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @media (max-width: 768px) {
+          .charts-container {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
       <div style={styles.container}>
         {/* Header with Filters */}
         <div style={styles.header}>
@@ -113,22 +145,80 @@ const ClinicReportsPage: React.FC = () => {
 
         {/* Filters */}
         <div style={styles.filters}>
-          <div style={styles.filterGroup}>
+          <button
+            onClick={() => setFiltersExpanded(!filtersExpanded)}
+            style={styles.filtersHeader}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#f9fafb';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            <span style={styles.filtersHeaderText}>Filtros</span>
+            {filtersExpanded ? (
+              <ChevronUp size={20} color={colors.textSecondary} />
+            ) : (
+              <ChevronDown size={20} color={colors.textSecondary} />
+            )}
+          </button>
+          
+          {filtersExpanded && (
+            <div style={styles.filtersContent}>
+              <div style={styles.filterGroup}>
             <label style={styles.filterLabel}>Período</label>
             <div style={styles.periodButtons}>
-              {(['7d', '30d', '90d'] as PeriodType[]).map(period => (
+              {(['7d', '30d', '90d', 'custom'] as PeriodType[]).map(period => (
                 <button
                   key={period}
-                  onClick={() => setSelectedPeriod(period)}
+                  onClick={() => {
+                    setSelectedPeriod(period);
+                    if (period === 'custom') {
+                      setShowCustomDatePicker(true);
+                    } else {
+                      setShowCustomDatePicker(false);
+                    }
+                  }}
                   style={{
                     ...styles.periodButton,
                     ...(selectedPeriod === period ? styles.periodButtonActive : {}),
                   }}
                 >
-                  {period === '7d' ? '7 dias' : period === '30d' ? '30 dias' : '90 dias'}
+                  {period === '7d' ? '7 dias' : 
+                   period === '30d' ? '30 dias' : 
+                   period === '90d' ? '90 dias' : 
+                   'Personalizado'}
                 </button>
               ))}
             </div>
+            {showCustomDatePicker && selectedPeriod === 'custom' && (
+              <div style={styles.customDatePicker}>
+                <div style={styles.dateInputGroup}>
+                  <label style={styles.dateLabel}>Data Inicial:</label>
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    style={styles.dateInput}
+                    max={customEndDate || new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+                <div style={styles.dateInputGroup}>
+                  <label style={styles.dateLabel}>Data Final:</label>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    style={styles.dateInput}
+                    min={customStartDate}
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+                {customStartDate && customEndDate && new Date(customStartDate) > new Date(customEndDate) && (
+                  <p style={styles.dateError}>A data inicial deve ser anterior à data final</p>
+                )}
+              </div>
+            )}
           </div>
 
           {units.length > 1 && (
@@ -156,6 +246,8 @@ const ClinicReportsPage: React.FC = () => {
                   </label>
                 ))}
               </div>
+            </div>
+          )}
             </div>
           )}
         </div>
@@ -194,6 +286,7 @@ const ClinicReportsPage: React.FC = () => {
         {/* Content */}
         {loading ? (
           <div style={styles.loading}>
+            <div style={styles.loadingSpinner}></div>
             <p>Carregando relatórios...</p>
           </div>
         ) : (
@@ -236,8 +329,22 @@ const OverviewTab: React.FC<{ overview: ReportsOverview }> = ({ overview }) => {
             <ClipboardList size={24} color={colors.primary} />
           </div>
           <div style={styles.summaryContent}>
-            <h3 style={styles.summaryValue}>{overview.summary.totalDemandsCreated}</h3>
+            <MetricTooltip text="Total de demandas criadas no período selecionado">
+              <h3 style={styles.summaryValue}>{overview.summary.totalDemandsCreated}</h3>
+            </MetricTooltip>
             <p style={styles.summaryLabel}>Demandas Criadas</p>
+          </div>
+        </div>
+
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryIcon}>
+            <FileText size={24} color="#8b5cf6" />
+          </div>
+          <div style={styles.summaryContent}>
+            <MetricTooltip text="Total de candidaturas recebidas no período selecionado">
+              <h3 style={styles.summaryValue}>{overview.summary.totalApplicationsReceived}</h3>
+            </MetricTooltip>
+            <p style={styles.summaryLabel}>Candidaturas Recebidas</p>
           </div>
         </div>
 
@@ -263,48 +370,117 @@ const OverviewTab: React.FC<{ overview: ReportsOverview }> = ({ overview }) => {
 
         <div style={styles.summaryCard}>
           <div style={styles.summaryIcon}>
+            <TrendingUp size={24} color="#10b981" />
+          </div>
+          <div style={styles.summaryContent}>
+            <MetricTooltip text="Percentual de candidaturas que foram aceitas (aceitas / total recebidas)">
+              <h3 style={styles.summaryValue}>{overview.summary.conversionRate.toFixed(1)}%</h3>
+            </MetricTooltip>
+            <p style={styles.summaryLabel}>Taxa de Conversão</p>
+          </div>
+        </div>
+
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryIcon}>
             <Clock size={24} color="#f59e0b" />
           </div>
           <div style={styles.summaryContent}>
-            <h3 style={styles.summaryValue}>{overview.summary.averageFillTime.toFixed(1)}</h3>
+            <MetricTooltip text="Tempo médio em dias entre a criação da posição e o preenchimento (aceitação do primeiro candidato)">
+              <h3 style={styles.summaryValue}>{overview.summary.averageFillTime.toFixed(1)}</h3>
+            </MetricTooltip>
             <p style={styles.summaryLabel}>Dias (média de preenchimento)</p>
+          </div>
+        </div>
+
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryIcon}>
+            <Clock size={24} color="#06b6d4" />
+          </div>
+          <div style={styles.summaryContent}>
+            <MetricTooltip text="Tempo médio entre a criação da demanda e a primeira candidatura recebida">
+              <h3 style={styles.summaryValue}>{overview.summary.averageResponseTime.toFixed(1)}h</h3>
+            </MetricTooltip>
+            <p style={styles.summaryLabel}>Tempo Médio de Resposta</p>
+          </div>
+        </div>
+
+        <div style={styles.summaryCard}>
+          <div style={styles.summaryIcon}>
+            <XCircle size={24} color="#ef4444" />
+          </div>
+          <div style={styles.summaryContent}>
+            <MetricTooltip text="Percentual de demandas canceladas em relação ao total criado">
+              <h3 style={styles.summaryValue}>{overview.summary.cancellationRate.toFixed(1)}%</h3>
+            </MetricTooltip>
+            <p style={styles.summaryLabel}>Taxa de Cancelamento</p>
           </div>
         </div>
       </div>
 
-      {/* Status Breakdown */}
-      <div style={styles.section}>
-        <h3 style={styles.sectionTitle}>Status das Demandas</h3>
-        <div style={styles.statusGrid}>
-          <div style={styles.statusCard}>
-            <div style={{ ...styles.statusIndicator, backgroundColor: '#3b82f6' }} />
-            <div style={styles.statusContent}>
-              <h4 style={styles.statusValue}>{overview.summary.demandsByStatus.open}</h4>
-              <p style={styles.statusLabel}>Abertas</p>
-            </div>
-          </div>
-          <div style={styles.statusCard}>
-            <div style={{ ...styles.statusIndicator, backgroundColor: '#f59e0b' }} />
-            <div style={styles.statusContent}>
-              <h4 style={styles.statusValue}>{overview.summary.demandsByStatus.in_progress}</h4>
-              <p style={styles.statusLabel}>Em Andamento</p>
-            </div>
-          </div>
-          <div style={styles.statusCard}>
-            <div style={{ ...styles.statusIndicator, backgroundColor: '#10b981' }} />
-            <div style={styles.statusContent}>
-              <h4 style={styles.statusValue}>{overview.summary.demandsByStatus.closed}</h4>
-              <p style={styles.statusLabel}>Concluídas</p>
-            </div>
-          </div>
-          <div style={styles.statusCard}>
-            <div style={{ ...styles.statusIndicator, backgroundColor: '#ef4444' }} />
-            <div style={styles.statusContent}>
-              <h4 style={styles.statusValue}>{overview.summary.demandsByStatus.cancelled}</h4>
-              <p style={styles.statusLabel}>Canceladas</p>
-            </div>
+      {/* Charts Side by Side */}
+      <div style={styles.chartsContainer} className="charts-container">
+        {/* Status Breakdown */}
+        <div style={styles.chartSection}>
+          <h3 style={styles.sectionTitle}>Status das Demandas</h3>
+          
+          {/* Insight Box */}
+          {(() => {
+            const totalAbertas = overview.summary.demandsByStatus.open;
+            const totalConcluidas = overview.summary.demandsByStatus.closed;
+            
+            return (
+              <div style={styles.statusInsightBox}>
+                <div style={styles.statusInsightIcon}>
+                  <TrendingUp size={16} color={colors.primary} />
+                </div>
+                <p style={styles.statusInsightText}>
+                  Das <strong>{totalAbertas}</strong> demandas abertas,{' '}
+                  {totalConcluidas > 0 ? (
+                    <> <strong>{totalConcluidas}</strong> foram concluídas.</>
+                  ) : (
+                    <> nenhuma foi concluída até o momento.</>
+                  )}
+                </p>
+              </div>
+            );
+          })()}
+
+          <div style={styles.chartContainer}>
+            <StatusPieChart data={overview.summary.demandsByStatus} />
           </div>
         </div>
+
+        {/* Most Demanded Specialties */}
+        {overview.summary.mostDemandedSpecialties && overview.summary.mostDemandedSpecialties.length > 0 && (() => {
+          const specialties = overview.summary.mostDemandedSpecialties;
+          const totalSpecialtiesCount = specialties.reduce((sum, item) => sum + item.count, 0);
+          const totalDemands = overview.summary.totalDemandsCreated;
+          const percentageOfTotal = totalDemands > 0 ? (totalSpecialtiesCount / totalDemands) * 100 : 0;
+          
+          return (
+            <div style={styles.chartSection}>
+              <h3 style={styles.sectionTitle}>Especialidades Mais Demandadas</h3>
+              
+              {/* Mini Resumo Analítico */}
+              <div style={styles.analyticalSummary}>
+                <div style={styles.analyticalSummaryIcon}>
+                  <TrendingUp size={16} color={colors.primary} />
+                </div>
+                <p style={styles.analyticalSummaryText}>
+                  As <strong>{specialties.length}</strong> especialidades mais procuradas representam{' '}
+                  <strong>{percentageOfTotal.toFixed(1)}%</strong> das demandas totais no período.
+                </p>
+              </div>
+
+              <div style={styles.chartContainer}>
+                <SpecialtyBarChart 
+                  data={specialties} 
+                  totalDemands={totalDemands}
+                />
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -387,7 +563,10 @@ const DemandsTab: React.FC<{ demands: ReportsDemands }> = ({ demands }) => {
       <div style={styles.section}>
         <h3 style={styles.sectionTitle}>Lista de Demandas</h3>
         {demands.demands.length === 0 ? (
-          <p style={styles.emptyText}>Nenhuma demanda encontrada no período selecionado</p>
+          <div style={styles.emptyState}>
+            <p style={styles.emptyText}>Nenhuma demanda encontrada no período selecionado</p>
+            <p style={styles.emptySubtext}>Tente alterar o período ou os filtros de unidade para ver mais resultados</p>
+          </div>
         ) : (
           <div style={styles.demandsList}>
             {demands.demands.map(demand => (
@@ -491,7 +670,10 @@ const ProfessionalsTab: React.FC<{ professionals: ReportsProfessionals }> = ({ p
       <div style={styles.section}>
         <h3 style={styles.sectionTitle}>Lista de Profissionais Contratados</h3>
         {professionals.hired.length === 0 ? (
-          <p style={styles.emptyText}>Nenhum profissional contratado no período selecionado</p>
+          <div style={styles.emptyState}>
+            <p style={styles.emptyText}>Nenhum profissional contratado no período selecionado</p>
+            <p style={styles.emptySubtext}>Profissionais contratados aparecerão aqui quando houver aceitações de candidaturas no período</p>
+          </div>
         ) : (
           <div style={styles.professionalsList}>
             {professionals.hired.map((professional, index) => (
@@ -552,8 +734,27 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: '#ffffff',
     border: '1px solid #e5e5e5',
     borderRadius: '12px',
-    padding: '24px',
     marginBottom: '24px',
+    overflow: 'hidden',
+  },
+  filtersHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    padding: '16px 24px',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease',
+  },
+  filtersHeaderText: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#262626',
+  },
+  filtersContent: {
+    padding: '0 24px 24px 24px',
     display: 'flex',
     flexDirection: 'column',
     gap: '24px',
@@ -633,6 +834,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     border: '1px solid #e5e5e5',
     borderRadius: '12px',
     padding: '24px',
+    position: 'relative',
+    overflow: 'visible',
   },
   periodInfo: {
     marginBottom: '24px',
@@ -648,12 +851,69 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: 'center',
     padding: '64px',
     color: '#737373',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '16px',
+  },
+  loadingSpinner: {
+    width: '40px',
+    height: '40px',
+    border: '4px solid #e5e5e5',
+    borderTop: '4px solid ' + colors.primary,
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
+  },
+  customDatePicker: {
+    marginTop: '16px',
+    padding: '16px',
+    backgroundColor: '#fafafa',
+    border: '1px solid #e5e5e5',
+    borderRadius: '8px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  dateInputGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  dateLabel: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#525252',
+  },
+  dateInput: {
+    padding: '8px 12px',
+    border: '1px solid #e5e5e5',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontFamily: 'inherit',
+  },
+  dateError: {
+    fontSize: '12px',
+    color: '#ef4444',
+    margin: 0,
+  },
+  specialtyRank: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '8px',
+  },
+  rankNumber: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#525252',
   },
   summaryGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
     gap: '20px',
     marginBottom: '32px',
+    position: 'relative',
+    overflow: 'visible',
   },
   summaryCard: {
     backgroundColor: '#fafafa',
@@ -663,6 +923,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
+    position: 'relative',
+    overflow: 'visible',
   },
   summaryIcon: {
     flexShrink: 0,
@@ -691,10 +953,69 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#262626',
     marginBottom: '16px',
   },
-  statusGrid: {
+  analyticalSummary: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px 16px',
+    backgroundColor: colors.primaryBg,
+    border: `1px solid ${colors.primaryLighter}`,
+    borderRadius: '8px',
+    marginBottom: '20px',
+  },
+  analyticalSummaryIcon: {
+    flexShrink: 0,
+  },
+  analyticalSummaryText: {
+    fontSize: '14px',
+    color: colors.primaryDark,
+    margin: 0,
+    lineHeight: '1.5',
+  },
+  statusInsightBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px 16px',
+    backgroundColor: colors.primaryBg,
+    border: `1px solid ${colors.primaryLighter}`,
+    borderRadius: '8px',
+    marginBottom: '20px',
+  },
+  statusInsightIcon: {
+    flexShrink: 0,
+  },
+  statusInsightText: {
+    fontSize: '14px',
+    color: colors.primaryDark,
+    margin: 0,
+    lineHeight: '1.5',
+  },
+  chartsContainer: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '16px',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '24px',
+    marginBottom: '32px',
+    alignItems: 'stretch',
+  },
+  chartSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+  },
+  chartContainer: {
+    backgroundColor: '#fafafa',
+    border: '1px solid #e5e5e5',
+    borderRadius: '12px',
+    padding: '24px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    overflow: 'visible',
+    width: '100%',
+    boxSizing: 'border-box',
+    minHeight: '400px',
+    flex: 1,
   },
   statusCard: {
     backgroundColor: '#fafafa',
@@ -704,6 +1025,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
+    height: '100%',
   },
   statusIndicator: {
     width: '12px',
@@ -728,14 +1050,20 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   specialtyGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+    gridTemplateColumns: '1fr',
     gap: '16px',
+    height: '100%',
+    alignContent: 'stretch',
   },
   specialtyCard: {
     backgroundColor: '#fafafa',
     border: '1px solid #e5e5e5',
     borderRadius: '12px',
     padding: '16px',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
   },
   specialtyName: {
     fontSize: '16px',
@@ -872,11 +1200,24 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     color: '#737373',
   },
-  emptyText: {
+  emptyState: {
     textAlign: 'center',
-    padding: '64px',
-    color: '#737373',
+    padding: '64px 32px',
+    backgroundColor: '#fafafa',
+    border: '1px solid #e5e5e5',
+    borderRadius: '12px',
+  },
+  emptyText: {
+    color: '#262626',
     fontSize: '16px',
+    fontWeight: '600',
+    margin: 0,
+    marginBottom: '8px',
+  },
+  emptySubtext: {
+    color: '#737373',
+    fontSize: '14px',
+    margin: 0,
   },
 };
 
