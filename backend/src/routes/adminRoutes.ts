@@ -17,6 +17,9 @@ import { getAllActiveUnits } from '../controllers/adminController';
 // Controllers de documentos
 import { getVetDocument } from '../controllers/admin/getVetDocument';
 
+// Controllers de relatórios admin
+import { getAdminOverview, getAdminSpecialties, getAdminUsage } from '../controllers/adminReportsController';
+
 const router = express.Router();
 
 /**
@@ -63,5 +66,20 @@ router.patch('/units/:id/review', authenticateUser, reviewUnit);
 
 // Servir documento CRMV de veterinário (apenas para admins)
 router.get('/vets/:vetId/document', authenticateUser, getVetDocument);
+
+/**
+ * ==============================================
+ * 🔹 ADMIN REPORTS
+ * ==============================================
+ */
+
+// Get admin overview reports
+router.get('/reports/overview', authenticateUser, getAdminOverview);
+
+// Get admin specialties reports
+router.get('/reports/specialties', authenticateUser, getAdminSpecialties);
+
+// Get admin usage reports
+router.get('/reports/usage', authenticateUser, getAdminUsage);
 
 export default router;

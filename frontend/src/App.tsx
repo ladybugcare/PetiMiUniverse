@@ -39,6 +39,7 @@ import AdminFreelancersPage from './pages/AdminFreelancersPage';
 import AdminDemandsPage from './pages/AdminDemandsPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminSupportTicketsPage from './pages/AdminSupportTicketsPage';
+import AdminReportsPage from './pages/AdminReportsPage';
 import VetOnboardingPage from './pages/VetOnboardingPage';
 import FreelancerOnboardingPage from './pages/FreelancerOnboardingPage';
 import VetPositionsPage from './pages/VetPositionsPage';
@@ -208,6 +209,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['ADMIN']}>
                     <AdminSupportTicketsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/reports"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminReportsPage />
                   </ProtectedRoute>
                 }
               />
