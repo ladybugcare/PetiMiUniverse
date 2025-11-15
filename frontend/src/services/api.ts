@@ -157,11 +157,21 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
           throw new Error(errorMessage + ' (Dica: verifique se frontend e backend usam o mesmo projeto Supabase)');
         }
 
-        // Se o erro for de token expirado ou inválido, limpar sessão e redirecionar
-        if (errorMessage?.includes('expirado') || errorMessage?.includes('inválido') || 
-            errorMessage?.includes('Token inválido') || errorMessage?.includes('JWT') ||
-            /invalid|expirad|assinatura|signature|expired|token/i.test(String(errorText))) {
-          
+        // NÃO redirecionar se for erro de login (credenciais inválidas)
+        // O endpoint /auth/login deve apenas lançar o erro, sem redirecionar
+        const isLoginEndpoint = endpoint.includes('/auth/login');
+        
+        // Se o erro for de token expirado ou inválido (e NÃO for endpoint de login), limpar sessão e redirecionar
+        // Verificar especificamente por erros de token, não credenciais inválidas
+        const isTokenError = errorMessage?.includes('expirado') || 
+                            errorMessage?.includes('Token inválido') || 
+                            errorMessage?.includes('JWT') ||
+                            errorMessage?.includes('expired') ||
+                            errorMessage?.includes('signature') ||
+                            errorMessage?.includes('assinatura') ||
+                            /token.*expir|jwt.*invalid|signature.*invalid/i.test(String(errorText));
+        
+        if (isTokenError && !isLoginEndpoint) {
           console.warn('Token expirado ou inválido detectado. Limpando sessão...');
           await handleInvalidToken();
           
@@ -175,6 +185,8 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
           
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
+        
+        // Se for endpoint de login ou erro de credenciais, apenas lançar o erro sem redirecionar
       }
 
       throw new Error(errorData?.error || errorData?.message || errorText || `Erro ${response.status}`);

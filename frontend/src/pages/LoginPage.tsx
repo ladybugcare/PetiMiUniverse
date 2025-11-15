@@ -33,7 +33,10 @@ const LoginPage: React.FC = () => {
       const result = await login({ email, password });
 
       if (!result?.user) {
-        showError('Falha ao obter informações do usuário.');
+        setLoading(false);
+        setTimeout(() => {
+          showError('Falha ao obter informações do usuário.', 'Erro no login');
+        }, 100);
         return;
       }
 
@@ -170,7 +173,34 @@ const LoginPage: React.FC = () => {
         return;
       }
       
-      showError('Erro no login: ' + (error.message || error.error || 'Tente novamente.'));
+      // Melhorar mensagens de erro para credenciais inválidas
+      let userFriendlyMessage = '';
+      const lowerErrorMessage = errorMessage.toLowerCase();
+      
+      if (lowerErrorMessage.includes('invalid') || 
+          lowerErrorMessage.includes('credencial') ||
+          lowerErrorMessage.includes('senha') ||
+          lowerErrorMessage.includes('password') ||
+          lowerErrorMessage.includes('email') ||
+          lowerErrorMessage.includes('user not found') ||
+          lowerErrorMessage.includes('incorrect') ||
+          lowerErrorMessage.includes('wrong')) {
+        userFriendlyMessage = 'Email ou senha incorretos. Verifique suas credenciais e tente novamente.';
+      } else if (errorMessage) {
+        userFriendlyMessage = errorMessage;
+      } else {
+        userFriendlyMessage = 'Erro ao fazer login. Tente novamente em instantes.';
+      }
+      
+      // Garantir que o loading seja false antes de mostrar o erro
+      setLoading(false);
+      
+      // Usar setTimeout para garantir que o alerta seja exibido após qualquer re-renderização
+      // Isso evita que o alerta desapareça rapidamente devido a re-renderizações do componente
+      // Aumentar o timeout para garantir que todas as atualizações de estado sejam concluídas
+      setTimeout(() => {
+        showError(userFriendlyMessage, 'Erro no login');
+      }, 200);
     } finally {
       setLoading(false);
     }

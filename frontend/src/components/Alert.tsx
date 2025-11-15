@@ -52,15 +52,20 @@ const Alert: React.FC<AlertProps> = ({
     onClose();
   };
 
+  // Prevenir fechamento ao clicar no backdrop - só fecha com botão OK
   const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
+    // Não fazer nada - não permitir fechar ao clicar no backdrop
+    e.stopPropagation();
+  };
+
+  const handleModalClick = (e: React.MouseEvent) => {
+    // Prevenir que cliques no modal fechem o alerta
+    e.stopPropagation();
   };
 
   return (
     <div style={styles.overlay} onClick={handleBackdropClick}>
-      <div style={styles.modal}>
+      <div style={styles.modal} onClick={handleModalClick}>
         {/* Icon */}
         <div
           style={{

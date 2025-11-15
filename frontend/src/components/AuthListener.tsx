@@ -82,10 +82,22 @@ const AuthListener: React.FC = () => {
         return;
       }
 
-      console.log('🔐 Auth event:', event);
+      console.log('🔐 Auth event:', event, 'Session:', session ? 'exists' : 'null');
 
       // Não navegar se já estamos em /email-confirmed
       if (location.pathname === '/email-confirmed') {
+        return;
+      }
+
+      // Não processar eventos se estamos na página de login (evita interferir com erros de login)
+      if (location.pathname === '/login') {
+        // Só processar se realmente houver uma sessão válida (login bem-sucedido)
+        if (event === 'SIGNED_IN' && session) {
+          // Deixar o LoginPage lidar com a navegação após login bem-sucedido
+          console.log('🔐 Login bem-sucedido detectado na página de login, deixando LoginPage processar');
+          return;
+        }
+        // Ignorar outros eventos na página de login
         return;
       }
 
