@@ -12,6 +12,8 @@ interface AvatarProps {
 }
 
 export const Avatar: React.FC<AvatarProps> = ({ src, name, size = 40, style, userType }) => {
+  const [imageError, setImageError] = React.useState(false);
+
   const getInitials = (name: string) => {
     const parts = name.trim().split(' ');
     if (parts.length >= 2) {
@@ -37,17 +39,34 @@ export const Avatar: React.FC<AvatarProps> = ({ src, name, size = 40, style, use
     return colors[index];
   };
 
-  if (src) {
+  // Reset imageError when src changes
+  React.useEffect(() => {
+    setImageError(false);
+  }, [src]);
+
+  const avatarStyle: React.CSSProperties = {
+    width: size,
+    height: size,
+    minWidth: size,
+    minHeight: size,
+    maxWidth: size,
+    maxHeight: size,
+    borderRadius: '50%',
+    flexShrink: 0,
+    aspectRatio: '1 / 1',
+    ...style,
+  };
+
+  // Se tem src e não houve erro, tentar mostrar imagem
+  if (src && !imageError) {
     return (
       <img
         src={src}
         alt={name || 'Avatar'}
+        onError={() => setImageError(true)}
         style={{
-          width: size,
-          height: size,
-          borderRadius: '50%',
+          ...avatarStyle,
           objectFit: 'cover',
-          ...style,
         }}
       />
     );
@@ -57,9 +76,7 @@ export const Avatar: React.FC<AvatarProps> = ({ src, name, size = 40, style, use
     return (
       <div
         style={{
-          width: size,
-          height: size,
-          borderRadius: '50%',
+          ...avatarStyle,
           backgroundColor: getBackgroundColor(name, userType),
           color: '#ffffff',
           display: 'flex',
@@ -67,7 +84,6 @@ export const Avatar: React.FC<AvatarProps> = ({ src, name, size = 40, style, use
           justifyContent: 'center',
           fontSize: size * 0.4,
           fontWeight: '600',
-          ...style,
         }}
       >
         {getInitials(name)}
@@ -78,14 +94,11 @@ export const Avatar: React.FC<AvatarProps> = ({ src, name, size = 40, style, use
   return (
     <div
       style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
+        ...avatarStyle,
         backgroundColor: colors.neutral[200],
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        ...style,
       }}
     >
       <User size={size * 0.6} color={colors.neutral[500]} />

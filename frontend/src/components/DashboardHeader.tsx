@@ -7,6 +7,8 @@ import SupportModal from './SupportModal';
 import NotificationBell from './NotificationBell';
 import { supportTicketsApi } from '../services/supportTicketsApi';
 import { useAuth } from '../AuthContext'; // ✅ Importa o contexto
+import Avatar from './Avatar';
+import { getUserPhotoUrl, getUserDisplayName, getUserTypeForAvatar } from '../utils/userPhotoHelper';
 
 interface DashboardHeaderProps {
   onMenuClick: () => void;
@@ -201,10 +203,11 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               style={styles.avatarButton}
               aria-label="Menu do usuário"
             >
-              <img
-                src={user?.user_metadata?.avatar_url || '/default_avatar.png'}
-                alt="Avatar"
-                style={styles.avatarImage}
+              <Avatar
+                src={getUserPhotoUrl(user)}
+                name={getUserDisplayName(user)}
+                size={40}
+                userType={getUserTypeForAvatar(user)}
               />
             </button>
 
@@ -327,13 +330,16 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: '50%',
     width: '40px',
     height: '40px',
+    minWidth: '40px',
+    minHeight: '40px',
+    maxWidth: '40px',
+    maxHeight: '40px',
+    padding: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
     overflow: 'hidden',
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-    borderRadius: '50%',
   },
   dropdownMenu: {
     position: 'absolute',

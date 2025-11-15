@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import colors from '../styles/colors';
 import { UnreadBadge } from './UnreadBadge';
+import Avatar from './Avatar';
+import { getUserPhotoUrl, getUserTypeForAvatar } from '../utils/userPhotoHelper';
 
 export interface MenuItem {
   id: string;
@@ -42,6 +44,20 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+
+  // Get user from localStorage to access photo
+  const getUserFromStorage = () => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) return null;
+      return JSON.parse(userStr);
+    } catch (error) {
+      console.warn('Failed to parse user from localStorage:', error);
+      return null;
+    }
+  };
+
+  const user = getUserFromStorage();
 
   // Carregar estado de expansão do localStorage
   useEffect(() => {
@@ -83,14 +99,6 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
       setExpandedItems(newExpanded);
     }
   }, [location.pathname, activeSection, menuItems]);
-
-  const getInitials = (name: string) => {
-    const names = name.split(' ');
-    if (names.length >= 2) {
-      return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  };
 
   const toggleExpanded = (itemId: string) => {
     setExpandedItems(prev => {
@@ -295,11 +303,12 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
         {/* User Profile Section */}
         <div style={styles.profileSection}>
           <div style={styles.avatarContainer}>
-            <div style={styles.avatar}>
-              <span style={styles.avatarText}>
-                {getInitials(userName)}
-              </span>
-            </div>
+            <Avatar
+              src={getUserPhotoUrl(user)}
+              name={userName}
+              size={80}
+              userType={getUserTypeForAvatar(user)}
+            />
           </div>
           <div style={styles.userInfo}>
             <h3 style={styles.userNameText}>{userName}</h3>
@@ -364,22 +373,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     justifyContent: 'center',
     marginBottom: '16px',
-  },
-  avatar: {
-    width: '80px',
-    height: '80px',
-    borderRadius: '50%',
-    backgroundColor: '#7c3aed',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: '3px solid #ede9fe',
-  },
-  avatarText: {
-    fontFamily: 'Poppins, sans-serif',
-    fontSize: '28px',
-    fontWeight: '600',
-    color: '#ffffff',
   },
   userInfo: {
     textAlign: 'center',
