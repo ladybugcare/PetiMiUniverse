@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronDown, X, Search, Check } from 'lucide-react';
 import colors from '../styles/colors';
 
@@ -10,6 +10,7 @@ interface MultiSelectDropdownProps {
   searchPlaceholder?: string;
   maxHeight?: number;
   disabled?: boolean;
+  singleSelect?: boolean; // Se true, permite apenas uma seleção
 }
 
 const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
@@ -20,10 +21,13 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
   searchPlaceholder = 'Buscar...',
   maxHeight = 300,
   disabled = false,
+  singleSelect = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
 
   // Normalizar opções para sempre ter formato { id, name }
   const normalizedOptions = options.map((opt) => {
@@ -37,6 +41,65 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
   const filteredOptions = normalizedOptions.filter((opt) =>
     opt.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Função para calcular posição do menu
+  const calculateMenuPosition = useCallback(() => {
+    if (isOpen && dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const menuHeight = Math.min(maxHeight, 400); // Altura estimada do menu
+      
+      // Altura do campo de busca (aproximadamente 60px com padding)
+      const searchHeight = 60;
+      // Padding adicional para garantir que o último item não seja cortado
+      const paddingForLastItem = 20;
+      
+      const newStyle: React.CSSProperties = {};
+      
+      // Se não há espaço suficiente abaixo, mas há acima, abrir para cima
+      if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
+        newStyle.bottom = '100%';
+        newStyle.top = 'auto';
+        newStyle.marginTop = '0';
+        newStyle.marginBottom = '4px';
+        // Limitar altura baseada no espaço disponível acima, considerando busca e padding
+        const availableHeight = spaceAbove - paddingForLastItem; // Margem para último item
+        newStyle.maxHeight = `${Math.min(maxHeight, Math.max(100, availableHeight))}px`;
+      } else {
+        // Abrir para baixo (padrão)
+        newStyle.top = '100%';
+        newStyle.bottom = 'auto';
+        newStyle.marginTop = '4px';
+        newStyle.marginBottom = '0';
+        // Limitar altura baseada no espaço disponível abaixo, considerando busca e padding
+        const availableHeight = spaceBelow - paddingForLastItem; // Margem para último item
+        newStyle.maxHeight = `${Math.min(maxHeight, Math.max(100, availableHeight))}px`;
+      }
+      
+      setMenuStyle(newStyle);
+    }
+  }, [isOpen, maxHeight]);
+
+  // Calcular posição do menu para não ultrapassar a tela
+  useEffect(() => {
+    calculateMenuPosition();
+    
+    // Recalcular ao redimensionar ou rolar
+    const handleResize = () => calculateMenuPosition();
+    const handleScroll = () => calculateMenuPosition();
+    
+    if (isOpen) {
+      window.addEventListener('resize', handleResize);
+      window.addEventListener('scroll', handleScroll, true);
+      
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        window.removeEventListener('scroll', handleScroll, true);
+      };
+    }
+  }, [isOpen, calculateMenuPosition]);
 
   // Fechar dropdown ao clicar fora
   useEffect(() => {
@@ -54,10 +117,22 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
   const toggleOption = (optionId: string) => {
     if (disabled) return;
 
-    if (selected.includes(optionId)) {
-      onChange(selected.filter((id) => id !== optionId));
+    if (singleSelect) {
+      // Modo single select: substitui a seleção anterior
+      if (selected.includes(optionId)) {
+        onChange([]); // Desmarcar se já está selecionado
+      } else {
+        onChange([optionId]); // Selecionar apenas este
+      }
+      // Fechar dropdown após seleção em modo single select
+      setIsOpen(false);
     } else {
-      onChange([...selected, optionId]);
+      // Modo multi select: comportamento original
+      if (selected.includes(optionId)) {
+        onChange(selected.filter((id) => id !== optionId));
+      } else {
+        onChange([...selected, optionId]);
+      }
     }
   };
 
@@ -86,7 +161,24 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
         <div style={styles.selectedContainer}>
           {selected.length === 0 ? (
             <span style={styles.placeholder}>{placeholder}</span>
+          ) : singleSelect ? (
+            // Modo single select: mostrar apenas o item selecionado
+            <div style={styles.selectedTags}>
+              <span style={styles.tag}>
+                {getOptionName(selected[0])}
+                {!disabled && (
+                  <button
+                    type="button"
+                    onClick={(e) => removeOption(selected[0], e)}
+                    style={styles.tagRemove}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </span>
+            </div>
           ) : (
+            // Modo multi select: comportamento original
             <div style={styles.selectedTags}>
               {selected.slice(0, 2).map((id) => (
                 <span key={id} style={styles.tag}>
@@ -119,7 +211,7 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
 
       {/* Dropdown Menu */}
       {isOpen && !disabled && (
-        <div style={styles.menu}>
+        <div ref={menuRef} style={{ ...styles.menu, ...menuStyle }}>
           {/* Busca */}
           <div style={styles.searchContainer}>
             <Search size={16} style={styles.searchIcon} />
@@ -134,12 +226,13 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
           </div>
 
           {/* Lista de opções */}
-          <div style={{ ...styles.optionsList, maxHeight: `${maxHeight}px` }}>
+          <div style={{ ...styles.optionsList, maxHeight: menuStyle.maxHeight || `${maxHeight}px` }}>
             {filteredOptions.length === 0 ? (
               <div style={styles.noResults}>Nenhum resultado encontrado</div>
             ) : (
-              filteredOptions.map((option) => {
+              filteredOptions.map((option, index) => {
                 const isSelected = selected.includes(option.id);
+                const isLast = index === filteredOptions.length - 1;
                 return (
                   <div
                     key={option.id}
@@ -147,6 +240,7 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
                     style={{
                       ...styles.option,
                       ...(isSelected ? styles.optionSelected : {}),
+                      ...(isLast ? { borderBottom: 'none' } : {}), // Remove borda do último item
                     }}
                   >
                     <div style={styles.optionContent}>
@@ -237,16 +331,15 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   menu: {
     position: 'absolute',
-    top: '100%',
     left: 0,
     right: 0,
-    marginTop: '4px',
     backgroundColor: colors.surface,
     border: `1px solid ${colors.border}`,
     borderRadius: '8px',
     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
     zIndex: 1000,
-    overflow: 'hidden',
+    overflow: 'hidden', // Mantido hidden para border-radius, mas com padding na lista
+    // Posição será calculada dinamicamente via menuStyle
   },
   searchContainer: {
     position: 'relative',
@@ -270,7 +363,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   optionsList: {
     overflowY: 'auto',
-    maxHeight: '300px',
+    paddingBottom: '12px', // Padding aumentado no final para evitar corte do último item
+    paddingTop: '4px', // Pequeno padding no topo também
+    // maxHeight será definido dinamicamente
   },
   option: {
     padding: '12px 16px',

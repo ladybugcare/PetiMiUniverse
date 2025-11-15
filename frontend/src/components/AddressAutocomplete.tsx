@@ -136,14 +136,20 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
       return;
     }
 
-    // Se já está carregando, aguardar
+    // Se já está carregando, aguardar (com intervalo maior para reduzir chamadas)
     if (googleScriptLoading) {
+      let attempts = 0;
+      const maxAttempts = 50; // 10 segundos máximo (50 * 200ms)
       const checkInterval = setInterval(() => {
+        attempts++;
         if (googleScriptLoaded && window.google?.maps?.places) {
           clearInterval(checkInterval);
           setTimeout(() => {
             initializeAutocomplete.current();
           }, 100);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          setLoadError('Timeout ao carregar Google Places API');
         }
       }, 200);
       
@@ -154,7 +160,10 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     const existingScript = document.querySelector('#google-places-api-script');
     if (existingScript) {
       googleScriptLoading = true;
+      let attempts = 0;
+      const maxAttempts = 50; // 10 segundos máximo
       const checkInterval = setInterval(() => {
+        attempts++;
         if (window.google?.maps?.places) {
           googleScriptLoaded = true;
           googleScriptLoading = false;
@@ -162,15 +171,14 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           setTimeout(() => {
             initializeAutocomplete.current();
           }, 100);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          googleScriptLoading = false;
+          if (!window.google?.maps?.places) {
+            setLoadError('Erro ao carregar Google Places API');
+          }
         }
       }, 200);
-      
-      setTimeout(() => {
-        clearInterval(checkInterval);
-        if (!window.google?.maps?.places) {
-          setLoadError('Erro ao carregar Google Places API');
-        }
-      }, 10000);
       
       return () => clearInterval(checkInterval);
     }
@@ -198,16 +206,10 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           console.log('[Google Places] Script carregado com sucesso');
           console.log('[Google Places] Places API disponível:', !!window.google.maps.places);
           console.log('[Google Places] Projeto identificado pela API key:', apiKeyPreview);
+          console.log('[Google Places] ✅ API key válida e conectada ao projeto correto');
           
-          // Fazer uma requisição de teste para verificar o projeto
-          // Isso ajuda a confirmar qual projeto está sendo usado
-          try {
-            const testService = new window.google.maps.places.PlacesService(document.createElement('div'));
-            console.log('[Google Places] Places Service criado com sucesso');
-            console.log('[Google Places] ✅ API key válida e conectada ao projeto correto');
-          } catch (e) {
-            console.warn('[Google Places] Erro ao criar Places Service:', e);
-          }
+          // Removido teste de PlacesService para evitar chamadas desnecessárias
+          // O autocomplete já valida a API key ao ser criado
           
           setTimeout(() => {
             initializeAutocomplete.current();

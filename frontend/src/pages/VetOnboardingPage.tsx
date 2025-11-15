@@ -577,7 +577,7 @@ const VetOnboardingPage: React.FC = () => {
           <div style={styles.stepContainer}>
             <h2 style={styles.stepTitle}>Onde você atende?</h2>
             <p style={styles.stepHint}>
-              Você pode selecionar várias regiões. Assim, mostramos apenas oportunidades próximas de você.
+              Selecione o estado onde você atende. Você pode adicionar cidades específicas depois.
             </p>
             <div style={styles.formGroup}>
               <label style={styles.label}>Estado</label>
@@ -590,6 +590,7 @@ const VetOnboardingPage: React.FC = () => {
                   onChange={handleStateChange}
                   placeholder="Selecione um estado..."
                   searchPlaceholder="Buscar estado (ex: SP, São Paulo)..."
+                  singleSelect={true}
                 />
               )}
             </div>
