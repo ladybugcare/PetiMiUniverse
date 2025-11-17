@@ -63,7 +63,7 @@ export const getPendingUnits = async (req: Request, res: Response) => {
         user_id: req.user?.id || 'system',
         action: 'GET_PENDING_UNITS',
         entity_type: 'unit',
-        entity_id: 'bulk',
+        // entity_id não é necessário para operações bulk (listagem)
         new_values: { count: data?.length || 0 },
         ...metadata,
       });

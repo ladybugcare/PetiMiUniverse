@@ -53,7 +53,7 @@ export const getAllActiveUnits = async (req: Request, res: Response) => {
       user_id: user.id,
       action: 'GET_ALL_ACTIVE_UNITS',
       entity_type: 'unit',
-      entity_id: 'bulk',
+      // entity_id não é necessário para operações bulk (listagem)
       new_values: { count: units?.length || 0 },
       ...metadata,
     });

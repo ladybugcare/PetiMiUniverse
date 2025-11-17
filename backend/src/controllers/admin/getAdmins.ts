@@ -115,7 +115,7 @@ export const getAdmins = async (req: Request, res: Response) => {
         user_id: req.user?.id || 'system',
         action: 'LIST_ADMINS',
         entity_type: 'admin',
-        entity_id: 'bulk',
+        // entity_id não é necessário para operações bulk (listagem)
         new_values: { count: admins.length },
         ...metadata,
       });
