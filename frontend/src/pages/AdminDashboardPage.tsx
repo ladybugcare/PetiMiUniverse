@@ -297,8 +297,12 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
         <div style={styles.errorSection}>
           <p style={styles.errorText}>Erro ao carregar insights. Tente novamente.</p>
         </div>
+      ) : insights.length > 0 ? (
+        <SystemInsights insights={insights} />
       ) : (
-        insights.length > 0 && <SystemInsights insights={insights} />
+        <div style={styles.emptySection}>
+          <p style={styles.emptyText}>Nenhum insight disponível no momento.</p>
+        </div>
       )}
 
       {/* 2. Visão Geral do Sistema */}

@@ -64,6 +64,8 @@ export const useDashboardData = (selectedPeriod: PeriodType): DashboardData => {
     // Cancelar requisição anterior se existir
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      // Garantir que o loading seja resetado se havia uma requisição anterior
+      isLoadingRef.current = false;
     }
 
     // Criar novo AbortController
@@ -73,6 +75,8 @@ export const useDashboardData = (selectedPeriod: PeriodType): DashboardData => {
     const loadData = async () => {
       // Verificar se foi cancelado antes de começar
       if (abortController.signal.aborted) {
+        isLoadingRef.current = false;
+        setLoading(false);
         return;
       }
 
@@ -91,8 +95,8 @@ export const useDashboardData = (selectedPeriod: PeriodType): DashboardData => {
               setPeriodStats(periodStatsData);
             }
           } catch (err: any) {
-            if (err.name === 'AbortError') {
-              console.log('[useDashboardData] Requisição cancelada');
+            if (err.name === 'AbortError' || abortController.signal.aborted) {
+              console.log('[useDashboardData] Requisição cancelada (period stats)');
               return;
             }
             console.error('Error loading period stats:', err);
@@ -171,8 +175,11 @@ export const useDashboardData = (selectedPeriod: PeriodType): DashboardData => {
           }
         }
       } catch (err: any) {
-        if (err.name === 'AbortError') {
-          console.log('[useDashboardData] Requisição cancelada');
+        if (err.name === 'AbortError' || abortController.signal.aborted) {
+          console.log('[useDashboardData] Requisição cancelada (outer catch)');
+          // Garantir que o loading seja resetado mesmo se cancelado
+          setLoading(false);
+          isLoadingRef.current = false;
           return;
         }
         console.error('Error loading dashboard data:', err);
@@ -180,10 +187,9 @@ export const useDashboardData = (selectedPeriod: PeriodType): DashboardData => {
           setError('Erro ao carregar dados do dashboard');
         }
       } finally {
-        if (!abortController.signal.aborted) {
-          setLoading(false);
-          isLoadingRef.current = false;
-        }
+        // SEMPRE resetar loading no finally
+        setLoading(false);
+        isLoadingRef.current = false;
       }
     };
 
