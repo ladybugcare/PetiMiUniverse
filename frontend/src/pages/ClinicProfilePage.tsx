@@ -13,6 +13,7 @@ import { messagesApi } from '../services/messagesApi';
 import { getUserRole } from '../utils/authHelpers';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { statisticsApi, ClinicStats } from '../services/statisticsApi';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 const ClinicProfilePage: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
@@ -414,11 +415,11 @@ const ClinicProfilePage: React.FC = () => {
               <div style={styles.formGroup}>
                 <label style={styles.label}>Endereço</label>
                 {isEditing ? (
-                  <textarea
+                  <AddressAutocomplete
                     value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    style={styles.textarea}
-                    rows={3}
+                    onChange={(address) => setFormData({ ...formData, address })}
+                    placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
+                    className="input"
                   />
                 ) : (
                   <p style={styles.value}>{clinic.address}</p>

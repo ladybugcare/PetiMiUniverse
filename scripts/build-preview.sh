@@ -107,3 +107,6 @@ echo -e "${BLUE}📋 Para ver todos os builds: eas build:list${NC}"
 
 
 
+
+
+

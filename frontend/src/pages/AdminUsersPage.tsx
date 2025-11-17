@@ -16,6 +16,7 @@ import { messagesApi } from '../services/messagesApi';
 import { useAuth } from '../AuthContext';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 interface Clinic {
   id: string;
@@ -1312,14 +1313,13 @@ const AdminUsersPage: React.FC = () => {
                             </div>
                             <div style={styles.formGroup}>
                               <label style={styles.label}>Endereço</label>
-                              <input
-                                type="text"
+                              <AddressAutocomplete
                                 value={createUserFormData.address || ''}
-                                onChange={(e) =>
-                                  setCreateUserFormData({ ...createUserFormData, address: e.target.value })
+                                onChange={(address) =>
+                                  setCreateUserFormData({ ...createUserFormData, address })
                                 }
-                                style={styles.input}
-                                placeholder="Endereço completo"
+                                placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
+                                className="input"
                               />
                             </div>
                             <div style={{ display: 'flex', gap: '12px' }}>

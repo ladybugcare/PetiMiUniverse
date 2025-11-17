@@ -14,6 +14,7 @@ import { statisticsApi, VetStats } from '../services/statisticsApi';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import VetProfileClinicView from '../components/VetProfileClinicView';
 import VetProfileAdminView from '../components/VetProfileAdminView';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 // Função para verificar se uma string é um UUID
 const isUUID = (str: string): boolean => {
@@ -549,12 +550,11 @@ const VetProfilePage: React.FC = () => {
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Endereço</label>
                   {isEditing ? (
-                    <textarea
+                    <AddressAutocomplete
                       value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      placeholder="Endereço completo"
-                      style={styles.textarea}
-                      rows={3}
+                      onChange={(address) => setFormData({ ...formData, address })}
+                      placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
+                      className="input"
                     />
                   ) : (
                     <p style={styles.value}>{vet.address || 'Não informado'}</p>

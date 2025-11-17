@@ -107,6 +107,96 @@ export const createTicket = async (
 };
 
 // ========================================
+// CRIAR TICKET PÚBLICO (SEM AUTENTICAÇÃO)
+// ========================================
+interface CreatePublicTicketBody {
+  name: string;
+  email: string;
+  message: string;
+}
+
+export const createPublicTicket = async (
+  req: Request<{}, {}, CreatePublicTicketBody>,
+  res: Response
+) => {
+  try {
+    const { name, email, message } = req.body;
+
+    // Validações
+    if (!name || typeof name !== 'string' || name.trim().length < 3) {
+      return res.status(400).json({ error: 'Nome é obrigatório e deve ter pelo menos 3 caracteres' });
+    }
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Email é obrigatório' });
+    }
+
+    // Validação básica de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return res.status(400).json({ error: 'Email inválido' });
+    }
+
+    if (!message || typeof message !== 'string' || message.trim().length < 10) {
+      return res.status(400).json({ error: 'Mensagem é obrigatória e deve ter pelo menos 10 caracteres' });
+    }
+
+    const now = new Date().toISOString();
+
+    // Criar mensagem formatada incluindo informações do guest
+    const formattedMessage = `[TICKET PÚBLICO]\nNome: ${name.trim()}\nEmail: ${email.trim()}\n\nMensagem:\n${message.trim()}`;
+
+    // Criar ticket com user_id null e user_role 'guest'
+    const { data: ticket, error: ticketError } = await supabaseAdmin
+      .from('support_tickets')
+      .insert([
+        {
+          user_id: null,
+          user_role: 'guest',
+          message: formattedMessage,
+          status: 'open',
+          last_message_at: now,
+          last_message_by: 'user',
+          category: 'conta_perfil',
+          priority: 'normal',
+          attachments: [],
+        },
+      ])
+      .select()
+      .single();
+
+    if (ticketError) {
+      console.error('Error creating public support ticket:', ticketError);
+      return res.status(400).json({ error: ticketError.message });
+    }
+
+    // Criar primeira mensagem na tabela de mensagens
+    // Para tickets públicos, sender_id pode ser null ou usar um ID especial
+    const { error: messageError } = await supabaseAdmin
+      .from('ticket_messages')
+      .insert([
+        {
+          ticket_id: ticket.id,
+          sender_id: null, // null para tickets públicos
+          sender_role: 'user',
+          message: formattedMessage,
+          read_by_receiver: false,
+        },
+      ]);
+
+    if (messageError) {
+      console.error('Error creating first message for public ticket:', messageError);
+      // Não falhamos o ticket se a mensagem falhar, mas logamos o erro
+    }
+
+    res.status(201).json({ ticket });
+  } catch (error: any) {
+    console.error('Error in createPublicTicket:', error);
+    res.status(500).json({ error: 'Erro ao criar ticket de suporte' });
+  }
+};
+
+// ========================================
 // OBTER TICKETS DO USUÁRIO
 // ========================================
 export const getUserTickets = async (req: Request, res: Response) => {

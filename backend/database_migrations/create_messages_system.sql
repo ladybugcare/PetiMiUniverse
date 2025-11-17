@@ -152,3 +152,6 @@ SELECT
   (SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'message_reports') as message_reports_table_exists,
   (SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'admin_conversation_access_logs') as access_logs_table_exists;
 
+
+
+

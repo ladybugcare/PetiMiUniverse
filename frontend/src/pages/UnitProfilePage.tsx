@@ -16,6 +16,7 @@ import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
 import UnitProfileVetView from '../components/UnitProfileVetView';
 import UnitProfileAdminView from '../components/UnitProfileAdminView';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 const UnitProfilePage: React.FC = () => {
   const { unitId } = useParams<{ unitId?: string }>();
@@ -794,11 +795,11 @@ const UnitProfilePage: React.FC = () => {
                 Endereço
               </label>
               {isEditing ? (
-                <input
-                  type="text"
+                <AddressAutocomplete
                   value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  style={styles.input}
+                  onChange={(address) => setFormData({ ...formData, address })}
+                  placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
+                  className="input"
                 />
               ) : (
                 <p style={styles.infoValue}>{getLocationDisplay()}</p>

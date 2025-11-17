@@ -71,3 +71,6 @@ SELECT
   (SELECT COUNT(*) FROM information_schema.columns 
    WHERE table_name = 'support_tickets' AND column_name = 'attachments') as attachments_exists;
 
+
+
+

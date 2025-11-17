@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { clinicsApi } from '../services/clinicsApi';
 import { API_BASE_URL } from '../services/api';
 import { supabase } from '../services/supabase';
@@ -16,6 +17,9 @@ import colors from '../styles/colors';
 import { Info, HelpCircle } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
 import SignUpSuccessModal from '../components/SignUpSuccessModal';
+import SignUpErrorModal from '../components/SignUpErrorModal';
+import PublicSupportModal from '../components/PublicSupportModal';
+import { classifySignUpError, SignUpErrorType } from '../utils/signUpErrorHandler';
 
 // Componente customizado de ícone Info sem fundo preto
 const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, color = colors.primary }) => {
@@ -48,10 +52,16 @@ const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, 
 };
 
 const ClinicSignUpPage: React.FC = () => {
+  const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [signupComplete, setSignupComplete] = useState(false);
   const [emailResent, setEmailResent] = useState(false);
+  const [errorModal, setErrorModal] = useState<{ isOpen: boolean; type: SignUpErrorType | null }>({
+    isOpen: false,
+    type: null,
+  });
+  const [showSupportModal, setShowSupportModal] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -194,10 +204,23 @@ if (step === 2) {
       setSignupComplete(true);
     } catch (err: any) {
       console.error('Erro ao cadastrar clínica:', err);
-      alert('Erro ao cadastrar: ' + (err.message || 'Tente novamente.'));
+      const classified = classifySignUpError(err);
+      setErrorModal({ isOpen: true, type: classified.type });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRetry = () => {
+    handleSignUp();
+  };
+
+  const handleGoToLogin = () => {
+    navigate('/login');
+  };
+
+  const handleOpenSupport = () => {
+    setShowSupportModal(true);
   };
 
   // Reenvia e-mail de confirmação
@@ -573,6 +596,18 @@ if (step === 2) {
           onResendEmail={handleResendEmail}
         />
       )}
+      <SignUpErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ isOpen: false, type: null })}
+        errorType={errorModal.type || 'unexpected_error'}
+        onRetry={handleRetry}
+        onGoToLogin={handleGoToLogin}
+        onOpenSupport={handleOpenSupport}
+      />
+      <PublicSupportModal
+        isOpen={showSupportModal}
+        onClose={() => setShowSupportModal(false)}
+      />
     </>
   );
 };

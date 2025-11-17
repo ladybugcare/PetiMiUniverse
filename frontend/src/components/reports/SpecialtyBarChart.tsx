@@ -80,12 +80,12 @@ const SpecialtyBarChart: React.FC<SpecialtyBarChartProps> = ({ data, totalDemand
 
   return (
     <div style={styles.container}>
-      <div style={styles.chartArea}>
+        <div style={styles.chartArea}>
         {dataWithPercentages.map((item, index) => {
           const widthPercent = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
           const isHovered = hoveredIndex === index;
           
-          return (
+              return (
             <div
               key={item.specialty}
               style={styles.barRow}
@@ -101,16 +101,16 @@ const SpecialtyBarChart: React.FC<SpecialtyBarChartProps> = ({ data, totalDemand
 
               {/* Barra horizontal */}
               <div style={styles.barContainer}>
-                <div
-                  style={{
-                    ...styles.bar,
+                    <div
+                      style={{
+                        ...styles.bar,
                     width: `${widthPercent}%`,
                     backgroundColor: index === 0 ? colors.primary : 
                                     index === 1 ? colors.primaryLight : 
                                     index === 2 ? colors.primaryLighter : '#c4b5fd',
                     transform: isHovered ? 'scaleY(1.05)' : 'scaleY(1)',
                     boxShadow: isHovered ? '0 4px 8px rgba(124, 58, 237, 0.3)' : 'none',
-                  }}
+                      }}
                 >
                   {/* Tooltip no hover */}
                   {isHovered && (
@@ -133,7 +133,7 @@ const SpecialtyBarChart: React.FC<SpecialtyBarChartProps> = ({ data, totalDemand
                           <strong>{item.percentage.toFixed(1)}%</strong>
                         </div>
                       </div>
-                    </div>
+                  </div>
                   )}
                 </div>
               </div>
@@ -143,9 +143,9 @@ const SpecialtyBarChart: React.FC<SpecialtyBarChartProps> = ({ data, totalDemand
                 <span style={styles.barValue}>{item.count}</span>
                 <span style={styles.barPercentage}>({item.percentage.toFixed(1)}%)</span>
               </div>
-            </div>
-          );
-        })}
+                </div>
+              );
+            })}
       </div>
     </div>
   );

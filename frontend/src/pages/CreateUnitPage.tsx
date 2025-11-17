@@ -9,6 +9,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 const CreateUnitPage: React.FC = () => {
   const navigate = useNavigate();
@@ -189,14 +190,11 @@ const CreateUnitPage: React.FC = () => {
             <label style={styles.label}>
               Endereço <span style={styles.required}>*</span>
             </label>
-            <input
-              type="text"
-              name="address"
+            <AddressAutocomplete
               value={formData.address}
-              onChange={handleChange}
-              placeholder="Rua, número, bairro"
-              style={styles.input}
-              required
+              onChange={(address) => setFormData({ ...formData, address })}
+              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
+              className="input"
             />
           </div>
 

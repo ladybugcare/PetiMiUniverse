@@ -11,6 +11,7 @@ import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 const AdminFreelancersPage: React.FC = () => {
   const navigate = useNavigate();
@@ -361,10 +362,11 @@ const AdminFreelancersPage: React.FC = () => {
                 </div>
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Endereço:</label>
-                  <textarea
+                  <AddressAutocomplete
                     value={editFormData?.address || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
-                    style={{ ...styles.input, minHeight: '60px' }}
+                    onChange={(address) => setEditFormData({ ...editFormData, address })}
+                    placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
+                    className="input"
                   />
                 </div>
                 <div style={styles.formGroup}>

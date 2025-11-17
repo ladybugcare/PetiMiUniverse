@@ -99,21 +99,28 @@ export const getClinicReportsOverview = async (
     const { data: positions, error: positionsError } = await positionsQuery;
     if (positionsError) throw positionsError;
 
-    // Get accepted applications to calculate professionals hired
+    // Get all applications for positions in these demands (not filtered by created_at to get all applications for response time calculation)
     const positionIds = positions?.map(p => p.id) || [];
-    let applicationsQuery = supabase
+    let allApplicationsQuery = supabase
       .from('position_applications')
-      .select('id, position_id, vet_id, accepted_at')
-      .eq('status', 'accepted')
+      .select('id, position_id, vet_id, status, accepted_at, created_at')
       .in('position_id', positionIds);
 
-    if (positionIds.length > 0) {
-      applicationsQuery = applicationsQuery.gte('accepted_at', start.toISOString())
-        .lte('accepted_at', end.toISOString());
-    }
+    // For conversion rate, we want applications created in the period
+    // But for response time, we need all applications for demands created in the period
+    const { data: allApplications, error: allAppsError } = await allApplicationsQuery;
+    if (allAppsError) throw allAppsError;
 
-    const { data: applications, error: appsError } = await applicationsQuery;
-    if (appsError) throw appsError;
+    // Filter applications created in period for conversion rate calculation
+    const applicationsInPeriod = allApplications?.filter(app => {
+      if (!app.created_at) return false;
+      const appDate = new Date(app.created_at);
+      return appDate >= start && appDate <= end;
+    }) || [];
+
+    // Get accepted applications in period to calculate professionals hired
+    const acceptedApplicationsInPeriod = applicationsInPeriod.filter(a => a.status === 'accepted');
+    const applications = acceptedApplicationsInPeriod;
 
     // Calculate metrics
     const totalDemandsCreated = demands?.length || 0;
@@ -127,7 +134,7 @@ export const getClinicReportsOverview = async (
     const totalPositionsCreated = positions?.length || 0;
     const totalPositionsFilled = positions?.filter(p => p.status === 'filled').length || 0;
 
-    // Unique professionals hired (unique vet_ids with accepted applications)
+    // Unique professionals hired in period (unique vet_ids with accepted applications in period)
     const uniqueVetIds = new Set(applications?.map(a => a.vet_id) || []);
     const professionalsHired = uniqueVetIds.size;
 
@@ -159,6 +166,68 @@ export const getClinicReportsOverview = async (
       ? fillTimes.reduce((sum, time) => sum + time, 0) / fillTimes.length
       : 0;
 
+    // Calculate total applications received (in period)
+    const totalApplicationsReceived = applicationsInPeriod.length;
+    const acceptedCount = acceptedApplicationsInPeriod.length;
+    
+    // Calculate conversion rate (accepted / total applications in period)
+    const conversionRate = totalApplicationsReceived > 0
+      ? Math.round((acceptedCount / totalApplicationsReceived) * 100 * 100) / 100
+      : 0;
+
+    // Calculate average response time (time between demand creation and first application)
+    const responseTimes: number[] = [];
+    if (demands && allApplications) {
+      demands.forEach(demand => {
+        const demandPositions = positions?.filter(p => p.master_demand_id === demand.id) || [];
+        const positionIdsForDemand = demandPositions.map(p => p.id);
+        const demandApplications = allApplications.filter(a => 
+          positionIdsForDemand.includes(a.position_id)
+        );
+        
+        if (demandApplications.length > 0) {
+          const firstApplication = demandApplications
+            .map(a => a.created_at ? new Date(a.created_at).getTime() : null)
+            .filter(t => t !== null)
+            .sort((a, b) => (a || 0) - (b || 0))[0];
+
+          if (firstApplication) {
+            const demandCreated = new Date(demand.created_at).getTime();
+            const hoursDiff = (firstApplication - demandCreated) / (1000 * 60 * 60);
+            if (hoursDiff >= 0) {
+              responseTimes.push(hoursDiff);
+            }
+          }
+        }
+      });
+    }
+
+    const averageResponseTime = responseTimes.length > 0
+      ? responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length
+      : 0;
+
+    // Calculate cancellation rate
+    const totalDemands = totalDemandsCreated;
+    const cancelledDemands = demandsByStatus.cancelled;
+    const cancellationRate = totalDemands > 0
+      ? Math.round((cancelledDemands / totalDemands) * 100 * 100) / 100
+      : 0;
+
+    // Calculate most demanded specialties (ranking)
+    const specialtyCounts: { [key: string]: number } = {};
+    positions?.forEach(position => {
+      if (!specialtyCounts[position.specialty]) {
+        specialtyCounts[position.specialty] = 0;
+      }
+      specialtyCounts[position.specialty]++;
+    });
+
+    // Sort specialties by count and get top 5
+    const mostDemandedSpecialties = Object.entries(specialtyCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([specialty, count]) => ({ specialty, count }));
+
     res.json({
       period: {
         start: start.toISOString(),
@@ -171,6 +240,11 @@ export const getClinicReportsOverview = async (
         totalPositionsFilled,
         professionalsHired,
         averageFillTime: Math.round(averageFillTime * 100) / 100, // Round to 2 decimals
+        totalApplicationsReceived,
+        conversionRate,
+        averageResponseTime: Math.round(averageResponseTime * 100) / 100, // hours
+        cancellationRate,
+        mostDemandedSpecialties,
       },
     });
   } catch (error: any) {

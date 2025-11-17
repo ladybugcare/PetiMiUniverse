@@ -6,8 +6,8 @@ import { apiRequest } from './api';
 // =================================
 export interface SupportTicket {
   id: string;
-  user_id: string;
-  user_role: 'clinic' | 'vet' | 'freelancer' | 'admin';
+  user_id: string | null;
+  user_role: 'clinic' | 'vet' | 'freelancer' | 'admin' | 'guest';
   user_name?: string; // Nome do usuário (clínica, veterinário, freelancer ou admin)
   message: string;
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
@@ -89,6 +89,14 @@ export const supportTicketsApi = {
   // Criar novo ticket de suporte
   create: async (data: CreateTicketData): Promise<{ ticket: SupportTicket }> => {
     return apiRequest('/support/tickets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Criar ticket público (para usuários não autenticados)
+  createPublic: async (data: { name: string; email: string; message: string }): Promise<{ ticket: SupportTicket }> => {
+    return apiRequest('/support/tickets/public', {
       method: 'POST',
       body: JSON.stringify(data),
     });

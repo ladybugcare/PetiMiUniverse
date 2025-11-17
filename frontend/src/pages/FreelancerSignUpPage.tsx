@@ -10,6 +10,7 @@ import { Info } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
 import { supabase } from '../services/supabase';
 import SignUpSuccessModal from '../components/SignUpSuccessModal';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 // Componente customizado de ícone Info sem fundo preto
 const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, color = colors.primary }) => {
@@ -430,17 +431,25 @@ const FreelancerSignUpPage: React.FC = () => {
               Qual o seu endereço?
             </h2>
             <p className="text-neutral-600 mb-6">
-              Informe seu endereço completo
+              Digite o endereço e selecione uma sugestão do Google
             </p>
-            <textarea
-              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP - CEP 01234-567"
+            <AddressAutocomplete
               value={formData.address}
-              onChange={(e) => handleFieldChange('address', e.target.value)}
+              onChange={(address) => handleFieldChange('address', address)}
               onKeyDown={handleKeyDown}
               className="input"
-              rows={3}
+              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
               autoFocus
             />
+            <p
+              className="text-sm text-neutral-500 mt-2"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
+                <InfoIconNoBg size={16} color={colors.primary} />
+              </span>
+              Digite o endereço e selecione uma sugestão do Google para preenchimento automático
+            </p>
           </div>
         );
 

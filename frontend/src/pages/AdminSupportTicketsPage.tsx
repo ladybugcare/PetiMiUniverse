@@ -163,7 +163,7 @@ const AdminSupportTicketsPage: React.FC = () => {
     );
   };
 
-  const getRoleBadge = (role: 'clinic' | 'vet' | 'freelancer' | 'admin') => {
+  const getRoleBadge = (role: 'clinic' | 'vet' | 'freelancer' | 'admin' | 'guest') => {
     const roleConfig = {
       clinic: {
         label: 'Clínica',
@@ -184,6 +184,11 @@ const AdminSupportTicketsPage: React.FC = () => {
         label: 'Administrador',
         color: '#8b5cf6',
         backgroundColor: '#ede9fe',
+      },
+      guest: {
+        label: 'Visitante',
+        color: '#6b7280',
+        backgroundColor: '#f3f4f6',
       },
     };
 

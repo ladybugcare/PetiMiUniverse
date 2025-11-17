@@ -9,6 +9,7 @@ import { SuccessModal } from '../components/SuccessModal';
 import colors from '../styles/colors';
 import { Heart, Info, Lightbulb, Building2, CheckCircle } from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 type Step = 'welcome' | 'clinic' | 'unit';
 
@@ -468,14 +469,11 @@ const CreateFirstUnitPage: React.FC = () => {
             <label style={styles.label}>
               Endereço <span style={styles.required}>*</span>
             </label>
-            <input
-              type="text"
-              name="address"
+            <AddressAutocomplete
               value={formData.address}
-              onChange={handleChange}
-              placeholder="Rua, número, bairro"
-              style={styles.input}
-              required
+              onChange={(address) => setFormData({ ...formData, address })}
+              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
+              className="input"
             />
           </div>
 
