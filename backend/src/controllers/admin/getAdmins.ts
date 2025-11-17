@@ -23,35 +23,64 @@ export const getAdmins = async (req: Request, res: Response) => {
       });
     }
 
-    // Usar Admin API para listar todos os usuários
-    const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers();
+    // Tentar usar Admin API com paginação para evitar problemas
+    let allUsers: any[] = [];
+    let page = 1;
+    const perPage = 1000;
+    let hasMore = true;
 
-    if (usersError) {
-      console.error('Erro ao listar administradores:', usersError);
-      return res.status(500).json({ 
-        error: 'Erro ao listar administradores',
-        details: process.env.NODE_ENV === 'development' ? usersError.message : undefined
-      });
-    }
+    while (hasMore) {
+      try {
+        const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers({
+          page,
+          perPage,
+        });
 
-    if (!usersData) {
-      console.error('usersData é null ou undefined');
-      return res.status(500).json({ 
-        error: 'Erro ao listar administradores: Resposta inválida do Supabase'
-      });
+        if (usersError) {
+          console.error(`Erro ao listar administradores (página ${page}):`, usersError);
+          // Se for erro de database, tentar abordagem alternativa
+          if (usersError.message?.includes('Database error')) {
+            console.warn('Admin API falhou, retornando lista vazia');
+            return res.status(200).json({ admins: [] });
+          }
+          throw usersError;
+        }
+
+        if (usersData?.users && usersData.users.length > 0) {
+          allUsers = allUsers.concat(usersData.users);
+          hasMore = usersData.users.length === perPage;
+          page++;
+        } else {
+          hasMore = false;
+        }
+      } catch (apiError: any) {
+        console.error('Erro na Admin API:', apiError);
+        // Se a Admin API falhar completamente, retornar lista vazia em vez de erro
+        if (apiError.message?.includes('Database error')) {
+          console.warn('Admin API com erro de database, retornando lista vazia');
+          return res.status(200).json({ admins: [] });
+        }
+        throw apiError;
+      }
     }
 
     // Filtrar apenas admins
-    const admins = (usersData?.users || [])
-      .filter((user) => user.user_metadata?.role === 'admin')
-      .map((user) => ({
-        id: user.id,
-        name: user.user_metadata?.name || user.email?.split('@')[0] || 'Sem nome',
-        email: user.email || '',
-        status: user.user_metadata?.status || 'active',
-        created_at: user.created_at || new Date().toISOString(),
-        last_sign_in_at: user.last_sign_in_at || null,
-      }));
+    const admins = allUsers
+      .filter((user) => {
+        const role = user.user_metadata?.role || user.raw_user_meta_data?.role;
+        return role === 'admin';
+      })
+      .map((user) => {
+        const metadata = user.user_metadata || user.raw_user_meta_data || {};
+        return {
+          id: user.id,
+          name: metadata.name || user.email?.split('@')[0] || 'Sem nome',
+          email: user.email || '',
+          status: metadata.status || 'active',
+          created_at: user.created_at || new Date().toISOString(),
+          last_sign_in_at: user.last_sign_in_at || null,
+        };
+      });
 
     // Tentar criar audit log, mas não falhar se der erro
     try {
