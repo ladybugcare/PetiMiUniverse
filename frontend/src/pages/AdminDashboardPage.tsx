@@ -886,6 +886,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#737373',
     fontSize: '14px',
   },
+  emptySection: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e5e5e5',
+    borderRadius: '12px',
+    padding: '32px',
+    textAlign: 'center' as const,
+  },
   emptyText: {
     padding: '20px',
     textAlign: 'center',
