@@ -14,6 +14,15 @@ export const getAdmins = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
+    // Verificar se SUPABASE_SERVICE_ROLE_KEY está configurado
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('🚨 SUPABASE_SERVICE_ROLE_KEY não configurado');
+      return res.status(500).json({ 
+        error: 'Erro ao listar administradores: Configuração do Supabase incompleta',
+        details: process.env.NODE_ENV === 'development' ? 'SUPABASE_SERVICE_ROLE_KEY não encontrado' : undefined
+      });
+    }
+
     // Usar Admin API para listar todos os usuários
     const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers();
 
@@ -22,6 +31,13 @@ export const getAdmins = async (req: Request, res: Response) => {
       return res.status(500).json({ 
         error: 'Erro ao listar administradores',
         details: process.env.NODE_ENV === 'development' ? usersError.message : undefined
+      });
+    }
+
+    if (!usersData) {
+      console.error('usersData é null ou undefined');
+      return res.status(500).json({ 
+        error: 'Erro ao listar administradores: Resposta inválida do Supabase'
       });
     }
 
@@ -37,15 +53,21 @@ export const getAdmins = async (req: Request, res: Response) => {
         last_sign_in_at: user.last_sign_in_at || null,
       }));
 
-    const metadata = extractRequestMetadata(req);
-    await createAuditLog({
-      user_id: req.user?.id || 'system',
-      action: 'LIST_ADMINS',
-      entity_type: 'admin',
-      entity_id: 'bulk',
-      new_values: { count: admins.length },
-      ...metadata,
-    });
+    // Tentar criar audit log, mas não falhar se der erro
+    try {
+      const metadata = extractRequestMetadata(req);
+      await createAuditLog({
+        user_id: req.user?.id || 'system',
+        action: 'LIST_ADMINS',
+        entity_type: 'admin',
+        entity_id: 'bulk',
+        new_values: { count: admins.length },
+        ...metadata,
+      });
+    } catch (auditError: any) {
+      console.warn('Erro ao criar audit log (não crítico):', auditError?.message);
+      // Não falhar a requisição por causa do audit log
+    }
 
     return res.status(200).json({ admins });
   } catch (error: any) {
