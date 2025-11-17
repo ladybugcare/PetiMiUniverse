@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 
 interface ServiceHealth {
   status: 'healthy' | 'unhealthy' | 'degraded';
@@ -52,7 +52,7 @@ export const getSystemHealth = async (req: Request, res: Response) => {
     // Verificar Database
     try {
       const dbStartTime = Date.now();
-      const { error: dbError } = await supabase.from('clinics').select('id').limit(1);
+      const { error: dbError } = await supabaseAdmin.from('clinics').select('id').limit(1);
       const dbLatency = Date.now() - dbStartTime;
 
       if (dbError) {
@@ -81,7 +81,7 @@ export const getSystemHealth = async (req: Request, res: Response) => {
     try {
       const storageStartTime = Date.now();
       // Tentar listar buckets para verificar se o storage está acessível
-      const { data: buckets, error: storageError } = await supabase.storage.listBuckets();
+      const { data: buckets, error: storageError } = await supabaseAdmin.storage.listBuckets();
       const storageLatency = Date.now() - storageStartTime;
 
       if (storageError) {

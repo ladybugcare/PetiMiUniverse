@@ -1,6 +1,6 @@
 // backend/src/controllers/units/getPendingUnits.ts
 import type { Request, Response } from 'express';
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin } from '../../config/supabase';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
 
 /**
@@ -9,7 +9,8 @@ import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
  */
 export const getPendingUnits = async (req: Request, res: Response) => {
   try {
-    const { data, error } = await supabase
+    // Adicionar timeout para evitar queries muito lentas
+    const queryPromise = supabaseAdmin
       .from('units')
       .select(`
         id,
@@ -33,26 +34,56 @@ export const getPendingUnits = async (req: Request, res: Response) => {
         )
       `)
       .eq('status', 'pending_review')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(1000);
 
-    if (error) throw error;
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Query timeout')), 25000)
+    );
 
-    const metadata = extractRequestMetadata(req);
-    await createAuditLog({
-      user_id: req.user?.id || 'system',
-      action: 'GET_PENDING_UNITS',
-      entity_type: 'unit',
-      entity_id: 'bulk',
-      new_values: { count: data?.length || 0 },
-      ...metadata,
-    });
+    const result = await Promise.race([
+      queryPromise,
+      timeoutPromise
+    ]);
+
+    const { data, error } = result;
+
+    if (error) {
+      console.error('Erro ao buscar unidades pendentes:', error);
+      return res.status(500).json({
+        success: false,
+        error: error.message || 'Erro ao buscar unidades pendentes',
+      });
+    }
+
+    // Tentar criar audit log, mas não falhar se der erro
+    try {
+      const metadata = extractRequestMetadata(req);
+      await createAuditLog({
+        user_id: req.user?.id || 'system',
+        action: 'GET_PENDING_UNITS',
+        entity_type: 'unit',
+        entity_id: 'bulk',
+        new_values: { count: data?.length || 0 },
+        ...metadata,
+      });
+    } catch (auditError: any) {
+      console.warn('Erro ao criar audit log (não crítico):', auditError?.message);
+    }
 
     return res.status(200).json({
       success: true,
       units: data || [],
     });
   } catch (error: any) {
-    console.error('Erro ao buscar unidades pendentes:', error);
+    console.error('Erro inesperado ao buscar unidades pendentes:', error);
+    if (error.message === 'Query timeout') {
+      return res.status(504).json({
+        success: false,
+        error: 'A requisição demorou muito para responder',
+        details: 'Timeout ao buscar unidades pendentes'
+      });
+    }
     return res.status(500).json({
       success: false,
       error: error.message || 'Erro ao buscar unidades pendentes',

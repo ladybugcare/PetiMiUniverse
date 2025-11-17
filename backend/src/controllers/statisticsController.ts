@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabase, supabaseAdmin } from '../config/supabase';
 
 // Get clinic statistics (for CADMIN role)
 export const getClinicStats = async (req: Request<{ clinicId: string }>, res: Response) => {
@@ -304,8 +304,8 @@ export const getSystemStatsWithPeriod = async (req: Request, res: Response) => {
     previousStart.setDate(previousStart.getDate() - periodDays);
     const previousEnd = new Date(start);
 
-    // Get new registrations in period
-    const { count: newClinics, error: newClinicsError } = await supabase
+    // Get new registrations in period - usar supabaseAdmin para contornar RLS
+    const { count: newClinics, error: newClinicsError } = await supabaseAdmin
       .from('clinics')
       .select('*', { count: 'exact', head: true })
       .gte('created_at', start.toISOString())
@@ -313,7 +313,7 @@ export const getSystemStatsWithPeriod = async (req: Request, res: Response) => {
 
     if (newClinicsError) throw newClinicsError;
 
-    const { count: newVets, error: newVetsError } = await supabase
+    const { count: newVets, error: newVetsError } = await supabaseAdmin
       .from('vets')
       .select('*', { count: 'exact', head: true })
       .gte('created_at', start.toISOString())
@@ -321,7 +321,7 @@ export const getSystemStatsWithPeriod = async (req: Request, res: Response) => {
 
     if (newVetsError) throw newVetsError;
 
-    const { count: newFreelancers, error: newFreelancersError } = await supabase
+    const { count: newFreelancers, error: newFreelancersError } = await supabaseAdmin
       .from('freelancers')
       .select('*', { count: 'exact', head: true })
       .gte('created_at', start.toISOString())
@@ -330,7 +330,7 @@ export const getSystemStatsWithPeriod = async (req: Request, res: Response) => {
     if (newFreelancersError) throw newFreelancersError;
 
     // Get previous period counts for growth calculation
-    const { count: prevClinics, error: prevClinicsError } = await supabase
+    const { count: prevClinics, error: prevClinicsError } = await supabaseAdmin
       .from('clinics')
       .select('*', { count: 'exact', head: true })
       .gte('created_at', previousStart.toISOString())
@@ -338,7 +338,7 @@ export const getSystemStatsWithPeriod = async (req: Request, res: Response) => {
 
     if (prevClinicsError) throw prevClinicsError;
 
-    const { count: prevVets, error: prevVetsError } = await supabase
+    const { count: prevVets, error: prevVetsError } = await supabaseAdmin
       .from('vets')
       .select('*', { count: 'exact', head: true })
       .gte('created_at', previousStart.toISOString())
@@ -346,7 +346,7 @@ export const getSystemStatsWithPeriod = async (req: Request, res: Response) => {
 
     if (prevVetsError) throw prevVetsError;
 
-    const { count: prevFreelancers, error: prevFreelancersError } = await supabase
+    const { count: prevFreelancers, error: prevFreelancersError } = await supabaseAdmin
       .from('freelancers')
       .select('*', { count: 'exact', head: true })
       .gte('created_at', previousStart.toISOString())
@@ -365,14 +365,14 @@ export const getSystemStatsWithPeriod = async (req: Request, res: Response) => {
     const freelancersGrowth = calculateGrowth(newFreelancers || 0, prevFreelancers || 0);
 
     // Get approval rate (approved / total pending + approved)
-    const { count: totalPendingVets, error: pendingVetsError } = await supabase
+    const { count: totalPendingVets, error: pendingVetsError } = await supabaseAdmin
       .from('vets')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'pending');
 
     if (pendingVetsError) throw pendingVetsError;
 
-    const { count: totalApprovedVets, error: approvedVetsError } = await supabase
+    const { count: totalApprovedVets, error: approvedVetsError } = await supabaseAdmin
       .from('vets')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'approved');
@@ -385,7 +385,7 @@ export const getSystemStatsWithPeriod = async (req: Request, res: Response) => {
       : 0;
 
     // Get completed demands in period
-    const { count: completedDemands, error: completedError } = await supabase
+    const { count: completedDemands, error: completedError } = await supabaseAdmin
       .from('demands')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'closed')
@@ -395,7 +395,7 @@ export const getSystemStatsWithPeriod = async (req: Request, res: Response) => {
     if (completedError) throw completedError;
 
     // Get active vets (vets with applications in period)
-    const { data: activeVetsData, error: activeVetsError } = await supabase
+    const { data: activeVetsData, error: activeVetsError } = await supabaseAdmin
       .from('position_applications')
       .select('vet_id')
       .gte('created_at', start.toISOString())
@@ -406,15 +406,15 @@ export const getSystemStatsWithPeriod = async (req: Request, res: Response) => {
     const uniqueActiveVets = new Set(activeVetsData?.map((a: any) => a.vet_id) || []).size;
 
     // Get total counts
-    const { count: totalClinics } = await supabase
+    const { count: totalClinics } = await supabaseAdmin
       .from('clinics')
       .select('*', { count: 'exact', head: true });
 
-    const { count: totalVets } = await supabase
+    const { count: totalVets } = await supabaseAdmin
       .from('vets')
       .select('*', { count: 'exact', head: true });
 
-    const { count: totalFreelancers } = await supabase
+    const { count: totalFreelancers } = await supabaseAdmin
       .from('freelancers')
       .select('*', { count: 'exact', head: true });
 
@@ -457,14 +457,24 @@ export const getSystemGrowthTrends = async (req: Request, res: Response) => {
     const { period = '30d' } = req.query;
     const { start, end } = getDateRange(period as string);
 
-    // Calculate number of days
-    const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    // Calculate number of days - limitar a 90 dias para evitar queries muito lentas
+    const days = Math.min(
+      Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)),
+      90
+    );
     const isWeekly = days > 14;
 
     const trends: any[] = [];
+    const startTime = Date.now();
+    const maxExecutionTime = 20000; // 20 segundos máximo
 
     // Generate data points
     for (let i = 0; i < days; i++) {
+      // Verificar timeout durante o loop
+      if (Date.now() - startTime > maxExecutionTime) {
+        console.warn(`[getSystemGrowthTrends] Timeout após ${i} de ${days} dias processados`);
+        break;
+      }
       const date = new Date(start);
       date.setDate(date.getDate() + i);
       const nextDate = new Date(date);
@@ -473,26 +483,26 @@ export const getSystemGrowthTrends = async (req: Request, res: Response) => {
       const dateStr = date.toISOString().split('T')[0];
       const nextDateStr = nextDate.toISOString();
 
-      // Get counts for this day
-      const { count: clinics } = await supabase
+      // Get counts for this day - usar supabaseAdmin para contornar RLS
+      const { count: clinics } = await supabaseAdmin
         .from('clinics')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', date.toISOString())
         .lt('created_at', nextDateStr);
 
-      const { count: vets } = await supabase
+      const { count: vets } = await supabaseAdmin
         .from('vets')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', date.toISOString())
         .lt('created_at', nextDateStr);
 
-      const { count: freelancers } = await supabase
+      const { count: freelancers } = await supabaseAdmin
         .from('freelancers')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', date.toISOString())
         .lt('created_at', nextDateStr);
 
-      const { count: demands } = await supabase
+      const { count: demands } = await supabaseAdmin
         .from('demands')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', date.toISOString())
