@@ -539,8 +539,8 @@ export const getRecentActivity = async (req: Request, res: Response) => {
 
     const activities: any[] = [];
 
-    // Get recent clinics
-    const { data: recentClinics, error: clinicsError } = await supabase
+    // Get recent clinics - usar supabaseAdmin para contornar RLS
+    const { data: recentClinics, error: clinicsError } = await supabaseAdmin
       .from('clinics')
       .select('id, name, created_at, status')
       .order('created_at', { ascending: false })
@@ -560,8 +560,8 @@ export const getRecentActivity = async (req: Request, res: Response) => {
       });
     }
 
-    // Get recent vets
-    const { data: recentVets, error: vetsError } = await supabase
+    // Get recent vets - usar supabaseAdmin para contornar RLS
+    const { data: recentVets, error: vetsError } = await supabaseAdmin
       .from('vets')
       .select('id, name, crmv, created_at, status')
       .order('created_at', { ascending: false })
@@ -581,8 +581,8 @@ export const getRecentActivity = async (req: Request, res: Response) => {
       });
     }
 
-    // Get recent freelancers
-    const { data: recentFreelancers, error: freelancersError } = await supabase
+    // Get recent freelancers - usar supabaseAdmin para contornar RLS
+    const { data: recentFreelancers, error: freelancersError } = await supabaseAdmin
       .from('freelancers')
       .select('id, name, created_at, status')
       .order('created_at', { ascending: false })
@@ -602,20 +602,20 @@ export const getRecentActivity = async (req: Request, res: Response) => {
       });
     }
 
-    // Get recent demands
-    const { data: recentDemands, error: demandsError } = await supabase
+    // Get recent demands - usar supabaseAdmin para contornar RLS
+    const { data: recentDemands, error: demandsError } = await supabaseAdmin
       .from('demands')
       .select('id, title, created_at, status, clinic_id')
       .order('created_at', { ascending: false })
       .limit(limitNum);
 
     if (!demandsError && recentDemands) {
-      // Get clinic names for demands
+      // Get clinic names for demands - usar supabaseAdmin para contornar RLS
       const clinicIds = [...new Set(recentDemands.map((d: any) => d.clinic_id).filter(Boolean))];
       const clinicNamesMap: { [key: string]: string } = {};
 
       if (clinicIds.length > 0) {
-        const { data: clinics } = await supabase
+        const { data: clinics } = await supabaseAdmin
           .from('clinics')
           .select('id, name')
           .in('id', clinicIds);
@@ -641,8 +641,8 @@ export const getRecentActivity = async (req: Request, res: Response) => {
       });
     }
 
-    // Get audit logs
-    const { data: auditLogs, error: auditError } = await supabase
+    // Get audit logs - usar supabaseAdmin para contornar RLS
+    const { data: auditLogs, error: auditError } = await supabaseAdmin
       .from('audit_logs')
       .select('*')
       .order('created_at', { ascending: false })
@@ -701,8 +701,8 @@ export const getTopPerformers = async (req: Request, res: Response) => {
     const limitNum = parseInt(limit as string, 10);
 
     if (type === 'clinics') {
-      // Get top clinics by number of demands created
-      const { data: clinics, error: clinicsError } = await supabase
+      // Get top clinics by number of demands created - usar supabaseAdmin para contornar RLS
+      const { data: clinics, error: clinicsError } = await supabaseAdmin
         .from('clinics')
         .select('id, name, created_at, status');
 
@@ -710,7 +710,7 @@ export const getTopPerformers = async (req: Request, res: Response) => {
 
       const clinicsWithCounts = await Promise.all(
         (clinics || []).map(async (clinic: any) => {
-          const { count } = await supabase
+          const { count } = await supabaseAdmin
             .from('demands')
             .select('*', { count: 'exact', head: true })
             .eq('clinic_id', clinic.id);
@@ -730,8 +730,8 @@ export const getTopPerformers = async (req: Request, res: Response) => {
 
       res.json({ performers: topClinics, type: 'clinics' });
     } else if (type === 'vets') {
-      // Get top vets by number of applications
-      const { data: vets, error: vetsError } = await supabase
+      // Get top vets by number of applications - usar supabaseAdmin para contornar RLS
+      const { data: vets, error: vetsError } = await supabaseAdmin
         .from('vets')
         .select('id, name, crmv, created_at, status');
 
@@ -739,7 +739,7 @@ export const getTopPerformers = async (req: Request, res: Response) => {
 
       const vetsWithCounts = await Promise.all(
         (vets || []).map(async (vet: any) => {
-          const { count } = await supabase
+          const { count } = await supabaseAdmin
             .from('position_applications')
             .select('*', { count: 'exact', head: true })
             .eq('vet_id', vet.id);
@@ -787,14 +787,14 @@ export const getSystemInsights = async (req: Request, res: Response) => {
     const prev7DaysStart = new Date(last7DaysStart);
     prev7DaysStart.setDate(prev7DaysStart.getDate() - 7);
 
-    // Compare vet registrations
-    const { count: vetsLast7Days } = await supabase
+    // Compare vet registrations - usar supabaseAdmin para contornar RLS
+    const { count: vetsLast7Days } = await supabaseAdmin
       .from('vets')
       .select('*', { count: 'exact', head: true })
       .gte('created_at', last7DaysStart.toISOString())
       .lte('created_at', now.toISOString());
 
-    const { count: vetsPrev7Days } = await supabase
+    const { count: vetsPrev7Days } = await supabaseAdmin
       .from('vets')
       .select('*', { count: 'exact', head: true })
       .gte('created_at', prev7DaysStart.toISOString())
@@ -815,8 +815,8 @@ export const getSystemInsights = async (req: Request, res: Response) => {
       }
     }
 
-    // Check for new demands
-    const { count: demandsLast7Days } = await supabase
+    // Check for new demands - usar supabaseAdmin para contornar RLS
+    const { count: demandsLast7Days } = await supabaseAdmin
       .from('demands')
       .select('*', { count: 'exact', head: true })
       .gte('created_at', last7DaysStart.toISOString())
@@ -832,13 +832,13 @@ export const getSystemInsights = async (req: Request, res: Response) => {
       });
     }
 
-    // Check approval rate
-    const { count: pendingVets } = await supabase
+    // Check approval rate - usar supabaseAdmin para contornar RLS
+    const { count: pendingVets } = await supabaseAdmin
       .from('vets')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'pending');
 
-    const { count: approvedVets } = await supabase
+    const { count: approvedVets } = await supabaseAdmin
       .from('vets')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'approved');
@@ -856,14 +856,14 @@ export const getSystemInsights = async (req: Request, res: Response) => {
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const { data: allClinics } = await supabase
+    const { data: allClinics } = await supabaseAdmin
       .from('clinics')
       .select('id, name');
 
     if (allClinics) {
       const inactiveClinics = await Promise.all(
         allClinics.map(async (clinic: any) => {
-          const { count } = await supabase
+          const { count } = await supabaseAdmin
             .from('demands')
             .select('*', { count: 'exact', head: true })
             .eq('clinic_id', clinic.id)
