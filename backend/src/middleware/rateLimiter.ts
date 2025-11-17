@@ -4,10 +4,12 @@ import rateLimit from 'express-rate-limit';
  * Rate limiter geral para todas as rotas
  * Limites diferentes por ambiente:
  * - Development: 1000 req/15min (para suportar StrictMode e desenvolvimento ativo)
- * - Staging/Production: 100 req/15min (limite mais restritivo)
+ * - Staging: 500 req/15min (para suportar polling de dashboard e múltiplos componentes)
+ * - Production: 100 req/15min (limite mais restritivo)
  */
 const isDevelopment = process.env.NODE_ENV === 'development';
-const maxRequests = isDevelopment ? 1000 : 100;
+const isStaging = process.env.NODE_ENV === 'staging' || process.env.RENDER_SERVICE_NAME?.includes('staging');
+const maxRequests = isDevelopment ? 1000 : isStaging ? 500 : 100;
 
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos

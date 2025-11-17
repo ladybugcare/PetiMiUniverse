@@ -113,23 +113,36 @@ const NotificationBell: React.FC = () => {
     }
   }, [userId]);
 
-  // Polling: Update unread count (intervalo maior em desenvolvimento devido ao StrictMode)
+  // Polling: Update unread count (intervalo aumentado para reduzir carga)
   useEffect(() => {
     if (!userId) return;
     
     // Carregar imediatamente apenas uma vez
     loadUnreadCount();
     
-    // Intervalo maior em desenvolvimento (60s) para compensar StrictMode que duplica requisições
-    // Em produção/staging: 30s é suficiente
-    const pollingInterval = isDevelopment ? 60000 : 30000;
+    // Intervalo aumentado para 60s em todos os ambientes para reduzir carga
+    const pollingInterval = 60000;
     
     const interval = setInterval(() => {
-      loadUnreadCount();
+      // Só fazer polling se a página estiver visível
+      if (document.visibilityState === 'visible') {
+        loadUnreadCount();
+      }
     }, pollingInterval);
     
-    return () => clearInterval(interval);
-  }, [userId, loadUnreadCount, isDevelopment]);
+    // Recarregar quando a página voltar a ficar visível
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadUnreadCount();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [userId, loadUnreadCount]);
 
   // Close dropdown when clicking outside
   useEffect(() => {

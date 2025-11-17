@@ -10,42 +10,30 @@ const getSpecialties = async (req, res) => {
         // Se uma categoria específica foi solicitada, filtrar por role
         if (category && typeof category === 'string') {
             const categoryLower = category.toLowerCase();
-            // Nunca retornar especialidades de freelancer, mesmo se solicitado
-            if (categoryLower === 'freelancer') {
-                console.log(`[getSpecialties] Categoria 'freelancer' solicitada - retornando array vazio`);
-                return res.json({ specialties: [] });
-            }
-            // Filtrar por role (vet, clinic, other)
+            // Filtrar por role (vet, freelancer, clinic, other)
             query = query.eq('role', categoryLower);
             console.log(`[getSpecialties] Buscando especialidades com role='${categoryLower}'`);
         }
         else {
             console.log(`[getSpecialties] Buscando todas as especialidades (sem filtro de categoria)`);
+            // Se não há filtro de categoria, excluir freelancer por padrão (para não aparecer em outros lugares)
+            query = query.neq('role', 'freelancer');
         }
-        // Sempre excluir freelancer na query
-        query = query.neq('role', 'freelancer');
         const { data, error } = await query.order('name');
         if (error) {
             console.error('[getSpecialties] Error fetching specialties:', error);
             return res.status(400).json({ error: error.message });
         }
         console.log(`[getSpecialties] Total de especialidades retornadas: ${data?.length || 0}`);
-        // Filtro adicional no código para garantir que nenhum freelancer escape
+        // Filtro adicional no código para garantir que corresponde à categoria solicitada
         const filteredData = (data || []).filter((s) => {
             const specialtyRole = (s.role || '').toLowerCase();
-            // Sempre excluir freelancer
-            if (specialtyRole === 'freelancer') {
-                return false;
-            }
             // Se uma categoria específica foi solicitada, garantir que corresponde
             if (category && typeof category === 'string') {
                 const requestedCategory = category.toLowerCase();
-                if (requestedCategory === 'freelancer') {
-                    return false; // Nunca retornar freelancer
-                }
                 return specialtyRole === requestedCategory;
             }
-            // Se não há filtro de categoria, retornar todas exceto freelancer
+            // Se não há filtro de categoria, retornar todas exceto freelancer (já filtrado na query)
             return true;
         });
         console.log(`[getSpecialties] Retornando ${filteredData.length} especialidades após filtro (categoria solicitada: ${category || 'todas'})`);

@@ -227,9 +227,26 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
     };
 
     loadHealth();
-    // Refresh health every 30 seconds
-    const interval = setInterval(loadHealth, 30000);
-    return () => clearInterval(interval);
+    // Refresh health every 60 seconds (aumentado para reduzir carga)
+    // Só fazer polling se a página estiver visível
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadHealth();
+      }
+    }, 60000);
+    
+    // Recarregar quando a página voltar a ficar visível
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadHealth();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Use custom hook for dashboard data

@@ -18,6 +18,8 @@ const reviewUnit_1 = require("../controllers/units/reviewUnit");
 const adminController_1 = require("../controllers/adminController");
 // Controllers de documentos
 const getVetDocument_1 = require("../controllers/admin/getVetDocument");
+// Controllers de relatórios admin
+const adminReportsController_1 = require("../controllers/adminReportsController");
 const router = express_1.default.Router();
 /**
  * ==============================================
@@ -52,4 +54,15 @@ router.patch('/units/:id/review', authMiddleware_1.authenticateUser, reviewUnit_
  */
 // Servir documento CRMV de veterinário (apenas para admins)
 router.get('/vets/:vetId/document', authMiddleware_1.authenticateUser, getVetDocument_1.getVetDocument);
+/**
+ * ==============================================
+ * 🔹 ADMIN REPORTS
+ * ==============================================
+ */
+// Get admin overview reports
+router.get('/reports/overview', authMiddleware_1.authenticateUser, adminReportsController_1.getAdminOverview);
+// Get admin specialties reports
+router.get('/reports/specialties', authMiddleware_1.authenticateUser, adminReportsController_1.getAdminSpecialties);
+// Get admin usage reports
+router.get('/reports/usage', authMiddleware_1.authenticateUser, adminReportsController_1.getAdminUsage);
 exports.default = router;

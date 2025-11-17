@@ -121,9 +121,26 @@ export const useSidebarMenu = (role: Role | string, currentPath?: string) => {
 
     loadBadges();
 
-    // Polling a cada 30 segundos
-    const interval = setInterval(loadBadges, 30000);
-    return () => clearInterval(interval);
+    // Polling a cada 60 segundos (aumentado para reduzir carga)
+    // Só fazer polling se a página estiver visível
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadBadges();
+      }
+    }, 60000);
+    
+    // Recarregar quando a página voltar a ficar visível
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadBadges();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [userId, role, loadBadge]);
 
   // Obter menus base para a role

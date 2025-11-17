@@ -7,6 +7,11 @@ const express_1 = __importDefault(require("express"));
 const supportTicketsController_1 = require("../controllers/supportTicketsController");
 const router = express_1.default.Router();
 // ========================================
+// ROTA PÚBLICA (SEM AUTENTICAÇÃO)
+// ========================================
+// Criar ticket público (para usuários não autenticados durante cadastro)
+router.post('/tickets/public', supportTicketsController_1.createPublicTicket);
+// ========================================
 // ROTAS DE USUÁRIOS (CLINIC, VET)
 // ========================================
 // Criar novo ticket de suporte

@@ -5,28 +5,34 @@ const supabase_1 = require("../../config/supabase");
 const auditLog_1 = require("../../utils/auditLog");
 /**
  * Controller para listar administradores ativos e inativos.
- * Agora usa `user_metadata.status` como referência principal.
+ * Usa Admin API do Supabase para listar usuários e filtra por role.
  */
 const getAdmins = async (req, res) => {
     try {
-        // 🔹 Lista todos os usuários do Supabase Auth
-        const { data, error } = await supabase_1.supabaseAdmin.auth.admin.listUsers();
-        if (error) {
-            console.error('Erro ao listar administradores:', error);
-            return res.status(500).json({ error: 'Erro ao listar administradores' });
+        const requesterRole = req.user?.role?.toLowerCase();
+        if (requesterRole !== 'admin') {
+            return res.status(403).json({ error: 'Acesso negado' });
         }
-        // 🔹 Filtra somente os admins
-        const admins = data.users
+        // Usar Admin API para listar todos os usuários
+        const { data: usersData, error: usersError } = await supabase_1.supabaseAdmin.auth.admin.listUsers();
+        if (usersError) {
+            console.error('Erro ao listar administradores:', usersError);
+            return res.status(500).json({
+                error: 'Erro ao listar administradores',
+                details: process.env.NODE_ENV === 'development' ? usersError.message : undefined
+            });
+        }
+        // Filtrar apenas admins
+        const admins = (usersData?.users || [])
             .filter((user) => user.user_metadata?.role === 'admin')
             .map((user) => ({
             id: user.id,
-            name: user.user_metadata?.name || 'Sem nome',
-            email: user.email,
-            status: user.user_metadata?.status || 'active', // 👈 agora vem de user_metadata
-            created_at: user.created_at,
-            last_sign_in_at: user.last_sign_in_at,
+            name: user.user_metadata?.name || user.email?.split('@')[0] || 'Sem nome',
+            email: user.email || '',
+            status: user.user_metadata?.status || 'active',
+            created_at: user.created_at || new Date().toISOString(),
+            last_sign_in_at: user.last_sign_in_at || null,
         }));
-        // 🔹 Loga o acesso à listagem
         const metadata = (0, auditLog_1.extractRequestMetadata)(req);
         await (0, auditLog_1.createAuditLog)({
             user_id: req.user?.id || 'system',

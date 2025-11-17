@@ -87,12 +87,26 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     // Carregar imediatamente apenas uma vez
     loadUnreadCount();
     
-    // Polling a cada 30 segundos
+    // Polling a cada 60 segundos (aumentado para reduzir carga)
     const interval = setInterval(() => {
-      loadUnreadCount();
-    }, 30000);
+      // Só fazer polling se a página estiver visível
+      if (document.visibilityState === 'visible') {
+        loadUnreadCount();
+      }
+    }, 60000);
     
-    return () => clearInterval(interval);
+    // Pausar polling quando a página não estiver visível
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadUnreadCount();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [userId, isAdmin, loadUnreadCount]);
 
   // Fecha dropdown ao clicar fora
