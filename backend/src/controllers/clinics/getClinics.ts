@@ -4,14 +4,15 @@ import { supabaseAdmin } from '../../config/supabase';
 export const getClinics = async (_req: Request, res: Response) => {
   try {
     // Adicionar timeout e limite para evitar queries muito lentas
+    // Reduzir limite para 500 e usar apenas colunas essenciais
     const queryPromise = supabaseAdmin
       .from('clinics')
       .select('id, name, email, cnpj, status, created_at, updated_at, deleted_at')
       .order('created_at', { ascending: false })
-      .limit(1000); // Limite para evitar queries muito grandes
+      .limit(500); // Limite reduzido para melhor performance
 
     const timeoutPromise = new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('Query timeout')), 25000)
+      setTimeout(() => reject(new Error('Query timeout')), 15000) // Timeout reduzido para 15s
     );
 
     const result = await Promise.race([
