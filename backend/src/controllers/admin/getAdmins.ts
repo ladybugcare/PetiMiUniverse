@@ -40,8 +40,10 @@ export const getAdmins = async (req: Request, res: Response) => {
           console.error(`Erro ao listar administradores (página ${page}):`, usersError);
           // Se for erro de database, tentar abordagem alternativa
           if (usersError.message?.includes('Database error')) {
-            console.warn('Admin API falhou, retornando lista vazia');
-            return res.status(200).json({ admins: [] });
+            console.warn('Admin API falhou com Database error, tentando continuar...');
+            // Não retornar vazio imediatamente, tentar continuar
+            hasMore = false;
+            break;
           }
           throw usersError;
         }
@@ -55,19 +57,41 @@ export const getAdmins = async (req: Request, res: Response) => {
         }
       } catch (apiError: any) {
         console.error('Erro na Admin API:', apiError);
-        // Se a Admin API falhar completamente, retornar lista vazia em vez de erro
+        // Se a Admin API falhar completamente, tentar retornar o que temos
         if (apiError.message?.includes('Database error')) {
-          console.warn('Admin API com erro de database, retornando lista vazia');
-          return res.status(200).json({ admins: [] });
+          console.warn('Admin API com erro de database, usando dados já coletados');
+          hasMore = false;
+          break;
         }
         throw apiError;
       }
     }
 
-    // Filtrar apenas admins
+    // Log para debug
+    console.log(`[getAdmins] Total de usuários encontrados: ${allUsers.length}`);
+    
+    // Filtrar apenas admins - verificar múltiplas fontes de role
     const admins = allUsers
       .filter((user) => {
-        const role = user.user_metadata?.role || user.raw_user_meta_data?.role;
+        // Verificar user_metadata primeiro (formato mais comum)
+        const roleFromMetadata = user.user_metadata?.role;
+        // Verificar raw_user_meta_data como fallback
+        const roleFromRaw = user.raw_user_meta_data?.role;
+        // Verificar app_metadata também
+        const roleFromApp = user.app_metadata?.role;
+        
+        const role = roleFromMetadata || roleFromRaw || roleFromApp;
+        
+        // Log para debug se encontrar usuário com role
+        if (role) {
+          console.log(`[getAdmins] Usuário encontrado com role: ${role}`, {
+            email: user.email,
+            id: user.id,
+            user_metadata: user.user_metadata,
+            raw_user_meta_data: user.raw_user_meta_data
+          });
+        }
+        
         return role === 'admin';
       })
       .map((user) => {
@@ -81,6 +105,8 @@ export const getAdmins = async (req: Request, res: Response) => {
           last_sign_in_at: user.last_sign_in_at || null,
         };
       });
+
+    console.log(`[getAdmins] Total de admins encontrados: ${admins.length}`);
 
     // Tentar criar audit log, mas não falhar se der erro
     try {
