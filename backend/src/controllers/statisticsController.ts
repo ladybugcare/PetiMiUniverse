@@ -779,6 +779,10 @@ export const getSystemInsights = async (req: Request, res: Response) => {
     }
 
     const insights: any[] = [];
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    // Thresholds mais baixos em desenvolvimento para mostrar insights mesmo com poucos dados
+    const growthThreshold = isDevelopment ? 10 : 20;
+    const pendingThreshold = isDevelopment ? 1 : 5;
 
     // Get data for last 7 days and previous 7 days
     const now = new Date();
@@ -800,17 +804,26 @@ export const getSystemInsights = async (req: Request, res: Response) => {
       .gte('created_at', prev7DaysStart.toISOString())
       .lt('created_at', last7DaysStart.toISOString());
 
-    if (vetsLast7Days && vetsPrev7Days) {
+    // Insight: Crescimento de vets (threshold ajustado por ambiente)
+    if (vetsLast7Days !== null && vetsPrev7Days !== null) {
       const growth = vetsPrev7Days > 0 
         ? ((vetsLast7Days - vetsPrev7Days) / vetsPrev7Days) * 100 
         : (vetsLast7Days > 0 ? 100 : 0);
 
-      if (Math.abs(growth) > 20) {
+      if (Math.abs(growth) > growthThreshold) {
         insights.push({
           type: growth > 0 ? 'positive' : 'warning',
           title: `Crescimento de ${Math.round(growth)}% em cadastros de veterinários`,
           message: `Esta semana houve ${vetsLast7Days} novos cadastros de veterinários, ${growth > 0 ? 'aumento' : 'redução'} de ${Math.round(Math.abs(growth))}% em relação à semana anterior.`,
           icon: 'trending-up',
+        });
+      } else if (isDevelopment && vetsLast7Days > 0) {
+        // Em desenvolvimento, mostrar insight mesmo com crescimento menor
+        insights.push({
+          type: 'info',
+          title: `${vetsLast7Days} novo(s) cadastro(s) de veterinário(s) esta semana`,
+          message: `Foram registrados ${vetsLast7Days} novo(s) veterinário(s) nos últimos 7 dias.`,
+          icon: 'user-plus',
         });
       }
     }
@@ -838,16 +851,32 @@ export const getSystemInsights = async (req: Request, res: Response) => {
       .select('*', { count: 'exact', head: true })
       .eq('status', 'pending');
 
+    const { count: pendingFreelancers } = await supabaseAdmin
+      .from('freelancers')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending');
+
     const { count: approvedVets } = await supabaseAdmin
       .from('vets')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'approved');
 
-    if (pendingVets && pendingVets > 5) {
+    // Insight: Vets pendentes (threshold ajustado por ambiente)
+    if (pendingVets !== null && pendingVets >= pendingThreshold) {
       insights.push({
         type: 'info',
-        title: `${pendingVets} veterinários aguardando aprovação`,
-        message: `Há ${pendingVets} cadastros de veterinários pendentes de análise. Considere revisar as aprovações pendentes.`,
+        title: `${pendingVets} veterinário(s) aguardando aprovação`,
+        message: `Há ${pendingVets} cadastro(s) de veterinário(s) pendente(s) de análise. Considere revisar as aprovações pendentes.`,
+        icon: 'clock',
+      });
+    }
+
+    // Insight: Freelancers pendentes
+    if (pendingFreelancers !== null && pendingFreelancers >= pendingThreshold) {
+      insights.push({
+        type: 'info',
+        title: `${pendingFreelancers} freelancer(s) aguardando aprovação`,
+        message: `Há ${pendingFreelancers} cadastro(s) de freelancer(s) pendente(s) de análise.`,
         icon: 'clock',
       });
     }
@@ -874,7 +903,7 @@ export const getSystemInsights = async (req: Request, res: Response) => {
       );
 
       const inactive = inactiveClinics.filter((c: any) => !c.hasActivity);
-      if (inactive.length > 0 && inactive.length <= 10) {
+      if (inactive.length > 0 && (isDevelopment || inactive.length <= 10)) {
         insights.push({
           type: 'info',
           title: `${inactive.length} clínica(s) inativa(s)`,
@@ -884,6 +913,28 @@ export const getSystemInsights = async (req: Request, res: Response) => {
       }
     }
 
+    // Em desenvolvimento, adicionar insight geral se não houver nenhum
+    if (isDevelopment && insights.length === 0) {
+      // Verificar se há dados no sistema
+      const { count: totalVets } = await supabaseAdmin
+        .from('vets')
+        .select('*', { count: 'exact', head: true });
+      
+      const { count: totalClinics } = await supabaseAdmin
+        .from('clinics')
+        .select('*', { count: 'exact', head: true });
+
+      if (totalVets !== null && totalClinics !== null) {
+        insights.push({
+          type: 'info',
+          title: 'Sistema em funcionamento',
+          message: `O sistema possui ${totalClinics} clínica(s) e ${totalVets} veterinário(s) cadastrado(s).`,
+          icon: 'activity',
+        });
+      }
+    }
+
+    console.log(`[getSystemInsights] Gerados ${insights.length} insights (ambiente: ${isDevelopment ? 'development' : 'production'})`);
     res.json({ insights });
   } catch (error: any) {
     console.error('Error getting system insights:', error);
