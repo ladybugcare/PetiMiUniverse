@@ -3,22 +3,9 @@ import type { Request, Response } from 'express';
 import { supabaseAdmin } from '../../config/supabase';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
 
-type AuthUserRow = {
-  id: string;
-  email: string | null;
-  created_at: string;
-  last_sign_in_at: string | null;
-  raw_user_meta_data: {
-    role?: string;
-    name?: string;
-    status?: string;
-    [key: string]: any;
-  } | null;
-};
-
 /**
  * Controller para listar administradores ativos e inativos.
- * Agora consulta diretamente `auth.users` para contornar limites do Admin API.
+ * Usa Admin API do Supabase para listar usuários e filtra por role.
  */
 export const getAdmins = async (req: Request, res: Response) => {
   try {
@@ -27,28 +14,28 @@ export const getAdmins = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    const { data, error } = await supabaseAdmin
-      .from<AuthUserRow>('auth.users')
-      .select('id, email, created_at, last_sign_in_at, raw_user_meta_data')
-      .contains('raw_user_meta_data', { role: 'admin' })
-      .order('created_at', { ascending: false });
+    // Usar Admin API para listar todos os usuários
+    const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers();
 
-    if (error) {
-      console.error('Erro ao listar administradores:', error);
-      return res.status(500).json({ error: 'Erro ao listar administradores' });
+    if (usersError) {
+      console.error('Erro ao listar administradores:', usersError);
+      return res.status(500).json({ 
+        error: 'Erro ao listar administradores',
+        details: process.env.NODE_ENV === 'development' ? usersError.message : undefined
+      });
     }
 
-    const admins = (data || []).map((user) => {
-      const metadata = user.raw_user_meta_data || {};
-      return {
+    // Filtrar apenas admins
+    const admins = (usersData?.users || [])
+      .filter((user) => user.user_metadata?.role === 'admin')
+      .map((user) => ({
         id: user.id,
-        name: metadata.name || user.email?.split('@')[0] || 'Sem nome',
-        email: user.email,
-        status: metadata.status || 'active',
-        created_at: user.created_at,
-        last_sign_in_at: user.last_sign_in_at,
-      };
-    });
+        name: user.user_metadata?.name || user.email?.split('@')[0] || 'Sem nome',
+        email: user.email || '',
+        status: user.user_metadata?.status || 'active',
+        created_at: user.created_at || new Date().toISOString(),
+        last_sign_in_at: user.last_sign_in_at || null,
+      }));
 
     const metadata = extractRequestMetadata(req);
     await createAuditLog({
