@@ -27,6 +27,15 @@ export const useSidebarMenu = (role: Role | string, currentPath?: string) => {
   const isLoadingRef = useRef<Record<string, boolean>>({});
 
   // Função helper para carregar badge com debounce
+  // IMPORTANTE: Não incluir 'badges' nas dependências para evitar loop infinito
+  // Usamos ref para acessar o valor atual sem causar re-renders
+  const badgesRef = useRef<Record<string, number>>({});
+  
+  // Sincronizar ref com state
+  useEffect(() => {
+    badgesRef.current = badges;
+  }, [badges]);
+
   const loadBadge = useCallback(async (badgeKey: string, loader: () => Promise<number>) => {
     if (!userId) return 0;
 
@@ -35,12 +44,12 @@ export const useSidebarMenu = (role: Role | string, currentPath?: string) => {
     
     // Debounce: não fazer requisição se a última foi há menos de 30 segundos
     if (now - lastRequest < 30000) {
-      return badges[badgeKey] || 0;
+      return badgesRef.current[badgeKey] || 0;
     }
 
     // Se já está carregando, retornar valor atual
     if (isLoadingRef.current[badgeKey]) {
-      return badges[badgeKey] || 0;
+      return badgesRef.current[badgeKey] || 0;
     }
 
     isLoadingRef.current[badgeKey] = true;
@@ -52,11 +61,11 @@ export const useSidebarMenu = (role: Role | string, currentPath?: string) => {
       return count;
     } catch (error) {
       console.error(`[useSidebarMenu] Error loading badge ${badgeKey}:`, error);
-      return badges[badgeKey] || 0;
+      return badgesRef.current[badgeKey] || 0;
     } finally {
       isLoadingRef.current[badgeKey] = false;
     }
-  }, [userId, badges]);
+  }, [userId]); // Removido 'badges' das dependências
 
   // Carregar badges dinamicamente
   useEffect(() => {
