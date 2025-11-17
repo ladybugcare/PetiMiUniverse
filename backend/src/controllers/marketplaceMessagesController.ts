@@ -163,19 +163,32 @@ export const markAsRead = async (req: Request, res: Response) => {
 
 // Get unread message count
 export const getUnreadCount = async (req: Request, res: Response) => {
-  const { user_id } = req.query;
+  const requesterId = req.user?.id;
+  const requestedUserId = (req.query.user_id as string | undefined) || requesterId;
 
-  if (!user_id) {
-    return res.status(400).json({ error: 'Missing user_id' });
+  if (!requesterId) {
+    return res.status(401).json({ error: 'Usuário não autenticado' });
   }
 
-  const { count, error } = await supabase
+  if (!requestedUserId) {
+    return res.status(400).json({ error: 'user_id é obrigatório' });
+  }
+
+  if (requestedUserId !== requesterId) {
+    return res.status(403).json({ error: 'Não é permitido consultar mensagens de outro usuário' });
+  }
+
+  const { count, error } = await supabaseAdmin
     .from('marketplace_messages')
     .select('*', { count: 'exact', head: true })
-    .eq('receiver_id', user_id)
+    .eq('receiver_id', requestedUserId)
     .eq('read', false);
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) {
+    console.error('Error fetching marketplace unread count:', error);
+    return res.status(500).json({ error: 'Erro ao buscar contagem de mensagens não lidas' });
+  }
+
   res.json({ unread_count: count || 0 });
 };
 
