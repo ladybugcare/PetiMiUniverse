@@ -13,14 +13,16 @@ export const getFreelancers = async (_req: Request, res: Response) => {
       .order('created_at', { ascending: false })
       .limit(1000); // Limite para evitar queries muito grandes
 
-    const timeoutPromise = new Promise((_, reject) => 
+    const timeoutPromise = new Promise<never>((_, reject) => 
       setTimeout(() => reject(new Error('Query timeout')), 25000)
     );
 
-    const { data, error } = await Promise.race([
+    const result = await Promise.race([
       queryPromise,
       timeoutPromise
-    ]) as any;
+    ]);
+
+    const { data, error } = result;
 
     if (error) {
       console.error('Erro ao buscar freelancers:', error);
