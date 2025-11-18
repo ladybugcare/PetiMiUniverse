@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { supabase, supabaseAdmin } from '../config/supabase'
 import { normalizeCNPJ } from '../utils/cnpjUtils'
+import { logger } from '../utils/logger.js'
 
 
 
@@ -284,10 +285,12 @@ export const deleteClinic = async (req: Request, res: Response) => {
   const timestamp = new Date().toISOString()
   
   try {
+    // Usar 'suspended' em vez de 'inactive' pois a constraint não permite 'inactive'
+    // 'suspended' é semanticamente equivalente a inativação
     const { data: clinic, error } = await supabaseAdmin
       .from('clinics')
       .update({ 
-        status: 'inactive',
+        status: 'suspended', // ✅ Corrigido: 'suspended' é permitido pela constraint
         deleted_at: timestamp,
         updated_at: timestamp,
       })
@@ -296,6 +299,11 @@ export const deleteClinic = async (req: Request, res: Response) => {
       .single()
     
     if (error) {
+      logger.error('Erro ao suspender clínica', {
+        clinicId: id,
+        error: error.message,
+        correlationId: (req as any).correlationId,
+      });
       return res.status(400).json({ error: error.message })
     }
     

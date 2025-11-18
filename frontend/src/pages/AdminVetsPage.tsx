@@ -318,55 +318,59 @@ const AdminVetsPage: React.FC = () => {
                 </button>
               </div>
               <div style={styles.modalBody}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Nome:</label>
-                  <input
-                    type="text"
-                    value={editFormData.name || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>E-mail:</label>
-                  <input
-                    type="email"
-                    value={editFormData.email || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>CRMV:</label>
-                  <input
-                    type="text"
-                    value={editFormData.crmv || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, crmv: e.target.value })}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Status:</label>
-                  <select
-                    value={editFormData.status || 'pending'}
-                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-                    style={styles.input}
-                  >
-                    <option value="active">Ativo</option>
-                    <option value="pending">Pendente</option>
-                    <option value="inactive">Inativo</option>
-                  </select>
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Experiência:</label>
-                  <textarea
-                    value={editFormData.experience || ''}
-                    onChange={(e) =>
-                      setEditFormData({ ...editFormData, experience: e.target.value })
-                    }
-                    style={{ ...styles.input, minHeight: '80px' }}
-                  />
-                </div>
+                {editFormData && (
+                  <>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Nome:</label>
+                      <input
+                        type="text"
+                        value={editFormData.name || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>E-mail:</label>
+                      <input
+                        type="email"
+                        value={editFormData.email || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>CRMV:</label>
+                      <input
+                        type="text"
+                        value={editFormData.crmv || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, crmv: e.target.value })}
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Status:</label>
+                      <select
+                        value={editFormData.status || 'pending'}
+                        onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                        style={styles.input}
+                      >
+                        <option value="active">Ativo</option>
+                        <option value="pending">Pendente</option>
+                        <option value="inactive">Inativo</option>
+                      </select>
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Experiência:</label>
+                      <textarea
+                        value={editFormData.experience || ''}
+                        onChange={(e) =>
+                          setEditFormData({ ...editFormData, experience: e.target.value })
+                        }
+                        style={{ ...styles.input, minHeight: '80px' }}
+                      />
+                    </div>
+                  </>
+                )}
                 <div style={styles.formActions}>
                   <button onClick={() => setShowEditModal(false)} style={styles.cancelButton}>
                     Cancelar

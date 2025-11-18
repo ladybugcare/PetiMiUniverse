@@ -241,11 +241,11 @@ const VetSignUpPage: React.FC = () => {
   };
 
   // Handler para teclado Enter
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     // Se Enter foi pressionado e botão está habilitado
     if (e.key === 'Enter' && isStepValid() && !loading) {
       // Para textarea (step 4 - endereço), Shift+Enter permite quebra de linha
-      if (step === 4 && e.currentTarget.tagName === 'TEXTAREA') {
+      if (step === 4 && (e.currentTarget as HTMLElement).tagName === 'TEXTAREA') {
         if (e.shiftKey) {
           // Shift+Enter: permite quebra de linha (comportamento padrão)
           return;

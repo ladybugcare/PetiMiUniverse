@@ -9,12 +9,11 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
-  errorInfo: ErrorInfo | null;
 }
 
 /**
  * Error Boundary para capturar erros de renderização no React
- * Baseado no plano de implementação do projeto
+ * Previne que erros quebrem toda a aplicação
  */
 class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -22,110 +21,122 @@ class ErrorBoundary extends Component<Props, State> {
     this.state = {
       hasError: false,
       error: null,
-      errorInfo: null,
     };
   }
 
   static getDerivedStateFromError(error: Error): State {
-    // Atualiza o state para mostrar a UI de erro na próxima renderização
     return {
       hasError: true,
       error,
-      errorInfo: null,
     };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Log do erro (pode ser enviado para serviço de logging como Sentry)
+    // Log do erro (em produção, enviar para serviço de monitoramento)
     console.error('ErrorBoundary capturou um erro:', error, errorInfo);
 
-    // Chama callback personalizado se fornecido
+    // Chamar callback de erro se fornecido
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
     }
 
-    // Atualiza state com informações de erro
-    this.setState({
-      error,
-      errorInfo,
-    });
-
-    // Aqui você pode enviar o erro para um serviço de logging
-    // Exemplo: Sentry.captureException(error, { contexts: { react: errorInfo } });
+    // Em produção, enviar para serviço de monitoramento (ex: Sentry)
+    if (process.env.NODE_ENV === 'production') {
+      // TODO: Integrar com Sentry ou similar
+      // Sentry.captureException(error, { contexts: { react: errorInfo } });
+    }
   }
 
   handleReset = () => {
     this.setState({
       hasError: false,
       error: null,
-      errorInfo: null,
     });
   };
 
   render() {
     if (this.state.hasError) {
-      // Se houver um fallback customizado, use-o
+      // Se fornecido fallback customizado, usar ele
       if (this.props.fallback) {
         return this.props.fallback;
       }
 
-      // UI padrão de erro
+      // Fallback padrão
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-          <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6">
-            <div className="text-center">
-              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
-                <svg
-                  className="h-6 w-6 text-red-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                  />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                Ops! Algo deu errado
-              </h2>
-              <p className="text-gray-600 mb-6">
-                Ocorreu um erro inesperado. Por favor, tente recarregar a página.
-              </p>
-
-              {process.env.NODE_ENV === 'development' && this.state.error && (
-                <div className="mb-6 text-left">
-                  <details className="bg-gray-100 rounded p-4">
-                    <summary className="cursor-pointer font-semibold text-sm text-gray-700 mb-2">
-                      Detalhes do erro (apenas em desenvolvimento)
-                    </summary>
-                    <pre className="text-xs text-red-600 overflow-auto mt-2">
-                      {this.state.error.toString()}
-                      {this.state.errorInfo?.componentStack}
-                    </pre>
-                  </details>
-                </div>
-              )}
-
-              <div className="flex gap-3 justify-center">
-                <button
-                  onClick={this.handleReset}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                >
-                  Tentar novamente
-                </button>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  Recarregar página
-                </button>
-              </div>
-            </div>
-          </div>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '400px',
+            padding: '2rem',
+            textAlign: 'center',
+          }}
+        >
+          <h2 style={{ color: '#dc2626', marginBottom: '1rem' }}>
+            Oops! Algo deu errado
+          </h2>
+          <p style={{ color: '#6b7280', marginBottom: '1.5rem' }}>
+            Ocorreu um erro inesperado. Por favor, tente recarregar a página.
+          </p>
+          {process.env.NODE_ENV === 'development' && this.state.error && (
+            <details
+              style={{
+                marginBottom: '1.5rem',
+                padding: '1rem',
+                backgroundColor: '#f3f4f6',
+                borderRadius: '0.5rem',
+                textAlign: 'left',
+                maxWidth: '600px',
+                width: '100%',
+              }}
+            >
+              <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>
+                Detalhes do erro (apenas em desenvolvimento)
+              </summary>
+              <pre
+                style={{
+                  marginTop: '0.5rem',
+                  fontSize: '0.875rem',
+                  overflow: 'auto',
+                }}
+              >
+                {this.state.error.toString()}
+                {this.state.error.stack}
+              </pre>
+            </details>
+          )}
+          <button
+            onClick={this.handleReset}
+            style={{
+              padding: '0.75rem 1.5rem',
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.5rem',
+              cursor: 'pointer',
+              fontSize: '1rem',
+              fontWeight: '500',
+            }}
+          >
+            Tentar novamente
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: '0.75rem',
+              padding: '0.75rem 1.5rem',
+              backgroundColor: '#6b7280',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.5rem',
+              cursor: 'pointer',
+              fontSize: '1rem',
+            }}
+          >
+            Recarregar página
+          </button>
         </div>
       );
     }
@@ -135,4 +146,3 @@ class ErrorBoundary extends Component<Props, State> {
 }
 
 export default ErrorBoundary;
-

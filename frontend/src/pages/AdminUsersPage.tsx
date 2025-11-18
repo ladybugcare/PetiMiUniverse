@@ -260,7 +260,7 @@ const AdminUsersPage: React.FC = () => {
   };
 
   const handleSaveEditClinic = async () => {
-    if (!selectedClinic) return;
+    if (!selectedClinic || !editClinicFormData) return;
 
     try {
       await clinicsApi.update(selectedClinic.id, editClinicFormData);
@@ -342,7 +342,7 @@ const AdminUsersPage: React.FC = () => {
   };
 
   const handleSaveEditFreelancer = async () => {
-    if (!selectedFreelancer) return;
+    if (!selectedFreelancer || !editFreelancerFormData) return;
 
     try {
       await freelancersApi.update(selectedFreelancer.id, editFreelancerFormData);
@@ -891,28 +891,32 @@ const AdminUsersPage: React.FC = () => {
                 </button>
               </div>
               <div style={styles.modalBody}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Nome:</label>
-                  <input
-                    type="text"
-                    value={editClinicFormData.name || ''}
-                    onChange={(e) =>
-                      setEditClinicFormData({ ...editClinicFormData, name: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>E-mail:</label>
-                  <input
-                    type="email"
-                    value={editClinicFormData.email || ''}
-                    onChange={(e) =>
-                      setEditClinicFormData({ ...editClinicFormData, email: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
+                {editClinicFormData && (
+                  <>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Nome:</label>
+                      <input
+                        type="text"
+                        value={editClinicFormData.name || ''}
+                        onChange={(e) =>
+                          setEditClinicFormData({ ...editClinicFormData, name: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>E-mail:</label>
+                      <input
+                        type="email"
+                        value={editClinicFormData.email || ''}
+                        onChange={(e) =>
+                          setEditClinicFormData({ ...editClinicFormData, email: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                  </>
+                )}
                 <div style={styles.formActions}>
                   <button onClick={() => setShowEditClinicModal(false)} style={styles.cancelButton}>
                     Cancelar
@@ -996,28 +1000,32 @@ const AdminUsersPage: React.FC = () => {
                 </button>
               </div>
               <div style={styles.modalBody}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Nome:</label>
-                  <input
-                    type="text"
-                    value={editFreelancerFormData.name || ''}
-                    onChange={(e) =>
-                      setEditFreelancerFormData({ ...editFreelancerFormData, name: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>E-mail:</label>
-                  <input
-                    type="email"
-                    value={editFreelancerFormData.email || ''}
-                    onChange={(e) =>
-                      setEditFreelancerFormData({ ...editFreelancerFormData, email: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
+                {editFreelancerFormData && (
+                  <>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Nome:</label>
+                      <input
+                        type="text"
+                        value={editFreelancerFormData.name || ''}
+                        onChange={(e) =>
+                          setEditFreelancerFormData({ ...editFreelancerFormData, name: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>E-mail:</label>
+                      <input
+                        type="email"
+                        value={editFreelancerFormData.email || ''}
+                        onChange={(e) =>
+                          setEditFreelancerFormData({ ...editFreelancerFormData, email: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                  </>
+                )}
                 <div style={styles.formActions}>
                   <button onClick={() => setShowEditFreelancerModal(false)} style={styles.cancelButton}>
                     Cancelar
@@ -1042,40 +1050,44 @@ const AdminUsersPage: React.FC = () => {
                 </button>
               </div>
               <div style={styles.modalBody}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Nome:</label>
-                  <input
-                    type="text"
-                    value={editVetFormData.name || ''}
-                    onChange={(e) =>
-                      setEditVetFormData({ ...editVetFormData, name: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>E-mail:</label>
-                  <input
-                    type="email"
-                    value={editVetFormData.email || ''}
-                    onChange={(e) =>
-                      setEditVetFormData({ ...editVetFormData, email: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>CRMV:</label>
-                  <input
-                    type="text"
-                    value={editVetFormData.crmv || ''}
-                    onChange={(e) => {
-                      const formatted = formatCRMV(e.target.value);
-                      setEditVetFormData({ ...editVetFormData, crmv: formatted });
-                    }}
-                    style={styles.input}
-                  />
-                </div>
+                {editVetFormData && (
+                  <>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Nome:</label>
+                      <input
+                        type="text"
+                        value={editVetFormData.name || ''}
+                        onChange={(e) =>
+                          setEditVetFormData({ ...editVetFormData, name: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>E-mail:</label>
+                      <input
+                        type="email"
+                        value={editVetFormData.email || ''}
+                        onChange={(e) =>
+                          setEditVetFormData({ ...editVetFormData, email: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>CRMV:</label>
+                      <input
+                        type="text"
+                        value={editVetFormData.crmv || ''}
+                        onChange={(e) => {
+                          const formatted = formatCRMV(e.target.value);
+                          setEditVetFormData({ ...editVetFormData, crmv: formatted });
+                        }}
+                        style={styles.input}
+                      />
+                    </div>
+                  </>
+                )}
                 <div style={styles.formActions}>
                   <button onClick={() => setShowEditVetModal(false)} style={styles.cancelButton}>
                     Cancelar

@@ -796,7 +796,7 @@ const UnitProfilePage: React.FC = () => {
               </label>
               {isEditing ? (
                 <AddressAutocomplete
-                  value={formData.address}
+                  value={formData.address || ''}
                   onChange={(address) => setFormData({ ...formData, address })}
                   placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
                   className="input"

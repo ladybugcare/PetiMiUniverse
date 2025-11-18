@@ -135,7 +135,7 @@ const DemandsPage: React.FC = () => {
       setLoading(true);
       
       // Carregar demandas abertas (filtered by user role and user_id for clinics)
-      const demandsResult = await demandsApi.getOpen(userRole, user.id);
+      const demandsResult = await demandsApi.getOpen(userRole || undefined, user.id);
       setDemands(demandsResult.demands);
       
       // Carregar clínicas

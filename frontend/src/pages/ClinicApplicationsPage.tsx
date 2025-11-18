@@ -273,7 +273,7 @@ const ClinicApplicationsPage: React.FC = () => {
 
                                 <div style={styles.applicationFooter}>
                                   <span style={styles.dateText}>
-                                    Candidatura em {new Date(app.applied_at || app.created_at).toLocaleDateString('pt-BR')}
+                                    Candidatura em {new Date(app.applied_at || app.created_at || Date.now()).toLocaleDateString('pt-BR')}
                                   </span>
                                   {app.status === 'pending' && (
                                     <div style={styles.actionButtons}>

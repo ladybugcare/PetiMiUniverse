@@ -284,7 +284,7 @@ const AdminSupportTicketsPage: React.FC = () => {
                       <User size={16} color={colors.primary} />
                       <div style={styles.userInfo}>
                         <span style={styles.ticketUserId}>
-                          {ticket.user_name || ticket.user_id.substring(0, 8) + '...'}
+                          {ticket.user_name || (ticket.user_id ? ticket.user_id.substring(0, 8) + '...' : 'N/A')}
                         </span>
                         <span style={styles.ticketDate}>
                           {new Date(ticket.created_at).toLocaleDateString('pt-BR', {
@@ -348,7 +348,7 @@ const AdminSupportTicketsPage: React.FC = () => {
           <div style={styles.conversationInfo}>
             <User size={16} color={colors.primary} />
             <span style={styles.userName}>
-              {selectedTicket.user_name || selectedTicket.user_id.substring(0, 8) + '...'}
+              {selectedTicket.user_name || (selectedTicket.user_id ? selectedTicket.user_id.substring(0, 8) + '...' : 'N/A')}
             </span>
             {getRoleBadge(selectedTicket.user_role)}
             {getStatusBadge(selectedTicket.status)}

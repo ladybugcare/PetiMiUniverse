@@ -129,7 +129,7 @@ const MyApplicationsPage: React.FC = () => {
                 <div style={styles.cardFooter}>
                   <span style={styles.dateText}>
                     Candidatura enviada em{' '}
-                    {new Date(application.created_at).toLocaleDateString('pt-BR')}
+                    {new Date(application.created_at || Date.now()).toLocaleDateString('pt-BR')}
                   </span>
                 </div>
               </div>

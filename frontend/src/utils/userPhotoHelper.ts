@@ -3,9 +3,10 @@ import { getUserRole, Role } from './authHelpers';
 /**
  * Obtém a URL da foto de perfil do usuário
  * Verifica user_metadata.photo_url e user_metadata.avatar_url
+ * Retorna undefined em vez de null para compatibilidade com componentes React
  */
-export const getUserPhotoUrl = (user: any): string | null => {
-  if (!user) return null;
+export const getUserPhotoUrl = (user: any): string | undefined => {
+  if (!user) return undefined;
   
   // Verificar photo_url primeiro (padrão mais comum)
   if (user.user_metadata?.photo_url) {
@@ -17,7 +18,7 @@ export const getUserPhotoUrl = (user: any): string | null => {
     return user.user_metadata.avatar_url;
   }
   
-  return null;
+  return undefined;
 };
 
 /**

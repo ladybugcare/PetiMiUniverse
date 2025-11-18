@@ -176,7 +176,7 @@ const AdminClinicsPage: React.FC = () => {
   };
 
   const handleSaveEdit = async () => {
-    if (!selectedClinic) return;
+    if (!selectedClinic || !editFormData) return;
 
     try {
       await clinicsApi.update(selectedClinic.id, editFormData);
@@ -651,51 +651,55 @@ const AdminClinicsPage: React.FC = () => {
                 </button>
               </div>
               <div style={styles.modalBody}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Nome:</label>
-                  <input
-                    type="text"
-                    value={editFormData.name || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>E-mail:</label>
-                  <input
-                    type="email"
-                    value={editFormData.email || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>CNPJ:</label>
-                  <input
-                    type="text"
-                    value={editFormData.cnpj || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, cnpj: e.target.value })}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Telefone:</label>
-                  <input
-                    type="text"
-                    value={editFormData.phone || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Endereço:</label>
-                  <input
-                    type="text"
-                    value={editFormData.address || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
-                    style={styles.input}
-                  />
-                </div>
+                {editFormData && (
+                  <>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Nome:</label>
+                      <input
+                        type="text"
+                        value={editFormData.name || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>E-mail:</label>
+                      <input
+                        type="email"
+                        value={editFormData.email || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>CNPJ:</label>
+                      <input
+                        type="text"
+                        value={editFormData.cnpj || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, cnpj: e.target.value })}
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Telefone:</label>
+                      <input
+                        type="text"
+                        value={editFormData.phone || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Endereço:</label>
+                      <input
+                        type="text"
+                        value={editFormData.address || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+                        style={styles.input}
+                      />
+                    </div>
+                  </>
+                )}
                 <div style={styles.formActions}>
                   <button onClick={() => setShowEditModal(false)} style={styles.cancelButton}>
                     Cancelar

@@ -246,7 +246,9 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}, retryCoun
       // Limpar cache antigo (manter apenas últimos 100 itens)
       if (requestCache.size > 100) {
         const oldestKey = requestCache.keys().next().value;
-        requestCache.delete(oldestKey);
+        if (oldestKey) {
+          requestCache.delete(oldestKey);
+        }
       }
     }
     

@@ -151,6 +151,11 @@ const VetProfilePage: React.FC = () => {
         vetId = user.id;
       }
 
+      if (!vetId) {
+        showError('ID do veterinário não encontrado');
+        return;
+      }
+
       const response = await vetsApi.getById(vetId);
       // Extrair o objeto Vet corretamente (response sempre retorna { vet: Vet })
       const vetData: Vet = response.vet;
@@ -770,7 +775,7 @@ const VetProfilePage: React.FC = () => {
             <div style={styles.photoSection}>
               <ProfilePhotoUploader
                 currentPhotoUrl={vet.photo_url}
-                onPhotoSelect={isOwnProfile ? handlePhotoSelect : undefined}
+                onPhotoSelect={isOwnProfile ? handlePhotoSelect : () => {}}
                 isUploading={uploadingPhoto}
               />
             </div>

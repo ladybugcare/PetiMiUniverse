@@ -112,7 +112,7 @@ const AdminFreelancersPage: React.FC = () => {
   };
 
   const handleSaveEdit = async () => {
-    if (!selectedFreelancer) return;
+    if (!selectedFreelancer || !editFormData) return;
 
     try {
       await freelancersApi.update(selectedFreelancer.id, editFormData);
