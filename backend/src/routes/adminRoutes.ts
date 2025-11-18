@@ -1,6 +1,7 @@
 // backend/src/routes/adminRoutes.ts
 import express from 'express';
 import { authenticateUser } from '../middleware/authMiddleware';
+import { statsLimiter } from '../middleware/rateLimiter.js';
 
 // Controllers de usuários
 import { createAdmin } from '../controllers/admin/createAdmin';
@@ -21,6 +22,9 @@ import { getVetDocument } from '../controllers/admin/getVetDocument';
 import { getAdminOverview, getAdminSpecialties, getAdminUsage } from '../controllers/adminReportsController';
 
 const router = express.Router();
+
+// Aplicar rate limiter mais permissivo para rotas GET de dashboard (não para POST/PATCH)
+router.get('*', statsLimiter);
 
 /**
  * ==============================================

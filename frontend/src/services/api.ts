@@ -35,8 +35,24 @@ interface LoginData {
 
 // ====================================================// 🚀 Função base de requisições HTTP
 // ====================================================
-const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+// Cache simples para evitar requisições duplicadas
+const requestCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 2000; // 2 segundos de cache
+
+const apiRequest = async (endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<any> => {
   const url = `${API_BASE_URL}${endpoint}`;
+  const maxRetries = 3;
+  const baseDelay = 1000; // 1 segundo
+  
+  // Verificar cache para requisições GET
+  if (options.method === 'GET' || !options.method) {
+    const cacheKey = `${endpoint}_${JSON.stringify(options)}`;
+    const cached = requestCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return cached.data;
+    }
+  }
+  
   let authToken: string | null = null;
 
   // 🪄 Sempre buscar token fresco do Supabase (renova automaticamente se necessário)
@@ -138,19 +154,33 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
 
     clearTimeout(timeoutId);
 
-    // ⚠️ Tratar erros
-    if (!response.ok) {
-      let errorText = '';
-      let errorData: any = null;
+      // ⚠️ Tratar erros
+      if (!response.ok) {
+        let errorText = '';
+        let errorData: any = null;
 
-      try {
-        errorText = await response.text();
-        errorData = errorText ? JSON.parse(errorText) : null;
-      } catch {
-        errorText = 'Erro desconhecido';
-      }
+        try {
+          errorText = await response.text();
+          errorData = errorText ? JSON.parse(errorText) : null;
+        } catch {
+          errorText = 'Erro desconhecido';
+        }
 
-      if (response.status === 401) {
+        // Retry com backoff exponencial para erros 429 (Too Many Requests)
+        if (response.status === 429 && retryCount < maxRetries) {
+          const delay = baseDelay * Math.pow(2, retryCount); // Backoff exponencial: 1s, 2s, 4s
+          const retryAfter = response.headers.get('Retry-After');
+          const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : delay;
+          
+          console.warn(`[apiRequest] Erro 429 (Too Many Requests). Tentando novamente em ${waitTime}ms (tentativa ${retryCount + 1}/${maxRetries})...`);
+          
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          
+          // Retry a requisição
+          return apiRequest(endpoint, options, retryCount + 1);
+        }
+
+        if (response.status === 401) {
         const errorMessage = errorData?.error || errorText;
 
         if (errorMessage?.includes('Supabase') || errorMessage?.includes('projeto')) {
@@ -199,13 +229,28 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
       return {};
     }
     
+    let result;
     try {
-      return JSON.parse(text);
+      result = JSON.parse(text);
     } catch (parseError) {
       // Se não for JSON válido, retornar objeto vazio
       console.warn('Resposta não é JSON válido:', text);
-      return {};
+      result = {};
     }
+    
+    // Cachear resultado de requisições GET bem-sucedidas
+    if (options.method === 'GET' || !options.method) {
+      const cacheKey = `${endpoint}_${JSON.stringify(options)}`;
+      requestCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      
+      // Limpar cache antigo (manter apenas últimos 100 itens)
+      if (requestCache.size > 100) {
+        const oldestKey = requestCache.keys().next().value;
+        requestCache.delete(oldestKey);
+      }
+    }
+    
+    return result;
   } catch (error: any) {
     clearTimeout(timeoutId);
     

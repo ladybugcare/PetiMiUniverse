@@ -78,54 +78,76 @@ const AdminDashboardPage: React.FC = () => {
   const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
-    const loadSystemStats = async () => {
+    let isMounted = true;
+    let isLoading = false;
+
+    const loadAllData = async () => {
+      // Prevenir múltiplas execuções simultâneas
+      if (isLoading) {
+        return;
+      }
+      isLoading = true;
+
       try {
-        const { statisticsApi } = await import('../services/statisticsApi');
-        const { stats: systemStats } = await statisticsApi.getSystemStats();
-        
-        setStats({
-          totalClinics: systemStats.totalClinics,
-          totalVets: systemStats.totalVets,
-          totalFreelancers: systemStats.totalFreelancers || 0,
-          totalDemands: systemStats.activeDemands,
-          totalUsers: systemStats.totalUsers,
-        });
+        // Agrupar todas as requisições em paralelo para reduzir tempo total
+        const [systemStatsResult, pendingVetsResult, pendingFreelancersResult, pendingUnitsResult] = await Promise.allSettled([
+          (async () => {
+            const { statisticsApi } = await import('../services/statisticsApi');
+            return statisticsApi.getSystemStats();
+          })(),
+          adminApi.getPendingVets(),
+          adminApi.getPendingFreelancers(),
+          adminApi.getPendingUnits(),
+        ]);
+
+        if (!isMounted) return;
+
+        // Processar resultados
+        if (systemStatsResult.status === 'fulfilled') {
+          const { stats: systemStats } = systemStatsResult.value;
+          setStats({
+            totalClinics: systemStats.totalClinics,
+            totalVets: systemStats.totalVets,
+            totalFreelancers: systemStats.totalFreelancers || 0,
+            totalDemands: systemStats.activeDemands,
+            totalUsers: systemStats.totalUsers,
+          });
+        } else {
+          console.error('Error loading system stats:', systemStatsResult.reason);
+        }
+
+        if (pendingVetsResult.status === 'fulfilled') {
+          const { vets } = pendingVetsResult.value;
+          setPendingVetsCount(vets.length);
+        } else {
+          console.error('Error loading pending vets:', pendingVetsResult.reason);
+        }
+
+        if (pendingFreelancersResult.status === 'fulfilled') {
+          const { freelancers } = pendingFreelancersResult.value;
+          setPendingFreelancersCount(freelancers.length);
+        } else {
+          console.error('Error loading pending freelancers:', pendingFreelancersResult.reason);
+        }
+
+        if (pendingUnitsResult.status === 'fulfilled') {
+          const { units } = pendingUnitsResult.value;
+          setPendingUnitsCount(units.length);
+        } else {
+          console.error('Error loading pending units:', pendingUnitsResult.reason);
+        }
       } catch (error) {
-        console.error('Error loading system stats:', error);
+        console.error('Error loading dashboard data:', error);
+      } finally {
+        isLoading = false;
       }
     };
 
-    const loadPendingVets = async () => {
-      try {
-        const { vets } = await adminApi.getPendingVets();
-        setPendingVetsCount(vets.length);
-      } catch (error) {
-        console.error('Error loading pending vets:', error);
-      }
-    };
+    loadAllData();
 
-    const loadPendingFreelancers = async () => {
-      try {
-        const { freelancers } = await adminApi.getPendingFreelancers();
-        setPendingFreelancersCount(freelancers.length);
-      } catch (error) {
-        console.error('Error loading pending freelancers:', error);
-      }
+    return () => {
+      isMounted = false;
     };
-
-    const loadPendingUnits = async () => {
-      try {
-        const { units } = await adminApi.getPendingUnits();
-        setPendingUnitsCount(units.length);
-      } catch (error) {
-        console.error('Error loading pending units:', error);
-      }
-    };
-
-    loadSystemStats();
-    loadPendingVets();
-    loadPendingFreelancers();
-    loadPendingUnits();
   }, []);
 
 

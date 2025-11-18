@@ -54,3 +54,26 @@ export const createLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+/**
+ * Rate limiter mais permissivo para rotas de estatísticas/dashboard
+ * Essas rotas são chamadas frequentemente pelo dashboard e podem ser agrupadas
+ * Limites por ambiente:
+ * - Development: 500 req/15min
+ * - Staging: 300 req/15min
+ * - Production: 200 req/15min
+ */
+const statsMaxRequests = isDevelopment ? 500 : isStaging ? 300 : 200;
+
+export const statsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: statsMaxRequests, // máximo de requisições por IP (ajustado por ambiente)
+  message: {
+    error: 'Muitas requisições de estatísticas. Tente novamente em alguns minutos.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    return req.path === '/' || req.path === '/health';
+  },
+});
+

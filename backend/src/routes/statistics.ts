@@ -15,8 +15,12 @@ import {
   getClinicReportsProfessionals
 } from '../controllers/reportsController';
 import { authenticateUser } from '../middleware/authMiddleware';
+import { statsLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
+
+// Aplicar rate limiter mais permissivo para todas as rotas de estatísticas
+router.use(statsLimiter);
 
 // Get clinic statistics
 router.get('/clinic/:clinicId', getClinicStats);

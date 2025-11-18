@@ -13,6 +13,7 @@ import { approveVet } from '../controllers/vets/approveVet';
 import { rejectVet } from '../controllers/vets/rejectVet';
 import { getVetCompletedDemands } from '../controllers/vets/getVetCompletedDemands';
 import { authenticateUser } from '../middleware/authMiddleware';
+import { statsLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
@@ -47,7 +48,8 @@ router.post('/onboarding/upload-crmv', authenticateUser, uploadCrmvFile);
  * ✅ APROVAÇÃO DE VETERINÁRIOS (ADMIN)
  * ===========================================================
  */
-router.get('/pending', authenticateUser, getPendingVets);
+// Aplicar rate limiter mais permissivo para rota de dashboard
+router.get('/pending', statsLimiter, authenticateUser, getPendingVets);
 
 /**
  * ===========================================================

@@ -12,6 +12,7 @@ import { getPendingFreelancers } from '../controllers/freelancers/getPendingFree
 import { approveFreelancer } from '../controllers/freelancers/approveFreelancer';
 import { rejectFreelancer } from '../controllers/freelancers/rejectFreelancer';
 import { authenticateUser } from '../middleware/authMiddleware';
+import { statsLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
@@ -46,7 +47,8 @@ router.post('/onboarding/upload-certification', authenticateUser, uploadCertific
  * ✅ APROVAÇÃO DE FREELANCERS (ADMIN)
  * ===========================================================
  */
-router.get('/pending', authenticateUser, getPendingFreelancers);
+// Aplicar rate limiter mais permissivo para rota de dashboard
+router.get('/pending', statsLimiter, authenticateUser, getPendingFreelancers);
 
 /**
  * ===========================================================
