@@ -87,13 +87,13 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
       {positions.map((position, index) => (
         <div key={position.id} style={styles.positionCard}>
           <div style={styles.positionHeader}>
-            <h4 style={styles.positionTitle}>Profissional {index + 1}</h4>
+            <h4 style={styles.positionTitle}>Vaga {index + 1}</h4>
             {positions.length > 1 && (
               <button
                 type="button"
                 onClick={() => removePosition(position.id)}
                 style={styles.removeButton}
-                title="Remover profissional"
+                title="Remover vaga"
               >
                 🗑️ Remover
               </button>
@@ -112,9 +112,16 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
                 placeholder={loadingSpecialties ? "Carregando especialidades..." : "Selecione uma ou mais especialidades..."}
                 disabled={loadingSpecialties}
               />
-              <small style={styles.hint}>
-                Selecione todas as especialidades necessárias para este profissional
-              </small>
+              {(!position.specialties || position.specialties.length === 0) && (
+                <small style={styles.errorText}>
+                  É necessário selecionar pelo menos uma especialidade
+                </small>
+              )}
+              {position.specialties && position.specialties.length > 0 && (
+                <small style={styles.hint}>
+                  Selecione todas as especialidades necessárias para esta vaga
+                </small>
+              )}
             </div>
           </div>
 
@@ -128,13 +135,26 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
                 type="number"
                 min="1"
                 value={position.slots}
-                onChange={(e) =>
-                  updatePosition(position.id, 'slots', parseInt(e.target.value) || 1)
-                }
-                style={styles.input}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 1;
+                  if (value >= 1) {
+                    updatePosition(position.id, 'slots', value);
+                  }
+                }}
+                style={{
+                  ...styles.input,
+                  ...(position.slots < 1 ? styles.inputError : {}),
+                }}
                 required
               />
-              <small style={styles.hint}>Quantos profissionais precisa?</small>
+              {position.slots < 1 && (
+                <small style={styles.errorText}>
+                  O número de vagas deve ser maior que zero
+                </small>
+              )}
+              {position.slots >= 1 && (
+                <small style={styles.hint}>Quantos profissionais precisa?</small>
+              )}
             </div>
 
             <div style={styles.field}>
@@ -152,7 +172,7 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
                 style={styles.input}
                 required
               />
-              <small style={styles.hint}>Valor por profissional</small>
+              <small style={styles.hint}>Valor por vaga</small>
             </div>
           </div>
 
@@ -170,7 +190,7 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
       ))}
 
       <button type="button" onClick={addPosition} style={styles.addButton}>
-        ➕ Adicionar Outro Profissional
+        ➕ Adicionar Outra Vaga
       </button>
 
       {/* Summary */}
@@ -183,12 +203,12 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
           </div>
           <div style={styles.summaryRow}>
             <span style={styles.summaryLabel}>Total de Vagas:</span>
-            <span style={styles.summaryValue}>{totalSlots}</span>
+            <span style={styles.summaryValueHighlight}>{totalSlots}</span>
           </div>
           <div style={styles.summaryRow}>
             <span style={styles.summaryLabel}>Investimento Total:</span>
             <span style={styles.summaryValueHighlight}>
-              R$ {totalPayment.toFixed(2)}
+              R$ {totalPayment.toFixed(2).replace('.', ',')}
             </span>
           </div>
         </div>
@@ -343,6 +363,16 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '18px',
     fontWeight: '700',
     color: '#7c3aed',
+  },
+  inputError: {
+    borderColor: '#dc2626',
+    backgroundColor: '#fef2f2',
+  },
+  errorText: {
+    fontSize: '12px',
+    color: '#dc2626',
+    marginTop: '4px',
+    fontWeight: '500',
   },
 };
 

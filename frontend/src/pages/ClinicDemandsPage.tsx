@@ -29,7 +29,7 @@ interface DemandWithPositions {
   end_time?: string;
   duration_hours?: number;
   is_composite?: boolean;
-  status: 'open' | 'in_progress' | 'closed' | 'cancelled';
+  status: 'open' | 'with_applicants' | 'partially_filled' | 'filled' | 'in_progress' | 'awaiting_report' | 'completed' | 'canceled_by_clinic' | 'canceled_by_system' | 'expired' | 'cancelled' | 'closed';
   payment?: number;
   created_at: string;
   updated_at: string;

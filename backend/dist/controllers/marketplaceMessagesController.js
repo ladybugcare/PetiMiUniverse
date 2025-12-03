@@ -130,26 +130,52 @@ const markAsRead = async (req, res) => {
 exports.markAsRead = markAsRead;
 // Get unread message count
 const getUnreadCount = async (req, res) => {
-    const requesterId = req.user?.id;
-    const requestedUserId = req.query.user_id || requesterId;
-    if (!requesterId) {
-        return res.status(401).json({ error: 'Usuário não autenticado' });
+    try {
+        const requesterId = req.user?.id;
+        const requestedUserId = req.query.user_id || requesterId;
+        if (!requesterId) {
+            return res.status(401).json({ error: 'Usuário não autenticado' });
+        }
+        if (!requestedUserId) {
+            return res.status(400).json({ error: 'user_id é obrigatório' });
+        }
+        if (requestedUserId !== requesterId) {
+            return res.status(403).json({ error: 'Não é permitido consultar mensagens de outro usuário' });
+        }
+        const { count, error } = await supabase_1.supabaseAdmin
+            .from('marketplace_messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('receiver_id', requestedUserId)
+            .eq('read', false);
+        if (error) {
+            console.error('[getUnreadCount] Error fetching marketplace unread count:', {
+                error: error.message,
+                code: error.code,
+                details: error.details,
+                hint: error.hint,
+                requestedUserId,
+            });
+            // Verificar se é erro de coluna não encontrada (migration não executada)
+            if (error.message?.includes('column') && (error.message?.includes('receiver_id') || error.message?.includes('read'))) {
+                return res.status(500).json({
+                    error: 'Erro ao buscar contagem de mensagens não lidas',
+                    details: 'Tabela marketplace_messages não possui as colunas necessárias. Execute a migration add_receiver_and_read_to_marketplace_messages.sql',
+                    migration_required: true
+                });
+            }
+            return res.status(500).json({
+                error: 'Erro ao buscar contagem de mensagens não lidas',
+                details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
+        res.json({ unread_count: count || 0 });
     }
-    if (!requestedUserId) {
-        return res.status(400).json({ error: 'user_id é obrigatório' });
+    catch (err) {
+        console.error('[getUnreadCount] Unexpected error:', err);
+        return res.status(500).json({
+            error: 'Erro inesperado ao buscar contagem de mensagens não lidas',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
-    if (requestedUserId !== requesterId) {
-        return res.status(403).json({ error: 'Não é permitido consultar mensagens de outro usuário' });
-    }
-    const { count, error } = await supabase_1.supabaseAdmin
-        .from('marketplace_messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', requestedUserId)
-        .eq('read', false);
-    if (error) {
-        console.error('Error fetching marketplace unread count:', error);
-        return res.status(500).json({ error: 'Erro ao buscar contagem de mensagens não lidas' });
-    }
-    res.json({ unread_count: count || 0 });
 };
 exports.getUnreadCount = getUnreadCount;

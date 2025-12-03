@@ -247,7 +247,7 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}, retryCoun
       if (requestCache.size > 100) {
         const oldestKey = requestCache.keys().next().value;
         if (oldestKey) {
-          requestCache.delete(oldestKey);
+        requestCache.delete(oldestKey);
         }
       }
     }

@@ -7,7 +7,10 @@ const express_1 = __importDefault(require("express"));
 const statisticsController_1 = require("../controllers/statisticsController");
 const reportsController_1 = require("../controllers/reportsController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
+const rateLimiter_js_1 = require("../middleware/rateLimiter.js");
 const router = express_1.default.Router();
+// Aplicar rate limiter mais permissivo para todas as rotas de estatísticas
+router.use(rateLimiter_js_1.statsLimiter);
 // Get clinic statistics
 router.get('/clinic/:clinicId', statisticsController_1.getClinicStats);
 // Get vet statistics

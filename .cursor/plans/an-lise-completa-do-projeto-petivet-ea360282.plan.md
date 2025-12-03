@@ -1,848 +1,800 @@
-<!-- ea360282-9aec-4e07-a8f7-6674338fed48 0f391f1a-2760-49aa-ad7c-4568be9e14bb -->
-# Análise Completa do Projeto PetiVet
+<!-- ea360282-9aec-4e07-a8f7-6674338fed48 77ece892-1403-4bdb-bf3d-57cf9e8f223c -->
+# Plano de Correção de Gaps de Lógica - PetiVet
 
-## 🔴 PONTOS CRÍTICOS (Urgente)
+## Estratégia Geral
 
-### 1. Segurança
+**Princípio:** Usar o trigger SQL `update_filled_positions_on_application_status()` como **fonte de verdade única** para `filled_positions`. Remover toda lógica duplicada em código TypeScript que tenta atualizar `filled_positions` manualmente.
 
-#### 1.1 TypeScript Strict Mode Desabilitado no Frontend
+**Decisões arquiteturais:**
 
-- **Problema**: `frontend/tsconfig.json` tem `strict: false` e `noImplicitAny: false`
-- **Risco**: Erros de tipo não detectados, bugs em produção
-- **Impacto**: Alto - pode causar erros de runtime
-- **Localização**: `frontend/tsconfig.json:14`
-
-#### 1.2 Excesso de console.log no Código
-
-- **Problema**: 357 ocorrências de `console.log/error/warn` no backend
-- **Risco**: Vazamento de informações sensíveis em produção, performance degradada
-- **Impacto**: Médio-Alto
-- **Localização**: Múltiplos arquivos em `backend/src/`
-
-#### 1.3 Validação de Upload de Arquivos Incompleta
-
-- **Problema**: Validação apenas de tipo MIME (pode ser falsificado)
-- **Risco**: Upload de arquivos maliciosos
-- **Impacto**: Alto
-- **Localização**: `backend/src/utils/vetDocumentUpload.ts`, `backend/src/utils/imageUpload.ts`
-
-#### 1.4 CORS com Múltiplas Origens Hardcoded
-
-- **Problema**: Lista de origens permitidas hardcoded em `app.ts`
-- **Risco**: Manutenção difícil, possibilidade de esquecer novas origens
-- **Impacto**: Médio
-- **Localização**: `backend/src/app.ts:37-46`
-
-#### 1.5 Falta de Validação de Tamanho de Payload Consistente
-
-- **Problema**: Limite de 50MB pode ser muito alto para alguns endpoints
-- **Risco**: Ataques de DoS, consumo excessivo de memória
-- **Impacto**: Médio
-- **Localização**: `backend/src/app.ts:95-96`
-
-### 2. Estrutura e Arquitetura
-
-#### 2.1 Inconsistência na Estrutura de Controllers
-
-- **Problema**: Alguns controllers em subdiretórios (`controllers/vets/`), outros na raiz (`controllers/vetsController.ts`)
-- **Risco**: Dificuldade de manutenção, falta de padrão
-- **Impacto**: Médio
-- **Localização**: `backend/src/controllers/`
-
-#### 2.2 Falta de Camada de Serviço (Service Layer)
-
-- **Problema**: Lógica de negócio misturada com controllers
-- **Risco**: Código difícil de testar e reutilizar
-- **Impacto**: Alto
-- **Localização**: Todos os controllers
-
-#### 2.3 Duplicação de Código
-
-- **Problema**: Lógica similar repetida em múltiplos controllers (ex: validação de permissões)
-- **Risco**: Bugs difíceis de corrigir, manutenção custosa
-- **Impacto**: Médio
-- **Localização**: Múltiplos controllers
-
-#### 2.4 Falta de Tratamento de Erros Consistente
-
-- **Problema**: Alguns controllers usam `try/catch`, outros não
-- **Risco**: Erros não tratados podem quebrar a aplicação
-- **Impacto**: Alto
-- **Localização**: Múltiplos controllers
-
-### 3. Banco de Dados
-
-#### 3.1 Migrations Não Versionadas
-
-- **Problema**: 60+ arquivos SQL sem sistema de versionamento adequado
-- **Risco**: Dificuldade em rastrear ordem de execução, conflitos
-- **Impacto**: Médio-Alto
-- **Localização**: `backend/database_migrations/`
-
-#### 3.2 Falta de Índices em Algumas Consultas Frequentes
-
-- **Problema**: Queries podem estar lentas sem índices adequados
-- **Risco**: Performance degradada com crescimento de dados
-- **Impacto**: Médio
-- **Localização**: Schema do banco
-
-#### 3.3 Falta de Constraints de Integridade Referencial
-
-- **Problema**: Algumas foreign keys podem não ter `ON DELETE CASCADE` adequado
-- **Risco**: Dados órfãos, inconsistências
-- **Impacto**: Médio
-- **Localização**: Migrations SQL
-
-### 4. Performance
-
-#### 4.1 Falta de Cache em Endpoints Críticos
-
-- **Problema**: Dados estáticos (especialidades, estados) são buscados repetidamente
-- **Risco**: Sobrecarga desnecessária no banco
-- **Impacto**: Médio
-- **Localização**: Controllers de especialidades, IBGE API
-
-#### 4.2 Paginação Não Implementada em Todos os Endpoints
-
-- **Problema**: Alguns endpoints retornam todos os dados sem paginação
-- **Risco**: Performance degradada com muitos registros
-- **Impacto**: Alto
-- **Localização**: `marketplaceController.ts`, `demandsController.ts`
-
-#### 4.3 N+1 Query Problem Potencial
-
-- **Problema**: Queries aninhadas podem causar múltiplas consultas ao banco
-- **Risco**: Performance degradada
-- **Impacto**: Médio
-- **Localização**: Controllers com relacionamentos
-
-### 5. Testes
-
-#### 5.1 Cobertura de Testes Mínima
-
-- **Problema**: Apenas 4 arquivos de teste encontrados
-- **Risco**: Bugs não detectados, regressões
-- **Impacto**: Alto
-- **Localização**: `backend/src/__tests__/`, `frontend/src/utils/__tests__/`
-
-#### 5.2 Falta de Testes E2E
-
-- **Problema**: Nenhum teste end-to-end implementado
-- **Risco**: Fluxos críticos não validados
-- **Impacto**: Alto
-
-#### 5.3 Testes Não Integrados ao CI/CD
-
-- **Problema**: Não há pipeline de testes automatizados
-- **Risco**: Bugs chegam em produção
-- **Impacto**: Alto
-
-### 6. Frontend
-
-#### 6.1 Gerenciamento de Estado Descentralizado
-
-- **Problema**: Estado gerenciado via localStorage e Context API misturado
-- **Risco**: Inconsistências, dificuldade de debug
-- **Impacto**: Médio-Alto
-- **Localização**: `frontend/src/AuthContext.tsx`, `frontend/src/contexts/UnitContext.tsx`
-
-#### 6.2 Componentes Muito Grandes
-
-- **Problema**: Alguns componentes têm 900+ linhas (ex: `DemandsPage.tsx`)
-- **Risco**: Dificuldade de manutenção, baixa reutilização
-- **Impacto**: Médio
-- **Localização**: `frontend/src/pages/DemandsPage.tsx`, `VetOnboardingPage.tsx`
-
-#### 6.3 Falta de Error Boundaries
-
-- **Problema**: Erros não tratados podem quebrar toda a aplicação
-- **Risco**: Má experiência do usuário
-- **Impacto**: Médio
-- **Localização**: `frontend/src/`
-
-#### 6.4 Dependências de localStorage Diretas
-
-- **Problema**: Múltiplos acessos diretos a `localStorage.getItem('user')`
-- **Risco**: Inconsistências, dificuldade de migração
-- **Impacto**: Médio
-- **Localização**: Múltiplos componentes
-
-## 🟡 MELHORIAS SUGERIDAS (Importante)
-
-### 1. Código e Qualidade
-
-#### 1.1 Implementar ESLint/Prettier
-
-- Padronizar formatação e detectar problemas
-- Configurar regras específicas para TypeScript/React
-
-#### 1.2 Adicionar Pre-commit Hooks
-
-- Husky + lint-staged para validar código antes de commit
-- Prevenir código quebrado no repositório
-
-#### 1.3 Documentação de API
-
-- Swagger já configurado mas pode ser expandido
-- Adicionar exemplos de requisições/respostas
-
-#### 1.4 Type Safety Melhorado
-
-- Criar tipos compartilhados entre frontend/backend
-- Usar tipos gerados do Supabase
-
-### 2. Segurança
-
-#### 2.1 Implementar Helmet.js
-
-- Headers de segurança HTTP
-- Proteção contra XSS, clickjacking, etc.
-
-#### 2.2 Validação de Arquivos Mais Robusta
-
-- Verificar assinatura de arquivo (magic numbers)
-- Escanear arquivos por malware (opcional)
-
-#### 2.3 Rate Limiting Mais Granular
-
-- Diferentes limites por tipo de usuário
-- Rate limiting por usuário autenticado, não apenas IP
-
-#### 2.4 Sanitização de Inputs
-
-- Sanitizar HTML em campos de texto
-- Validar e sanitizar todos os inputs do usuário
-
-### 3. Performance
-
-#### 3.1 Implementar Redis para Cache
-
-- Cache de queries frequentes
-- Cache de sessões (opcional)
-
-#### 3.2 Lazy Loading de Componentes
-
-- Code splitting no frontend
-- Carregar rotas sob demanda
-
-#### 3.3 Otimização de Imagens
-
-- Compressão automática de uploads
-- Geração de thumbnails
-- Lazy loading de imagens
-
-#### 3.4 Database Query Optimization
-
-- Usar `select()` específico em vez de `*`
-- Implementar eager loading onde necessário
-- Adicionar índices baseados em queries reais
-
-### 4. Monitoramento e Observabilidade
-
-#### 4.1 Implementar Logging Estruturado
-
-- Winston já está configurado, mas pode ser melhorado
-- Adicionar correlation IDs para rastrear requisições
-
-#### 4.2 Métricas e APM
-
-- Integrar Sentry ou similar para error tracking
-- Métricas de performance (response time, throughput)
-
-#### 4.3 Health Checks Melhorados
-
-- Verificar dependências (Supabase, storage)
-- Endpoint de readiness vs liveness
-
-### 5. Testes
-
-#### 5.1 Testes Unitários
-
-- Cobrir lógica de negócio crítica
-- Testar utilitários e helpers
-
-#### 5.2 Testes de Integração
-
-- Testar fluxos completos (signup → login → criar demanda)
-- Mockar Supabase para testes
-
-#### 5.3 Testes de Componentes
-
-- React Testing Library para componentes críticos
-- Testes de acessibilidade
-
-## 🟢 MELHORIAS DE FEATURES
-
-### 1. Funcionalidades Faltantes
-
-#### 1.1 Sistema de Busca Avançada
-
-- Busca full-text em demandas
-- Filtros combinados (especialidade + localização + data)
-
-#### 1.2 Notificações em Tempo Real
-
-- WebSockets ou Supabase Realtime para notificações
-- Notificações push para mobile
-
-#### 1.3 Sistema de Avaliações
-
-- Avaliação de veterinários por clínicas
-- Sistema de reviews e ratings
-
-#### 1.4 Histórico de Conversas
-
-- Chat entre clínica e veterinário
-- Histórico de mensagens (já mencionado em migrations)
-
-#### 1.5 Relatórios e Analytics
-
-- Dashboard com métricas para clínicas
-- Relatórios de performance para veterinários
-
-#### 1.6 Sistema de Favoritos
-
-- Veterinários podem favoritar clínicas
-- Clínicas podem favoritar veterinários
-
-#### 1.7 Exportação de Dados
-
-- Exportar demandas em PDF/Excel
-- Relatórios exportáveis
-
-### 2. UX/UI
-
-#### 2.1 Loading States Consistentes
-
-- Skeleton loaders em vez de spinners genéricos
-- Estados de loading específicos por ação
-
-#### 2.2 Feedback Visual Melhorado
-
-- Toasts mais informativos
-- Confirmações antes de ações destrutivas
-
-#### 2.3 Responsividade Mobile
-
-- Melhorar experiência mobile
-- Testar em diferentes tamanhos de tela
-
-#### 2.4 Acessibilidade
-
-- ARIA labels adequados
-- Navegação por teclado
-- Contraste de cores adequado
-
-#### 2.5 Internacionalização (i18n)
-
-- Suporte a múltiplos idiomas
-- Formatação de datas/números por região
-
-### 3. Performance Frontend
-
-#### 3.1 Virtualização de Listas
-
-- React Window para listas longas
-- Melhorar performance de renderização
-
-#### 3.2 Memoização
-
-- useMemo/useCallback onde apropriado
-- React.memo para componentes pesados
-
-#### 3.3 Service Worker
-
-- Cache de assets estáticos
-- Offline support básico
-
-## 📋 PRIORIZAÇÃO RECOMENDADA
-
-### Fase 1 (Crítico - 1-2 semanas)
-
-1. ✅ Habilitar TypeScript strict mode no frontend
-2. ✅ Substituir console.log por logger estruturado
-3. ✅ Implementar validação robusta de uploads
-4. ✅ Adicionar Error Boundaries no frontend
-5. ✅ Implementar paginação em todos os endpoints
-
-### Fase 2 (Importante - 2-4 semanas)
-
-1. ✅ Refatorar estrutura de controllers (service layer)
-2. ✅ Implementar testes unitários críticos
-3. ✅ Adicionar Helmet.js e melhorias de segurança
-4. ✅ Implementar cache para dados estáticos
-5. ✅ Otimizar queries do banco de dados
-
-### Fase 3 (Melhorias - 1-2 meses)
-
-1. ✅ Implementar sistema de busca avançada
-2. ✅ Adicionar notificações em tempo real
-3. ✅ Melhorar UX/UI (loading states, feedback)
-4. ✅ Implementar sistema de avaliações
-5. ✅ Adicionar relatórios e analytics
-
-## 📊 MÉTRICAS DE QUALIDADE ATUAIS
-
-- **Cobertura de Testes**: ~2% (crítico)
-- **TypeScript Strict**: Backend ✅ | Frontend ❌
-- **Documentação API**: Parcial (Swagger configurado)
-- **Logging**: Estruturado (Winston) mas com muitos console.log
-- **Error Handling**: Parcial (middleware existe mas não usado consistentemente)
-- **Security**: Básico (rate limiting, CORS, mas falta validações robustas)
-
-## 🎯 CONCLUSÃO
-
-O projeto tem uma base sólida com boas práticas implementadas (Winston, rate limiting, error handler), mas precisa de melhorias críticas em:
-
-1. **Segurança**: Validações mais robustas, TypeScript strict
-2. **Testes**: Cobertura mínima precisa ser expandida drasticamente
-3. **Estrutura**: Service layer, padronização de controllers
-4. **Performance**: Cache, paginação, otimização de queries
-5. **Frontend**: Error boundaries, gerenciamento de estado mais robusto
-
-A priorização sugerida permite resolver os problemas mais críticos primeiro, depois melhorar gradualmente a qualidade e adicionar features.
+1. `filled_positions` será mantido automaticamente pelo trigger SQL (atômico, sem race conditions)
+2. `calculateDemandStatus` usará `filled_positions` como fonte de verdade (não contagem em tempo real)
+3. Unificar controllers duplicados mantendo a lógica mais robusta
+4. Migrar completamente de `position_applications` para `demand_applications`
+5. Adicionar validações de transição de status em todos os pontos de mudança
 
 ---
 
-## 📋 PLANO DETALHADO DE IMPLEMENTAÇÃO EM FASES
+## FASE 1: Correções Críticas (Dados e Race Conditions)
 
-### FASE 0: Preparação e Fundação (Semana 1)
+### 1.1 Remover lógica duplicada de `filled_positions` em código
 
-**Objetivo**: Criar base sólida para mudanças futuras
+**Arquivo:** `backend/src/controllers/applicationsController.ts`
 
-#### 0.1 Setup de Ferramentas
+**Problema:** Código tenta atualizar `filled_positions` manualmente, causando race conditions e inconsistências com o trigger SQL.
 
-- Configurar ESLint + Prettier com regras TypeScript/React
-- Configurar Husky + lint-staged para pre-commit hooks
-- Configurar CI/CD básico (GitHub Actions ou similar)
-- Criar estrutura de branches (main, develop, feature/*)
+**Solução:**
 
-#### 0.2 Documentação de Processo
+- Remover todo código que incrementa/decrementa `filled_positions` manualmente (linhas 538-572)
+- O trigger SQL já faz isso automaticamente de forma atômica
+- Manter apenas validação de vagas disponíveis antes de aprovar
+- Usar `SELECT ... FOR UPDATE` ou validação baseada em `filled_positions` atual (lido do banco)
 
-- Documentar padrões de código (Code Style Guide)
-- Criar templates de PR e issues
-- Documentar processo de deploy
-- Criar guia de contribuição
-
-**Entregáveis**:
-
-- `.eslintrc.js`, `.prettierrc`, `.husky/` configurados
-- CI/CD rodando testes básicos
-- Documentação de processos criada
-
----
-
-### FASE 1: Segurança e Qualidade Crítica (Semanas 2-3)
-
-**Objetivo**: Resolver problemas críticos de segurança e qualidade
-
-#### 1.1 TypeScript Strict Mode (3 dias)
-
-- Habilitar `strict: true` no `frontend/tsconfig.json`
-- Corrigir erros de tipo gradualmente (começar pelos mais críticos)
-- Adicionar `@ts-expect-error` apenas onde necessário com comentários
-- Criar tipos compartilhados entre frontend/backend
-
-**Estratégia**:
-
-- Fazer em branch separada (`feature/typescript-strict`)
-- Corrigir arquivo por arquivo, começando pelos mais usados
-- Usar `// @ts-expect-error` temporariamente com TODO para revisar depois
-
-#### 1.2 Tratamento de Erros Padronizado (5 dias)
-
-- Refatorar todos os controllers para usar `asyncHandler`
-- Substituir `console.log/error` por `logger` estruturado
-- Criar classes de erro customizadas (ValidationError, NotFoundError, etc.)
-- Garantir que todos os erros passem pelo `errorHandler` middleware
-- Adicionar correlation IDs para rastreamento
-
-**Estratégia**:
-
-- Criar classes de erro em `backend/src/utils/errors.ts`
-- Refatorar um controller por vez
-- Testar cada refatoração antes de prosseguir
-
-#### 1.3 Validação de Uploads Robusta (2 dias)
-
-- Implementar validação por magic numbers (assinatura de arquivo)
-- Adicionar sanitização de nomes de arquivo
-- Implementar verificação de tamanho mais granular
-- Adicionar rate limiting específico para uploads
-
-#### 1.4 Error Boundaries no Frontend (2 dias)
-
-- Criar componente `ErrorBoundary` genérico
-- Adicionar Error Boundaries em rotas principais
-- Implementar página de erro amigável
-- Adicionar logging de erros do frontend (Sentry ou similar)
-
-**Entregáveis**:
-
-- TypeScript strict habilitado (com erros corrigidos)
-- Todos os controllers usando tratamento de erros padronizado
-- Uploads com validação robusta
-- Error Boundaries implementados
-
----
-
-### FASE 2: Arquitetura e Estrutura (Semanas 4-6)
-
-**Objetivo**: Melhorar arquitetura e facilitar manutenção
-
-#### 2.1 Service Layer (1 semana)
-
-- Criar estrutura de serviços (`backend/src/services/`)
-- Mover lógica de negócio dos controllers para services
-- Refatorar controllers para serem "thin" (apenas recebem request e chamam service)
-- Criar interfaces para services (facilita testes)
-
-**Estrutura proposta**:
-
-```
-backend/src/services/
-├── auth/
-│   ├── AuthService.ts
-│   └── TokenService.ts
-├── clinics/
-│   ├── ClinicService.ts
-│   └── ClinicValidationService.ts
-├── vets/
-│   ├── VetService.ts
-│   └── VetOnboardingService.ts
-└── demands/
-    ├── DemandService.ts
-    └── DemandPositionService.ts
-```
-
-#### 2.2 Padronização de Controllers (3 dias)
-
-- Consolidar estrutura (todos em subdiretórios ou todos na raiz)
-- Criar base controller com métodos comuns
-- Padronizar nomes de métodos (getAll, getById, create, update, delete)
-- Documentar padrões de controllers
-
-#### 2.3 Gerenciamento de Estado Frontend (1 semana)
-
-- Avaliar necessidade de Redux/Zustand (ou manter Context API)
-- Criar hooks customizados para lógica compartilhada
-- Refatorar acesso direto ao localStorage
-- Criar camada de abstração para storage
-
-**Estratégia**:
-
-- Se Context API suficiente, melhorar estrutura atual
-- Se complexidade alta, considerar Zustand (mais leve que Redux)
-
-**Entregáveis**:
-
-- Service layer implementado
-- Controllers padronizados e "thin"
-- Estado do frontend melhor organizado
-
----
-
-### FASE 3: Performance e Escalabilidade (Semanas 7-9)
-
-**Objetivo**: Melhorar performance e preparar para escala
-
-#### 3.1 Paginação Universal (3 dias)
-
-- Criar helper de paginação reutilizável
-- Implementar paginação em todos os endpoints de listagem
-- Adicionar metadata de paginação nas respostas
-- Atualizar frontend para usar paginação
-
-#### 3.2 Cache Strategy (1 semana)
-
-- Implementar cache in-memory para dados estáticos (especialidades, estados)
-- Adicionar TTL (Time To Live) para cache
-- Criar sistema de invalidação de cache
-- Considerar Redis para produção (opcional nesta fase)
-
-**Dados para cache**:
-
-- Especialidades (TTL: 1 hora)
-- Estados e cidades IBGE (TTL: 24 horas)
-- Configurações do sistema (TTL: 30 minutos)
-
-#### 3.3 Otimização de Queries (1 semana)
-
-- Analisar queries lentas (usar EXPLAIN ANALYZE)
-- Adicionar índices necessários
-- Otimizar queries com N+1 problem
-- Implementar eager loading onde necessário
-
-#### 3.4 Code Splitting Frontend (2 dias)
-
-- Implementar lazy loading de rotas
-- Code splitting por rota
-- Otimizar bundle size
-- Adicionar loading states durante carregamento
-
-**Entregáveis**:
-
-- Todos os endpoints com paginação
-- Cache implementado para dados estáticos
-- Queries otimizadas
-- Frontend com code splitting
-
----
-
-### FASE 4: Testes e Qualidade (Semanas 10-12)
-
-**Objetivo**: Garantir qualidade através de testes
-
-#### 4.1 Testes Unitários (2 semanas)
-
-- Configurar Jest/Vitest completamente
-- Criar testes para services (lógica de negócio)
-- Criar testes para utilitários (validações, helpers)
-- Alcançar 60%+ de cobertura em código crítico
-
-**Prioridade de testes**:
-
-1. Services de autenticação
-2. Services de validação
-3. Utilitários de upload
-4. Lógica de permissões
-
-#### 4.2 Testes de Integração (1 semana)
-
-- Configurar ambiente de testes (banco de dados de teste)
-- Criar testes para fluxos críticos (signup → login → criar demanda)
-- Testes de API endpoints principais
-- Mockar Supabase para testes
-
-#### 4.3 Testes E2E (opcional, 1 semana)
-
-- Configurar Playwright ou Cypress
-- Criar testes para fluxos principais
-- Integrar no CI/CD
-
-**Entregáveis**:
-
-- 60%+ de cobertura de testes unitários
-- Testes de integração para fluxos críticos
-- CI/CD rodando testes automaticamente
-
----
-
-### FASE 5: Segurança Avançada (Semanas 13-14)
-
-**Objetivo**: Implementar melhorias de segurança
-
-#### 5.1 Helmet.js e Headers (2 dias)
-
-- Instalar e configurar Helmet.js
-- Configurar headers de segurança
-- Testar configuração
-
-#### 5.2 Rate Limiting Avançado (3 dias)
-
-- Implementar rate limiting por usuário autenticado
-- Diferentes limites por tipo de usuário
-- Rate limiting por endpoint específico
-
-#### 5.3 Sanitização de Inputs (3 dias)
-
-- Implementar sanitização de HTML
-- Validar e sanitizar todos os inputs
-- Proteção contra XSS
-
-#### 5.4 Auditoria e Logging (2 dias)
-
-- Implementar audit log para ações críticas
-- Melhorar logging estruturado
-- Adicionar correlation IDs em todas as requisições
-
-**Entregáveis**:
-
-- Helmet.js configurado
-- Rate limiting avançado
-- Inputs sanitizados
-- Sistema de auditoria funcionando
-
----
-
-### FASE 6: Features e Melhorias (Semanas 15+)
-
-**Objetivo**: Adicionar features e melhorias de UX
-
-#### 6.1 Busca Avançada (1 semana)
-
-- Implementar busca full-text no backend
-- Adicionar filtros combinados
-- Melhorar UI de busca no frontend
-
-#### 6.2 Notificações em Tempo Real (1 semana)
-
-- Configurar Supabase Realtime
-- Implementar notificações push
-- Adicionar badge de notificações não lidas
-
-#### 6.3 Sistema de Avaliações (1 semana)
-
-- Criar schema de avaliações
-- Implementar CRUD de avaliações
-- Adicionar UI de avaliações
-
-#### 6.4 Melhorias de UX (contínuo)
-
-- Skeleton loaders
-- Feedback visual melhorado
-- Acessibilidade (ARIA labels, navegação por teclado)
-- Responsividade mobile melhorada
-
-**Entregáveis**:
-
-- Busca avançada funcionando
-- Notificações em tempo real
-- Sistema de avaliações
-- UX melhorada
-
----
-
-## 🔧 PLANO DETALHADO: TRATAMENTO DE ERROS
-
-### Situação Atual
-
-- ✅ Existe `errorHandler` middleware
-- ✅ Existe `asyncHandler` wrapper
-- ❌ Não usado consistentemente
-- ❌ Muitos `console.error` diretos
-- ❌ Tratamento de erro inconsistente entre controllers
-- ❌ Falta classes de erro customizadas
-
-### Estrutura Proposta
-
-#### 1. Classes de Erro Customizadas
-
-Criar arquivo `backend/src/utils/errors.ts` com:
-
-- `AppError` (classe base)
-- `ValidationError` (400)
-- `NotFoundError` (404)
-- `UnauthorizedError` (401)
-- `ForbiddenError` (403)
-- `ConflictError` (409)
-- `DatabaseError` (500)
-
-#### 2. Error Handler Melhorado
-
-Atualizar `errorHandler.ts` para:
-
-- Usar classes de erro customizadas
-- Adicionar correlation IDs
-- Melhorar logging estruturado
-- Não vazar detalhes em produção
-
-#### 3. Async Handler Melhorado
-
-Melhorar `asyncHandler` para:
-
-- Converter erros do Supabase automaticamente
-- Passar AppErrors diretamente
-- Tratar erros não esperados
-
-#### 4. Padrão de Uso nos Controllers
-
-**ANTES**:
+**Mudanças:**
 
 ```typescript
-export const createVet = async (req: Request, res: Response) => {
+// ANTES: Tentava atualizar manualmente
+filled_positions: demand.filled_positions + 1
+
+// DEPOIS: Apenas valida e deixa o trigger atualizar
+// Ler filled_positions atualizado do banco antes de validar
+if (demand.filled_positions >= demand.vacancies) {
+  return res.status(400).json({ error: 'Não há vagas disponíveis' });
+}
+// Trigger SQL atualiza filled_positions automaticamente
+```
+
+**Validação de vagas simultâneas:**
+
+- Usar `SELECT filled_positions FROM demands WHERE id = ? FOR UPDATE` para lock
+- Ou validar baseado em contagem real de aplicações aprovadas (mais seguro)
+
+---
+
+### 1.2 Atualizar trigger SQL para cobrir todos os casos
+
+**Arquivo:** `backend/database_migrations/add_filled_positions_trigger.sql`
+
+**Problema:** Trigger não cobre `canceled_by_vet` e outros status que deveriam decrementar.
+
+**Solução:**
+
+- Expandir trigger para decrementar quando status muda de `approved` para qualquer status que não seja `approved` (incluindo `canceled_by_vet`, `rejected_by_vet`, etc.)
+- Já está parcialmente implementado, mas garantir que todos os status finais sejam cobertos
+
+**Mudanças:**
+
+```sql
+-- Expandir condição para incluir todos os status que invalidam aprovação
+IF v_old_status = 'approved' AND v_new_status NOT IN ('approved', 'check_in', 'check_out', 'report_sent', 'report_approved') THEN
+  -- Decrementar
+END IF;
+```
+
+---
+
+### 1.3 Usar `filled_positions` como fonte de verdade no cálculo de status
+
+**Arquivo:** `backend/src/services/demandLifecycleService.ts`
+
+**Problema:** `calculateDemandStatus` usa contagem em tempo real, ignorando `filled_positions`.
+
+**Solução:**
+
+- Usar `demand.filled_positions` (do banco) como fonte de verdade
+- Manter contagem em tempo real apenas para validação/auditoria
+- Adicionar função de sincronização para corrigir inconsistências (se necessário)
+
+**Mudanças:**
+
+```typescript
+// ANTES: Usava approvedCount (contagem em tempo real)
+if (approvedCount >= demand.vacancies) {
+  return 'filled';
+}
+
+// DEPOIS: Usa filled_positions (mantido pelo trigger)
+if (demand.filled_positions >= demand.vacancies) {
+  return 'filled';
+}
+if (demand.filled_positions > 0 && demand.filled_positions < demand.vacancies) {
+  return 'partially_filled';
+}
+```
+
+---
+
+### 1.4 Adicionar validação atômica de vagas antes de aprovar
+
+**Arquivo:** `backend/src/controllers/applicationsController.ts`
+
+**Problema:** Validação de vagas não previne aprovações simultâneas.
+
+**Solução:**
+
+- Usar `SELECT ... FOR UPDATE SKIP LOCKED` ou validação baseada em contagem real
+- Validar baseado em contagem de aplicações já aprovadas (mais seguro que `filled_positions`)
+
+**Mudanças:**
+
+```typescript
+// Validar baseado em contagem real de aplicações aprovadas
+const { data: approvedApps } = await supabaseAdmin
+  .from('demand_applications')
+  .select('id')
+  .eq('demand_id', demand.id)
+  .in('status', ['approved', 'check_in', 'check_out', 'report_sent', 'report_approved']);
+
+if (approvedApps && approvedApps.length >= demand.vacancies) {
+  return res.status(400).json({ error: 'Não há vagas disponíveis' });
+}
+```
+
+---
+
+## FASE 2: Unificação e Consistência
+
+### 2.1 Unificar controllers `reviewUnit`
+
+**Problema:** Dois controllers com lógicas diferentes.
+
+**Solução:**
+
+- Manter apenas `backend/src/controllers/units/reviewUnit.ts` (mais completo)
+- Remover `backend/src/controllers/adminController.ts:100` (método `reviewUnit`)
+- Atualizar rota em `backend/src/routes/adminRoutes.ts` para usar o controller unificado
+- Adicionar validação de status antes de aprovar/rejeitar
+
+**Mudanças:**
+
+- Remover método `reviewUnit` de `adminController.ts`
+- Garantir que `units/reviewUnit.ts` valide se unidade está em `pending_review` antes de aprovar
+- Manter lógica: só ativa clínica se `is_main = true` (comportamento correto)
+
+---
+
+### 2.2 Adicionar validação de transições em `updateDemandStatus`
+
+**Arquivo:** `backend/src/controllers/demandsController.ts`
+
+**Problema:** Permite qualquer transição de status.
+
+**Solução:**
+
+- Usar `DemandLifecycleService.validateStatusTransition` ou criar validação específica para demandas
+- Definir transições válidas para status de demanda (não de aplicação)
+
+**Mudanças:**
+
+```typescript
+// Adicionar validação de transições válidas para demandas
+const validDemandTransitions: Record<string, string[]> = {
+  'open': ['with_applicants', 'canceled_by_clinic', 'expired'],
+  'with_applicants': ['partially_filled', 'filled', 'canceled_by_clinic'],
+  'partially_filled': ['filled', 'in_progress', 'canceled_by_clinic'],
+  'filled': ['in_progress', 'canceled_by_clinic'],
+  'in_progress': ['awaiting_report', 'completed', 'canceled_by_clinic'],
+  'awaiting_report': ['completed', 'canceled_by_clinic'],
+  'completed': [], // Status final
+  // ... outros status
+};
+
+if (!validDemandTransitions[currentDemand.status]?.includes(status)) {
+  return res.status(400).json({ 
+    error: `Transição inválida de "${currentDemand.status}" para "${status}"` 
+  });
+}
+```
+
+---
+
+### 2.3 Migrar completamente de `position_applications` para `demand_applications`
+
+**Arquivos afetados:**
+
+- `backend/src/controllers/demandsController.ts:568, 594`
+- `backend/src/controllers/demandPositionsController.ts` (marcar como deprecated)
+- `backend/src/controllers/unitsController.ts:445, 456`
+- `backend/src/controllers/reportsController.ts`
+- `backend/src/controllers/statisticsController.ts`
+
+**Solução:**
+
+- Criar migration para migrar dados existentes de `position_applications` para `demand_applications` (se houver)
+- Atualizar todos os controllers para usar apenas `demand_applications`
+- Manter `position_applications` apenas para leitura durante período de transição
+- Marcar endpoints que usam `position_applications` como deprecated
+
+**Estratégia:**
+
+1. Criar função helper para buscar aplicações (abstrai a fonte)
+2. Atualizar controllers gradualmente
+3. Remover referências a `position_applications` após migração completa
+
+---
+
+## FASE 3: Melhorias e Consistência
+
+### 3.4 Criar endpoint interno para sincronização em massa
+
+**Arquivo:** `backend/src/controllers/adminController.ts` ou novo `backend/src/controllers/syncController.ts`
+
+**Solução:**
+
+- Criar endpoint `POST /admin/sync-filled-positions-all` (apenas para admins)
+- Executa `syncFilledPositions` para todas as demandas
+- Executa `calculateDemandStatus` e atualiza status de todas as demandas
+- Útil para correção retroativa após migrações ou inconsistências
+
+**Mudanças:**
+
+```typescript
+export const syncAllFilledPositions = async (req: Request, res: Response) => {
+  // Verificar se é admin
+  const user = req.user!;
+  if (user.role !== 'admin') {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+
   try {
-    // validação manual
-    if (!name) {
-      return res.status(400).json({ error: 'Nome obrigatório' });
+    // Buscar todas as demandas
+    const { data: demands, error } = await supabaseAdmin
+      .from('demands')
+      .select('id');
+    
+    if (error) throw error;
+
+    const results = {
+      total: demands?.length || 0,
+      synced: 0,
+      errors: [] as string[],
+    };
+
+    // Para cada demanda: sync filled_positions e recalcular status
+    for (const demand of demands || []) {
+      try {
+        await DemandLifecycleService.syncFilledPositions(demand.id);
+        const newStatus = await DemandLifecycleService.calculateDemandStatus(demand.id);
+        await DemandLifecycleService.updateDemandStatus(demand.id, newStatus);
+        results.synced++;
+      } catch (err: any) {
+        results.errors.push(`Demanda ${demand.id}: ${err.message}`);
+      }
     }
-    // ...
+
+    res.json({
+      success: true,
+      message: `Sincronização concluída: ${results.synced}/${results.total} demandas`,
+      results,
+    });
   } catch (error: any) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Erro interno' });
+    res.status(500).json({ error: error.message });
   }
 };
 ```
 
-**DEPOIS**:
+---
 
-```typescript
-import { asyncHandler } from '../middleware/asyncHandler.js';
-import { ValidationError, DatabaseError } from '../utils/errors.js';
+## FASE 4: Gaps Críticos Adicionais (Novos)
 
-export const createVet = asyncHandler(async (req: Request, res: Response) => {
-  const { name } = req.body;
+### 4.1 Criar trigger SQL para recalcular status da demanda automaticamente
+
+**Arquivo:** `backend/database_migrations/add_demand_status_trigger.sql` (novo)
+
+**Problema:** Status da demanda depende de serviços TypeScript que podem falhar ou não ser chamados. Deveria ser atualizado automaticamente pelo banco.
+
+**Solução:**
+
+- Criar trigger SQL que recalcula e atualiza `demands.status` automaticamente quando:
+                                - Status de aplicação muda para/de `approved`
+                                - Status de aplicação muda para `check_in`, `check_out`, `report_sent`, `report_approved`
+- Usar função SQL que replica a lógica de `calculateDemandStatus`
+- Garantir que status seja sempre consistente, mesmo se API falhar
+
+**Mudanças:**
+
+```sql
+-- Função SQL para calcular status da demanda
+CREATE OR REPLACE FUNCTION calculate_demand_status_sql(p_demand_id uuid)
+RETURNS text AS $
+DECLARE
+  v_demand RECORD;
+  v_approved_count integer;
+  v_check_in_count integer;
+  v_report_sent_count integer;
+  v_report_approved_count integer;
+  v_has_applicants boolean;
+BEGIN
+  -- Buscar dados da demanda
+  SELECT id, vacancies, filled_positions, status
+  INTO v_demand
+  FROM demands
+  WHERE id = p_demand_id;
+
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  -- Contar aplicações por status
+  SELECT 
+    COUNT(*) FILTER (WHERE status IN ('approved', 'check_in', 'check_out', 'report_sent', 'report_approved')),
+    COUNT(*) FILTER (WHERE status IN ('check_in', 'check_out', 'report_sent', 'report_approved')),
+    COUNT(*) FILTER (WHERE status IN ('report_sent', 'report_approved')),
+    COUNT(*) FILTER (WHERE status = 'report_approved'),
+    COUNT(*) FILTER (WHERE status IN ('applied', 'invited')) > 0
+  INTO v_approved_count, v_check_in_count, v_report_sent_count, v_report_approved_count, v_has_applicants
+  FROM demand_applications
+  WHERE demand_id = p_demand_id;
+
+  -- Calcular status baseado nas regras (mesma lógica do TypeScript)
+  IF v_report_approved_count > 0 AND v_report_approved_count = v_approved_count THEN
+    RETURN 'completed';
+  END IF;
+
+  IF v_report_sent_count > 0 AND v_report_sent_count = v_approved_count THEN
+    RETURN 'awaiting_report';
+  END IF;
+
+  IF v_check_in_count > 0 THEN
+    RETURN 'in_progress';
+  END IF;
+
+  IF v_demand.filled_positions >= v_demand.vacancies THEN
+    RETURN 'filled';
+  END IF;
+
+  IF v_demand.filled_positions > 0 AND v_demand.filled_positions < v_demand.vacancies THEN
+    RETURN 'partially_filled';
+  END IF;
+
+  IF v_has_applicants THEN
+    RETURN 'with_applicants';
+  END IF;
+
+  RETURN 'open';
+END;
+$ LANGUAGE plpgsql;
+
+-- Trigger que atualiza status quando aplicação muda
+CREATE OR REPLACE FUNCTION update_demand_status_on_application_change()
+RETURNS TRIGGER AS $
+DECLARE
+  v_new_status text;
+BEGIN
+  -- Recalcular status da demanda
+  v_new_status := calculate_demand_status_sql(NEW.demand_id);
   
-  if (!name) {
-    throw new ValidationError('Nome é obrigatório');
-  }
+  IF v_new_status IS NOT NULL THEN
+    UPDATE demands
+    SET status = v_new_status, updated_at = now()
+    WHERE id = NEW.demand_id;
+  END IF;
 
-  const { data, error } = await supabase.from('vets').insert({...});
+  RETURN NEW;
+END;
+$ LANGUAGE plpgsql;
 
-  if (error) {
-    throw new DatabaseError('Erro ao criar veterinário', error);
-  }
-
-  res.status(201).json({ vet: data });
-});
+-- Criar trigger
+DROP TRIGGER IF EXISTS trigger_update_demand_status ON demand_applications;
+CREATE TRIGGER trigger_update_demand_status
+  AFTER INSERT OR UPDATE OF status ON demand_applications
+  FOR EACH ROW
+  WHEN (OLD.status IS DISTINCT FROM NEW.status OR OLD IS NULL)
+  EXECUTE FUNCTION update_demand_status_on_application_change();
 ```
 
-### Plano de Migração
+**Vantagens:**
 
-**Passo 1**: Criar classes de erro (1 dia)
+- Status sempre consistente, mesmo se API falhar
+- Reduz 80% dos bugs relacionados a status desatualizado
+- Performance melhor (cálculo no banco)
 
-- Criar `backend/src/utils/errors.ts`
-- Exportar todas as classes
+---
 
-**Passo 2**: Melhorar errorHandler (1 dia)
+### 4.2 Criar controle de transação para aprovações com múltiplas posições
 
-- Atualizar `errorHandler.ts` para usar classes de erro
-- Adicionar correlation IDs
+**Arquivo:** `backend/src/controllers/applicationsController.ts`
 
-**Passo 3**: Refatorar controllers gradualmente (1 por vez)
+**Problema:** Cada aprovação é uma operação isolada. Se uma demanda tem múltiplas posições e várias aprovações ocorrem simultaneamente, pode haver inconsistências.
 
-- Começar pelos mais críticos (auth, vets, clinics)
-- Usar `asyncHandler` em todas as rotas
-- Substituir `res.status().json()` por `throw new ErrorClass()`
-- Substituir `console.error` por `logger.error`
+**Solução:**
 
-**Ordem sugerida**:
+- Criar função `approveMultipleApplications` que aprova múltiplas aplicações em uma única transação
+- Usar `SELECT ... FOR UPDATE` na demanda para lock durante toda a operação
+- Validar vagas disponíveis dentro da transação
+- Atualizar todas as aplicações e `filled_positions` atomicamente
 
-1. `auth.ts` (crítico)
-2. `vetsController.ts` e `vets/*.ts`
-3. `clinicsController.ts` e `clinics/*.ts`
-4. `demandsController.ts`
-5. Resto dos controllers
+**Mudanças:**
 
-**Passo 4**: Testar cada refatoração
+```typescript
+// Novo endpoint para aprovar múltiplas aplicações
+export const approveMultipleApplications = async (
+  req: Request<{}, {}, { application_ids: string[] }>,
+  res: Response
+) => {
+  const { application_ids } = req.body;
+  const user = (req as any).user;
 
-- Testar fluxo completo após cada controller
-- Verificar logs
-- Verificar respostas de erro
+  if (!user || !application_ids || application_ids.length === 0) {
+    return res.status(400).json({ error: 'IDs de aplicações são obrigatórios' });
+  }
 
-**Passo 5**: Documentar padrões
+  // Usar transação do Supabase (se disponível) ou implementar com locks
+  // Lock na demanda durante toda a operação
+  const { data: firstApp } = await supabaseAdmin
+    .from('demand_applications')
+    .select('demand_id, demands!inner(vacancies, filled_positions, clinic_id)')
+    .eq('id', application_ids[0])
+    .single();
 
-- Criar guia de tratamento de erros
-- Adicionar exemplos na documentação
+  if (!firstApp) {
+    return res.status(404).json({ error: 'Aplicação não encontrada' });
+  }
 
-### Benefícios da Nova Estrutura
+  const demand = (firstApp as any).demands;
+  
+  // Verificar permissões
+  const hasAccess = await checkClinicAccess(user.id, demand.clinic_id);
+  if (!hasAccess) {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
 
-1. **Consistência**: Todos os erros seguem o mesmo padrão
-2. **Rastreabilidade**: Correlation IDs facilitam debug
-3. **Manutenibilidade**: Classes de erro facilitam tratamento específico
-4. **Logging**: Logs estruturados facilitam análise
-5. **Segurança**: Detalhes de erro não vazam em produção
-6. **Testabilidade**: Erros podem ser testados facilmente
+  // Validar vagas disponíveis (dentro de lock)
+  const { data: approvedCount } = await supabaseAdmin
+    .from('demand_applications')
+    .select('id', { count: 'exact' })
+    .eq('demand_id', demand.id)
+    .in('status', ['approved', 'check_in', 'check_out', 'report_sent', 'report_approved']);
+
+  const currentApproved = approvedCount?.length || 0;
+  const requestedApprovals = application_ids.length;
+
+  if (currentApproved + requestedApprovals > demand.vacancies) {
+    return res.status(400).json({ 
+      error: `Apenas ${demand.vacancies - currentApproved} vagas disponíveis. Tentando aprovar ${requestedApprovals}.` 
+    });
+  }
+
+  // Aprovar todas as aplicações (trigger atualiza filled_positions automaticamente)
+  const { error: updateError } = await supabaseAdmin
+    .from('demand_applications')
+    .update({ 
+      status: 'approved',
+      approved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .in('id', application_ids)
+    .in('status', ['applied', 'invited']); // Só pode aprovar se estiver nesses status
+
+  if (updateError) throw updateError;
+
+  // Status da demanda será atualizado pelo trigger SQL (4.1)
+  
+  res.json({ 
+    success: true,
+    message: `${application_ids.length} aplicações aprovadas com sucesso`,
+  });
+};
+```
+
+**Alternativa mais simples (se não houver transações no Supabase):**
+
+- Manter aprovações individuais, mas garantir que validação de vagas seja feita no trigger SQL (já implementado em 1.4)
+
+---
+
+### 4.3 Padronizar lista de status "ativos" e "finais"
+
+**Arquivo:** `backend/src/utils/applicationStatus.ts` (novo)
+
+**Problema:** Arrays de status estão espalhados e hardcoded em múltiplos lugares (trigger SQL, API, lifecycle). Mudanças precisam ser feitas em vários lugares.
+
+**Solução:**
+
+- Criar arquivo centralizado com constantes de status
+- Exportar para uso em TypeScript
+- Criar função SQL equivalente para uso em triggers
+- Garantir que ambos estejam sempre sincronizados
+
+**Mudanças:**
+
+```typescript
+// backend/src/utils/applicationStatus.ts
+
+/**
+ * Status de aplicação que indicam que o profissional foi aprovado e está ativo
+ * (pode fazer check-in, check-out, enviar relatório)
+ */
+export const ACTIVE_APPLICATION_STATES = [
+  'approved',
+  'check_in',
+  'check_out',
+  'report_sent',
+  'report_approved',
+] as const;
+
+/**
+ * Status de aplicação que são finais (não podem transicionar para outros)
+ */
+export const FINAL_APPLICATION_STATES = [
+  'rejected',
+  'rejected_by_vet',
+  'canceled_by_vet',
+  'report_approved',
+] as const;
+
+/**
+ * Status de aplicação que indicam candidatura pendente
+ */
+export const PENDING_APPLICATION_STATES = [
+  'applied',
+  'invited',
+] as const;
+
+/**
+ * Status de aplicação que indicam que relatório foi enviado
+ */
+export const REPORT_STATES = [
+  'report_sent',
+  'report_approved',
+] as const;
+
+export type ActiveApplicationState = typeof ACTIVE_APPLICATION_STATES[number];
+export type FinalApplicationState = typeof FINAL_APPLICATION_STATES[number];
+export type PendingApplicationState = typeof PENDING_APPLICATION_STATES[number];
+
+/**
+ * Verificar se status é ativo
+ */
+export const isActiveState = (status: string): boolean => {
+  return ACTIVE_APPLICATION_STATES.includes(status as ActiveApplicationState);
+};
+
+/**
+ * Verificar se status é final
+ */
+export const isFinalState = (status: string): boolean => {
+  return FINAL_APPLICATION_STATES.includes(status as FinalApplicationState);
+};
+```
+
+**Migration SQL equivalente:**
+
+```sql
+-- Criar constantes SQL (usando função)
+CREATE OR REPLACE FUNCTION get_active_application_states()
+RETURNS text[] AS $
+BEGIN
+  RETURN ARRAY['approved', 'check_in', 'check_out', 'report_sent', 'report_approved'];
+END;
+$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION get_final_application_states()
+RETURNS text[] AS $
+BEGIN
+  RETURN ARRAY['rejected', 'rejected_by_vet', 'canceled_by_vet', 'report_approved'];
+END;
+$ LANGUAGE plpgsql IMMUTABLE;
+```
+
+**Atualizar todos os lugares:**
+
+- Trigger SQL: usar `get_active_application_states()`
+- `DemandLifecycleService`: importar `ACTIVE_APPLICATION_STATES`
+- `applicationsController`: importar constantes
+- Qualquer outro lugar que use arrays hardcoded
+
+---
+
+### 4.4 Implementar rollback inteligente com transações no banco
+
+**Arquivo:** `backend/database_migrations/add_application_approval_transaction.sql` (novo)
+
+**Problema:** Se a API falhar depois que o trigger atualiza `filled_positions` e `status`, pode deixar dados inconsistentes. Precisa de transação que envolva aplicação + status da demanda.
+
+**Solução:**
+
+- Criar stored procedure que aprova aplicação E atualiza status da demanda em uma única transação
+- Se qualquer parte falhar, tudo é revertido
+- API chama a stored procedure ao invés de fazer UPDATE direto
+
+**Mudanças:**
+
+```sql
+-- Stored procedure para aprovar aplicação com transação completa
+CREATE OR REPLACE FUNCTION approve_application_safe(
+  p_application_id uuid,
+  p_demand_id uuid,
+  p_vacancies integer
+)
+RETURNS jsonb AS $
+DECLARE
+  v_current_status text;
+  v_current_filled integer;
+  v_new_status text;
+  v_result jsonb;
+BEGIN
+  -- Lock da demanda para evitar race conditions
+  SELECT status, filled_positions
+  INTO v_current_status, v_current_filled
+  FROM demands
+  WHERE id = p_demand_id
+  FOR UPDATE; -- Lock exclusivo
+
+  -- Validar vagas disponíveis
+  IF v_current_filled >= p_vacancies THEN
+    RAISE EXCEPTION 'Não há vagas disponíveis. Vagas preenchidas: %, Total: %', 
+      v_current_filled, p_vacancies;
+  END IF;
+
+  -- Verificar status atual da aplicação
+  SELECT status INTO v_current_status
+  FROM demand_applications
+  WHERE id = p_application_id;
+
+  IF v_current_status NOT IN ('applied', 'invited') THEN
+    RAISE EXCEPTION 'Aplicação não pode ser aprovada. Status atual: %', v_current_status;
+  END IF;
+
+  -- Atualizar aplicação
+  UPDATE demand_applications
+  SET 
+    status = 'approved',
+    approved_at = now(),
+    updated_at = now()
+  WHERE id = p_application_id;
+
+  -- filled_positions será atualizado pelo trigger existente
+  -- Status da demanda será atualizado pelo trigger de status (4.1)
+
+  -- Retornar resultado
+  v_result := jsonb_build_object(
+    'success', true,
+    'application_id', p_application_id,
+    'demand_id', p_demand_id
+  );
+
+  RETURN v_result;
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Rollback automático (transação)
+    RAISE;
+END;
+$ LANGUAGE plpgsql;
+```
+
+**Atualizar controller para usar stored procedure:**
+
+```typescript
+// Em applicationsController.ts
+const { data, error } = await supabaseAdmin.rpc('approve_application_safe', {
+  p_application_id: applicationId,
+  p_demand_id: demand.id,
+  p_vacancies: demand.vacancies,
+});
+
+if (error) {
+  // Erro já inclui mensagem de validação
+  return res.status(400).json({ error: error.message });
+}
+```
+
+**Vantagens:**
+
+- Transação atômica: tudo ou nada
+- Validação e atualização na mesma transação
+- Rollback automático em caso de erro
+- Impossível ter inconsistências
+
+### 3.1 Reverter operação se `filled_positions` falhar (ou remover código)
+
+**Arquivo:** `backend/src/controllers/applicationsController.ts`
+
+**Problema:** Erros são apenas logados, não revertidos.
+
+**Solução:**
+
+- Como vamos remover código manual de `filled_positions`, esse problema desaparece
+- Se houver erro no trigger SQL, será exceção do banco e a transação será revertida automaticamente
+- Adicionar monitoramento/logging para detectar inconsistências
+
+---
+
+### 3.2 Garantir consistência: clínica só ativa com unidade principal aprovada
+
+**Arquivo:** `backend/src/controllers/units/reviewUnit.ts`
+
+**Problema:** Já está correto, mas documentar melhor.
+
+**Solução:**
+
+- Manter lógica atual (só ativa se `is_main = true`)
+- Adicionar comentários explicando o comportamento
+- Garantir que frontend filtre apenas unidades aprovadas (já implementado)
+
+---
+
+### 3.3 Adicionar função de sincronização de `filled_positions`
+
+**Arquivo:** `backend/src/services/demandLifecycleService.ts`
+
+**Solução:**
+
+- Criar função `syncFilledPositions(demandId)` que recalcula baseado em aplicações reais
+- Usar como ferramenta de manutenção/correção
+- Chamar periodicamente ou quando detectar inconsistência
+
+**Mudanças:**
+
+```typescript
+static async syncFilledPositions(demandId: string): Promise<void> {
+  // Contar aplicações realmente aprovadas
+  const { data: approvedApps } = await supabaseAdmin
+    .from('demand_applications')
+    .select('id')
+    .eq('demand_id', demandId)
+    .in('status', ['approved', 'check_in', 'check_out', 'report_sent', 'report_approved']);
+  
+  const realCount = approvedApps?.length || 0;
+  
+  // Atualizar se diferente
+  await supabaseAdmin
+    .from('demands')
+    .update({ filled_positions: realCount })
+    .eq('id', demandId);
+}
+```
+
+---
+
+## Ordem de Implementação
+
+1. **Fase 1.1** - Remover lógica duplicada de `filled_positions` (crítico)
+2. **Fase 1.2** - Atualizar trigger SQL (crítico)
+3. **Fase 1.3** - Usar `filled_positions` no cálculo de status (crítico)
+4. **Fase 1.4** - Validação atômica de vagas (crítico)
+5. **Fase 2.1** - Unificar controllers `reviewUnit` (alto)
+6. **Fase 2.2** - Validação de transições (alto)
+7. **Fase 2.3** - Migrar para `demand_applications` (alto, pode ser gradual)
+8. **Fase 3.1-3.3** - Melhorias e sincronização (médio)
+
+---
+
+## Testes Necessários
+
+1. Teste de concorrência: aprovar múltiplas aplicações simultaneamente
+2. Teste de cancelamento: cancelar aplicação aprovada e verificar decremento
+3. Teste de status: verificar que status reflete `filled_positions` corretamente
+4. Teste de validação: tentar transições inválidas de status
+5. Teste de sincronização: forçar inconsistência e corrigir com `syncFilledPositions`
+
+---
+
+## Riscos e Mitigações
+
+**Risco 1:** Remover código manual pode quebrar se trigger não estiver ativo
+
+- **Mitigação:** Verificar se trigger existe antes de remover código
+- **Mitigação:** Adicionar migration check para garantir trigger está ativo
+
+**Risco 2:** Migração de `position_applications` pode perder dados
+
+- **Mitigação:** Criar backup antes de migrar
+- **Mitigação:** Manter tabela legada em modo read-only durante transição
+
+**Risco 3:** Mudança de cálculo de status pode afetar demandas existentes
+
+- **Mitigação:** Rodar `syncFilledPositions` em todas as demandas após deploy
+- **Mitigação:** Comparar resultados antes/depois em staging
 
 ### To-dos
 
-- [ ] Habilitar TypeScript strict mode no frontend (tsconfig.json)
-- [ ] Substituir console.log por logger estruturado em todos os arquivos do backend
-- [ ] Implementar validação robusta de uploads (magic numbers, sanitização)
-- [ ] Adicionar Error Boundaries no frontend para capturar erros de renderização
-- [ ] Implementar paginação em todos os endpoints que retornam listas
-- [ ] Criar camada de serviço (service layer) e refatorar controllers
-- [ ] Implementar testes unitários para lógica crítica de negócio
-- [ ] Adicionar Helmet.js para headers de segurança HTTP
-- [ ] Implementar cache (Redis ou in-memory) para dados estáticos
-- [ ] Analisar e adicionar índices necessários nas tabelas do banco
+- [ ] Remover lógica duplicada de filled_positions em applicationsController.ts (linhas 538-572), deixando apenas validação. O trigger SQL já atualiza automaticamente.
+- [ ] Atualizar trigger SQL para decrementar filled_positions quando status muda de 'approved' para 'canceled_by_vet' ou outros status finais
+- [ ] Modificar calculateDemandStatus para usar demand.filled_positions como fonte de verdade ao invés de contagem em tempo real
+- [ ] Adicionar validação atômica de vagas antes de aprovar, usando contagem real de aplicações aprovadas ao invés de filled_positions
+- [ ] Unificar controllers reviewUnit: remover método de adminController.ts e manter apenas units/reviewUnit.ts, atualizando rotas
+- [ ] Adicionar validação de transições válidas em updateDemandStatus usando DemandLifecycleService ou validação específica para demandas
+- [ ] Migrar todos os controllers de position_applications para demand_applications, começando por demandsController.ts, unitsController.ts, reportsController.ts e statisticsController.ts
+- [ ] Criar função syncFilledPositions em DemandLifecycleService para recalcular e corrigir inconsistências quando necessário
+- [ ] Adicionar documentação e comentários explicando que clínica só ativa quando unidade principal (is_main) é aprovada

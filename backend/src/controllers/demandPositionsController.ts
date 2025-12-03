@@ -2,6 +2,9 @@ import type { Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { createNotification } from './notificationsController';
 
+/**
+ * @deprecated Use POST /api/demands (createDemandV2) instead
+ */
 // Criar demanda composta com posições
 export const createCompositeDemand = async (req: Request, res: Response) => {
   const {

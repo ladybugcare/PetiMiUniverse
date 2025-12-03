@@ -1,4 +1,6 @@
 import rateLimit from 'express-rate-limit';
+import type { Request, Response, NextFunction } from 'express';
+import { logger } from '../utils/logger.js';
 
 /**
  * Rate limiter geral para todas as rotas
@@ -77,3 +79,74 @@ export const statsLimiter = rateLimit({
   },
 });
 
+/**
+ * Rate limiter por usuário autenticado
+ * Usa o user ID do request para limitar por usuário, não apenas por IP
+ * Útil para prevenir abuso de usuários autenticados
+ */
+export const userRateLimiter = (maxRequests: number = 200, windowMs: number = 15 * 60 * 1000) => {
+  // Store simples em memória (em produção, usar Redis)
+  const userRequestCounts = new Map<string, { count: number; resetTime: number }>();
+
+  // Limpar entradas expiradas periodicamente
+  setInterval(() => {
+    const now = Date.now();
+    for (const [userId, data] of userRequestCounts.entries()) {
+      if (now > data.resetTime) {
+        userRequestCounts.delete(userId);
+      }
+    }
+  }, 60000); // Limpar a cada minuto
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    const userId = (req as any).user?.id;
+
+    // Se não houver usuário autenticado, usar limiter geral
+    if (!userId) {
+      return generalLimiter(req, res, next);
+    }
+
+    const now = Date.now();
+    const userData = userRequestCounts.get(userId);
+
+    // Se não existe ou expirou, criar nova entrada
+    if (!userData || now > userData.resetTime) {
+      userRequestCounts.set(userId, {
+        count: 1,
+        resetTime: now + windowMs,
+      });
+      return next();
+    }
+
+    // Incrementar contador
+    userData.count++;
+
+    // Verificar se excedeu o limite
+    if (userData.count > maxRequests) {
+      logger.warn('Rate limit excedido para usuário', {
+        userId,
+        count: userData.count,
+        maxRequests,
+      });
+
+      res.status(429).json({
+        error: 'Muitas requisições. Tente novamente em alguns minutos.',
+        retryAfter: Math.ceil((userData.resetTime - now) / 1000),
+      });
+      return;
+    }
+
+    // Adicionar headers de rate limit
+    res.setHeader('X-RateLimit-Limit', maxRequests.toString());
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequests - userData.count).toString());
+    res.setHeader('X-RateLimit-Reset', new Date(userData.resetTime).toISOString());
+
+    next();
+  };
+};
+
+/**
+ * Rate limiter específico para uploads
+ * Limita uploads por usuário para prevenir abuso
+ */
+export const uploadLimiter = userRateLimiter(20, 60 * 60 * 1000); // 20 uploads por hora por usuário

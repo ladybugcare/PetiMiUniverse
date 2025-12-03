@@ -35,7 +35,7 @@ const getSystemHealth = async (req, res) => {
         // Verificar Database
         try {
             const dbStartTime = Date.now();
-            const { error: dbError } = await supabase_1.supabase.from('clinics').select('id').limit(1);
+            const { error: dbError } = await supabase_1.supabaseAdmin.from('clinics').select('id').limit(1);
             const dbLatency = Date.now() - dbStartTime;
             if (dbError) {
                 health.database = {
@@ -64,7 +64,7 @@ const getSystemHealth = async (req, res) => {
         try {
             const storageStartTime = Date.now();
             // Tentar listar buckets para verificar se o storage está acessível
-            const { data: buckets, error: storageError } = await supabase_1.supabase.storage.listBuckets();
+            const { data: buckets, error: storageError } = await supabase_1.supabaseAdmin.storage.listBuckets();
             const storageLatency = Date.now() - storageStartTime;
             if (storageError) {
                 health.storage = {

@@ -17,6 +17,7 @@ const getPendingFreelancers_1 = require("../controllers/freelancers/getPendingFr
 const approveFreelancer_1 = require("../controllers/freelancers/approveFreelancer");
 const rejectFreelancer_1 = require("../controllers/freelancers/rejectFreelancer");
 const authMiddleware_1 = require("../middleware/authMiddleware");
+const rateLimiter_js_1 = require("../middleware/rateLimiter.js");
 const router = express_1.default.Router();
 /**
  * ===========================================================
@@ -46,7 +47,8 @@ router.post('/onboarding/upload-certification', authMiddleware_1.authenticateUse
  * ✅ APROVAÇÃO DE FREELANCERS (ADMIN)
  * ===========================================================
  */
-router.get('/pending', authMiddleware_1.authenticateUser, getPendingFreelancers_1.getPendingFreelancers);
+// Aplicar rate limiter mais permissivo para rota de dashboard
+router.get('/pending', rateLimiter_js_1.statsLimiter, authMiddleware_1.authenticateUser, getPendingFreelancers_1.getPendingFreelancers);
 /**
  * ===========================================================
  * 🔍 ROTAS COM PARÂMETROS DINÂMICOS (devem vir por último)

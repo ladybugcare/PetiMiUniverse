@@ -46,6 +46,10 @@ export const colors = {
   border: '#e5e7eb',
   borderDark: '#d1d5db',
   
+  // Convenience aliases
+  lightGray: '#f3f4f6', // neutral.100
+  darkGray: '#6b7280',   // neutral.500
+  
   // Overlay
   overlay: 'rgba(0, 0, 0, 0.5)',
 };

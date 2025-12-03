@@ -10,8 +10,9 @@ import { Demand } from '../services/demandsApi';
 import { useAlert } from '../hooks/useAlert';
 import { getUserRole, type Role as AuthRole } from '../utils/authHelpers';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
-import { Search, Filter, X, Clock, MapPin, DollarSign, PlusCircle } from 'lucide-react';
+import { Search, Filter, X, Clock, MapPin, DollarSign, PlusCircle, UserPlus } from 'lucide-react';
 import colors from '../styles/colors';
+import InviteVetModal from '../components/InviteVetModal';
 
 interface Clinic {
   id: string;
@@ -34,6 +35,8 @@ const DemandsPage: React.FC = () => {
   const [selectedDemand, setSelectedDemand] = useState<Demand | null>(null);
   const [applicationMessage, setApplicationMessage] = useState('');
   const [isApplying, setIsApplying] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteDemandId, setInviteDemandId] = useState<string | null>(null);
   
   // Load view mode from localStorage
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>(() => {
@@ -708,6 +711,28 @@ const DemandsPage: React.FC = () => {
                           </div>
                         )}
                         {userRole !== 'VET' && (
+                          <>
+                            {(userRole === 'CADMIN' || userRole === 'CMANAGER' || rawUserRole?.toLowerCase() === 'clinic') && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setInviteDemandId(demand.id);
+                                  setShowInviteModal(true);
+                                }}
+                                style={{
+                                  ...styles.viewDetailsButton,
+                                  backgroundColor: colors.primary,
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  marginRight: '8px',
+                                }}
+                              >
+                                <UserPlus size={16} />
+                                Convidar Vet
+                              </button>
+                            )}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -717,6 +742,7 @@ const DemandsPage: React.FC = () => {
                           >
                             Ver Detalhes
                           </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -1103,6 +1129,21 @@ const DemandsPage: React.FC = () => {
         <PlusCircle size={24} color="#ffffff" />
       </button>
     )}
+
+      {/* Invite Vet Modal */}
+      {showInviteModal && inviteDemandId && (
+        <InviteVetModal
+          demandId={inviteDemandId}
+          onClose={() => {
+            setShowInviteModal(false);
+            setInviteDemandId(null);
+          }}
+          onInviteSent={() => {
+            // Recarregar dados se necessário
+            loadData();
+          }}
+        />
+      )}
   </>
   );
 };

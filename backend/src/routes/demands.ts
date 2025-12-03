@@ -1,6 +1,7 @@
 import express from 'express'
 import { 
   createDemand, 
+  createDemandV2,
   getDemands, 
   getAllDemands,
   getDemandById,
@@ -12,11 +13,24 @@ import {
   getDemandsByUnit 
 } from '../controllers/demandsController'
 import { requireActiveClinic } from '../middleware/requireActiveClinic'
+import { authenticateUser } from '../middleware/authMiddleware'
+import { requirePermission } from '../middleware/authMiddleware'
 
 const router = express.Router()
 
+/**
+ * @deprecated Use POST / instead (createDemandV2)
+ */
 // Create demand (requires active clinic)
 router.post('/create', requireActiveClinic, createDemand)
+
+// Create demand V2 (new endpoint with full validations and lifecycle)
+router.post('/', 
+  authenticateUser,
+  requireActiveClinic,
+  requirePermission('demand.create'),
+  createDemandV2
+)
 router.get('/open', getDemands)
 router.get('/all', getAllDemands)
 router.get('/recent-activity', getRecentActivity)

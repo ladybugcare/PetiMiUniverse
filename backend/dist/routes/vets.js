@@ -18,6 +18,7 @@ const approveVet_1 = require("../controllers/vets/approveVet");
 const rejectVet_1 = require("../controllers/vets/rejectVet");
 const getVetCompletedDemands_1 = require("../controllers/vets/getVetCompletedDemands");
 const authMiddleware_1 = require("../middleware/authMiddleware");
+const rateLimiter_js_1 = require("../middleware/rateLimiter.js");
 const router = express_1.default.Router();
 /**
  * ===========================================================
@@ -47,7 +48,8 @@ router.post('/onboarding/upload-crmv', authMiddleware_1.authenticateUser, upload
  * ✅ APROVAÇÃO DE VETERINÁRIOS (ADMIN)
  * ===========================================================
  */
-router.get('/pending', authMiddleware_1.authenticateUser, getPendingVets_1.getPendingVets);
+// Aplicar rate limiter mais permissivo para rota de dashboard
+router.get('/pending', rateLimiter_js_1.statsLimiter, authMiddleware_1.authenticateUser, getPendingVets_1.getPendingVets);
 /**
  * ===========================================================
  * 🔍 ROTAS COM PARÂMETROS DINÂMICOS (devem vir por último)

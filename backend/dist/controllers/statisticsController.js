@@ -274,22 +274,22 @@ const getSystemStatsWithPeriod = async (req, res) => {
         const previousStart = new Date(start);
         previousStart.setDate(previousStart.getDate() - periodDays);
         const previousEnd = new Date(start);
-        // Get new registrations in period
-        const { count: newClinics, error: newClinicsError } = await supabase_1.supabase
+        // Get new registrations in period - usar supabaseAdmin para contornar RLS
+        const { count: newClinics, error: newClinicsError } = await supabase_1.supabaseAdmin
             .from('clinics')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', start.toISOString())
             .lte('created_at', end.toISOString());
         if (newClinicsError)
             throw newClinicsError;
-        const { count: newVets, error: newVetsError } = await supabase_1.supabase
+        const { count: newVets, error: newVetsError } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', start.toISOString())
             .lte('created_at', end.toISOString());
         if (newVetsError)
             throw newVetsError;
-        const { count: newFreelancers, error: newFreelancersError } = await supabase_1.supabase
+        const { count: newFreelancers, error: newFreelancersError } = await supabase_1.supabaseAdmin
             .from('freelancers')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', start.toISOString())
@@ -297,21 +297,21 @@ const getSystemStatsWithPeriod = async (req, res) => {
         if (newFreelancersError)
             throw newFreelancersError;
         // Get previous period counts for growth calculation
-        const { count: prevClinics, error: prevClinicsError } = await supabase_1.supabase
+        const { count: prevClinics, error: prevClinicsError } = await supabase_1.supabaseAdmin
             .from('clinics')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', previousStart.toISOString())
             .lte('created_at', previousEnd.toISOString());
         if (prevClinicsError)
             throw prevClinicsError;
-        const { count: prevVets, error: prevVetsError } = await supabase_1.supabase
+        const { count: prevVets, error: prevVetsError } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', previousStart.toISOString())
             .lte('created_at', previousEnd.toISOString());
         if (prevVetsError)
             throw prevVetsError;
-        const { count: prevFreelancers, error: prevFreelancersError } = await supabase_1.supabase
+        const { count: prevFreelancers, error: prevFreelancersError } = await supabase_1.supabaseAdmin
             .from('freelancers')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', previousStart.toISOString())
@@ -328,13 +328,13 @@ const getSystemStatsWithPeriod = async (req, res) => {
         const vetsGrowth = calculateGrowth(newVets || 0, prevVets || 0);
         const freelancersGrowth = calculateGrowth(newFreelancers || 0, prevFreelancers || 0);
         // Get approval rate (approved / total pending + approved)
-        const { count: totalPendingVets, error: pendingVetsError } = await supabase_1.supabase
+        const { count: totalPendingVets, error: pendingVetsError } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('*', { count: 'exact', head: true })
             .eq('status', 'pending');
         if (pendingVetsError)
             throw pendingVetsError;
-        const { count: totalApprovedVets, error: approvedVetsError } = await supabase_1.supabase
+        const { count: totalApprovedVets, error: approvedVetsError } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('*', { count: 'exact', head: true })
             .eq('status', 'approved');
@@ -345,7 +345,7 @@ const getSystemStatsWithPeriod = async (req, res) => {
             ? ((totalApprovedVets || 0) / totalVetsForApproval) * 100
             : 0;
         // Get completed demands in period
-        const { count: completedDemands, error: completedError } = await supabase_1.supabase
+        const { count: completedDemands, error: completedError } = await supabase_1.supabaseAdmin
             .from('demands')
             .select('*', { count: 'exact', head: true })
             .eq('status', 'closed')
@@ -354,7 +354,7 @@ const getSystemStatsWithPeriod = async (req, res) => {
         if (completedError)
             throw completedError;
         // Get active vets (vets with applications in period)
-        const { data: activeVetsData, error: activeVetsError } = await supabase_1.supabase
+        const { data: activeVetsData, error: activeVetsError } = await supabase_1.supabaseAdmin
             .from('position_applications')
             .select('vet_id')
             .gte('created_at', start.toISOString())
@@ -363,13 +363,13 @@ const getSystemStatsWithPeriod = async (req, res) => {
             throw activeVetsError;
         const uniqueActiveVets = new Set(activeVetsData?.map((a) => a.vet_id) || []).size;
         // Get total counts
-        const { count: totalClinics } = await supabase_1.supabase
+        const { count: totalClinics } = await supabase_1.supabaseAdmin
             .from('clinics')
             .select('*', { count: 'exact', head: true });
-        const { count: totalVets } = await supabase_1.supabase
+        const { count: totalVets } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('*', { count: 'exact', head: true });
-        const { count: totalFreelancers } = await supabase_1.supabase
+        const { count: totalFreelancers } = await supabase_1.supabaseAdmin
             .from('freelancers')
             .select('*', { count: 'exact', head: true });
         res.json({
@@ -409,35 +409,42 @@ const getSystemGrowthTrends = async (req, res) => {
         }
         const { period = '30d' } = req.query;
         const { start, end } = getDateRange(period);
-        // Calculate number of days
-        const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        // Calculate number of days - limitar a 90 dias para evitar queries muito lentas
+        const days = Math.min(Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)), 90);
         const isWeekly = days > 14;
         const trends = [];
+        const startTime = Date.now();
+        const maxExecutionTime = 20000; // 20 segundos máximo
         // Generate data points
         for (let i = 0; i < days; i++) {
+            // Verificar timeout durante o loop
+            if (Date.now() - startTime > maxExecutionTime) {
+                console.warn(`[getSystemGrowthTrends] Timeout após ${i} de ${days} dias processados`);
+                break;
+            }
             const date = new Date(start);
             date.setDate(date.getDate() + i);
             const nextDate = new Date(date);
             nextDate.setDate(nextDate.getDate() + 1);
             const dateStr = date.toISOString().split('T')[0];
             const nextDateStr = nextDate.toISOString();
-            // Get counts for this day
-            const { count: clinics } = await supabase_1.supabase
+            // Get counts for this day - usar supabaseAdmin para contornar RLS
+            const { count: clinics } = await supabase_1.supabaseAdmin
                 .from('clinics')
                 .select('*', { count: 'exact', head: true })
                 .gte('created_at', date.toISOString())
                 .lt('created_at', nextDateStr);
-            const { count: vets } = await supabase_1.supabase
+            const { count: vets } = await supabase_1.supabaseAdmin
                 .from('vets')
                 .select('*', { count: 'exact', head: true })
                 .gte('created_at', date.toISOString())
                 .lt('created_at', nextDateStr);
-            const { count: freelancers } = await supabase_1.supabase
+            const { count: freelancers } = await supabase_1.supabaseAdmin
                 .from('freelancers')
                 .select('*', { count: 'exact', head: true })
                 .gte('created_at', date.toISOString())
                 .lt('created_at', nextDateStr);
-            const { count: demands } = await supabase_1.supabase
+            const { count: demands } = await supabase_1.supabaseAdmin
                 .from('demands')
                 .select('*', { count: 'exact', head: true })
                 .gte('created_at', date.toISOString())
@@ -469,8 +476,8 @@ const getRecentActivity = async (req, res) => {
         const { limit = '20' } = req.query;
         const limitNum = parseInt(limit, 10);
         const activities = [];
-        // Get recent clinics
-        const { data: recentClinics, error: clinicsError } = await supabase_1.supabase
+        // Get recent clinics - usar supabaseAdmin para contornar RLS
+        const { data: recentClinics, error: clinicsError } = await supabase_1.supabaseAdmin
             .from('clinics')
             .select('id, name, created_at, status')
             .order('created_at', { ascending: false })
@@ -488,8 +495,8 @@ const getRecentActivity = async (req, res) => {
                 });
             });
         }
-        // Get recent vets
-        const { data: recentVets, error: vetsError } = await supabase_1.supabase
+        // Get recent vets - usar supabaseAdmin para contornar RLS
+        const { data: recentVets, error: vetsError } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('id, name, crmv, created_at, status')
             .order('created_at', { ascending: false })
@@ -507,8 +514,8 @@ const getRecentActivity = async (req, res) => {
                 });
             });
         }
-        // Get recent freelancers
-        const { data: recentFreelancers, error: freelancersError } = await supabase_1.supabase
+        // Get recent freelancers - usar supabaseAdmin para contornar RLS
+        const { data: recentFreelancers, error: freelancersError } = await supabase_1.supabaseAdmin
             .from('freelancers')
             .select('id, name, created_at, status')
             .order('created_at', { ascending: false })
@@ -526,18 +533,18 @@ const getRecentActivity = async (req, res) => {
                 });
             });
         }
-        // Get recent demands
-        const { data: recentDemands, error: demandsError } = await supabase_1.supabase
+        // Get recent demands - usar supabaseAdmin para contornar RLS
+        const { data: recentDemands, error: demandsError } = await supabase_1.supabaseAdmin
             .from('demands')
             .select('id, title, created_at, status, clinic_id')
             .order('created_at', { ascending: false })
             .limit(limitNum);
         if (!demandsError && recentDemands) {
-            // Get clinic names for demands
+            // Get clinic names for demands - usar supabaseAdmin para contornar RLS
             const clinicIds = [...new Set(recentDemands.map((d) => d.clinic_id).filter(Boolean))];
             const clinicNamesMap = {};
             if (clinicIds.length > 0) {
-                const { data: clinics } = await supabase_1.supabase
+                const { data: clinics } = await supabase_1.supabaseAdmin
                     .from('clinics')
                     .select('id, name')
                     .in('id', clinicIds);
@@ -560,8 +567,8 @@ const getRecentActivity = async (req, res) => {
                 });
             });
         }
-        // Get audit logs
-        const { data: auditLogs, error: auditError } = await supabase_1.supabase
+        // Get audit logs - usar supabaseAdmin para contornar RLS
+        const { data: auditLogs, error: auditError } = await supabase_1.supabaseAdmin
             .from('audit_logs')
             .select('*')
             .order('created_at', { ascending: false })
@@ -615,14 +622,14 @@ const getTopPerformers = async (req, res) => {
         const { type = 'clinics', limit = '5' } = req.query;
         const limitNum = parseInt(limit, 10);
         if (type === 'clinics') {
-            // Get top clinics by number of demands created
-            const { data: clinics, error: clinicsError } = await supabase_1.supabase
+            // Get top clinics by number of demands created - usar supabaseAdmin para contornar RLS
+            const { data: clinics, error: clinicsError } = await supabase_1.supabaseAdmin
                 .from('clinics')
                 .select('id, name, created_at, status');
             if (clinicsError)
                 throw clinicsError;
             const clinicsWithCounts = await Promise.all((clinics || []).map(async (clinic) => {
-                const { count } = await supabase_1.supabase
+                const { count } = await supabase_1.supabaseAdmin
                     .from('demands')
                     .select('*', { count: 'exact', head: true })
                     .eq('clinic_id', clinic.id);
@@ -639,14 +646,14 @@ const getTopPerformers = async (req, res) => {
             res.json({ performers: topClinics, type: 'clinics' });
         }
         else if (type === 'vets') {
-            // Get top vets by number of applications
-            const { data: vets, error: vetsError } = await supabase_1.supabase
+            // Get top vets by number of applications - usar supabaseAdmin para contornar RLS
+            const { data: vets, error: vetsError } = await supabase_1.supabaseAdmin
                 .from('vets')
                 .select('id, name, crmv, created_at, status');
             if (vetsError)
                 throw vetsError;
             const vetsWithCounts = await Promise.all((vets || []).map(async (vet) => {
-                const { count } = await supabase_1.supabase
+                const { count } = await supabase_1.supabaseAdmin
                     .from('position_applications')
                     .select('*', { count: 'exact', head: true })
                     .eq('vet_id', vet.id);
@@ -682,28 +689,33 @@ const getSystemInsights = async (req, res) => {
             return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar esta rota.' });
         }
         const insights = [];
+        const isDevelopment = process.env.NODE_ENV === 'development';
+        // Thresholds mais baixos em desenvolvimento para mostrar insights mesmo com poucos dados
+        const growthThreshold = isDevelopment ? 10 : 20;
+        const pendingThreshold = isDevelopment ? 1 : 5;
         // Get data for last 7 days and previous 7 days
         const now = new Date();
         const last7DaysStart = new Date(now);
         last7DaysStart.setDate(last7DaysStart.getDate() - 7);
         const prev7DaysStart = new Date(last7DaysStart);
         prev7DaysStart.setDate(prev7DaysStart.getDate() - 7);
-        // Compare vet registrations
-        const { count: vetsLast7Days } = await supabase_1.supabase
+        // Compare vet registrations - usar supabaseAdmin para contornar RLS
+        const { count: vetsLast7Days } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', last7DaysStart.toISOString())
             .lte('created_at', now.toISOString());
-        const { count: vetsPrev7Days } = await supabase_1.supabase
+        const { count: vetsPrev7Days } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', prev7DaysStart.toISOString())
             .lt('created_at', last7DaysStart.toISOString());
-        if (vetsLast7Days && vetsPrev7Days) {
+        // Insight: Crescimento de vets (threshold ajustado por ambiente)
+        if (vetsLast7Days !== null && vetsPrev7Days !== null) {
             const growth = vetsPrev7Days > 0
                 ? ((vetsLast7Days - vetsPrev7Days) / vetsPrev7Days) * 100
                 : (vetsLast7Days > 0 ? 100 : 0);
-            if (Math.abs(growth) > 20) {
+            if (Math.abs(growth) > growthThreshold) {
                 insights.push({
                     type: growth > 0 ? 'positive' : 'warning',
                     title: `Crescimento de ${Math.round(growth)}% em cadastros de veterinários`,
@@ -711,9 +723,18 @@ const getSystemInsights = async (req, res) => {
                     icon: 'trending-up',
                 });
             }
+            else if (isDevelopment && vetsLast7Days > 0) {
+                // Em desenvolvimento, mostrar insight mesmo com crescimento menor
+                insights.push({
+                    type: 'info',
+                    title: `${vetsLast7Days} novo(s) cadastro(s) de veterinário(s) esta semana`,
+                    message: `Foram registrados ${vetsLast7Days} novo(s) veterinário(s) nos últimos 7 dias.`,
+                    icon: 'user-plus',
+                });
+            }
         }
-        // Check for new demands
-        const { count: demandsLast7Days } = await supabase_1.supabase
+        // Check for new demands - usar supabaseAdmin para contornar RLS
+        const { count: demandsLast7Days } = await supabase_1.supabaseAdmin
             .from('demands')
             .select('*', { count: 'exact', head: true })
             .gte('created_at', last7DaysStart.toISOString())
@@ -727,32 +748,46 @@ const getSystemInsights = async (req, res) => {
                 icon: 'alert-triangle',
             });
         }
-        // Check approval rate
-        const { count: pendingVets } = await supabase_1.supabase
+        // Check approval rate - usar supabaseAdmin para contornar RLS
+        const { count: pendingVets } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('*', { count: 'exact', head: true })
             .eq('status', 'pending');
-        const { count: approvedVets } = await supabase_1.supabase
+        const { count: pendingFreelancers } = await supabase_1.supabaseAdmin
+            .from('freelancers')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'pending');
+        const { count: approvedVets } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('*', { count: 'exact', head: true })
             .eq('status', 'approved');
-        if (pendingVets && pendingVets > 5) {
+        // Insight: Vets pendentes (threshold ajustado por ambiente)
+        if (pendingVets !== null && pendingVets >= pendingThreshold) {
             insights.push({
                 type: 'info',
-                title: `${pendingVets} veterinários aguardando aprovação`,
-                message: `Há ${pendingVets} cadastros de veterinários pendentes de análise. Considere revisar as aprovações pendentes.`,
+                title: `${pendingVets} veterinário(s) aguardando aprovação`,
+                message: `Há ${pendingVets} cadastro(s) de veterinário(s) pendente(s) de análise. Considere revisar as aprovações pendentes.`,
+                icon: 'clock',
+            });
+        }
+        // Insight: Freelancers pendentes
+        if (pendingFreelancers !== null && pendingFreelancers >= pendingThreshold) {
+            insights.push({
+                type: 'info',
+                title: `${pendingFreelancers} freelancer(s) aguardando aprovação`,
+                message: `Há ${pendingFreelancers} cadastro(s) de freelancer(s) pendente(s) de análise.`,
                 icon: 'clock',
             });
         }
         // Check for inactive clinics (no demands in last 30 days)
         const thirtyDaysAgo = new Date(now);
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const { data: allClinics } = await supabase_1.supabase
+        const { data: allClinics } = await supabase_1.supabaseAdmin
             .from('clinics')
             .select('id, name');
         if (allClinics) {
             const inactiveClinics = await Promise.all(allClinics.map(async (clinic) => {
-                const { count } = await supabase_1.supabase
+                const { count } = await supabase_1.supabaseAdmin
                     .from('demands')
                     .select('*', { count: 'exact', head: true })
                     .eq('clinic_id', clinic.id)
@@ -760,7 +795,7 @@ const getSystemInsights = async (req, res) => {
                 return { clinic, hasActivity: (count || 0) > 0 };
             }));
             const inactive = inactiveClinics.filter((c) => !c.hasActivity);
-            if (inactive.length > 0 && inactive.length <= 10) {
+            if (inactive.length > 0 && (isDevelopment || inactive.length <= 10)) {
                 insights.push({
                     type: 'info',
                     title: `${inactive.length} clínica(s) inativa(s)`,
@@ -769,6 +804,25 @@ const getSystemInsights = async (req, res) => {
                 });
             }
         }
+        // Em desenvolvimento, adicionar insight geral se não houver nenhum
+        if (isDevelopment && insights.length === 0) {
+            // Verificar se há dados no sistema
+            const { count: totalVets } = await supabase_1.supabaseAdmin
+                .from('vets')
+                .select('*', { count: 'exact', head: true });
+            const { count: totalClinics } = await supabase_1.supabaseAdmin
+                .from('clinics')
+                .select('*', { count: 'exact', head: true });
+            if (totalVets !== null && totalClinics !== null) {
+                insights.push({
+                    type: 'info',
+                    title: 'Sistema em funcionamento',
+                    message: `O sistema possui ${totalClinics} clínica(s) e ${totalVets} veterinário(s) cadastrado(s).`,
+                    icon: 'activity',
+                });
+            }
+        }
+        console.log(`[getSystemInsights] Gerados ${insights.length} insights (ambiente: ${isDevelopment ? 'development' : 'production'})`);
         res.json({ insights });
     }
     catch (error) {

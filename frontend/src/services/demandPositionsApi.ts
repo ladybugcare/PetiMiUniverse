@@ -64,6 +64,9 @@ export interface CreateCompositeDemandData {
 
 // API Service
 export const demandPositionsApi = {
+  /**
+   * @deprecated Use demandsApi.createV2 instead
+   */
   // Criar demanda composta com posições
   createCompositeDemand: async (
     data: CreateCompositeDemandData

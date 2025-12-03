@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Stethoscope, Heart, Building2, Star } from 'lucide-react';
 import IconWrapper from './IconWrapper';
 
@@ -20,44 +20,66 @@ const categories: CategoryCardData[] = [
   {
     id: 'vet',
     icon: <IconWrapper icon={Stethoscope} size={32} />,
-    title: 'Buscar Veterinário',
-    description: 'Encontre profissionais especializados para consultas, cirurgias e emergências',
+    title: 'Criar Demanda para Veterinário',
+    description: 'Publique uma vaga para consultas, cirurgias ou atendimentos emergenciais e receba candidaturas.',
     color: '#7c3aed',
   },
   {
     id: 'freelancer',
     icon: <IconWrapper icon={Heart} size={32} fill="currentColor" />,
-    title: 'Buscar Freelancer',
-    description: 'Grooming, adestramento, passeios e cuidados especializados',
+    title: 'Criar Demanda para Freelancer',
+    description: 'Abra uma demanda para grooming, adestramento, passeios ou cuidados especializados.',
     color: '#f59e0b',
   },
   {
     id: 'clinic',
     icon: <IconWrapper icon={Building2} size={32} />,
-    title: 'Buscar Clínica Parceira',
-    description: 'Parcerias com outras clínicas para serviços especializados',
+    title: 'Criar Demanda para Clínica Parceira',
+    description: 'Solicite suporte de outras clínicas para serviços especializados.',
     color: '#0ea5e9',
   },
   {
     id: 'other',
     icon: <IconWrapper icon={Star} size={32} fill="currentColor" />,
-    title: 'Outros Profissionais',
-    description: 'Consultorias, pesquisa e outros serviços especializados',
+    title: 'Criar Demanda para Outros Profissionais',
+    description: 'Crie demandas para consultorias e serviços técnicos especializados.',
     color: '#22c55e',
   },
 ];
 
 const CategorySelectionStep: React.FC<CategorySelectionStepProps> = ({ onSelect }) => {
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Determinar número de colunas baseado na largura da tela
+  const getGridColumns = () => {
+    if (windowWidth >= 1200) {
+      return 'repeat(4, 1fr)'; // Todos na mesma linha em telas grandes
+    } else if (windowWidth >= 768) {
+      return 'repeat(2, 1fr)'; // 2 por linha em telas médias
+    } else {
+      return '1fr'; // 1 por linha em mobile
+    }
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Que tipo de profissional você precisa?</h1>
+        <h1 style={styles.title}>Que tipo de demanda você deseja abrir?</h1>
         <p style={styles.subtitle}>
-          Escolha a categoria que melhor se adequa à sua necessidade
+          Selecione a categoria para criar uma demanda e receber candidaturas de profissionais qualificados.
         </p>
       </div>
 
-      <div style={styles.grid}>
+      <div style={{ ...styles.grid, gridTemplateColumns: getGridColumns() }}>
         {categories.map((category) => (
           <button
             key={category.id}
@@ -126,8 +148,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
     gap: '24px',
+    maxWidth: '1200px',
+    margin: '0 auto',
   },
   card: {
     backgroundColor: '#ffffff',

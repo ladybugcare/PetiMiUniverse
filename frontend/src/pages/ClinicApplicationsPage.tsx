@@ -3,14 +3,16 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import LoadingOverlay from '../components/LoadingOverlay';
-import { applicationsApi, Application } from '../services/applicationsApi';
+import { applicationsApi, Application, DemandApplication } from '../services/applicationsApi';
+import { workProofApi } from '../services/workProofApi';
 import { demandsApi } from '../services/demandsApi';
 import { useAlert } from '../hooks/useAlert';
-import { Settings } from 'lucide-react';
+import { Settings, CheckCircle } from 'lucide-react';
 import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
+import ApplicationStatusBadge from '../components/ApplicationStatusBadge';
 
 interface DemandWithApplications {
   demandId: string;
@@ -55,7 +57,7 @@ const ClinicApplicationsPage: React.FC = () => {
       
       // Filter by status if statusFilter is provided
       if (statusFilter === 'pending') {
-        applications = applications.filter(app => app.status === 'pending');
+        applications = applications.filter(app => app.status === 'applied' || app.status === 'invited');
       }
       
       // Get unique demand IDs
@@ -78,7 +80,7 @@ const ClinicApplicationsPage: React.FC = () => {
       const grouped: DemandWithApplications[] = [];
       demandIds.forEach(demandId => {
         const demandApps = applications.filter(app => app.demand_id === demandId);
-        const pendingApps = demandApps.filter(app => app.status === 'pending');
+        const pendingApps = demandApps.filter(app => app.status === 'applied' || app.status === 'invited');
         const demand = demandsMap.get(demandId);
         
         if (demand || demandApps.length > 0) {
@@ -108,7 +110,7 @@ const ClinicApplicationsPage: React.FC = () => {
     showConfirm('Tem certeza que deseja aceitar este candidato?', async () => {
       try {
         setProcessingId(applicationId);
-        await applicationsApi.updateStatus(applicationId, 'accepted');
+        await applicationsApi.updateStatus(applicationId, 'approved');
         showSuccess('Candidato aceito com sucesso!');
         await loadData();
       } catch (error: any) {
@@ -136,11 +138,27 @@ const ClinicApplicationsPage: React.FC = () => {
     });
   };
 
+  const handleApproveReport = async (applicationId: string) => {
+    showConfirm('Tem certeza que deseja aprovar este relatório?', async () => {
+      try {
+        setProcessingId(applicationId);
+        await workProofApi.approveReport(applicationId);
+        showSuccess('Relatório aprovado com sucesso!');
+        await loadData();
+      } catch (error: any) {
+        console.error('Error approving report:', error);
+        showError('Erro ao aprovar relatório: ' + (error.message || ''));
+      } finally {
+        setProcessingId(null);
+      }
+    });
+  };
+
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: { label: string; color: string; bgColor: string } } = {
       applied: { label: 'Pendente', color: '#92400e', bgColor: '#fef3c7' },
-      pending: { label: 'Pendente', color: '#92400e', bgColor: '#fef3c7' },
-      accepted: { label: 'Aceito', color: '#065f46', bgColor: '#d1fae5' },
+      invited: { label: 'Convidado', color: '#3b82f6', bgColor: '#dbeafe' },
+      approved: { label: 'Aprovado', color: '#065f46', bgColor: '#d1fae5' },
       rejected: { label: 'Rejeitado', color: '#991b1b', bgColor: '#fee2e2' },
     };
 
@@ -197,7 +215,7 @@ const ClinicApplicationsPage: React.FC = () => {
               {demandsWithApplications.map((demandWithApps) => {
                 const isExpanded = selectedDemandId === demandWithApps.demandId;
                 const pendingApps = demandWithApps.applications.filter(
-                  app => app.status === 'pending'
+                  app => app.status === 'applied' || app.status === 'invited'
                 );
 
                 return (
@@ -261,7 +279,17 @@ const ClinicApplicationsPage: React.FC = () => {
                                       <p style={styles.vetCrmv}>CRMV: {app.vets.crmv}</p>
                                     )}
                                   </div>
-                                  {getStatusBadge(app.status)}
+                                  <ApplicationStatusBadge status={app.status} />
+                                  {app.status === 'invited' && (
+                                    <span style={{
+                                      ...styles.statusBadge,
+                                      backgroundColor: '#dbeafe',
+                                      color: '#3b82f6',
+                                      marginLeft: '8px',
+                                    }}>
+                                      Convidado
+                                    </span>
+                                  )}
                                 </div>
 
                                 {app.message && (
@@ -275,7 +303,7 @@ const ClinicApplicationsPage: React.FC = () => {
                                   <span style={styles.dateText}>
                                     Candidatura em {new Date(app.applied_at || app.created_at || Date.now()).toLocaleDateString('pt-BR')}
                                   </span>
-                                  {app.status === 'pending' && (
+                                  {(app.status === 'applied' || app.status === 'invited') && (
                                     <div style={styles.actionButtons}>
                                       <button
                                         onClick={() => handleAccept(app.id)}
@@ -298,6 +326,26 @@ const ClinicApplicationsPage: React.FC = () => {
                                         }}
                                       >
                                         {processingId === app.id ? 'Processando...' : 'Rejeitar'}
+                                      </button>
+                                    </div>
+                                  )}
+                                  {app.status === 'report_sent' && (
+                                    <div style={styles.actionButtons}>
+                                      <button
+                                        onClick={() => handleApproveReport(app.id)}
+                                        disabled={processingId === app.id}
+                                        style={{
+                                          ...styles.actionButton,
+                                          backgroundColor: colors.success,
+                                          color: '#fff',
+                                          opacity: processingId === app.id ? 0.6 : 1,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                        }}
+                                      >
+                                        <CheckCircle size={16} />
+                                        {processingId === app.id ? 'Processando...' : 'Aprovar Relatório'}
                                       </button>
                                     </div>
                                   )}

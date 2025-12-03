@@ -6,7 +6,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // backend/src/app.ts
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
-const dotenv_1 = __importDefault(require("dotenv"));
+const helmet_1 = __importDefault(require("helmet"));
+// loadEnv.ts é carregado automaticamente quando importamos supabase
 const supabase_js_1 = require("./config/supabase.js");
 const errorHandler_js_1 = require("./middleware/errorHandler.js");
 const rateLimiter_js_1 = require("./middleware/rateLimiter.js");
@@ -32,22 +33,56 @@ const notifications_js_1 = __importDefault(require("./routes/notifications.js"))
 const messages_js_1 = __importDefault(require("./routes/messages.js"));
 const messageReports_js_1 = __importDefault(require("./routes/messageReports.js"));
 const health_js_1 = __importDefault(require("./routes/health.js"));
-// 🔹 Carrega variáveis de ambiente
-dotenv_1.default.config();
+// 🔹 Variáveis de ambiente são carregadas automaticamente por loadEnv.ts
+// quando importamos supabase (config/supabase.ts importa './loadEnv')
+// Ordem de carregamento: .env.${NODE_ENV}.local > .env.${NODE_ENV} > .env.local > .env
 // 🔹 Inicializa o Express
 const app = (0, express_1.default)();
-// 🔹 Configuração de CORS (com suporte a múltiplos domínios)
-// Permite origens locais (portas 3001 e 3002 para React dev server) e ambientes de deploy
-const allowedOrigins = [
-    'http://localhost:3000', // Backend local (caso frontend rode na mesma porta)
-    'http://localhost:3001', // Frontend local - porta alternativa
-    'http://localhost:3002', // Frontend local - porta padrão React dev server
-    'https://peti-vet-git-staging-petivet.vercel.app', // Staging (Vercel preview)
-    'https://staging.petivet.com.br', // Staging (domínio customizado)
-    'https://peti-vet-petivet.vercel.app', // Vercel production (preview)
-    'https://petivet.com.br', // Produção (domínio customizado)
-    process.env.FRONTEND_URL, // Variável de ambiente (permite configuração flexível)
-].filter((origin) => Boolean(origin));
+// 🔹 Helmet.js - Headers de segurança HTTP
+app.use((0, helmet_1.default)({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"], // Permite inline styles (necessário para alguns componentes)
+            scriptSrc: ["'self'"],
+            imgSrc: ["'self'", 'data:', 'https:'], // Permite imagens de qualquer origem HTTPS
+            connectSrc: ["'self'", process.env.SUPABASE_URL || 'https://*.supabase.co'],
+            fontSrc: ["'self'", 'data:'],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'"],
+            frameSrc: ["'none'"],
+        },
+    },
+    crossOriginEmbedderPolicy: false, // Desabilitado para compatibilidade com Supabase
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // Necessário para Supabase Storage
+}));
+// 🔹 Configuração de CORS (com suporte a múltiplos domínios via variáveis de ambiente)
+// Lê origens permitidas de variáveis de ambiente
+const getAllowedOrigins = () => {
+    const origins = [];
+    // Origens padrão para desenvolvimento
+    if (process.env.NODE_ENV === 'development') {
+        origins.push('http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002');
+    }
+    // Origens de staging
+    if (process.env.STAGING_ORIGINS) {
+        origins.push(...process.env.STAGING_ORIGINS.split(',').map((o) => o.trim()));
+    }
+    // Origens de produção
+    if (process.env.PRODUCTION_ORIGINS) {
+        origins.push(...process.env.PRODUCTION_ORIGINS.split(',').map((o) => o.trim()));
+    }
+    // Frontend URL (pode ser usado em qualquer ambiente)
+    if (process.env.FRONTEND_URL) {
+        origins.push(process.env.FRONTEND_URL);
+    }
+    // Fallback para origens hardcoded se não houver variáveis de ambiente (compatibilidade)
+    if (origins.length === 0) {
+        origins.push('http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'https://peti-vet-git-staging-petivet.vercel.app', 'https://staging.petivet.com.br', 'https://peti-vet-petivet.vercel.app', 'https://petivet.com.br');
+    }
+    return origins.filter((origin) => Boolean(origin));
+};
+const allowedOrigins = getAllowedOrigins();
 const normalizedOrigins = allowedOrigins.map((origin) => origin.replace(/\/$/, ''));
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
@@ -87,9 +122,19 @@ app.use((0, cors_1.default)({
 }));
 // 🔹 Correlation ID middleware (deve ser um dos primeiros)
 app.use(correlationId_js_1.correlationIdMiddleware);
-// 🔹 Aumenta limite de payload (para imagens base64)
-app.use(express_1.default.json({ limit: '50mb' }));
-app.use(express_1.default.urlencoded({ limit: '50mb', extended: true }));
+// 🔹 Sanitização de inputs (proteção contra XSS)
+// Aplicar em rotas que recebem dados do usuário
+// Nota: Não aplicar em rotas de upload de arquivos (multer precisa do body raw)
+// 🔹 Limites de payload por tipo de endpoint
+// Limite padrão menor para segurança (10MB)
+const defaultLimit = process.env.PAYLOAD_LIMIT_DEFAULT || '10mb';
+// Limite maior apenas para endpoints de upload
+app.use(express_1.default.json({ limit: defaultLimit }));
+app.use(express_1.default.urlencoded({ limit: defaultLimit, extended: true }));
+// Middleware para aumentar limite em rotas específicas de upload
+app.use('/vets/upload-crmv', express_1.default.json({ limit: '5mb' }));
+app.use('/freelancers/upload-certification', express_1.default.json({ limit: '5mb' }));
+app.use('/marketplace/upload-images', express_1.default.json({ limit: '10mb' }));
 // 🔹 Rate limiting global (aplicado a todas as rotas)
 app.use(rateLimiter_js_1.generalLimiter);
 // 🔹 Rotas principais

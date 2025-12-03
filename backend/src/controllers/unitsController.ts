@@ -401,24 +401,24 @@ export const getUnitStats = async (req: Request<{ unitId: string }>, res: Respon
           const compositeDemandIds = demandsData?.filter(d => d.is_composite).map(d => d.id) || [];
           const simpleDemandIds = demandsData?.filter(d => !d.is_composite).map(d => d.id) || [];
 
-          // Para demandas simples: buscar em applications
+          // Para demandas simples: buscar em demand_applications
           if (simpleDemandIds.length > 0) {
             const { count: simpleApps, error: simpleAppsError } = await supabase
-              .from('applications')
+              .from('demand_applications')
               .select('*', { count: 'exact', head: true })
               .in('demand_id', simpleDemandIds);
 
             if (simpleAppsError) {
-              console.warn('Error getting simple applications (table may not exist):', JSON.stringify(simpleAppsError, null, 2));
+              console.warn('Error getting simple applications:', JSON.stringify(simpleAppsError, null, 2));
             } else {
               applicationsCount += simpleApps || 0;
             }
 
             const { count: simplePending, error: simplePendingError } = await supabase
-              .from('applications')
+              .from('demand_applications')
               .select('*', { count: 'exact', head: true })
               .in('demand_id', simpleDemandIds)
-              .eq('status', 'pending');
+              .in('status', ['applied', 'invited']);
 
             if (simplePendingError) {
               console.warn('Error getting simple pending applications:', JSON.stringify(simplePendingError, null, 2));

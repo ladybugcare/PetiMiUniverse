@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // backend/src/routes/adminRoutes.ts
 const express_1 = __importDefault(require("express"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
+const rateLimiter_js_1 = require("../middleware/rateLimiter.js");
 // Controllers de usuários
 const createAdmin_1 = require("../controllers/admin/createAdmin");
 const createClinic_1 = require("../controllers/admin/createClinic");
@@ -21,6 +22,8 @@ const getVetDocument_1 = require("../controllers/admin/getVetDocument");
 // Controllers de relatórios admin
 const adminReportsController_1 = require("../controllers/adminReportsController");
 const router = express_1.default.Router();
+// Aplicar rate limiter mais permissivo para rotas GET de dashboard (não para POST/PATCH)
+router.get('*', rateLimiter_js_1.statsLimiter);
 /**
  * ==============================================
  * 🔹 ADMIN USER MANAGEMENT

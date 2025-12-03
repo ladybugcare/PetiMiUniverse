@@ -1,7 +1,8 @@
 // backend/src/app.ts
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import helmet from 'helmet';
+// loadEnv.ts é carregado automaticamente quando importamos supabase
 import { supabase } from './config/supabase.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { generalLimiter } from './middleware/rateLimiter.js';
@@ -28,25 +29,79 @@ import notificationsRoutes from './routes/notifications.js';
 import messagesRoutes from './routes/messages.js';
 import messageReportsRoutes from './routes/messageReports.js';
 import healthRoutes from './routes/health.js';
+import demandInvitesRoutes from './routes/demandInvites.js';
+import workProofRoutes from './routes/workProof.js';
 
-// 🔹 Carrega variáveis de ambiente
-dotenv.config();
+// 🔹 Variáveis de ambiente são carregadas automaticamente por loadEnv.ts
+// quando importamos supabase (config/supabase.ts importa './loadEnv')
+// Ordem de carregamento: .env.${NODE_ENV}.local > .env.${NODE_ENV} > .env.local > .env
 
 // 🔹 Inicializa o Express
 const app = express();
 
-// 🔹 Configuração de CORS (com suporte a múltiplos domínios)
-// Permite origens locais (portas 3001 e 3002 para React dev server) e ambientes de deploy
-const allowedOrigins: string[] = [
-  'http://localhost:3000', // Backend local (caso frontend rode na mesma porta)
-  'http://localhost:3001', // Frontend local - porta alternativa
-  'http://localhost:3002', // Frontend local - porta padrão React dev server
-  'https://peti-vet-git-staging-petivet.vercel.app', // Staging (Vercel preview)
-  'https://staging.petivet.com.br', // Staging (domínio customizado)
-  'https://peti-vet-petivet.vercel.app', // Vercel production (preview)
-  'https://petivet.com.br', // Produção (domínio customizado)
-  process.env.FRONTEND_URL, // Variável de ambiente (permite configuração flexível)
-].filter((origin): origin is string => Boolean(origin));
+// 🔹 Helmet.js - Headers de segurança HTTP
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // Permite inline styles (necessário para alguns componentes)
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'https:'], // Permite imagens de qualquer origem HTTPS
+        connectSrc: ["'self'", process.env.SUPABASE_URL || 'https://*.supabase.co'],
+        fontSrc: ["'self'", 'data:'],
+        objectSrc: ["'none'"],
+        mediaSrc: ["'self'"],
+        frameSrc: ["'none'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Desabilitado para compatibilidade com Supabase
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // Necessário para Supabase Storage
+  })
+);
+
+// 🔹 Configuração de CORS (com suporte a múltiplos domínios via variáveis de ambiente)
+// Lê origens permitidas de variáveis de ambiente
+const getAllowedOrigins = (): string[] => {
+  const origins: string[] = [];
+
+  // Origens padrão para desenvolvimento
+  if (process.env.NODE_ENV === 'development') {
+    origins.push('http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002');
+  }
+
+  // Origens de staging
+  if (process.env.STAGING_ORIGINS) {
+    origins.push(...process.env.STAGING_ORIGINS.split(',').map((o) => o.trim()));
+  }
+
+  // Origens de produção
+  if (process.env.PRODUCTION_ORIGINS) {
+    origins.push(...process.env.PRODUCTION_ORIGINS.split(',').map((o) => o.trim()));
+  }
+
+  // Frontend URL (pode ser usado em qualquer ambiente)
+  if (process.env.FRONTEND_URL) {
+    origins.push(process.env.FRONTEND_URL);
+  }
+
+  // Fallback para origens hardcoded se não houver variáveis de ambiente (compatibilidade)
+  if (origins.length === 0) {
+    origins.push(
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002',
+      'https://peti-vet-git-staging-petivet.vercel.app',
+      'https://staging.petivet.com.br',
+      'https://peti-vet-petivet.vercel.app',
+      'https://petivet.com.br'
+    );
+  }
+
+  return origins.filter((origin): origin is string => Boolean(origin));
+};
+
+const allowedOrigins = getAllowedOrigins();
 
 const normalizedOrigins = allowedOrigins.map((origin) =>
   origin.replace(/\/$/, '')
@@ -97,9 +152,22 @@ app.use(
 // 🔹 Correlation ID middleware (deve ser um dos primeiros)
 app.use(correlationIdMiddleware);
 
-// 🔹 Aumenta limite de payload (para imagens base64)
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// 🔹 Sanitização de inputs (proteção contra XSS)
+// Aplicar em rotas que recebem dados do usuário
+// Nota: Não aplicar em rotas de upload de arquivos (multer precisa do body raw)
+
+// 🔹 Limites de payload por tipo de endpoint
+// Limite padrão menor para segurança (10MB)
+const defaultLimit = process.env.PAYLOAD_LIMIT_DEFAULT || '10mb';
+
+// Limite maior apenas para endpoints de upload
+app.use(express.json({ limit: defaultLimit }));
+app.use(express.urlencoded({ limit: defaultLimit, extended: true }));
+
+// Middleware para aumentar limite em rotas específicas de upload
+app.use('/vets/upload-crmv', express.json({ limit: '5mb' }));
+app.use('/freelancers/upload-certification', express.json({ limit: '5mb' }));
+app.use('/marketplace/upload-images', express.json({ limit: '10mb' }));
 
 // 🔹 Rate limiting global (aplicado a todas as rotas)
 app.use(generalLimiter);
@@ -124,6 +192,8 @@ app.use('/support', supportTicketsRoutes);
 app.use('/notifications', notificationsRoutes);
 app.use('/api/messages', messagesRoutes);
 app.use('/api/messages/admin', messageReportsRoutes);
+app.use('/api', demandInvitesRoutes);
+app.use('/api', workProofRoutes);
 app.use('/health', healthRoutes);
 
 // 🔹 Healthcheck melhorado (verifica dependências)

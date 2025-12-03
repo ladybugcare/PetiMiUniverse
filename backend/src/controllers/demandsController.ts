@@ -1,6 +1,10 @@
 import type { Request, Response } from 'express'
 import { supabase } from '../config/supabase'
 import { createNotification } from './notificationsController'
+import { DemandValidationService } from '../services/demandValidationService.js'
+import { DemandPermissionService } from '../services/demandPermissionService.js'
+import { DemandLifecycleService } from '../services/demandLifecycleService.js'
+import { notifyProfessionalsByCategory } from './notificationsController.js'
 
 interface DemandBody {
   title: string
@@ -15,6 +19,27 @@ interface DemandBody {
   payment?: number
 }
 
+interface CreateDemandV2Body {
+  clinic_id: string
+  unit_id?: string
+  category: 'vet' | 'freelancer' | 'clinic' | 'other'
+  title: string
+  description: string
+  demand_date: string // YYYY-MM-DD
+  start_time: string
+  end_time: string
+  is_overnight: boolean
+  payment: number // Payment geral (pode ser usado como fallback)
+  positions: Array<{
+    slots: number
+    specialties: string[]
+    payment?: number // Payment específico da posição (opcional, usa payment geral se não fornecido)
+  }>
+}
+
+/**
+ * @deprecated Use createDemandV2 instead
+ */
 export const createDemand = async (req: Request<{}, {}, DemandBody>, res: Response) => {
   const { 
     title, 
@@ -41,7 +66,9 @@ export const createDemand = async (req: Request<{}, {}, DemandBody>, res: Respon
       start_time,
       duration_hours,
       status: status || 'open', 
-      payment 
+      payment,
+      vacancies: 1, // Default: 1 vaga
+      filled_positions: 0 // Inicialmente nenhuma vaga preenchida
     }])
     .select()
 
@@ -85,6 +112,197 @@ export const createDemand = async (req: Request<{}, {}, DemandBody>, res: Respon
 
   res.status(201).json({ demand: newDemand })
 }
+
+/**
+ * Criar demanda V2 - versão completa com validações, permissões e lifecycle
+ */
+export const createDemandV2 = async (
+  req: Request<{}, {}, CreateDemandV2Body>,
+  res: Response
+) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Usuário não autenticado' });
+    }
+
+    const {
+      clinic_id,
+      unit_id,
+      category,
+      title,
+      description,
+      demand_date,
+      start_time,
+      end_time,
+      is_overnight,
+      payment,
+      positions,
+    } = req.body;
+
+    // Validar clínica
+    await DemandValidationService.validateClinic(clinic_id, userId);
+
+    // Validar unidade (obter unit_id validado)
+    const validatedUnitId = await DemandValidationService.validateUnit(unit_id, clinic_id);
+
+    // Validar data
+    DemandValidationService.validateDate(demand_date);
+
+    // Validar categoria
+    DemandValidationService.validateCategory(category);
+
+    // Validar posições
+    DemandValidationService.validatePositions(positions);
+
+    // Validar especialidades para cada posição
+    for (const position of positions) {
+      await DemandValidationService.validateSpecialties(position.specialties, category);
+    }
+
+    // Validar payment
+    DemandValidationService.validatePayment(payment);
+
+    // Validar horários
+    DemandValidationService.validateTimeRange(start_time, end_time, is_overnight);
+
+    // Calcular vacancies
+    const vacancies = DemandValidationService.calculateVacancies(positions);
+
+    // Criar demanda
+    const { data: createdDemand, error: demandError } = await supabase
+      .from('demands')
+      .insert({
+        clinic_id,
+        unit_id: validatedUnitId,
+        category,
+        title,
+        description,
+        demand_date,
+        start_time,
+        end_time,
+        is_overnight,
+        payment,
+        vacancies,
+        filled_positions: 0,
+        status: 'open',
+        is_composite: positions.length > 1,
+      })
+      .select()
+      .single();
+
+    if (demandError) {
+      throw demandError;
+    }
+
+    // Criar posições
+    const positionsData = positions.map((pos) => ({
+      master_demand_id: createdDemand.id,
+      specialty: pos.specialties[0], // Primeira especialidade para backward compatibility
+      total_slots: pos.slots,
+      individual_payment: pos.payment !== undefined ? pos.payment : payment, // Usar payment da posição ou payment geral
+      description: null,
+    }));
+
+    const { data: createdPositions, error: posError } = await supabase
+      .from('demand_positions')
+      .insert(positionsData)
+      .select();
+
+    if (posError) {
+      throw posError;
+    }
+
+    // Criar especialidades em position_specialties
+    const specialtiesData: any[] = [];
+    createdPositions.forEach((position, index) => {
+      const posSpecialties = positions[index].specialties;
+      posSpecialties.forEach((specialty: string) => {
+        specialtiesData.push({
+          position_id: position.id,
+          specialty_name: specialty,
+        });
+      });
+    });
+
+    if (specialtiesData.length > 0) {
+      const { error: specialtiesError } = await supabase
+        .from('position_specialties')
+        .insert(specialtiesData);
+
+      if (specialtiesError) {
+        console.error('Error creating position specialties:', specialtiesError);
+        // Não falha totalmente, pois a posição já foi criada
+      }
+    }
+
+    // Popular required_specialties com todas as especialidades únicas das posições
+    const allSpecialties = Array.from(
+      new Set(positions.flatMap((pos) => pos.specialties))
+    );
+
+    if (allSpecialties.length > 0) {
+      const { error: updateSpecialtiesError } = await supabase
+        .from('demands')
+        .update({ required_specialties: allSpecialties })
+        .eq('id', createdDemand.id);
+
+      if (updateSpecialtiesError) {
+        console.error('Error updating required_specialties:', updateSpecialtiesError);
+        // Não falha totalmente, pois a demanda já foi criada
+      }
+    }
+
+    // Calcular e atualizar status via lifecycle
+    const calculatedStatus = await DemandLifecycleService.calculateDemandStatus(
+      createdDemand.id
+    );
+    await DemandLifecycleService.updateDemandStatus(createdDemand.id, calculatedStatus);
+
+    // Buscar nome da clínica para notificação
+    const { data: clinic } = await supabase
+      .from('clinics')
+      .select('name')
+      .eq('id', clinic_id)
+      .single();
+
+    // Notificar profissionais por categoria
+    if (clinic) {
+      notifyProfessionalsByCategory(
+        category,
+        createdDemand.id,
+        clinic.name,
+        title
+      ).catch((err) => {
+        console.error('Error sending notifications:', err);
+        // Não falhar a criação da demanda
+      });
+    }
+
+    // Adicionar array de specialties aos positions retornados
+    const positionsWithSpecialties = createdPositions.map((pos, index) => ({
+      ...pos,
+      specialties: positions[index].specialties,
+    }));
+
+    // Buscar demanda atualizada com status calculado
+    const { data: updatedDemand } = await supabase
+      .from('demands')
+      .select('*')
+      .eq('id', createdDemand.id)
+      .single();
+
+    res.status(201).json({
+      demand: updatedDemand || createdDemand,
+      positions: positionsWithSpecialties,
+    });
+  } catch (error: any) {
+    console.error('Error in createDemandV2:', error);
+    res.status(400).json({
+      error: error.message || 'Erro ao criar demanda',
+    });
+  }
+};
 
 export const getDemands = async (req: Request, res: Response) => {
   const { user_role, user_id } = req.query
@@ -246,8 +464,8 @@ export const updateDemand = async (req: Request, res: Response) => {
     if (updates.status && currentDemand && currentDemand.status !== updates.status) {
       // Get all applications for this demand
       const { data: applications } = await supabase
-        .from('applications')
-        .select('vet_id')
+        .from('demand_applications')
+        .select('vet_id, freelancer_id')
         .eq('demand_id', id);
 
       // Get demand info
@@ -264,12 +482,14 @@ export const updateDemand = async (req: Request, res: Response) => {
           'cancelled': 'A demanda foi cancelada',
         };
 
-        const notificationPromises = applications.map((app) =>
-          createNotification({
-            user_id: app.vet_id,
-            type: 'demand_status_changed',
-            title: 'Status de Demanda Atualizado',
-            message: `${statusMessages[updates.status] || 'O status da demanda mudou'}: "${demandInfo.title}"`,
+        const notificationPromises = applications
+          .filter((app: any) => app.vet_id || app.freelancer_id)
+          .map((app: any) =>
+            createNotification({
+              user_id: app.vet_id || app.freelancer_id,
+              type: 'demand_status_changed',
+              title: 'Status de Demanda Atualizado',
+              message: `${statusMessages[updates.status] || 'O status da demanda mudou'}: "${demandInfo.title}"`,
             link: `/demands/${id}`,
             entity_type: 'demand',
             entity_id: id,
@@ -295,8 +515,26 @@ export const updateDemandStatus = async (req: Request, res: Response) => {
   const { status } = req.body;
 
   try {
-    if (!['open', 'in_progress', 'closed', 'cancelled'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status value' });
+    // Validar status permitidos (incluindo novos status do lifecycle)
+    const validStatuses = [
+      'open',
+      'with_applicants',
+      'partially_filled',
+      'filled',
+      'in_progress',
+      'awaiting_report',
+      'completed',
+      'canceled_by_clinic',
+      'canceled_by_system',
+      'expired',
+      'cancelled', // Mantido para compatibilidade
+      'closed', // Mantido para compatibilidade
+    ];
+
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ 
+        error: `Invalid status value. Allowed values: ${validStatuses.join(', ')}` 
+      });
     }
 
     // Get current status
@@ -323,8 +561,8 @@ export const updateDemandStatus = async (req: Request, res: Response) => {
       // Get all applications for this demand (from both tables)
       const [applicationsResult, positionApplicationsResult] = await Promise.all([
         supabase
-          .from('applications')
-          .select('vet_id')
+          .from('demand_applications')
+          .select('vet_id, freelancer_id')
           .eq('demand_id', id),
         supabase
           .from('position_applications')
@@ -332,11 +570,14 @@ export const updateDemandStatus = async (req: Request, res: Response) => {
           .eq('position_id', id), // This might need adjustment based on schema
       ]);
 
-      // Combine all vet_ids
-      const allVetIds = new Set<string>();
+      // Combine all vet_ids and freelancer_ids
+      const allUserIds = new Set<string>();
       
       if (applicationsResult.data) {
-        applicationsResult.data.forEach((app: any) => allVetIds.add(app.vet_id));
+        applicationsResult.data.forEach((app: any) => {
+          if (app.vet_id) allUserIds.add(app.vet_id);
+          if (app.freelancer_id) allUserIds.add(app.freelancer_id);
+        });
       }
       
       // Get position applications through demand_positions
@@ -355,7 +596,7 @@ export const updateDemandStatus = async (req: Request, res: Response) => {
             .in('position_id', positionIds);
 
           if (posApps) {
-            posApps.forEach((app: any) => allVetIds.add(app.vet_id));
+            posApps.forEach((app: any) => allUserIds.add(app.vet_id));
           }
         }
       }
@@ -366,10 +607,10 @@ export const updateDemandStatus = async (req: Request, res: Response) => {
         'cancelled': 'A demanda foi cancelada',
       };
 
-      if (allVetIds.size > 0 && currentDemand.title) {
-        const notificationPromises = Array.from(allVetIds).map((vetId) =>
+      if (allUserIds.size > 0 && currentDemand.title) {
+        const notificationPromises = Array.from(allUserIds).map((userId) =>
           createNotification({
-            user_id: vetId,
+            user_id: userId,
             type: 'demand_status_changed',
             title: 'Status de Demanda Atualizado',
             message: `${statusMessages[status] || 'O status da demanda mudou'}: "${currentDemand.title}"`,
@@ -423,7 +664,7 @@ export const getDemandApplications = async (req: Request, res: Response) => {
 
   try {
     const { data, error } = await supabase
-      .from('applications')
+      .from('demand_applications')
       .select(`
         *,
         vets (
@@ -431,12 +672,17 @@ export const getDemandApplications = async (req: Request, res: Response) => {
           name,
           email,
           crmv,
-          specialties,
-          experience
+          specialties
+        ),
+        freelancers (
+          id,
+          name,
+          email,
+          document_number
         )
       `)
       .eq('demand_id', id)
-      .order('created_at', { ascending: false });
+      .order('applied_at', { ascending: false });
 
     if (error) throw error;
 

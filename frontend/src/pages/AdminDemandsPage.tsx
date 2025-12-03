@@ -388,49 +388,49 @@ const AdminDemandsPage: React.FC = () => {
               <div style={styles.modalBody}>
                 {editFormData && (
                   <>
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Título:</label>
-                      <input
-                        type="text"
-                        value={editFormData.title || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
-                        style={styles.input}
-                      />
-                    </div>
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Descrição:</label>
-                      <textarea
-                        value={editFormData.description || ''}
-                        onChange={(e) =>
-                          setEditFormData({ ...editFormData, description: e.target.value })
-                        }
-                        style={{ ...styles.input, minHeight: '80px' }}
-                      />
-                    </div>
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Status:</label>
-                      <select
-                        value={editFormData.status || 'open'}
-                        onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value as any })}
-                        style={styles.input}
-                      >
-                        <option value="open">Aberta</option>
-                        <option value="in_progress">Em Progresso</option>
-                        <option value="closed">Fechada</option>
-                        <option value="cancelled">Cancelada</option>
-                      </select>
-                    </div>
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Pagamento:</label>
-                      <input
-                        type="number"
-                        value={editFormData.payment || ''}
-                        onChange={(e) =>
-                          setEditFormData({ ...editFormData, payment: parseFloat(e.target.value) })
-                        }
-                        style={styles.input}
-                      />
-                    </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Título:</label>
+                  <input
+                    type="text"
+                    value={editFormData.title || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                    style={styles.input}
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Descrição:</label>
+                  <textarea
+                    value={editFormData.description || ''}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, description: e.target.value })
+                    }
+                    style={{ ...styles.input, minHeight: '80px' }}
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Status:</label>
+                  <select
+                    value={editFormData.status || 'open'}
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value as any })}
+                    style={styles.input}
+                  >
+                    <option value="open">Aberta</option>
+                    <option value="in_progress">Em Progresso</option>
+                    <option value="closed">Fechada</option>
+                    <option value="cancelled">Cancelada</option>
+                  </select>
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Pagamento:</label>
+                  <input
+                    type="number"
+                    value={editFormData.payment || ''}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, payment: parseFloat(e.target.value) })
+                    }
+                    style={styles.input}
+                  />
+                </div>
                   </>
                 )}
                 <div style={styles.formActions}>

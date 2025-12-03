@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MultiSelect from './MultiSelect';
 import DemandPositionsForm from './DemandPositionsForm';
+import DemandReviewStep from './DemandReviewStep';
 import InlineCalendar from './InlineCalendar';
 import { demandsApi } from '../services/demandsApi';
-import { demandPositionsApi } from '../services/demandPositionsApi';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
 import { useUnit } from '../contexts/UnitContext';
@@ -14,43 +14,48 @@ type CategoryType = 'vet' | 'freelancer' | 'clinic' | 'other';
 interface DemandFormStepProps {
   category: CategoryType;
   onBack: () => void;
+  onReview?: () => void;
 }
 
 const getCategoryInfo = (category: CategoryType) => {
   switch (category) {
     case 'vet':
       return {
-        title: 'Nova Demanda para Veterinário',
-        subtitle: 'Descreva a vaga ou serviço veterinário necessário',
+        title: 'Criar Demanda para Veterinário',
+        subtitle: 'Preencha os detalhes da vaga para receber candidaturas de veterinários qualificados.',
         gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       };
     case 'freelancer':
       return {
-        title: 'Nova Demanda para Freelancer',
-        subtitle: 'Descreva o serviço de cuidado pet necessário',
+        title: 'Criar Demanda para Freelancer',
+        subtitle: 'Preencha os detalhes da vaga para receber candidaturas de freelancers qualificados.',
         gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
       };
     case 'clinic':
       return {
-        title: 'Nova Demanda para Clínica Parceira',
-        subtitle: 'Descreva a parceria ou serviço clínico necessário',
+        title: 'Criar Demanda para Clínica Parceira',
+        subtitle: 'Preencha os detalhes da demanda para receber propostas de clínicas parceiras.',
         gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
       };
     case 'other':
       return {
-        title: 'Nova Demanda Profissional',
-        subtitle: 'Descreva o serviço profissional necessário',
+        title: 'Criar Demanda para Outros Profissionais',
+        subtitle: 'Preencha os detalhes da vaga para receber candidaturas de profissionais especializados.',
         gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
       };
   }
 };
 
-const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => {
+const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onReview }) => {
   const navigate = useNavigate();
   const { showSuccess, showError, showWarning } = useAlert();
-  const { units, selectedUnit, loading: unitsLoading } = useUnit();
+  const { units: allUnits, selectedUnit, loading: unitsLoading } = useUnit();
+  
+  // Filtrar apenas unidades aprovadas para criar demanda
+  const units = allUnits.filter((u) => u.status === 'approved');
   const [loading, setLoading] = useState(false);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [currentStep, setCurrentStep] = useState<'form' | 'review'>('form');
 
   // Initialize with selected unit or main unit or first unit
   const getInitialUnitId = (availableUnits: typeof units, currentSelectedUnit: typeof selectedUnit) => {
@@ -139,7 +144,17 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Validar data não pode ser passado
+  const validateDate = (dateString: string): boolean => {
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    date.setHours(0, 0, 0, 0);
+    return date >= today;
+  };
+
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validações básicas
@@ -151,6 +166,12 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
       !formData.end_time
     ) {
       showWarning('Por favor, preencha todos os campos obrigatórios.');
+      return;
+    }
+
+    // Validar data não pode ser passado
+    if (!validateDate(formData.demand_date)) {
+      showWarning('A data não pode ser no passado.');
       return;
     }
 
@@ -179,28 +200,42 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
       return;
     }
 
+    // Avançar para step de revisão
+    if (onReview) {
+      onReview();
+    } else {
+      setCurrentStep('review');
+    }
+  };
+
+  const handleReviewSubmit = async () => {
     try {
       setLoading(true);
 
       const user = JSON.parse(localStorage.getItem('user') || '');
       const clinicId = user.id;
 
-      // Usar nova API de demandas compostas
-      await demandPositionsApi.createCompositeDemand({
-        title: formData.title,
-        description: formData.description,
+      // Calcular payment médio para usar como fallback
+      const averagePayment = positions.length > 0
+        ? positions.reduce((sum, p) => sum + p.payment, 0) / positions.length
+        : 0;
+
+      // Usar novo endpoint createV2
+      await demandsApi.createV2({
         clinic_id: clinicId,
         unit_id: formData.selectedUnitId || undefined,
+        category,
+        title: formData.title,
+        description: formData.description,
         demand_date: formData.demand_date,
         start_time: formData.start_time,
         end_time: formData.end_time,
-        category,
         is_overnight: formData.isOvernight,
+        payment: averagePayment, // Payment médio como fallback
         positions: positions.map((p) => ({
-          specialties: p.specialties,
           slots: p.slots,
-          payment: p.payment,
-          description: p.description,
+          specialties: p.specialties,
+          payment: p.payment, // Incluir payment específico de cada posição
         })),
       });
 
@@ -208,11 +243,80 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
       navigate('/clinic-dashboard');
     } catch (error: any) {
       console.error('Error creating demand:', error);
-      showError('Erro ao criar demanda: ' + (error.message || 'Tente novamente.'));
+      const errorMessage = error.message || 'Tente novamente.';
+      showError('Erro ao criar demanda: ' + errorMessage);
     } finally {
       setLoading(false);
     }
   };
+
+  const handleBackFromReview = () => {
+    setCurrentStep('form');
+  };
+
+  // Se estiver no step de revisão, mostrar DemandReviewStep
+  if (currentStep === 'review') {
+    const selectedUnit = units.find((u) => u.id === formData.selectedUnitId);
+    const unitName = selectedUnit
+      ? `${selectedUnit.name}${selectedUnit.nickname ? ` (${selectedUnit.nickname})` : ''}`
+      : undefined;
+
+    return (
+      <DemandReviewStep
+        formData={formData}
+        positions={positions}
+        category={category}
+        unitName={unitName}
+        onBack={handleBackFromReview}
+        onSubmit={handleReviewSubmit}
+      />
+    );
+  }
+
+  // Verificar se há unidades aprovadas
+  if (!unitsLoading && units.length === 0) {
+    return (
+      <div style={styles.container}>
+        <div
+          style={{
+            ...styles.header,
+            background: categoryInfo.gradient,
+          }}
+        >
+          <h1 style={styles.headerTitle}>{categoryInfo.title}</h1>
+          <p style={styles.headerSubtitle}>{categoryInfo.subtitle}</p>
+        </div>
+        <div style={styles.formCard}>
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <p style={{ fontSize: '18px', color: colors.text, marginBottom: '16px' }}>
+              Você não possui unidades aprovadas para criar demandas.
+            </p>
+            <p style={{ fontSize: '14px', color: colors.darkGray, marginBottom: '24px' }}>
+              Apenas unidades aprovadas pelo administrador podem criar demandas.
+              {allUnits.some((u) => u.status === 'pending_review') && (
+                <span> Você tem unidades aguardando aprovação.</span>
+              )}
+            </p>
+            <button
+              onClick={onBack}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: colors.primary,
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: '600',
+              }}
+            >
+              ← Voltar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
@@ -229,7 +333,7 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
 
       {/* Form */}
       <div style={styles.formCard}>
-        <form onSubmit={handleSubmit} style={styles.form}>
+        <form onSubmit={handleFormSubmit} style={styles.form}>
           <div style={styles.inputGroup}>
             <label style={styles.label}>Título da Demanda *</label>
             <input
@@ -249,7 +353,7 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
               name="description"
               value={formData.description}
               onChange={handleChange}
-              placeholder="Descreva as atividades, requisitos e o que espera do profissional..."
+              placeholder="Descreva as atividades, requisitos e o que espera do profissional. Esta descrição será visível para os candidatos."
               style={styles.textarea}
               required
             />
@@ -344,6 +448,16 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
             />
           </div>
 
+          {/* Cálculo visual de vagas totais */}
+          <div style={styles.vacanciesSummary}>
+            <div style={styles.vacanciesCard}>
+              <strong style={styles.vacanciesLabel}>Total de Vagas:</strong>
+              <span style={styles.vacanciesValue}>
+                {positions.reduce((sum, pos) => sum + (pos.slots || 0), 0)}
+              </span>
+            </div>
+          </div>
+
           <div style={styles.buttonGroup}>
             <button
               type="button"
@@ -364,7 +478,7 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack }) => 
                 opacity: loading ? 0.7 : 1,
               }}
             >
-              {loading ? 'Criando...' : 'Criar Demanda →'}
+              {loading ? 'Processando...' : 'Revisar Demanda →'}
             </button>
           </div>
         </form>
@@ -537,6 +651,31 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     outline: 'none',
     transition: 'border-color 0.2s ease',
+  },
+  vacanciesSummary: {
+    marginTop: '8px',
+    marginBottom: '8px',
+  },
+  vacanciesCard: {
+    backgroundColor: '#f3e8ff',
+    border: '2px solid #7c3aed',
+    borderRadius: '8px',
+    padding: '16px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  vacanciesLabel: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#262626',
+  },
+  vacanciesValue: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '24px',
+    fontWeight: '700',
+    color: '#7c3aed',
   },
 };
 
