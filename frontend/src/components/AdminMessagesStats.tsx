@@ -22,7 +22,7 @@ export const AdminMessagesStats: React.FC<AdminMessagesStatsProps> = ({ stats })
       <div style={styles.statsGrid}>
         <div style={styles.statCard}>
           <div style={styles.statIcon}>
-            <MessageSquare size={24} color={colors.primary} />
+            <MessageSquare size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.total_conversations || 0}</h3>
@@ -32,7 +32,7 @@ export const AdminMessagesStats: React.FC<AdminMessagesStatsProps> = ({ stats })
 
         <div style={styles.statCard}>
           <div style={styles.statIcon}>
-            <TrendingUp size={24} color={colors.success} />
+            <TrendingUp size={24} color={colors.success[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.messages_today || 0}</h3>
@@ -42,7 +42,7 @@ export const AdminMessagesStats: React.FC<AdminMessagesStatsProps> = ({ stats })
 
         <div style={styles.statCard}>
           <div style={styles.statIcon}>
-            <TrendingUp size={24} color={colors.info} />
+            <TrendingUp size={24} color={colors.info[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.messages_week || 0}</h3>
@@ -52,7 +52,7 @@ export const AdminMessagesStats: React.FC<AdminMessagesStatsProps> = ({ stats })
 
         <div style={styles.statCard}>
           <div style={styles.statIcon}>
-            <Users size={24} color={colors.secondary} />
+            <Users size={24} color={colors.brand.secondary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>
@@ -123,9 +123,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   note: {
     padding: '16px',
-    backgroundColor: colors.warningLight,
+    backgroundColor: colors.warning[100],
     borderRadius: '8px',
-    border: `1px solid ${colors.warning}`,
+    border: `1px solid ${colors.warning[500]}`,
   },
   noteText: {
     fontSize: '13px',

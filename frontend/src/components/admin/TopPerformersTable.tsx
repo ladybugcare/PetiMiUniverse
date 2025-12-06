@@ -16,7 +16,7 @@ const TopPerformersTable: React.FC<TopPerformersTableProps> = ({ clinics, vets }
         {/* Top Clinics */}
         <div style={styles.tableContainer}>
           <div style={styles.tableHeader}>
-            <Building2 size={20} color={colors.primary} />
+            <Building2 size={20} color={colors.brand.primary[500]} />
             <h4 style={styles.tableTitle}>Top 5 Clínicas</h4>
           </div>
           <div style={styles.table}>
@@ -37,7 +37,7 @@ const TopPerformersTable: React.FC<TopPerformersTableProps> = ({ clinics, vets }
         {/* Top Vets */}
         <div style={styles.tableContainer}>
           <div style={styles.tableHeader}>
-            <Stethoscope size={20} color={colors.primary} />
+            <Stethoscope size={20} color={colors.brand.primary[500]} />
             <h4 style={styles.tableTitle}>Top 5 Veterinários</h4>
           </div>
           <div style={styles.table}>
@@ -117,7 +117,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     borderRadius: '50%',
     fontSize: '12px',

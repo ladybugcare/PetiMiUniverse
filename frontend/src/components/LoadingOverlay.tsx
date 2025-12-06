@@ -38,7 +38,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '16px 18px',
     borderRadius: 14,
     backgroundColor: '#ffffff',
-    boxShadow: '0 10px 30px rgba(124, 58, 237, 0.18)',
+    boxShadow: '0 10px 30px rgba(196, 108, 106, 0.18)',
     border: '1px solid #ede9fe',
   },
   spinner: {
@@ -46,7 +46,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     height: 28,
     borderRadius: '50%',
     border: '3px solid #ede9fe',
-    borderTopColor: colors.primary,
+    borderTopColor: colors.brand.primary[500],
     animation: 'spin 0.9s linear infinite',
   },
   text: {

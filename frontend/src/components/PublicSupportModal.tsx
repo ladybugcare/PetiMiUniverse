@@ -114,7 +114,7 @@ const PublicSupportModal: React.FC<PublicSupportModalProps> = ({ isOpen, onClose
           {/* Header */}
           <div style={styles.header}>
             <div style={styles.headerLeft}>
-              <MessageCircle size={24} color={colors.primary} />
+              <MessageCircle size={24} color={colors.brand.primary[500]} />
               <h2 style={styles.title}>Falar com o Suporte</h2>
             </div>
             <button
@@ -352,7 +352,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     fontWeight: '500',
     color: '#ffffff',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',

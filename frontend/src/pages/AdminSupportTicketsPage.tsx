@@ -167,8 +167,8 @@ const AdminSupportTicketsPage: React.FC = () => {
     const roleConfig = {
       clinic: {
         label: 'Clínica',
-        color: colors.primary,
-        backgroundColor: colors.primaryLight,
+        color: colors.brand.primary[500],
+        backgroundColor: colors.brand.primary[100],
       },
       vet: {
         label: 'Veterinário',
@@ -182,7 +182,7 @@ const AdminSupportTicketsPage: React.FC = () => {
       },
       admin: {
         label: 'Administrador',
-        color: '#8b5cf6',
+        color: colors.brand.primary[500],
         backgroundColor: '#ede9fe',
       },
       guest: {
@@ -214,8 +214,8 @@ const AdminSupportTicketsPage: React.FC = () => {
           <Star
             key={star}
             size={16}
-            fill={star <= rating ? colors.primary : 'transparent'}
-            color={star <= rating ? colors.primary : colors.textSecondary}
+            fill={star <= rating ? colors.brand.primary[500]: 'transparent'}
+            color={star <= rating ? colors.brand.primary[500]: colors.textSecondary}
           />
         ))}
       </div>
@@ -281,7 +281,7 @@ const AdminSupportTicketsPage: React.FC = () => {
                 >
                   <div style={styles.ticketHeader}>
                     <div style={styles.ticketMeta}>
-                      <User size={16} color={colors.primary} />
+                      <User size={16} color={colors.brand.primary[500]} />
                       <div style={styles.userInfo}>
                         <span style={styles.ticketUserId}>
                           {ticket.user_name || (ticket.user_id ? ticket.user_id.substring(0, 8) + '...' : 'N/A')}
@@ -346,7 +346,7 @@ const AdminSupportTicketsPage: React.FC = () => {
             <span>Voltar</span>
           </button>
           <div style={styles.conversationInfo}>
-            <User size={16} color={colors.primary} />
+            <User size={16} color={colors.brand.primary[500]} />
             <span style={styles.userName}>
               {selectedTicket.user_name || (selectedTicket.user_id ? selectedTicket.user_id.substring(0, 8) + '...' : 'N/A')}
             </span>
@@ -394,7 +394,7 @@ const AdminSupportTicketsPage: React.FC = () => {
           <div style={styles.evaluationBanner}>
             <div style={styles.evaluationContent}>
               <div style={styles.evaluationHeader}>
-                <IconWrapper icon={CheckCircle} size={20} color={colors.primary} />
+                <IconWrapper icon={CheckCircle} size={20} color={colors.brand.primary[500]} />
                 <span style={styles.evaluationTitle}>Ticket Avaliado pelo Usuário</span>
               </div>
               {renderStars(selectedTicket.evaluation.rating)}
@@ -467,7 +467,7 @@ const AdminSupportTicketsPage: React.FC = () => {
           </form>
         ) : (
           <div style={styles.closedMessage}>
-            <CheckCircle size={24} color={colors.primary} />
+            <CheckCircle size={24} color={colors.brand.primary[500]} />
             <div>
               <p style={styles.closedTitle}>Ticket avaliado e encerrado pelo usuário</p>
               <p style={styles.closedSubtitle}>
@@ -729,7 +729,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   evaluationBanner: {
     backgroundColor: '#f0fdf4',
-    border: `2px solid ${colors.primary}`,
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '12px',
     padding: '20px',
     marginBottom: '24px',
@@ -780,7 +780,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '4px',
   },
   adminMessage: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
     alignSelf: 'flex-end',
   },
@@ -827,7 +827,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
     border: 'none',
     borderRadius: '8px',
@@ -842,7 +842,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '16px',
     padding: '20px',
     backgroundColor: '#f0fdf4',
-    border: `2px solid ${colors.primary}`,
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '12px',
   },
   closedTitle: {

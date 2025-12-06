@@ -87,10 +87,10 @@ const ResumoSection: React.FC = () => {
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          style={{ ...styles.statCard, borderLeftColor: colors.brand.primary[500] }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(196, 108, 106, 0.15)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0)';
@@ -98,7 +98,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <IconWrapper icon={ClipboardList} size={24} color={colors.primary} />
+            <IconWrapper icon={ClipboardList} size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalDemands}</h3>
@@ -118,7 +118,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <IconWrapper icon={CheckCircle} size={24} color={colors.primary} />
+            <IconWrapper icon={CheckCircle} size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalApplications}</h3>
@@ -138,7 +138,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <IconWrapper icon={Calendar} size={24} color={colors.primary} />
+            <IconWrapper icon={Calendar} size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.todayDemands}</h3>
@@ -156,14 +156,14 @@ const ResumoSection: React.FC = () => {
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
             }}
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
             }}
@@ -178,14 +178,14 @@ const ResumoSection: React.FC = () => {
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
             }}
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
             }}
@@ -200,14 +200,14 @@ const ResumoSection: React.FC = () => {
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
             }}
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
             }}
@@ -222,14 +222,14 @@ const ResumoSection: React.FC = () => {
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
             }}
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
             }}
@@ -274,7 +274,7 @@ const MensagensSection: React.FC = () => {
       <div style={styles.placeholder}>
         <p style={styles.placeholderText}>
           <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: '8px' }}>
-            <IconWrapper icon={MessageSquare} size={24} color={colors.primary} />
+            <IconWrapper icon={MessageSquare} size={24} color={colors.brand.primary[500]} />
           </span>
           Suas mensagens aparecerão aqui
         </p>
@@ -389,7 +389,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '12px',
     cursor: 'pointer',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.08)',
+    boxShadow: '0 4px 12px rgba(196, 108, 106, 0.08)',
     position: 'relative',
     overflow: 'hidden',
   },

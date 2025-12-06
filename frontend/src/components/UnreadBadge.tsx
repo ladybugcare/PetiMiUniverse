@@ -25,7 +25,7 @@ export const UnreadBadge: React.FC<UnreadBadgeProps> = ({ count, style }) => {
 
 const styles: { [key: string]: React.CSSProperties } = {
   badge: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     borderRadius: '12px',
     padding: '2px 8px',

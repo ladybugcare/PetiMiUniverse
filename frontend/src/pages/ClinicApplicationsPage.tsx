@@ -248,7 +248,7 @@ const ClinicApplicationsPage: React.FC = () => {
                         onMouseLeave={() => setHoveredManageButton(null)}
                         style={{
                           ...styles.manageButton,
-                          backgroundColor: hoveredManageButton === demandWithApps.demandId ? colors.primaryDark : colors.primary,
+                          backgroundColor: hoveredManageButton === demandWithApps.demandId ? colors.brand.primary[600] : colors.brand.primary[500],
                         }}
                       >
                         <Settings size={16} style={{ marginRight: '6px' }} />
@@ -336,7 +336,7 @@ const ClinicApplicationsPage: React.FC = () => {
                                         disabled={processingId === app.id}
                                         style={{
                                           ...styles.actionButton,
-                                          backgroundColor: colors.success,
+                                          backgroundColor: colors.success[500],
                                           color: '#fff',
                                           opacity: processingId === app.id ? 0.6 : 1,
                                           display: 'flex',
@@ -485,7 +485,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   manageButton: {
     padding: '8px 16px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

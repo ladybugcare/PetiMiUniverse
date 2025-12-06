@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckCircle, Calendar } from 'lucide-react';
+import { colors } from '../styles/colors';
 
 interface DemandHistoryItem {
   id: string;
@@ -140,7 +141,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Inter, sans-serif',
     fontSize: '13px',
     fontWeight: '500',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     cursor: 'pointer',
     transition: 'all 0.2s ease',
     alignSelf: 'flex-start',

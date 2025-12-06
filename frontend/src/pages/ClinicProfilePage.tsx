@@ -245,7 +245,7 @@ const ClinicProfilePage: React.FC = () => {
               ) : stats ? (
                 <div style={styles.statsGrid}>
                   <div style={styles.statCard}>
-                    <FileText size={20} color="#7c3aed" />
+                    <FileText size={20} color={colors.brand.primary[500]} />
                     <div style={styles.statContent}>
                       <h4 style={styles.statValue}>{stats.totalDemands}</h4>
                       <p style={styles.statLabel}>Total Demandas</p>
@@ -273,7 +273,7 @@ const ClinicProfilePage: React.FC = () => {
                     </div>
                   </div>
                   <div style={styles.statCard}>
-                    <Users size={20} color="#8b5cf6" />
+                    <Users size={20} color={colors.brand.primary[500]} />
                     <div style={styles.statContent}>
                       <h4 style={styles.statValue}>{stats.totalUsers}</h4>
                       <p style={styles.statLabel}>Usuários</p>
@@ -292,7 +292,7 @@ const ClinicProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -307,7 +307,7 @@ const ClinicProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -322,7 +322,7 @@ const ClinicProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -337,7 +337,7 @@ const ClinicProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -565,7 +565,7 @@ const ClinicProfilePage: React.FC = () => {
                   alignItems: 'center',
                   gap: '8px',
                   padding: '12px 24px',
-                  backgroundColor: colors.primary,
+                  backgroundColor: colors.brand.primary[500],
                   color: '#ffffff',
                   border: 'none',
                   borderRadius: '8px',
@@ -768,7 +768,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   editButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -797,7 +797,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   saveButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

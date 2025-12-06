@@ -1,6 +1,7 @@
 import React from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info } from 'lucide-react';
 import IconWrapper from './IconWrapper';
+import { colors } from '../styles/colors';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info';
 
@@ -39,7 +40,7 @@ const Alert: React.FC<AlertProps> = ({
         return { icon: <IconWrapper icon={AlertTriangle} size={32} />, color: '#f59e0b', bgColor: '#fef3c7' };
       case 'info':
       default:
-        return { icon: <IconWrapper icon={Info} size={32} />, color: '#7c3aed', bgColor: '#ede9fe' };
+        return { icon: <IconWrapper icon={Info} size={32} />, color: colors.brand.primary[500], bgColor: '#ede9fe' };
     }
   };
 
@@ -182,7 +183,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   confirmButton: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
   },
   cancelButton: {

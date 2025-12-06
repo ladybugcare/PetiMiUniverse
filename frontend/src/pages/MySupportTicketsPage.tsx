@@ -212,8 +212,8 @@ const MySupportTicketsPage: React.FC = () => {
           <Star
             key={star}
             size={18}
-            fill={star <= rating ? colors.primary : 'transparent'}
-            color={star <= rating ? colors.primary : colors.textSecondary}
+            fill={star <= rating ? colors.brand.primary[500]: 'transparent'}
+            color={star <= rating ? colors.brand.primary[500]: colors.textSecondary}
           />
         ))}
       </div>
@@ -338,7 +338,7 @@ const MySupportTicketsPage: React.FC = () => {
           <div style={styles.evaluationBanner}>
             <div style={styles.evaluationContent}>
               <div style={styles.evaluationHeader}>
-                <CheckCircle size={20} color={colors.primary} />
+                <CheckCircle size={20} color={colors.brand.primary[500]} />
                 <span style={styles.evaluationTitle}>Ticket Avaliado e Resolvido</span>
               </div>
               {renderStars(selectedTicket.evaluation.rating)}
@@ -425,7 +425,7 @@ const MySupportTicketsPage: React.FC = () => {
           </>
         ) : (
           <div style={styles.closedMessage}>
-            <CheckCircle size={24} color={colors.primary} />
+            <CheckCircle size={24} color={colors.brand.primary[500]} />
             <div>
               <p style={styles.closedTitle}>Ticket resolvido e avaliado</p>
               <p style={styles.closedSubtitle}>
@@ -550,8 +550,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '12px',
     fontWeight: '500',
     borderRadius: '12px',
-    backgroundColor: colors.primaryBg,
-    color: colors.primary,
+    backgroundColor: colors.brand.primary[500],
+    color: colors.brand.primary[500],
     fontFamily: 'Inter, sans-serif',
   },
   unreadBadge: {
@@ -631,7 +631,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   evaluationBanner: {
     backgroundColor: '#f0fdf4',
-    border: `2px solid ${colors.primary}`,
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '12px',
     padding: '20px',
     marginBottom: '24px',
@@ -682,7 +682,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '4px',
   },
   userMessage: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
     alignSelf: 'flex-end',
   },
@@ -722,7 +722,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
     border: 'none',
     borderRadius: '8px',
@@ -748,7 +748,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
     border: 'none',
     borderRadius: '8px',
@@ -763,7 +763,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '16px',
     padding: '20px',
     backgroundColor: '#f0fdf4',
-    border: `2px solid ${colors.primary}`,
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '12px',
   },
   closedTitle: {

@@ -280,7 +280,7 @@ const AdminPendingAllPage: React.FC = () => {
               <CollapsibleSection
                 title="Clínicas"
                 count={units.length}
-                icon={<Building2 size={24} color={colors.primary} />}
+                icon={<Building2 size={24} color={colors.brand.primary[500]} />}
                 defaultOpen={units.length > 0}
               >
                 {units.length === 0 ? (
@@ -376,7 +376,7 @@ const AdminPendingAllPage: React.FC = () => {
               <CollapsibleSection
                 title="Veterinários"
                 count={vets.length}
-                icon={<Stethoscope size={24} color={colors.primary} />}
+                icon={<Stethoscope size={24} color={colors.brand.primary[500]} />}
                 defaultOpen={vets.length > 0}
               >
                 {vets.length === 0 ? (
@@ -499,7 +499,7 @@ const AdminPendingAllPage: React.FC = () => {
               <CollapsibleSection
                 title="Freelancers"
                 count={freelancers.length}
-                icon={<Briefcase size={24} color={colors.primary} />}
+                icon={<Briefcase size={24} color={colors.brand.primary[500]} />}
                 defaultOpen={freelancers.length > 0}
               >
                 {freelancers.length === 0 ? (
@@ -706,7 +706,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '40px',
     height: '40px',
     border: '4px solid #f3f4f6',
-    borderTop: '4px solid #7c3aed',
+    borderTop: '4px solid colors.brand.primary[500]',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },
@@ -773,7 +773,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   documentBadge: {
     display: 'inline-block',
     fontSize: '12px',
-    color: '#8b5cf6',
+    color: colors.brand.primary[500],
     backgroundColor: '#f5f3ff',
     padding: '4px 8px',
     borderRadius: '4px',
@@ -806,7 +806,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'inline-block',
     padding: '4px 12px',
     backgroundColor: '#ede9fe',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     borderRadius: '16px',
     fontSize: '12px',
     fontWeight: '500',
@@ -818,7 +818,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '6px',
     padding: '8px 16px',
     marginTop: '8px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

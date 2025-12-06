@@ -60,7 +60,7 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({
           <div style={styles.howItWorks}>
             <div style={styles.sectionHeader}>
               <span style={styles.emoji}>
-                <IconWrapper icon={Sparkles} size={24} color={colors.primary} />
+                <IconWrapper icon={Sparkles} size={24} color={colors.brand.primary[500]} />
               </span>
               <h3 style={styles.sectionTitle}>Como funciona:</h3>
             </div>
@@ -122,10 +122,10 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({
             onClick={onStart}
             style={styles.startButton}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = colors.primaryDark;
+              e.currentTarget.style.backgroundColor = colors.brand.primary[600];
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = colors.primary;
+              e.currentTarget.style.backgroundColor = colors.brand.primary[500];
             }}
           >
             Começar
@@ -202,8 +202,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
   },
   howItWorks: {
-    backgroundColor: colors.primaryBg,
-    borderLeft: `3px solid ${colors.primary}`,
+    backgroundColor: colors.brand.primary[500],
+    borderLeft: `3px solid ${colors.brand.primary[500]}`,
     padding: '14px 16px',
     borderRadius: '6px',
   },
@@ -236,7 +236,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   bullet: {
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.brand.primary[500],
     flexShrink: 0,
     minWidth: '18px',
   },
@@ -269,7 +269,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '16px',
     height: '16px',
     cursor: 'pointer',
-    accentColor: colors.primary,
+    accentColor: colors.brand.primary[500],
   },
   checkboxText: {
     fontSize: '13px',
@@ -295,7 +295,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   startButton: {
     padding: '10px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: colors.surface,
     border: 'none',
     borderRadius: '8px',

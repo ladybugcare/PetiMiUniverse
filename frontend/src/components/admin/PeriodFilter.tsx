@@ -52,9 +52,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   buttonActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
-    borderColor: colors.primary,
+    borderColor: colors.brand.primary[500],
   },
 };
 

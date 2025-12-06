@@ -307,7 +307,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   filterToggleButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

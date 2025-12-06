@@ -234,7 +234,7 @@ const LoginPage: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-2">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Mail size={18} color={colors.primary} />
+                    <Mail size={18} color={colors.brand.primary[500]} />
                     <span>Email</span>
                   </div>
                 </label>
@@ -252,7 +252,7 @@ const LoginPage: React.FC = () => {
               <div style={{ marginTop: '32px' }}>
                 <label className="block text-sm font-medium text-neutral-700 mb-2">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Lock size={18} color={colors.primary} />
+                    <Lock size={18} color={colors.brand.primary[500]} />
                     <span>Senha</span>
                   </div>
                 </label>
@@ -273,7 +273,7 @@ const LoginPage: React.FC = () => {
                   style={{
                     width: '100%',
                     padding: '12px 24px',
-                    backgroundColor: loading ? colors.primaryLight : colors.primary,
+                    backgroundColor: loading ? colors.brand.primary[100] : colors.brand.primary[500],
                     color: colors.surface,
                     border: 'none',
                     borderRadius: '8px',
@@ -285,11 +285,11 @@ const LoginPage: React.FC = () => {
                   }}
                   onMouseEnter={(e) => {
                     if (!loading)
-                      e.currentTarget.style.backgroundColor = colors.primaryDark;
+                      e.currentTarget.style.backgroundColor = colors.brand.primary[600];
                   }}
                   onMouseLeave={(e) => {
                     if (!loading)
-                      e.currentTarget.style.backgroundColor = colors.primary;
+                      e.currentTarget.style.backgroundColor = colors.brand.primary[500];
                   }}
                 >
                   {loading ? 'Entrando...' : 'Entrar'}

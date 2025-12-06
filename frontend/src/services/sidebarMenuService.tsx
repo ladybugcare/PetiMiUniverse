@@ -65,7 +65,7 @@ export class SidebarMenuService {
       {
         id: 'dashboard',
         label: 'Dashboard',
-        icon: <BarChart2 size={20} color={colors.primary} />,
+        icon: <BarChart2 size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/admin-dashboard',
         group: 'Principal',
@@ -74,7 +74,7 @@ export class SidebarMenuService {
       {
         id: 'users',
         label: 'Usuários',
-        icon: <Users size={20} color={colors.primary} />,
+        icon: <Users size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/admin/users',
         group: 'Gerenciamento',
@@ -83,7 +83,7 @@ export class SidebarMenuService {
           {
             id: 'users-all',
             label: 'Todos',
-            icon: <Users size={18} color={colors.primary} />,
+            icon: <Users size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/admin/users',
             group: 'Gerenciamento',
@@ -91,7 +91,7 @@ export class SidebarMenuService {
           {
             id: 'users-freelancers',
             label: 'Freelancers',
-            icon: <Briefcase size={18} color={colors.primary} />,
+            icon: <Briefcase size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/admin/freelancers',
             group: 'Gerenciamento',
@@ -99,7 +99,7 @@ export class SidebarMenuService {
           {
             id: 'users-vets',
             label: 'Veterinários',
-            icon: <Stethoscope size={18} color={colors.primary} />,
+            icon: <Stethoscope size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/admin/vets',
             group: 'Gerenciamento',
@@ -107,7 +107,7 @@ export class SidebarMenuService {
           {
             id: 'users-clinics',
             label: 'Clínicas',
-            icon: <Building2 size={18} color={colors.primary} />,
+            icon: <Building2 size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/admin/clinics',
             group: 'Gerenciamento',
@@ -117,7 +117,7 @@ export class SidebarMenuService {
       {
         id: 'demands',
         label: 'Demandas',
-        icon: <ClipboardList size={20} color={colors.primary} />,
+        icon: <ClipboardList size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/admin/demands',
         group: 'Operacional',
@@ -126,7 +126,7 @@ export class SidebarMenuService {
       {
         id: 'messages',
         label: 'Mensagens',
-        icon: <MessageSquare size={20} color={colors.primary} />,
+        icon: <MessageSquare size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/messages',
         group: 'Operacional',
@@ -135,7 +135,7 @@ export class SidebarMenuService {
       {
         id: 'reports',
         label: 'Relatórios',
-        icon: <TrendingUp size={20} color={colors.primary} />,
+        icon: <TrendingUp size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/admin/reports',
         group: 'Operacional',
@@ -144,7 +144,7 @@ export class SidebarMenuService {
       {
         id: 'support-tickets',
         label: 'Tickets de Suporte',
-        icon: <MessageCircle size={20} color={colors.primary} />,
+        icon: <MessageCircle size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/admin/support-tickets',
         group: 'Suporte',
@@ -153,7 +153,7 @@ export class SidebarMenuService {
       {
         id: 'settings',
         label: 'Configurações',
-        icon: <Settings size={20} color={colors.primary} />,
+        icon: <Settings size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/admin/settings',
         group: 'Suporte',
@@ -170,7 +170,7 @@ export class SidebarMenuService {
       {
         id: 'dashboard',
         label: 'Dashboard',
-        icon: <BarChart2 size={20} color={colors.primary} />,
+        icon: <BarChart2 size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/clinic-dashboard',
         group: 'Principal',
@@ -179,7 +179,7 @@ export class SidebarMenuService {
       {
         id: 'units',
         label: 'Unidades',
-        icon: <Building2 size={20} color={colors.primary} />,
+        icon: <Building2 size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/units',
         group: 'Gerenciamento',
@@ -188,7 +188,7 @@ export class SidebarMenuService {
           {
             id: 'units-list',
             label: 'Listar Unidades',
-            icon: <Building2 size={18} color={colors.primary} />,
+            icon: <Building2 size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/units',
             group: 'Gerenciamento',
@@ -196,7 +196,7 @@ export class SidebarMenuService {
           {
             id: 'units-create',
             label: 'Criar Unidade',
-            icon: <Building2 size={18} color={colors.primary} />,
+            icon: <Building2 size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/units/create',
             group: 'Gerenciamento',
@@ -206,7 +206,7 @@ export class SidebarMenuService {
       {
         id: 'users',
         label: 'Usuários',
-        icon: <Users size={20} color={colors.primary} />,
+        icon: <Users size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/users',
         group: 'Gerenciamento',
@@ -215,7 +215,7 @@ export class SidebarMenuService {
       {
         id: 'demands',
         label: 'Demandas',
-        icon: <ClipboardList size={20} color={colors.primary} />,
+        icon: <ClipboardList size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/demands',
         group: 'Operacional',
@@ -224,7 +224,7 @@ export class SidebarMenuService {
           {
             id: 'demands-my',
             label: 'Minhas Demandas',
-            icon: <ClipboardList size={18} color={colors.primary} />,
+            icon: <ClipboardList size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/clinic-demands',
             group: 'Operacional',
@@ -232,7 +232,7 @@ export class SidebarMenuService {
           {
             id: 'demands-all',
             label: 'Todas as Demandas',
-            icon: <ClipboardList size={18} color={colors.primary} />,
+            icon: <ClipboardList size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/demands',
             group: 'Operacional',
@@ -240,7 +240,7 @@ export class SidebarMenuService {
           {
             id: 'demands-create',
             label: 'Criar Demanda',
-            icon: <ClipboardList size={18} color={colors.primary} />,
+            icon: <ClipboardList size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/create-demand',
             group: 'Operacional',
@@ -250,7 +250,7 @@ export class SidebarMenuService {
       {
         id: 'messages',
         label: 'Mensagens',
-        icon: <MessageSquare size={20} color={colors.primary} />,
+        icon: <MessageSquare size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/messages',
         group: 'Operacional',
@@ -259,7 +259,7 @@ export class SidebarMenuService {
       {
         id: 'marketplace',
         label: 'Marketplace',
-        icon: <ShoppingCart size={20} color={colors.primary} />,
+        icon: <ShoppingCart size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/marketplace',
         group: 'Operacional',
@@ -268,7 +268,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-view',
             label: 'Ver Anúncios',
-            icon: <ShoppingCart size={18} color={colors.primary} />,
+            icon: <ShoppingCart size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace',
             group: 'Operacional',
@@ -276,7 +276,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-create',
             label: 'Criar Anúncio',
-            icon: <PlusCircle size={18} color={colors.primary} />,
+            icon: <PlusCircle size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace/create',
             group: 'Operacional',
@@ -284,7 +284,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-my-listings',
             label: 'Meus Anúncios',
-            icon: <Package size={18} color={colors.primary} />,
+            icon: <Package size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace/my-listings',
             group: 'Operacional',
@@ -294,7 +294,7 @@ export class SidebarMenuService {
       {
         id: 'audit',
         label: 'Auditoria',
-        icon: <Search size={20} color={colors.primary} />,
+        icon: <Search size={20} color={colors.brand.primary[500]} />,
         action: 'section',
         sectionId: 'audit',
         group: 'Operacional',
@@ -303,7 +303,7 @@ export class SidebarMenuService {
       {
         id: 'support-tickets',
         label: 'Tickets',
-        icon: <MessageCircle size={20} color={colors.primary} />,
+        icon: <MessageCircle size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/my-support-tickets',
         group: 'Suporte',
@@ -320,7 +320,7 @@ export class SidebarMenuService {
       {
         id: 'dashboard',
         label: 'Dashboard',
-        icon: <BarChart2 size={20} color={colors.primary} />,
+        icon: <BarChart2 size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/clinic-dashboard',
         group: 'Principal',
@@ -329,7 +329,7 @@ export class SidebarMenuService {
       {
         id: 'demands',
         label: 'Demandas',
-        icon: <ClipboardList size={20} color={colors.primary} />,
+        icon: <ClipboardList size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/demands',
         group: 'Operacional',
@@ -338,7 +338,7 @@ export class SidebarMenuService {
           {
             id: 'demands-my',
             label: 'Minhas Demandas',
-            icon: <ClipboardList size={18} color={colors.primary} />,
+            icon: <ClipboardList size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/clinic-demands',
             group: 'Operacional',
@@ -346,7 +346,7 @@ export class SidebarMenuService {
           {
             id: 'demands-create',
             label: 'Criar Demanda',
-            icon: <ClipboardList size={18} color={colors.primary} />,
+            icon: <ClipboardList size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/create-demand',
             group: 'Operacional',
@@ -356,7 +356,7 @@ export class SidebarMenuService {
       {
         id: 'people',
         label: 'Pessoas',
-        icon: <Users size={20} color={colors.primary} />,
+        icon: <Users size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/users',
         group: 'Gerenciamento',
@@ -365,7 +365,7 @@ export class SidebarMenuService {
           {
             id: 'people-applications',
             label: 'Candidaturas',
-            icon: <FileText size={18} color={colors.primary} />,
+            icon: <FileText size={18} color={colors.brand.primary[500]} />,
             action: 'section',
             sectionId: 'profissionais',
             group: 'Gerenciamento',
@@ -373,7 +373,7 @@ export class SidebarMenuService {
           {
             id: 'people-team',
             label: 'Equipe',
-            icon: <Users size={18} color={colors.primary} />,
+            icon: <Users size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/users',
             group: 'Gerenciamento',
@@ -383,7 +383,7 @@ export class SidebarMenuService {
       {
         id: 'messages',
         label: 'Mensagens',
-        icon: <MessageSquare size={20} color={colors.primary} />,
+        icon: <MessageSquare size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/messages',
         group: 'Operacional',
@@ -392,7 +392,7 @@ export class SidebarMenuService {
       {
         id: 'marketplace',
         label: 'Marketplace',
-        icon: <ShoppingCart size={20} color={colors.primary} />,
+        icon: <ShoppingCart size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/marketplace',
         group: 'Operacional',
@@ -401,7 +401,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-view',
             label: 'Ver Anúncios',
-            icon: <ShoppingCart size={18} color={colors.primary} />,
+            icon: <ShoppingCart size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace',
             group: 'Operacional',
@@ -409,7 +409,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-create',
             label: 'Criar Anúncio',
-            icon: <PlusCircle size={18} color={colors.primary} />,
+            icon: <PlusCircle size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace/create',
             group: 'Operacional',
@@ -417,7 +417,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-my-listings',
             label: 'Meus Anúncios',
-            icon: <Package size={18} color={colors.primary} />,
+            icon: <Package size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace/my-listings',
             group: 'Operacional',
@@ -427,7 +427,7 @@ export class SidebarMenuService {
       {
         id: 'support-tickets',
         label: 'Tickets',
-        icon: <MessageCircle size={20} color={colors.primary} />,
+        icon: <MessageCircle size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/my-support-tickets',
         group: 'Suporte',
@@ -444,7 +444,7 @@ export class SidebarMenuService {
       {
         id: 'dashboard',
         label: 'Dashboard',
-        icon: <BarChart2 size={20} color={colors.primary} />,
+        icon: <BarChart2 size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/clinic-dashboard',
         group: 'Principal',
@@ -453,7 +453,7 @@ export class SidebarMenuService {
       {
         id: 'demands',
         label: 'Demandas',
-        icon: <ClipboardList size={20} color={colors.primary} />,
+        icon: <ClipboardList size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/demands',
         group: 'Operacional',
@@ -462,7 +462,7 @@ export class SidebarMenuService {
           {
             id: 'demands-available',
             label: 'Disponíveis',
-            icon: <ClipboardList size={18} color={colors.primary} />,
+            icon: <ClipboardList size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/demands',
             group: 'Operacional',
@@ -470,7 +470,7 @@ export class SidebarMenuService {
           {
             id: 'demands-applications',
             label: 'Minhas Candidaturas',
-            icon: <FileText size={18} color={colors.primary} />,
+            icon: <FileText size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/my-applications',
             group: 'Operacional',
@@ -480,7 +480,7 @@ export class SidebarMenuService {
       {
         id: 'messages',
         label: 'Mensagens',
-        icon: <MessageSquare size={20} color={colors.primary} />,
+        icon: <MessageSquare size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/messages',
         group: 'Operacional',
@@ -489,7 +489,7 @@ export class SidebarMenuService {
       {
         id: 'reviews',
         label: 'Avaliações',
-        icon: <Star size={20} color={colors.primary} />,
+        icon: <Star size={20} color={colors.brand.primary[500]} />,
         action: 'section',
         sectionId: 'avaliacoes',
         group: 'Operacional',
@@ -498,7 +498,7 @@ export class SidebarMenuService {
       {
         id: 'marketplace',
         label: 'Marketplace',
-        icon: <ShoppingCart size={20} color={colors.primary} />,
+        icon: <ShoppingCart size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/marketplace',
         group: 'Operacional',
@@ -507,7 +507,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-view',
             label: 'Ver Anúncios',
-            icon: <ShoppingCart size={18} color={colors.primary} />,
+            icon: <ShoppingCart size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace',
             group: 'Operacional',
@@ -515,7 +515,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-create',
             label: 'Criar Anúncio',
-            icon: <PlusCircle size={18} color={colors.primary} />,
+            icon: <PlusCircle size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace/create',
             group: 'Operacional',
@@ -523,7 +523,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-my-listings',
             label: 'Meus Anúncios',
-            icon: <Package size={18} color={colors.primary} />,
+            icon: <Package size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace/my-listings',
             group: 'Operacional',
@@ -533,7 +533,7 @@ export class SidebarMenuService {
       {
         id: 'support-tickets',
         label: 'Tickets',
-        icon: <MessageCircle size={20} color={colors.primary} />,
+        icon: <MessageCircle size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/my-support-tickets',
         group: 'Suporte',
@@ -542,7 +542,7 @@ export class SidebarMenuService {
       {
         id: 'settings',
         label: 'Configurações',
-        icon: <Settings size={20} color={colors.primary} />,
+        icon: <Settings size={20} color={colors.brand.primary[500]} />,
         action: 'section',
         sectionId: 'configuracoes',
         group: 'Perfil',
@@ -559,7 +559,7 @@ export class SidebarMenuService {
       {
         id: 'dashboard',
         label: 'Dashboard',
-        icon: <BarChart2 size={20} color={colors.primary} />,
+        icon: <BarChart2 size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/clinic-dashboard',
         group: 'Principal',
@@ -568,7 +568,7 @@ export class SidebarMenuService {
       {
         id: 'demands',
         label: 'Demandas',
-        icon: <ClipboardList size={20} color={colors.primary} />,
+        icon: <ClipboardList size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/demands',
         group: 'Operacional',
@@ -577,7 +577,7 @@ export class SidebarMenuService {
       {
         id: 'messages',
         label: 'Mensagens',
-        icon: <MessageSquare size={20} color={colors.primary} />,
+        icon: <MessageSquare size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/messages',
         group: 'Operacional',
@@ -586,7 +586,7 @@ export class SidebarMenuService {
       {
         id: 'marketplace',
         label: 'Marketplace',
-        icon: <ShoppingCart size={20} color={colors.primary} />,
+        icon: <ShoppingCart size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/marketplace',
         group: 'Operacional',
@@ -595,7 +595,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-view',
             label: 'Ver Anúncios',
-            icon: <ShoppingCart size={18} color={colors.primary} />,
+            icon: <ShoppingCart size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace',
             group: 'Operacional',
@@ -603,7 +603,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-create',
             label: 'Criar Anúncio',
-            icon: <PlusCircle size={18} color={colors.primary} />,
+            icon: <PlusCircle size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace/create',
             group: 'Operacional',
@@ -611,7 +611,7 @@ export class SidebarMenuService {
           {
             id: 'marketplace-my-listings',
             label: 'Meus Anúncios',
-            icon: <Package size={18} color={colors.primary} />,
+            icon: <Package size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/marketplace/my-listings',
             group: 'Operacional',
@@ -621,7 +621,7 @@ export class SidebarMenuService {
       {
         id: 'support-tickets',
         label: 'Tickets',
-        icon: <MessageCircle size={20} color={colors.primary} />,
+        icon: <MessageCircle size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/my-support-tickets',
         group: 'Suporte',
@@ -638,7 +638,7 @@ export class SidebarMenuService {
       {
         id: 'dashboard',
         label: 'Meu Resumo',
-        icon: <BarChart2 size={20} color={colors.primary} />,
+        icon: <BarChart2 size={20} color={colors.brand.primary[500]} />,
         action: 'section',
         sectionId: 'resumo',
         group: 'Principal',
@@ -647,7 +647,7 @@ export class SidebarMenuService {
       {
         id: 'demands',
         label: 'Demandas Disponíveis',
-        icon: <ClipboardList size={20} color={colors.primary} />,
+        icon: <ClipboardList size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/demands',
         group: 'Operacional',
@@ -656,7 +656,7 @@ export class SidebarMenuService {
       {
         id: 'applications',
         label: 'Minhas Candidaturas',
-        icon: <FileText size={20} color={colors.primary} />,
+        icon: <FileText size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/my-applications',
         group: 'Operacional',
@@ -665,7 +665,7 @@ export class SidebarMenuService {
       {
         id: 'messages',
         label: 'Mensagens',
-        icon: <MessageSquare size={20} color={colors.primary} />,
+        icon: <MessageSquare size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/messages',
         group: 'Operacional',
@@ -674,7 +674,7 @@ export class SidebarMenuService {
       {
         id: 'reviews',
         label: 'Minhas Avaliações',
-        icon: <Star size={20} color={colors.primary} />,
+        icon: <Star size={20} color={colors.brand.primary[500]} />,
         action: 'section',
         sectionId: 'avaliacoes',
         group: 'Operacional',
@@ -683,7 +683,7 @@ export class SidebarMenuService {
       {
         id: 'support-tickets',
         label: 'Meus Tickets',
-        icon: <MessageCircle size={20} color={colors.primary} />,
+        icon: <MessageCircle size={20} color={colors.brand.primary[500]} />,
         action: 'navigate',
         path: '/my-support-tickets',
         group: 'Suporte',

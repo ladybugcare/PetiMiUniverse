@@ -409,7 +409,7 @@ const DemandDetailPage: React.FC = () => {
             <div style={styles.headerCardContent}>
               <div style={styles.headerCardMain}>
                 <div style={styles.headerClinicInfo}>
-                  <Building2 size={24} color={colors.primary} />
+                  <Building2 size={24} color={colors.brand.primary[500]} />
                   <div>
                     <h2 style={styles.headerClinicName}>{clinicName}</h2>
                     {(unit?.city || clinic?.city) && (
@@ -432,7 +432,7 @@ const DemandDetailPage: React.FC = () => {
               
               <div style={styles.headerMeta}>
                 <div style={styles.headerMetaItem}>
-                  <DollarSign size={20} color={colors.primary} />
+                  <DollarSign size={20} color={colors.brand.primary[500]} />
                   <div>
                     <span style={styles.headerMetaLabel}>Valor</span>
                     <span style={styles.headerMetaValue}>
@@ -441,14 +441,14 @@ const DemandDetailPage: React.FC = () => {
                   </div>
                 </div>
                 <div style={styles.headerMetaItem}>
-                  <Calendar size={20} color={colors.primary} />
+                  <Calendar size={20} color={colors.brand.primary[500]} />
                   <div>
                     <span style={styles.headerMetaLabel}>Data</span>
                     <span style={styles.headerMetaValue}>{formatDate(demand.demand_date)}</span>
                   </div>
                 </div>
                 <div style={styles.headerMetaItem}>
-                  <Clock size={20} color={colors.primary} />
+                  <Clock size={20} color={colors.brand.primary[500]} />
                   <div>
                     <span style={styles.headerMetaLabel}>Horário</span>
                     <span style={styles.headerMetaValue}>
@@ -458,7 +458,7 @@ const DemandDetailPage: React.FC = () => {
                   </div>
                 </div>
                 <div style={styles.headerMetaItem}>
-                  <User size={20} color={colors.primary} />
+                  <User size={20} color={colors.brand.primary[500]} />
                   <div>
                     <span style={styles.headerMetaLabel}>Categoria</span>
                     <span style={styles.headerMetaValue}>
@@ -570,7 +570,7 @@ const DemandDetailPage: React.FC = () => {
                   onClick={handleSendMessageToClinic}
                   style={{
                     ...styles.viewProfileButton,
-                    backgroundColor: colors.primary,
+                    backgroundColor: colors.brand.primary[500],
                     color: '#ffffff',
                     display: 'flex',
                     alignItems: 'center',
@@ -897,7 +897,7 @@ const DemandDetailPage: React.FC = () => {
               )}
               
               <div style={styles.transparencyItem}>
-                <CreditCard size={20} color={colors.primary} />
+                <CreditCard size={20} color={colors.brand.primary[500]} />
                 <div>
                   <strong>Pagamento direto com a clínica</strong>
                   <p>O pagamento é combinado e efetuado diretamente entre você e a clínica</p>
@@ -905,7 +905,7 @@ const DemandDetailPage: React.FC = () => {
               </div>
               
               <div style={styles.transparencyItem}>
-                <Info size={20} color={colors.primary} />
+                <Info size={20} color={colors.brand.primary[500]} />
                 <div>
                   <strong>Política de cancelamento</strong>
                   <p>Cancelamentos até 24h antes não geram penalidade</p>
@@ -1065,7 +1065,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'flex-start',
   },
   infoIcon: {
-    color: colors.primary,
+    color: colors.brand.primary[500],
     marginTop: '4px',
     flexShrink: 0,
   },
@@ -1091,7 +1091,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   specialtyBadge: {
     padding: '6px 14px',
     backgroundColor: '#ede9fe',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     borderRadius: '12px',
     fontSize: '14px',
     fontWeight: '500',
@@ -1197,7 +1197,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '40px',
     height: '40px',
     border: '4px solid #f3f4f6',
-    borderTop: '4px solid #7c3aed',
+    borderTop: '4px solid colors.brand.primary[500]',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
     marginBottom: '16px',
@@ -1233,7 +1233,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   applyButton: {
     padding: '10px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1322,7 +1322,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   modalConfirmButton: {
     padding: '10px 20px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1433,8 +1433,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginTop: '12px',
     padding: '8px 16px',
     backgroundColor: 'transparent',
-    color: colors.primary,
-    border: `1px solid ${colors.primary}`,
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px',
@@ -1466,7 +1466,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'flex-start',
   },
   clinicInfoIcon: {
-    color: colors.primary,
+    color: colors.brand.primary[500],
     marginTop: '4px',
     flexShrink: 0,
   },
@@ -1475,7 +1475,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '4px',
     marginTop: '8px',
-    color: colors.primary,
+    color: colors.brand.primary[500],
     textDecoration: 'none',
     fontSize: '14px',
     fontFamily: 'Inter, sans-serif',
@@ -1552,7 +1552,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   updateProfileButton: {
     marginTop: '12px',
     padding: '8px 16px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1628,7 +1628,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   paymentValueBold: {
     fontFamily: 'Inter, sans-serif',
     fontSize: '18px',
-    color: colors.primary,
+    color: colors.brand.primary[500],
     fontWeight: '700',
   },
   paymentDivider: {
@@ -1693,7 +1693,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: '32px',
     marginTop: '8px',
     border: '2px solid',
-    borderColor: colors.primary,
+    borderColor: colors.brand.primary[500],
   },
   summaryTitle: {
     fontFamily: 'Poppins, sans-serif',
@@ -1719,7 +1719,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   mainActionButton: {
     width: '100%',
     padding: '16px 32px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '12px',

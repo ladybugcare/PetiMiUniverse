@@ -67,7 +67,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     wordWrap: 'break-word',
   },
   ownBubble: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     alignSelf: 'flex-end',
     marginLeft: 'auto',

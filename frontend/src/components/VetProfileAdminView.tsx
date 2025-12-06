@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Vet } from '../services/vetsApi';
 import { useAlert } from '../hooks/useAlert';
 import { CheckCircle, XCircle, Clock, Shield, FileText, Mail, Phone, MapPin, User, Calendar } from 'lucide-react';
+import { colors } from '../styles/colors';
 
 interface VetProfileAdminViewProps {
   vet: Vet;
@@ -459,8 +460,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '8px',
     padding: '10px',
     backgroundColor: '#ffffff',
-    color: '#7c3aed',
-    border: '1px solid #7c3aed',
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px',

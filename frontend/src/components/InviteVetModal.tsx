@@ -245,7 +245,7 @@ const InviteVetModal: React.FC<InviteVetModalProps> = ({
                       <div
                         style={{
                           fontSize: '0.875rem',
-                          color: colors.primary,
+                          color: colors.brand.primary[500],
                           marginTop: '8px',
                         }}
                       >
@@ -261,7 +261,7 @@ const InviteVetModal: React.FC<InviteVetModalProps> = ({
                       alignItems: 'center',
                       gap: '6px',
                       padding: '8px 16px',
-                      backgroundColor: inviting === vet.id ? colors.lightGray : colors.primary,
+                      backgroundColor: inviting === vet.id ? colors.lightGray : colors.brand.primary[500],
                       color: '#fff',
                       border: 'none',
                       borderRadius: '6px',

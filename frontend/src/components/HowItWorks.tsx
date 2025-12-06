@@ -38,21 +38,21 @@ type AudienceCard = {
 const cards: AudienceCard[] = [
   {
     id: 'clinics',
-    icon: <IconWrapper icon={Building2} size={32} color={colors.primary} />,
+    icon: <IconWrapper icon={Building2} size={32} color={colors.brand.primary[500]} />,
     title: 'Para Clínicas',
     description: 'Publique demandas, visualize perfis de veterinários e freelancers, e contrate com segurança e agilidade.',
     emphasis: 'Encontre profissionais quando mais precisa.',
   },
   {
     id: 'vets',
-    icon: <IconWrapper icon={Stethoscope} size={32} color={colors.primary} />,
+    icon: <IconWrapper icon={Stethoscope} size={32} color={colors.brand.primary[500]} />,
     title: 'Para Veterinários',
     description: 'Candidata-se a demandas de clínicas, exiba suas especialidades e amplie sua rede de parceiros na área.',
     emphasis: 'Conecte-se a novas oportunidades.',
   },
   {
     id: 'freelancers',
-    icon: <IconWrapper icon={Heart} size={32} color={colors.primary} />,
+    icon: <IconWrapper icon={Heart} size={32} color={colors.brand.primary[500]} />,
     title: 'Para Freelancers',
     description: 'Groomers, adestradores, cuidadores e outros profissionais encontram aqui espaço para se destacar.',
     emphasis: 'Ofereça seus serviços ao mundo pet.',
@@ -66,7 +66,7 @@ const HowItWorks: React.FC = () => {
   return (
     <section style={styles.section}>
       <div style={styles.wrapper}>
-        <h2 style={styles.title}>Como o PetiVet funciona</h2>
+        <h2 style={styles.title}>Como o PetiMi funciona</h2>
         <p style={styles.subtitle}>
           Uma plataforma feita para unir quem oferece cuidado e quem precisa dele. Tudo em um só lugar — simples, rápido e cheio de amor pelos pets.
         </p>
@@ -148,7 +148,7 @@ const HowItWorksCard: React.FC<HowItWorksCardProps> = ({ card, variant }) => {
 
 const styles: { [key: string]: React.CSSProperties } = {
   section: {
-    backgroundColor: '#F6F6FF',
+    backgroundColor: colors.neutral[50],
     paddingTop: '64px',
     paddingBottom: '64px',
     paddingLeft: '16px',
@@ -163,7 +163,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '32px',
     fontWeight: '600',
-    color: '#2f1f69',
+    color: colors.neutral[900],
     textAlign: 'center',
     margin: 0,
     marginBottom: '16px',
@@ -172,7 +172,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Inter, sans-serif',
     fontSize: '18px',
     lineHeight: '26px',
-    color: '#594a84',
+    color: colors.neutral[600],
     textAlign: 'center',
     maxWidth: '720px',
     margin: '0 auto',
@@ -199,8 +199,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     paddingBottom: '28px',
     paddingLeft: '24px',
     paddingRight: '24px',
-    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.1)',
-    border: '1px solid #e6e1ff',
+    boxShadow: '0 8px 16px rgba(196, 108, 106, 0.1)',
+    border: `1px solid ${colors.neutral[200]}`,
     cursor: 'pointer',
     transition: 'all 0.3s ease',
   },
@@ -212,9 +212,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '100%',
   },
   cardHovered: {
-    boxShadow: '0 12px 24px rgba(124, 58, 237, 0.18)',
+    boxShadow: '0 12px 24px rgba(196, 108, 106, 0.18)',
     transform: 'translateY(-4px)',
-    borderColor: '#c7b8ff',
+    borderColor: colors.brand.primary[300],
   },
   cardContent: {
     display: 'flex',
@@ -238,7 +238,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '18px',
     fontWeight: '600',
-    color: '#27144b',
+    color: colors.neutral[900],
     marginTop: '20px',
     marginBottom: '8px',
     margin: 0,
@@ -247,20 +247,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '16px',
     fontWeight: '500',
-    color: '#6a5bb3',
+    color: colors.brand.primary[600],
     marginTop: '8px',
     marginBottom: '8px',
     margin: 0,
     transition: 'color 0.3s ease',
   },
   cardEmphasisHovered: {
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
   },
   cardDescription: {
     fontFamily: 'Inter, sans-serif',
     fontSize: '15px',
     lineHeight: '22px',
-    color: '#4b3f75',
+    color: colors.neutral[700],
     marginTop: '8px',
     margin: 0,
   },

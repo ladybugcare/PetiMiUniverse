@@ -1,25 +1,25 @@
 {
-  "short_name": "PetiVet",
-  "name": "PetiVet - Conectando clínicas e veterinários",
+  "short_name": "PetiMi",
+  "name": "PetiMi - Conectando clínicas e veterinários",
   "icons": [
     {
-      "src": "favicon.ico",
+      "src": "favicon.png",
       "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
+      "type": "image/png"
     },
     {
-      "src": "logo.png",
+      "src": "favicon.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "logo.png",
+      "src": "favicon.png",
       "type": "image/png",
       "sizes": "512x512"
     }
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#a855f7",
+  "theme_color": "#C46C6A",
   "background_color": "#ffffff"
 }

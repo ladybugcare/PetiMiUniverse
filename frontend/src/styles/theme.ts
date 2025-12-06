@@ -1,68 +1,75 @@
-// Design System PetiVet - Tons Pastéis para Pets
+// Design System PetiMi - Paleta Oficial
+import { colors } from './colors';
+
 export const theme = {
-  // Cores principais
+  // Cores principais - usando paleta PetiMi
   colors: {
-    // Primárias - Tons pastéis suaves
+    // Primárias - Rosa Queimado
     primary: {
-      50: '#f8f4ff',   // Lavanda muito clara
-      100: '#f0e6ff',  // Lavanda clara
-      200: '#e0ccff',  // Lavanda média
-      300: '#c7a3ff',  // Lavanda
-      400: '#a366ff',  // Roxo pastel
-      500: '#8b5cf6',  // Roxo principal
-      600: '#7c3aed',  // Roxo escuro
-      700: '#6d28d9',  // Roxo mais escuro
-      800: '#5b21b6',  // Roxo muito escuro
-      900: '#4c1d95',  // Roxo escuro profundo
+      50: colors.brand.primary[50],
+      100: colors.brand.primary[100],
+      200: colors.brand.primary[200],
+      300: colors.brand.primary[300],
+      400: colors.brand.primary[400],
+      500: colors.brand.primary[500],
+      600: colors.brand.primary[600],
+      700: colors.brand.primary[700],
+      800: colors.brand.primary[800],
     },
     
-    // Secundárias - Terracota/Laranja pastel
+    // Secundárias - Nude/Bege Rosado Quente
     secondary: {
-      50: '#fff7ed',   // Pêssego muito claro
-      100: '#ffedd5',  // Pêssego claro
-      200: '#fed7aa',  // Pêssego médio
-      300: '#fdba74',  // Terracota claro
-      400: '#fb923c',  // Terracota
-      500: '#f97316',  // Laranja pastel
-      600: '#ea580c',  // Laranja médio
-      700: '#c2410c',  // Laranja escuro
-      800: '#9a3412',  // Terracota escuro
-      900: '#7c2d12',  // Terracota profundo
+      100: colors.brand.secondary[100],
+      200: colors.brand.secondary[200],
+      300: colors.brand.secondary[300],
+      400: colors.brand.secondary[400],
+      500: colors.brand.secondary[500],
     },
     
-    // Accent - Verde menta pastel
+    // Accent - Verde Sálvia Suave
     accent: {
-      50: '#f0fdf4',   // Menta muito clara
-      100: '#dcfce7',  // Menta clara
-      200: '#bbf7d0',  // Menta média
-      300: '#86efac',  // Verde menta
-      400: '#4ade80',  // Verde pastel
-      500: '#22c55e',  // Verde principal
-      600: '#16a34a',  // Verde médio
-      700: '#15803d',  // Verde escuro
-      800: '#166534',  // Verde muito escuro
-      900: '#14532d',  // Verde profundo
+      100: colors.accent.sage[100],
+      200: colors.accent.sage[200],
+      300: colors.accent.sage[300],
+      400: colors.accent.sage[400],
+      500: colors.accent.sage[500],
     },
     
-    // Neutros - Tons de cinza suaves
+    // Info - Azul Neblina
+    info: {
+      100: colors.info[100],
+      200: colors.info[200],
+      300: colors.info[300],
+      400: colors.info[400],
+      500: colors.info[500],
+    },
+    
+    // Neutros Quentes
     neutral: {
-      50: '#fafafa',   // Branco suave
-      100: '#f5f5f5',  // Cinza muito claro
-      200: '#e5e5e5',  // Cinza claro
-      300: '#d4d4d4',  // Cinza médio claro
-      400: '#a3a3a3',  // Cinza médio
-      500: '#737373',  // Cinza
-      600: '#525252',  // Cinza escuro
-      700: '#404040',  // Cinza muito escuro
-      800: '#262626',  // Cinza profundo
-      900: '#171717',  // Preto suave
+      50: colors.neutral[50],
+      100: colors.neutral[100],
+      200: colors.neutral[200],
+      300: colors.neutral[300],
+      400: colors.neutral[400],
+      500: colors.neutral[500],
+      600: colors.neutral[600],
+      700: colors.neutral[700],
+      800: colors.neutral[800],
+      900: colors.neutral[900],
     },
     
     // Status colors
-    success: '#22c55e',  // Verde menta
-    warning: '#f59e0b',  // Âmbar pastel
-    error: '#ef4444',    // Vermelho suave
-    info: '#3b82f6',     // Azul pastel
+    success: colors.success[500],
+    successLight: colors.success[100],
+    successDark: colors.success[700],
+    warning: colors.warning[500],
+    warningLight: colors.warning[100],
+    warningDark: colors.warning[700],
+    error: colors.error[500],
+    errorLight: colors.error[100],
+    errorDark: colors.error[700],
+    infoColor: colors.info[500],
+    infoLight: colors.info[100],
   },
   
   // Tipografia
@@ -133,68 +140,67 @@ export const theme = {
   },
 };
 
-// Cores específicas para componentes
+// Cores específicas para componentes (usando paleta PetiMi)
 export const componentColors = {
   // Backgrounds
   background: {
-    primary: theme.colors.neutral[50],      // Branco suave
-    secondary: theme.colors.primary[50],    // Lavanda muito clara
-    accent: theme.colors.secondary[50],     // Pêssego muito claro
+    primary: theme.colors.neutral[50],      // Branco suave quente
+    secondary: theme.colors.primary[50],    // Rosa queimado muito claro
+    accent: theme.colors.secondary[100],    // Nude muito claro
   },
   
   // Textos
   text: {
-    primary: theme.colors.neutral[800],     // Cinza escuro
-    secondary: theme.colors.neutral[600],   // Cinza médio
-    accent: theme.colors.primary[600],      // Roxo médio
-    inverse: theme.colors.neutral[50],      // Branco
+    primary: theme.colors.neutral[900],     // Neutro quente escuro
+    secondary: theme.colors.neutral[600],   // Neutro quente médio
+    accent: theme.colors.primary[600],      // Rosa queimado médio
+    inverse: theme.colors.neutral[50],      // Branco suave
   },
   
   // Botões
   button: {
     primary: {
-      bg: theme.colors.primary[500],        // Roxo principal
-      hover: theme.colors.primary[600],     // Roxo escuro
-      text: theme.colors.neutral[50],       // Branco
+      bg: theme.colors.primary[500],        // Rosa queimado principal
+      hover: theme.colors.primary[600],     // Rosa queimado profundo
+      text: theme.colors.neutral[50],       // Branco suave
     },
     secondary: {
-      bg: theme.colors.secondary[500],      // Laranja pastel
-      hover: theme.colors.secondary[600],  // Laranja médio
-      text: theme.colors.neutral[50],       // Branco
+      bg: theme.colors.secondary[500],      // Nude/bege principal
+      hover: theme.colors.secondary[400],  // Nude/bege mais escuro
+      text: theme.colors.neutral[50],       // Branco suave
     },
     accent: {
-      bg: theme.colors.accent[500],         // Verde menta
-      hover: theme.colors.accent[600],     // Verde médio
-      text: theme.colors.neutral[50],       // Branco
+      bg: theme.colors.accent[500],         // Verde sálvia
+      hover: theme.colors.accent[400],     // Verde sálvia mais escuro
+      text: theme.colors.neutral[50],       // Branco suave
     },
     outline: {
       bg: 'transparent',
-      border: theme.colors.primary[300],   // Lavanda
-      text: theme.colors.primary[600],     // Roxo médio
-      hover: theme.colors.primary[50],     // Lavanda clara
+      border: theme.colors.primary[300],   // Rosa queimado leve
+      text: theme.colors.primary[600],     // Rosa queimado médio
+      hover: theme.colors.primary[50],     // Rosa queimado muito claro
     },
   },
   
   // Cards
   card: {
-    bg: theme.colors.neutral[50],           // Branco
-    border: theme.colors.neutral[200],      // Cinza claro
+    bg: theme.colors.neutral[50],           // Branco suave
+    border: theme.colors.neutral[200],      // Neutro quente claro
     shadow: theme.boxShadow.md,
   },
   
   // Inputs
   input: {
-    bg: theme.colors.neutral[50],           // Branco
-    border: theme.colors.neutral[300],      // Cinza médio claro
-    focus: theme.colors.primary[400],       // Roxo pastel
-    placeholder: theme.colors.neutral[400], // Cinza médio
+    bg: theme.colors.neutral[50],           // Branco suave
+    border: theme.colors.neutral[300],      // Neutro quente médio claro
+    focus: theme.colors.primary[400],       // Rosa queimado médio
+    placeholder: theme.colors.neutral[400], // Neutro quente médio
   },
 };
 
 export const COLORS = {
-  primary: '#8b5cf6',
-  background: '#fafafa',
-  // add other colors as needed
+  primary: theme.colors.primary[500],
+  background: theme.colors.neutral[50],
 };
 
 export default theme;

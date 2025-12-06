@@ -21,10 +21,7 @@ import { notificationsApi, Notification } from '../services/notificationsApi';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
-
-const colors = {
-  primary: '#7c3aed',
-};
+import { colors } from '../styles/colors';
 
 const NotificationsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -125,23 +122,23 @@ const NotificationsPage: React.FC = () => {
     const iconProps = { size: 24 };
     switch (type) {
       case 'application_received':
-        return <IconWrapper icon={UserPlus} {...iconProps} color="#7c3aed" />;
+        return <IconWrapper icon={UserPlus} {...iconProps} color={colors.brand.primary[500]} />;
       case 'application_accepted':
-        return <IconWrapper icon={CheckCircle} {...iconProps} color="#22c55e" />;
+        return <IconWrapper icon={CheckCircle} {...iconProps} color={colors.success[500]} />;
       case 'application_rejected':
-        return <IconWrapper icon={XCircle} {...iconProps} color="#ef4444" />;
+        return <IconWrapper icon={XCircle} {...iconProps} color={colors.error[500]} />;
       case 'support_reply':
-        return <IconWrapper icon={MessageCircle} {...iconProps} color="#0ea5e9" />;
+        return <IconWrapper icon={MessageCircle} {...iconProps} color={colors.info[500]} />;
       case 'unit_invitation':
-        return <IconWrapper icon={Mail} {...iconProps} color="#f59e0b" />;
+        return <IconWrapper icon={Mail} {...iconProps} color={colors.warning[500]} />;
       case 'marketplace_message':
-        return <IconWrapper icon={MessageSquare} {...iconProps} color="#ec4899" />;
+        return <IconWrapper icon={MessageSquare} {...iconProps} color={colors.brand.secondary[500]} />;
       case 'demand_status_changed':
-        return <IconWrapper icon={AlertCircle} {...iconProps} color="#f97316" />;
+        return <IconWrapper icon={AlertCircle} {...iconProps} color={colors.warning[500]} />;
       case 'new_demand_created':
-        return <IconWrapper icon={Briefcase} {...iconProps} color="#8b5cf6" />;
+        return <IconWrapper icon={Briefcase} {...iconProps} color={colors.brand.primary[500]} />;
       default:
-        return <IconWrapper icon={Bell} {...iconProps} color="#6b7280" />;
+        return <IconWrapper icon={Bell} {...iconProps} color={colors.neutral[600]} />;
     }
   };
 
@@ -364,7 +361,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     fontWeight: '500',
     color: '#ffffff',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
@@ -403,8 +400,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   filterButtonActive: {
-    color: '#7c3aed',
-    borderBottomColor: '#7c3aed',
+    color: colors.brand.primary[500],
+    borderBottomColor: colors.brand.primary[500],
   },
   loading: {
     padding: '60px 20px',
@@ -488,8 +485,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '4px 8px',
     fontSize: '11px',
     fontWeight: '600',
-    color: '#7c3aed',
-    backgroundColor: '#f3e8ff',
+    color: colors.brand.primary[500],
+    backgroundColor: colors.brand.primary[50],
     borderRadius: '6px',
   },
   notificationMessage: {

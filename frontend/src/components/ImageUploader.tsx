@@ -1,4 +1,5 @@
 import React, { useState, useRef, ChangeEvent } from 'react';
+import { colors } from '../styles/colors';
 
 interface ImageUploaderProps {
   maxImages?: number;
@@ -189,7 +190,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: '8px',
   },
   browseText: {
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     fontWeight: '500',
     textDecoration: 'underline',
   },
@@ -247,7 +248,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     position: 'absolute',
     bottom: '4px',
     left: '4px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     padding: '2px 8px',
     borderRadius: '4px',

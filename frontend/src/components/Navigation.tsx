@@ -33,7 +33,7 @@ const Navigation: React.FC<NavigationProps> = ({ user, onLogout }) => {
             {/* Logo */}
             <Link to="/demands" className="flex items-center space-x-2">
               <span className="text-2xl">🐾</span>
-              <span className="text-xl font-bold text-primary-600">PetiVet</span>
+              <span className="text-xl font-bold" style={{ color: '#A36B6B' }}>PetiMi</span>
             </Link>
 
             {/* Desktop Menu */}

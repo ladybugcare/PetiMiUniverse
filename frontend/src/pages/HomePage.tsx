@@ -188,8 +188,8 @@ const HomePage: React.FC = () => {
           <div className="footer-content">
             <div className="footer-brand">
               <img 
-                src="/logo_n_name.png" 
-                alt="PetiVet" 
+                src="/logo_branco.png" 
+                alt="PetiMi" 
                 className="footer-logo"
               />
               <p>
@@ -235,7 +235,7 @@ const HomePage: React.FC = () => {
             <p className="footer-bottom__tagline">
               Feito com <IconWrapper icon={Heart} size={18} fill="currentColor" /> para pets e veterinários
             </p>
-            <p className="footer-bottom__copyright">© 2025 PetiVet. Todos os direitos reservados.</p>
+            <p className="footer-bottom__copyright">© 2025 PetiMi. Todos os direitos reservados.</p>
           </div>
         </div>
       </footer>

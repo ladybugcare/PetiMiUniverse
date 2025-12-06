@@ -8,6 +8,7 @@ import { demandsApi } from '../services/demandsApi';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
 import { useUnit } from '../contexts/UnitContext';
+import { colors } from '../styles/colors';
 
 type CategoryType = 'vet' | 'freelancer' | 'clinic' | 'other';
 
@@ -301,7 +302,7 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
               onClick={onBack}
               style={{
                 padding: '12px 24px',
-                backgroundColor: colors.primary,
+                backgroundColor: colors.brand.primary[500],
                 color: '#fff',
                 border: 'none',
                 borderRadius: '8px',
@@ -593,7 +594,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   primaryButton: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
   },
   secondaryButton: {
@@ -634,7 +635,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '18px',
     height: '18px',
     cursor: 'pointer',
-    accentColor: '#7c3aed',
+    accentColor: colors.brand.primary[500],
   },
   checkboxText: {
     userSelect: 'none',
@@ -657,8 +658,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: '8px',
   },
   vacanciesCard: {
-    backgroundColor: '#f3e8ff',
-    border: '2px solid #7c3aed',
+    backgroundColor: colors.brand.primary[50],
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     padding: '16px',
     display: 'flex',
@@ -675,7 +676,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Inter, sans-serif',
     fontSize: '24px',
     fontWeight: '700',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
   },
 };
 

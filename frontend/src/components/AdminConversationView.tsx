@@ -76,7 +76,7 @@ export const AdminConversationView: React.FC<AdminConversationViewProps> = ({
         {/* Header */}
         <div style={styles.header}>
           <div style={styles.headerInfo}>
-            <Shield size={20} color={colors.primary} />
+            <Shield size={20} color={colors.brand.primary[500]} />
             <div>
               <h3 style={styles.title}>Visualização Admin</h3>
               <span style={styles.contextBadge}>{contextLabels[context]}</span>
@@ -175,7 +175,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   contextBadge: {
     fontSize: '12px',
-    color: colors.primary,
+    color: colors.brand.primary[500],
     fontFamily: 'Inter, sans-serif',
   },
   closeButton: {
@@ -192,8 +192,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   privacyWarning: {
     padding: '12px 20px',
-    backgroundColor: colors.warningLight,
-    borderBottom: `1px solid ${colors.warning}`,
+    backgroundColor: colors.warning[100],
+    borderBottom: `1px solid ${colors.warning[500]}`,
   },
   warningText: {
     fontSize: '13px',
@@ -227,7 +227,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   deleteButton: {
     padding: '6px',
-    backgroundColor: colors.danger,
+    backgroundColor: colors.error[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '4px',

@@ -84,7 +84,7 @@ const MyMarketplaceListingsPage: React.FC = () => {
             onClick={() => setFilter('all')}
             style={{
               ...styles.statCard,
-              borderColor: filter === 'all' ? '#7c3aed' : '#e5e5e5',
+              borderColor: filter === 'all' ? colors.brand.primary[500] : '#e5e5e5',
             }}
           >
             <div style={styles.statNumber}>{stats.total}</div>
@@ -181,7 +181,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   createButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -209,7 +209,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '36px',
     fontWeight: '700',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     marginBottom: '8px',
   },
   statLabel: {
@@ -246,7 +246,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   emptyButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

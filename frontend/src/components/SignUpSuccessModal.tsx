@@ -23,7 +23,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
           <>
             <h2 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                <IconWrapper icon={Heart} size={32} color={colors.primary} />
+                <IconWrapper icon={Heart} size={32} color={colors.brand.primary[500]} />
                 <span>Tudo pronto!</span>
               </div>
             </h2>
@@ -37,7 +37,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
             <p style={styles.text}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 Você pode fechar esta aba — o restante do processo é feito por e-mail.
-                <IconWrapper icon={Mail} size={18} color={colors.primary} />
+                <IconWrapper icon={Mail} size={18} color={colors.brand.primary[500]} />
               </span>
             </p>
 
@@ -56,7 +56,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
           <>
             <h2 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                <IconWrapper icon={Mail} size={32} color={colors.primary} />
+                <IconWrapper icon={Mail} size={32} color={colors.brand.primary[500]} />
                 <span>E-mail reenviado!</span>
               </div>
             </h2>
@@ -116,7 +116,7 @@ const styles = {
   },
   resendButton: {
     padding: '10px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

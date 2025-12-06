@@ -142,7 +142,7 @@ const WorkProofForm: React.FC<WorkProofFormProps> = ({
             alignItems: 'center',
             gap: '8px',
             padding: '10px 20px',
-            backgroundColor: colors.primary,
+            backgroundColor: colors.brand.primary[500],
             color: '#fff',
             border: 'none',
             borderRadius: '6px',
@@ -195,7 +195,7 @@ const WorkProofForm: React.FC<WorkProofFormProps> = ({
             alignItems: 'center',
             gap: '8px',
             padding: '10px 20px',
-            backgroundColor: colors.primary,
+            backgroundColor: colors.brand.primary[500],
             color: '#fff',
             border: 'none',
             borderRadius: '6px',
@@ -316,7 +316,7 @@ const WorkProofForm: React.FC<WorkProofFormProps> = ({
               onClick={handleAddAttachment}
               style={{
                 padding: '8px 16px',
-                backgroundColor: colors.primary,
+                backgroundColor: colors.brand.primary[500],
                 color: '#fff',
                 border: 'none',
                 borderRadius: '6px',
@@ -350,7 +350,7 @@ const WorkProofForm: React.FC<WorkProofFormProps> = ({
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ color: colors.primary, textDecoration: 'none', flex: 1 }}
+                    style={{ color: colors.brand.primary[500], textDecoration: 'none', flex: 1 }}
                   >
                     {url}
                   </a>
@@ -361,7 +361,7 @@ const WorkProofForm: React.FC<WorkProofFormProps> = ({
                       border: 'none',
                       cursor: 'pointer',
                       padding: '4px',
-                      color: colors.danger,
+                      color: colors.error[500],
                     }}
                   >
                     <X size={16} />
@@ -380,7 +380,7 @@ const WorkProofForm: React.FC<WorkProofFormProps> = ({
             alignItems: 'center',
             gap: '8px',
             padding: '10px 20px',
-            backgroundColor: colors.primary,
+            backgroundColor: colors.brand.primary[500],
             color: '#fff',
             border: 'none',
             borderRadius: '6px',
@@ -427,7 +427,7 @@ const WorkProofForm: React.FC<WorkProofFormProps> = ({
             gap: '8px',
           }}
         >
-          <CheckCircle size={20} color={colors.success} />
+          <CheckCircle size={20} color={colors.success[500]} />
           Prova de Trabalho
         </h3>
 
@@ -481,7 +481,7 @@ const WorkProofForm: React.FC<WorkProofFormProps> = ({
                     rel="noopener noreferrer"
                     style={{
                       fontSize: '0.875rem',
-                      color: colors.primary,
+                      color: colors.brand.primary[500],
                       textDecoration: 'none',
                     }}
                   >
@@ -493,8 +493,8 @@ const WorkProofForm: React.FC<WorkProofFormProps> = ({
           )}
 
           {currentStatus === 'report_approved' && workProof.clinic_signature && (
-            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: colors.success + '20', borderRadius: '4px' }}>
-              <div style={{ fontSize: '0.875rem', color: colors.success, fontWeight: 500 }}>
+            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: `${colors.success[500]}20`, borderRadius: '4px' }}>
+              <div style={{ fontSize: '0.875rem', color: colors.success[500], fontWeight: 500 }}>
                 ✓ Relatório aprovado pela clínica
               </div>
               <div style={{ fontSize: '0.75rem', color: colors.darkGray, marginTop: '4px' }}>

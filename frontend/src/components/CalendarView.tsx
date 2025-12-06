@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Demand } from '../services/demandsApi';
 import { Clock, MapPin, DollarSign, X } from 'lucide-react';
+import { colors } from '../styles/colors';
 
 interface CalendarViewProps {
   demands: Demand[];
@@ -461,7 +462,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   todayButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -527,13 +528,13 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   today: {
     backgroundColor: '#ede9fe',
-    borderColor: '#7c3aed',
+    borderColor: colors.brand.primary[500],
     borderWidth: '2px',
     borderStyle: 'solid',
   },
   selected: {
     backgroundColor: '#dcd4ff',
-    borderColor: '#7c3aed',
+    borderColor: colors.brand.primary[500],
     borderWidth: '2px',
     borderStyle: 'solid',
   },
@@ -541,7 +542,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     position: 'absolute',
     top: '4px',
     right: '4px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     borderRadius: '50%',
     width: '20px',
@@ -734,7 +735,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   applyButton: {
     padding: '8px 16px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -747,8 +748,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   viewDetailsButton: {
     padding: '8px 16px',
     backgroundColor: '#ffffff',
-    color: '#7c3aed',
-    border: '1px solid #7c3aed',
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px',

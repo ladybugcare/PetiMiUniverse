@@ -105,11 +105,11 @@ const SpecialtyBarChart: React.FC<SpecialtyBarChartProps> = ({ data, totalDemand
                       style={{
                         ...styles.bar,
                     width: `${widthPercent}%`,
-                    backgroundColor: index === 0 ? colors.primary : 
-                                    index === 1 ? colors.primaryLight : 
-                                    index === 2 ? colors.primaryLighter : '#c4b5fd',
+                    backgroundColor: index === 0 ? colors.brand.primary[500]: 
+                                    index === 1 ? colors.brand.primary[100] : 
+                                    index === 2 ? colors.brand.primary[300] : '#c4b5fd',
                     transform: isHovered ? 'scaleY(1.05)' : 'scaleY(1)',
-                    boxShadow: isHovered ? '0 4px 8px rgba(124, 58, 237, 0.3)' : 'none',
+                    boxShadow: isHovered ? '0 4px 8px rgba(196, 108, 106, 0.3)' : 'none',
                       }}
                 >
                   {/* Tooltip no hover */}

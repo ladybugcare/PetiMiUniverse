@@ -216,7 +216,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
   },
   unreadBadge: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     width: '28px',
     height: '28px',

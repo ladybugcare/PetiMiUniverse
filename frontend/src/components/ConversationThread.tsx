@@ -118,7 +118,7 @@ export const ConversationThread: React.FC<ConversationThreadProps> = ({
                   {/* Card de demanda acima da primeira mensagem de cada demanda */}
                   {showDemandCard && message.demand && (
                     <div style={styles.demandCard}>
-                      <ClipboardList size={16} color={colors.primary} />
+                      <ClipboardList size={16} color={colors.brand.primary[500]} />
                       <span style={styles.demandCardText}>Sobre: </span>
                       <a
                         href={`/demands/${message.demand.id}`}
@@ -253,7 +253,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '44px',
     height: '44px',
     borderRadius: '50%',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     display: 'flex',
@@ -272,9 +272,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '8px',
     padding: '12px 16px',
     margin: '8px 0',
-    backgroundColor: colors.primaryBg,
+    backgroundColor: colors.brand.primary[500],
     borderRadius: '8px',
-    border: `1px solid ${colors.primary}20`,
+    border: `1px solid ${colors.brand.primary[200]}`,
     fontFamily: 'Inter, sans-serif',
   },
   demandCardText: {
@@ -283,7 +283,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   demandCardLink: {
     fontSize: '13px',
-    color: colors.primary,
+    color: colors.brand.primary[500],
     textDecoration: 'none',
     fontWeight: '500',
     transition: 'opacity 0.2s',

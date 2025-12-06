@@ -16,7 +16,7 @@ interface IconWrapperProps {
  * Resolve problemas de incompatibilidade entre React 18 e lucide-react
  * 
  * @example
- * <IconWrapper icon={Info} size={16} color={colors.primary} />
+ * <IconWrapper icon={Info} size={16} color={colors.brand.primary[500]} />
  */
 export const IconWrapper: React.FC<IconWrapperProps> = ({ 
   icon: Icon, 

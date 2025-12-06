@@ -29,14 +29,14 @@ export const Avatar: React.FC<AvatarProps> = ({ src, name, size = 40, style, use
     }
     
     // Fallback: usar cores baseadas no nome (para compatibilidade)
-    const colors = [
-      '#7c3aed', '#a855f7', '#c084fc',
+    const avatarColors = [
+      colors.brand.primary[500], colors.brand.primary[500], '#c084fc',
       '#f97316', '#fb923c', '#fdba74',
       '#22c55e', '#4ade80', '#86efac',
       '#3b82f6', '#60a5fa', '#93c5fd',
     ];
-    const index = name.charCodeAt(0) % colors.length;
-    return colors[index];
+    const index = name.charCodeAt(0) % avatarColors.length;
+    return avatarColors[index];
   };
 
   // Reset imageError when src changes

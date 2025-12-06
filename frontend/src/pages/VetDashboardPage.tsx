@@ -102,7 +102,7 @@ const VetDashboardPage: React.FC = () => {
       label: 'Ver Demandas',
       icon: <IconWrapper icon={ClipboardList} size={20} color="#ffffff" />,
       path: isApproved ? '/demands' : undefined,
-      color: '#7c3aed',
+      color: colors.brand.primary[500],
       disabled: !isApproved,
     },
     {
@@ -257,10 +257,10 @@ const ResumoSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Meu Resumo Profissional</h2>
       <div style={styles.statsGrid}>
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          style={{ ...styles.statCard, borderLeftColor: colors.brand.primary[500] }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(196, 108, 106, 0.15)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0)';
@@ -268,7 +268,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <IconWrapper icon={FileText} size={24} color={colors.primary} />
+            <IconWrapper icon={FileText} size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalApplications}</h3>
@@ -288,7 +288,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <IconWrapper icon={Clock} size={24} color={colors.primary} />
+            <IconWrapper icon={Clock} size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.activeJobs}</h3>
@@ -308,7 +308,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <IconWrapper icon={CheckCircle} size={24} color={colors.primary} />
+            <IconWrapper icon={CheckCircle} size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.completedJobs}</h3>
@@ -328,7 +328,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <IconWrapper icon={Star} size={24} color={colors.primary} />
+            <IconWrapper icon={Star} size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.averageRating.toFixed(1)}</h3>
@@ -358,19 +358,19 @@ const ResumoSection: React.FC = () => {
               };
               
               return (
-              <OpportunityItem
-                key={opportunity.id}
+                <OpportunityItem
+                  key={opportunity.id}
                   demandId={opportunity.id}
-                icon={<Building2 size={20} color="#7c3aed" />}
-                title={opportunity.title}
+                  icon={<Building2 size={20} color={colors.brand.primary[500]} />}
+                  title={opportunity.title}
                   clinicName={clinicName}
                   specialties={opportunity.required_specialties || []}
                   date={formatDate(opportunity.demand_date)}
                   time={formatTime(opportunity.start_time)}
                   payment={opportunity.payment}
-                urgent={opportunity.category === 'emergency'}
+                  urgent={opportunity.category === 'emergency'}
                   onViewDetails={() => navigate(`/demands/${opportunity.id}`)}
-              />
+                />
               );
             })
           ) : (
@@ -459,22 +459,22 @@ const ConfiguracoesSection: React.FC = () => (
     <h2 style={styles.sectionTitle}>Configurações</h2>
     <div style={styles.settingsGrid}>
       <SettingCard
-        icon={<IconWrapper icon={Bell} size={28} color="#7c3aed" />}
+        icon={<IconWrapper icon={Bell} size={28} color={colors.brand.primary[500]} />}
         title="Notificações"
         description="Gerencie suas preferências de notificação"
       />
       <SettingCard
-        icon={<IconWrapper icon={Lock} size={28} color="#7c3aed" />}
+        icon={<IconWrapper icon={Lock} size={28} color={colors.brand.primary[500]} />}
         title="Privacidade"
         description="Controle quem pode ver seu perfil"
       />
       <SettingCard
-        icon={<IconWrapper icon={Smartphone} size={28} color="#7c3aed" />}
+        icon={<IconWrapper icon={Smartphone} size={28} color={colors.brand.primary[500]} />}
         title="Preferências"
         description="Personalize sua experiência"
       />
       <SettingCard
-        icon={<IconWrapper icon={Globe} size={28} color="#7c3aed" />}
+        icon={<IconWrapper icon={Globe} size={28} color={colors.brand.primary[500]} />}
         title="Idioma"
         description="Português (Brasil)"
       />
@@ -746,7 +746,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   specialtyBadge: {
     padding: '4px 10px',
     backgroundColor: '#ede9fe',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     borderRadius: '12px',
     fontSize: '12px',
     fontWeight: '500',
@@ -768,13 +768,13 @@ const styles: { [key: string]: React.CSSProperties } = {
   opportunityPayment: {
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     fontWeight: '600',
     margin: '8px 0 0 0',
   },
   applyButton: {
     padding: '8px 16px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -824,7 +824,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     top: '12px',
     right: '12px',
     padding: '4px 8px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     fontSize: '10px',
     fontWeight: '600',
@@ -920,8 +920,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
   },
   warningBanner: {
-    backgroundColor: colors.warningLight,
-    border: `1px solid ${colors.warning}`,
+    backgroundColor: colors.warning[100],
+    border: `1px solid ${colors.warning[500]}`,
     borderRadius: '12px',
     padding: '16px 20px',
     marginBottom: '24px',
@@ -932,7 +932,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '12px',
   },
   warningIcon: {
-    color: colors.warning,
+    color: colors.warning[500],
     flexShrink: 0,
     marginTop: '2px',
   },

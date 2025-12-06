@@ -323,10 +323,10 @@ const UnitProfileAdminView: React.FC<UnitProfileAdminViewProps> = ({ unit, onApp
             )}
             {(unit as any).rejection_reason && (
               <div style={styles.infoItem}>
-                <label style={{ ...styles.infoLabel, color: colors.danger }}>
+                <label style={{ ...styles.infoLabel, color: colors.error[500] }}>
                   Motivo da Rejeição
                 </label>
-                <p style={{ ...styles.infoValue, color: colors.danger }}>
+                <p style={{ ...styles.infoValue, color: colors.error[500] }}>
                   {(unit as any).rejection_reason}
                 </p>
               </div>
@@ -423,7 +423,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'center',
     gap: '8px',
     padding: '12px 20px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -441,8 +441,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '8px',
     padding: '12px 20px',
     backgroundColor: '#ffffff',
-    color: colors.primary,
-    border: `1px solid ${colors.primary}`,
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: '600',

@@ -1,5 +1,6 @@
 import React from 'react';
 import { GrowthTrend } from '../../services/statisticsApi';
+import { colors } from '../../styles/colors';
 
 interface GrowthChartProps {
   trends: GrowthTrend[];
@@ -60,7 +61,7 @@ const GrowthChart: React.FC<GrowthChartProps> = ({ trends }) => {
                       style={{
                         ...styles.bar,
                         height: `${(data.Clínicas / maxValue) * barHeight}px`,
-                        backgroundColor: '#7c3aed',
+                        backgroundColor: colors.brand.primary[500],
                       }}
                       title={`Clínicas: ${data.Clínicas}`}
                     />
@@ -76,7 +77,7 @@ const GrowthChart: React.FC<GrowthChartProps> = ({ trends }) => {
                       style={{
                         ...styles.bar,
                         height: `${(data.Freelancers / maxValue) * barHeight}px`,
-                        backgroundColor: '#8b5cf6',
+                        backgroundColor: colors.brand.primary[500],
                       }}
                       title={`Freelancers: ${data.Freelancers}`}
                     />
@@ -99,7 +100,7 @@ const GrowthChart: React.FC<GrowthChartProps> = ({ trends }) => {
         {/* Legend */}
         <div style={styles.legend}>
           <div style={styles.legendItem}>
-            <div style={{ ...styles.legendColor, backgroundColor: '#7c3aed' }} />
+            <div style={{ ...styles.legendColor, backgroundColor: colors.brand.primary[500] }} />
             <span>Clínicas</span>
           </div>
           <div style={styles.legendItem}>
@@ -107,7 +108,7 @@ const GrowthChart: React.FC<GrowthChartProps> = ({ trends }) => {
             <span>Veterinários</span>
           </div>
           <div style={styles.legendItem}>
-            <div style={{ ...styles.legendColor, backgroundColor: '#8b5cf6' }} />
+            <div style={{ ...styles.legendColor, backgroundColor: colors.brand.primary[500] }} />
             <span>Freelancers</span>
           </div>
           <div style={styles.legendItem}>

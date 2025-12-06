@@ -479,7 +479,7 @@ const AdminUsersPage: React.FC = () => {
         <div style={styles.header}>
           <h2 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Users size={28} color={colors.primary} />
+              <Users size={28} color={colors.brand.primary[500]} />
               <span>Usuários Totais</span>
             </div>
           </h2>
@@ -621,7 +621,7 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.messageButton }}
                                 title="Enviar mensagem"
                               >
-                                <MessageCircle size={16} color={colors.primary} />
+                                <MessageCircle size={16} color={colors.brand.primary[500]} />
                               </button>
                               <button
                                 onClick={() => handleViewClinic(clinic)}
@@ -695,7 +695,7 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.messageButton }}
                                 title="Enviar mensagem"
                               >
-                                <MessageCircle size={16} color={colors.primary} />
+                                <MessageCircle size={16} color={colors.brand.primary[500]} />
                               </button>
                               <button
                                 onClick={() => handleViewVet(vet)}
@@ -769,7 +769,7 @@ const AdminUsersPage: React.FC = () => {
                                 style={{ ...styles.actionButton, ...styles.messageButton }}
                                 title="Enviar mensagem"
                               >
-                                <MessageCircle size={16} color={colors.primary} />
+                                <MessageCircle size={16} color={colors.brand.primary[500]} />
                               </button>
                               <button
                                 onClick={() => handleViewFreelancer(freelancer)}
@@ -1107,7 +1107,7 @@ const AdminUsersPage: React.FC = () => {
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <UserPlus size={24} color={colors.primary} />
+                  <UserPlus size={24} color={colors.brand.primary[500]} />
                   <h3 style={styles.modalTitle}>Novo Usuário</h3>
                 </div>
                 <button onClick={handleCloseCreateModal} style={styles.closeButton}>
@@ -1467,7 +1467,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1501,8 +1501,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s',
   },
   activeTab: {
-    color: '#7c3aed',
-    borderBottomColor: '#7c3aed',
+    color: colors.brand.primary[500],
+    borderBottomColor: colors.brand.primary[500],
   },
   searchContainer: {
     marginBottom: '24px',
@@ -1614,7 +1614,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderColor: '#ef4444',
   },
   messageButton: {
-    borderColor: colors.primary,
+    borderColor: colors.brand.primary[500],
   },
   modalOverlay: {
     position: 'fixed',
@@ -1700,7 +1700,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   saveButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1743,7 +1743,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexShrink: 0,
   },
   stepCircleActive: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
   },
   stepLine: {
@@ -1784,7 +1784,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   userTypeButtonSelected: {
     borderWidth: '2px',
-    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.2)',
+    boxShadow: '0 8px 16px rgba(196, 108, 106, 0.2)',
   },
   userTypeIconCircle: {
     width: '56px',

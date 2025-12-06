@@ -21,16 +21,16 @@ const SpecialtySuccessCard: React.FC<SpecialtySuccessCardProps> = ({
 
   // Determine color based on success rate
   const getProgressColor = (): string => {
-    if (isTopPerformer) {
-      return colors.primary;
-    }
+      if (isTopPerformer) {
+        return colors.brand.primary[500];
+      }
     if (successRate >= 80) {
-      return colors.success;
+      return colors.success[500]
     }
     if (successRate >= 50) {
-      return colors.warning;
+      return colors.warning[500]
     }
-    return colors.danger;
+    return colors.error[500];
   };
 
   const progressColor = getProgressColor();
@@ -107,8 +107,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
   },
   topPerformerCard: {
-    border: `2px solid ${colors.primary}`,
-    backgroundColor: colors.primaryBg,
+    border: `2px solid ${colors.brand.primary[500]}`,
+    backgroundColor: colors.brand.primary[500],
   },
   header: {
     display: 'flex',
@@ -127,7 +127,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     whiteSpace: 'nowrap',
   },
   topPerformerBadge: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     padding: '4px 10px',
     borderRadius: '12px',

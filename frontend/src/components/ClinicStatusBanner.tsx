@@ -90,7 +90,7 @@ const ClinicStatusBanner: React.FC = () => {
       <div style={styles.bannerWarning}>
         <div style={styles.bannerContent}>
           <div style={styles.bannerIconContainer}>
-            <IconWrapper icon={Construction} size={24} color={colors.warning} />
+            <IconWrapper icon={Construction} size={24} color={colors.warning[500]} />
           </div>
           <div style={styles.bannerText}>
             <strong style={styles.bannerTitle}>Ação necessária:</strong>
@@ -128,7 +128,7 @@ const ClinicStatusBanner: React.FC = () => {
       <div style={styles.bannerError}>
         <div style={styles.bannerContent}>
           <div style={styles.bannerIconContainer}>
-            <IconWrapper icon={AlertTriangle} size={24} color={colors.danger} />
+            <IconWrapper icon={AlertTriangle} size={24} color={colors.error[500]} />
           </div>
           <div style={styles.bannerText}>
             <strong style={styles.bannerTitle}>Sua unidade foi reprovada.</strong>
@@ -150,7 +150,7 @@ const ClinicStatusBanner: React.FC = () => {
       <div style={styles.bannerError}>
         <div style={styles.bannerContent}>
           <div style={styles.bannerIconContainer}>
-            <IconWrapper icon={AlertTriangle} size={24} color={colors.danger} />
+            <IconWrapper icon={AlertTriangle} size={24} color={colors.error[500]} />
           </div>
           <div style={styles.bannerText}>
             <strong style={styles.bannerTitle}>Conta suspensa:</strong>
@@ -166,8 +166,8 @@ const ClinicStatusBanner: React.FC = () => {
 
 const styles: { [key: string]: React.CSSProperties } = {
   bannerWarning: {
-    backgroundColor: colors.warningLight,
-    border: `1px solid ${colors.warning}`,
+    backgroundColor: colors.warning[100],
+    border: `1px solid ${colors.warning[500]}`,
     borderRadius: '12px',
     padding: '16px 20px',
     marginBottom: '24px',
@@ -190,8 +190,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
   },
   bannerError: {
-    backgroundColor: colors.dangerLight,
-    border: `1px solid ${colors.danger}`,
+    backgroundColor: colors.error[100],
+    border: `1px solid ${colors.error[500]}`,
     borderRadius: '12px',
     padding: '16px 20px',
     marginBottom: '24px',

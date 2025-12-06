@@ -151,7 +151,7 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
       },
       inactive_accepted_other_position: {
         label: 'ℹ️ Aceito em outra posição',
-        style: { backgroundColor: '#f3f4f6', color: '#6b7280' },
+        style: { backgroundColor: colors.neutral[100], color: colors.neutral[600] },
       },
       inactive_time_conflict: {
         label: '⚠️ Conflito de horário',
@@ -159,7 +159,7 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
       },
       cancelled_by_vet: {
         label: '🚫 Cancelada pelo vet',
-        style: { backgroundColor: '#ede9fe', color: '#5b21b6' },
+        style: { backgroundColor: colors.brand.primary[50], color: colors.brand.primary[800] },
       },
     };
 
@@ -256,7 +256,7 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                       style={styles.viewProfileButton}
                       title="Ver perfil do veterinário"
                     >
-                      <User size={16} color={colors.primary} />
+                      <User size={16} color={colors.brand.primary[500]} />
                       Ver Perfil
                     </button>
                     <button
@@ -264,7 +264,7 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                       style={styles.messageButton}
                       title="Enviar mensagem"
                     >
-                      <MessageCircle size={16} color={colors.primary} />
+                      <MessageCircle size={16} color={colors.brand.primary[500]} />
                       Mensagem
                     </button>
                   </>
@@ -322,7 +322,7 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                     style={styles.viewProfileButton}
                     title="Ver perfil do veterinário"
                   >
-                    <User size={16} color={colors.primary} />
+                    <User size={16} color={colors.brand.primary[500]} />
                     Ver Perfil
                   </button>
                   <button
@@ -330,7 +330,7 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                     style={styles.messageButton}
                     title="Enviar mensagem"
                   >
-                    <MessageCircle size={16} color={colors.primary} />
+                    <MessageCircle size={16} color={colors.brand.primary[500]} />
                     Mensagem
                   </button>
                 </div>
@@ -367,7 +367,7 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                     style={styles.viewProfileButton}
                     title="Ver perfil do veterinário"
                   >
-                    <User size={16} color={colors.primary} />
+                    <User size={16} color={colors.brand.primary[500]} />
                     Ver Perfil
                   </button>
                   <button
@@ -375,7 +375,7 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                     style={styles.messageButton}
                     title="Enviar mensagem"
                   >
-                    <MessageCircle size={16} color={colors.primary} />
+                    <MessageCircle size={16} color={colors.brand.primary[500]} />
                     Mensagem
                   </button>
                 </div>
@@ -409,7 +409,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   positionBadge: {
     padding: '4px 12px',
     backgroundColor: '#faf5ff',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     borderRadius: '12px',
     fontSize: '13px',
     fontWeight: '600',
@@ -486,8 +486,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '6px',
     padding: '10px 16px',
     backgroundColor: '#ffffff',
-    color: colors.primary,
-    border: `1px solid ${colors.primary}`,
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: '600',
@@ -534,8 +534,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '6px',
     padding: '10px 16px',
     backgroundColor: '#ffffff',
-    color: colors.primary,
-    border: `1px solid ${colors.primary}`,
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: '600',
@@ -555,7 +555,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '32px',
     height: '32px',
     border: '3px solid #f3f4f6',
-    borderTop: '3px solid #7c3aed',
+    borderTop: `3px solid ${colors.brand.primary[500]}`,
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },

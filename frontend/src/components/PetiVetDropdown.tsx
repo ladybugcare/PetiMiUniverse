@@ -171,8 +171,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Inter, sans-serif',
   },
   triggerOpen: {
-    borderColor: '#7c3aed',
-    boxShadow: '0 0 0 3px rgba(124, 58, 237, 0.1)',
+    borderColor: colors.brand.primary[500],
+    boxShadow: '0 0 0 3px rgba(196, 108, 106, 0.1)',
   },
   triggerDisabled: {
     opacity: 0.6,

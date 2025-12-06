@@ -114,7 +114,7 @@ const CreateUnitPage: React.FC = () => {
         <div style={styles.header}>
           <h1 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Building2 size={32} color={colors.primary} />
+              <Building2 size={32} color={colors.brand.primary[500]} />
               <span>Nova Unidade</span>
             </div>
           </h1>
@@ -166,7 +166,7 @@ const CreateUnitPage: React.FC = () => {
             />
             <div style={styles.tooltip}>
               <span style={styles.tooltipIcon}>
-                <IconWrapper icon={Lightbulb} size={18} color={colors.primary} />
+                <IconWrapper icon={Lightbulb} size={18} color={colors.brand.primary[500]} />
               </span>
               <span style={styles.tooltipText}>
                 Use o bairro ou ponto de referência para diferenciar se tiver mais de uma unidade na mesma cidade
@@ -260,7 +260,7 @@ const CreateUnitPage: React.FC = () => {
 
           <div style={styles.infoBox}>
             <span style={styles.infoIcon}>
-              <IconWrapper icon={Info} size={20} color={colors.primary} />
+              <IconWrapper icon={Info} size={20} color={colors.brand.primary[500]} />
             </span>
             <div>
               <strong>Sobre a nova unidade</strong>

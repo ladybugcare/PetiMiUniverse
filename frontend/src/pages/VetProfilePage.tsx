@@ -382,7 +382,7 @@ const VetProfilePage: React.FC = () => {
               ) : stats ? (
                 <div style={styles.statsGrid}>
                   <div style={styles.statCard}>
-                    <FileText size={20} color="#7c3aed" />
+                    <FileText size={20} color={colors.brand.primary[500]} />
                     <div style={styles.statContent}>
                       <h4 style={styles.statValue}>{stats.totalApplications}</h4>
                       <p style={styles.statLabel}>Candidaturas</p>
@@ -422,7 +422,7 @@ const VetProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -437,7 +437,7 @@ const VetProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -452,7 +452,7 @@ const VetProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -467,7 +467,7 @@ const VetProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -1027,7 +1027,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   editButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1053,7 +1053,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   saveButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1124,7 +1124,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   addButton: {
     padding: '12px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1145,7 +1145,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '6px',
     padding: '6px 12px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     borderRadius: '6px',
     fontFamily: 'Inter, sans-serif',

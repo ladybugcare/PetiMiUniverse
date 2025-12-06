@@ -331,8 +331,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     whiteSpace: 'nowrap',
   },
   tabActive: {
-    color: colors.primary,
-    borderBottomColor: colors.primary,
+    color: colors.brand.primary[500],
+    borderBottomColor: colors.brand.primary[500],
     fontWeight: '600',
   },
   tabIcon: {

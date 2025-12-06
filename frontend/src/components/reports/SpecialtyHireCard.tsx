@@ -44,7 +44,7 @@ const SpecialtyHireCard: React.FC<SpecialtyHireCardProps> = ({
         </div>
         <div style={styles.metric}>
           <span style={styles.metricLabel}>Percentual:</span>
-          <span style={{ ...styles.metricValue, color: colors.primary }}>
+          <span style={{ ...styles.metricValue, color: colors.brand.primary[500]}}>
             {percentage.toFixed(1)}%
           </span>
         </div>
@@ -70,8 +70,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
   },
   topHiredCard: {
-    border: `2px solid ${colors.primary}`,
-    backgroundColor: colors.primaryBg,
+    border: `2px solid ${colors.brand.primary[500]}`,
+    backgroundColor: colors.brand.primary[500],
   },
   header: {
     display: 'flex',
@@ -90,7 +90,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     whiteSpace: 'nowrap',
   },
   topHiredBadge: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     padding: '4px 10px',
     borderRadius: '12px',

@@ -341,7 +341,7 @@ const UnitProfilePage: React.FC = () => {
                 <h3 style={styles.statsTitle}>Estatísticas</h3>
                 <div style={styles.statsGrid}>
                   <div style={styles.statCardTwoColumn}>
-                    <FileText size={20} color="#7c3aed" />
+                    <FileText size={20} color={colors.brand.primary[500]} />
                     <div style={styles.statContentTwoColumn}>
                       <h4 style={styles.statValueTwoColumn}>{stats.totalDemands}</h4>
                       <p style={styles.statLabelTwoColumn}>Total Demandas</p>
@@ -381,7 +381,7 @@ const UnitProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -396,7 +396,7 @@ const UnitProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -411,7 +411,7 @@ const UnitProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -426,7 +426,7 @@ const UnitProfilePage: React.FC = () => {
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = '#ffffff';
@@ -890,7 +890,7 @@ const UnitProfilePage: React.FC = () => {
           <h2 style={styles.sectionTitle}>Estatísticas</h2>
           <div style={styles.statsGrid}>
             <div style={styles.statCard}>
-              <div style={styles.statIcon}><FileText size={24} color={colors.primary} /></div>
+              <div style={styles.statIcon}><FileText size={24} color={colors.brand.primary[500]} /></div>
               <div style={styles.statContent}>
                 <p style={styles.statLabel}>Total de Demandas</p>
                 <p style={styles.statValue}>{stats.totalDemands}</p>
@@ -1090,7 +1090,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '10px 20px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1262,7 +1262,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   viewButton: {
     padding: '6px 12px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '6px',

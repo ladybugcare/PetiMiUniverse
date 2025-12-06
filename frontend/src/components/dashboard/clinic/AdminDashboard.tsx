@@ -222,11 +222,11 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          style={{ ...styles.statCard, borderLeftColor: colors.brand.primary[500] }}
           onClick={() => navigate('/units')}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(196, 108, 106, 0.15)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0)';
@@ -234,8 +234,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <Building2 size={24} color={colors.primary} />
+            <Building2 size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalUnits}</h3>
@@ -256,8 +255,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <Users size={24} color={colors.primary} />
+            <Users size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalUsers}</h3>
@@ -278,8 +276,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <ClipboardList size={24} color={colors.primary} />
+            <ClipboardList size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalDemands}</h3>
@@ -288,7 +285,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
         </div>
 
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#f59e0b', cursor: 'pointer' }}
+          style={{ ...styles.statCard, borderLeftColor: colors.warning[500], cursor: 'pointer' }}
           onClick={() => navigate('/clinic-applications?status=pending')}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
@@ -300,8 +297,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <AlertCircle size={24} color={colors.primary} />
+            <AlertCircle size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.pendingApplications}</h3>
@@ -324,13 +320,13 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
                 switch (status) {
                   case 'approved':
                   case 'active':
-                    return { label: 'Aprovada', color: '#10b981' };
+                    return { label: 'Aprovada', color: colors.success[500] };
                   case 'pending_review':
-                    return { label: 'Pendente', color: '#f59e0b' };
+                    return { label: 'Pendente', color: colors.warning[500] };
                   case 'rejected':
-                    return { label: 'Rejeitada', color: '#ef4444' };
+                    return { label: 'Rejeitada', color: colors.error[500] };
                   case 'inactive':
-                    return { label: 'Inativa', color: '#737373' };
+                    return { label: 'Inativa', color: colors.neutral[500] };
                   default:
                     return { label: status, color: '#737373' };
                 }
@@ -379,8 +375,8 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) {
                 icon.style.transform = 'scale(1.1) rotate(5deg)';
               }
@@ -388,7 +384,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) {
                 icon.style.transform = 'scale(1) rotate(0deg)';
@@ -406,8 +402,8 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) {
                 icon.style.transform = 'scale(1.1) rotate(5deg)';
               }
@@ -415,7 +411,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) {
                 icon.style.transform = 'scale(1) rotate(0deg)';
@@ -433,8 +429,8 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) {
                 icon.style.transform = 'scale(1.1) rotate(5deg)';
               }
@@ -442,7 +438,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) {
                 icon.style.transform = 'scale(1) rotate(0deg)';
@@ -460,8 +456,8 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) {
                 icon.style.transform = 'scale(1.1) rotate(5deg)';
               }
@@ -469,7 +465,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) {
                 icon.style.transform = 'scale(1) rotate(0deg)';
@@ -500,7 +496,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
                   }
                   style={styles.input}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onBlur={(e) => {
                     e.currentTarget.style.borderColor = '#e5e5e5';
@@ -517,7 +513,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
                   }
                   style={styles.input}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onBlur={(e) => {
                     e.currentTarget.style.borderColor = '#e5e5e5';
@@ -541,7 +537,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
                   }
                   style={styles.input}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = '#7c3aed';
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onBlur={(e) => {
                     e.currentTarget.style.borderColor = '#e5e5e5';
@@ -577,12 +573,12 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
                   }}
                   onMouseEnter={(e) => {
                     if (!inviteLoading) {
-                      e.currentTarget.style.backgroundColor = '#6d28d9';
+                      e.currentTarget.style.backgroundColor = colors.brand.primary[700];
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (!inviteLoading) {
-                      e.currentTarget.style.backgroundColor = '#7c3aed';
+                      e.currentTarget.style.backgroundColor = colors.brand.primary[500];
                     }
                   }}
                 >
@@ -760,14 +756,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '12px',
     cursor: 'pointer',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.08)',
+    boxShadow: '0 4px 12px rgba(196, 108, 106, 0.08)',
     position: 'relative',
     overflow: 'hidden',
   },
   actionIconCircle: {
     width: '56px',
     height: '56px',
-    background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+    background: `linear-gradient(135deg, ${colors.brand.primary[500]} 0%, ${colors.brand.primary[600]} 100%)`,
     borderRadius: '14px',
     display: 'flex',
     alignItems: 'center',
@@ -869,7 +865,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   submitButton: {
     flex: '1',
     padding: '12px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

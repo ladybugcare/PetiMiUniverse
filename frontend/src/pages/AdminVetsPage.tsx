@@ -157,7 +157,7 @@ const AdminVetsPage: React.FC = () => {
         <div style={styles.header}>
           <h2 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Stethoscope size={28} color={colors.primary} />
+              <Stethoscope size={28} color={colors.brand.primary[500]} />
               <span>Veterinários Cadastrados</span>
             </div>
           </h2>
@@ -600,7 +600,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   saveButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

@@ -50,7 +50,7 @@ const EmailNotConfirmedModal: React.FC<EmailNotConfirmedModalProps> = ({
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
           <div style={styles.iconContainer}>
-            <AlertCircle size={32} color={colors.warning} />
+            <AlertCircle size={32} color={colors.warning[500]} />
           </div>
           <button
             onClick={onClose}
@@ -72,7 +72,7 @@ const EmailNotConfirmedModal: React.FC<EmailNotConfirmedModalProps> = ({
 
           {successMessage && (
             <div style={styles.successBox}>
-              <CheckCircle size={20} color={colors.success} />
+              <CheckCircle size={20} color={colors.success[500]} />
               <span style={styles.successText}>{successMessage}</span>
             </div>
           )}
@@ -184,10 +184,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px',
-    backgroundColor: colors.successLight,
+    backgroundColor: colors.success[100],
     borderRadius: '8px',
     marginBottom: '20px',
-    border: `1px solid ${colors.success}`,
+    border: `1px solid ${colors.success[500]}`,
   },
   successText: {
     fontSize: '14px',
@@ -206,7 +206,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'center',
     gap: '8px',
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: colors.surface,
     border: 'none',
     borderRadius: '8px',

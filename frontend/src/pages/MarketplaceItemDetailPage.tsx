@@ -134,7 +134,7 @@ const MarketplaceItemDetailPage: React.FC = () => {
                     alt={`Thumbnail ${index + 1}`}
                     style={{
                       ...styles.thumbnail,
-                      border: selectedImageIndex === index ? '3px solid #7c3aed' : '2px solid #e5e5e5',
+                      border: selectedImageIndex === index ? '3px solid colors.brand.primary[500]' : '2px solid #e5e5e5',
                     }}
                     onClick={() => setSelectedImageIndex(index)}
                   />
@@ -442,7 +442,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   contactButton: {
     flex: 1,
     padding: '16px 32px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '12px',
@@ -520,7 +520,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   sendButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

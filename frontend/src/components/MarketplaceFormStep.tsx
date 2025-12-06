@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import ImageUploader from './ImageUploader';
 import { marketplaceApi } from '../services/marketplaceApi';
 import { BRAZILIAN_STATES, getCitiesByState } from '../utils/locationData';
+import { colors } from '../styles/colors';
 
 type ListingType = 'sale' | 'wanted';
 type CategoryType = 'equipment' | 'medicine' | 'vaccine' | 'supplies';
@@ -510,7 +511,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   primaryButton: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
   },
   secondaryButton: {

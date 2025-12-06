@@ -273,8 +273,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s',
   },
   dropdownOpen: {
-    borderColor: colors.primary,
-    boxShadow: `0 0 0 3px ${colors.primaryLight}33`,
+    borderColor: colors.brand.primary[500],
+    boxShadow: `0 0 0 3px ${colors.brand.primary[100]}33`,
   },
   disabled: {
     opacity: 0.6,
@@ -304,8 +304,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '4px',
     padding: '4px 8px',
     backgroundColor: colors.surface,
-    color: colors.primary,
-    border: `1px solid ${colors.primary}`,
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '6px',
     fontSize: '13px',
     fontWeight: '500',
@@ -317,7 +317,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: 0,
     display: 'flex',
     alignItems: 'center',
-    color: colors.primary,
+    color: colors.brand.primary[500],
   },
   moreTags: {
     fontSize: '13px',
@@ -378,10 +378,10 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   optionSelected: {
     backgroundColor: colors.surface,
-    borderLeft: `1px solid ${colors.primary}`,
-    borderRight: `1px solid ${colors.primary}`,
-    borderTop: `1px solid ${colors.primary}`,
-    borderBottom: `1px solid ${colors.primary}`,
+    borderLeft: `1px solid ${colors.brand.primary[500]}`,
+    borderRight: `1px solid ${colors.brand.primary[500]}`,
+    borderTop: `1px solid ${colors.brand.primary[500]}`,
+    borderBottom: `1px solid ${colors.brand.primary[500]}`,
   },
   optionContent: {
     display: 'flex',
@@ -392,7 +392,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: colors.text,
   },
   checkIcon: {
-    color: colors.primary,
+    color: colors.brand.primary[500],
     flexShrink: 0,
     marginLeft: 'auto',
   },

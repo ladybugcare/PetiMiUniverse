@@ -1,4 +1,5 @@
 import React from 'react';
+import { colors } from '../styles/colors';
 
 interface PositionCardProps {
   position: {
@@ -211,7 +212,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   badgeCancelled: {
     backgroundColor: '#ede9fe',
-    color: '#5b21b6',
+    color: colors.brand.primary[800],
   },
   specialty: {
     display: 'flex',
@@ -238,7 +239,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
   },
   slotsCount: {
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     fontWeight: '600',
   },
   progressBar: {
@@ -250,7 +251,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     transition: 'width 0.3s ease',
   },
   infoRow: {
@@ -289,7 +290,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   applyButton: {
     flex: 1,
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

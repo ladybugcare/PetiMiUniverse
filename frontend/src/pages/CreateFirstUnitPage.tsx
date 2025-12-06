@@ -363,10 +363,10 @@ const CreateFirstUnitPage: React.FC = () => {
                 onClick={handleSaveClinicAndContinue}
                 style={styles.submitButton}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = colors.primaryDark;
+                  e.currentTarget.style.backgroundColor = colors.brand.primary[600];
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = colors.primary;
+                  e.currentTarget.style.backgroundColor = colors.brand.primary[500];
                 }}
               >
                 Criar Primeira Unidade
@@ -394,7 +394,7 @@ const CreateFirstUnitPage: React.FC = () => {
         <div style={styles.header}>
           <h1 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Building2 size={32} color={colors.primary} />
+              <Building2 size={32} color={colors.brand.primary[500]} />
               <span>Primeira Unidade</span>
             </div>
           </h1>
@@ -442,7 +442,7 @@ const CreateFirstUnitPage: React.FC = () => {
             />
             <div style={styles.tooltip}>
               <span style={styles.tooltipIcon}>
-                <IconWrapper icon={Lightbulb} size={18} color={colors.primary} />
+                <IconWrapper icon={Lightbulb} size={18} color={colors.brand.primary[500]} />
               </span>
               <span style={styles.tooltipText}>
                 Use o nome do bairro ou ponto de referência para diferenciar unidades (ex: Cotia – Granja Viana)
@@ -532,7 +532,7 @@ const CreateFirstUnitPage: React.FC = () => {
 
           <div style={styles.infoBox}>
             <span style={styles.infoIcon}>
-              <IconWrapper icon={Info} size={20} color={colors.primary} />
+              <IconWrapper icon={Info} size={20} color={colors.brand.primary[500]} />
             </span>
             <div>
               <strong>E depois?</strong>
@@ -566,10 +566,10 @@ const CreateFirstUnitPage: React.FC = () => {
               style={styles.submitButton}
               disabled={loading}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = colors.primaryDark;
+                e.currentTarget.style.backgroundColor = colors.brand.primary[600];
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = colors.primary;
+                e.currentTarget.style.backgroundColor = colors.brand.primary[500];
               }}
             >
               {loading ? 'Enviando...' : 'Enviar para Aprovação'}
@@ -615,8 +615,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     lineHeight: '1.6',
   },
   errorBanner: {
-    backgroundColor: colors.dangerLight,
-    borderLeft: `4px solid ${colors.danger}`,
+    backgroundColor: colors.error[100],
+    borderLeft: `4px solid ${colors.error[500]}`,
     padding: '16px',
     marginBottom: '24px',
     borderRadius: '8px',
@@ -664,7 +664,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: colors.neutral[700],
   },
   required: {
-    color: colors.danger,
+    color: colors.error[500],
   },
   input: {
     padding: '12px',
@@ -699,11 +699,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '8px',
     marginTop: '6px',
     padding: '8px',
-    backgroundColor: colors.primaryBg,
-    borderLeft: `3px solid ${colors.primary}`,
+    backgroundColor: colors.brand.primary[500],
+    borderLeft: `3px solid ${colors.brand.primary[500]}`,
     borderRadius: '4px',
     fontSize: '12px',
-    color: colors.primaryDark,
+    color: colors.brand.primary[600],
   },
   tooltipIcon: {
     fontSize: '14px',
@@ -715,20 +715,20 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   autoSuggestion: {
     fontSize: '12px',
-    color: colors.primary,
+    color: colors.brand.primary[500],
     fontStyle: 'italic',
     marginTop: '4px',
     display: 'block',
   },
   infoBox: {
-    backgroundColor: colors.primaryBg,
-    borderLeft: `3px solid ${colors.primary}`,
+    backgroundColor: colors.brand.primary[500],
+    borderLeft: `3px solid ${colors.brand.primary[500]}`,
     padding: '16px',
     borderRadius: '8px',
     display: 'flex',
     gap: '12px',
     fontSize: '13px',
-    color: colors.primaryDark,
+    color: colors.brand.primary[600],
     marginTop: '8px',
   },
   infoIcon: {
@@ -769,7 +769,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   submitButton: {
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: colors.surface,
     border: 'none',
     borderRadius: '8px',

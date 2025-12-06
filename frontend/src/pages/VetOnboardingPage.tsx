@@ -504,15 +504,15 @@ const VetOnboardingPage: React.FC = () => {
   const getStepIcon = () => {
     switch (step) {
       case 1:
-        return <Stethoscope size={32} color={colors.primary} />;
+        return <Stethoscope size={32} color={colors.brand.primary[500]} />;
       case 2:
-        return <MapPin size={32} color={colors.primary} />;
+        return <MapPin size={32} color={colors.brand.primary[500]} />;
       case 3:
-        return <Calendar size={32} color={colors.primary} />;
+        return <Calendar size={32} color={colors.brand.primary[500]} />;
       case 4:
-        return <FileText size={32} color={colors.primary} />;
+        return <FileText size={32} color={colors.brand.primary[500]} />;
       case 5:
-        return <CheckCircle size={32} color={colors.success} />;
+        return <CheckCircle size={32} color={colors.success[500]} />;
       default:
         return null;
     }
@@ -678,7 +678,7 @@ const VetOnboardingPage: React.FC = () => {
               {formData.experience_year && !errors.experience_year && (
                 <div style={styles.tooltip}>
                   <span style={styles.tooltipIcon}>
-                    <IconWrapper icon={Lightbulb} size={18} color={colors.primary} />
+                    <IconWrapper icon={Lightbulb} size={18} color={colors.brand.primary[500]} />
                   </span>
                   <span style={styles.tooltipText}>
                     Você tem {currentYear - parseInt(formData.experience_year)} anos de experiência
@@ -710,7 +710,7 @@ const VetOnboardingPage: React.FC = () => {
                   alignItems: 'center',
                   gap: '8px',
                 }}>
-                  <IconWrapper icon={Stethoscope} size={20} color={colors.primary} />
+                  <IconWrapper icon={Stethoscope} size={20} color={colors.brand.primary[500]} />
                   <span>{crmv}</span>
                 </div>
                 <p style={{ ...styles.stepHint, marginTop: '8px' }}>
@@ -760,7 +760,7 @@ const VetOnboardingPage: React.FC = () => {
               <div style={styles.charCounter}>
                 {formData.bio.length}/30 caracteres (mínimo)
                 {formData.bio.length >= 30 && (
-                  <IconWrapper icon={CheckCircle} size={16} color={colors.success} style={{ marginLeft: '8px' }} />
+                  <IconWrapper icon={CheckCircle} size={16} color={colors.success[500]} style={{ marginLeft: '8px' }} />
                 )}
               </div>
               {errors.bio && (
@@ -841,7 +841,7 @@ const VetOnboardingPage: React.FC = () => {
         <div style={styles.topHeader}>
           <div style={styles.headerContent}>
             <div style={styles.logoSection}>
-              <Heart size={24} color={colors.primary} />
+              <Heart size={24} color={colors.brand.primary[500]} />
               <span style={styles.logoText}>PetiVet</span>
             </div>
             <button
@@ -870,7 +870,7 @@ const VetOnboardingPage: React.FC = () => {
       <div style={styles.topHeader}>
         <div style={styles.headerContent}>
           <div style={styles.logoSection}>
-            <Heart size={24} color={colors.primary} />
+            <Heart size={24} color={colors.brand.primary[500]} />
             <span style={styles.logoText}>PetiVet</span>
           </div>
           <button
@@ -1015,7 +1015,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   logoText: {
     fontSize: '18px',
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.brand.primary[500],
   },
   logoutButton: {
     display: 'flex',
@@ -1083,7 +1083,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.3s',
   },
   stepIndicatorDotActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
   },
   stepIndicatorLine: {
@@ -1094,7 +1094,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.3s',
   },
   stepIndicatorLineActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
   },
   content: {
     marginBottom: '32px',
@@ -1230,7 +1230,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1268,7 +1268,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   marketplaceButton: {
     padding: '14px 32px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

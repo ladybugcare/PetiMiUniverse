@@ -49,7 +49,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
     }
 
     const isPositiveTrend = isPositive ? trendValue > 0 : trendValue < 0;
-    const trendColor = isPositiveTrend ? colors.success : colors.danger;
+    const trendColor = isPositiveTrend ? colors.success[500]: colors.error[500];
     const TrendIcon = isPositiveTrend ? ArrowUp : ArrowDown;
 
     return (

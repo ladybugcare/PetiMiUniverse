@@ -18,7 +18,7 @@ const PendingCard: React.FC<PendingCardProps> = ({
   count,
   highlight = false,
   onClick,
-  iconColor = colors.primary,
+  iconColor = colors.brand.primary[500],
 }) => {
   const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>) => {
     if (onClick) {
@@ -75,9 +75,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
   },
   pendingCardHighlight: {
-    borderColor: colors.primary,
+    borderColor: colors.brand.primary[500],
     borderWidth: '2px',
-    backgroundColor: colors.primaryBg || '#f5f3ff',
+    backgroundColor: colors.brand.primary[500] || '#f5f3ff',
   },
   pendingIcon: {
     position: 'relative',
@@ -89,7 +89,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     position: 'absolute',
     top: '-8px',
     right: '-8px',
-    backgroundColor: colors.danger || '#ef4444',
+    backgroundColor: colors.error[500] || '#ef4444',
     color: '#ffffff',
     borderRadius: '50%',
     width: '24px',
@@ -117,7 +117,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   pendingArrow: {
     fontSize: '20px',
-    color: colors.primary,
+    color: colors.brand.primary[500],
     fontWeight: '600',
   },
 };

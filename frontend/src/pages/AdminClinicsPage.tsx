@@ -282,7 +282,7 @@ const AdminClinicsPage: React.FC = () => {
         <div style={styles.header}>
           <h2 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Building2 size={28} color={colors.primary} />
+              <Building2 size={28} color={colors.brand.primary[500]} />
                 <span>Clínicas e Unidades</span>
             </div>
           </h2>
@@ -750,8 +750,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Inter, sans-serif',
   },
   activeTab: {
-    color: colors.primary,
-    borderBottomColor: colors.primary,
+    color: colors.brand.primary[500],
+    borderBottomColor: colors.brand.primary[500],
     fontWeight: '600',
   },
   searchContainer: {
@@ -1042,7 +1042,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   saveButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

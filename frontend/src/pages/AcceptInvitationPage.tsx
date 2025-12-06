@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAlert } from '../hooks/useAlert';
 import { clinicUsersApi } from '../services/clinicUsersApi';
 import HomeHeader from '../components/HomeHeader';
+import { colors } from '../styles/colors';
 
 const AcceptInvitationPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -72,7 +73,7 @@ const AcceptInvitationPage: React.FC = () => {
               height="48"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="#7c3aed"
+              stroke={colors.brand.primary[500]}
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -169,7 +170,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   button: {
     width: '100%',
     padding: '14px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -184,8 +185,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '100%',
     padding: '14px 24px',
     backgroundColor: 'transparent',
-    color: '#7c3aed',
-    border: '2px solid #7c3aed',
+    color: colors.brand.primary[500],
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontSize: '16px',
     fontWeight: '600',

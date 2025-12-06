@@ -238,7 +238,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '10px 20px',
     border: 'none',
     borderRadius: '8px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px',

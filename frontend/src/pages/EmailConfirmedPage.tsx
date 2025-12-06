@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { CheckCircle, XCircle, PartyPopper, Sparkles, LogIn, AlertCircle, Mail } from 'lucide-react';
 import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
+import { colors } from '../styles/colors';
 
 const EmailConfirmedPage: React.FC = () => {
   const navigate = useNavigate();
@@ -407,7 +408,7 @@ const EmailConfirmedPage: React.FC = () => {
                 border: '1px solid #e5e7eb', 
                 marginBottom: '12px',
                 backgroundColor: '#f9fafb',
-                color: '#6b7280',
+                color: colors.neutral[600],
                 fontSize: '14px'
               }}>
                 <strong>E-mail:</strong> {email}
@@ -486,7 +487,7 @@ const EmailConfirmedPage: React.FC = () => {
                     setErrorMessage(err?.message || 'Não foi possível reenviar o código.');
                     setStatus('error');
                   } finally { setResending(false); }
-                }} style={{ ...styles.button, backgroundColor: '#6b7280' }} disabled={resending}>
+                }} style={{ ...styles.button, backgroundColor: colors.neutral[600] }} disabled={resending}>
                   {resending ? 'Reenviando...' : 'Reenviar código'}
                 </button>
               )}
@@ -506,8 +507,8 @@ const EmailConfirmedPage: React.FC = () => {
             {/* Logo PetiVet */}
             <div style={styles.logoContainer}>
               <img 
-                src="/purple_logo.png" 
-                alt="PetiVet" 
+                src="/just_logo.png" 
+                alt="PetiMi" 
                 style={styles.logo}
               />
             </div>
@@ -524,7 +525,7 @@ const EmailConfirmedPage: React.FC = () => {
             <h2 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <span>E-mail confirmado com sucesso!</span>
-                <PartyPopper size={32} style={{ color: '#7c3aed' }} />
+                <PartyPopper size={32} style={{ color: colors.brand.primary[500] }} />
               </div>
             </h2>
 
@@ -538,14 +539,14 @@ const EmailConfirmedPage: React.FC = () => {
               onClick={() => navigate('/login')} 
               style={styles.loginButton}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#6d28d9';
+                e.currentTarget.style.backgroundColor = colors.brand.primary[700];
                 e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.4)';
+                e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.4)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#7c3aed';
+                e.currentTarget.style.backgroundColor = colors.brand.primary[500];
                 e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 8px 16px rgba(124, 58, 237, 0.3)';
+                e.currentTarget.style.boxShadow = '0 8px 16px rgba(196, 108, 106, 0.3)';
               }}
             >
               <LogIn size={20} style={{ marginRight: '8px' }} />
@@ -559,8 +560,8 @@ const EmailConfirmedPage: React.FC = () => {
             {/* Logo PetiVet */}
             <div style={styles.logoContainer}>
               <img 
-                src="/purple_logo.png" 
-                alt="PetiVet" 
+                src="/just_logo.png" 
+                alt="PetiMi" 
                 style={styles.logo}
               />
             </div>
@@ -578,8 +579,8 @@ const EmailConfirmedPage: React.FC = () => {
             {/* Email se disponível */}
             {email && (
               <div style={styles.emailInfo}>
-                <Mail size={18} style={{ marginRight: '8px', color: '#6b7280' }} />
-                <span style={{ color: '#6b7280', fontSize: '15px' }}>{email}</span>
+                <Mail size={18} style={{ marginRight: '8px', color: colors.neutral[600] }} />
+                <span style={{ color: colors.neutral[600], fontSize: '15px' }}>{email}</span>
               </div>
             )}
 
@@ -605,13 +606,13 @@ const EmailConfirmedPage: React.FC = () => {
                   disabled={resending || cooldown > 0}
                   onMouseEnter={(e) => {
                     if (!resending && cooldown === 0) {
-                      e.currentTarget.style.backgroundColor = '#f59e0b';
+                      e.currentTarget.style.backgroundColor = colors.warning[500];
                       e.currentTarget.style.transform = 'translateY(-2px)';
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (!resending && cooldown === 0) {
-                      e.currentTarget.style.backgroundColor = '#f97316';
+                      e.currentTarget.style.backgroundColor = colors.warning[500];
                       e.currentTarget.style.transform = 'translateY(0)';
                     }
                   }}
@@ -630,7 +631,7 @@ const EmailConfirmedPage: React.FC = () => {
                   e.currentTarget.style.transform = 'translateY(-1px)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#4b5563';
+                  e.currentTarget.style.backgroundColor = colors.neutral[700];
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
@@ -662,13 +663,13 @@ const EmailConfirmedPage: React.FC = () => {
                 title="Após receber o email, clique no link do email para confirmar sua conta. Esta página ficará inativa após o reenvio."
                 onMouseEnter={(e) => {
                   if (!resending && cooldown === 0) {
-                    e.currentTarget.style.backgroundColor = '#7c3aed';
+                    e.currentTarget.style.backgroundColor = colors.brand.primary[500];
                     e.currentTarget.style.transform = 'translateY(-1px)';
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!resending && cooldown === 0) {
-                    e.currentTarget.style.backgroundColor = '#6b7280';
+                    e.currentTarget.style.backgroundColor = colors.neutral[600];
                     e.currentTarget.style.transform = 'translateY(0)';
                   }
                 }}
@@ -728,7 +729,7 @@ const styles = {
   },
   successMessage: {
     fontSize: '17px',
-    color: '#4b5563',
+    color: colors.neutral[700],
     lineHeight: '1.7',
     marginBottom: '32px',
     fontWeight: '400',
@@ -738,7 +739,7 @@ const styles = {
     height: '48px',
     margin: '0 auto 24px',
     border: '4px solid #e5e7eb',
-    borderTop: '4px solid #7c3aed',
+    borderTop: `4px solid ${colors.brand.primary[500]}`,
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },
@@ -749,8 +750,8 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#d1fae5',
-    color: '#10b981',
+    backgroundColor: colors.success[100],
+    color: colors.success[500],
     borderRadius: '50%',
     position: 'relative' as const,
     boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)',
@@ -763,7 +764,7 @@ const styles = {
   },
   loginButton: {
     padding: '16px 32px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '12px',
@@ -774,7 +775,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     transition: 'all 0.3s ease-in-out',
-    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.3)',
+    boxShadow: '0 8px 16px rgba(196, 108, 106, 0.3)',
     minWidth: '200px',
     marginTop: '8px',
   },
@@ -785,8 +786,8 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fee2e2',
-    color: '#dc2626',
+    backgroundColor: colors.error[100],
+    color: colors.error[500],
     borderRadius: '50%',
     position: 'relative' as const,
     boxShadow: '0 4px 12px rgba(220, 38, 38, 0.2)',
@@ -813,7 +814,7 @@ const styles = {
   },
   resendButton: {
     padding: '16px 32px',
-    backgroundColor: '#f97316',
+    backgroundColor: colors.warning[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '12px',
@@ -831,7 +832,7 @@ const styles = {
   },
   secondaryButton: {
     padding: '14px 28px',
-    backgroundColor: '#4b5563',
+    backgroundColor: colors.neutral[700],
     color: '#ffffff',
     border: 'none',
     borderRadius: '10px',
@@ -845,7 +846,7 @@ const styles = {
   },
   resendEmailButton: {
     padding: '14px 28px',
-    backgroundColor: '#6b7280',
+    backgroundColor: colors.neutral[600],
     color: '#ffffff',
     border: 'none',
     borderRadius: '10px',
@@ -863,7 +864,7 @@ const styles = {
   },
   button: {
     padding: '12px 32px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

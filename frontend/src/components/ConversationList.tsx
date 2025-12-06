@@ -108,7 +108,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                         {otherParticipant?.name || 'Usuário'}
                       </span>
                       {otherParticipant?.type === 'admin' && (
-                        <Shield size={14} color={colors.primary} style={styles.adminBadge} />
+                        <Shield size={14} color={colors.brand.primary[500]} style={styles.adminBadge} />
                       )}
                     </div>
                     {conversation.last_message_at && (
@@ -183,9 +183,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s',
   },
   archiveButtonActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
-    borderColor: colors.primary,
+    borderColor: colors.brand.primary[500],
   },
   list: {
     flex: 1,
@@ -209,8 +209,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderBottom: `1px solid ${colors.border}`,
   },
   conversationItemSelected: {
-    backgroundColor: colors.primaryBg,
-    borderLeft: `3px solid ${colors.primary}`,
+    backgroundColor: colors.brand.primary[500],
+    borderLeft: `3px solid ${colors.brand.primary[500]}`,
   },
   conversationContent: {
     flex: 1,

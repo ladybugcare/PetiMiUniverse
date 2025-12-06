@@ -108,7 +108,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '12px',
   },
   badge: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     borderRadius: '12px',
     padding: '4px 12px',

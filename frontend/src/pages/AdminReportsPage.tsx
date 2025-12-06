@@ -78,25 +78,25 @@ const AdminReportsPage: React.FC = () => {
     switch (metric) {
       case 'approvalRate':
         // Taxa de Aprovação: > 80% = verde, 50-80% = roxo, < 50% = laranja
-        if (value >= 80) return colors.success;
-        if (value >= 50) return colors.primary;
-        return colors.warning;
+        if (value >= 80) return colors.success[500];
+        if (value >= 50) return colors.brand.primary[500];
+        return colors.warning[500];
       
       case 'growthRate':
         // Crescimento: > 0 = verde, 0 = roxo, < 0 = laranja
-        if (value > 0) return colors.success;
-        if (value === 0) return colors.primary;
-        return colors.warning;
+        if (value > 0) return colors.success[500];
+        if (value === 0) return colors.brand.primary[500];
+        return colors.warning[500];
       
       case 'rejectionRate':
       case 'cancellationRate':
         // Taxa de Rejeição/Cancelamento: < 5% = verde, 5-15% = laranja, > 15% = vermelho
-        if (value < 5) return colors.success;
-        if (value <= 15) return colors.warning;
-        return colors.danger;
+        if (value < 5) return colors.success[500];
+        if (value <= 15) return colors.warning[500];
+        return colors.error[500];
       
       default:
-        return colors.primary;
+        return colors.brand.primary[500];
     }
   };
 
@@ -316,7 +316,7 @@ const AdminReportsPage: React.FC = () => {
                 {/* Insight Box */}
                 <div style={styles.insightBox}>
                   <div style={styles.insightIcon}>
-                    <TrendingUp size={16} color={colors.primary} />
+                    <TrendingUp size={16} color={colors.brand.primary[500]} />
                   </div>
                   <p style={styles.insightText}>
                     {generateActivityInsight()}
@@ -329,8 +329,7 @@ const AdminReportsPage: React.FC = () => {
                     value={overview.activity.activeClinics}
                   icon={Building2}
                   tooltip="Clínicas com status ativo que tiveram atividade (login ou demanda) nos últimos 30 dias"
-                  color={colors.success}
-                />
+                  color={colors.brand.primary[500]} />
                 
                 <MetricCard
                   label="Clínicas Inativas"
@@ -345,7 +344,7 @@ const AdminReportsPage: React.FC = () => {
                   value={overview.activity.totalNewRegistrations}
                   icon={Users}
                   tooltip="Total de novos cadastros (clínicas + unidades + veterinários) no período"
-                  color={colors.primary}
+                  color={colors.brand.primary[500]}
                 />
                 
                 <MetricCard
@@ -353,7 +352,7 @@ const AdminReportsPage: React.FC = () => {
                   value={overview.activity.newClinics}
                   icon={Building2}
                   tooltip="Clínicas cadastradas no período"
-                  color={colors.primary}
+                  color={colors.brand.primary[500]}
                 />
                 
                 <MetricCard
@@ -361,7 +360,7 @@ const AdminReportsPage: React.FC = () => {
                   value={overview.activity.newUnits}
                   icon={Building2}
                   tooltip="Unidades cadastradas no período"
-                  color={colors.primary}
+                  color={colors.brand.primary[500]}
                 />
                 
                 <MetricCard
@@ -369,7 +368,7 @@ const AdminReportsPage: React.FC = () => {
                   value={overview.activity.newVets}
                   icon={Users}
                   tooltip="Veterinários cadastrados no período"
-                  color={colors.primary}
+                  color={colors.brand.primary[500]}
                 />
                 
                 <MetricCard
@@ -377,7 +376,7 @@ const AdminReportsPage: React.FC = () => {
                   value={overview.activity.openDemands}
                   icon={FileText}
                   tooltip="Total de demandas com status aberto no período"
-                  color={colors.primary}
+                  color={colors.brand.primary[500]}
                 />
                 
                 <MetricCard
@@ -385,8 +384,7 @@ const AdminReportsPage: React.FC = () => {
                   value={overview.activity.closedDemands}
                   icon={CheckCircle}
                   tooltip="Total de demandas concluídas no período"
-                  color={colors.success}
-                />
+                  color={colors.brand.primary[500]} />
               </div>
 
               {/* Gráfico de Status das Demandas */}
@@ -410,7 +408,7 @@ const AdminReportsPage: React.FC = () => {
                 {overview && specialties && (
                   <div style={styles.insightBox}>
                     <div style={styles.insightIcon}>
-                      <TrendingUp size={16} color={colors.primary} />
+                      <TrendingUp size={16} color={colors.brand.primary[500]} />
                     </div>
                     <p style={styles.insightText}>
                       {generatePerformanceInsight()}
@@ -442,7 +440,7 @@ const AdminReportsPage: React.FC = () => {
                     value={overview.performance.averageDemandsPerSpecialty}
                     icon={FileText}
                     tooltip="Média de demandas por especialidade no período"
-                    color={colors.primary}
+                    color={colors.brand.primary[500]}
                     formatValue={(v) => v.toFixed(1)}
                   />
                 </div>
@@ -471,7 +469,7 @@ const AdminReportsPage: React.FC = () => {
                 {usage && (
                   <div style={styles.insightBox}>
                     <div style={styles.insightIcon}>
-                      <Activity size={16} color={colors.primary} />
+                      <Activity size={16} color={colors.brand.primary[500]} />
                     </div>
                     <p style={styles.insightText}>
                       {generateHealthInsight()}
@@ -485,8 +483,7 @@ const AdminReportsPage: React.FC = () => {
                     value={usage.activeUsers}
                     icon={Users}
                     tooltip="Usuários únicos com atividade nos últimos 30 dias"
-                    color={colors.success}
-                  />
+                    color={colors.brand.primary[500]} />
                   
                   <MetricCard
                     label="Taxa de Rejeição"
@@ -511,7 +508,7 @@ const AdminReportsPage: React.FC = () => {
                     value={usage.uniqueLogins}
                     icon={Activity}
                     tooltip="Número de usuários únicos que fizeram login no período"
-                    color={colors.primary}
+                    color={colors.brand.primary[500]}
                   />
                 </div>
               </div>
@@ -604,9 +601,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   periodButtonActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
-    borderColor: colors.primary,
+    borderColor: colors.brand.primary[500],
   },
   customDatePicker: {
     marginTop: '16px',
@@ -663,7 +660,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '40px',
     height: '40px',
     border: '4px solid #e5e5e5',
-    borderTop: '4px solid ' + colors.primary,
+    borderTop: '4px solid ' + colors.brand.primary[500],
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },
@@ -723,8 +720,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '12px',
     padding: '16px 20px',
-    backgroundColor: colors.primaryBg,
-    border: `1px solid ${colors.primaryLighter}`,
+    backgroundColor: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[300]}`,
     borderRadius: '12px',
     marginBottom: '24px',
   },
@@ -733,7 +730,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   insightText: {
     fontSize: '14px',
-    color: colors.primaryDark,
+    color: colors.brand.primary[600],
     margin: 0,
     lineHeight: '1.6',
   },

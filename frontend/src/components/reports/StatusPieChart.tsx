@@ -94,7 +94,7 @@ const StatusPieChart: React.FC<StatusPieChartProps> = ({ data }) => {
     const endAngle = currentAngle;
     paths.push({ 
       path: createDonutPath(startAngle, endAngle), 
-      color: colors.primary, 
+      color: colors.brand.primary[500],
       angle: openAngle 
     });
   }
@@ -105,7 +105,7 @@ const StatusPieChart: React.FC<StatusPieChartProps> = ({ data }) => {
     const endAngle = currentAngle;
     paths.push({ 
       path: createDonutPath(startAngle, endAngle), 
-      color: colors.warning, 
+      color: colors.warning[500],
       angle: inProgressAngle 
     });
   }
@@ -116,7 +116,7 @@ const StatusPieChart: React.FC<StatusPieChartProps> = ({ data }) => {
     const endAngle = currentAngle;
     paths.push({ 
       path: createDonutPath(startAngle, endAngle), 
-      color: colors.success, 
+      color: colors.success[500],
       angle: closedAngle 
     });
   }
@@ -127,7 +127,7 @@ const StatusPieChart: React.FC<StatusPieChartProps> = ({ data }) => {
     const endAngle = currentAngle;
     paths.push({ 
       path: createDonutPath(startAngle, endAngle), 
-      color: colors.danger, 
+      color: colors.error[500], 
       angle: cancelledAngle 
     });
   }
@@ -152,28 +152,28 @@ const StatusPieChart: React.FC<StatusPieChartProps> = ({ data }) => {
       </div>
       <div style={styles.legend}>
         <div style={styles.legendItem}>
-          <div style={{ ...styles.legendColor, backgroundColor: colors.primary }} />
+          <div style={{ ...styles.legendColor, backgroundColor: colors.brand.primary[500]}} />
           <div style={styles.legendContent}>
             <span style={styles.legendLabel}>Abertas</span>
             <span style={styles.legendValue}>{data.open} ({openPercent.toFixed(1)}%)</span>
           </div>
         </div>
         <div style={styles.legendItem}>
-          <div style={{ ...styles.legendColor, backgroundColor: colors.warning }} />
+          <div style={{ ...styles.legendColor, backgroundColor: colors.warning[500]}} />
           <div style={styles.legendContent}>
             <span style={styles.legendLabel}>Em Andamento</span>
             <span style={styles.legendValue}>{data.in_progress} ({inProgressPercent.toFixed(1)}%)</span>
           </div>
         </div>
         <div style={styles.legendItem}>
-          <div style={{ ...styles.legendColor, backgroundColor: colors.success }} />
+          <div style={{ ...styles.legendColor, backgroundColor: colors.success[500]}} />
           <div style={styles.legendContent}>
             <span style={styles.legendLabel}>Concluídas</span>
             <span style={styles.legendValue}>{data.closed} ({closedPercent.toFixed(1)}%)</span>
           </div>
         </div>
         <div style={styles.legendItem}>
-          <div style={{ ...styles.legendColor, backgroundColor: colors.danger }} />
+          <div style={{ ...styles.legendColor, backgroundColor: colors.error[500] }} />
           <div style={styles.legendContent}>
             <span style={styles.legendLabel}>Canceladas</span>
             <span style={styles.legendValue}>{data.cancelled} ({cancelledPercent.toFixed(1)}%)</span>

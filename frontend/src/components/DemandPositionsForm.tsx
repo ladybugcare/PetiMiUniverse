@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MultiSelect from './MultiSelect';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
+import { colors } from '../styles/colors';
 
 interface Position {
   id: string;
@@ -314,8 +315,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '100%',
     padding: '12px',
     backgroundColor: '#ffffff',
-    color: '#7c3aed',
-    border: '2px dashed #7c3aed',
+    color: colors.brand.primary[500],
+    border: `2px dashed ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: '500',
@@ -326,7 +327,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   summary: {
     marginTop: '24px',
     backgroundColor: '#ffffff',
-    border: '2px solid #7c3aed',
+    border: '2px solid colors.brand.primary[500]',
     borderRadius: '12px',
     padding: '20px',
   },
@@ -362,7 +363,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   summaryValueHighlight: {
     fontSize: '18px',
     fontWeight: '700',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
   },
   inputError: {
     borderColor: '#dc2626',

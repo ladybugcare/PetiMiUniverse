@@ -334,7 +334,7 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
           icon={<Building2 />}
           value={stats.totalClinics}
           label="Clínicas Cadastradas"
-          color="#7c3aed"
+          color={colors.brand.primary[500]}
           onClick={() => navigate('/admin/clinics')}
           subtext={periodStats ? `${periodStats.newClinics} novos nos últimos ${selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}` : null}
           growth={periodStats?.clinicsGrowth}
@@ -352,7 +352,7 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
           icon={<Briefcase />}
           value={stats.totalFreelancers || 0}
           label="Freelancers Cadastrados"
-          color="#8b5cf6"
+          color={colors.brand.primary[500]}
           onClick={() => navigate('/admin/freelancers')}
           subtext={periodStats ? `${periodStats.newFreelancers} novos nos últimos ${selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}` : null}
           growth={periodStats?.freelancersGrowth}
@@ -541,11 +541,11 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
                   style={styles.seeMoreButton}
                   onClick={() => setShowActivityModal(true)}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = colors.primaryDark || '#6d28d9';
+                    e.currentTarget.style.backgroundColor = colors.brand.primary[600];
                     e.currentTarget.style.transform = 'translateY(-2px)';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = colors.primary;
+                    e.currentTarget.style.backgroundColor = colors.brand.primary[500];
                     e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
@@ -826,9 +826,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
   },
   pendingCardHighlight: {
-    borderColor: colors.primary,
+    borderColor: colors.brand.primary[500],
     borderWidth: '2px',
-    backgroundColor: colors.primaryBg,
+    backgroundColor: colors.brand.primary[500],
   },
   pendingIcon: {
     position: 'relative',
@@ -840,7 +840,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     position: 'absolute',
     top: '-8px',
     right: '-8px',
-    backgroundColor: colors.danger,
+    backgroundColor: colors.error[500],
     color: '#ffffff',
     borderRadius: '50%',
     width: '24px',
@@ -868,7 +868,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   pendingArrow: {
     fontSize: '20px',
-    color: colors.primary,
+    color: colors.brand.primary[500],
     fontWeight: '600',
   },
   headerSection: {
@@ -924,7 +924,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   seeMoreButton: {
     marginTop: '16px',
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

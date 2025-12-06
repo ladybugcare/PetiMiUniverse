@@ -141,13 +141,13 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
           onMouseEnter={(e) => {
             if (!isOpen) {
               e.currentTarget.style.transform = 'scale(1.1) rotate(0deg)';
-              e.currentTarget.style.boxShadow = '0 6px 16px rgba(124, 58, 237, 0.5)';
+              e.currentTarget.style.boxShadow = '0 6px 16px rgba(196, 108, 106, 0.5)';
             }
           }}
           onMouseLeave={(e) => {
             if (!isOpen) {
               e.currentTarget.style.transform = 'scale(1) rotate(0deg)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.4)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.4)';
             }
           }}
           aria-label={isOpen ? 'Fechar menu' : 'Abrir menu de ações'}
@@ -185,13 +185,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '64px',
     height: '64px',
     borderRadius: '50%',
-    background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+    background: 'linear-gradient(135deg, colors.brand.primary[500] 0%, colors.brand.primary[500] 100%)',
     border: 'none',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.4)',
+    boxShadow: '0 4px 12px rgba(196, 108, 106, 0.4)',
     transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease',
   },
   mainIcon: {

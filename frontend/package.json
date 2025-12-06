@@ -35,10 +35,10 @@
   },
   "scripts": {
     "start": "expo start",
-    "start:web": "expo start --web",
+    "start:web": "PORT=3001 FAST_REFRESH=false react-scripts start",
     "start:ios": "expo start --ios --localhost",
     "start:android": "expo start --android",
-    "web": "FAST_REFRESH=false react-scripts start",
+    "web": "PORT=3001 FAST_REFRESH=false react-scripts start",
     "build:web": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",

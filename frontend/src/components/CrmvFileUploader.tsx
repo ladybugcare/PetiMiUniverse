@@ -163,7 +163,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'not-allowed',
   },
   uploadIcon: {
-    color: colors.primary,
+    color: colors.brand.primary[500],
     marginBottom: '8px',
   },
   uploadText: {
@@ -196,7 +196,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     flex: 1,
   },
   fileIcon: {
-    color: colors.primary,
+    color: colors.brand.primary[500],
     flexShrink: 0,
   },
   fileName: {
@@ -221,9 +221,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexShrink: 0,
   },
   removeButtonHover: {
-    backgroundColor: colors.dangerLight,
-    color: colors.danger,
-    borderColor: colors.danger,
+    backgroundColor: colors.error[100],
+    color: colors.error[500],
+    borderColor: colors.error[500],
   },
   errorContainer: {
     display: 'flex',
@@ -246,12 +246,12 @@ const styles: { [key: string]: React.CSSProperties } = {
   infoContainer: {
     marginTop: '8px',
     padding: '8px 12px',
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.brand.primary[100],
     borderRadius: '6px',
   },
   infoText: {
     fontSize: '14px',
-    color: colors.primary,
+    color: colors.brand.primary[500],
   },
 };
 

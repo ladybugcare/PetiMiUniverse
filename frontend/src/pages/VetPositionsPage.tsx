@@ -329,7 +329,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   refreshButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -350,7 +350,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '40px',
     height: '40px',
     border: '4px solid #f3f4f6',
-    borderTop: '4px solid #7c3aed',
+    borderTop: '4px solid colors.brand.primary[500]',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },
@@ -436,7 +436,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   modalConfirmButton: {
     flex: 1,
     padding: '12px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

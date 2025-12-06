@@ -13,7 +13,7 @@ import SignUpSuccessModal from '../components/SignUpSuccessModal';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 
 // Componente customizado de ícone Info sem fundo preto
-const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, color = colors.primary }) => {
+const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, color = colors.brand.primary[500]}) => {
   return (
     <svg
       width={size}
@@ -319,8 +319,8 @@ const FreelancerSignUpPage: React.FC = () => {
                   flex: 1,
                   padding: '16px 24px',
                   borderRadius: '8px',
-                  border: `2px solid ${formData.document_type === 'CPF' ? colors.primary : colors.border}`,
-                  backgroundColor: formData.document_type === 'CPF' ? colors.primary : colors.surface,
+                  border: `2px solid ${formData.document_type === 'CPF' ? colors.brand.primary[500]: colors.border}`,
+                  backgroundColor: formData.document_type === 'CPF' ? colors.brand.primary[500]: colors.surface,
                   color: formData.document_type === 'CPF' ? colors.surface : colors.textSecondary,
                   fontSize: '16px',
                   fontWeight: '600',
@@ -329,7 +329,7 @@ const FreelancerSignUpPage: React.FC = () => {
                 }}
                 onMouseEnter={(e) => {
                   if (formData.document_type !== 'CPF') {
-                    e.currentTarget.style.borderColor = colors.primary;
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                     e.currentTarget.style.backgroundColor = colors.neutral[50];
                   }
                 }}
@@ -349,8 +349,8 @@ const FreelancerSignUpPage: React.FC = () => {
                   flex: 1,
                   padding: '16px 24px',
                   borderRadius: '8px',
-                  border: `2px solid ${formData.document_type === 'CNPJ' ? colors.primary : colors.border}`,
-                  backgroundColor: formData.document_type === 'CNPJ' ? colors.primary : colors.surface,
+                  border: `2px solid ${formData.document_type === 'CNPJ' ? colors.brand.primary[500]: colors.border}`,
+                  backgroundColor: formData.document_type === 'CNPJ' ? colors.brand.primary[500]: colors.surface,
                   color: formData.document_type === 'CNPJ' ? colors.surface : colors.textSecondary,
                   fontSize: '16px',
                   fontWeight: '600',
@@ -359,7 +359,7 @@ const FreelancerSignUpPage: React.FC = () => {
                 }}
                 onMouseEnter={(e) => {
                   if (formData.document_type !== 'CNPJ') {
-                    e.currentTarget.style.borderColor = colors.primary;
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
                     e.currentTarget.style.backgroundColor = colors.neutral[50];
                   }
                 }}
@@ -411,7 +411,7 @@ const FreelancerSignUpPage: React.FC = () => {
                     <IconWrapper 
                       icon={Info} 
                       size={16} 
-                      color={colors.primary}
+                      color={colors.brand.primary[500]}
                       style={{ backgroundColor: 'transparent' }}
                     />
               </span>
@@ -446,7 +446,7 @@ const FreelancerSignUpPage: React.FC = () => {
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
-                <InfoIconNoBg size={16} color={colors.primary} />
+                <InfoIconNoBg size={16} color={colors.brand.primary[500]} />
               </span>
               Digite o endereço e selecione uma sugestão do Google para preenchimento automático
             </p>
@@ -569,8 +569,8 @@ const FreelancerSignUpPage: React.FC = () => {
                     padding: '12px 24px',
                     backgroundColor:
                       !isStepValid() || loading
-                        ? colors.primaryLight
-                        : colors.primary,
+                        ? colors.brand.primary[100]
+                        : colors.brand.primary[500],
                     color: colors.surface,
                     border: 'none',
                     borderRadius: '8px',
@@ -586,13 +586,13 @@ const FreelancerSignUpPage: React.FC = () => {
                   onMouseEnter={(e) => {
                     if (isStepValid() && !loading) {
                       e.currentTarget.style.backgroundColor =
-                        colors.primaryDark;
+                        colors.brand.primary[600];
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (isStepValid() && !loading) {
                       e.currentTarget.style.backgroundColor =
-                        colors.primary;
+                        colors.brand.primary[500];
                     }
                   }}
                 >

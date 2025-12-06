@@ -23,11 +23,18 @@ const HomeHeader: React.FC = () => {
         {/* Logo */}
         <Link to="/" className="home-header-logo">
           <img 
-            src="/purple_logo.png" 
-            alt="PetiVet" 
-            style={{ height: '50px', width: 'auto' }}
+            src="/logo_texto_lado.png" 
+            alt="PetiMi" 
+            style={{ 
+              height: '140px', 
+              width: 'auto',
+              objectFit: 'contain',
+              display: 'block',
+              marginTop: '-35px',
+              marginBottom: '-35px',
+              alignSelf: 'center'
+            }}
           />
-          <span className="home-header-logo-text">PETIVET</span>
         </Link>
 
         {/* Right side navigation */}

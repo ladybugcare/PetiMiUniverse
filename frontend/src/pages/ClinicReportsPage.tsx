@@ -623,37 +623,37 @@ const getCardColor = (metric: string, value: number): string => {
   switch (metric) {
     case 'conversionRate':
       // Taxa de Conversão: > 30% = verde, 10-30% = roxo, < 10% = laranja
-      if (value >= 30) return colors.success;
-      if (value >= 10) return colors.primary;
-      return colors.warning;
+      if (value >= 30) return colors.success[500];
+      if (value >= 10) return colors.brand.primary[500];
+      return colors.warning[500];
     
     case 'cancellationRate':
       // Taxa de Cancelamento: < 5% = verde, 5-15% = laranja, > 15% = vermelho
-      if (value < 5) return colors.success;
-      if (value <= 15) return colors.warning;
-      return colors.danger;
+      if (value < 5) return colors.success[500];
+      if (value <= 15) return colors.warning[500];
+      return colors.error[500];
     
     case 'averageResponseTime':
       // Tempo Médio de Resposta: < 24h = verde, 24-48h = laranja, > 48h = vermelho
-      if (value < 24) return colors.success;
-      if (value <= 48) return colors.warning;
-      return colors.danger;
+      if (value < 24) return colors.success[500];
+      if (value <= 48) return colors.warning[500];
+      return colors.error[500];
     
     case 'averageFillTime':
       // Média de Preenchimento: < 7 dias = verde, 7-14 dias = laranja, > 14 dias = vermelho
-      if (value < 7) return colors.success;
-      if (value <= 14) return colors.warning;
-      return colors.danger;
+      if (value < 7) return colors.success[500];
+      if (value <= 14) return colors.warning[500];
+      return colors.error[500];
     
     case 'totalDemandsCreated':
     case 'totalApplicationsReceived':
     case 'totalPositionsFilled':
     case 'professionalsHired':
       // Métricas de volume: sempre roxo (informativo)
-      return colors.primary;
+      return colors.brand.primary[500];
     
     default:
-      return colors.primary;
+      return colors.brand.primary[500];
   }
 };
 
@@ -755,7 +755,7 @@ const OverviewTab: React.FC<{
       {/* Insight Box */}
       <div style={styles.overviewInsightBox}>
         <div style={styles.overviewInsightIcon}>
-          <TrendingUp size={16} color={colors.primary} />
+          <TrendingUp size={16} color={colors.brand.primary[500]} />
         </div>
         <p style={styles.overviewInsightText}>
           {generateInsightText()}
@@ -870,7 +870,7 @@ const OverviewTab: React.FC<{
             return (
               <div style={styles.statusInsightBox}>
                 <div style={styles.statusInsightIcon}>
-                  <TrendingUp size={16} color={colors.primary} />
+                  <TrendingUp size={16} color={colors.brand.primary[500]} />
                 </div>
                 <p style={styles.statusInsightText}>
                   {insight}
@@ -900,7 +900,7 @@ const OverviewTab: React.FC<{
               {/* Mini Resumo Analítico */}
               <div style={styles.analyticalSummary}>
                 <div style={styles.analyticalSummaryIcon}>
-                  <TrendingUp size={16} color={colors.primary} />
+                  <TrendingUp size={16} color={colors.brand.primary[500]} />
                 </div>
                 <p style={styles.analyticalSummaryText}>
                   {generateSpecialtiesInsight(specialties, totalPositions)}
@@ -1018,7 +1018,7 @@ const DemandsTab: React.FC<{ demands: ReportsDemands }> = ({ demands }) => {
             {/* Insight Box */}
             <div style={styles.analyticalSummary}>
               <div style={styles.analyticalSummaryIcon}>
-                <TrendingUp size={16} color={colors.primary} />
+                <TrendingUp size={16} color={colors.brand.primary[500]} />
                   </div>
               <p style={styles.analyticalSummaryText}>
                 {getTopPerformersText()}
@@ -1245,7 +1245,7 @@ const ProfessionalsTab: React.FC<{ professionals: ReportsProfessionals }> = ({ p
       {/* Insight Box */}
       <div style={styles.overviewInsightBox}>
         <div style={styles.overviewInsightIcon}>
-          <TrendingUp size={16} color={colors.primary} />
+          <TrendingUp size={16} color={colors.brand.primary[500]} />
         </div>
         <p style={styles.overviewInsightText}>
           {insight}
@@ -1417,9 +1417,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   periodButtonActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
-    borderColor: colors.primary,
+    borderColor: colors.brand.primary[500],
   },
   unitsCheckboxes: {
     display: 'flex',
@@ -1457,8 +1457,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   tabActive: {
-    borderBottomColor: colors.primary,
-    color: colors.primary,
+    borderBottomColor: colors.brand.primary[500],
+    color: colors.brand.primary[500],
   },
   tabContent: {
     backgroundColor: '#ffffff',
@@ -1491,7 +1491,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '40px',
     height: '40px',
     border: '4px solid #e5e5e5',
-    borderTop: '4px solid ' + colors.primary,
+    borderTop: '4px solid ' + colors.brand.primary[500],
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },
@@ -1588,8 +1588,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '12px',
     padding: '12px 16px',
-    backgroundColor: colors.primaryBg,
-    border: `1px solid ${colors.primaryLighter}`,
+    backgroundColor: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[300]}`,
     borderRadius: '8px',
     marginBottom: '20px',
   },
@@ -1598,7 +1598,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   analyticalSummaryText: {
     fontSize: '14px',
-    color: colors.primaryDark,
+    color: colors.brand.primary[600],
     margin: 0,
     lineHeight: '1.5',
   },
@@ -1607,8 +1607,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '12px',
     padding: '12px 16px',
-    backgroundColor: colors.primaryBg,
-    border: `1px solid ${colors.primaryLighter}`,
+    backgroundColor: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[300]}`,
     borderRadius: '8px',
     marginBottom: '20px',
   },
@@ -1617,7 +1617,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   statusInsightText: {
     fontSize: '14px',
-    color: colors.primaryDark,
+    color: colors.brand.primary[600],
     margin: 0,
     lineHeight: '1.5',
   },
@@ -1626,8 +1626,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '12px',
     padding: '16px 20px',
-    backgroundColor: colors.primaryBg,
-    border: `1px solid ${colors.primaryLighter}`,
+    backgroundColor: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[300]}`,
     borderRadius: '12px',
     marginBottom: '32px',
   },
@@ -1636,7 +1636,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   overviewInsightText: {
     fontSize: '14px',
-    color: colors.primaryDark,
+    color: colors.brand.primary[600],
     margin: 0,
     lineHeight: '1.6',
   },
@@ -1767,7 +1767,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   specialtyCount: {
     fontSize: '24px',
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.brand.primary[500],
     margin: 0,
   },
   demandsList: {
@@ -1827,7 +1827,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   positionSlots: {
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand.primary[500],
   },
   professionalsList: {
     display: 'flex',
@@ -1859,7 +1859,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
   },
   specialtyBadge: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     padding: '4px 12px',
     borderRadius: '16px',

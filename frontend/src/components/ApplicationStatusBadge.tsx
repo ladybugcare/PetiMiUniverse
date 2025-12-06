@@ -68,7 +68,7 @@ const ApplicationStatusBadge: React.FC<ApplicationStatusBadgeProps> = ({
       case 'check_out':
         return {
           label: 'Check-out Realizado',
-          color: '#8b5cf6', // roxo
+          color: colors.brand.primary[500], // roxo
           bgColor: '#ede9fe',
           icon: LogOut,
         };

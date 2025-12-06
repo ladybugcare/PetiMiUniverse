@@ -263,7 +263,7 @@ const AdminPendingVetsPage: React.FC = () => {
                         <img src={vet.photo_url} alt={vet.name} style={styles.vetPhoto} />
                       ) : (
                         <div style={styles.vetPhotoPlaceholder}>
-                          <Stethoscope size={24} color={colors.primary} />
+                          <Stethoscope size={24} color={colors.brand.primary[500]} />
                         </div>
                       )}
                       <div>
@@ -558,7 +558,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '64px',
     height: '64px',
     borderRadius: '50%',
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.brand.primary[100],
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -607,8 +607,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   badge: {
     padding: '4px 10px',
     backgroundColor: '#ffffff',
-    color: colors.primary,
-    border: `1px solid ${colors.primary}`,
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '12px',
     fontSize: '12px',
     fontWeight: '500',
@@ -637,8 +637,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '6px',
     padding: '8px 12px',
-    backgroundColor: colors.primaryLight,
-    color: colors.primary,
+    backgroundColor: colors.brand.primary[100],
+    color: colors.brand.primary[500],
     borderRadius: '6px',
     fontSize: '14px',
     fontWeight: '500',
@@ -650,9 +650,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '6px',
     padding: '8px 12px',
-    backgroundColor: colors.primaryLight,
-    color: colors.primary,
-    border: `1px solid ${colors.primary}`,
+    backgroundColor: colors.brand.primary[100],
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '6px',
     fontSize: '14px',
     fontWeight: '500',

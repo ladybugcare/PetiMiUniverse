@@ -67,10 +67,10 @@ const ResumoSection: React.FC = () => {
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          style={{ ...styles.statCard, borderLeftColor: colors.brand.primary[500] }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(196, 108, 106, 0.15)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0)';
@@ -78,8 +78,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <ClipboardList size={24} color={colors.primary} />
+            <ClipboardList size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.availableOpportunities}</h3>
@@ -99,8 +98,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <FileText size={24} color={colors.primary} />
+            <FileText size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalApplications}</h3>
@@ -120,8 +118,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <CheckCircle size={24} color={colors.primary} />
+            <CheckCircle size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.completedJobs}</h3>
@@ -141,8 +138,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <Star size={24} color={colors.primary} />
+            <Star size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.averageRating.toFixed(1)}</h3>
@@ -208,7 +204,7 @@ const MensagensSection: React.FC = () => {
       <div style={styles.placeholder}>
         <p style={styles.placeholderText}>
           {}
-          <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+          <MessageSquare size={24} color={colors.brand.primary[500]} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
           Suas mensagens aparecerão aqui
         </p>
       </div>
@@ -403,7 +399,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   scheduleTime: {
     fontSize: '14px',
     fontWeight: '600',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     minWidth: '120px',
   },
   scheduleContent: {
@@ -467,7 +463,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   applyButton: {
     width: '100%',
     padding: '10px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

@@ -290,11 +290,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: '-2px',
   },
   tabActive: {
-    color: colors.primary,
-    borderBottomColor: colors.primary,
+    color: colors.brand.primary[500],
+    borderBottomColor: colors.brand.primary[500],
   },
   tabBadge: {
-    backgroundColor: colors.danger,
+    backgroundColor: colors.error[500],
     color: '#ffffff',
     borderRadius: '12px',
     padding: '2px 8px',
@@ -324,9 +324,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   infoBox: {
     padding: '20px',
-    backgroundColor: colors.infoLight,
+    backgroundColor: colors.info[100],
     borderRadius: '8px',
-    border: `1px solid ${colors.info}`,
+    border: `1px solid ${colors.info[500]}`,
   },
   infoText: {
     fontSize: '14px',

@@ -91,7 +91,7 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
         <div style={styles.header}>
           <div style={styles.headerLeft}>
             {}
-            <MessageCircle size={24} color={colors.primary} />
+            <MessageCircle size={24} color={colors.brand.primary[500]} />
             <h2 style={styles.title}>Suporte</h2>
           </div>
           <button
@@ -385,8 +385,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   attachmentTag: {
     padding: '6px 12px',
-    backgroundColor: colors.primaryBg,
-    color: colors.primary,
+    backgroundColor: colors.brand.primary[500],
+    color: colors.brand.primary[500],
     borderRadius: '16px',
     fontSize: '12px',
     fontFamily: 'Inter, sans-serif',
@@ -422,7 +422,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     fontWeight: '600',
     color: '#ffffff',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',

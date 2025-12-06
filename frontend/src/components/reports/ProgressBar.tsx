@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { colors } from '../../styles/colors';
 
 interface ProgressBarProps {
   value: number;
@@ -49,7 +50,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
 
   const percentage = maxValue > 0 ? (displayValue / maxValue) * 100 : 0;
   const clampedPercentage = Math.min(Math.max(percentage, 0), 100);
-  const defaultColor = '#7c3aed'; // colors.primary as fallback
+  const defaultColor = colors.brand.primary[500]; // colors.brand.primary[500]as fallback
 
   return (
     <div style={styles.container}>

@@ -215,7 +215,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'not-allowed',
   },
   uploadIcon: {
-    color: colors.primary,
+    color: colors.brand.primary[500],
     marginBottom: '8px',
   },
   uploadText: {
@@ -253,7 +253,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     flex: 1,
   },
   fileIcon: {
-    color: colors.primary,
+    color: colors.brand.primary[500],
     flexShrink: 0,
   },
   fileInfo: {
@@ -291,9 +291,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 16px',
-    backgroundColor: colors.primaryLight,
-    color: colors.primary,
-    border: `1px solid ${colors.primary}`,
+    backgroundColor: colors.brand.primary[100],
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: '500',
@@ -318,12 +318,12 @@ const styles: { [key: string]: React.CSSProperties } = {
   infoContainer: {
     marginTop: '8px',
     padding: '8px 12px',
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.brand.primary[100],
     borderRadius: '6px',
   },
   infoText: {
     fontSize: '14px',
-    color: colors.primary,
+    color: colors.brand.primary[500],
   },
 };
 

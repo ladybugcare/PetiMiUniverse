@@ -31,7 +31,7 @@ const SignUpErrorModal: React.FC<SignUpErrorModalProps> = ({
       case 'email_exists':
         return {
           icon: <IconWrapper icon={Info} size={32} />,
-          color: '#7c3aed',
+          color: colors.brand.primary[500],
           bgColor: '#ede9fe',
           title: 'Email já cadastrado',
           message: 'Não foi possível criar a conta com esse e-mail. Se você já usa o PetiVet, tente fazer login.',
@@ -181,7 +181,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     fontWeight: '500',
     color: '#ffffff',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',

@@ -35,7 +35,7 @@ const RestoreProgressModal: React.FC<RestoreProgressModalProps> = ({
       <div style={styles.modal}>
         {/* Icon */}
         <div style={styles.iconContainer}>
-          <IconWrapper icon={Play} size={32} color={colors.primary} />
+          <IconWrapper icon={Play} size={32} color={colors.brand.primary[500]} />
         </div>
 
         {/* Content */}
@@ -155,7 +155,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   progressBar: {
     height: '100%',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     borderRadius: '4px',
     transition: 'width 0.3s ease',
   },
@@ -163,7 +163,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px',
     fontWeight: '500',
-    color: colors.primary,
+    color: colors.brand.primary[500],
   },
   actions: {
     display: 'flex',
@@ -197,7 +197,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: '8px',
     cursor: 'pointer',
     transition: 'all 0.2s ease',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     display: 'flex',
     alignItems: 'center',

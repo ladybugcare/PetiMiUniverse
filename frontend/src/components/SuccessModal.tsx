@@ -21,7 +21,7 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Icon */}
         <div style={styles.iconContainer}>
-          <IconWrapper icon={CheckCircle} size={64} color={colors.primary} />
+          <IconWrapper icon={CheckCircle} size={64} color={colors.brand.primary[500]} />
         </div>
 
         {/* Message */}
@@ -32,10 +32,10 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
           onClick={onClose} 
           style={styles.button}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = colors.primaryDark;
+            e.currentTarget.style.backgroundColor = colors.brand.primary[600];
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = colors.primary;
+            e.currentTarget.style.backgroundColor = colors.brand.primary[500];
           }}
         >
           OK
@@ -88,7 +88,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '16px',
     fontWeight: '600',
     color: '#ffffff',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',

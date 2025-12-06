@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Stethoscope, Heart, Building2, Star } from 'lucide-react';
 import IconWrapper from './IconWrapper';
+import { colors } from '../styles/colors';
 
 type CategoryType = 'vet' | 'freelancer' | 'clinic' | 'other';
 
@@ -22,7 +23,7 @@ const categories: CategoryCardData[] = [
     icon: <IconWrapper icon={Stethoscope} size={32} />,
     title: 'Criar Demanda para Veterinário',
     description: 'Publique uma vaga para consultas, cirurgias ou atendimentos emergenciais e receba candidaturas.',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
   },
   {
     id: 'freelancer',

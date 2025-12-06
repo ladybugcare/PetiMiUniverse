@@ -8,6 +8,7 @@ import { useAuth } from '../AuthContext';
 import { getUserRole } from '../utils/authHelpers';
 import VerificationBadge from './VerificationBadge';
 import DemandHistoryTimeline from './DemandHistoryTimeline';
+import { colors } from '../styles/colors';
 import { MessageCircle, Calendar, MapPin, Stethoscope, Award, Star, UserPlus, RotateCcw } from 'lucide-react';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 
@@ -349,7 +350,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'center',
     gap: '8px',
     padding: '12px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -366,8 +367,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '8px',
     padding: '12px',
     backgroundColor: '#ffffff',
-    color: '#7c3aed',
-    border: '1px solid #7c3aed',
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px',

@@ -721,7 +721,7 @@ const DemandsPage: React.FC = () => {
                                 }}
                                 style={{
                                   ...styles.viewDetailsButton,
-                                  backgroundColor: colors.primary,
+                                  backgroundColor: colors.brand.primary[500],
                                   color: '#fff',
                                   display: 'flex',
                                   alignItems: 'center',
@@ -882,7 +882,7 @@ const DemandsPage: React.FC = () => {
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.backgroundColor = '#ede9fe';
-                              e.currentTarget.style.color = '#7c3aed';
+                              e.currentTarget.style.color = colors.brand.primary[500];
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.backgroundColor = '#f5f5f5';
@@ -1121,7 +1121,7 @@ const DemandsPage: React.FC = () => {
         onMouseLeave={() => setFabHovered(false)}
         style={{
           ...styles.fab,
-          backgroundColor: fabHovered ? colors.primaryDark : colors.primary,
+          backgroundColor: fabHovered ? colors.brand.primary[600] : colors.brand.primary[500],
           transform: fabHovered ? 'scale(1.1)' : 'scale(1)',
         }}
         title="Criar nova demanda"
@@ -1195,7 +1195,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   toggleButtonActive: {
     backgroundColor: '#ffffff',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     fontWeight: '600',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
   },
@@ -1327,7 +1327,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   applyButton: {
     padding: '8px 16px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1340,8 +1340,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   viewDetailsButton: {
     padding: '8px 16px',
     backgroundColor: '#ffffff',
-    color: '#7c3aed',
-    border: '1px solid #7c3aed',
+    color: colors.brand.primary[500],
+    border: '1px solid colors.brand.primary[500]',
     borderRadius: '8px',
     fontFamily: 'Inter, sans-serif',
     fontSize: '14px',
@@ -1431,7 +1431,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   modalButtonPrimary: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
   },
   modalButtonSecondary: {
@@ -1446,9 +1446,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '64px',
     height: '64px',
     borderRadius: '50%',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     border: 'none',
-    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.4)',
+    boxShadow: '0 4px 12px rgba(196, 108, 106, 0.4)',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
@@ -1552,10 +1552,10 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   filterButtonActive: {
     backgroundColor: '#ede9fe',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
   },
   filterBadge: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     borderRadius: '10px',
     padding: '2px 8px',
@@ -1654,7 +1654,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '6px',
     padding: '4px 10px',
     backgroundColor: '#ede9fe',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     borderRadius: '16px',
     fontSize: '12px',
     fontFamily: 'Inter, sans-serif',
@@ -1662,7 +1662,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   tagRemove: {
     background: 'none',
     border: 'none',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     cursor: 'pointer',
     padding: '0',
     display: 'flex',
@@ -1802,9 +1802,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   paginationNumberActive: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
-    borderColor: '#7c3aed',
+    borderColor: colors.brand.primary[500],
   },
 };
 

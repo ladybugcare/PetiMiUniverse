@@ -254,9 +254,9 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
             {hasSubItems && (
               <span style={styles.menuChevron}>
                 {isExpanded ? (
-                  <ChevronDown size={16} color={colors.primary} />
+                  <ChevronDown size={16} color={colors.brand.primary[500]} />
                 ) : (
-                  <ChevronRight size={16} color={colors.primary} />
+                  <ChevronRight size={16} color={colors.brand.primary[500]} />
                 )}
               </span>
             )}
@@ -425,14 +425,14 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   menuButtonActive: {
     backgroundColor: '#ede9fe',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     fontWeight: '500',
   },
   menuButtonParentActive: {
     backgroundColor: 'transparent',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     fontWeight: '500',
-    borderLeft: '3px solid #7c3aed',
+    borderLeft: '3px solid colors.brand.primary[500]',
   },
   menuIcon: {
     fontSize: '20px',

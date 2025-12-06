@@ -172,7 +172,7 @@ const AdminPendingFreelancersPage: React.FC = () => {
                         <img src={freelancer.photo_url} alt={freelancer.name} style={styles.freelancerPhoto} />
                       ) : (
                         <div style={styles.freelancerPhotoPlaceholder}>
-                          <Briefcase size={24} color={colors.primary} />
+                          <Briefcase size={24} color={colors.brand.primary[500]} />
                         </div>
                       )}
                       <div>

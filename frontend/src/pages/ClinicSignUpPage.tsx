@@ -22,7 +22,7 @@ import PublicSupportModal from '../components/PublicSupportModal';
 import { classifySignUpError, SignUpErrorType } from '../utils/signUpErrorHandler';
 
 // Componente customizado de ícone Info sem fundo preto
-const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, color = colors.primary }) => {
+const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, color = colors.brand.primary[500]}) => {
   return (
     <svg
       width={size}
@@ -318,7 +318,7 @@ if (step === 2) {
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
-                <InfoIconNoBg size={16} color={colors.primary} />
+                <InfoIconNoBg size={16} color={colors.brand.primary[500]} />
               </span>
               Digite o endereço e selecione uma sugestão do Google para preenchimento automático
             </p>
@@ -428,8 +428,8 @@ if (step === 2) {
                     padding: '12px 24px',
                     backgroundColor:
                       !isStepValid() || loading
-                        ? colors.primaryLight
-                        : colors.primary,
+                        ? colors.brand.primary[100]
+                        : colors.brand.primary[500],
                     color: colors.surface,
                     border: 'none',
                     borderRadius: '8px',

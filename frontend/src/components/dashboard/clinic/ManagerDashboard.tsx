@@ -91,10 +91,10 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
       {/* Unit Stats */}
       <div style={styles.statsGrid}>
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          style={{ ...styles.statCard, borderLeftColor: colors.brand.primary[500] }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(196, 108, 106, 0.15)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0)';
@@ -102,8 +102,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <ClipboardList size={24} color={colors.primary} />
+            <ClipboardList size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.openDemands}</h3>
@@ -123,8 +122,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <Users size={24} color={colors.primary} />
+            <Users size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalApplications}</h3>
@@ -144,8 +142,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <CheckCircle size={24} color={colors.primary} />
+            <CheckCircle size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.pendingApplications}</h3>
@@ -165,8 +162,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
           }}
         >
           <div style={styles.statIcon}>
-            {}
-            <Calendar size={24} color={colors.primary} />
+            <Calendar size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalDemands}</h3>
@@ -183,7 +179,7 @@ const ResumoSection: React.FC<{ unit: any }> = ({ unit }) => {
             recentDemands.map((demand) => (
               <ActivityItem
                 key={demand.id}
-                icon={<ClipboardList size={20} color={colors.primary} />}
+                icon={<ClipboardList size={20} color={colors.brand.primary[500]} />}
                 title={demand.title}
                 description={`Categoria: ${demand.category} - Status: ${demand.status}`}
                 time={new Date(demand.created_at).toLocaleDateString('pt-BR')}
@@ -230,8 +226,7 @@ const ProfissionaisSection: React.FC<{ unitId?: string }> = ({ unitId }) => {
           {applications.map((app) => (
             <div key={app.id} style={styles.activityItem}>
               <div style={styles.activityIcon}>
-                {}
-                <Stethoscope size={20} color={colors.primary} />
+                <Stethoscope size={20} color={colors.brand.primary[500]} />
               </div>
               <div style={styles.activityContent}>
                 <h4 style={styles.activityTitle}>Candidatura #{app.id.substring(0, 8)}</h4>
@@ -246,7 +241,7 @@ const ProfissionaisSection: React.FC<{ unitId?: string }> = ({ unitId }) => {
         <div style={styles.placeholder}>
           <p style={styles.placeholderText}>
             {}
-            <Stethoscope size={20} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+            <Stethoscope size={20} color={colors.brand.primary[500]} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
             Nenhuma candidatura recebida ainda
           </p>
         </div>
@@ -262,7 +257,7 @@ const MensagensSection: React.FC = () => {
       <div style={styles.placeholder}>
         <p style={styles.placeholderText}>
           {}
-          <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+          <MessageSquare size={24} color={colors.brand.primary[500]} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
           Suas mensagens aparecerão aqui
         </p>
       </div>

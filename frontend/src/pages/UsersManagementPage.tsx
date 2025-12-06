@@ -393,7 +393,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   createButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -420,8 +420,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   activeTab: {
-    borderBottomColor: '#7c3aed',
-    color: '#7c3aed',
+    borderBottomColor: colors.brand.primary[500],
+    color: colors.brand.primary[500],
   },
   emptyState: {
     textAlign: 'center',
@@ -552,7 +552,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   submitButton: {
     flex: '1',
     padding: '12px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

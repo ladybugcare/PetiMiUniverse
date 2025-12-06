@@ -274,14 +274,14 @@ const SpecialtiesManager: React.FC = () => {
                       style={styles.actionButton}
                       title="Editar"
                     >
-                      <IconWrapper icon={Edit} size={16} color={colors.primary} />
+                      <IconWrapper icon={Edit} size={16} color={colors.brand.primary[500]} />
                     </button>
                     <button
                       onClick={() => handleDelete(specialty)}
                       style={styles.actionButton}
                       title="Deletar"
                     >
-                      <IconWrapper icon={Trash2} size={16} color={colors.danger} />
+                      <IconWrapper icon={Trash2} size={16} color={colors.error[500]} />
                     </button>
                   </td>
                 </tr>
@@ -409,7 +409,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 20px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -483,7 +483,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   addFirstButton: {
     marginTop: '16px',
     padding: '8px 16px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '6px',
@@ -613,7 +613,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: '8px',
   },
   required: {
-    color: colors.danger,
+    color: colors.error[500],
   },
   input: {
     width: '100%',
@@ -666,7 +666,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

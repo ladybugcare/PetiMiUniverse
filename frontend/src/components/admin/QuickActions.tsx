@@ -25,7 +25,7 @@ const QuickActions: React.FC<QuickActionsProps> = ({ pendingCount = 0 }) => {
       title: 'Cadastrar Especialidade',
       description: 'Adicionar nova especialidade ao sistema',
       icon: <Plus size={24} />,
-      color: '#7c3aed',
+      color: colors.brand.primary[500],
       action: () => {
         navigate('/admin/settings?tab=cadastros');
       },
@@ -76,8 +76,8 @@ const QuickActions: React.FC<QuickActionsProps> = ({ pendingCount = 0 }) => {
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) {
                 icon.style.transform = 'scale(1.1) rotate(5deg)';
               }
@@ -85,7 +85,7 @@ const QuickActions: React.FC<QuickActionsProps> = ({ pendingCount = 0 }) => {
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) {
                 icon.style.transform = 'scale(1) rotate(0deg)';
@@ -134,14 +134,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '12px',
     cursor: 'pointer',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.08)',
+    boxShadow: '0 4px 12px rgba(196, 108, 106, 0.08)',
     position: 'relative',
     overflow: 'hidden',
   },
   actionIconCircle: {
     width: '56px',
     height: '56px',
-    background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+    background: 'linear-gradient(135deg, colors.brand.primary[500] 0%, colors.brand.primary[500] 100%)',
     borderRadius: '14px',
     display: 'flex',
     alignItems: 'center',

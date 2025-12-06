@@ -8,6 +8,7 @@ import NotificationBell from './NotificationBell';
 import { supportTicketsApi } from '../services/supportTicketsApi';
 import { useAuth } from '../AuthContext'; // ✅ Importa o contexto
 import Avatar from './Avatar';
+import { colors } from '../styles/colors';
 import { getUserPhotoUrl, getUserDisplayName, getUserTypeForAvatar } from '../utils/userPhotoHelper';
 
 interface DashboardHeaderProps {
@@ -176,8 +177,8 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         {/* Center: Logo */}
         <div style={styles.centerSection}>
           <img
-            src="/purple_logo.png"
-            alt="PetiVet"
+            src="/logo_texto_lado.png"
+            alt="PetiMi"
             style={styles.logo}
             onClick={handleLogoClick}
             title="Ir para o Dashboard"
@@ -271,6 +272,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderBottom: '1px solid #e5e5e5',
     zIndex: 100,
     boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+    overflow: 'hidden',
   },
   container: {
     display: 'flex',
@@ -300,11 +302,19 @@ const styles: { [key: string]: React.CSSProperties } = {
   centerSection: {
     position: 'absolute',
     left: '50%',
-    transform: 'translateX(-50%)',
+    top: '50%',
+    transform: 'translate(-50%, -50%)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logo: {
-    height: '40px',
+    height: '110px',
     cursor: 'pointer',
+    objectFit: 'contain',
+    display: 'block',
+    marginTop: '-25px',
+    marginBottom: '-25px',
   },
   rightSection: {
     display: 'flex',
@@ -322,7 +332,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     height: '40px',
     border: 'none',
     backgroundColor: 'transparent',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     cursor: 'pointer',
   },
   supportBadge: {

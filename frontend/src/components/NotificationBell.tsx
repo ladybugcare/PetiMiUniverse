@@ -15,6 +15,7 @@ import {
 import { notificationsApi, Notification } from '../services/notificationsApi';
 import { useAuth } from '../AuthContext';
 import IconWrapper from './IconWrapper';
+import { colors } from '../styles/colors';
 
 const NotificationBell: React.FC = () => {
   const navigate = useNavigate();
@@ -218,23 +219,23 @@ const NotificationBell: React.FC = () => {
     const iconProps = { size: 20 };
     switch (type) {
       case 'application_received':
-        return <IconWrapper icon={UserPlus} {...iconProps} color="#7c3aed" />;
+        return <IconWrapper icon={UserPlus} {...iconProps} color={colors.brand.primary[500]} />;
       case 'application_accepted':
-        return <IconWrapper icon={CheckCircle} {...iconProps} color="#22c55e" />;
+        return <IconWrapper icon={CheckCircle} {...iconProps} color={colors.success[500]} />;
       case 'application_rejected':
-        return <IconWrapper icon={XCircle} {...iconProps} color="#ef4444" />;
+        return <IconWrapper icon={XCircle} {...iconProps} color={colors.error[500]} />;
       case 'support_reply':
-        return <IconWrapper icon={MessageCircle} {...iconProps} color="#0ea5e9" />;
+        return <IconWrapper icon={MessageCircle} {...iconProps} color={colors.info[500]} />;
       case 'unit_invitation':
-        return <IconWrapper icon={Mail} {...iconProps} color="#f59e0b" />;
+        return <IconWrapper icon={Mail} {...iconProps} color={colors.warning[500]} />;
       case 'marketplace_message':
-        return <IconWrapper icon={MessageSquare} {...iconProps} color="#ec4899" />;
+        return <IconWrapper icon={MessageSquare} {...iconProps} color={colors.brand.secondary[500]} />;
       case 'demand_status_changed':
-        return <IconWrapper icon={AlertCircle} {...iconProps} color="#f97316" />;
+        return <IconWrapper icon={AlertCircle} {...iconProps} color={colors.warning[500]} />;
       case 'new_demand_created':
-        return <IconWrapper icon={Briefcase} {...iconProps} color="#8b5cf6" />;
+        return <IconWrapper icon={Briefcase} {...iconProps} color={colors.brand.primary[500]} />;
       default:
-        return <IconWrapper icon={Bell} {...iconProps} color="#6b7280" />;
+        return <IconWrapper icon={Bell} {...iconProps} color={colors.neutral[600]} />;
     }
   };
 
@@ -418,7 +419,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   markAllButton: {
     fontSize: '12px',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     background: 'none',
     border: 'none',
     cursor: 'pointer',
@@ -488,7 +489,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '8px',
     height: '8px',
     borderRadius: '50%',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     flexShrink: 0,
   },
   notificationMessage: {
@@ -528,7 +529,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '10px',
     fontSize: '14px',
     fontWeight: '500',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     backgroundColor: 'transparent',
     border: '1px solid #e9d5ff',
     borderRadius: '8px',

@@ -282,8 +282,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   overnightBadge: {
     display: 'inline-block',
     padding: '4px 12px',
-    backgroundColor: colors.infoLight,
-    color: colors.info,
+    backgroundColor: colors.info[100],
+    color: colors.info[500],
     borderRadius: '12px',
     fontSize: '12px',
     fontWeight: '500',
@@ -310,7 +310,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '8px',
   },
   totalsSection: {
-    backgroundColor: colors.primaryBg,
+    backgroundColor: colors.brand.primary[500],
     borderRadius: '8px',
     padding: '20px',
     marginTop: '24px',
@@ -332,7 +332,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Inter, sans-serif',
     fontSize: '18px',
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.brand.primary[500],
   },
   buttonGroup: {
     display: 'flex',
@@ -351,7 +351,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   primaryButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
   },
   secondaryButton: {
