@@ -1,6 +1,6 @@
 # 📱 Guia de Build Mobile - iOS e Android
 
-Este guia mostra como buildar os aplicativos iOS e Android do PetiVet usando EAS Build (recomendado) ou build local.
+Este guia mostra como buildar os aplicativos iOS e Android do PetMi Vet usando EAS Build (recomendado) ou build local.
 
 ## 📋 Índice
 
@@ -66,7 +66,7 @@ O projeto deve ter um arquivo `app.json` na raiz do `frontend/`. Se não existir
 ```json
 {
   "expo": {
-    "name": "PetiVet",
+    "name": "PetMi Vet",
     "slug": "petivet",
     "version": "1.0.0",
     "orientation": "portrait",

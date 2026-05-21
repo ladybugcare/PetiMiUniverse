@@ -2,7 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import LoadingOverlay from '../components/LoadingOverlay';
-import { Clock, CheckCircle, AlertTriangle, XCircle, Activity, Building2, Stethoscope, Briefcase, ClipboardList, Users } from 'lucide-react';
+import {
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  XCircle,
+  Activity,
+  Building2,
+  Stethoscope,
+  Briefcase,
+  ClipboardList,
+  Users,
+  LayoutDashboard,
+} from 'lucide-react';
 import { adminApi } from '../services/adminApi';
 import PeriodFilter, { PeriodType } from '../components/admin/PeriodFilter';
 import QuickActions from '../components/admin/QuickActions';
@@ -154,7 +166,7 @@ const AdminDashboardPage: React.FC = () => {
   return (
     <>
       <DashboardLayout 
-        pageName="Painel do Administrador" 
+        pageName="Início" 
         menuItems={menuItems}
       >
         <OverviewSection stats={stats} pendingVetsCount={pendingVetsCount} pendingFreelancersCount={pendingFreelancersCount} pendingUnitsCount={pendingUnitsCount} />
@@ -200,6 +212,72 @@ const getGreeting = (): string => {
   if (hour < 12) return 'Bom dia';
   if (hour < 18) return 'Boa tarde';
   return 'Boa noite';
+};
+
+const SectionHeading: React.FC<{ title: string; subtitle?: string }> = ({ title, subtitle }) => (
+  <div style={sectionStyles.headingRow}>
+    <span style={sectionStyles.headingBar} aria-hidden />
+    <div>
+      <h3 style={sectionStyles.headingTitle}>{title}</h3>
+      {subtitle ? <p style={sectionStyles.headingSubtitle}>{subtitle}</p> : null}
+    </div>
+  </div>
+);
+
+const sectionStyles: { [key: string]: React.CSSProperties } = {
+  headingRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '14px',
+    marginBottom: '18px',
+  },
+  headingBar: {
+    width: '4px',
+    minHeight: '44px',
+    borderRadius: '4px',
+    background: `linear-gradient(180deg, ${colors.brand.primary[500]} 0%, ${colors.accent.sage[500]} 100%)`,
+    flexShrink: 0,
+    marginTop: '2px',
+  },
+  headingTitle: {
+    fontSize: 'clamp(1.05rem, 2.5vw, 1.25rem)',
+    fontWeight: 700,
+    color: colors.text,
+    margin: 0,
+    letterSpacing: '-0.02em',
+  },
+  headingSubtitle: {
+    fontSize: '13px',
+    color: colors.textSecondary,
+    margin: '6px 0 0 0',
+    lineHeight: 1.45,
+    maxWidth: '520px',
+  },
+};
+
+type HealthState = 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+
+const healthVisual = (status: HealthState | string) => {
+  const s = String(status || 'unknown').toLowerCase();
+  if (s === 'healthy') {
+    return {
+      label: 'Operacional',
+      fg: colors.success[700],
+      icon: <CheckCircle size={26} color={colors.success[500]} strokeWidth={2} />,
+    };
+  }
+  if (s === 'degraded') {
+    return {
+      label: 'Atenção',
+      fg: colors.warning[700],
+      icon: <AlertTriangle size={26} color={colors.warning[500]} strokeWidth={2} />,
+    };
+  }
+  return {
+    label: 'Indisponível / não verificado',
+    fg: colors.error[700],
+    icon: <XCircle size={26} color={colors.error[500]} strokeWidth={2} />,
+  };
 };
 
 // Overview Section
@@ -290,27 +368,35 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
     }
   }, [error, showError]);
 
+  const totalPending = pendingVetsCount + pendingFreelancersCount + pendingUnitsCount;
+
   return (
     <div style={styles.container}>
-      {/* Header with Welcome and Period Filter */}
-      <div style={styles.headerSection}>
-        <div style={styles.welcomeSection}>
-          <h2 style={styles.sectionTitle}>
-            {getGreeting()}, {adminName} {getGreeting() === 'Boa noite' ? '🌙' : getGreeting() === 'Boa tarde' ? '☀️' : '🌅'}
+      <header style={styles.hero}>
+        <div style={styles.heroMain}>
+          <div style={styles.heroKicker}>
+            <LayoutDashboard size={18} color={colors.brand.primary[600]} aria-hidden />
+            <span>Visão geral da plataforma</span>
+          </div>
+          <h2 style={styles.heroTitle}>
+            {getGreeting()}, {adminName}
           </h2>
-          {pendingVetsCount + pendingFreelancersCount > 0 && (
-            <p style={styles.welcomeSubtitle}>
-              {pendingVetsCount + pendingFreelancersCount} cadastro(s) aguardando análise
-            </p>
-          )}
+          <p style={styles.heroSubtitle}>
+            {totalPending > 0
+              ? `${totalPending} ${totalPending === 1 ? 'item aguarda' : 'itens aguardam'} sua revisão (unidades, vets ou freelancers). Use as filas abaixo para agir.`
+              : 'Nenhuma fila de aprovação no momento. Continue acompanhando métricas e saúde do sistema.'}
+          </p>
         </div>
-        <div style={styles.filterSection}>
+        <div style={styles.heroAside}>
+          <p style={styles.filterLabel}>Período dos gráficos</p>
           <PeriodFilter selectedPeriod={selectedPeriod} onPeriodChange={setSelectedPeriod} />
         </div>
-      </div>
+      </header>
 
-      {/* 1. Visão Inteligente */}
-      <h3 style={styles.subsectionTitle}>Visão Inteligente</h3>
+      <SectionHeading
+        title="Visão inteligente"
+        subtitle="Destaques e alertas calculados automaticamente com base no período selecionado."
+      />
       {loading ? (
         <div style={styles.loadingSection}>
           <SkeletonLoader variant="statCard" count={2} />
@@ -327,13 +413,15 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
         </div>
       )}
 
-      {/* 2. Visão Geral do Sistema */}
-      <h3 style={styles.subsectionTitle}>Visão Geral do Sistema</h3>
+      <SectionHeading
+        title="Visão geral do sistema"
+        subtitle="Métricas consolidadas. Toque em um card para abrir a área correspondente."
+      />
       <div style={styles.statsGrid}>
         <StatCard
           icon={<Building2 />}
           value={stats.totalClinics}
-          label="Clínicas Cadastradas"
+          label="Clínicas cadastradas"
           color={colors.brand.primary[500]}
           onClick={() => navigate('/admin/clinics')}
           subtext={periodStats ? `${periodStats.newClinics} novos nos últimos ${selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}` : null}
@@ -342,8 +430,8 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
         <StatCard
           icon={<Stethoscope />}
           value={stats.totalVets}
-          label="Veterinários Cadastrados"
-          color="#3b82f6"
+          label="Veterinários cadastrados"
+          color={colors.info[500]}
           onClick={() => navigate('/admin/vets')}
           subtext={periodStats ? `${periodStats.newVets} novos nos últimos ${selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}` : null}
           growth={periodStats?.vetsGrowth}
@@ -351,8 +439,8 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
         <StatCard
           icon={<Briefcase />}
           value={stats.totalFreelancers || 0}
-          label="Freelancers Cadastrados"
-          color={colors.brand.primary[500]}
+          label="Freelancers cadastrados"
+          color={colors.accent.sage[500]}
           onClick={() => navigate('/admin/freelancers')}
           subtext={periodStats ? `${periodStats.newFreelancers} novos nos últimos ${selectedPeriod === 'today' ? 'dias' : selectedPeriod === '7d' ? '7 dias' : '30 dias'}` : null}
           growth={periodStats?.freelancersGrowth}
@@ -360,51 +448,62 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
         <StatCard
           icon={<ClipboardList />}
           value={stats.totalDemands}
-          label="Demandas Ativas"
-          color="#10b981"
+          label="Demandas ativas"
+          color={colors.brand.primary[600]}
           onClick={() => navigate('/admin/demands')}
         />
         <StatCard
           icon={<Users />}
           value={stats.totalUsers}
-          label="Usuários Totais"
-          color="#f59e0b"
+          label="Usuários totais"
+          color={colors.warning[500]}
           onClick={() => navigate('/admin/users')}
         />
       </div>
 
-      {/* 3. Aprovações Pendentes */}
       <div style={styles.pendingSection}>
-        <h3 style={styles.subsectionTitle}>Aprovações Pendentes</h3>
+        <SectionHeading
+          title="Fila de aprovações"
+          subtitle="Priorize unidades novas de clínica e cadastros de profissionais aguardando revisão."
+        />
         <div style={styles.pendingGrid}>
           <PendingCard
             icon={<Building2 />}
-            title="Unidades Pendentes"
-            description={pendingUnitsCount > 0
-              ? `${pendingUnitsCount} ${pendingUnitsCount === 1 ? 'unidade' : 'unidades'} aguardando aprovação`
-              : 'Nenhuma unidade pendente'}
+            title="Unidades pendentes"
+            description={
+              pendingUnitsCount > 0
+                ? `${pendingUnitsCount} ${pendingUnitsCount === 1 ? 'unidade aguarda' : 'unidades aguardam'} revisão antes de a clínica seguir no fluxo.`
+                : 'Nenhuma unidade na fila — ótimo momento para revisar outros cadastros.'
+            }
             count={pendingUnitsCount > 0 ? pendingUnitsCount : undefined}
             highlight={pendingUnitsCount > 0}
+            iconColor={colors.brand.primary[600]}
             onClick={() => navigate('/admin/pending-units')}
           />
           <PendingCard
             icon={<Stethoscope />}
-            title="Veterinários Pendentes"
-            description={pendingVetsCount > 0 
-              ? `${pendingVetsCount} ${pendingVetsCount === 1 ? 'veterinário' : 'veterinários'} aguardando aprovação`
-              : 'Nenhum veterinário pendente'}
+            title="Veterinários pendentes"
+            description={
+              pendingVetsCount > 0
+                ? `${pendingVetsCount} ${pendingVetsCount === 1 ? 'cadastro aguarda' : 'cadastros aguardam'} análise de documentação e perfil.`
+                : 'Nenhum veterinário aguardando aprovação neste momento.'
+            }
             count={pendingVetsCount > 0 ? pendingVetsCount : undefined}
             highlight={pendingVetsCount > 0}
+            iconColor={colors.info[500]}
             onClick={() => navigate('/admin/pending-all')}
           />
           <PendingCard
             icon={<Briefcase />}
-            title="Freelancers Pendentes"
-            description={pendingFreelancersCount > 0
-              ? `${pendingFreelancersCount} ${pendingFreelancersCount === 1 ? 'freelancer' : 'freelancers'} aguardando aprovação`
-              : 'Nenhum freelancer pendente'}
+            title="Freelancers pendentes"
+            description={
+              pendingFreelancersCount > 0
+                ? `${pendingFreelancersCount} ${pendingFreelancersCount === 1 ? 'perfil aguarda' : 'perfis aguardam'} revisão administrativa.`
+                : 'Nenhum freelancer na fila de aprovação.'
+            }
             count={pendingFreelancersCount > 0 ? pendingFreelancersCount : undefined}
             highlight={pendingFreelancersCount > 0}
+            iconColor={colors.accent.sage[500]}
             onClick={() => navigate('/admin/pending-all')}
           />
         </div>
@@ -412,9 +511,11 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
 
       {/* 4. Crescimento Mensal / Saúde do Sistema */}
       <div style={styles.twoColumnSection}>
-        {/* Left Column - Growth Chart */}
-        <div style={styles.leftColumn}>
-          <h3 style={{ ...styles.subsectionTitle, marginBottom: '16px' }}>Crescimento Mensal</h3>
+        <div style={styles.panel}>
+          <SectionHeading
+            title="Crescimento no período"
+            subtitle="Evolução de cadastros — ajuste o intervalo no topo da página."
+          />
           <div style={styles.chartWrapper}>
             {loading ? (
               <div style={styles.loadingSection}>
@@ -426,9 +527,11 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
           </div>
         </div>
 
-        {/* Right Column - System Health */}
-        <div style={styles.rightColumn}>
-          <h3 style={{ ...styles.subsectionTitle, marginBottom: '16px' }}>Saúde do Sistema</h3>
+        <div style={styles.panel}>
+          <SectionHeading
+            title="Saúde do sistema"
+            subtitle="Monitoramento em tempo quase real dos serviços críticos."
+          />
           <div style={styles.healthSection}>
             {healthLoading ? (
               <div style={styles.healthCardsGrid}>
@@ -437,64 +540,21 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
             ) : systemHealth ? (
               <div style={styles.healthCardsGrid}>
                 <HealthCard
-                  title="API Status"
-                  status={systemHealth.api.status === 'healthy' ? 'Operacional' : systemHealth.api.status === 'degraded' ? 'Degradado' : 'Indisponível'}
-                  statusColor={systemHealth.api.status === 'healthy' ? '#10b981' : systemHealth.api.status === 'degraded' ? '#f59e0b' : '#ef4444'}
-                  icon={
-                    systemHealth.api.status === 'healthy' ? (
-                      <CheckCircle size={32} color="#10b981" />
-                    ) : systemHealth.api.status === 'degraded' ? (
-                      <AlertTriangle size={32} color="#f59e0b" />
-                    ) : (
-                      <XCircle size={32} color="#ef4444" />
-                    )
-                  }
+                  title="API"
+                  rawStatus={systemHealth.api.status}
                   latency={systemHealth.api.latency}
                 />
                 <HealthCard
-                  title="Database"
-                  status={systemHealth.database.status === 'healthy' ? 'Operacional' : systemHealth.database.status === 'degraded' ? 'Degradado' : 'Indisponível'}
-                  statusColor={systemHealth.database.status === 'healthy' ? '#10b981' : systemHealth.database.status === 'degraded' ? '#f59e0b' : '#ef4444'}
-                  icon={
-                    systemHealth.database.status === 'healthy' ? (
-                      <CheckCircle size={32} color="#10b981" />
-                    ) : systemHealth.database.status === 'degraded' ? (
-                      <AlertTriangle size={32} color="#f59e0b" />
-                    ) : (
-                      <XCircle size={32} color="#ef4444" />
-                    )
-                  }
+                  title="Base de dados"
+                  rawStatus={systemHealth.database.status}
                   latency={systemHealth.database.latency}
                 />
                 <HealthCard
-                  title="Storage"
-                  status={systemHealth.storage.status === 'healthy' ? 'Operacional' : systemHealth.storage.status === 'degraded' ? 'Degradado' : 'Indisponível'}
-                  statusColor={systemHealth.storage.status === 'healthy' ? '#10b981' : systemHealth.storage.status === 'degraded' ? '#f59e0b' : '#ef4444'}
-                  icon={
-                    systemHealth.storage.status === 'healthy' ? (
-                      <CheckCircle size={32} color="#10b981" />
-                    ) : systemHealth.storage.status === 'degraded' ? (
-                      <AlertTriangle size={32} color="#f59e0b" />
-                    ) : (
-                      <XCircle size={32} color="#ef4444" />
-                    )
-                  }
+                  title="Armazenamento"
+                  rawStatus={systemHealth.storage.status}
                   latency={systemHealth.storage.latency}
                 />
-                <HealthCard
-                  title="Email Service"
-                  status={systemHealth.email.status === 'healthy' ? 'Operacional' : systemHealth.email.status === 'degraded' ? 'Degradado' : 'Indisponível'}
-                  statusColor={systemHealth.email.status === 'healthy' ? '#10b981' : systemHealth.email.status === 'degraded' ? '#f59e0b' : '#ef4444'}
-                  icon={
-                    systemHealth.email.status === 'healthy' ? (
-                      <CheckCircle size={32} color="#10b981" />
-                    ) : systemHealth.email.status === 'degraded' ? (
-                      <AlertTriangle size={32} color="#f59e0b" />
-                    ) : (
-                      <XCircle size={32} color="#ef4444" />
-                    )
-                  }
-                />
+                <HealthCard title="E-mail" rawStatus={systemHealth.email.status} />
               </div>
             ) : (
               <div style={styles.errorSection}>
@@ -506,7 +566,7 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
       </div>
 
       {/* 5. Ações Rápidas */}
-      <QuickActions pendingCount={pendingVetsCount + pendingFreelancersCount} />
+      <QuickActions pendingCount={pendingVetsCount + pendingFreelancersCount + pendingUnitsCount} />
 
       {/* 6. Top Performers */}
       {loading ? (
@@ -521,7 +581,10 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
 
       {/* 7. Atividade Recente */}
       <div style={styles.activitySection}>
-        <h3 style={styles.subsectionTitle}>Atividade Recente</h3>
+        <SectionHeading
+          title="Atividade recente"
+          subtitle="Últimos eventos registrados na plataforma (amostra rápida)."
+        />
         <div style={styles.activityList}>
           {loading ? (
             <SkeletonLoader variant="activity" count={5} />
@@ -574,19 +637,16 @@ const OverviewSection: React.FC<{ stats: any; pendingVetsCount: number; pendingF
 // Helper Components
 const HealthCard: React.FC<{
   title: string;
-  status: string;
-  statusColor: string;
-  icon: React.ReactNode;
+  rawStatus: string;
   latency?: number;
-}> = ({ title, status, statusColor, icon, latency }) => {
+}> = ({ title, rawStatus, latency }) => {
+  const v = healthVisual(rawStatus);
   return (
     <div style={styles.healthCard}>
-      <div style={styles.healthIcon}>{icon}</div>
+      <div style={styles.healthIcon}>{v.icon}</div>
       <h4 style={styles.healthTitle}>{title}</h4>
-      <p style={{ ...styles.healthStatus, color: statusColor }}>{status}</p>
-      {latency !== undefined && (
-        <p style={styles.healthLatency}>{latency}ms</p>
-      )}
+      <p style={{ ...styles.healthStatus, color: v.fg }}>{v.label}</p>
+      {latency !== undefined && <p style={styles.healthLatency}>{latency} ms</p>}
     </div>
   );
 };
@@ -611,85 +671,99 @@ const ActivityItem: React.FC<{
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
-    padding: '32px',
-    fontFamily: 'Inter, sans-serif',
+    padding: 'clamp(16px, 3vw, 36px)',
+    maxWidth: '1240px',
+    margin: '0 auto',
+    fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+    color: colors.text,
   },
-  sectionTitle: {
-    fontSize: '28px',
-    fontWeight: '700',
-    fontFamily: 'Poppins, sans-serif',
-    color: '#262626',
-    marginBottom: '24px',
+  hero: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '24px',
+    marginBottom: '36px',
+    padding: 'clamp(20px, 3vw, 28px)',
+    borderRadius: '18px',
+    background: `linear-gradient(135deg, ${colors.brand.primary[50]} 0%, ${colors.surface} 55%, ${colors.accent.sage[100]} 100%)`,
+    border: `1px solid ${colors.brand.primary[200]}`,
+    boxShadow: '0 8px 30px rgba(42, 39, 38, 0.06)',
   },
-  subsectionTitle: {
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#262626',
-    marginBottom: '16px',
+  heroMain: {
+    flex: '1 1 280px',
+    minWidth: 0,
+  },
+  heroKicker: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '12px',
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    color: colors.brand.primary[700],
+    marginBottom: '10px',
+  },
+  heroTitle: {
+    fontSize: 'clamp(1.5rem, 4vw, 2rem)',
+    fontWeight: 800,
+    color: colors.text,
+    margin: '0 0 10px 0',
+    letterSpacing: '-0.03em',
+    lineHeight: 1.2,
+  },
+  heroSubtitle: {
+    fontSize: '15px',
+    lineHeight: 1.55,
+    color: colors.textSecondary,
+    margin: 0,
+    maxWidth: '560px',
+  },
+  heroAside: {
+    flexShrink: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: '8px',
+    minWidth: '200px',
+  },
+  filterLabel: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: colors.textMuted,
+    margin: 0,
+    alignSelf: 'flex-end',
   },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '24px',
-    marginBottom: '32px',
-  },
-  statCard: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
-    borderLeft: '4px solid',
-    borderRadius: '12px',
-    padding: '24px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  statCardClickable: {
-    cursor: 'pointer',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  },
-  statIcon: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statContent: {
-    flex: 1,
-  },
-  statValue: {
-    fontSize: '32px',
-    fontWeight: '700',
-    color: '#262626',
-    margin: 0,
-  },
-  statLabel: {
-    fontSize: '14px',
-    color: '#737373',
-    margin: 0,
-    marginTop: '4px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
+    gap: '18px',
+    marginBottom: '8px',
   },
   twoColumnSection: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '24px',
-    marginTop: '32px',
-    marginBottom: '32px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
+    gap: '22px',
+    marginTop: '8px',
+    marginBottom: '28px',
     alignItems: 'stretch',
   },
-  leftColumn: {
-    width: '100%',
+  panel: {
+    backgroundColor: colors.surface,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '16px',
+    padding: '22px 22px 24px',
+    boxShadow: '0 4px 18px rgba(42, 39, 38, 0.05)',
     display: 'flex',
     flexDirection: 'column',
-  },
-  rightColumn: {
-    width: '100%',
-    display: 'flex',
-    flexDirection: 'column',
+    minHeight: 0,
   },
   chartWrapper: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    minHeight: '350px',
+    minHeight: '320px',
     justifyContent: 'center',
   },
   healthSection: {
@@ -697,263 +771,157 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     flexDirection: 'column',
     flex: 1,
-    minHeight: '350px',
+    minHeight: '280px',
     justifyContent: 'center',
   },
   healthCardsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gridTemplateRows: 'repeat(2, 1fr)',
-    gap: '16px',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '14px',
     flex: 1,
-    minHeight: '350px',
-  },
-  healthCards: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '16px',
   },
   healthCard: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
-    borderRadius: '12px',
-    padding: '20px',
-    textAlign: 'center',
+    backgroundColor: colors.neutral[50],
+    border: `1px solid ${colors.border}`,
+    borderRadius: '14px',
+    padding: '18px 14px',
+    textAlign: 'center' as const,
   },
   healthIcon: {
     display: 'flex',
     justifyContent: 'center',
-    marginBottom: '8px',
+    marginBottom: '10px',
   },
   healthTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#262626',
+    fontSize: '14px',
+    fontWeight: 700,
+    color: colors.text,
     margin: 0,
-    marginBottom: '8px',
+    marginBottom: '6px',
+    letterSpacing: '-0.01em',
   },
   healthStatus: {
-    fontSize: '14px',
-    fontWeight: '600',
+    fontSize: '13px',
+    fontWeight: 600,
     margin: 0,
     marginBottom: '4px',
   },
   healthLatency: {
-    fontSize: '12px',
-    color: '#737373',
+    fontSize: '11px',
+    color: colors.textMuted,
     margin: 0,
   },
   activitySection: {
-    marginTop: '32px',
+    marginTop: '12px',
+    marginBottom: '24px',
   },
   activityList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
+    gap: '10px',
   },
   activityItem: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
-    borderRadius: '12px',
-    padding: '16px',
+    backgroundColor: colors.surface,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '14px',
+    padding: '16px 18px',
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
+    boxShadow: '0 1px 2px rgba(42, 39, 38, 0.04)',
   },
   activityIcon: {
-    fontSize: '24px',
     width: '48px',
     height: '48px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f5f5f5',
-    borderRadius: '50%',
+    backgroundColor: colors.neutral[100],
+    borderRadius: '12px',
+    border: `1px solid ${colors.border}`,
+    flexShrink: 0,
   },
   activityContent: {
     flex: 1,
+    minWidth: 0,
   },
   activityTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#262626',
+    fontSize: '15px',
+    fontWeight: 700,
+    color: colors.text,
     margin: 0,
     marginBottom: '4px',
+    letterSpacing: '-0.02em',
   },
   activityDescription: {
-    fontSize: '14px',
-    color: '#737373',
+    fontSize: '13px',
+    color: colors.textSecondary,
     margin: 0,
+    lineHeight: 1.45,
   },
   activityTime: {
-    fontSize: '13px',
-    color: '#a3a3a3',
+    fontSize: '12px',
+    color: colors.textMuted,
     whiteSpace: 'nowrap',
-  },
-  placeholder: {
-    backgroundColor: '#fafafa',
-    border: '2px dashed #e5e5e5',
-    borderRadius: '12px',
-    padding: '64px 32px',
-    textAlign: 'center',
-  },
-  placeholderText: {
-    fontSize: '18px',
-    color: '#525252',
-    marginBottom: '8px',
-  },
-  placeholderSubtext: {
-    fontSize: '14px',
-    color: '#737373',
+    flexShrink: 0,
   },
   pendingSection: {
-    marginTop: '32px',
-    marginBottom: '32px',
+    marginTop: '8px',
+    marginBottom: '28px',
   },
   pendingGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-    gap: '20px',
-  },
-  pendingCard: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
-    borderRadius: '12px',
-    padding: '20px',
-    display: 'flex',
-    alignItems: 'center',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))',
     gap: '16px',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  },
-  pendingCardHighlight: {
-    borderColor: colors.brand.primary[500],
-    borderWidth: '2px',
-    backgroundColor: colors.brand.primary[500],
-  },
-  pendingIcon: {
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badge: {
-    position: 'absolute',
-    top: '-8px',
-    right: '-8px',
-    backgroundColor: colors.error[500],
-    color: '#ffffff',
-    borderRadius: '50%',
-    width: '24px',
-    height: '24px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '12px',
-    fontWeight: '700',
-  },
-  pendingContent: {
-    flex: 1,
-  },
-  pendingTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#262626',
-    margin: 0,
-    marginBottom: '4px',
-  },
-  pendingText: {
-    fontSize: '14px',
-    color: '#737373',
-    margin: 0,
-  },
-  pendingArrow: {
-    fontSize: '20px',
-    color: colors.brand.primary[500],
-    fontWeight: '600',
-  },
-  headerSection: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '24px',
-    gap: '24px',
-    flexWrap: 'wrap',
-  },
-  welcomeSection: {
-    flex: 1,
-    minWidth: '200px',
-  },
-  welcomeSubtitle: {
-    fontSize: '14px',
-    color: '#737373',
-    marginTop: '8px',
-    margin: 0,
-  },
-  filterSection: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-  },
-  statSubtext: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginTop: '8px',
-    fontSize: '12px',
-    color: '#737373',
-  },
-  loadingText: {
-    padding: '20px',
-    textAlign: 'center',
-    color: '#737373',
-    fontSize: '14px',
   },
   emptySection: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
-    borderRadius: '12px',
-    padding: '32px',
+    backgroundColor: colors.surface,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '14px',
+    padding: '28px',
     textAlign: 'center' as const,
   },
   emptyText: {
-    padding: '20px',
+    padding: '12px',
     textAlign: 'center',
-    color: '#737373',
+    color: colors.textSecondary,
     fontSize: '14px',
+    margin: 0,
   },
   seeMoreButton: {
-    marginTop: '16px',
-    padding: '12px 24px',
+    marginTop: '12px',
+    padding: '12px 22px',
     backgroundColor: colors.brand.primary[500],
-    color: '#ffffff',
+    color: colors.surface,
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '10px',
     fontSize: '14px',
-    fontWeight: '600',
+    fontWeight: 600,
     cursor: 'pointer',
-    transition: 'all 0.2s',
+    transition: 'background-color 0.2s, transform 0.2s',
     alignSelf: 'center',
     width: 'fit-content',
+    boxShadow: '0 2px 10px rgba(196, 108, 106, 0.3)',
   },
   loadingSection: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
-    borderRadius: '12px',
-    padding: '40px',
+    backgroundColor: colors.neutral[50],
+    border: `1px dashed ${colors.border}`,
+    borderRadius: '14px',
+    padding: '36px 24px',
     textAlign: 'center',
-    marginTop: '32px',
-    marginBottom: '32px',
+    marginTop: '0',
+    marginBottom: '0',
   },
   errorSection: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #ef4444',
-    borderRadius: '12px',
-    padding: '24px',
-    marginTop: '32px',
-    marginBottom: '32px',
+    backgroundColor: colors.error[100],
+    border: `1px solid ${colors.error[500]}`,
+    borderRadius: '14px',
+    padding: '20px',
+    marginTop: '0',
+    marginBottom: '0',
   },
   errorText: {
-    color: '#ef4444',
+    color: colors.error[700],
     fontSize: '14px',
     margin: 0,
     textAlign: 'center',

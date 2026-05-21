@@ -43,7 +43,7 @@
 Abra o terminal e execute:
 
 ```bash
-cd /Users/beatrizdias/Documents/PetiVet
+cd /caminho/para/PetiMiUniverse
 
 git add .
 

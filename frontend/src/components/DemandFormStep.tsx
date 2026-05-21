@@ -1,14 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import MultiSelect from './MultiSelect';
 import DemandPositionsForm from './DemandPositionsForm';
 import DemandReviewStep from './DemandReviewStep';
 import InlineCalendar from './InlineCalendar';
 import { demandsApi } from '../services/demandsApi';
-import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
 import { useUnit } from '../contexts/UnitContext';
 import { colors } from '../styles/colors';
+import { getStoredClinicId } from '../utils/authHelpers';
+import { isUnitApprovedForClinicOperations } from '../utils/unitEligibility';
+import CreateDemandHero from './CreateDemandHero';
+import { FileText, Briefcase, Lightbulb, ChevronRight, Save } from 'lucide-react';
+
+const ACCENT = colors.brand.primary[500];
+const PAGE_BG = '#eeeceb';
+const DESC_MAX_LEN = 2000;
 
 type CategoryType = 'vet' | 'freelancer' | 'clinic' | 'other';
 
@@ -18,47 +24,134 @@ interface DemandFormStepProps {
   onReview?: () => void;
 }
 
-const getCategoryInfo = (category: CategoryType) => {
+interface CategoryHeaderInfo {
+  title: string;
+  subtitle: string;
+  badge: string;
+}
+
+const getCategoryInfo = (category: CategoryType): CategoryHeaderInfo => {
   switch (category) {
     case 'vet':
       return {
-        title: 'Criar Demanda para Veterinário',
+        title: 'Criar demanda para veterinário',
         subtitle: 'Preencha os detalhes da vaga para receber candidaturas de veterinários qualificados.',
-        gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        badge: 'Veterinário',
       };
     case 'freelancer':
       return {
-        title: 'Criar Demanda para Freelancer',
+        title: 'Criar demanda para freelancer',
         subtitle: 'Preencha os detalhes da vaga para receber candidaturas de freelancers qualificados.',
-        gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+        badge: 'Freelancer',
       };
     case 'clinic':
       return {
-        title: 'Criar Demanda para Clínica Parceira',
+        title: 'Criar demanda para clínica parceira',
         subtitle: 'Preencha os detalhes da demanda para receber propostas de clínicas parceiras.',
-        gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+        badge: 'Clínica parceira',
       };
     case 'other':
       return {
-        title: 'Criar Demanda para Outros Profissionais',
+        title: 'Criar demanda para outros profissionais',
         subtitle: 'Preencha os detalhes da vaga para receber candidaturas de profissionais especializados.',
-        gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+        badge: 'Outros profissionais',
       };
   }
 };
+
+const STEPPER_STEPS = [
+  { id: 1, label: 'Informações gerais' },
+  { id: 2, label: 'Posições e vagas' },
+  { id: 3, label: 'Requisitos e preferências' },
+  { id: 4, label: 'Resumo e publicação' },
+] as const;
+
+const stepperStyles: Record<string, React.CSSProperties> = {
+  row: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    gap: '8px 4px',
+    marginBottom: '28px',
+    padding: '0 4px',
+  },
+  stepWrap: {
+    flex: '1 1 120px',
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    position: 'relative',
+  },
+  circle: {
+    width: 32,
+    height: 32,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    fontWeight: 700,
+    fontFamily: 'Inter, sans-serif',
+    zIndex: 1,
+  },
+  label: {
+    marginTop: '10px',
+    fontSize: '11px',
+    lineHeight: 1.25,
+    fontFamily: 'Inter, sans-serif',
+    maxWidth: '112px',
+  },
+};
+
+function DemandFormStepper({ activeStep }: { activeStep: number }) {
+  return (
+    <div style={stepperStyles.row} role="list" aria-label="Etapas da demanda">
+      {STEPPER_STEPS.map((step) => {
+        const active = step.id === activeStep;
+        const done = step.id < activeStep;
+        return (
+          <div key={step.id} style={stepperStyles.stepWrap}>
+            <div
+              style={{
+                ...stepperStyles.circle,
+                backgroundColor: active || done ? ACCENT : '#d6d3d1',
+                color: '#fff',
+                boxShadow: active ? `0 0 0 3px ${colors.brand.primary[100]}` : undefined,
+              }}
+            >
+              {step.id}
+            </div>
+            <span
+              style={{
+                ...stepperStyles.label,
+                color: active ? ACCENT : '#78716c',
+                fontWeight: active ? 600 : 500,
+              }}
+            >
+              {step.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onReview }) => {
   const navigate = useNavigate();
   const { showSuccess, showError, showWarning } = useAlert();
   const { units: allUnits, selectedUnit, loading: unitsLoading } = useUnit();
-  
-  // Filtrar apenas unidades aprovadas para criar demanda
-  const units = allUnits.filter((u) => u.status === 'approved');
+
+  const units = useMemo(
+    () => allUnits.filter((u) => isUnitApprovedForClinicOperations(u.status)),
+    [allUnits]
+  );
   const [loading, setLoading] = useState(false);
-  const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [currentStep, setCurrentStep] = useState<'form' | 'review'>('form');
 
-  // Initialize with selected unit or main unit or first unit
   const getInitialUnitId = (availableUnits: typeof units, currentSelectedUnit: typeof selectedUnit) => {
     if (currentSelectedUnit) return currentSelectedUnit.id;
     const mainUnit = availableUnits.find((u) => u.is_main);
@@ -70,7 +163,6 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    required_specialties: [] as string[],
     demand_date: '',
     start_time: '09:00',
     end_time: '17:00',
@@ -78,13 +170,15 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
     selectedUnitId: '',
   });
 
-  const [positions, setPositions] = useState<Array<{
-    id: string;
-    specialties: string[];
-    slots: number;
-    payment: number;
-    description?: string;
-  }>>([
+  const [positions, setPositions] = useState<
+    Array<{
+      id: string;
+      specialties: string[];
+      slots: number;
+      payment: number;
+      description?: string;
+    }>
+  >([
     {
       id: crypto.randomUUID(),
       specialties: [],
@@ -95,27 +189,11 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
 
   const categoryInfo = getCategoryInfo(category);
 
-  // Load specialties filtered by category
-  useEffect(() => {
-    const loadSpecialties = async () => {
-      try {
-        const result = await specialtiesApi.getByCategory(category);
-        setSpecialties(result.specialties);
-      } catch (error) {
-        console.error('Error loading specialties:', error);
-      }
-    };
-    loadSpecialties();
-  }, [category]);
-
-  // Initialize and update selectedUnitId when units are loaded
   useEffect(() => {
     if (!unitsLoading && units.length > 0) {
       setFormData((prev) => {
         const currentUnitId = prev.selectedUnitId;
         const unitExists = units.some((u) => u.id === currentUnitId);
-        
-        // If no unit selected or current unit doesn't exist, set to initial unit
         if (!currentUnitId || !unitExists) {
           const newUnitId = getInitialUnitId(units, selectedUnit);
           if (newUnitId) {
@@ -131,21 +209,17 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const target = e.target;
-    const value = target.type === 'checkbox' ? (target as HTMLInputElement).checked : target.value;
+    let value: string | boolean =
+      target.type === 'checkbox' ? (target as HTMLInputElement).checked : target.value;
+    if (typeof value === 'string' && target.name === 'description' && value.length > DESC_MAX_LEN) {
+      value = value.slice(0, DESC_MAX_LEN);
+    }
     setFormData({
       ...formData,
       [target.name]: value,
     });
   };
 
-  const handleSpecialtiesChange = (values: string[]) => {
-    setFormData({
-      ...formData,
-      required_specialties: values,
-    });
-  };
-
-  // Validar data não pode ser passado
   const validateDate = (dateString: string): boolean => {
     if (!dateString) return false;
     const date = new Date(dateString);
@@ -158,7 +232,6 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validações básicas
     if (
       !formData.title ||
       !formData.description ||
@@ -170,38 +243,33 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
       return;
     }
 
-    // Validar data não pode ser passado
     if (!validateDate(formData.demand_date)) {
       showWarning('A data não pode ser no passado.');
       return;
     }
 
-    // Validar horários
     if (!formData.isOvernight) {
-      // Se não for demanda noturna, validar que end_time > start_time
       if (formData.end_time <= formData.start_time) {
         showWarning('O horário final deve ser posterior ao horário inicial.');
         return;
       }
     }
-    // Se for demanda noturna, permite end_time < start_time (cruza meia-noite)
 
-    // Validar posições
     const invalidPosition = positions.find(
       (p) => !p.specialties || p.specialties.length === 0 || p.slots < 1 || p.payment < 0
     );
     if (invalidPosition) {
-      showWarning('Por favor, preencha corretamente todas as posições profissionais (incluindo pelo menos uma especialidade).');
+      showWarning(
+        'Por favor, preencha corretamente todas as posições profissionais (incluindo pelo menos uma especialidade).'
+      );
       return;
     }
 
-    // Validar unidade (obrigatória se houver múltiplas unidades)
     if (units.length > 1 && !formData.selectedUnitId) {
       showWarning('Por favor, selecione a unidade que abrirá esta demanda.');
       return;
     }
 
-    // Avançar para step de revisão
     if (onReview) {
       onReview();
     } else {
@@ -209,19 +277,36 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
     }
   };
 
+  const saveDraft = () => {
+    try {
+      const key = `demand_draft_${category}_${getStoredClinicId() || 'anon'}`;
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          formData,
+          positions,
+          savedAt: new Date().toISOString(),
+        })
+      );
+      showSuccess('Rascunho guardado neste dispositivo.');
+    } catch {
+      showError('Não foi possível guardar o rascunho.');
+    }
+  };
+
   const handleReviewSubmit = async () => {
     try {
       setLoading(true);
 
-      const user = JSON.parse(localStorage.getItem('user') || '');
-      const clinicId = user.id;
+      const clinicId = getStoredClinicId();
+      if (!clinicId) {
+        showError('Não foi possível identificar a clínica. Faça login novamente.');
+        return;
+      }
 
-      // Calcular payment médio para usar como fallback
-      const averagePayment = positions.length > 0
-        ? positions.reduce((sum, p) => sum + p.payment, 0) / positions.length
-        : 0;
+      const averagePayment =
+        positions.length > 0 ? positions.reduce((sum, p) => sum + p.payment, 0) / positions.length : 0;
 
-      // Usar novo endpoint createV2
       await demandsApi.createV2({
         clinic_id: clinicId,
         unit_id: formData.selectedUnitId || undefined,
@@ -232,19 +317,19 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
         start_time: formData.start_time,
         end_time: formData.end_time,
         is_overnight: formData.isOvernight,
-        payment: averagePayment, // Payment médio como fallback
+        payment: averagePayment,
         positions: positions.map((p) => ({
           slots: p.slots,
           specialties: p.specialties,
-          payment: p.payment, // Incluir payment específico de cada posição
+          payment: p.payment,
         })),
       });
 
       showSuccess('Demanda criada com sucesso!');
       navigate('/clinic-dashboard');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating demand:', error);
-      const errorMessage = error.message || 'Tente novamente.';
+      const errorMessage = error instanceof Error ? error.message : 'Tente novamente.';
       showError('Erro ao criar demanda: ' + errorMessage);
     } finally {
       setLoading(false);
@@ -255,11 +340,10 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
     setCurrentStep('form');
   };
 
-  // Se estiver no step de revisão, mostrar DemandReviewStep
   if (currentStep === 'review') {
-    const selectedUnit = units.find((u) => u.id === formData.selectedUnitId);
-    const unitName = selectedUnit
-      ? `${selectedUnit.name}${selectedUnit.nickname ? ` (${selectedUnit.nickname})` : ''}`
+    const selectedUnitRow = units.find((u) => u.id === formData.selectedUnitId);
+    const unitName = selectedUnitRow
+      ? `${selectedUnitRow.name}${selectedUnitRow.nickname ? ` (${selectedUnitRow.nickname})` : ''}`
       : undefined;
 
     return (
@@ -274,213 +358,258 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
     );
   }
 
-  // Verificar se há unidades aprovadas
   if (!unitsLoading && units.length === 0) {
     return (
-      <div style={styles.container}>
-        <div
-          style={{
-            ...styles.header,
-            background: categoryInfo.gradient,
-          }}
-        >
-          <h1 style={styles.headerTitle}>{categoryInfo.title}</h1>
-          <p style={styles.headerSubtitle}>{categoryInfo.subtitle}</p>
-        </div>
-        <div style={styles.formCard}>
-          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <p style={{ fontSize: '18px', color: colors.text, marginBottom: '16px' }}>
-              Você não possui unidades aprovadas para criar demandas.
-            </p>
-            <p style={{ fontSize: '14px', color: colors.darkGray, marginBottom: '24px' }}>
-              Apenas unidades aprovadas pelo administrador podem criar demandas.
-              {allUnits.some((u) => u.status === 'pending_review') && (
-                <span> Você tem unidades aguardando aprovação.</span>
-              )}
-            </p>
-            <button
-              onClick={onBack}
-              style={{
-                padding: '12px 24px',
-                backgroundColor: colors.brand.primary[500],
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '16px',
-                fontWeight: '600',
-              }}
-            >
-              ← Voltar
-            </button>
+      <div style={styles.pageOuter}>
+        <CreateDemandHero
+          contained
+          category={category}
+          title={categoryInfo.title}
+          subtitle={categoryInfo.subtitle}
+          badge={categoryInfo.badge.toUpperCase()}
+        />
+        <div style={styles.pageInner}>
+          <div style={styles.panelCard}>
+            <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+              <p style={{ fontSize: '18px', color: colors.text, marginBottom: '16px' }}>
+                Você não possui unidades aprovadas para criar demandas.
+              </p>
+              <p style={{ fontSize: '14px', color: colors.darkGray, marginBottom: '24px' }}>
+                Apenas unidades aprovadas pelo administrador podem criar demandas.
+                {allUnits.some((u) => u.status === 'pending_review') && (
+                  <span> Você tem unidades aguardando aprovação.</span>
+                )}
+              </p>
+              <button
+                onClick={onBack}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: ACCENT,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                }}
+              >
+                ← Voltar
+              </button>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
+  const soleUnit = units.length === 1 ? units[0] : null;
+
   return (
-    <div style={styles.container}>
-      {/* Colored Header */}
-      <div
-        style={{
-          ...styles.header,
-          background: categoryInfo.gradient,
-        }}
-      >
-        <h1 style={styles.headerTitle}>{categoryInfo.title}</h1>
-        <p style={styles.headerSubtitle}>{categoryInfo.subtitle}</p>
-      </div>
+    <div style={styles.pageOuter}>
+      <CreateDemandHero
+        contained
+        category={category}
+        title={categoryInfo.title}
+        subtitle={categoryInfo.subtitle}
+        badge={categoryInfo.badge.toUpperCase()}
+      />
 
-      {/* Form */}
-      <div style={styles.formCard}>
-        <form onSubmit={handleFormSubmit} style={styles.form}>
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Título da Demanda *</label>
-            <input
-              type="text"
-              name="title"
-              value={formData.title}
-              onChange={handleChange}
-              placeholder="Ex: Veterinário para cirurgia ortopédica"
-              style={styles.input}
-              required
-            />
-          </div>
+      <div style={styles.pageInner}>
+        <DemandFormStepper activeStep={1} />
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Descrição Detalhada *</label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              placeholder="Descreva as atividades, requisitos e o que espera do profissional. Esta descrição será visível para os candidatos."
-              style={styles.textarea}
-              required
-            />
-          </div>
-
-          {/* Unit Selection - Only show for clinic users with multiple units */}
-          {!unitsLoading && units.length > 1 && (
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Unidade *</label>
-              <select
-                name="selectedUnitId"
-                value={formData.selectedUnitId}
-                onChange={handleChange}
-                style={styles.select}
-                required
-              >
-                <option value="">Selecione uma unidade</option>
-                {units.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {unit.is_main && '⭐ '}
-                    {unit.name}
-                    {unit.nickname && ` (${unit.nickname})`}
-                  </option>
-                ))}
-              </select>
-              <small style={styles.hint}>
-                Selecione qual unidade abrirá esta demanda
-              </small>
-            </div>
-          )}
-
-          {/* Calendar and Time Selection */}
-          <div style={styles.dateTimeContainer}>
-            <div style={styles.calendarSection}>
-              <label style={styles.label}>Data da Demanda *</label>
-              <InlineCalendar
-                selectedDate={formData.demand_date}
-                onChange={(date) => setFormData({ ...formData, demand_date: date })}
-                minDate={new Date().toISOString().split('T')[0]}
-              />
-            </div>
-
-            <div style={styles.timeSection}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Horário Inicial *</label>
-                <input
-                  type="time"
-                  name="start_time"
-                  value={formData.start_time}
-                  onChange={handleChange}
-                  style={styles.input}
-                  required
-                />
+        <form onSubmit={handleFormSubmit} style={styles.formOuter}>
+          <div style={styles.panelsGrid}>
+            <section style={styles.panelCard}>
+              <div style={styles.panelHeader}>
+                <div style={styles.panelIconWrap}>
+                  <FileText size={18} color={ACCENT} strokeWidth={2} aria-hidden />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={styles.panelTitle}>Informações gerais</div>
+                  <div style={styles.panelSubtitle}>Dados básicos sobre a sua demanda.</div>
+                </div>
               </div>
 
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Horário Final *</label>
-                <input
-                  type="time"
-                  name="end_time"
-                  value={formData.end_time}
-                  onChange={handleChange}
-                  style={styles.input}
-                  required
-                />
-              </div>
-
-              <div style={styles.checkboxGroup}>
-                <label style={styles.checkboxLabel}>
-                  <input
-                    type="checkbox"
-                    name="isOvernight"
-                    checked={formData.isOvernight}
-                    onChange={handleChange}
-                    style={styles.checkbox}
-                  />
-                  <span style={styles.checkboxText}>Demanda noturna</span>
+                <label style={styles.label}>
+                  Título da demanda <span style={{ color: ACCENT }}>*</span>
                 </label>
-                <small style={styles.hint}>
-                  Marque se a demanda começa em um dia e termina no dia seguinte
-                </small>
+                <input
+                  type="text"
+                  name="title"
+                  value={formData.title}
+                  onChange={handleChange}
+                  placeholder="Ex: Veterinário para cirurgia ortopédica"
+                  style={styles.input}
+                  required
+                />
               </div>
-            </div>
+
+              <div style={styles.inputGroup}>
+                <div style={styles.labelRow}>
+                  <label style={styles.label}>
+                    Descrição da demanda <span style={{ color: ACCENT }}>*</span>
+                  </label>
+                  <span style={styles.charCount}>
+                    {formData.description.length}/{DESC_MAX_LEN}
+                  </span>
+                </div>
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleChange}
+                  placeholder="Descreva as atividades, requisitos e o que espera do profissional. Esta descrição será visível para os candidatos."
+                  style={styles.textarea}
+                  maxLength={DESC_MAX_LEN}
+                  required
+                />
+              </div>
+
+              {!unitsLoading && units.length > 1 && (
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>
+                    Unidade <span style={{ color: ACCENT }}>*</span>
+                  </label>
+                  <select
+                    name="selectedUnitId"
+                    value={formData.selectedUnitId}
+                    onChange={handleChange}
+                    style={styles.select}
+                    required
+                  >
+                    <option value="">Selecione uma unidade</option>
+                    {units.map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.is_main && '⭐ '}
+                        {unit.name}
+                        {unit.nickname && ` (${unit.nickname})`}
+                      </option>
+                    ))}
+                  </select>
+                  <small style={styles.hint}>Selecione qual unidade abrirá esta demanda.</small>
+                </div>
+              )}
+
+              {!unitsLoading && soleUnit && (
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Unidade</label>
+                  <div style={styles.readOnlyUnit}>
+                    {soleUnit.is_main && '⭐ '}
+                    {soleUnit.name}
+                    {soleUnit.nickname && ` (${soleUnit.nickname})`}
+                  </div>
+                </div>
+              )}
+
+              <div style={styles.dateTimeStack}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>
+                    Data da demanda <span style={{ color: ACCENT }}>*</span>
+                  </label>
+                  <InlineCalendar
+                    selectedDate={formData.demand_date}
+                    onChange={(date) => setFormData({ ...formData, demand_date: date })}
+                    minDate={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+
+                <div style={styles.timeRow}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>
+                      Horário inicial <span style={{ color: ACCENT }}>*</span>
+                    </label>
+                    <input
+                      type="time"
+                      name="start_time"
+                      value={formData.start_time}
+                      onChange={handleChange}
+                      style={styles.input}
+                      required
+                    />
+                  </div>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>
+                      Horário final <span style={{ color: ACCENT }}>*</span>
+                    </label>
+                    <input
+                      type="time"
+                      name="end_time"
+                      value={formData.end_time}
+                      onChange={handleChange}
+                      style={styles.input}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div style={styles.checkboxGroup}>
+                  <label style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      name="isOvernight"
+                      checked={formData.isOvernight}
+                      onChange={handleChange}
+                      style={styles.checkbox}
+                    />
+                    <span style={styles.checkboxText}>Demanda noturna</span>
+                  </label>
+                  <small style={styles.hint}>
+                    Marque se a demanda começa num dia e termina no dia seguinte.
+                  </small>
+                </div>
+              </div>
+
+              <div style={styles.tipBox} role="note">
+                <Lightbulb size={20} color="#c2410c" style={{ flexShrink: 0 }} aria-hidden />
+                <p style={styles.tipText}>
+                  Seja específico na descrição: tipo de atos clínicos, software ou equipamento, e o
+                  que torna a oportunidade clara para quem se candidata.
+                </p>
+              </div>
+            </section>
+
+            <section style={styles.panelCard}>
+              <div style={styles.panelHeader}>
+                <div style={styles.panelIconWrap}>
+                  <Briefcase size={18} color={ACCENT} strokeWidth={2} aria-hidden />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={styles.panelTitle}>Posições e vagas</div>
+                  <div style={styles.panelSubtitle}>Defina as posições profissionais necessárias.</div>
+                </div>
+              </div>
+
+              <DemandPositionsForm
+                embedded
+                positions={positions}
+                onChange={setPositions}
+                category={category}
+              />
+            </section>
           </div>
 
-          {/* Novo componente de posições */}
-          <div style={styles.inputGroup}>
-            <DemandPositionsForm 
-              positions={positions} 
-              onChange={setPositions}
-              category={category}
-            />
-          </div>
-
-          {/* Cálculo visual de vagas totais */}
-          <div style={styles.vacanciesSummary}>
-            <div style={styles.vacanciesCard}>
-              <strong style={styles.vacanciesLabel}>Total de Vagas:</strong>
-              <span style={styles.vacanciesValue}>
-                {positions.reduce((sum, pos) => sum + (pos.slots || 0), 0)}
-              </span>
-            </div>
-          </div>
-
-          <div style={styles.buttonGroup}>
-            <button
-              type="button"
-              onClick={onBack}
-              style={{
-                ...styles.button,
-                ...styles.secondaryButton,
-              }}
-            >
-              ← Voltar
+          <div style={styles.footerBar}>
+            <button type="button" onClick={saveDraft} style={styles.draftButton}>
+              <Save size={16} strokeWidth={2} aria-hidden />
+              Salvar como rascunho
             </button>
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                ...styles.button,
-                ...styles.primaryButton,
-                opacity: loading ? 0.7 : 1,
-              }}
-            >
-              {loading ? 'Processando...' : 'Revisar Demanda →'}
-            </button>
+            <div style={styles.footerRight}>
+              <button type="button" onClick={onBack} style={styles.cancelButton}>
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  ...styles.ctaButton,
+                  opacity: loading ? 0.7 : 1,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {loading ? 'Processando…' : 'Continuar para revisão'}
+                {!loading && <ChevronRight size={18} strokeWidth={2} aria-hidden />}
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -489,38 +618,164 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
 };
 
 const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    maxWidth: '900px',
-    margin: '0 auto',
+  pageOuter: {
+    minHeight: '100vh',
+    backgroundColor: PAGE_BG,
+    paddingBottom: '48px',
   },
-  header: {
-    padding: '40px 32px',
-    borderRadius: '16px 16px 0 0',
-    marginBottom: '0',
+  pageInner: {
+    maxWidth: '1180px',
+    marginLeft: 'auto',
+    marginRight: 'auto',
+    padding: '0 20px 32px',
   },
-  headerTitle: {
-    fontFamily: 'Poppins, sans-serif',
-    fontSize: '32px',
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: '8px',
-    textShadow: '0 2px 4px rgba(0,0,0,0.1)',
-  },
-  headerSubtitle: {
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '16px',
-    color: 'rgba(255, 255, 255, 0.95)',
-  },
-  formCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: '0 0 16px 16px',
-    padding: '32px',
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-  },
-  form: {
+  formOuter: {
     display: 'flex',
     flexDirection: 'column',
+    gap: '8px',
+  },
+  panelsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
     gap: '24px',
+    alignItems: 'start',
+  },
+  panelCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: '14px',
+    padding: '22px 22px 24px',
+    boxShadow: '0 2px 14px rgba(15, 23, 42, 0.06)',
+    border: '1px solid rgba(15, 23, 42, 0.06)',
+  },
+  panelHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    marginBottom: '20px',
+  },
+  panelIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: '10px',
+    backgroundColor: colors.brand.primary[50],
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  panelTitle: {
+    fontFamily: 'Poppins, sans-serif',
+    fontSize: '17px',
+    fontWeight: 600,
+    color: '#292524',
+    letterSpacing: '-0.01em',
+  },
+  panelSubtitle: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '13px',
+    color: '#78716c',
+    marginTop: '4px',
+    lineHeight: 1.4,
+  },
+  labelRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: '12px',
+  },
+  charCount: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '12px',
+    color: '#a8a29e',
+    flexShrink: 0,
+  },
+  readOnlyUnit: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    color: '#292524',
+    padding: '12px 14px',
+    backgroundColor: '#fafaf9',
+    border: '1px solid #e7e5e4',
+    borderRadius: '10px',
+  },
+  tipBox: {
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'flex-start',
+    padding: '14px 16px',
+    borderRadius: '12px',
+    backgroundColor: '#fff7ed',
+    border: '1px solid #ffedd5',
+    marginTop: '4px',
+  },
+  tipText: {
+    margin: 0,
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '13px',
+    lineHeight: 1.5,
+    color: '#9a3412',
+  },
+  footerBar: {
+    position: 'sticky',
+    bottom: 0,
+    zIndex: 2,
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '14px',
+    marginTop: '20px',
+    padding: '16px 18px',
+    backgroundColor: '#ffffff',
+    borderRadius: '14px',
+    border: '1px solid rgba(15, 23, 42, 0.08)',
+    boxShadow: '0 -4px 24px rgba(15, 23, 42, 0.06)',
+  },
+  footerRight: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: '12px',
+    marginLeft: 'auto',
+  },
+  draftButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 16px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#44403c',
+    backgroundColor: '#ffffff',
+    border: '1px solid #d6d3d1',
+    borderRadius: '10px',
+    cursor: 'pointer',
+  },
+  cancelButton: {
+    padding: '10px 14px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#57534e',
+    backgroundColor: 'transparent',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+  },
+  ctaButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '12px 20px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#ffffff',
+    backgroundColor: ACCENT,
+    border: 'none',
+    borderRadius: '10px',
+    boxShadow: '0 2px 8px rgba(193, 92, 92, 0.25)',
   },
   inputGroup: {
     display: 'flex',
@@ -541,7 +796,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#262626',
     backgroundColor: '#fafafa',
     border: '1px solid #e5e5e5',
-    borderRadius: '8px',
+    borderRadius: '10px',
   },
   textarea: {
     width: '100%',
@@ -552,62 +807,22 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#262626',
     backgroundColor: '#fafafa',
     border: '1px solid #e5e5e5',
-    borderRadius: '8px',
+    borderRadius: '10px',
     resize: 'vertical',
   },
-  gridRow: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '24px',
-  },
-  dateTimeContainer: {
-    display: 'flex',
-    gap: '24px',
-    alignItems: 'flex-start',
-  },
-  calendarSection: {
-    flex: '0 0 35%',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  timeSection: {
-    flex: '0 0 calc(65% - 24px)',
+  dateTimeStack: {
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
-  },
-  buttonGroup: {
-    display: 'flex',
-    gap: '12px',
-    paddingTop: '16px',
-  },
-  button: {
-    flex: 1,
-    padding: '12px 24px',
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '14px',
-    fontWeight: '500',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-  },
-  primaryButton: {
-    backgroundColor: colors.brand.primary[500],
-    color: '#ffffff',
-  },
-  secondaryButton: {
+    padding: '16px',
     backgroundColor: '#fafafa',
-    color: '#525252',
+    borderRadius: '12px',
     border: '1px solid #e5e5e5',
   },
-  helperText: {
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '13px',
-    color: '#737373',
-    marginTop: '8px',
-    fontStyle: 'italic',
+  timeRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '16px',
   },
   hint: {
     fontFamily: 'Inter, sans-serif',
@@ -648,37 +863,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#262626',
     backgroundColor: '#fafafa',
     border: '1px solid #e5e5e5',
-    borderRadius: '8px',
+    borderRadius: '10px',
     cursor: 'pointer',
     outline: 'none',
     transition: 'border-color 0.2s ease',
   },
-  vacanciesSummary: {
-    marginTop: '8px',
-    marginBottom: '8px',
-  },
-  vacanciesCard: {
-    backgroundColor: colors.brand.primary[50],
-    border: `2px solid ${colors.brand.primary[500]}`,
-    borderRadius: '8px',
-    padding: '16px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  vacanciesLabel: {
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#262626',
-  },
-  vacanciesValue: {
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '24px',
-    fontWeight: '700',
-    color: colors.brand.primary[500],
-  },
 };
 
 export default DemandFormStep;
-

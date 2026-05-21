@@ -1,21 +1,38 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BRAZILIAN_STATES } from '../utils/locationData';
 import { clinicsApi } from '../services/clinicsApi';
 import { useUnit } from '../contexts/UnitContext';
 import WelcomeModal from '../components/WelcomeModal';
-import PetiVetDropdown from '../components/PetiVetDropdown';
+import PetMiVetDropdown from '../components/PetMiVetDropdown';
 import { SuccessModal } from '../components/SuccessModal';
+import LogoutConfirmModal from '../components/LogoutConfirmModal';
 import colors from '../styles/colors';
-import { Heart, Info, Lightbulb, Building2, CheckCircle } from 'lucide-react';
+import {
+  Heart,
+  Info,
+  Lightbulb,
+  Building2,
+  CheckCircle,
+  AlertTriangle,
+  ClipboardList,
+  LogOut,
+} from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
 import AddressAutocomplete from '../components/AddressAutocomplete';
+import { getStoredClinicId } from '../utils/authHelpers';
+import { CLINIC_STORAGE_UPDATED_EVENT } from '../constants/appEvents';
+import { useAuth } from '../AuthContext';
 
 type Step = 'welcome' | 'clinic' | 'unit';
 
+const CLINIC_FIRST_UNIT_TOTAL_STEPS = 3;
+const CREATE_FIRST_UNIT_PROGRESS_KEY = 'createFirstUnitProgress';
+
 const CreateFirstUnitPage: React.FC = () => {
   const navigate = useNavigate();
-  const { units, loadUnits } = useUnit();
+  const { logout, isLoggingOut } = useAuth();
+  const { units, loadUnits, loading: unitsLoading } = useUnit();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasClinic, setHasClinic] = useState(false);
@@ -25,7 +42,8 @@ const CreateFirstUnitPage: React.FC = () => {
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
   const [clinicData, setClinicData] = useState({
     name: '',
     cnpj: '',
@@ -43,10 +61,79 @@ const CreateFirstUnitPage: React.FC = () => {
     technical_manager: '',
   });
 
-  const userStr = localStorage.getItem('user');
-  
-  const user = userStr ? JSON.parse(userStr) : null;
-  const clinicId = user?.id;
+  const getClinicOnboardingStepNumber = (): number => {
+    if (currentStep === 'welcome') return 1;
+    if (currentStep === 'clinic') return 2;
+    return 3;
+  };
+
+  const saveClinicFirstUnitProgress = useCallback(() => {
+    try {
+      localStorage.setItem(
+        CREATE_FIRST_UNIT_PROGRESS_KEY,
+        JSON.stringify({
+          currentStep,
+          showWelcomeModal,
+          clinicData,
+          formData,
+          dontShowAgain,
+          savedAt: new Date().toISOString(),
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [currentStep, showWelcomeModal, clinicData, formData, dontShowAgain]);
+
+  const clearClinicFirstUnitProgress = useCallback(() => {
+    localStorage.removeItem(CREATE_FIRST_UNIT_PROGRESS_KEY);
+  }, []);
+
+  const handleLogoutClick = useCallback(() => {
+    if (showSuccessModal) {
+      void logout();
+      return;
+    }
+    setShowLogoutModal(true);
+  }, [showSuccessModal, logout]);
+
+  const handleSaveAndExitClinic = useCallback(async () => {
+    saveClinicFirstUnitProgress();
+    setShowLogoutModal(false);
+    await logout();
+  }, [saveClinicFirstUnitProgress, logout]);
+
+  const handleExitWithoutSavingClinic = useCallback(async () => {
+    clearClinicFirstUnitProgress();
+    setShowLogoutModal(false);
+    await logout();
+  }, [clearClinicFirstUnitProgress, logout]);
+
+  const renderTopHeader = () => (
+    <div style={styles.topHeader}>
+      <div style={styles.headerContent}>
+        <div style={styles.logoSection}>
+          <img src="/logo_texto_lado.png" alt="PetMi Vet" style={styles.logoImage} />
+        </div>
+        <button
+          type="button"
+          onClick={handleLogoutClick}
+          disabled={isLoggingOut || loading}
+          style={{
+            ...styles.logoutButton,
+            ...(isLoggingOut || loading ? styles.buttonDisabled : {}),
+          }}
+          title="Sair"
+        >
+          <LogOut size={18} aria-hidden />
+          <span>Sair</span>
+        </button>
+      </div>
+    </div>
+  );
+
+  /** ID real da clínica (localStorage); nunca o UUID do Auth. */
+  const clinicId = getStoredClinicId();
 
   // Load units and redirect if user already has units
   useEffect(() => {
@@ -61,21 +148,44 @@ const CreateFirstUnitPage: React.FC = () => {
     checkUnits();
   }, [loadUnits]);
 
-  // Redirect to /units/create if user already has units
+  // Já existe unidade cadastrada (qualquer status) — não exibir fluxo de primeira unidade
   useEffect(() => {
+    if (unitsLoading) return;
     if (units.length > 0) {
-      navigate('/units/create', { replace: true });
+      navigate('/clinic-dashboard', { replace: true });
     }
-  }, [units, navigate]);
+  }, [units, unitsLoading, navigate]);
+
+  // Se o login/onboarding já indicou unidades mas a API falhou (ex.: 403 antigo), não ficar preso em "Carregando..."
+  useEffect(() => {
+    if (unitsLoading) return;
+    if (units.length > 0) return;
+    try {
+      const raw = localStorage.getItem('clinicOnboarding');
+      if (!raw) return;
+      const o = JSON.parse(raw) as { hasUnits?: boolean };
+      if (o?.hasUnits === true) {
+        navigate('/clinic-dashboard', { replace: true });
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [unitsLoading, units.length, navigate]);
 
   // Check if clinic already exists and manage initial step
   useEffect(() => {
+    if (!clinicId) {
+      setCheckingClinic(false);
+      return;
+    }
+    const resolvedClinicId: string = clinicId;
+
     const checkClinic = async () => {
       try {
         const hideModal = localStorage.getItem('hideWelcomeModal');
         const isFirstAccess = localStorage.getItem('isFirstAccess');
         
-        const { clinic } = await clinicsApi.getById(clinicId);
+        const { clinic } = await clinicsApi.getById(resolvedClinicId);
         
           setHasClinic(true);
           setClinicData({
@@ -102,12 +212,8 @@ const CreateFirstUnitPage: React.FC = () => {
         setCheckingClinic(false);
       }
     };
-    
-    if (clinicId) {
-      checkClinic();
-    } else {
-      setCheckingClinic(false);
-    }
+
+    checkClinic();
   }, [clinicId]);
 
   const handleClinicChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -216,14 +322,53 @@ const CreateFirstUnitPage: React.FC = () => {
       const data = await clinicsApi.registerWithUnit({
         clinic: !hasClinic && clinicData.name ? clinicData : null,
         unit: {
-          clinic_id: clinicId,
           ...formData,
+          ...(clinicId ? { clinic_id: clinicId } : {}),
         },
       });
+
+      const clinicIdResolved = data.clinic?.id ?? data.unit?.clinic_id;
+      if (clinicIdResolved) {
+        try {
+          const rawCu = localStorage.getItem('clinic_user');
+          if (rawCu) {
+            const cu = JSON.parse(rawCu);
+            localStorage.setItem(
+              'clinic_user',
+              JSON.stringify({
+                ...cu,
+                clinic_id: clinicIdResolved,
+                unit_id: data.unit?.id ?? cu.unit_id,
+                status: 'active',
+              })
+            );
+          }
+          localStorage.setItem(
+            'clinicOnboarding',
+            JSON.stringify({
+              clinicId: clinicIdResolved,
+              clinicStatus: data.clinic?.status ?? 'pending_approval',
+              hasUnits: true,
+              needsOnboarding: false,
+              shouldCompleteFirstUnit: false,
+              isFirstLogin: false,
+            })
+          );
+        } catch (persistErr) {
+          console.warn('[CreateFirstUnitPage] Falha ao atualizar sessão local pós-cadastro:', persistErr);
+        }
+        window.dispatchEvent(new Event(CLINIC_STORAGE_UPDATED_EVENT));
+      }
 
       // Clear onboarding flags
       localStorage.removeItem('isFirstAccess');
       localStorage.removeItem('hideWelcomeModal');
+
+      try {
+        await loadUnits();
+      } catch (loadErr) {
+        console.warn('[CreateFirstUnitPage] loadUnits após cadastro:', loadErr);
+      }
 
       // Show success modal
       setSuccessMessage(data.message || 'Clínica e unidade cadastradas! Aguarde aprovação do administrador.');
@@ -245,40 +390,88 @@ const CreateFirstUnitPage: React.FC = () => {
     navigate('/clinic-dashboard');
   };
 
+  if (unitsLoading || units.length > 0) {
+    return (
+      <>
+        {renderTopHeader()}
+        <div style={styles.containerWithHeader}>
+          <div style={styles.card}>
+            <div style={{ textAlign: 'center', padding: '40px' }}>
+              <p>{unitsLoading ? 'Carregando...' : 'Redirecionando...'}</p>
+            </div>
+          </div>
+        </div>
+        <LogoutConfirmModal
+          isOpen={showLogoutModal}
+          onClose={() => setShowLogoutModal(false)}
+          onSaveAndExit={handleSaveAndExitClinic}
+          onExitWithoutSaving={handleExitWithoutSavingClinic}
+          currentStep={getClinicOnboardingStepNumber()}
+          totalSteps={CLINIC_FIRST_UNIT_TOTAL_STEPS}
+        />
+      </>
+    );
+  }
+
   // Loading state
   if (checkingClinic) {
     return (
-      <div style={styles.container}>
-        <div style={styles.card}>
-          <div style={{ textAlign: 'center', padding: '40px' }}>
-            <p>Carregando...</p>
+      <>
+        {renderTopHeader()}
+        <div style={styles.containerWithHeader}>
+          <div style={styles.card}>
+            <div style={{ textAlign: 'center', padding: '40px' }}>
+              <p>Carregando...</p>
+            </div>
           </div>
         </div>
-      </div>
+        <LogoutConfirmModal
+          isOpen={showLogoutModal}
+          onClose={() => setShowLogoutModal(false)}
+          onSaveAndExit={handleSaveAndExitClinic}
+          onExitWithoutSaving={handleExitWithoutSavingClinic}
+          currentStep={getClinicOnboardingStepNumber()}
+          totalSteps={CLINIC_FIRST_UNIT_TOTAL_STEPS}
+        />
+      </>
     );
   }
 
   // Step 1: Welcome Modal
   if (currentStep === 'welcome') {
     return (
-      <WelcomeModal
-        isOpen={showWelcomeModal}
-        onStart={handleWelcomeStart}
-        onLater={handleWelcomeLater}
-        onDontShowAgainChange={setDontShowAgain}
-      />
+      <>
+        {renderTopHeader()}
+        <WelcomeModal
+          isOpen={showWelcomeModal}
+          onStart={handleWelcomeStart}
+          onLater={handleWelcomeLater}
+          onDontShowAgainChange={setDontShowAgain}
+          backdropTopPaddingPx={100}
+        />
+        <LogoutConfirmModal
+          isOpen={showLogoutModal}
+          onClose={() => setShowLogoutModal(false)}
+          onSaveAndExit={handleSaveAndExitClinic}
+          onExitWithoutSaving={handleExitWithoutSavingClinic}
+          currentStep={getClinicOnboardingStepNumber()}
+          totalSteps={CLINIC_FIRST_UNIT_TOTAL_STEPS}
+        />
+      </>
     );
   }
 
   // Step 2: Clinic Data
   if (currentStep === 'clinic') {
     return (
-      <div style={styles.container}>
+      <>
+        {renderTopHeader()}
+        <div style={styles.containerWithHeader}>
         <div style={styles.card}>
           <div style={styles.header}>
             <h1 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                <span>Boas-vindas à PetiVet!
+                <span>Boas-vindas à PetMi Vet!
                    Vamos cadastrar sua Clínica</span>
               
               </div>
@@ -291,14 +484,17 @@ const CreateFirstUnitPage: React.FC = () => {
 
           {error && (
             <div style={styles.errorBanner}>
-              <span style={styles.errorIcon}>⚠️</span>
-              {error}
+              <AlertTriangle size={20} color="#b45309" aria-hidden style={{ flexShrink: 0 }} />
+              <span>{error}</span>
             </div>
           )}
 
           <form style={styles.form}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>📋 Dados da Clínica</h2>
+              <h2 style={styles.sectionTitle}>
+                <ClipboardList size={22} color={colors.brand.primary[600]} aria-hidden />
+                <span>Dados da Clínica</span>
+              </h2>
               <p style={styles.sectionSubtitle}>Preencha as informações básicas da sua clínica</p>
             </div>
 
@@ -375,12 +571,22 @@ const CreateFirstUnitPage: React.FC = () => {
           </form>
         </div>
       </div>
+        <LogoutConfirmModal
+          isOpen={showLogoutModal}
+          onClose={() => setShowLogoutModal(false)}
+          onSaveAndExit={handleSaveAndExitClinic}
+          onExitWithoutSaving={handleExitWithoutSavingClinic}
+          currentStep={getClinicOnboardingStepNumber()}
+          totalSteps={CLINIC_FIRST_UNIT_TOTAL_STEPS}
+        />
+      </>
     );
   }
 
   // Step 3: Unit Data
   return (
     <>
+      {renderTopHeader()}
       {/* Success Modal */}
       {showSuccessModal && (
         <SuccessModal
@@ -389,7 +595,7 @@ const CreateFirstUnitPage: React.FC = () => {
           onClose={handleSuccessModalClose}
         />
       )}
-    <div style={styles.container}>
+    <div style={styles.containerWithHeader}>
       <div style={styles.card}>
         <div style={styles.header}>
           <h1 style={styles.title}>
@@ -405,8 +611,8 @@ const CreateFirstUnitPage: React.FC = () => {
 
         {error && (
           <div style={styles.errorBanner}>
-            <span style={styles.errorIcon}>⚠️</span>
-            {error}
+            <AlertTriangle size={20} color="#b45309" aria-hidden style={{ flexShrink: 0 }} />
+            <span>{error}</span>
           </div>
         )}
 
@@ -440,13 +646,15 @@ const CreateFirstUnitPage: React.FC = () => {
               required
               maxLength={100}
             />
-            <div style={styles.tooltip}>
-              <span style={styles.tooltipIcon}>
-                <IconWrapper icon={Lightbulb} size={18} color={colors.brand.primary[500]} />
-              </span>
-              <span style={styles.tooltipText}>
-                Use o nome do bairro ou ponto de referência para diferenciar unidades (ex: Cotia – Granja Viana)
-              </span>
+            <div style={styles.hintCallout}>
+              <div style={styles.hintIconBadge} aria-hidden>
+                <IconWrapper icon={Lightbulb} size={18} color={colors.accent.sage[500]} />
+              </div>
+              <p style={styles.hintText}>
+                <span style={styles.hintLabel}>Dica</span>
+                Use o nome do bairro ou um ponto de referência para diferenciar unidades (ex.: Cotia – Granja
+                Viana).
+              </p>
             </div>
           </div>
 
@@ -497,7 +705,7 @@ const CreateFirstUnitPage: React.FC = () => {
               <label style={styles.label}>
                 Estado <span style={styles.required}>*</span>
               </label>
-              <PetiVetDropdown
+              <PetMiVetDropdown
                 options={BRAZILIAN_STATES}
                 value={formData.state}
                 onChange={(value) => setFormData({ ...formData, state: value })}
@@ -531,11 +739,11 @@ const CreateFirstUnitPage: React.FC = () => {
           </div>
 
           <div style={styles.infoBox}>
-            <span style={styles.infoIcon}>
-              <IconWrapper icon={Info} size={20} color={colors.brand.primary[500]} />
-            </span>
+            <div style={styles.infoIconBadge} aria-hidden>
+              <IconWrapper icon={Info} size={20} color={colors.info[500]} />
+            </div>
             <div>
-              <strong>E depois?</strong>
+              <p style={styles.infoTitle}>E depois?</p>
               <ul style={styles.infoList}>
                 <li>Nossa equipe vai revisar as informações da sua unidade.
                 </li>
@@ -578,6 +786,14 @@ const CreateFirstUnitPage: React.FC = () => {
         </form>
       </div>
     </div>
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onSaveAndExit={handleSaveAndExitClinic}
+        onExitWithoutSaving={handleExitWithoutSavingClinic}
+        currentStep={getClinicOnboardingStepNumber()}
+        totalSteps={CLINIC_FIRST_UNIT_TOTAL_STEPS}
+      />
     </>
   );
 };
@@ -590,6 +806,62 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: '40px 20px',
+  },
+  containerWithHeader: {
+    minHeight: '100vh',
+    backgroundColor: colors.background,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '40px 20px',
+    paddingTop: '88px',
+  },
+  topHeader: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    borderBottom: '1px solid #e5e7eb',
+    padding: '12px 20px',
+    zIndex: 10050,
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+  },
+  headerContent: {
+    maxWidth: '700px',
+    margin: '0 auto',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  logoSection: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  logoImage: {
+    height: '36px',
+    width: 'auto',
+    objectFit: 'contain',
+    display: 'block',
+  },
+  logoutButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 16px',
+    backgroundColor: 'transparent',
+    color: '#6b7280',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+    cursor: 'not-allowed',
   },
   card: {
     backgroundColor: colors.surface,
@@ -626,10 +898,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     color: '#991b1b',
   },
-  errorIcon: {
-    fontSize: '20px',
-    flexShrink: 0,
-  },
   form: {
     display: 'flex',
     flexDirection: 'column',
@@ -644,6 +912,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     color: colors.text,
     marginBottom: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
   },
   sectionSubtitle: {
     fontSize: '13px',
@@ -693,51 +964,87 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'inherit',
     resize: 'vertical',
   },
-  tooltip: {
+  hintCallout: {
     display: 'flex',
     alignItems: 'flex-start',
-    gap: '8px',
-    marginTop: '6px',
-    padding: '8px',
-    backgroundColor: colors.brand.primary[500],
-    borderLeft: `3px solid ${colors.brand.primary[500]}`,
-    borderRadius: '4px',
-    fontSize: '12px',
-    color: colors.brand.primary[600],
+    gap: '12px',
+    marginTop: '8px',
+    padding: '12px 14px',
+    backgroundColor: colors.accent.sage[100],
+    border: `1px solid ${colors.accent.sage[300]}`,
+    borderLeft: `4px solid ${colors.accent.sage[500]}`,
+    borderRadius: '10px',
+    boxShadow: '0 1px 2px rgba(42, 39, 38, 0.04)',
   },
-  tooltipIcon: {
-    fontSize: '14px',
+  hintIconBadge: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '10px',
+    backgroundColor: colors.surface,
+    border: `1px solid ${colors.accent.sage[300]}`,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
-    marginTop: '1px',
   },
-  tooltipText: {
-    lineHeight: '1.5',
+  hintText: {
+    margin: 0,
+    fontSize: '13px',
+    lineHeight: 1.55,
+    color: colors.neutral[800],
+  },
+  hintLabel: {
+    display: 'block',
+    fontSize: '11px',
+    fontWeight: 700,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase' as const,
+    color: colors.accent.sage[500],
+    marginBottom: '4px',
   },
   autoSuggestion: {
     fontSize: '12px',
-    color: colors.brand.primary[500],
+    color: colors.accent.sage[500],
     fontStyle: 'italic',
     marginTop: '4px',
     display: 'block',
   },
   infoBox: {
-    backgroundColor: colors.brand.primary[500],
-    borderLeft: `3px solid ${colors.brand.primary[500]}`,
-    padding: '16px',
-    borderRadius: '8px',
+    backgroundColor: colors.info[100],
+    border: `1px solid ${colors.info[200]}`,
+    borderLeft: `4px solid ${colors.info[500]}`,
+    padding: '16px 18px',
+    borderRadius: '12px',
     display: 'flex',
-    gap: '12px',
-    fontSize: '13px',
-    color: colors.brand.primary[600],
+    gap: '14px',
+    alignItems: 'flex-start',
     marginTop: '8px',
+    boxShadow: '0 1px 2px rgba(42, 39, 38, 0.04)',
   },
-  infoIcon: {
-    fontSize: '20px',
+  infoIconBadge: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '10px',
+    backgroundColor: colors.surface,
+    border: `1px solid ${colors.info[300]}`,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
   },
+  infoTitle: {
+    margin: '0 0 10px 0',
+    fontSize: '15px',
+    fontWeight: 700,
+    color: colors.text,
+    letterSpacing: '-0.01em',
+  },
   infoList: {
-    margin: '8px 0 0 0',
-    paddingLeft: '20px',
+    margin: 0,
+    paddingLeft: '18px',
+    fontSize: '13px',
+    lineHeight: 1.55,
+    color: colors.textSecondary,
   },
   buttonGroup: {
     display: 'flex',

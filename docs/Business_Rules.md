@@ -2,12 +2,12 @@
 ## 📋 **PETIVET - KNOWLEDGE BASE - REGRAS DE NEGÓCIO**
 
 ```markdown
-# PetiVet - Knowledge Base & Business Rules
+# PetMi Vet - Knowledge Base & Business Rules
 
 ## 📌 **VISÃO GERAL DO PROJETO**
 
 ### **Descrição**
-PetiVet é uma plataforma que conecta clínicas veterinárias a profissionais veterinários qualificados, facilitando a contratação temporária e matching de demandas.
+PetMi Vet é uma plataforma que conecta clínicas veterinárias a profissionais veterinários qualificados, facilitando a contratação temporária e matching de demandas.
 
 ### **Propósito**
 Revolucionar o atendimento veterinário ao facilitar a conexão entre clínicas que precisam de profissionais e veterinários em busca de oportunidades.

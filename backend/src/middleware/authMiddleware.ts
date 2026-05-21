@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { supabase } from '../config/supabase';
+import { supabase, supabaseAdmin } from '../config/supabase';
 import { PERMISSIONS, Role } from '../utils/permissions';
 
 // Extend Express Request to include user info
@@ -97,7 +97,9 @@ export const checkPermission = async (
 ): Promise<boolean> => {
   try {
     // Buscar role do usuário na clínica
-    const { data: clinicUser, error } = await supabase
+    // Usar service role: estas verificações rodam após JWT válido; o client anon não tem
+    // sessão RLS do utilizador e devolve vazio → falsos negativos e 403 em /units/clinic/:id.
+    const { data: clinicUser, error } = await supabaseAdmin
       .from('clinic_users')
       .select('role')
       .eq('user_id', user_id)
@@ -127,7 +129,7 @@ export const checkClinicAccess = async (
     // First check if user is the clinic owner (clinic.id === user_id)
     if (user_id === clinic_id) {
       // Verify clinic exists
-      const { data: clinic, error: clinicError } = await supabase
+      const { data: clinic, error: clinicError } = await supabaseAdmin
         .from('clinics')
         .select('id')
         .eq('id', clinic_id)
@@ -139,7 +141,7 @@ export const checkClinicAccess = async (
     }
 
     // Also check if user has a clinic_users entry
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('clinic_users')
       .select('id')
       .eq('user_id', user_id)

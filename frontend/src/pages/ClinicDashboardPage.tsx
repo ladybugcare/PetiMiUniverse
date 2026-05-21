@@ -9,7 +9,7 @@ import LoadingOverlay from '../components/LoadingOverlay';
 import { usePermissions } from '../hooks/usePermissions';
 import { useUnit } from '../contexts/UnitContext';
 import { useAuth } from '../AuthContext';
-import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
+import { getUserRole, getDashboardPathForRole, getStoredClinicId } from '../utils/authHelpers';
 import { API_BASE_URL } from '../services/api';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import colors from '../styles/colors';
@@ -21,11 +21,21 @@ import ManagerDashboard from '../components/dashboard/clinic/ManagerDashboard';
 import AssistantDashboard from '../components/dashboard/clinic/AssistantDashboard';
 import VetInternalDashboard from '../components/dashboard/clinic/VetInternalDashboard';
 
+const clinicPageStyles: { shell: React.CSSProperties } = {
+  shell: {
+    width: '100%',
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '0 clamp(16px, 3vw, 28px) 56px',
+    boxSizing: 'border-box',
+  },
+};
+
 const ClinicDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, session, role: userRole, loading: authLoading } = useAuth();
   const { role: clinicRole, loading: permissionsLoading } = usePermissions();
-  const { selectedUnit } = useUnit();
+  const { selectedUnit, units, loading: unitsLoading } = useUnit();
   const [activeSection, setActiveSection] = useState('resumo');
   const [clinicStatus, setClinicStatus] = useState<string | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(true);
@@ -38,6 +48,16 @@ const ClinicDashboardPage: React.FC = () => {
     // Se não há usuário, redirecionar para login
     if (!user) {
       navigate('/login', { replace: true });
+      return;
+    }
+
+    // Dono de clínica (metadata role "clinic") sem clinic_id persistido → primeira unidade
+    const rawMetaRole = user?.user_metadata?.role;
+    if (
+      String(rawMetaRole || '').toLowerCase() === 'clinic' &&
+      !getStoredClinicId()
+    ) {
+      navigate('/units/create-first', { replace: true });
       return;
     }
     
@@ -64,28 +84,7 @@ const ClinicDashboardPage: React.FC = () => {
       if (!user) return; // Se não há usuário, não fazer requisição
       
       try {
-        // Get clinic ID - usar clinic_user primeiro, depois fallback para user.id
-        let clinicId: string | null = null;
-        
-        // Tentar obter clinic_id do clinic_user primeiro
-        const clinicUserStr = localStorage.getItem('clinic_user');
-        if (clinicUserStr) {
-          try {
-            const clinicUser = JSON.parse(clinicUserStr);
-            clinicId = clinicUser?.clinic_id;
-          } catch (error) {
-            console.warn('Failed to parse clinic_user:', error);
-          }
-        }
-        
-        // Se não encontrou clinic_id no clinic_user, usar user.id como fallback
-        // (apenas para clinic owners, não para CADMIN/CMANAGER que têm clinic_user)
-        if (!clinicId) {
-          const userRole = getUserRole(user);
-          if (userRole === 'CADMIN' || (user as any)?.user_metadata?.role === 'clinic') {
-            clinicId = user.id;
-          }
-        }
+        const clinicId = getStoredClinicId();
         
         if (!clinicId) {
           setCheckingStatus(false);
@@ -576,8 +575,13 @@ const ClinicDashboardPage: React.FC = () => {
 
   // Use overlay instead of blank screen to evitar "piscadas" enquanto carrega
 
-  // Block dashboard if clinic status is pending_unit
-  if (clinicStatus === 'pending_unit') {
+  // Bloquear só quando ainda não existe nenhuma unidade (status legacy `pending_unit` pode persistir após o cadastro)
+  if (
+    clinicStatus === 'pending_unit' &&
+    !checkingStatus &&
+    !unitsLoading &&
+    units.length === 0
+  ) {
     return <DashboardBlockedOverlay />;
   }
 
@@ -591,17 +595,21 @@ const ClinicDashboardPage: React.FC = () => {
         activeSection={activeSection}
         onSectionChange={setActiveSection}
       >
-        <div style={{ width: '100%' }}>
+        <div style={clinicPageStyles.shell}>
           <ClinicStatusBanner />
-        {config.component}
+          {config.component}
         </div>
         <FloatingActionButton options={config.fabOptions} />
       </DashboardLayout>
-      <LoadingOverlay visible={permissionsLoading || checkingStatus} />
+      <LoadingOverlay
+        visible={
+          permissionsLoading ||
+          checkingStatus ||
+          (clinicStatus === 'pending_unit' && unitsLoading)
+        }
+      />
     </>
   );
 };
-
-const styles: { [key: string]: React.CSSProperties } = {};
 
 export default ClinicDashboardPage;

@@ -15,42 +15,62 @@ interface DemandPositionsFormProps {
   positions: Position[];
   onChange: (positions: Position[]) => void;
   category: 'vet' | 'freelancer' | 'clinic' | 'other';
+  /** Quando true, não mostra o título geral (o cartão pai define o cabeçalho). */
+  embedded?: boolean;
 }
 
-const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, onChange, category }) => {
+const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({
+  positions,
+  onChange,
+  category,
+  embedded = false,
+}) => {
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [loadingSpecialties, setLoadingSpecialties] = useState(true);
 
-  // Load specialties filtered by category
+  // Load specialties filtered by category (com retry leve em 429)
   useEffect(() => {
+    let cancelled = false;
+
     const loadSpecialties = async () => {
       try {
         setLoadingSpecialties(true);
-        console.log(`[DemandPositionsForm] Carregando especialidades para categoria: ${category}`);
-        
-        // Buscar especialidades filtradas por categoria
-        const result = await specialtiesApi.getByCategory(category);
-        console.log(`[DemandPositionsForm] Resultado da API por categoria:`, result);
-        console.log(`[DemandPositionsForm] Total de especialidades retornadas: ${result.specialties?.length || 0}`);
-        
-        // O backend já filtra por categoria e exclui freelancer
-        // Usar diretamente o resultado do backend sem filtro adicional
-        const specialtiesList = result.specialties || [];
-        
-        console.log(`[DemandPositionsForm] ${specialtiesList.length} especialidades retornadas do backend para categoria "${category}"`);
-        console.log(`[DemandPositionsForm] Especialidades:`, specialtiesList.map(s => ({ name: s.name, category: s.category })));
-        
-        setSpecialties(specialtiesList);
-      } catch (error) {
-        console.error('[DemandPositionsForm] Error loading specialties:', error);
-        console.error('[DemandPositionsForm] Error details:', error);
-        // Em caso de erro, não buscar todas as especialidades - apenas deixar vazio
-        setSpecialties([]);
+        const fetchList = async () => {
+          const result = await specialtiesApi.getByCategory(category);
+          return result.specialties || [];
+        };
+
+        let list: Specialty[];
+        try {
+          list = await fetchList();
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if ((msg.includes('429') || msg.includes('Too Many')) && !cancelled) {
+            await new Promise((r) => setTimeout(r, 2500));
+            list = await fetchList();
+          } else {
+            throw e;
+          }
+        }
+
+        if (!cancelled) {
+          setSpecialties(list);
+        }
+      } catch {
+        if (!cancelled) {
+          setSpecialties([]);
+        }
       } finally {
-        setLoadingSpecialties(false);
+        if (!cancelled) {
+          setLoadingSpecialties(false);
+        }
       }
     };
-    loadSpecialties();
+
+    void loadSpecialties();
+    return () => {
+      cancelled = true;
+    };
   }, [category]);
 
   const addPosition = () => {
@@ -80,10 +100,14 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
 
   return (
     <div style={styles.container}>
-      <h3 style={styles.title}>Profissionais Necessários</h3>
-      <p style={styles.subtitle}>
-        Adicione as posições profissionais necessárias para esta demanda
-      </p>
+      {!embedded && (
+        <>
+          <h3 style={styles.title}>Profissionais Necessários</h3>
+          <p style={styles.subtitle}>
+            Adicione as posições profissionais necessárias para esta demanda
+          </p>
+        </>
+      )}
 
       {positions.map((position, index) => (
         <div key={position.id} style={styles.positionCard}>
@@ -191,7 +215,7 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
       ))}
 
       <button type="button" onClick={addPosition} style={styles.addButton}>
-        ➕ Adicionar Outra Vaga
+        + Adicionar mais uma vaga
       </button>
 
       {/* Summary */}
@@ -326,8 +350,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   summary: {
     marginTop: '24px',
-    backgroundColor: '#ffffff',
-    border: '2px solid colors.brand.primary[500]',
+    backgroundColor: colors.brand.primary[50],
+    border: `1px solid ${colors.brand.primary[200]}`,
     borderRadius: '12px',
     padding: '20px',
   },

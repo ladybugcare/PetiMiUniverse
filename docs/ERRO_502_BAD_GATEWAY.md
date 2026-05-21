@@ -4,7 +4,7 @@
 
 O erro **502 Bad Gateway** indica que o servidor (no caso, o Render.com) recebeu uma resposta inválida de um servidor upstream, ou o servidor não está conseguindo processar a requisição corretamente.
 
-**No contexto do PetiVet Staging:**
+**No contexto do PetMi Vet Staging:**
 - **URL da API**: `https://petivet-api-staging.onrender.com`
 - **Endpoint afetado**: `/vets/check-document/:document_number`
 

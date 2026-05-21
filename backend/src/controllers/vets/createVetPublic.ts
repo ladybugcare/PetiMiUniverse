@@ -1,7 +1,6 @@
 import type { Request, Response } from 'express';
-import { supabase, supabaseAdmin } from '../../config/supabase';
+import { supabaseAdmin } from '../../config/supabase';
 import { createAuthUser } from '../../utils/createAuthUser';
-import crypto from 'crypto';
 
 /**
  * ===========================================================
@@ -167,7 +166,7 @@ export const createVetPublic = async (req: Request, res: Response) => {
     if (specialties) vetData.specialties = specialties;
     if (experience) vetData.experience = experience;
 
-    const { data: vet, error: vetError } = await supabase
+    const { data: vet, error: vetError } = await supabaseAdmin
       .from('vets')
       .insert([vetData])
       .select()
@@ -188,7 +187,7 @@ export const createVetPublic = async (req: Request, res: Response) => {
         if (specialties) fallbackData.specialties = specialties;
         if (experience) fallbackData.experience = experience;
 
-        const { data: fallbackVet, error: fallbackError } = await supabase
+        const { data: fallbackVet, error: fallbackError } = await supabaseAdmin
           .from('vets')
           .insert([fallbackData])
           .select()

@@ -503,7 +503,7 @@ O sistema de dashboards dinâmicos está **100% implementado e pronto para uso**
 **Versão:** 1.0.0  
 **Data:** 29 de Outubro, 2025  
 **Status:** ✅ Completo e Funcional  
-**Autor:** PetiVet Development Team
+**Autor:** PetMi Vet Development Team
 
 ---
 

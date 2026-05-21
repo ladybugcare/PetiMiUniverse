@@ -1,6 +1,19 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  ReactNode,
+} from 'react';
+import { useLocation } from 'react-router-dom';
 import { Unit } from '../types/units';
 import { unitsApi } from '../services/unitsApi';
+import { getStoredClinicId } from '../utils/authHelpers';
+
+import { CLINIC_STORAGE_UPDATED_EVENT } from '../constants/appEvents';
 
 interface UnitContextType {
   selectedUnit: Unit | null;
@@ -17,101 +30,124 @@ interface UnitProviderProps {
 }
 
 export const UnitProvider: React.FC<UnitProviderProps> = ({ children }) => {
+  const location = useLocation();
   const [selectedUnit, setSelectedUnitState] = useState<Unit | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Evita pedidos GET em paralelo ao mesmo recurso (ex.: 429 em cascata). */
+  const loadUnitsInFlightRef = useRef<Promise<void> | null>(null);
 
-  const loadUnits = async () => {
-    try {
-      setLoading(true);
-      const userStr = localStorage.getItem('user');
-      if (!userStr) {
-        setUnits([]);
-        setSelectedUnitState(null);
-        setLoading(false);
-        return;
-      }
-      let user;
+  const loadUnits = useCallback(async () => {
+    if (loadUnitsInFlightRef.current) {
+      return loadUnitsInFlightRef.current;
+    }
+
+    const p = (async () => {
       try {
-        user = JSON.parse(userStr);
-      } catch (error) {
-        console.warn('Failed to parse user from localStorage:', error);
-        setUnits([]);
-        setSelectedUnitState(null);
-        setLoading(false);
-        return;
-      }
-      const userRole = user?.user_metadata?.role || user?.role;
-
-      let clinicUser: any = null;
-      const clinicUserRaw = localStorage.getItem('clinic_user');
-      if (clinicUserRaw) {
-        try {
-          clinicUser = JSON.parse(clinicUserRaw);
-        } catch (error) {
-          console.warn('Failed to parse clinic_user from localStorage:', error);
-        }
-      }
-
-      // Determine clinic_id based on clinic_user or clinic owner
-      let clinicId: string | null =
-        clinicUser?.clinic_id || (userRole === 'clinic' ? user.id : null);
-
-      if (!clinicId) {
-        setUnits([]);
-        setSelectedUnitState(null);
-        setLoading(false);
-        return;
-      }
-
-      const result = await unitsApi.getByClinic(clinicId);
-      setUnits(result.units);
-
-      // Select main unit by default, or first unit
-      const mainUnit = result.units.find((u) => u.is_main) || result.units[0];
-      
-      // Check if there's a saved unit in localStorage
-      const savedUnitId = localStorage.getItem('selected_unit_id');
-      if (savedUnitId) {
-        const savedUnit = result.units.find((u) => u.id === savedUnitId);
-        if (savedUnit) {
-          setSelectedUnitState(savedUnit);
+        setLoading(true);
+        const userStr = localStorage.getItem('user');
+        if (!userStr) {
+          setUnits([]);
+          setSelectedUnitState(null);
           return;
         }
-      }
-
-      setSelectedUnitState(mainUnit || null);
-    } catch (error: any) {
-      // Não logar erro 403/404 - são esperados em alguns casos
-      if (error?.message?.includes('403') || error?.message?.includes('404')) {
-        // Silently handle - usuário pode não ter acesso ou clínica pode não existir
-        setUnits([]);
-        setSelectedUnitState(null);
-      } else {
-        // Logar apenas erros inesperados
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Error loading units:', error);
+        try {
+          JSON.parse(userStr);
+        } catch (error) {
+          console.warn('Failed to parse user from localStorage:', error);
+          setUnits([]);
+          setSelectedUnitState(null);
+          return;
         }
+
+        const clinicId: string | null = getStoredClinicId();
+
+        if (!clinicId) {
+          setUnits([]);
+          setSelectedUnitState(null);
+          return;
+        }
+
+        const fetchOnce = () => unitsApi.getByClinic(clinicId);
+
+        let result: { units: Unit[] };
+        try {
+          result = await fetchOnce();
+        } catch (first: any) {
+          const msg = String(first?.message || '');
+          if (msg.includes('429') || msg.includes('Too Many')) {
+            await new Promise((r) => setTimeout(r, 2500));
+            result = await fetchOnce();
+          } else {
+            throw first;
+          }
+        }
+
+        setUnits(result.units);
+
+        const mainUnit = result.units.find((u) => u.is_main) || result.units[0];
+
+        const savedUnitId = localStorage.getItem('selected_unit_id');
+        if (savedUnitId) {
+          const savedUnit = result.units.find((u) => u.id === savedUnitId);
+          if (savedUnit) {
+            setSelectedUnitState(savedUnit);
+            return;
+          }
+        }
+
+        setSelectedUnitState(mainUnit || null);
+      } catch (error: any) {
+        if (error?.message?.includes('403') || error?.message?.includes('404')) {
+          setUnits([]);
+          setSelectedUnitState(null);
+        } else {
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Error loading units:', error);
+          }
+        }
+      } finally {
+        setLoading(false);
       }
+    })();
+
+    loadUnitsInFlightRef.current = p;
+    try {
+      await p;
     } finally {
-      setLoading(false);
+      if (loadUnitsInFlightRef.current === p) {
+        loadUnitsInFlightRef.current = null;
+      }
     }
-  };
-
-  const setSelectedUnit = (unit: Unit) => {
-    setSelectedUnitState(unit);
-    // Save to localStorage
-    localStorage.setItem('selected_unit_id', unit.id);
-  };
-
-  useEffect(() => {
-    loadUnits();
   }, []);
 
+  const setSelectedUnit = useCallback((unit: Unit) => {
+    setSelectedUnitState(unit);
+    localStorage.setItem('selected_unit_id', unit.id);
+  }, []);
+
+  // Recarregar ao mudar de rota (ex.: após login ainda com UnitProvider montado desde o arranque)
+  useEffect(() => {
+    void loadUnits();
+  }, [location.pathname, loadUnits]);
+
+  useEffect(() => {
+    const onClinicStorageUpdated = () => {
+      void loadUnits();
+    };
+    window.addEventListener(CLINIC_STORAGE_UPDATED_EVENT, onClinicStorageUpdated);
+    return () => {
+      window.removeEventListener(CLINIC_STORAGE_UPDATED_EVENT, onClinicStorageUpdated);
+    };
+  }, [loadUnits]);
+
+  const contextValue = useMemo(
+    () => ({ selectedUnit, units, setSelectedUnit, loadUnits, loading }),
+    [selectedUnit, units, setSelectedUnit, loadUnits, loading]
+  );
+
   return (
-    <UnitContext.Provider
-      value={{ selectedUnit, units, setSelectedUnit, loadUnits, loading }}
-    >
+    <UnitContext.Provider value={contextValue}>
       {children}
     </UnitContext.Provider>
   );

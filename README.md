@@ -1,6 +1,6 @@
-# 🐾 PetiVet
+# 🐾 PetMi Vet
 
-PetiVet connects veterinary clinics and professionals. This workspace provides:
+PetMi Vet connects veterinary clinics and professionals. This workspace provides:
 - **Backend** (Express + TypeScript) in `backend/`
 - **Universal Frontend** (Expo/React Native) in `frontend/` which runs on web, iOS, and Android
 
@@ -50,7 +50,7 @@ PetiVet connects veterinary clinics and professionals. This workspace provides:
 
 ```bash
 git clone <repository-url>
-cd PetiVet
+cd PetiMiUniverse
 ```
 
 ### 2. Install Dependencies
@@ -351,7 +351,7 @@ NODE_ENV=production npm start
 ## 📁 Project Structure
 
 ```
-PetiVet/
+PetiMiUniverse/
 ├── backend/           # Express API (TypeScript)
 │   ├── src/
 │   │   ├── config/         # Supabase configuration
@@ -494,7 +494,7 @@ This is a project for connecting veterinary clinics with professionals. Feel fre
 
 ## 👥 Team
 
-PetiVet Development Team
+PetMi Vet Development Team
 
 ---
 

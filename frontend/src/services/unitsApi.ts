@@ -10,12 +10,13 @@ export const unitsApi = {
     });
   },
 
-  // Get units by clinic ID
-  getByClinic: async (clinicId: string, includeAll: boolean = false): Promise<{ units: Unit[] }> => {
-    const url = includeAll 
-      ? `/units/clinic/${clinicId}?all=true`
-      : `/units/clinic/${clinicId}`;
-    return apiRequest(url);
+  // Get units by clinic ID (todas as unidades por defeito; use activeOnly para só active/approved)
+  getByClinic: async (
+    clinicId: string,
+    options?: { activeOnly?: boolean }
+  ): Promise<{ units: Unit[] }> => {
+    const qs = options?.activeOnly ? '?activeOnly=true' : '';
+    return apiRequest(`/units/clinic/${clinicId}${qs}`);
   },
 
   // Get unit by ID

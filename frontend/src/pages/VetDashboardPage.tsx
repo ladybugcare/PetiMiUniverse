@@ -119,16 +119,19 @@ const VetDashboardPage: React.FC = () => {
   const { menuItems: baseMenuItems } = useSidebarMenu(userRole);
   
   // Filtrar itens desabilitados baseado em aprovação
-  const menuItems = baseMenuItems.map(item => {
-    // Se o item é "Demandas Disponíveis" e o vet não está aprovado, desabilitar
-    if (item.id === 'demands' && !isApproved) {
-      const updatedSubItems = item.subItems?.map(subItem => {
-        if (subItem.id === 'demands-available') {
-          return { ...subItem, disabled: true, tooltip: 'Complete seu cadastro para acessar' };
-        }
-        return subItem;
-      });
-      return { ...item, subItems: updatedSubItems };
+  const menuItems = baseMenuItems.map((item) => {
+    if (item.id === 'demands' && !isApproved && item.subItems?.length) {
+      const pendingTooltip =
+        'Disponível após aprovação do seu cadastro pela equipe PetMi.';
+      return {
+        ...item,
+        subItems: item.subItems.map((subItem) => {
+          if (subItem.id === 'demands-available' || subItem.id === 'demands-applications') {
+            return { ...subItem, disabled: true, tooltip: pendingTooltip };
+          }
+          return subItem;
+        }),
+      };
     }
     return item;
   });

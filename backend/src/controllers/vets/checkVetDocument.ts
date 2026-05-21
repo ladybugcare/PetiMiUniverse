@@ -1,6 +1,6 @@
 // backend/controllers/vets/checkVetDocument.ts
 import type { Request, Response } from 'express';
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin } from '../../config/supabase';
 
 // Helper function to normalize document number (remove formatting)
 const normalizeDocument = (doc: string): string => {
@@ -43,7 +43,7 @@ export const checkVetDocument = async (req: Request, res: Response) => {
     // Se não existir, retorna false (documento não existe)
     // Timeout de 10 segundos para evitar que o servidor trave
     const { data, error } = await withTimeout(
-      supabase
+      supabaseAdmin
         .from('vets')
         .select('id')
         .eq('document_number', normalizedDocument)

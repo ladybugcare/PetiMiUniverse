@@ -121,7 +121,7 @@ const HomeScreen = () => {
             source={logoSource}
             style={styles.logo}
             resizeMode="contain"
-            accessibilityLabel="PetiVet Logo"
+            accessibilityLabel="PetMi Vet Logo"
             onError={(error) => {
               console.error('Image load error:', error);
             }}
@@ -136,7 +136,7 @@ const HomeScreen = () => {
         
         <View style={styles.heroDescriptionContainer}>
           <Text style={styles.heroDescription}>
-            O PetiVet é a plataforma que une clínicas veterinárias, profissionais 
+            O PetMi Vet é a plataforma que une clínicas veterinárias, profissionais 
             independentes, freelancers e tutores em um só lugar. Aqui, quem oferece 
             cuidado encontra quem precisa dele — de forma simples, segura e com muito 
             amor pelos animais.{' '}
@@ -156,7 +156,7 @@ const HomeScreen = () => {
         
         <Text style={styles.heroDescriptionSecondary}>
           Encontre clínicas próximas, descubra oportunidades de trabalho e colabore 
-          com outros profissionais do mundo pet. O PetiVet foi criado para facilitar 
+          com outros profissionais do mundo pet. O PetMi Vet foi criado para facilitar 
           conexões e fortalecer o cuidado animal.
         </Text>
 
@@ -265,7 +265,7 @@ const HomeScreen = () => {
       <View style={styles.sectionCta}>
         <Text style={styles.ctaTitle}>Pronto para começar?</Text>
         <Text style={styles.ctaDescription}>
-          Junte-se à comunidade PetiVet e faça parte da revolução no atendimento
+          Junte-se à comunidade PetMi Vet e faça parte da revolução no atendimento
           veterinário.
         </Text>
         <Pressable
@@ -286,7 +286,7 @@ const HomeScreen = () => {
             isWeb ? styles.footerColumnWeb : undefined,
           ]}
         >
-          <Text style={styles.footerTitle}>PetiVet 🐾</Text>
+          <Text style={styles.footerTitle}>PetMi Vet 🐾</Text>
           <Text style={styles.footerText}>
             Conectando clínicas e veterinários para melhor atender nossos amigos
             de quatro patas.

@@ -1,11 +1,11 @@
 // backend/controllers/vets/checkVetEmail.ts
 import type { Request, Response } from 'express';
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin } from '../../config/supabase';
 
 export const checkVetEmail = async (req: Request, res: Response) => {
   const { email } = req.params;
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('vets')
       .select('id')
       .eq('email', email)

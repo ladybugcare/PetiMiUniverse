@@ -1,4 +1,4 @@
-# Reestruturação do Sidebar - PetiVet
+# Reestruturação do Sidebar - PetMi Vet
 
 ## Problema Atual
 

@@ -64,7 +64,7 @@ const HowItWorks: React.FC = () => {
   const isDesktop = width >= 1024;
 
   return (
-    <section style={styles.section}>
+    <section id="sobre" style={styles.section}>
       <div style={styles.wrapper}>
         <h2 style={styles.title}>Como o PetiMi funciona</h2>
         <p style={styles.subtitle}>

@@ -121,7 +121,7 @@ WHERE raw_user_meta_data->>'role' = 'admin';
 -- ========================================
 -- NOTAS IMPORTANTES
 -- ========================================
--- 1. O role 'admin' é para administradores do SISTEMA PetiVet
+-- 1. O role 'admin' é para administradores do SISTEMA PetMi Vet
 -- 2. Isso é diferente de 'CADMIN' (admin de clínica)
 -- 3. Após criar, faça login com este usuário
 -- 4. Você será redirecionado para /admin-dashboard

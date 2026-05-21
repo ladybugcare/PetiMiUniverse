@@ -34,7 +34,7 @@ const SignUpErrorModal: React.FC<SignUpErrorModalProps> = ({
           color: colors.brand.primary[500],
           bgColor: '#ede9fe',
           title: 'Email já cadastrado',
-          message: 'Não foi possível criar a conta com esse e-mail. Se você já usa o PetiVet, tente fazer login.',
+          message: 'Não foi possível criar a conta com esse e-mail. Se você já usa o PetMi Vet, tente fazer login.',
           buttonText: 'Entrar agora',
           onButtonClick: () => {
             if (onGoToLogin) {

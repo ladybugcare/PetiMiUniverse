@@ -267,7 +267,7 @@ Se precisar de ajuda:
 
 ## 🎉 Conclusão
 
-**Ambiente de Staging do PetiVet está 100% operacional!**
+**Ambiente de Staging do PetMi Vet está 100% operacional!**
 
 Você pode agora:
 - ✅ Desenvolver novas features com segurança

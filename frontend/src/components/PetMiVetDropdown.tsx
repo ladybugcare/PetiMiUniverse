@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import colors from '../styles/colors';
 
-interface PetiVetDropdownProps {
+interface PetMiVetDropdownProps {
   options: string[];
   value: string;
   onChange: (value: string) => void;
@@ -10,7 +10,7 @@ interface PetiVetDropdownProps {
   disabled?: boolean;
 }
 
-const PetiVetDropdown: React.FC<PetiVetDropdownProps> = ({
+const PetMiVetDropdown: React.FC<PetMiVetDropdownProps> = ({
   options,
   value,
   onChange,
@@ -23,22 +23,22 @@ const PetiVetDropdown: React.FC<PetiVetDropdownProps> = ({
 
   // Inject custom scrollbar styles
   useEffect(() => {
-    const styleId = 'petivet-dropdown-styles';
+    const styleId = 'petmivet-dropdown-styles';
     if (!document.getElementById(styleId)) {
       const styleSheet = document.createElement('style');
       styleSheet.id = styleId;
       styleSheet.textContent = `
-        .petivet-dropdown-options::-webkit-scrollbar {
+        .petmivet-dropdown-options::-webkit-scrollbar {
           width: 8px;
         }
-        .petivet-dropdown-options::-webkit-scrollbar-track {
+        .petmivet-dropdown-options::-webkit-scrollbar-track {
           background: #f5f5f5;
         }
-        .petivet-dropdown-options::-webkit-scrollbar-thumb {
+        .petmivet-dropdown-options::-webkit-scrollbar-thumb {
           background: #d4d4d4;
           border-radius: 4px;
         }
-        .petivet-dropdown-options::-webkit-scrollbar-thumb:hover {
+        .petmivet-dropdown-options::-webkit-scrollbar-thumb:hover {
           background: #a3a3a3;
         }
       `;
@@ -110,7 +110,7 @@ const PetiVetDropdown: React.FC<PetiVetDropdownProps> = ({
       {/* Dropdown Menu */}
       {isOpen && !disabled && (
         <div style={styles.dropdown}>
-          <div className="petivet-dropdown-options" style={styles.optionsList}>
+          <div className="petmivet-dropdown-options" style={styles.optionsList}>
             {options.map((option, index) => {
               const isSelected = option === value;
               const isHovered = hoveredIndex === index;
@@ -242,5 +242,4 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
 };
 
-export default PetiVetDropdown;
-
+export default PetMiVetDropdown;

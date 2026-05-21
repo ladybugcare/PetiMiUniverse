@@ -76,7 +76,7 @@ backend/database_migrations/migrate_existing_clinics_to_approval_flow.sql
 
 ### 1️⃣ Acesse Supabase
 - URL: https://app.supabase.com
-- Projeto: PetiVet
+- Projeto: PetMi Vet
 - Navegue para: **SQL Editor** (⚡)
 
 ### 2️⃣ Execute Migration 1 (OBRIGATÓRIA)

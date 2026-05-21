@@ -1,81 +1,241 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import HomeHeader from '../components/HomeHeader';
 import HowItWorks from '../components/HowItWorks';
-import { Heart, Dog, Cat, Building2, Stethoscope, ClipboardList, Lock, Instagram, CheckCircle } from 'lucide-react';
+import {
+  Heart,
+  Building2,
+  Stethoscope,
+  ClipboardList,
+  Lock,
+  Instagram,
+  CheckCircle,
+  Dog,
+  CalendarDays,
+  Briefcase,
+  Users,
+  Shield,
+  Home,
+  Calendar,
+  User,
+} from 'lucide-react';
 import IconWrapper from '../components/IconWrapper';
 
 const HomePage: React.FC = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    const id = location.hash?.replace(/^#/, '');
+    if (!id) return;
+    const el = document.getElementById(id);
+    if (!el) return;
+    const t = window.setTimeout(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [location.pathname, location.hash]);
+
   return (
     <div className="min-h-screen">
       <HomeHeader />
 
-      {/* Purple Hero Section with Paw Prints */}
-      <section className="hero-purple">
+      <section className="hero-soft">
+        <div className="hero-soft__bg" aria-hidden>
+          <div className="hero-soft__blob hero-soft__blob--1" />
+          <div className="hero-soft__blob hero-soft__blob--2" />
+          <div className="hero-soft__blob hero-soft__blob--3" />
+        </div>
+        <span className="hero-soft__decor hero-soft__decor--1" aria-hidden>
+          <IconWrapper icon={Heart} size={44} strokeWidth={1.25} />
+        </span>
+        <span className="hero-soft__decor hero-soft__decor--2" aria-hidden>
+          <IconWrapper icon={Dog} size={38} strokeWidth={1.25} />
+        </span>
+        <span className="hero-soft__decor hero-soft__decor--3" aria-hidden>
+          <IconWrapper icon={Heart} size={28} strokeWidth={1.25} />
+        </span>
+        <span className="hero-soft__decor hero-soft__decor--4" aria-hidden>
+          <IconWrapper icon={Dog} size={32} strokeWidth={1.25} />
+        </span>
+        <span className="hero-soft__decor hero-soft__decor--5" aria-hidden>
+          <IconWrapper icon={Heart} size={22} strokeWidth={1.25} />
+        </span>
+
         <div className="container">
           <div className="hero-content-split">
-            {/* Lado esquerdo - Texto */}
             <div className="hero-text-left animate-fade-in-up">
-              <h1 className="text-display text-4xl md:text-5xl lg:text-6xl font-bold mb-6">
-                Conectando quem cuida, quem ama e quem precisa.
+              <div className="hero-eyebrow">
+                <IconWrapper icon={Heart} size={14} fill="currentColor" strokeWidth={0} />
+                O universo do cuidado animal
+              </div>
+              <h1 className="text-display text-4xl md:text-5xl lg:text-6xl font-bold mb-6 hero-headline">
+                Conectando quem cuida, quem ama e{' '}
+                <span className="hero-headline__accent">quem precisa.</span>
               </h1>
-              
-              <p className="text-lg md:text-xl mb-6 opacity-90 animate-fade-in-up animate-delay-100">
-                O PetiVet é a plataforma que une clínicas veterinárias, profissionais 
-                independentes, freelancers e tutores em um só lugar. Aqui, quem oferece 
-                cuidado encontra quem precisa dele — de forma simples, segura e com muito 
-                amor pelos animais.{' '}
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <IconWrapper icon={Heart} size={20} fill="currentColor" />
-                  <IconWrapper icon={Dog} size={20} />
-                  <IconWrapper icon={Cat} size={20} />
-                </span>
+
+              <p className="hero-lead animate-fade-in-up animate-delay-100">
+                O PetMi Vet é a plataforma que conecta clínicas veterinárias, veterinários, profissionais
+                freelancers e tutores. Tudo em um só lugar — simples, humano e com foco no bem-estar dos
+                pets.
               </p>
-              
-              <p className="text-base md:text-lg opacity-80 animate-fade-in-up animate-delay-200">
-                Encontre clínicas próximas, descubra oportunidades de trabalho e colabore 
-                com outros profissionais do mundo pet. O PetiVet foi criado para facilitar 
-                conexões e fortalecer o cuidado animal.
-              </p>
+
+              <div className="hero-cta-row animate-fade-in-up animate-delay-200">
+                <Link to="/vet-signup" className="btn btn-primary hero-cta-primary">
+                  <IconWrapper icon={Dog} size={20} strokeWidth={2} />
+                  Criar minha conta
+                </Link>
+                <Link to="/#servicos" className="btn btn-outline hero-cta-outline">
+                  Explorar a plataforma
+                </Link>
+              </div>
+
+              <div className="hero-feature-strip animate-fade-in-up animate-delay-300">
+                <div className="hero-feature-item">
+                  <IconWrapper icon={Building2} size={28} strokeWidth={1.5} color="var(--primary-600)" />
+                  <span>Encontre clínicas e profissionais</span>
+                </div>
+                <div className="hero-feature-item">
+                  <IconWrapper icon={CalendarDays} size={28} strokeWidth={1.5} color="var(--primary-600)" />
+                  <span>Agende e gerencie atendimentos</span>
+                </div>
+                <div className="hero-feature-item">
+                  <IconWrapper icon={Heart} size={28} strokeWidth={1.5} color="var(--primary-600)" />
+                  <span>Cuide com amor, onde estiver</span>
+                </div>
+                <div className="hero-feature-item">
+                  <IconWrapper icon={Briefcase} size={28} strokeWidth={1.5} color="var(--primary-600)" />
+                  <span>Oportunidades para profissionais</span>
+                </div>
+              </div>
             </div>
-            
-            {/* Lado direito - Galeria circular */}
+
             <div className="hero-images-right animate-scale-in animate-delay-300">
-              <div style={{ position: 'relative', width: '100%', maxWidth: '500px', height: '500px' }}>
-                <div
-                  className="hero-image-circle animate-float"
-                  style={{ position: 'absolute', top: '20px', left: '20px', width: '200px', height: '200px', zIndex: 3 }}
-                >
-                  <img src="/img1.png" alt="Galeria PetiVet 1" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <div className="hero-visual-composition">
+                <div className="hero-visual-org hero-visual-org--1" aria-hidden />
+                <div className="hero-visual-org hero-visual-org--2" aria-hidden />
+                <div className="hero-visual-org hero-visual-org--3" aria-hidden />
+
+                <div className="hero-pet-float hero-pet-float--1">
+                  <div className="hero-pet-float__inner animate-float">
+                    <img src="/pets/pet-showcase-1.png" alt="Cão" loading="lazy" />
+                  </div>
+                </div>
+                <div className="hero-pet-float hero-pet-float--2">
+                  <div className="hero-pet-float__inner animate-float" style={{ animationDelay: '0.25s' }}>
+                    <img src="/pets/pet-showcase-2.png" alt="Cachorro" loading="lazy" />
+                  </div>
+                </div>
+                <div className="hero-pet-float hero-pet-float--3">
+                  <div className="hero-pet-float__inner animate-float" style={{ animationDelay: '0.5s' }}>
+                    <img src="/pets/pet-showcase-6.png" alt="Pet" loading="lazy" />
+                  </div>
                 </div>
 
-                <div
-                  className="hero-image-circle"
-                  style={{ position: 'absolute', top: '60px', right: '40px', width: '180px', height: '180px', zIndex: 4, animationDelay: '0.3s' }}
-                >
-                  <img src="/img2.jpg" alt="Galeria PetiVet 2" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
+                <div className="hero-phone-wrap animate-float" style={{ animationDelay: '0.15s' }}>
+                  <div className="hero-phone-shell">
+                    <div className="hero-phone-inner">
+                      <div className="hero-phone-bar" />
+                      <p className="hero-phone-greet">Olá, Amanda!</p>
+                      <p className="hero-phone-sub">Bem-vindo de volta</p>
 
-                <div
-                  className="hero-image-circle animate-float"
-                  style={{ position: 'absolute', bottom: '80px', right: '80px', width: '240px', height: '240px', zIndex: 5, animationDelay: '0.15s' }}
-                >
-                  <img src="/im3.jpg" alt="Galeria PetiVet 3" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
+                      <div className="hero-phone-pet-card">
+                        <img
+                          src="/pets/pet-showcase-4.png"
+                          alt=""
+                          className="hero-phone-pet-card__avatar"
+                          width={44}
+                          height={44}
+                        />
+                        <div className="hero-phone-pet-card__text">
+                          <span className="hero-phone-pet-card__label">Meu pet</span>
+                          <span className="hero-phone-pet-card__name">Mel</span>
+                        </div>
+                      </div>
 
-                <div
-                  className="hero-image-circle"
-                  style={{ position: 'absolute', bottom: '40px', left: '0', width: '160px', height: '160px', zIndex: 2, animationDelay: '0.5s' }}
-                >
-                  <img src="/img4.jpg" alt="Galeria PetiVet 4" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
+                      <div className="hero-phone-appt">
+                        <div className="hero-phone-appt__icon" aria-hidden>
+                          <IconWrapper icon={Calendar} size={14} strokeWidth={2} />
+                        </div>
+                        <div>
+                          <span className="hero-phone-appt__title">Próxima consulta</span>
+                          <span className="hero-phone-appt__meta">Amanhã · 14h</span>
+                        </div>
+                      </div>
 
-                <div
-                  className="hero-image-circle animate-float"
-                  style={{ position: 'absolute', bottom: '0', right: '20px', width: '140px', height: '140px', zIndex: 1, animationDelay: '0.7s' }}
-                >
-                  <img src="/img5.jpg" alt="Galeria PetiVet 5" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <p className="hero-phone-quick-label">Acesso rápido</p>
+                      <div className="hero-phone-grid">
+                        <div className="hero-phone-tile">Clínicas</div>
+                        <div className="hero-phone-tile">Vets</div>
+                        <div className="hero-phone-tile">Serviços</div>
+                        <div className="hero-phone-tile">Mais</div>
+                      </div>
+
+                      <div className="hero-phone-nav">
+                        <span className="hero-phone-nav__item" aria-hidden>
+                          <IconWrapper icon={Home} size={18} strokeWidth={2} color="var(--primary-600)" />
+                        </span>
+                        <span className="hero-phone-nav__item" aria-hidden>
+                          <IconWrapper icon={Calendar} size={18} strokeWidth={2} color="var(--primary-600)" />
+                        </span>
+                        <span className="hero-phone-nav__fab" aria-hidden>
+                          <IconWrapper icon={Dog} size={20} strokeWidth={2} color="#fff" />
+                        </span>
+                        <span className="hero-phone-nav__item" aria-hidden>
+                          <IconWrapper icon={User} size={18} strokeWidth={2} color="var(--primary-600)" />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="home-stats-strip-wrap">
+        <div className="container">
+          <div className="home-stats-strip">
+            <div className="home-stats-grid">
+              <div className="home-stat">
+                <div className="home-stat__icon">
+                  <IconWrapper icon={Users} size={22} strokeWidth={1.75} />
+                </div>
+                <p className="home-stat__value">+120</p>
+                <p className="home-stat__label">Profissionais cadastrados</p>
+              </div>
+              <div className="home-stat">
+                <div className="home-stat__icon">
+                  <IconWrapper icon={Building2} size={22} strokeWidth={1.75} />
+                </div>
+                <p className="home-stat__value">+35</p>
+                <p className="home-stat__label">Clínicas parceiras</p>
+              </div>
+              <div className="home-stat">
+                <div className="home-stat__icon">
+                  <IconWrapper icon={Heart} size={22} strokeWidth={1.75} />
+                </div>
+                <p className="home-stat__value">+500</p>
+                <p className="home-stat__label">Pets atendidos</p>
+              </div>
+            </div>
+            <div className="home-stats-aside">
+              <div className="home-stats-secure">
+                <div className="home-stat__icon" style={{ marginBottom: 0 }}>
+                  <IconWrapper icon={Shield} size={22} strokeWidth={1.75} />
+                </div>
+                <div>
+                  <h3 className="home-stats-secure__title">Plataforma segura</h3>
+                  <p>Dados e conversas pensados para privacidade entre clínicas e profissionais.</p>
+                </div>
+              </div>
+              <div className="home-stats-mission">
+                <h3 className="home-stats-mission__title">Apoiamos o cuidado responsável</h3>
+                <p>
+                  Transparência entre clínicas, profissionais e tutores, com respeito aos pets e à
+                  privacidade de cada conversa.
+                </p>
+                <Link to="/#sobre">Conheça nossas iniciativas →</Link>
               </div>
             </div>
           </div>
@@ -88,13 +248,20 @@ const HomePage: React.FC = () => {
             <span className="secondary-cta__eyebrow">Próximo passo</span>
             <h2>Converse com a equipe e conheça a plataforma de perto</h2>
             <p>
-              Agende uma demo e veja como o PetiVet pode acelerar a gestão da sua clínica,
-              engajar a equipe e colaborar com especialistas de confiança.
+              Agende uma demo e veja como o PetMi Vet pode acelerar a gestão da sua clínica, engajar a
+              equipe e colaborar com especialistas de confiança.
             </p>
             <div className="secondary-cta__benefits">
-              <div><IconWrapper icon={CheckCircle} size={16} /> Onboarding guiado com checklists inteligentes</div>
-              <div><IconWrapper icon={CheckCircle} size={16} /> Ferramentas para equipe: convites, agendas, unidades</div>
-              <div><IconWrapper icon={CheckCircle} size={16} /> Marketplace para vender serviços e produtos pet</div>
+              <div>
+                <IconWrapper icon={CheckCircle} size={16} /> Onboarding guiado com checklists inteligentes
+              </div>
+              <div>
+                <IconWrapper icon={CheckCircle} size={16} /> Ferramentas para equipe: convites, agendas,
+                unidades
+              </div>
+              <div>
+                <IconWrapper icon={CheckCircle} size={16} /> Marketplace para vender serviços e produtos pet
+              </div>
             </div>
           </div>
           <div className="secondary-cta__actions">
@@ -110,8 +277,7 @@ const HomePage: React.FC = () => {
 
       <HowItWorks />
 
-      {/* O que você pode fazer? */}
-      <section className="section section-what-you-can-do">
+      <section id="servicos" className="section section-what-you-can-do">
         <div className="container">
           <div className="text-center mb-16 section-what-you-can-do__header">
             <h2 className="text-display text-4xl md:text-5xl font-bold mb-4 animate-fade-in-up">
@@ -121,58 +287,50 @@ const HomePage: React.FC = () => {
               Escolha a opção que melhor se adequa ao seu perfil
             </p>
           </div>
-          
+
           <div className="cards-grid gap-8">
             <div className="icon-card group animate-scale-in">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
                 <IconWrapper icon={Building2} size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
-                <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
-                  Cadastrar Clínica
-                </h3>
+                <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">Cadastrar Clínica</h3>
                 <p className="text-neutral-600 leading-relaxed">
                   Registre sua clínica veterinária e publique oportunidades de trabalho
                 </p>
               </div>
             </div>
-            
+
             <div className="icon-card group animate-scale-in animate-delay-100">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
                 <IconWrapper icon={Stethoscope} size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
-                <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
-                  Cadastrar Veterinário
-                </h3>
+                <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">Cadastrar Veterinário</h3>
                 <p className="text-neutral-600 leading-relaxed">
                   Registre-se como profissional e encontre as melhores oportunidades
                 </p>
               </div>
             </div>
-            
+
             <div className="icon-card group animate-scale-in animate-delay-200">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
                 <IconWrapper icon={ClipboardList} size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
-                <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
-                  Ver Demandas
-                </h3>
+                <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">Ver Demandas</h3>
                 <p className="text-neutral-600 leading-relaxed">
                   Visualize todas as demandas abertas por clínicas veterinárias
                 </p>
               </div>
             </div>
-            
+
             <div className="icon-card group animate-scale-in animate-delay-300">
               <div className="icon-card-icon group-hover:scale-110 transition-transform">
                 <IconWrapper icon={Lock} size={48} strokeWidth={1.5} />
               </div>
               <div className="icon-card-content">
-                <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">
-                  Login
-                </h3>
+                <h3 className="text-display text-xl font-bold mb-2 text-neutral-800">Login</h3>
                 <p className="text-neutral-600 leading-relaxed">
                   Acesse sua conta para gerenciar suas informações e candidaturas
                 </p>
@@ -182,31 +340,34 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="footer footer--minimal">
+      <footer id="contato" className="footer footer--minimal">
         <div className="container">
           <div className="footer-content">
             <div className="footer-brand">
-              <img 
-                src="/logo_branco.png" 
-                alt="PetiMi" 
-                className="footer-logo"
-              />
+              <div className="footer-brand-mark">
+                <img src="/just_logo.png" alt="" className="footer-logo-icon" width={52} height={52} decoding="async" />
+                <span className="footer-wordmark">PetMi Vet</span>
+              </div>
               <p>
-                Conectando clínicas, profissionais e tutores para levar cuidado,
-                agilidade e amor aos pets.
+                Conectando clínicas, profissionais e tutores para levar cuidado, agilidade e amor aos pets.
               </p>
             </div>
-            
+
             <div className="footer-links">
               <h4>Links Rápidos</h4>
               <ul>
-                <li><Link to="/clinic-signup">Cadastrar Clínica</Link></li>
-                <li><Link to="/vet-signup">Cadastrar Veterinário</Link></li>
-                <li><Link to="/demands">Ver Demandas</Link></li>
+                <li>
+                  <Link to="/clinic-signup">Cadastrar Clínica</Link>
+                </li>
+                <li>
+                  <Link to="/vet-signup">Cadastrar Veterinário</Link>
+                </li>
+                <li>
+                  <Link to="/demands">Ver Demandas</Link>
+                </li>
               </ul>
             </div>
-            
+
             <div className="footer-social">
               <h4>Conecte-se</h4>
               <a
@@ -230,12 +391,12 @@ const HomePage: React.FC = () => {
               </ul>
             </div>
           </div>
-          
+
           <div className="footer-bottom">
             <p className="footer-bottom__tagline">
               Feito com <IconWrapper icon={Heart} size={18} fill="currentColor" /> para pets e veterinários
             </p>
-            <p className="footer-bottom__copyright">© 2025 PetiMi. Todos os direitos reservados.</p>
+            <p className="footer-bottom__copyright">© 2026 PetMi Vet. Todos os direitos reservados.</p>
           </div>
         </div>
       </footer>

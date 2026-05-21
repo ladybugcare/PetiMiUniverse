@@ -2,7 +2,7 @@
 
 ## 📋 Visão Geral
 
-Sistema completo de notificações in-app implementado para todos os usuários do PetiVet, permitindo notificações em tempo real para diversos eventos do sistema.
+Sistema completo de notificações in-app implementado para todos os usuários do PetMi Vet, permitindo notificações em tempo real para diversos eventos do sistema.
 
 **Data de Implementação:** 30 de Outubro de 2025
 
@@ -365,5 +365,5 @@ Sistema de notificações totalmente funcional implementado com sucesso!
 ---
 
 *Última atualização: 30 de Outubro de 2025*
-*Desenvolvido para PetiVet 🐾*
+*Desenvolvido para PetMi Vet 🐾*
 

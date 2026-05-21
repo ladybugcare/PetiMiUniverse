@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { ClipboardList, FileText, Heart, Plus } from 'lucide-react';
 
 interface NavigationProps {
   user?: any;
@@ -32,8 +33,8 @@ const Navigation: React.FC<NavigationProps> = ({ user, onLogout }) => {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link to="/demands" className="flex items-center space-x-2">
-              <span className="text-2xl">🐾</span>
-              <span className="text-xl font-bold" style={{ color: '#A36B6B' }}>PetiMi</span>
+              <Heart className="w-7 h-7 shrink-0" style={{ color: '#A36B6B' }} aria-hidden strokeWidth={2} />
+              <span className="text-xl font-bold" style={{ color: '#A36B6B' }}>PetMi Vet</span>
             </Link>
 
             {/* Desktop Menu */}
@@ -152,26 +153,28 @@ const Navigation: React.FC<NavigationProps> = ({ user, onLogout }) => {
                 <Link
                   to="/demands"
                   onClick={() => setIsSidebarOpen(false)}
-                  className={`block px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     isActive('/demands')
                       ? 'bg-primary-100 text-primary-700'
                       : 'text-neutral-700 hover:bg-neutral-100'
                   }`}
                 >
-                  📋 Demandas
+                  <ClipboardList className="w-4 h-4 shrink-0" aria-hidden />
+                  Demandas
                 </Link>
 
                 {userRole === 'clinic' && (
                   <Link
                     to="/create-demand"
                     onClick={() => setIsSidebarOpen(false)}
-                    className={`block px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                       isActive('/create-demand')
                         ? 'bg-primary-100 text-primary-700'
                         : 'text-neutral-700 hover:bg-neutral-100'
                     }`}
                   >
-                    ➕ Nova Demanda
+                    <Plus className="w-4 h-4 shrink-0" aria-hidden />
+                    Nova Demanda
                   </Link>
                 )}
 
@@ -179,13 +182,14 @@ const Navigation: React.FC<NavigationProps> = ({ user, onLogout }) => {
                   <Link
                     to="/my-applications"
                     onClick={() => setIsSidebarOpen(false)}
-                    className={`block px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                       isActive('/my-applications')
                         ? 'bg-primary-100 text-primary-700'
                         : 'text-neutral-700 hover:bg-neutral-100'
                     }`}
                   >
-                    📝 Minhas Candidaturas
+                    <FileText className="w-4 h-4 shrink-0" aria-hidden />
+                    Minhas Candidaturas
                   </Link>
                 )}
 

@@ -1,6 +1,6 @@
-# 🚀 Configuração de Ambiente Local - PetiVet
+# 🚀 Configuração de Ambiente Local - PetMi Vet
 
-Este guia consolida todas as informações necessárias para configurar o ambiente local do PetiVet com Supabase local via Docker, incluindo configuração de variáveis de ambiente e CORS.
+Este guia consolida todas as informações necessárias para configurar o ambiente local do PetMi Vet com Supabase local via Docker, incluindo configuração de variáveis de ambiente e CORS.
 
 ## 📋 Visão Geral
 
@@ -179,7 +179,7 @@ has been blocked by CORS policy
    ```bash
    curl http://localhost:3000
    ```
-   Deve retornar: `{"message":"🐾 PetiVet API is running!"}`
+   Deve retornar: `{"message":"🐾 PetMi Vet API is running!"}`
 
 2. **Verifique se a porta do frontend está permitida:**
    - Abra `backend/src/index.ts`

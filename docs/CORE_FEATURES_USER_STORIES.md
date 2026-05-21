@@ -1,4 +1,4 @@
-# PetiVet Core Feature Guide
+# PetMi Vet Core Feature Guide
 
 This guide distills the product’s most important capabilities into user stories,
 business rules, and operational cues that the team can rely on when planning or

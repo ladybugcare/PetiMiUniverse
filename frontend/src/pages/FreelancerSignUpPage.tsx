@@ -183,7 +183,7 @@ const FreelancerSignUpPage: React.FC = () => {
 
         const text = await response.text();
         if (!text) {
-          // Resposta vazia, assumir que email não existe
+          setStep(step + 1);
           return;
         }
 
@@ -608,11 +608,12 @@ const FreelancerSignUpPage: React.FC = () => {
 
           {/* Coluna Direita - Imagens e Texto */}
           <div className="signup-images-section">
-            <h2 className="text-display">
-              Conectando quem cuida, quem ama e quem precisa.
+            <h2 className="text-display hero-headline">
+              Conectando quem cuida, quem ama e{' '}
+              <span className="hero-headline__accent">quem precisa.</span>
             </h2>
             <p>
-              Junte-se ao PetiVet como freelancer e encontre as melhores oportunidades de
+              Junte-se ao PetMi Vet como freelancer e encontre as melhores oportunidades de
               trabalho. Candidate-se às demandas que mais combinam com seu perfil e construa uma carreira de sucesso.
             </p>
 
@@ -639,7 +640,7 @@ const FreelancerSignUpPage: React.FC = () => {
                   }}
                 >
                   <img
-                    src="/img1.png"
+                    src="/pets/pet-showcase-1.png"
                     alt="Freelancer cuidando de pet"
                     style={{
                       width: '100%',
@@ -663,7 +664,7 @@ const FreelancerSignUpPage: React.FC = () => {
                   }}
                 >
                   <img
-                    src="/img2.jpg"
+                    src="/pets/pet-showcase-2.png"
                     alt="Pet feliz"
                     style={{
                       width: '100%',
@@ -687,7 +688,7 @@ const FreelancerSignUpPage: React.FC = () => {
                   }}
                 >
                   <img
-                    src="/im3.jpg"
+                    src="/pets/pet-showcase-3.png"
                     alt="Serviços para pets"
                     style={{
                       width: '100%',
@@ -711,7 +712,7 @@ const FreelancerSignUpPage: React.FC = () => {
                   }}
                 >
                   <img
-                    src="/img4.jpg"
+                    src="/pets/pet-showcase-4.png"
                     alt="Profissional freelancer"
                     style={{
                       width: '100%',
@@ -735,7 +736,7 @@ const FreelancerSignUpPage: React.FC = () => {
                   }}
                 >
                   <img
-                    src="/img5.jpg"
+                    src="/pets/pet-showcase-5.png"
                     alt="Cuidado animal"
                     style={{
                       width: '100%',

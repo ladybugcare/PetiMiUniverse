@@ -320,16 +320,42 @@ export const getVetById = async (req: Request, res: Response) => {
   }
 }
 
-// ✏️ Atualizar veterinário
+const canVetUserMutateProfile = (req: Request, vetId: string): boolean => {
+  const uid = req.user?.id
+  if (!uid) return false
+  if (uid === vetId) return true
+  const role = String(req.user?.role || '').toLowerCase()
+  return role === 'admin'
+}
+
+// ✏️ Atualizar veterinário (perfil próprio ou admin)
 export const updateVet = async (req: Request, res: Response) => {
   const { id } = req.params
-  const updates = req.body
+  const body = req.body || {}
 
   try {
-    delete updates.id
-    delete updates.created_at
+    if (!canVetUserMutateProfile(req, id)) {
+      return res.status(403).json({ error: 'Acesso negado' })
+    }
 
-    const { data, error } = await supabase.from('vets').update(updates).eq('id', id).select()
+    const allowedKeys = ['name', 'phone', 'address', 'bio', 'specialties', 'certificates', 'experience'] as const
+    const updates: Record<string, unknown> = {}
+    for (const key of allowedKeys) {
+      if (key in body) {
+        updates[key] = body[key]
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'Nenhum campo permitido para atualização foi enviado.' })
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('vets')
+      .update(updates as never)
+      .eq('id', id)
+      .select()
+
     if (error) {
       return res.status(400).json({ error: error.message })
     }
@@ -344,15 +370,19 @@ export const updateVet = async (req: Request, res: Response) => {
   }
 }
 
-// 🖼️ Atualizar foto do veterinário
+// 🖼️ Atualizar foto do veterinário (perfil próprio ou admin)
 export const updateVetPhoto = async (req: Request, res: Response) => {
   const { id } = req.params
   const { photo_url } = req.body
 
   try {
+    if (!canVetUserMutateProfile(req, id)) {
+      return res.status(403).json({ error: 'Acesso negado' })
+    }
+
     if (!photo_url) return res.status(400).json({ error: 'photo_url is required' })
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('vets')
       .update({ photo_url })
       .eq('id', id)

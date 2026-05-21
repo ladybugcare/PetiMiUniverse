@@ -8,6 +8,7 @@ import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
+import { MapPin, MessageCircle, Search, ShoppingBag } from 'lucide-react';
 
 const MarketplaceItemDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -151,9 +152,22 @@ const MarketplaceItemDetailPage: React.FC = () => {
                   style={{
                     ...styles.badge,
                     backgroundColor: item.listing_type === 'sale' ? '#10b981' : '#3b82f6',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
                   }}
                 >
-                  {item.listing_type === 'sale' ? '🛍️ Venda' : '🔍 Procura'}
+                  {item.listing_type === 'sale' ? (
+                    <>
+                      <ShoppingBag size={14} color="#fff" aria-hidden />
+                      Venda
+                    </>
+                  ) : (
+                    <>
+                      <Search size={14} color="#fff" aria-hidden />
+                      Procura
+                    </>
+                  )}
                 </span>
                 {item.listing_type === 'sale' && (
                   <span style={{...styles.badge, backgroundColor: '#f59e0b'}}>
@@ -204,7 +218,10 @@ const MarketplaceItemDetailPage: React.FC = () => {
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>Localização:</span>
                     <span style={styles.detailValue}>
-                      📍 {[item.city, item.state].filter(Boolean).join(', ')}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <MapPin size={16} color="#6b7280" aria-hidden />
+                        {[item.city, item.state].filter(Boolean).join(', ')}
+                      </span>
                     </span>
                   </div>
                 )}
@@ -222,9 +239,10 @@ const MarketplaceItemDetailPage: React.FC = () => {
               {!isOwner && item.status === 'active' && (
                 <button
                   onClick={() => setShowMessageModal(true)}
-                  style={styles.contactButton}
+                  style={{ ...styles.contactButton, display: 'inline-flex', alignItems: 'center', gap: '8px' }}
                 >
-                  💬 Contatar Vendedor
+                  <MessageCircle size={18} aria-hidden />
+                  Contatar Vendedor
                 </button>
               )}
               

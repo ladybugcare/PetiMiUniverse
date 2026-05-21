@@ -14,7 +14,16 @@ export interface Vet {
   certificates?: string[];
   experience?: string;
   photo_url?: string;
+  /** Conta ativa/inativa (operacional). */
   status?: 'active' | 'inactive' | 'pending' | string;
+  /** Fluxo de cadastro / moderação admin (fonte de verdade para “pendente” vs “aprovado”). */
+  approval_status?:
+    | 'pending'
+    | 'pending_approval'
+    | 'approved'
+    | 'rejected'
+    | 'pending_review'
+    | string;
   created_at?: string;
   updated_at?: string;
 }

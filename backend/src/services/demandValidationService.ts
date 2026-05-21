@@ -1,4 +1,4 @@
-import { supabase } from '../config/supabase.js';
+import { supabaseAdmin } from '../config/supabase.js';
 import { checkClinicAccess } from '../middleware/authMiddleware.js';
 
 /**
@@ -15,11 +15,12 @@ export interface Position {
  */
 export class DemandValidationService {
   /**
-   * Valida se a clínica existe, está ativa e o usuário pertence a ela
+   * Valida se a clínica existe, o utilizador pertence a ela e a clínica pode operar
+   * (`active`, ou `pending_approval` com pelo menos uma unidade aprovada).
    */
   static async validateClinic(clinicId: string, userId: string): Promise<void> {
     // Verificar se clínica existe
-    const { data: clinic, error } = await supabase
+    const { data: clinic, error } = await supabaseAdmin
       .from('clinics')
       .select('id, status')
       .eq('id', clinicId)
@@ -29,8 +30,18 @@ export class DemandValidationService {
       throw new Error('Clínica não encontrada');
     }
 
-    // Verificar se clínica está ativa
-    if (clinic.status !== 'active') {
+    let clinicOperational = clinic.status === 'active';
+    if (!clinicOperational && clinic.status === 'pending_approval') {
+      const { data: approvedUnits, error: unitsErr } = await supabaseAdmin
+        .from('units')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .in('status', ['approved', 'active'])
+        .limit(1);
+      clinicOperational = !unitsErr && (approvedUnits?.length ?? 0) > 0;
+    }
+
+    if (!clinicOperational) {
       throw new Error('Clínica não está ativa');
     }
 
@@ -45,18 +56,18 @@ export class DemandValidationService {
    * Valida a unidade e retorna o unit_id validado
    * Se unit_id não fornecido e clínica tem apenas uma unidade aprovada, retorna essa unidade
    * Se clínica tem múltiplas unidades e unit_id não fornecido, lança erro
-   * IMPORTANTE: Só permite criar demanda em unidades aprovadas (status = 'approved')
+   * IMPORTANTE: Só permite criar demanda em unidades aprovadas (`approved` ou `active` em BD legado)
    */
   static async validateUnit(
     unitId: string | undefined,
     clinicId: string
   ): Promise<string> {
     // Buscar unidades aprovadas da clínica
-    const { data: units, error: unitsError } = await supabase
+    const { data: units, error: unitsError } = await supabaseAdmin
       .from('units')
       .select('id')
       .eq('clinic_id', clinicId)
-      .eq('status', 'approved');
+      .in('status', ['approved', 'active']);
 
     if (unitsError) {
       throw new Error('Erro ao buscar unidades da clínica');
@@ -78,7 +89,7 @@ export class DemandValidationService {
     }
 
     // Se unit_id fornecido: verificar se existe, pertence à clínica e está aprovada
-    const { data: unit, error: unitError } = await supabase
+    const { data: unit, error: unitError } = await supabaseAdmin
       .from('units')
       .select('id, clinic_id, status, name')
       .eq('id', unitId)
@@ -92,7 +103,7 @@ export class DemandValidationService {
       throw new Error('Unidade não pertence a esta clínica');
     }
 
-    if (unit.status !== 'approved') {
+    if (!['approved', 'active'].includes(unit.status)) {
       if (unit.status === 'pending_review') {
         throw new Error(`Unidade "${unit.name}" está aguardando aprovação do administrador`);
       }
@@ -145,7 +156,7 @@ export class DemandValidationService {
     }
 
     // Buscar todas as especialidades fornecidas
-    const { data: foundSpecialties, error } = await supabase
+    const { data: foundSpecialties, error } = await supabaseAdmin
       .from('specialties')
       .select('name, role, active')
       .in('name', specialties);

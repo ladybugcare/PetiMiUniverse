@@ -140,8 +140,8 @@ const ForgotPasswordPage: React.FC = () => {
                   }}
                 >
                   <img 
-                    src="/img1.png" 
-                    alt="Veterinário cuidando de pet" 
+                    src="/pets/pet-showcase-1.png" 
+                    alt="Pet" 
                     style={{width: '100%', height: '100%', objectFit: 'cover'}}
                   />
                 </div>
@@ -160,7 +160,7 @@ const ForgotPasswordPage: React.FC = () => {
                   }}
                 >
                   <img 
-                    src="/img2.jpg" 
+                    src="/pets/pet-showcase-2.png" 
                     alt="Pet feliz" 
                     style={{width: '100%', height: '100%', objectFit: 'cover'}}
                   />
@@ -180,8 +180,8 @@ const ForgotPasswordPage: React.FC = () => {
                   }}
                 >
                   <img 
-                    src="/im3.jpg" 
-                    alt="Clínica veterinária" 
+                    src="/pets/pet-showcase-3.png" 
+                    alt="Pet" 
                     style={{width: '100%', height: '100%', objectFit: 'cover'}}
                   />
                 </div>
@@ -200,8 +200,8 @@ const ForgotPasswordPage: React.FC = () => {
                   }}
                 >
                   <img 
-                    src="/img4.jpg" 
-                    alt="Profissional veterinário" 
+                    src="/pets/pet-showcase-4.png" 
+                    alt="Pet" 
                     style={{width: '100%', height: '100%', objectFit: 'cover'}}
                   />
                 </div>
@@ -220,7 +220,7 @@ const ForgotPasswordPage: React.FC = () => {
                   }}
                 >
                   <img 
-                    src="/img5.jpg" 
+                    src="/pets/pet-showcase-5.png" 
                     alt="Cuidado animal" 
                     style={{width: '100%', height: '100%', objectFit: 'cover'}}
                   />

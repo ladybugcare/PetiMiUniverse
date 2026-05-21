@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { CheckCircle, XCircle, PartyPopper, Sparkles, LogIn, AlertCircle, Mail } from 'lucide-react';
-import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
+import { getUserRole, getDashboardPathForRole, getStoredClinicId } from '../utils/authHelpers';
 import { colors } from '../styles/colors';
 
 const EmailConfirmedPage: React.FC = () => {
@@ -97,8 +97,13 @@ const EmailConfirmedPage: React.FC = () => {
         }
         
         if (userRole === 'CADMIN' || userRole === 'CMANAGER') {
-          // Para clínicas, verificar se precisa criar primeira unidade
-          // Por enquanto, redirecionar para dashboard (a lógica de primeira unidade será verificada lá)
+          const rawMetaRole = session.user?.user_metadata?.role;
+          const isClinicOwnerSignup =
+            String(rawMetaRole || '').toLowerCase() === 'clinic';
+          if (isClinicOwnerSignup && !getStoredClinicId()) {
+            navigate('/units/create-first', { replace: true });
+            return;
+          }
           navigate('/clinic-dashboard', { replace: true });
           return;
         }
@@ -504,11 +509,11 @@ const EmailConfirmedPage: React.FC = () => {
         
         {status === 'success' && (
           <>
-            {/* Logo PetiVet */}
+            {/* Logo PetMi Vet */}
             <div style={styles.logoContainer}>
               <img 
                 src="/just_logo.png" 
-                alt="PetiMi" 
+                alt="PetMi Vet" 
                 style={styles.logo}
               />
             </div>
@@ -531,7 +536,7 @@ const EmailConfirmedPage: React.FC = () => {
 
             <p style={styles.successMessage}>
               Seu e-mail foi confirmado com sucesso! 🎉<br />
-              Faça login para acessar o ecossistema PetiVet e começar a gerenciar sua clínica ou perfil veterinário.
+              Faça login para acessar o ecossistema PetMi Vet e começar a gerenciar sua clínica ou perfil veterinário.
             </p>
 
             {/* Botão Fazer login estilizado */}
@@ -557,11 +562,11 @@ const EmailConfirmedPage: React.FC = () => {
         
         {status === 'error' && (
           <>
-            {/* Logo PetiVet */}
+            {/* Logo PetMi Vet */}
             <div style={styles.logoContainer}>
               <img 
                 src="/just_logo.png" 
-                alt="PetiMi" 
+                alt="PetMi Vet" 
                 style={styles.logo}
               />
             </div>

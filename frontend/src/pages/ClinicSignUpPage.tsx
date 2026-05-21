@@ -455,11 +455,12 @@ if (step === 2) {
 
           {/* Coluna Direita - Imagens */}
           <div className="signup-images-section">
-            <h2 className="text-display">
-              Conectando quem cuida, quem ama e quem precisa.
+            <h2 className="text-display hero-headline">
+              Conectando quem cuida, quem ama e{' '}
+              <span className="hero-headline__accent">quem precisa.</span>
             </h2>
             <p>
-              Junte-se ao PetiVet e faça parte da maior rede de clínicas e
+              Junte-se ao PetMi Vet e faça parte da maior rede de clínicas e
               profissionais veterinários do Brasil. Publique oportunidades e
               encontre os melhores veterinários para sua equipe.
             </p>
@@ -485,8 +486,8 @@ if (step === 2) {
                   }}
                 >
                   <img
-                    src="/img1.png"
-                    alt="Veterinário cuidando de pet"
+                    src="/pets/pet-showcase-1.png"
+                    alt="Pet"
                     style={{
                       width: '100%',
                       height: '100%',
@@ -507,7 +508,7 @@ if (step === 2) {
                   }}
                 >
                   <img
-                    src="/img2.jpg"
+                    src="/pets/pet-showcase-2.png"
                     alt="Pet feliz"
                     style={{
                       width: '100%',
@@ -529,8 +530,8 @@ if (step === 2) {
                   }}
                 >
                   <img
-                    src="/im3.jpg"
-                    alt="Clínica veterinária"
+                    src="/pets/pet-showcase-3.png"
+                    alt="Pet"
                     style={{
                       width: '100%',
                       height: '100%',
@@ -551,8 +552,8 @@ if (step === 2) {
                   }}
                 >
                   <img
-                    src="/img4.jpg"
-                    alt="Profissional veterinário"
+                    src="/pets/pet-showcase-4.png"
+                    alt="Pet"
                     style={{
                       width: '100%',
                       height: '100%',
@@ -573,7 +574,7 @@ if (step === 2) {
                   }}
                 >
                   <img
-                    src="/img5.jpg"
+                    src="/pets/pet-showcase-5.png"
                     alt="Cuidado animal"
                     style={{
                       width: '100%',

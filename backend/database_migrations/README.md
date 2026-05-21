@@ -1,6 +1,6 @@
 # 📋 Database Migrations
 
-Este diretório contém todas as migrations do banco de dados do sistema PetiVet.
+Este diretório contém todas as migrations do banco de dados do sistema PetMi Vet.
 
 ## 🚨 Resolução Rápida de Erros
 
@@ -55,6 +55,26 @@ Se você está com erros ao criar demandas ou candidatar-se a vagas:
 - `add_position_specialties_junction_table.sql` - Tabela de junção para especialidades
 - `fix_position_applications_types.sql` - Corrige tipos (bigint → uuid)
 
+### Especialidades (lista vazia no onboarding / demandas)
+
+- **`seed_specialties_petimi.sql`** — Garante a tabela `specialties`, colunas `role` / `active`, constraints compatíveis com o backend e **insere ou atualiza** ~50 especialidades (vet + freelancer).  
+  **Quando usar:** Supabase novo ou tabela vazia / sem `role` (a API `/specialties` filtra por `role`; sem dados ou com `role` NULL a lista aparece vazia).  
+  **Como:** Supabase Dashboard → SQL Editor → colar o ficheiro → Run.
+
+- `add_category_and_specialties.sql` — Versão mais antiga (category só `vet|freelancer|clinic|other`); o seed acima alinha com `update_specialties_staging.sql`.
+
+### Onboarding de veterinário (erro `onboarding_completed does not exist`)
+
+- **`fix_vet_onboarding_schema_supabase.sql`** — Adiciona em `public.vets` as colunas `onboarding_completed`, `crmv_file_url`, `service_regions`, `experience_year` e o bloco de **aprovação** (`approval_status`, etc.), como nas migrations `add_vet_onboarding_fields.sql` + `add_vet_approval_system.sql`.  
+  **Sintoma:** ao finalizar onboarding, mensagem *column vets.onboarding_completed does not exist*.  
+  **Como:** SQL Editor → executar este ficheiro (ou as duas migrations originais **nessa ordem**).
+
+### Cadastro público de clínica (`POST /clinics`)
+
+- **`fix_clinic_public_signup_clinic_users.sql`** — Torna `clinic_users.clinic_id` **nullable** e atualiza o **CHECK** de `status` para incluir `pending_clinic` (fluxo atual do signup).  
+  **Sintoma:** *null value in column "clinic_id" violates not-null constraint* ou falha ao criar vínculo após criar o user no Auth.  
+  **Como:** SQL Editor → executar antes de testar `/clinic-signup` ou `POST /clinics`.
+
 ### Migrações de Dados
 
 - `migrate_existing_clinics_to_units.sql` - Migra clínicas existentes para sistema de unidades
@@ -94,6 +114,22 @@ Execute na ordem cronológica (da mais antiga para a mais recente):
 8. `create_demand_positions_system.sql` ⭐ **IMPORTANTE**
 9. `add_position_specialties_junction_table.sql`
 10. `migrate_existing_clinics_to_units.sql`
+
+---
+
+## Novo projeto Supabase (vazio)
+
+Para **criar schema do zero** num projeto novo (sem importar dump de cluster inteiro):
+
+- **Um só ficheiro:** `BOOTSTRAP_NEW_SUPABASE_ALL_IN_ONE.sql` — cole no SQL Editor e execute (se der timeout, use a opção em passos abaixo). Para regenerar após alterar migrações: `./scripts/generate-bootstrap-all-in-one.sh`.
+
+1. No repositório, execute: `./scripts/bootstrap-new-supabase.sh` — lista a **ordem** dos ficheiros SQL.
+2. No **Supabase Dashboard → SQL Editor**, cole e execute **cada** ficheiro **por ordem** (um de cada vez).
+3. Depois, opcional: `00_DIAGNOSE_DATABASE.sql` e, só se fizer falta, `01_FIX_ALL_ERRORS.sql`.
+
+Importante: **não** execute `create_auth_triggers.sql` depois de `petivet_prod_structure.sql` + migrações em `supabase/migrations/`, pois sobrescreve `handle_new_user`. Use `bootstrap_attach_auth_triggers.sql` (só liga os triggers em `auth.users`).
+
+Dump antigo (`.backup`): não colar o ficheiro inteiro no SQL Editor. Para extrair só `public`: `python3 scripts/extract_public_from_supabase_cluster_dump.py …` (ver comentário no script).
 
 ---
 
@@ -171,5 +207,5 @@ Após todas as migrations executadas:
 ---
 
 **Última atualização:** 2025-10-29
-**Versão do sistema:** PetiVet v2.0
+**Versão do sistema:** PetMi Vet v2.0
 

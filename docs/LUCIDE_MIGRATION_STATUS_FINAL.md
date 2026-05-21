@@ -6,7 +6,7 @@
 
 ## 📊 Resumo Executivo
 
-A migração de ícones do sistema PetiVet para a biblioteca **Lucide React** foi concluída com sucesso!
+A migração de ícones do sistema PetMi Vet para a biblioteca **Lucide React** foi concluída com sucesso!
 
 ### Estatísticas
 - **Total de Arquivos Migrados**: 40+ arquivos

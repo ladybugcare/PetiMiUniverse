@@ -1,11 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { adminApi } from '../services/adminApi';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { useAlert } from '../hooks/useAlert';
-import { CheckCircle, XCircle, Briefcase } from 'lucide-react';
+import {
+  AlertTriangle,
+  AlignLeft,
+  Briefcase,
+  CheckCircle,
+  CheckCircle2,
+  ClipboardList,
+  Home,
+  Hourglass,
+  Info,
+  MapPin,
+  XCircle,
+} from 'lucide-react';
 import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
@@ -31,7 +42,6 @@ interface PendingFreelancer {
 }
 
 const AdminPendingFreelancersPage: React.FC = () => {
-  const navigate = useNavigate();
   const { user } = useAuth();
   const { showSuccess, showError } = useAlert();
   
@@ -105,10 +115,10 @@ const AdminPendingFreelancersPage: React.FC = () => {
     try {
       if (modalAction === 'approve') {
         await adminApi.approveFreelancer(selectedFreelancer.id);
-        showSuccess('✅ Freelancer aprovado com sucesso!');
+        showSuccess('Freelancer aprovado com sucesso!');
       } else {
         await adminApi.rejectFreelancer(selectedFreelancer.id, rejectionReason);
-        showSuccess('❌ Freelancer rejeitado. Email com motivo foi enviado.');
+        showSuccess('Freelancer rejeitado. Email com motivo foi enviado.');
       }
 
       handleCloseModal();
@@ -145,7 +155,16 @@ const AdminPendingFreelancersPage: React.FC = () => {
       <DashboardLayout pageName="Aprovações de Freelancers" menuItems={menuItems}>
         <div style={styles.container}>
           <div style={styles.header}>
-            <h1 style={styles.title}>⏳ Freelancers Pendentes de Aprovação</h1>
+            <h1 style={styles.title}>
+              <Hourglass
+                size={28}
+                color={colors.brand.primary[600]}
+                strokeWidth={2}
+                aria-hidden
+                style={{ flexShrink: 0 }}
+              />
+              <span>Freelancers pendentes de aprovação</span>
+            </h1>
             <p style={styles.subtitle}>
               Analise os cadastros de freelancers que completaram o onboarding e aprove ou reprove.
             </p>
@@ -158,7 +177,9 @@ const AdminPendingFreelancersPage: React.FC = () => {
             </div>
           ) : freelancers.length === 0 ? (
             <div style={styles.emptyState}>
-              <span style={styles.emptyIcon}>✅</span>
+              <div style={styles.emptyIconWrap} aria-hidden>
+                <CheckCircle2 size={56} color={colors.success[500]} strokeWidth={1.75} />
+              </div>
               <h3 style={styles.emptyTitle}>Nenhum freelancer pendente</h3>
               <p style={styles.emptyText}>Todos os freelancers foram analisados!</p>
             </div>
@@ -189,7 +210,10 @@ const AdminPendingFreelancersPage: React.FC = () => {
                   <div style={styles.cardBody}>
                     {freelancer.specialties && freelancer.specialties.length > 0 && (
                       <div style={styles.section}>
-                        <h4 style={styles.sectionTitle}>📋 Especialidades</h4>
+                        <h4 style={styles.sectionTitle}>
+                          <ClipboardList size={16} color="#374151" aria-hidden />
+                          <span>Especialidades</span>
+                        </h4>
                         <div style={styles.badgesContainer}>
                           {freelancer.specialties.map((specId, idx) => {
                             const specName = specialtiesMap.get(specId) || specId;
@@ -205,7 +229,10 @@ const AdminPendingFreelancersPage: React.FC = () => {
 
                     {freelancer.service_regions && freelancer.service_regions.length > 0 && (
                       <div style={styles.section}>
-                        <h4 style={styles.sectionTitle}>📍 Regiões de Atendimento</h4>
+                        <h4 style={styles.sectionTitle}>
+                          <MapPin size={16} color="#374151" aria-hidden />
+                          <span>Regiões de atendimento</span>
+                        </h4>
                         <div style={styles.badgesContainer}>
                           {freelancer.service_regions.slice(0, 3).map((region, idx) => (
                             <span key={idx} style={styles.badge}>
@@ -221,7 +248,10 @@ const AdminPendingFreelancersPage: React.FC = () => {
 
                     {freelancer.experience && (
                       <div style={styles.section}>
-                        <h4 style={styles.sectionTitle}>💼 Experiência</h4>
+                        <h4 style={styles.sectionTitle}>
+                          <Briefcase size={16} color="#374151" aria-hidden />
+                          <span>Experiência</span>
+                        </h4>
                         <p style={styles.text}>{freelancer.experience}</p>
                         {freelancer.experience_year && (
                           <p style={styles.textSmall}>Desde {freelancer.experience_year}</p>
@@ -231,14 +261,20 @@ const AdminPendingFreelancersPage: React.FC = () => {
 
                     {freelancer.bio && (
                       <div style={styles.section}>
-                        <h4 style={styles.sectionTitle}>📝 Descrição</h4>
+                        <h4 style={styles.sectionTitle}>
+                          <AlignLeft size={16} color="#374151" aria-hidden />
+                          <span>Descrição</span>
+                        </h4>
                         <p style={styles.text}>{freelancer.bio}</p>
                       </div>
                     )}
 
                     {freelancer.address && (
                       <div style={styles.section}>
-                        <h4 style={styles.sectionTitle}>📍 Endereço</h4>
+                        <h4 style={styles.sectionTitle}>
+                          <Home size={16} color="#374151" aria-hidden />
+                          <span>Endereço</span>
+                        </h4>
                         <p style={styles.text}>{freelancer.address}</p>
                       </div>
                     )}
@@ -254,16 +290,20 @@ const AdminPendingFreelancersPage: React.FC = () => {
 
                   <div style={styles.cardFooter}>
                     <button
+                      type="button"
                       onClick={() => handleOpenModal(freelancer, 'reject')}
                       style={styles.rejectButton}
                     >
-                      ❌ Reprovar
+                      <XCircle size={18} color="#ffffff" aria-hidden />
+                      Reprovar
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleOpenModal(freelancer, 'approve')}
                       style={styles.approveButton}
                     >
-                      ✅ Aprovar
+                      <CheckCircle size={18} color="#ffffff" aria-hidden />
+                      Aprovar
                     </button>
                   </div>
                 </div>
@@ -278,7 +318,17 @@ const AdminPendingFreelancersPage: React.FC = () => {
         <div style={styles.modalOverlay} onClick={handleCloseModal}>
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <h2 style={styles.modalTitle}>
-              {modalAction === 'approve' ? '✅ Aprovar Freelancer' : '❌ Reprovar Freelancer'}
+              {modalAction === 'approve' ? (
+                <>
+                  <CheckCircle size={22} color="#059669" aria-hidden style={{ flexShrink: 0 }} />
+                  <span>Aprovar freelancer</span>
+                </>
+              ) : (
+                <>
+                  <XCircle size={22} color="#dc2626" aria-hidden style={{ flexShrink: 0 }} />
+                  <span>Reprovar freelancer</span>
+                </>
+              )}
             </h2>
 
             <div style={styles.modalBody}>
@@ -294,7 +344,7 @@ const AdminPendingFreelancersPage: React.FC = () => {
 
               {modalAction === 'approve' ? (
                 <div style={styles.infoBox}>
-                  <span style={styles.infoIcon}>ℹ️</span>
+                  <Info size={20} color="#1d4ed8" aria-hidden style={styles.boxLeadIcon} />
                   <div>
                     <strong>O que vai acontecer:</strong>
                     <ul style={styles.infoList}>
@@ -308,7 +358,7 @@ const AdminPendingFreelancersPage: React.FC = () => {
               ) : (
                 <>
                   <div style={styles.warningBox}>
-                    <span style={styles.warningIcon}>⚠️</span>
+                    <AlertTriangle size={20} color="#b45309" aria-hidden style={styles.boxLeadIcon} />
                     <div>
                       <strong>O que vai acontecer:</strong>
                       <ul style={styles.infoList}>
@@ -379,6 +429,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '700',
     color: '#1f2937',
     marginBottom: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap',
   },
   subtitle: {
     fontSize: '14px',
@@ -408,9 +462,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: 'center',
     padding: '60px 20px',
   },
-  emptyIcon: {
-    fontSize: '64px',
-    display: 'block',
+  emptyIconWrap: {
+    display: 'flex',
+    justifyContent: 'center',
     marginBottom: '16px',
   },
   emptyTitle: {
@@ -497,6 +551,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     color: '#374151',
     marginBottom: '8px',
+    marginTop: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
   },
   badgesContainer: {
     display: 'flex',
@@ -559,6 +617,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'background-color 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
   },
   approveButton: {
     flex: 1,
@@ -571,6 +633,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'background-color 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
   },
   modalOverlay: {
     position: 'fixed',
@@ -598,6 +664,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '700',
     color: '#1f2937',
     marginBottom: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginTop: 0,
   },
   modalBody: {
     marginBottom: '24px',
@@ -616,9 +686,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: '8px',
     marginTop: '16px',
   },
-  infoIcon: {
-    fontSize: '20px',
+  boxLeadIcon: {
     flexShrink: 0,
+    marginTop: '2px',
   },
   infoList: {
     margin: '8px 0 0 0',
@@ -634,10 +704,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: '#fef3c7',
     borderRadius: '8px',
     marginTop: '16px',
-  },
-  warningIcon: {
-    fontSize: '20px',
-    flexShrink: 0,
   },
   formGroup: {
     marginTop: '20px',

@@ -1,4 +1,13 @@
 import React from 'react';
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle,
+  Clock,
+  Info,
+  User,
+  XCircle,
+} from 'lucide-react';
 import { colors } from '../styles/colors';
 
 interface PositionCardProps {
@@ -37,43 +46,50 @@ const PositionCard: React.FC<PositionCardProps> = ({
     });
   };
 
+  const badgeRow = (icon: React.ReactNode, text: string, style: React.CSSProperties) => (
+    <span style={{ ...styles.badge, ...style, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+      {icon}
+      {text}
+    </span>
+  );
+
   const getStatusBadge = () => {
     switch (position.application_status) {
       case 'pending':
-        return (
-          <span style={{ ...styles.badge, ...styles.badgePending }}>
-            ⏳ Candidatura Pendente
-          </span>
+        return badgeRow(
+          <Clock size={14} aria-hidden />,
+          'Candidatura pendente',
+          styles.badgePending
         );
       case 'accepted':
-        return (
-          <span style={{ ...styles.badge, ...styles.badgeAccepted }}>
-            ✅ Aceito
-          </span>
+        return badgeRow(
+          <CheckCircle size={14} aria-hidden />,
+          'Aceito',
+          styles.badgeAccepted
         );
       case 'rejected':
-        return (
-          <span style={{ ...styles.badge, ...styles.badgeRejected }}>
-            ❌ Rejeitado
-          </span>
+        return badgeRow(
+          <XCircle size={14} aria-hidden />,
+          'Rejeitado',
+          styles.badgeRejected
         );
       case 'inactive_accepted_other_position':
-        return (
-          <span style={{ ...styles.badge, ...styles.badgeInactive }}>
-            ℹ️ Aceito em outra posição desta demanda
-          </span>
+        return badgeRow(
+          <Info size={14} aria-hidden />,
+          'Aceito em outra posição desta demanda',
+          styles.badgeInactive
         );
       case 'inactive_time_conflict':
-        return (
-          <span style={{ ...styles.badge, ...styles.badgeInactive }}>
-            ⚠️ Conflito de horário
-          </span>
+        return badgeRow(
+          <AlertTriangle size={14} aria-hidden />,
+          'Conflito de horário',
+          styles.badgeInactive
         );
       case 'cancelled_by_vet':
-        return (
-          <span style={{ ...styles.badge, ...styles.badgeCancelled }}>
-            🚫 Cancelada
-          </span>
+        return badgeRow(
+          <Ban size={14} aria-hidden />,
+          'Cancelada',
+          styles.badgeCancelled
         );
       default:
         return null;
@@ -95,7 +111,7 @@ const PositionCard: React.FC<PositionCardProps> = ({
       </div>
 
       <div style={styles.specialty}>
-        <span style={styles.icon}>👨‍⚕️</span>
+        <User size={18} color={colors.textSecondary} aria-hidden style={{ flexShrink: 0 }} />
         <strong>Posição:</strong> {position.specialty}
       </div>
 

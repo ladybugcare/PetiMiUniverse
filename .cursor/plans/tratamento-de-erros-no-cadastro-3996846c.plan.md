@@ -68,7 +68,7 @@ Modal reutilizável que exibe diferentes mensagens e ações baseado no tipo de 
 
 **Tipos de erro e mensagens:**
 
-- `email_exists`: "Não foi possível criar a conta com esse e-mail. Se você já usa o PetiVet, tente fazer login." + botão "Entrar agora"
+- `email_exists`: "Não foi possível criar a conta com esse e-mail. Se você já usa o PetMi Vet, tente fazer login." + botão "Entrar agora"
 - `cnpj_exists` / `cpf_exists`: "Não foi possível criar a conta com esses dados. Entre em contato com o suporte." + botão "Falar com o suporte"
 - `network_error`: "Ops! Tivemos um probleminha na conexão. Pode tentar novamente em alguns instantes?" + botão "Tentar novamente"
 - `unexpected_error`: "Algo deu errado aqui. Nossa equipe já foi avisada e vai verificar. Tente novamente mais tarde." + botão "Entendi"

@@ -27,7 +27,7 @@ const DashboardBlockedOverlay: React.FC = () => {
         <h2 style={styles.title}>Finalize seu cadastro</h2>
         
         <p style={styles.description}>
-          Para acessar o dashboard e todas as funcionalidades da PetiVet, 
+          Para acessar o dashboard e todas as funcionalidades da PetMi Vet, 
           você precisa cadastrar a primeira unidade da sua clínica.
         </p>
 

@@ -17,7 +17,7 @@ const UnitsManagementPage: React.FC = () => {
   const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
   const { canCreateUnit, canEditUnit, canDeleteUnit } = usePermissions();
-  const { units, loadUnits } = useUnit();
+  const { units, loadUnits, loading: unitsLoading } = useUnit();
 
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -37,16 +37,17 @@ const UnitsManagementPage: React.FC = () => {
   const userRole = user ? getUserRole(user) : 'CADMIN';
   const { menuItems } = useSidebarMenu(userRole);
 
-  // Redirect to CreateFirstUnitPage if no units exist
+  // Redirect to CreateFirstUnitPage if no units exist (após carregar do contexto)
   useEffect(() => {
-    if (!loading && units.length === 0) {
+    if (unitsLoading) return;
+    if (units.length === 0) {
       navigate('/units/create-first');
     }
-  }, [units, loading, navigate]);
+  }, [units, unitsLoading, navigate]);
 
   const handleOpenModal = (unit?: Unit) => {
     // If trying to create a new unit but no units exist, redirect to first unit flow
-    if (!unit && units.length === 0) {
+    if (!unit && !unitsLoading && units.length === 0) {
       navigate('/units/create-first');
       return;
     }

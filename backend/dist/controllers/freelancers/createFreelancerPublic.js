@@ -108,7 +108,8 @@ const createFreelancerPublic = async (req, res) => {
             email,
             created_at: new Date().toISOString(),
         };
-        const { data: freelancer, error: freelancerError } = await supabase_1.supabase
+        // Service role: cadastro público não tem JWT; insert com anon key falha no RLS
+        const { data: freelancer, error: freelancerError } = await supabase_1.supabaseAdmin
             .from('freelancers')
             .insert([freelancerData])
             .select()

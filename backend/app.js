@@ -21,7 +21,7 @@ app.use('/admin', adminRoutes_1.default);
 app.use('/vets', vets_1.default);
 // 🩵 Healthcheck
 app.get('/', (_req, res) => {
-    res.send('PetiVet API is running 🐾');
+    res.send('PetMi Vet API is running 🐾');
 });
 // ❌ Fallback para rotas inexistentes
 app.use((_req, res) => {

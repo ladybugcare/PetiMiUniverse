@@ -25,7 +25,7 @@ export const sendInvitationEmail = async (
   console.log('📧 INVITATION EMAIL');
   console.log('========================================');
   console.log(`To: ${email}`);
-  console.log(`Subject: Convite para se juntar à equipe PetiVet`);
+  console.log(`Subject: Convite para se juntar à equipe PetMi Vet`);
   console.log(`\nVocê foi convidado para se juntar como ${role}`);
   console.log(`Link de convite: ${invitationLink}`);
   console.log(`Clinic ID: ${clinicId}`);
@@ -64,9 +64,9 @@ export const sendWelcomeEmail = async (
   console.log('📧 WELCOME EMAIL');
   console.log('========================================');
   console.log(`To: ${email}`);
-  console.log(`Subject: Bem-vindo(a) à PetiVet!`);
+  console.log(`Subject: Bem-vindo(a) à PetMi Vet!`);
   console.log(`\nOlá ${name},`);
-  console.log(`\nSua conta de ${userTypeDisplay} foi criada com sucesso na plataforma PetiVet!`);
+  console.log(`\nSua conta de ${userTypeDisplay} foi criada com sucesso na plataforma PetMi Vet!`);
   console.log(`\nCredenciais de acesso:`);
   console.log(`E-mail: ${email}`);
   if (password) {
@@ -84,6 +84,6 @@ export const sendWelcomeEmail = async (
   if (generated && password) {
     console.log(`2. Altere sua senha na primeira vez que acessar`);
   }
-  console.log(`\nBem-vindo(a) à nossa comunidade PetiVet 💜`);
+  console.log(`\nBem-vindo(a) à nossa comunidade PetMi Vet 💜`);
   console.log('========================================\n');
 };

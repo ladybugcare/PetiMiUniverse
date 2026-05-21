@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Stethoscope, Heart, Building2, Star } from 'lucide-react';
 import IconWrapper from './IconWrapper';
 import { colors } from '../styles/colors';
+import CreateDemandHero from './CreateDemandHero';
 
 type CategoryType = 'vet' | 'freelancer' | 'clinic' | 'other';
 
@@ -21,28 +22,28 @@ const categories: CategoryCardData[] = [
   {
     id: 'vet',
     icon: <IconWrapper icon={Stethoscope} size={32} />,
-    title: 'Criar Demanda para Veterinário',
+    title: 'Criar demanda para veterinário',
     description: 'Publique uma vaga para consultas, cirurgias ou atendimentos emergenciais e receba candidaturas.',
     color: colors.brand.primary[500],
   },
   {
     id: 'freelancer',
     icon: <IconWrapper icon={Heart} size={32} fill="currentColor" />,
-    title: 'Criar Demanda para Freelancer',
+    title: 'Criar demanda para freelancer',
     description: 'Abra uma demanda para grooming, adestramento, passeios ou cuidados especializados.',
     color: '#f59e0b',
   },
   {
     id: 'clinic',
     icon: <IconWrapper icon={Building2} size={32} />,
-    title: 'Criar Demanda para Clínica Parceira',
+    title: 'Criar demanda para clínica parceira',
     description: 'Solicite suporte de outras clínicas para serviços especializados.',
     color: '#0ea5e9',
   },
   {
     id: 'other',
     icon: <IconWrapper icon={Star} size={32} fill="currentColor" />,
-    title: 'Criar Demanda para Outros Profissionais',
+    title: 'Criar demanda para outros profissionais',
     description: 'Crie demandas para consultorias e serviços técnicos especializados.',
     color: '#22c55e',
   },
@@ -72,80 +73,80 @@ const CategorySelectionStep: React.FC<CategorySelectionStepProps> = ({ onSelect 
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>Que tipo de demanda você deseja abrir?</h1>
-        <p style={styles.subtitle}>
-          Selecione a categoria para criar uma demanda e receber candidaturas de profissionais qualificados.
-        </p>
-      </div>
-
-      <div style={{ ...styles.grid, gridTemplateColumns: getGridColumns() }}>
-        {categories.map((category) => (
-          <button
-            key={category.id}
-            onClick={() => onSelect(category.id)}
-            style={{
-              ...styles.card,
-              borderColor: category.color,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = category.color;
-              e.currentTarget.style.transform = 'translateY(-8px)';
-              e.currentTarget.style.boxShadow = `0 12px 24px ${category.color}30`;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#e5e5e5';
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
-            }}
-          >
-            <div
-              style={{
-                ...styles.iconCircle,
-                backgroundColor: `${category.color}15`,
-              }}
-            >
-              <span style={styles.icon}>{category.icon}</span>
-            </div>
-            <h3 style={styles.cardTitle}>{category.title}</h3>
-            <p style={styles.cardDescription}>{category.description}</p>
-            <div
-              style={{
-                ...styles.arrow,
-                color: category.color,
-              }}
-            >
-              →
-            </div>
-          </button>
-        ))}
+    <div style={styles.outer}>
+      <div style={styles.pageShell}>
+        <CreateDemandHero
+          category="select"
+          title="Selecione o tipo de vaga"
+          subtitle="Selecione a categoria para criar uma demanda e receber candidaturas de profissionais qualificados."
+          eyebrow="Nova demanda"
+          badge="Tipo de serviço"
+        />
+        <div style={styles.cardsPanel}>
+          <div style={{ ...styles.grid, gridTemplateColumns: getGridColumns() }}>
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => onSelect(category.id)}
+                style={{
+                  ...styles.card,
+                  borderColor: category.color,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = category.color;
+                  e.currentTarget.style.transform = 'translateY(-8px)';
+                  e.currentTarget.style.boxShadow = `0 12px 24px ${category.color}30`;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#e5e5e5';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+                }}
+              >
+                <div
+                  style={{
+                    ...styles.iconCircle,
+                    backgroundColor: `${category.color}15`,
+                  }}
+                >
+                  <span style={styles.icon}>{category.icon}</span>
+                </div>
+                <h3 style={styles.cardTitle}>{category.title}</h3>
+                <p style={styles.cardDescription}>{category.description}</p>
+                <div
+                  style={{
+                    ...styles.arrow,
+                    color: category.color,
+                  }}
+                >
+                  →
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
 const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    padding: '48px 32px',
-    maxWidth: '1200px',
-    margin: '0 auto',
+  outer: {
+    maxWidth: '1180px',
+    margin: '36px auto 24px',
+    padding: '0 16px',
   },
-  header: {
-    textAlign: 'center',
-    marginBottom: '48px',
+  pageShell: {
+    borderRadius: '16px',
+    overflow: 'hidden',
+    boxShadow: '0 10px 40px rgba(15, 23, 42, 0.1)',
+    border: '1px solid rgba(15, 23, 42, 0.06)',
   },
-  title: {
-    fontFamily: 'Poppins, sans-serif',
-    fontSize: '36px',
-    fontWeight: '700',
-    color: '#262626',
-    marginBottom: '16px',
-  },
-  subtitle: {
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '18px',
-    color: '#737373',
+  cardsPanel: {
+    backgroundColor: '#ffffff',
+    borderRadius: '0 0 16px 16px',
+    borderTop: '1px solid rgba(15, 23, 42, 0.06)',
+    padding: '32px 24px 40px',
   },
   grid: {
     display: 'grid',

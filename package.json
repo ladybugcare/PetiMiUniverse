@@ -1,7 +1,7 @@
 {
   "name": "petivet",
   "version": "1.0.0",
-  "description": "PetiVet - Plataforma de conexão entre clínicas veterinárias e veterinários",
+  "description": "PetMi Vet - Plataforma de conexão entre clínicas veterinárias e veterinários",
   "private": true,
   "workspaces": [
     "backend",
@@ -10,7 +10,11 @@
   "scripts": {
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm start",
+    "dev:web": "cd frontend && npm run web",
     "build:backend": "cd backend && npm run build",
     "build:frontend": "cd frontend && npm run build:web"
+  },
+  "dependencies": {
+    "react": "^18.2.0"
   }
 }

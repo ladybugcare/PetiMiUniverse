@@ -119,9 +119,15 @@ app.use(
       }
       
       const normalizedOrigin = origin.replace(/\/$/, '');
-      
+
+      // Dev: acesso pelo IP da rede local (ex.: http://192.168.x.x:3001 no telemóvel)
+      const isLanDevOrigin =
+        process.env.NODE_ENV === 'development' &&
+        /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:(3000|3001|3002)$/.test(normalizedOrigin);
+
       // Verifica se a origem está na lista de permitidas
-      const isAllowed = 
+      const isAllowed =
+        isLanDevOrigin ||
         normalizedOrigins.includes(normalizedOrigin) ||
         allowedOrigins.includes(origin) ||
         allowedOrigins.includes(normalizedOrigin);
@@ -204,7 +210,7 @@ app.get('/', async (req, res) => {
     
     const health = {
       status: 'healthy',
-      message: '🐾 PetiVet API is running!',
+      message: '🐾 PetMi Vet API is running!',
       timestamp: new Date().toISOString(),
       services: {
         database: supabaseError ? 'unhealthy' : 'healthy',

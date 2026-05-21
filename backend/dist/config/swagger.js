@@ -8,11 +8,11 @@ const options = {
     definition: {
         openapi: '3.0.0',
         info: {
-            title: 'PetiVet API',
+            title: 'PetMi Vet API',
             version: '1.0.0',
             description: 'API para plataforma de conexão entre clínicas veterinárias e veterinários',
             contact: {
-                name: 'PetiVet Support',
+                name: 'PetMi Vet Support',
             },
         },
         servers: [

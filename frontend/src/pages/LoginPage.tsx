@@ -42,8 +42,9 @@ const LoginPage: React.FC = () => {
 
       console.log('Login result:', result);
 
-      // Centraliza persistência de auth (user/session/onboarding/etc)
-      setAuthFromLogin(result);
+      // Centraliza persistência de auth (user/session/onboarding/etc).
+      // Deve ser awaited: setSession é async e ClinicDashboard usa getStoredClinicId() no primeiro paint.
+      await setAuthFromLogin(result);
 
       // Usar getUserRole() para detecção robusta e consistente
       const userRole = getUserRole(result.user);
@@ -123,15 +124,37 @@ const LoginPage: React.FC = () => {
 
       // Clínicas (CADMIN ou CMANAGER) têm lógica especial de onboarding
       if (userRole === 'CADMIN' || userRole === 'CMANAGER') {
+        const clinicUserPayload = result.clinicUser as { clinic_id?: string | null } | null | undefined;
+
         // Onboarding de clínica - verificar se precisa criar primeira unidade
         if (onboardingInfo?.shouldCompleteFirstUnit) {
           navigate('/units/create-first', { replace: true });
           return;
         }
 
-        // Verificar status da clínica para determinar se precisa criar unidade
+        // Sem clinic_id = ainda não existe registro em `clinics` (fluxo pós-signup público)
+        if (onboardingInfo?.needsOnboarding && !onboardingInfo?.hasUnits) {
+          navigate('/units/create-first', { replace: true });
+          return;
+        }
+        if (!clinicUserPayload?.clinic_id) {
+          if (onboardingInfo?.hasUnits) {
+            navigate('/clinic-dashboard', { replace: true });
+            return;
+          }
+          navigate('/units/create-first', { replace: true });
+          return;
+        }
+
+        // Verificar status da clínica (usar ID da clínica, NÃO o user.id do Auth)
         try {
-          const response = await fetch(`${API_BASE_URL}/clinics/${result.user.id}`, {
+          const clinicIdToFetch = clinicUserPayload.clinic_id || onboardingInfo?.clinicId;
+          if (!clinicIdToFetch) {
+            navigate('/units/create-first', { replace: true });
+            return;
+          }
+
+          const response = await fetch(`${API_BASE_URL}/clinics/${clinicIdToFetch}`, {
             headers: {
               Authorization: `Bearer ${result.session.access_token}`,
             },
@@ -139,18 +162,18 @@ const LoginPage: React.FC = () => {
 
           if (response.ok) {
             const { clinic } = await response.json();
-            if (clinic.status === 'pending_unit') {
+            if (clinic.status === 'pending_unit' && !onboardingInfo?.hasUnits) {
               navigate('/units/create-first', { replace: true });
             } else {
               navigate('/clinic-dashboard', { replace: true });
             }
+          } else if (response.status === 404) {
+            navigate('/units/create-first', { replace: true });
           } else {
-            // Se não conseguir verificar, vai para dashboard (pode ser primeira vez)
             navigate('/clinic-dashboard', { replace: true });
           }
         } catch (error) {
           console.error('Erro ao verificar status da clínica:', error);
-          // Em caso de erro, vai para dashboard
           navigate('/clinic-dashboard', { replace: true });
         }
         return;
@@ -226,7 +249,7 @@ const LoginPage: React.FC = () => {
               Bem-vindo de volta
             </h1>
             <p className="text-neutral-600 mb-8">
-              Acesse sua conta PetiVet
+              Acesse sua conta PetMi Vet
             </p>
 
             <form onSubmit={handleLogin} className="space-y-6">
@@ -309,11 +332,12 @@ const LoginPage: React.FC = () => {
 
           {/* Lado direito - imagens */}
           <div className="signup-images-section">
-            <h2 className="text-display">
-              Conectando quem cuida, quem ama e quem precisa.
+            <h2 className="text-display hero-headline">
+              Conectando quem cuida, quem ama e{' '}
+              <span className="hero-headline__accent">quem precisa.</span>
             </h2>
             <p>
-              Acesse sua conta PetiVet para gerenciar suas demandas, visualizar candidaturas e
+              Acesse sua conta PetMi Vet para gerenciar suas demandas, visualizar candidaturas e
               encontrar as melhores oportunidades na área veterinária. Conecte-se com profissionais
               qualificados e clínicas de confiança.
             </p>
@@ -330,7 +354,7 @@ const LoginPage: React.FC = () => {
                     zIndex: 3,
                   }}
                 >
-                  <img src="/img1.png" alt="Veterinário cuidando de pet" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src="/pets/pet-showcase-1.png" alt="Pet" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
                 <div
                   className="hero-image-circle"
@@ -344,7 +368,7 @@ const LoginPage: React.FC = () => {
                     animationDelay: '0.3s',
                   }}
                 >
-                  <img src="/img2.jpg" alt="Pet feliz" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src="/pets/pet-showcase-2.png" alt="Pet feliz" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
                 <div
                   className="hero-image-circle animate-float"
@@ -358,7 +382,7 @@ const LoginPage: React.FC = () => {
                     animationDelay: '0.15s',
                   }}
                 >
-                  <img src="/im3.jpg" alt="Clínica veterinária" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src="/pets/pet-showcase-3.png" alt="Pet" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
                 <div
                   className="hero-image-circle"
@@ -372,7 +396,7 @@ const LoginPage: React.FC = () => {
                     animationDelay: '0.5s',
                   }}
                 >
-                  <img src="/img4.jpg" alt="Profissional veterinário" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src="/pets/pet-showcase-4.png" alt="Pet" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
                 <div
                   className="hero-image-circle animate-float"
@@ -386,7 +410,7 @@ const LoginPage: React.FC = () => {
                     animationDelay: '0.7s',
                   }}
                 >
-                  <img src="/img5.jpg" alt="Cuidado animal" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src="/pets/pet-showcase-5.png" alt="Cuidado animal" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
               </div>
             </div>

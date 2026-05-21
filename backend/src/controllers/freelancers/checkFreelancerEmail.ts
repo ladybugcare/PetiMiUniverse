@@ -1,11 +1,11 @@
 // backend/controllers/freelancers/checkFreelancerEmail.ts
 import type { Request, Response } from 'express';
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin } from '../../config/supabase';
 
 export const checkFreelancerEmail = async (req: Request, res: Response) => {
   const { email } = req.params;
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('freelancers')
       .select('id')
       .eq('email', email)

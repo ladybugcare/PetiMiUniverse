@@ -343,7 +343,7 @@ Alinhar a interface com o lifecycle de demandas implementado, onde clínicas pub
   - Outros: `#22c55e` (success)
 
 **Consistência:**
-- ✅ Cores alinhadas com paleta PetiVet
+- ✅ Cores alinhadas com paleta PetMi Vet
 
 ### 8.4 Bordas e Sombras
 

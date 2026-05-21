@@ -165,7 +165,7 @@ app.get('/', async (req, res) => {
         const { error: supabaseError } = await supabase_js_1.supabase.from('clinics').select('id').limit(1);
         const health = {
             status: 'healthy',
-            message: '🐾 PetiVet API is running!',
+            message: '🐾 PetMi Vet API is running!',
             timestamp: new Date().toISOString(),
             services: {
                 database: supabaseError ? 'unhealthy' : 'healthy',

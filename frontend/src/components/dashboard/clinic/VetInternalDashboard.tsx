@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { statisticsApi } from '../../../services/statisticsApi';
 import { demandsApi } from '../../../services/demandsApi';
 import { applicationsApi } from '../../../services/applicationsApi';
-import { ClipboardList, CheckCircle, MessageSquare, FileText, Star } from 'lucide-react';
+import { ClipboardList, CheckCircle, MessageSquare, FileText, Star, Clock } from 'lucide-react';
 import colors from '../../../styles/colors';
 
 interface VetInternalDashboardProps {
@@ -277,7 +277,10 @@ const ScheduleItem: React.FC<{
           >
             {type}
           </span>
-          <span style={styles.scheduleDuration}>⏱️ {duration}</span>
+          <span style={{ ...styles.scheduleDuration, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <Clock size={14} aria-hidden />
+            {duration}
+          </span>
         </div>
       </div>
     </div>
@@ -325,8 +328,9 @@ const ReviewCard: React.FC<{
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
-    padding: '32px',
+    padding: '12px 0 40px',
     fontFamily: 'Inter, sans-serif',
+    maxWidth: '100%',
   },
   section: {
     marginBottom: '32px',

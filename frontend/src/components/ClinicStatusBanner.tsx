@@ -9,6 +9,7 @@ import colors from '../styles/colors';
 const ClinicStatusBanner: React.FC = () => {
   const [status, setStatus] = useState<string | null>(null);
   const [hasApprovedUnit, setHasApprovedUnit] = useState(false);
+  const [hasAnyUnit, setHasAnyUnit] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   
@@ -57,6 +58,7 @@ const ClinicStatusBanner: React.FC = () => {
         // Check if there are any approved units
         try {
           const { units } = await unitsApi.getByClinic(clinicId);
+          setHasAnyUnit(units.length > 0);
           const approvedUnits = units.filter((unit: any) => 
             unit.status === 'approved' || unit.status === 'active'
           );
@@ -64,6 +66,7 @@ const ClinicStatusBanner: React.FC = () => {
         } catch (error) {
           console.warn('Error loading units:', error);
           setHasApprovedUnit(false);
+          setHasAnyUnit(false);
         }
         
         setStatus(clinicStatus);
@@ -85,7 +88,7 @@ const ClinicStatusBanner: React.FC = () => {
   
   if (loading || !status || status === 'active') return null;
   
-  if (status === 'pending_unit') {
+  if (status === 'pending_unit' && !hasAnyUnit) {
     return (
       <div style={styles.bannerWarning}>
         <div style={styles.bannerContent}>

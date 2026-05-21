@@ -4,7 +4,7 @@ import { demandPositionsApi } from '../services/demandPositionsApi';
 import { messagesApi } from '../services/messagesApi';
 import { useAlert } from '../hooks/useAlert';
 import { useAuth } from '../AuthContext';
-import { MessageCircle, CheckCircle, XCircle, User } from 'lucide-react';
+import { MessageCircle, CheckCircle, XCircle, User, Clock, Info, AlertTriangle, Ban, Users } from 'lucide-react';
 import colors from '../styles/colors';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 
@@ -136,39 +136,61 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
   };
 
   const getStatusBadge = (status: string) => {
-    const statusMap: { [key: string]: { label: string; style: React.CSSProperties } } = {
-      pending: {
-        label: '⏳ Pendente',
-        style: { backgroundColor: '#fef3c7', color: '#92400e' },
-      },
-      accepted: {
-        label: '✅ Aceito',
-        style: { backgroundColor: '#d1fae5', color: '#065f46' },
-      },
-      rejected: {
-        label: '❌ Rejeitado',
-        style: { backgroundColor: '#fee2e2', color: '#991b1b' },
-      },
-      inactive_accepted_other_position: {
-        label: 'ℹ️ Aceito em outra posição',
-        style: { backgroundColor: colors.neutral[100], color: colors.neutral[600] },
-      },
-      inactive_time_conflict: {
-        label: '⚠️ Conflito de horário',
-        style: { backgroundColor: '#fef3c7', color: '#92400e' },
-      },
-      cancelled_by_vet: {
-        label: '🚫 Cancelada pelo vet',
-        style: { backgroundColor: colors.brand.primary[50], color: colors.brand.primary[800] },
-      },
+    const base: React.CSSProperties = {
+      ...styles.badge,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
     };
 
-    const statusInfo = statusMap[status] || {
-      label: status,
-      style: { backgroundColor: '#f3f4f6', color: '#6b7280' },
-    };
-
-    return <span style={{ ...styles.badge, ...statusInfo.style }}>{statusInfo.label}</span>;
+    switch (status) {
+      case 'pending':
+        return (
+          <span style={{ ...base, backgroundColor: '#fef3c7', color: '#92400e' }}>
+            <Clock size={14} aria-hidden />
+            Pendente
+          </span>
+        );
+      case 'accepted':
+        return (
+          <span style={{ ...base, backgroundColor: '#d1fae5', color: '#065f46' }}>
+            <CheckCircle size={14} aria-hidden />
+            Aceito
+          </span>
+        );
+      case 'rejected':
+        return (
+          <span style={{ ...base, backgroundColor: '#fee2e2', color: '#991b1b' }}>
+            <XCircle size={14} aria-hidden />
+            Rejeitado
+          </span>
+        );
+      case 'inactive_accepted_other_position':
+        return (
+          <span style={{ ...base, backgroundColor: colors.neutral[100], color: colors.neutral[600] }}>
+            <Info size={14} aria-hidden />
+            Aceito em outra posição
+          </span>
+        );
+      case 'inactive_time_conflict':
+        return (
+          <span style={{ ...base, backgroundColor: '#fef3c7', color: '#92400e' }}>
+            <AlertTriangle size={14} aria-hidden />
+            Conflito de horário
+          </span>
+        );
+      case 'cancelled_by_vet':
+        return (
+          <span style={{ ...base, backgroundColor: colors.brand.primary[50], color: colors.brand.primary[800] }}>
+            <Ban size={14} aria-hidden />
+            Cancelada pelo vet
+          </span>
+        );
+      default:
+        return (
+          <span style={{ ...base, backgroundColor: '#f3f4f6', color: '#6b7280' }}>{status}</span>
+        );
+    }
   };
 
   const pendingApplications = applications.filter((app) => app.status === 'pending');
@@ -202,7 +224,9 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
 
       {applications.length === 0 && (
         <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}>👥</div>
+          <div style={styles.emptyIcon} aria-hidden>
+            <Users size={40} color="#9ca3af" strokeWidth={1.5} />
+          </div>
           <p style={styles.emptyText}>Nenhuma candidatura recebida ainda</p>
         </div>
       )}
@@ -564,7 +588,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '40px 20px',
   },
   emptyIcon: {
-    fontSize: '48px',
+    display: 'flex',
+    justifyContent: 'center',
     marginBottom: '12px',
   },
   emptyText: {

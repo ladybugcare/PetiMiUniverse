@@ -10,7 +10,7 @@ const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 app.get("/", (req, res) => {
-    res.send("PetiVet backend rodando 🐾");
+    res.send("PetMi Vet backend rodando 🐾");
 });
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

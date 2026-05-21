@@ -32,7 +32,7 @@ const SignUpSuccessModal: React.FC<SignUpSuccessModalProps> = ({
               Enviamos um e-mail de confirmação para <strong>{email}</strong>.
             </p>
             <p style={styles.text}>
-              É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetiVet.
+              É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetMi Vet.
             </p>
             <p style={styles.text}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>

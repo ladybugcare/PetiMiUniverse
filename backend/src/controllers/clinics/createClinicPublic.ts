@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { supabase, supabaseAdmin } from '../../config/supabase.js';
+import { supabaseAdmin } from '../../config/supabase.js';
 import crypto from 'crypto';
 import { normalizeCNPJ } from '../../utils/cnpjUtils.js';
 
@@ -95,7 +95,7 @@ export const createClinicPublic = async (req: Request, res: Response) => {
 
     // 2️⃣ Verifica se clinic_users foi criado pelo trigger
     // O trigger handle_new_user deve ter criado clinic_users com clinic_id = NULL
-    const { data: existingClinicUser, error: fetchError } = await supabase
+    const { data: existingClinicUser, error: fetchError } = await supabaseAdmin
       .from('clinic_users')
       .select('id, status, clinic_id')
       .eq('user_id', userId)
@@ -111,7 +111,7 @@ export const createClinicPublic = async (req: Request, res: Response) => {
     // Se o trigger não criou, cria manualmente
     if (!existingClinicUser) {
       console.log('🔹 Trigger não criou clinic_users, criando manualmente...');
-      const { error: insertError } = await supabase.from('clinic_users').insert([
+      const { error: insertError } = await supabaseAdmin.from('clinic_users').insert([
         {
           id: crypto.randomUUID(),
           user_id: userId,
@@ -133,7 +133,7 @@ export const createClinicPublic = async (req: Request, res: Response) => {
       // Atualiza clinic_users se necessário (garantir role e status corretos)
       if (existingClinicUser.status !== 'pending_clinic' || existingClinicUser.clinic_id !== null) {
         console.log('🔹 Atualizando clinic_users para status correto...');
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from('clinic_users')
           .update({
             clinic_id: null, // ✅ Garantir que é NULL

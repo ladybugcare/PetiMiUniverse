@@ -178,7 +178,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         <div style={styles.centerSection}>
           <img
             src="/logo_texto_lado.png"
-            alt="PetiMi"
+            alt="PetMi Vet"
             style={styles.logo}
             onClick={handleLogoClick}
             title="Ir para o Dashboard"
@@ -272,7 +272,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderBottom: '1px solid #e5e5e5',
     zIndex: 100,
     boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
-    overflow: 'hidden',
+    // `hidden` recortava o menu do avatar (dropdown fica abaixo dos 64px do header).
+    overflow: 'visible',
   },
   container: {
     display: 'flex',

@@ -161,7 +161,7 @@ const AdminSettingsPage: React.FC = () => {
             </div>
             <div style={styles.placeholderSection}>
               <h3 style={styles.sectionTitle}>Taxas de Intermediação</h3>
-              <p style={styles.placeholderText}>Em breve: Configuração de percentual PetiVet por transação</p>
+              <p style={styles.placeholderText}>Em breve: Configuração de percentual PetMi Vet por transação</p>
             </div>
             <div style={styles.placeholderSection}>
               <h3 style={styles.sectionTitle}>Política de Cancelamento</h3>
@@ -259,7 +259,7 @@ const AdminSettingsPage: React.FC = () => {
         <div style={styles.header}>
           <h1 style={styles.title}>Configurações do Sistema</h1>
           <p style={styles.subtitle}>
-            Gerencie as configurações gerais da plataforma PetiVet
+            Gerencie as configurações gerais da plataforma PetMi Vet
           </p>
         </div>
 

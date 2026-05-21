@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { supabase, supabaseAdmin } from '../../config/supabase';
+import { supabaseAdmin } from '../../config/supabase';
 import { createAuthUser } from '../../utils/createAuthUser';
 
 /**
@@ -120,7 +120,8 @@ export const createFreelancerPublic = async (req: Request, res: Response) => {
       created_at: new Date().toISOString(),
     };
 
-    const { data: freelancer, error: freelancerError } = await supabase
+    // Service role: cadastro público não tem JWT; insert com anon key falha no RLS
+    const { data: freelancer, error: freelancerError } = await supabaseAdmin
       .from('freelancers')
       .insert([freelancerData])
       .select()

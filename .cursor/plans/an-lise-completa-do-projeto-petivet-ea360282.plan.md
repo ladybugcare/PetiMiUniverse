@@ -1,5 +1,5 @@
 <!-- ea360282-9aec-4e07-a8f7-6674338fed48 77ece892-1403-4bdb-bf3d-57cf9e8f223c -->
-# Plano de Correção de Gaps de Lógica - PetiVet
+# Plano de Correção de Gaps de Lógica - PetMi Vet
 
 ## Estratégia Geral
 

@@ -1,8 +1,10 @@
 import type { Request, Response } from 'express';
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin } from '../../config/supabase';
 
 /**
  * ✅ Retorna os detalhes de um veterinário específico pelo ID
+ * Usa supabaseAdmin para não depender de RLS (o cliente anon do backend não carrega a sessão do vet).
+ * Alinhado a getVets / getPendingVets, que já leem `vets` via service role.
  */
 export const getVetById = async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -12,7 +14,7 @@ export const getVetById = async (req: Request, res: Response) => {
   }
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('vets')
       .select('*')
       .eq('id', id)

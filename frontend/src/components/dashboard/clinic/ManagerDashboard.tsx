@@ -285,8 +285,9 @@ const ActivityItem: React.FC<{
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
-    padding: '32px',
+    padding: '12px 0 40px',
     fontFamily: 'Inter, sans-serif',
+    maxWidth: '100%',
   },
   section: {
     marginBottom: '32px',

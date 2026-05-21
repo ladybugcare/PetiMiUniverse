@@ -1,15 +1,15 @@
-# Dashboard Structure Guide - PetiVet
+# Dashboard Structure Guide - PetMi Vet
 
 ## 📋 Visão Geral
 
-O sistema PetiVet agora possui **dashboards dinâmicos** que se adaptam automaticamente ao tipo e role do usuário, oferecendo uma experiência personalizada para cada perfil.
+O sistema PetMi Vet agora possui **dashboards dinâmicos** que se adaptam automaticamente ao tipo e role do usuário, oferecendo uma experiência personalizada para cada perfil.
 
 ---
 
 ## 🎯 Estrutura de Dashboards
 
 ### 1. **AdminDashboardPage** (`/admin-dashboard`)
-**Para quem:** Administradores do Sistema PetiVet
+**Para quem:** Administradores do Sistema PetMi Vet
 
 **Acesso:** Usuários com `user.role = 'admin'`
 
@@ -493,5 +493,5 @@ Para dúvidas ou problemas:
 
 **Versão:** 1.0.0  
 **Data:** 29 de Outubro, 2025  
-**Autor:** PetiVet Development Team
+**Autor:** PetMi Vet Development Team
 

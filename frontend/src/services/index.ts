@@ -8,7 +8,7 @@ export * from './adminApi';
 export * from './specialtiesApi';
 
 
-// Centraliza e exporta todas as APIs do PetiVet
+// Centraliza e exporta todas as APIs do PetMi Vet
 export * from './api';
 export * from './clinicsApi';
 

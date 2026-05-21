@@ -12,6 +12,7 @@ import { getPendingVets } from '../controllers/vets/getPendingVets';
 import { approveVet } from '../controllers/vets/approveVet';
 import { rejectVet } from '../controllers/vets/rejectVet';
 import { getVetCompletedDemands } from '../controllers/vets/getVetCompletedDemands';
+import { updateVet, updateVetPhoto } from '../controllers/vetsController';
 import { authenticateUser } from '../middleware/authMiddleware';
 import { statsLimiter } from '../middleware/rateLimiter.js';
 
@@ -56,14 +57,12 @@ router.get('/pending', statsLimiter, authenticateUser, getPendingVets);
  * 🔍 ROTAS COM PARÂMETROS DINÂMICOS (devem vir por último)
  * ===========================================================
  */
+// PATCH mais específico antes de PATCH /:id
+router.patch('/:id/photo', authenticateUser, updateVetPhoto);
+router.patch('/:id', authenticateUser, updateVet);
 router.get('/:id', getVetById);
 router.get('/:id/completed-demands', getVetCompletedDemands);
 router.post('/:id/approve', authenticateUser, approveVet);
 router.post('/:id/reject', authenticateUser, rejectVet);
-
-/**
- * (Opcional) rotas futuras com autenticação
- * router.put('/:id', authenticateUser, updateVet);
- */
 
 export default router;

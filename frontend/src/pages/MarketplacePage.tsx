@@ -94,7 +94,7 @@ const MarketplacePage: React.FC = () => {
         {/* Header */}
         <div style={styles.header}>
           <div>
-            <h1 style={styles.title}>Marketplace PetiVet</h1>
+            <h1 style={styles.title}>Marketplace PetMi Vet</h1>
             <p style={styles.subtitle}>
               Encontre equipamentos, medicamentos e suprimentos veterinários
             </p>

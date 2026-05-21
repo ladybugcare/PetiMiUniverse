@@ -102,7 +102,7 @@ app.use('/api/messages', messages_js_1.default);
 app.use('/api/messages/admin', messageReports_js_1.default);
 // 🔹 Healthcheck
 app.get('/', (req, res) => {
-    res.json({ message: '🐾 PetiVet API is running!' });
+    res.json({ message: '🐾 PetMi Vet API is running!' });
 });
 // 🔹 Endpoint de teste de conexão com Supabase
 app.get('/test-supabase', async (req, res) => {

@@ -1,4 +1,4 @@
-# Resumo da Implementação - Auditoria e Melhorias PetiVet
+# Resumo da Implementação - Auditoria e Melhorias PetMi Vet
 
 ## ✅ Tarefas Concluídas
 

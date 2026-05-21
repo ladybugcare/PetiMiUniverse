@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PERMISSIONS, hasPermission as checkPermission } from '../utils/permissions';
 import { Role } from '../types/units';
 
@@ -51,9 +51,12 @@ export const usePermissions = () => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  const hasPermission = (permission: string): boolean => {
-    return checkPermission(role, permission);
-  };
+  const hasPermission = useCallback(
+    (permission: string): boolean => {
+      return checkPermission(role, permission);
+    },
+    [role]
+  );
 
   // Convenience methods for common permissions
   const canCreateUnit = hasPermission('unit.create');

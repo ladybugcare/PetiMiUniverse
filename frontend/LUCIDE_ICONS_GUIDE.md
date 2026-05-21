@@ -1,6 +1,6 @@
 # Guia de Uso - Lucide Icons
 
-A biblioteca Lucide React foi integrada ao projeto PetiVet para fornecer ícones modernos e consistentes.
+A biblioteca Lucide React foi integrada ao projeto PetMi Vet para fornecer ícones modernos e consistentes.
 
 ## 📦 Instalação
 
@@ -99,7 +99,7 @@ function LoginForm() {
 <Mail strokeWidth={2.5} />  {/* Grosso */}
 ```
 
-## 🎯 Ícones Recomendados para PetiVet
+## 🎯 Ícones Recomendados para PetMi Vet
 
 ### Autenticação
 - `Mail` - Email
@@ -205,5 +205,5 @@ const LoginPage = () => {
 1. **Consistência**: Use o mesmo tamanho de ícone para elementos similares
 2. **Acessibilidade**: Adicione `aria-label` quando o ícone for o único conteúdo
 3. **Performance**: Importe apenas os ícones que você usa
-4. **Cores**: Use as cores do design system PetiVet para manter consistência
+4. **Cores**: Use as cores do design system PetMi Vet para manter consistência
 

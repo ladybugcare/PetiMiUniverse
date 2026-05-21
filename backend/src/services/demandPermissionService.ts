@@ -66,7 +66,7 @@ export class DemandPermissionService {
         return false;
       }
 
-      if (unit.status !== 'active') {
+      if (!['active', 'approved'].includes(unit.status)) {
         return false;
       }
 

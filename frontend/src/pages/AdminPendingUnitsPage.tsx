@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import colors from '../styles/colors';
@@ -9,9 +8,23 @@ import { useAuth } from '../AuthContext';
 import { adminApi, PendingUnit } from '../services/adminApi';
 import { SuccessModal } from '../components/SuccessModal';
 import { useAlert } from '../hooks/useAlert';
+import {
+  AlertTriangle,
+  Building,
+  Building2,
+  CheckCircle,
+  CheckCircle2,
+  Hourglass,
+  Info,
+  Landmark,
+  MapPin,
+  Phone,
+  Trophy,
+  User,
+  XCircle,
+} from 'lucide-react';
 
 const AdminPendingUnitsPage: React.FC = () => {
-  const navigate = useNavigate();
   const { user } = useAuth();
   const { showError } = useAlert();
   
@@ -109,6 +122,16 @@ const AdminPendingUnitsPage: React.FC = () => {
     }
   };
 
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   return (
     <>
       {/* Success Modal */}
@@ -123,7 +146,16 @@ const AdminPendingUnitsPage: React.FC = () => {
       <DashboardLayout pageName="Aprovações Pendentes" menuItems={menuItems}>
         <div style={styles.container}>
           <div style={styles.header}>
-            <h1 style={styles.title}>⏳ Unidades Pendentes de Aprovação</h1>
+            <h1 style={styles.title}>
+              <Hourglass
+                size={28}
+                color={colors.brand.primary[600]}
+                strokeWidth={2}
+                aria-hidden
+                style={{ flexShrink: 0 }}
+              />
+              <span>Unidades pendentes de aprovação</span>
+            </h1>
             <p style={styles.subtitle}>
               Analise as unidades criadas por novas clínicas e aprove ou reprove.
             </p>
@@ -136,30 +168,51 @@ const AdminPendingUnitsPage: React.FC = () => {
             </div>
           ) : units.length === 0 ? (
             <div style={styles.emptyState}>
-              <span style={styles.emptyIcon}>✅</span>
+              <div style={styles.emptyIconWrap} aria-hidden>
+                <CheckCircle2 size={56} color={colors.success[500]} strokeWidth={1.75} />
+              </div>
               <h3 style={styles.emptyTitle}>Nenhuma unidade pendente</h3>
               <p style={styles.emptyText}>Todas as unidades foram analisadas!</p>
             </div>
           ) : (
             <div style={styles.grid}>
-              {units.map((unit) => (
+              {units.map((unit) => {
+                const displayCnpj = unit.cnpj || unit.clinic.cnpj;
+                return (
                 <div key={unit.id} style={styles.card}>
                   <div style={styles.cardHeader}>
-                    <div>
-                      <h3 style={styles.cardTitle}>
-                        {unit.name}
-                        {unit.nickname && <span style={styles.nicknameText}> ({unit.nickname})</span>}
-                      </h3>
-                      <p style={styles.cardSubtitle}>
-                        {unit.is_main && <span style={styles.mainBadge}>🏆 Unidade Principal</span>}
-                      </p>
+                    <div style={styles.cardHeaderLeft}>
+                      <div style={styles.unitIconPlaceholder}>
+                        <Building2 size={24} color={colors.brand.primary[500]} aria-hidden />
+                      </div>
+                      <div>
+                        <h3 style={styles.cardTitle}>
+                          {unit.name}
+                          {unit.nickname && <span style={styles.nicknameText}> ({unit.nickname})</span>}
+                        </h3>
+                        <p style={styles.cardEmail}>{unit.clinic.email}</p>
+                        {displayCnpj && (
+                          <p style={styles.cardCnpj}>CNPJ: {displayCnpj}</p>
+                        )}
+                        {unit.is_main && (
+                          <div style={styles.badgesContainer}>
+                            <span style={styles.badge}>
+                              <Trophy size={14} color={colors.brand.primary[500]} aria-hidden style={{ flexShrink: 0 }} />
+                              Unidade principal
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <span style={styles.statusBadge}>Pendente</span>
                   </div>
 
                   <div style={styles.cardBody}>
                     <div style={styles.section}>
-                      <h4 style={styles.sectionTitle}>📍 Localização</h4>
+                      <h4 style={styles.sectionTitle}>
+                        <MapPin size={16} color="#374151" aria-hidden />
+                        <span>Localização</span>
+                      </h4>
                       <p style={styles.text}>{unit.address}</p>
                       <p style={styles.text}>
                         {unit.city} - {unit.state}
@@ -168,21 +221,30 @@ const AdminPendingUnitsPage: React.FC = () => {
 
                     {unit.phone && (
                       <div style={styles.section}>
-                        <h4 style={styles.sectionTitle}>📞 Telefone</h4>
+                        <h4 style={styles.sectionTitle}>
+                          <Phone size={16} color="#374151" aria-hidden />
+                          <span>Telefone da unidade</span>
+                        </h4>
                         <p style={styles.text}>{unit.phone}</p>
                       </div>
                     )}
 
-                    {unit.cnpj && (
+                    {unit.cnpj && unit.clinic.cnpj && unit.cnpj !== unit.clinic.cnpj && (
                       <div style={styles.section}>
-                        <h4 style={styles.sectionTitle}>🏢 CNPJ</h4>
+                        <h4 style={styles.sectionTitle}>
+                          <Landmark size={16} color="#374151" aria-hidden />
+                          <span>CNPJ da unidade</span>
+                        </h4>
                         <p style={styles.text}>{unit.cnpj}</p>
                       </div>
                     )}
 
                     {unit.technical_manager && (
                       <div style={styles.section}>
-                        <h4 style={styles.sectionTitle}>👨‍⚕️ Responsável Técnico</h4>
+                        <h4 style={styles.sectionTitle}>
+                          <User size={16} color="#374151" aria-hidden />
+                          <span>Responsável técnico</span>
+                        </h4>
                         <p style={styles.text}>{unit.technical_manager}</p>
                       </div>
                     )}
@@ -190,48 +252,42 @@ const AdminPendingUnitsPage: React.FC = () => {
                     <div style={styles.divider}></div>
 
                     <div style={styles.section}>
-                      <h4 style={styles.sectionTitle}>🏥 Dados da Clínica</h4>
-                      <p style={styles.text}>
-                        <strong>Nome:</strong> {unit.clinic.name}
-                      </p>
-                      <p style={styles.text}>
-                        <strong>Email:</strong> {unit.clinic.email}
-                      </p>
+                      <h4 style={styles.sectionTitle}>
+                        <Building size={16} color="#374151" aria-hidden />
+                        <span>Clínica</span>
+                      </h4>
+                      <p style={styles.text}>{unit.clinic.name}</p>
                       {unit.clinic.phone && (
-                        <p style={styles.text}>
-                          <strong>Telefone:</strong> {unit.clinic.phone}
-                        </p>
-                      )}
-                      {unit.clinic.cnpj && (
-                        <p style={styles.text}>
-                          <strong>CNPJ:</strong> {unit.clinic.cnpj}
-                        </p>
+                        <p style={styles.textSmall}>Telefone: {unit.clinic.phone}</p>
                       )}
                     </div>
 
                     <div style={styles.section}>
-                      <p style={styles.dateText}>
-                        Criado em: {new Date(unit.created_at).toLocaleDateString('pt-BR')}
-                      </p>
+                      <p style={styles.dateText}>Cadastro recebido em: {formatDate(unit.created_at)}</p>
                     </div>
                   </div>
 
                   <div style={styles.cardFooter}>
                     <button
+                      type="button"
                       onClick={() => handleOpenModal(unit, 'reject')}
                       style={styles.rejectButton}
                     >
-                      ❌ Reprovar
+                      <XCircle size={18} color="#ef4444" aria-hidden />
+                      Reprovar
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleOpenModal(unit, 'approve')}
                       style={styles.approveButton}
                     >
-                      ✅ Aprovar
+                      <CheckCircle size={18} color="#ffffff" aria-hidden />
+                      Aprovar
                     </button>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>
@@ -242,7 +298,17 @@ const AdminPendingUnitsPage: React.FC = () => {
         <div style={styles.modalOverlay} onClick={handleCloseModal}>
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <h2 style={styles.modalTitle}>
-              {modalAction === 'approve' ? '✅ Aprovar Unidade' : '❌ Reprovar Unidade'}
+              {modalAction === 'approve' ? (
+                <>
+                  <CheckCircle size={22} color="#059669" aria-hidden style={{ flexShrink: 0 }} />
+                  <span>Aprovar unidade</span>
+                </>
+              ) : (
+                <>
+                  <XCircle size={22} color="#dc2626" aria-hidden style={{ flexShrink: 0 }} />
+                  <span>Reprovar unidade</span>
+                </>
+              )}
             </h2>
 
             <div style={styles.modalBody}>
@@ -255,7 +321,7 @@ const AdminPendingUnitsPage: React.FC = () => {
 
               {modalAction === 'approve' ? (
                 <div style={styles.infoBox}>
-                  <span style={styles.infoIcon}>ℹ️</span>
+                  <Info size={20} color="#1d4ed8" aria-hidden style={styles.boxLeadIcon} />
                   <div>
                     <strong>O que vai acontecer:</strong>
                     <ul style={styles.infoList}>
@@ -269,7 +335,7 @@ const AdminPendingUnitsPage: React.FC = () => {
               ) : (
                 <>
                   <div style={styles.warningBox}>
-                    <span style={styles.warningIcon}>⚠️</span>
+                    <AlertTriangle size={20} color="#b91c1c" aria-hidden style={styles.boxLeadIcon} />
                     <div>
                       <strong>O que vai acontecer:</strong>
                       <ul style={styles.infoList}>
@@ -339,6 +405,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '700',
     color: '#1f2937',
     marginBottom: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap',
   },
   subtitle: {
     fontSize: '14px',
@@ -368,10 +438,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: 'center',
     padding: '60px 20px',
   },
-  emptyIcon: {
-    fontSize: '64px',
+  emptyIconWrap: {
+    display: 'flex',
+    justifyContent: 'center',
     marginBottom: '16px',
-    display: 'block',
   },
   emptyTitle: {
     fontSize: '20px',
@@ -385,7 +455,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(450px, 1fr))',
     gap: '24px',
   },
   card: {
@@ -403,6 +473,23 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+  cardHeaderLeft: {
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'flex-start',
+    flex: 1,
+    minWidth: 0,
+  },
+  unitIconPlaceholder: {
+    width: '64px',
+    height: '64px',
+    borderRadius: '50%',
+    backgroundColor: colors.brand.primary[100],
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
   cardTitle: {
     fontSize: '18px',
     fontWeight: '600',
@@ -414,17 +501,32 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '400',
     color: '#6b7280',
   },
-  cardSubtitle: {
-    fontSize: '13px',
+  cardEmail: {
+    fontSize: '14px',
     color: '#6b7280',
+    marginBottom: '4px',
   },
-  mainBadge: {
-    backgroundColor: '#fef3c7',
-    color: '#92400e',
-    padding: '4px 8px',
-    borderRadius: '4px',
+  cardCnpj: {
+    fontSize: '13px',
+    color: '#9ca3af',
+    marginBottom: '8px',
+  },
+  badgesContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+  },
+  badge: {
+    padding: '4px 10px',
+    backgroundColor: '#ffffff',
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
+    borderRadius: '12px',
     fontSize: '12px',
-    fontWeight: '600',
+    fontWeight: '500',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
   },
   statusBadge: {
     backgroundColor: '#fef3c7',
@@ -446,11 +548,22 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     color: '#374151',
     marginBottom: '8px',
+    marginTop: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
   },
   text: {
     fontSize: '14px',
     color: '#6b7280',
     marginBottom: '4px',
+    lineHeight: '1.5',
+  },
+  textSmall: {
+    fontSize: '13px',
+    color: '#9ca3af',
+    fontStyle: 'italic',
+    marginTop: '4px',
   },
   dateText: {
     fontSize: '13px',
@@ -479,6 +592,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
   },
   approveButton: {
     padding: '10px 20px',
@@ -490,6 +607,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'background-color 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
   },
   modalOverlay: {
     position: 'fixed',
@@ -519,6 +640,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#1f2937',
     padding: '24px 24px 16px 24px',
     borderBottom: '1px solid #e5e7eb',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    margin: 0,
   },
   modalBody: {
     padding: '24px',
@@ -551,13 +676,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginTop: '16px',
     marginBottom: '16px',
   },
-  infoIcon: {
-    fontSize: '20px',
+  boxLeadIcon: {
     flexShrink: 0,
-  },
-  warningIcon: {
-    fontSize: '20px',
-    flexShrink: 0,
+    marginTop: '2px',
   },
   infoList: {
     margin: '8px 0 0 0',

@@ -113,7 +113,9 @@ export const createUnit = async (req: Request<{}, {}, UnitBody>, res: Response) 
 export const getUnitsByClinic = async (req: Request, res: Response) => {
   const { clinic_id } = req.params;
   const user_id = req.user!.id;
-  const includeAll = req.query.all === 'true'; // Query param to include all statuses
+  // Por defeito devolve todas as unidades (qualquer status), para fluxos de onboarding/redirecionamento.
+  // activeOnly=true → apenas active/approved (listagens operacionais).
+  const activeOnly = req.query.activeOnly === 'true';
 
   try {
     // Verify clinic access
@@ -122,13 +124,12 @@ export const getUnitsByClinic = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    let query = supabase
+    let query = supabaseAdmin
       .from('units')
       .select('*')
       .eq('clinic_id', clinic_id);
 
-    // If all=true, return all units regardless of status, otherwise only active/approved
-    if (!includeAll) {
+    if (activeOnly) {
       query = query.in('status', ['active', 'approved']);
     }
 

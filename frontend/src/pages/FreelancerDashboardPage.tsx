@@ -118,12 +118,18 @@ const FreelancerDashboardPage: React.FC = () => {
   const { menuItems: baseMenuItems } = useSidebarMenu('FREELANCER');
   
   // Map menu items to conditionally disable "Demandas Disponíveis" if not approved
-  const menuItems = baseMenuItems.map(item => {
-    if (item.id === 'demands-available' && !isApproved) {
+  const menuItems = baseMenuItems.map((item) => {
+    if (item.id === 'demands' && !isApproved && item.subItems?.length) {
+      const pendingTooltip =
+        'Disponível após aprovação do seu cadastro pela equipe PetMi.';
       return {
         ...item,
-        disabled: true,
-        tooltip: 'Você precisa ser aprovado para ver demandas disponíveis',
+        subItems: item.subItems.map((subItem) => {
+          if (subItem.id === 'demands-available' || subItem.id === 'demands-applications') {
+            return { ...subItem, disabled: true, tooltip: pendingTooltip };
+          }
+          return subItem;
+        }),
       };
     }
     return item;

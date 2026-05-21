@@ -124,7 +124,7 @@ npm install -g eas-cli
 
 Certifique-se de executar os scripts da raiz do projeto:
 ```bash
-cd /caminho/para/PetiVet
+cd /caminho/para/PetiMiUniverse
 ./scripts/build-local.sh android
 ```
 

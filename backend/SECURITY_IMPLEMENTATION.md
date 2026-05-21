@@ -1,4 +1,4 @@
-# 🔒 Implementação de Segurança - PetiVet
+# 🔒 Implementação de Segurança - PetMi Vet
 
 Este documento descreve todas as melhorias de segurança implementadas no projeto.
 

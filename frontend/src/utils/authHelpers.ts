@@ -1,4 +1,4 @@
-// Tipos de role que o PetiVet usa hoje
+// Tipos de role que o PetMi Vet usa hoje
 export type Role = 'ADMIN' | 'CADMIN' | 'CMANAGER' | 'VET' | 'FREELANCER' | 'UNKNOWN';
 
 export function getUserRole(user: any): Role {
@@ -42,6 +42,39 @@ export function getUserRole(user: any): Role {
 
   console.warn('[getUserRole] Unknown role detected:', role, 'from user:', user.id);
   return 'UNKNOWN';
+}
+
+/**
+ * ID da clínica persistido após login (`clinic_user`) ou no payload de onboarding (`clinicOnboarding`).
+ * Nunca use o UUID do Auth (`user.id`) como ID de clínica.
+ */
+export function getStoredClinicId(): string | null {
+  try {
+    const clinicUserRaw = localStorage.getItem('clinic_user');
+    if (clinicUserRaw) {
+      const cu = JSON.parse(clinicUserRaw);
+      if (cu?.clinic_id) return cu.clinic_id as string;
+    }
+    const onboardingRaw = localStorage.getItem('clinicOnboarding');
+    if (onboardingRaw) {
+      const o = JSON.parse(onboardingRaw);
+      if (o?.clinicId) return o.clinicId as string;
+    }
+    const userRaw = localStorage.getItem('user');
+    if (userRaw) {
+      const u = JSON.parse(userRaw);
+      if (u?.user_metadata?.clinic_id) return u.user_metadata.clinic_id as string;
+    }
+    const sessionRaw = localStorage.getItem('session');
+    if (sessionRaw) {
+      const s = JSON.parse(sessionRaw);
+      const fromSessionUser = s?.user?.user_metadata?.clinic_id;
+      if (fromSessionUser) return String(fromSessionUser);
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 export function getDashboardPathForRole(role: Role): string {

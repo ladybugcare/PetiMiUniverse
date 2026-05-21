@@ -36,7 +36,7 @@ import colors from '../styles/colors';
 
 /**
  * Página de exemplo mostrando todos os ícones Lucide disponíveis
- * e como usá-los no projeto PetiVet
+ * e como usá-los no projeto PetMi Vet
  */
 const LucideIconsExample: React.FC = () => {
   const iconStyle = {
@@ -74,7 +74,7 @@ const LucideIconsExample: React.FC = () => {
   return (
     <div style={{ padding: '40px', backgroundColor: colors.background, minHeight: '100vh' }}>
       <h1 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '16px', color: colors.text }}>
-        Lucide Icons - PetiVet
+        Lucide Icons - PetMi Vet
       </h1>
       <p style={{ color: colors.textSecondary, marginBottom: '40px' }}>
         Biblioteca de ícones integrada ao projeto. Clique nos ícones abaixo para ver o código de importação.

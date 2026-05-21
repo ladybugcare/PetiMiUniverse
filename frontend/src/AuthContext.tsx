@@ -7,6 +7,7 @@ import React, {
   ReactNode,
 } from "react";
 import { Role, getUserRole } from "./utils/authHelpers";
+import { CLINIC_STORAGE_UPDATED_EVENT } from "./constants/appEvents";
 import { supabase } from "./services/supabase";
 
 type AuthContextType = {
@@ -96,18 +97,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const onboardingInfo = result?.onboarding || null;
       const clinicUserInfo = result?.clinicUser || null;
 
-      if (nextSession) {
-        // 🔸 Define sessão no Supabase (garante persistência em staging/prod)
-        await supabase.auth.setSession(nextSession);
-      }
-
-      // Persistência local (opcional, útil pra dados extras)
+      // Persistir user + dados de clínica antes de setSession (async), para getStoredClinicId()
+      // estar correto no primeiro render após login (ex.: ClinicDashboard + UnitContext).
       if (nextUser) localStorage.setItem("user", JSON.stringify(nextUser));
       else localStorage.removeItem("user");
-
-      if (nextSession)
-        localStorage.setItem("session", JSON.stringify(nextSession));
-      else localStorage.removeItem("session");
 
       if (onboardingInfo) {
         localStorage.setItem(
@@ -125,6 +118,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (clinicUserInfo)
         localStorage.setItem("clinic_user", JSON.stringify(clinicUserInfo));
       else localStorage.removeItem("clinic_user");
+
+      if (nextSession) {
+        // 🔸 Define sessão no Supabase (garante persistência em staging/prod)
+        await supabase.auth.setSession(nextSession);
+      }
+
+      if (nextSession)
+        localStorage.setItem("session", JSON.stringify(nextSession));
+      else localStorage.removeItem("session");
 
       // Salvar informações de onboarding do vet
       const vetOnboardingInfo = result?.vetOnboarding || null;
@@ -146,6 +148,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(nextUser);
       setSession(nextSession);
       setRole(getUserRole(nextUser));
+      window.dispatchEvent(new Event(CLINIC_STORAGE_UPDATED_EVENT));
     } catch (err) {
       console.error("[AuthContext] Erro ao definir sessão:", err);
     }
@@ -174,7 +177,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       localStorage.removeItem("clinic_user");
       localStorage.removeItem("isFirstAccess");
       localStorage.removeItem("pendingEmail");
-      
+
+      window.dispatchEvent(new Event(CLINIC_STORAGE_UPDATED_EVENT));
+
       // Limpar cookies de sessão se existirem (alguns navegadores podem usar cookies)
       // Nota: Não podemos limpar cookies diretamente, mas o signOut do Supabase deve fazer isso
 

@@ -1,14 +1,24 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
 import { vetsApi, Vet } from '../services/vetsApi';
 import { useAlert } from '../hooks/useAlert';
-import { Edit, FileText, Clock, CheckCircle, Star, ClipboardList, MessageCircle, ShoppingCart, Settings } from 'lucide-react';
+import {
+  Edit,
+  FileText,
+  Clock,
+  CheckCircle,
+  ClipboardList,
+  MessageCircle,
+  ShoppingCart,
+  Calendar,
+} from 'lucide-react';
 import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
+import { vetOrFreelancerRecordCanAccessDemandsFlow, canVetFreelancerAccessDemandsAndApplications } from '../utils/vetFreelancerDemandAccess';
 import { useAuth } from '../AuthContext';
 import { statisticsApi, VetStats } from '../services/statisticsApi';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
@@ -22,11 +32,19 @@ const isUUID = (str: string): boolean => {
   return uuidRegex.test(str);
 };
 
+type VetOwnProfileEditSection =
+  | 'info'
+  | 'specialties'
+  | 'certificates'
+  | 'bio'
+  | 'experience'
+  | null;
+
 const VetProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const { user } = useAuth();
-  const { showSuccess, showError } = useAlert();
+  const { showSuccess, showError, showWarning } = useAlert();
   
   // Se há um ID na URL, é visualização pública (não edição)
   const isPublicView = !!id;
@@ -34,17 +52,19 @@ const VetProfilePage: React.FC = () => {
   
   // Get menu items using hook
   const userRole = user ? getUserRole(user) : 'VET';
-  const { menuItems } = useSidebarMenu(userRole);
+  const { menuItems: baseMenuFromSidebar } = useSidebarMenu(userRole);
 
   // Detectar contexto do visualizador
   const viewerRole = user ? getUserRole(user) : null;
   const isClinicView = isPublicView && (viewerRole === 'CADMIN' || viewerRole === 'CMANAGER');
   const isAdminView = isPublicView && viewerRole === 'ADMIN';
-  const isVetView = isOwnProfile && !isPublicView;
   const [vet, setVet] = useState<Vet | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  /** Edição por secção (perfil próprio, layout em cartões). */
+  const [editingSection, setEditingSection] = useState<VetOwnProfileEditSection>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -63,6 +83,29 @@ const VetProfilePage: React.FC = () => {
   const [loadingStats, setLoadingStats] = useState(false);
   const [specialtiesMap, setSpecialtiesMap] = useState<Map<string, string>>(new Map());
   const [loadingSpecialties, setLoadingSpecialties] = useState(false);
+
+  const menuItems = useMemo(() => {
+    const demandFlowOk = vet
+      ? vetOrFreelancerRecordCanAccessDemandsFlow(vet)
+      : canVetFreelancerAccessDemandsAndApplications(user);
+    if (userRole !== 'VET' || demandFlowOk) {
+      return baseMenuFromSidebar;
+    }
+    const pendingTooltip = 'Disponível após aprovação do seu cadastro pela equipe PetMi.';
+    return baseMenuFromSidebar.map((item) => {
+      if (item.id === 'demands' && item.subItems?.length) {
+        return {
+          ...item,
+          subItems: item.subItems.map((sub) =>
+            sub.id === 'demands-available' || sub.id === 'demands-applications'
+              ? { ...sub, disabled: true, tooltip: pendingTooltip }
+              : sub
+          ),
+        };
+      }
+      return item;
+    });
+  }, [userRole, vet, user, baseMenuFromSidebar]);
 
   const loadStats = useCallback(async (vetId: string) => {
     try {
@@ -200,6 +243,7 @@ const VetProfilePage: React.FC = () => {
       const { vet: updatedVet } = await vetsApi.update(vet!.id, formData);
       setVet(updatedVet);
       setIsEditing(false);
+      setEditingSection(null);
       showSuccess('Perfil atualizado com sucesso!');
     } catch (error: any) {
       showError('Erro ao atualizar perfil: ' + error.message);
@@ -219,6 +263,30 @@ const VetProfilePage: React.FC = () => {
       experience: vet!.experience || '', // ✅ fallback seguro
     });
     setIsEditing(false);
+    setEditingSection(null);
+  };
+
+  const handleCancelSection = (section: NonNullable<VetOwnProfileEditSection>) => {
+    if (!vet) return;
+    if (section === 'info') {
+      setFormData((f) => ({
+        ...f,
+        name: vet.name,
+        phone: vet.phone || '',
+        address: vet.address || '',
+      }));
+    } else if (section === 'specialties') {
+      setFormData((f) => ({ ...f, specialties: vet.specialties || [] }));
+      setSpecialtyInput('');
+    } else if (section === 'certificates') {
+      setFormData((f) => ({ ...f, certificates: vet.certificates || [] }));
+      setCertificateInput('');
+    } else if (section === 'bio') {
+      setFormData((f) => ({ ...f, bio: vet.bio || '' }));
+    } else if (section === 'experience') {
+      setFormData((f) => ({ ...f, experience: vet.experience || '' }));
+    }
+    setEditingSection(null);
   };
 
   const maskDocument = (doc: string | undefined): string => {
@@ -234,25 +302,56 @@ const VetProfilePage: React.FC = () => {
   };
 
   const getStatusBadge = () => {
-    const status = vet?.status || 'pending';
-    const statusConfig = {
-      active: { label: 'Aprovado', color: '#22c55e', bgColor: '#dcfce7' },
-      pending: { label: 'Pendente', color: '#f59e0b', bgColor: '#fef3c7' },
-      rejected: { label: 'Rejeitado', color: '#ef4444', bgColor: '#fee2e2' },
-      inactive: { label: 'Inativo', color: '#6b7280', bgColor: '#f3f4f6' },
-    };
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
+    const a = vet?.approval_status;
+    let label: string;
+    let color: string;
+    let bg: string;
+
+    if (a === 'approved') {
+      label = 'Aprovado';
+      color = '#22c55e';
+      bg = '#dcfce7';
+    } else if (a === 'rejected') {
+      label = 'Rejeitado';
+      color = '#ef4444';
+      bg = '#fee2e2';
+    } else if (a === 'pending_review') {
+      label = 'Em revisão';
+      color = '#f59e0b';
+      bg = '#fef3c7';
+    } else if (a === 'pending_approval') {
+      label = 'Pendente';
+      color = '#f59e0b';
+      bg = '#fef3c7';
+    } else if (a === 'pending') {
+      label = 'Aguardando onboarding';
+      color = '#f59e0b';
+      bg = '#fef3c7';
+    } else {
+      const legacy = vet?.status || 'pending';
+      const map: Record<string, { label: string; color: string; bg: string }> = {
+        active: { label: 'Aprovado', color: '#22c55e', bg: '#dcfce7' },
+        pending: { label: 'Pendente', color: '#f59e0b', bg: '#fef3c7' },
+        rejected: { label: 'Rejeitado', color: '#ef4444', bg: '#fee2e2' },
+        inactive: { label: 'Inativo', color: '#6b7280', bg: '#f3f4f6' },
+      };
+      const c = map[legacy] || map.pending;
+      label = c.label;
+      color = c.color;
+      bg = c.bg;
+    }
+
     return (
       <span style={{
         padding: '6px 12px',
         borderRadius: '20px',
         fontSize: '13px',
         fontWeight: '600',
-        color: config.color,
-        backgroundColor: config.bgColor,
+        color,
+        backgroundColor: bg,
         fontFamily: 'Inter, sans-serif',
       }}>
-        {config.label}
+        {label}
       </span>
     );
   };
@@ -309,9 +408,19 @@ const VetProfilePage: React.FC = () => {
     });
   };
 
+  /** Admin/clínica a ver ficha de outro vet: não usar "Meu Perfil". */
+  const viewerIsStaffSeeingOtherVet =
+    isPublicView && !isOwnProfile && (isAdminView || isClinicView);
+  const layoutPageName =
+    vet && viewerIsStaffSeeingOtherVet
+      ? `Perfil: ${vet.name}`
+      : viewerIsStaffSeeingOtherVet && !vet
+        ? 'Perfil do veterinário'
+        : 'Meu Perfil';
+
   if (loading) {
     return (
-      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
+      <DashboardLayout pageName={layoutPageName} menuItems={menuItems}>
         <div style={styles.loading}>Carregando...</div>
       </DashboardLayout>
     );
@@ -319,7 +428,7 @@ const VetProfilePage: React.FC = () => {
 
   if (!vet) {
     return (
-      <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
+      <DashboardLayout pageName={layoutPageName} menuItems={menuItems}>
         <div style={styles.error}>Erro ao carregar perfil</div>
       </DashboardLayout>
     );
@@ -327,6 +436,12 @@ const VetProfilePage: React.FC = () => {
 
   // Layout de duas colunas apenas para próprio perfil, visualização pública mantém layout simples
   const useTwoColumnLayout = isOwnProfile && !isPublicView;
+
+  /** Mesma regra do login: só demandas/candidaturas após aprovação + conta ativa. */
+  const canDemandQuickActions = vetOrFreelancerRecordCanAccessDemandsFlow(vet);
+
+  const pendingDemandActionsMsg =
+    'Disponível após aprovação do seu cadastro pela equipe PetMi.';
 
   // Handlers para ações de admin
   const handleApproveVet = async (vetId: string) => {
@@ -342,13 +457,14 @@ const VetProfilePage: React.FC = () => {
   };
 
   return (
-    <DashboardLayout pageName="Meu Perfil" menuItems={menuItems}>
+    <DashboardLayout pageName={layoutPageName} menuItems={menuItems}>
       {/* Renderizar visão específica baseada no contexto */}
       {isClinicView ? (
         <VetProfileClinicView vet={vet} clinicId={user?.id} />
       ) : isAdminView ? (
-        <VetProfileAdminView 
-          vet={vet} 
+        <VetProfileAdminView
+          vet={vet}
+          getSpecialtyName={getSpecialtyName}
           onApprove={handleApproveVet}
           onReject={handleRejectVet}
         />
@@ -418,13 +534,26 @@ const VetProfilePage: React.FC = () => {
               <h3 style={styles.quickActionsTitle}>Ações Rápidas</h3>
               <div style={styles.quickActionsList}>
                 <button
-                  onClick={() => navigate('/my-applications')}
-                  style={styles.quickActionButton}
+                  type="button"
+                  title={!canDemandQuickActions ? pendingDemandActionsMsg : undefined}
+                  onClick={() => {
+                    if (!canDemandQuickActions) {
+                      showWarning(pendingDemandActionsMsg);
+                      return;
+                    }
+                    navigate('/my-applications');
+                  }}
+                  style={{
+                    ...styles.quickActionButton,
+                    ...(!canDemandQuickActions ? styles.quickActionButtonDisabled : {}),
+                  }}
                   onMouseEnter={(e) => {
+                    if (!canDemandQuickActions) return;
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
                     e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
+                    if (!canDemandQuickActions) return;
                     e.currentTarget.style.backgroundColor = '#ffffff';
                     e.currentTarget.style.borderColor = '#e5e7eb';
                   }}
@@ -433,13 +562,26 @@ const VetProfilePage: React.FC = () => {
                   <span>Minhas Candidaturas</span>
                 </button>
                 <button
-                  onClick={() => navigate('/demands')}
-                  style={styles.quickActionButton}
+                  type="button"
+                  title={!canDemandQuickActions ? pendingDemandActionsMsg : undefined}
+                  onClick={() => {
+                    if (!canDemandQuickActions) {
+                      showWarning(pendingDemandActionsMsg);
+                      return;
+                    }
+                    navigate('/demands');
+                  }}
+                  style={{
+                    ...styles.quickActionButton,
+                    ...(!canDemandQuickActions ? styles.quickActionButtonDisabled : {}),
+                  }}
                   onMouseEnter={(e) => {
+                    if (!canDemandQuickActions) return;
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
                     e.currentTarget.style.borderColor = colors.brand.primary[500];
                   }}
                   onMouseLeave={(e) => {
+                    if (!canDemandQuickActions) return;
                     e.currentTarget.style.backgroundColor = '#ffffff';
                     e.currentTarget.style.borderColor = '#e5e7eb';
                   }}
@@ -481,62 +623,56 @@ const VetProfilePage: React.FC = () => {
             </div>
           </aside>
 
-          {/* Lado Direito Scrollável */}
+          {/* Lado Direito — mesmo estilo de cartões que o admin (VetProfileAdminView) */}
           <main style={styles.rightContent}>
-            {/* Header com botão editar */}
-            <div style={styles.contentHeader}>
-              <h1 style={styles.title}>Meu Perfil</h1>
-              {!isEditing ? (
-                <button onClick={() => setIsEditing(true)} style={styles.editButton}>
-                  <Edit size={16} />
-                  <span>Editar Perfil</span>
-                </button>
-              ) : (
-                <div style={styles.buttonGroup}>
-                  <button onClick={handleCancel} style={styles.cancelButton} disabled={saving}>
-                    Cancelar
-                  </button>
-                  <button onClick={handleSave} style={styles.saveButton} disabled={saving}>
-                    {saving ? 'Salvando...' : 'Salvar'}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Form */}
-            <div style={styles.form}>
-              {/* Nome */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Nome</label>
-                {isEditing ? (
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    style={styles.input}
-                  />
+            {/* Informações Completas */}
+            <div style={styles.vetMainSection}>
+              <div style={styles.vetMainSectionHeader}>
+                <h2 style={styles.vetMainSectionTitle}>Informações Completas</h2>
+                {editingSection === 'info' ? (
+                  <div style={styles.sectionButtonGroup}>
+                    <button
+                      type="button"
+                      onClick={() => handleCancelSection('info')}
+                      style={styles.cancelButton}
+                      disabled={saving}
+                    >
+                      Cancelar
+                    </button>
+                    <button type="button" onClick={handleSave} style={styles.saveButton} disabled={saving}>
+                      {saving ? 'Salvando...' : 'Salvar'}
+                    </button>
+                  </div>
                 ) : (
-                  <p style={styles.value}>{vet.name}</p>
+                  editingSection === null && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingSection('info')}
+                      style={styles.sectionEditButton}
+                    >
+                      <Edit size={16} />
+                      <span>Editar</span>
+                    </button>
+                  )
                 )}
               </div>
-
-              {/* Email */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Email</label>
-                <p style={styles.valueReadOnly}>{vet.email}</p>
-              </div>
-
-              {/* CRMV */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>CRMV</label>
-                <p style={styles.valueReadOnly}>{vet.crmv}</p>
-              </div>
-
-              {/* Telefone - apenas para próprio perfil */}
-              {isOwnProfile && (
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Telefone</label>
-                  {isEditing ? (
+              {editingSection === 'info' ? (
+                <div style={styles.vetInfoGrid}>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>Nome Completo</label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      style={styles.input}
+                    />
+                  </div>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>Email</label>
+                    <p style={styles.vetFieldValueMuted}>{vet.email}</p>
+                  </div>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>Telefone</label>
                     <input
                       type="text"
                       value={formData.phone}
@@ -544,198 +680,351 @@ const VetProfilePage: React.FC = () => {
                       placeholder="(00) 00000-0000"
                       style={styles.input}
                     />
-                  ) : (
-                    <p style={styles.value}>{vet.phone || 'Não informado'}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Endereço - apenas para próprio perfil */}
-              {isOwnProfile && (
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Endereço</label>
-                  {isEditing ? (
+                  </div>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>CRMV</label>
+                    <p style={styles.vetFieldValueMuted}>{vet.crmv}</p>
+                  </div>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>Tipo de Documento</label>
+                    <p style={styles.vetFieldValueMuted}>{vet.document_type || 'Não informado'}</p>
+                  </div>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>Número do Documento</label>
+                    <p style={styles.vetFieldValueMuted}>
+                      {vet.document_number ? maskDocument(vet.document_number) : 'Não informado'}
+                    </p>
+                  </div>
+                  <div style={styles.vetInfoItemFull}>
+                    <label style={styles.vetFieldLabel}>Endereço Completo</label>
                     <AddressAutocomplete
                       value={formData.address}
                       onChange={(address) => setFormData({ ...formData, address })}
                       placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
                       className="input"
                     />
-                  ) : (
-                    <p style={styles.value}>{vet.address || 'Não informado'}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Documento - apenas para próprio perfil, somente leitura */}
-              {isOwnProfile && vet.document_type && (
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>
-                    {vet.document_type === 'CPF' ? 'CPF' : 'CNPJ'}
-                  </label>
-                  <p style={styles.valueReadOnly}>
-                    {maskDocument(vet.document_number)}
-                  </p>
-                </div>
-              )}
-
-              {/* Especialidades */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Especialidades</label>
-                {isEditing ? (
-                  <>
-                    <div style={styles.inputWithButton}>
-                      <input
-                        type="text"
-                        value={specialtyInput}
-                        onChange={(e) => setSpecialtyInput(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSpecialty())}
-                        placeholder="Adicionar especialidade"
-                        style={styles.input}
-                      />
-                      <button onClick={addSpecialty} style={styles.addButton}>
-                        + Adicionar
-                      </button>
-                    </div>
-                    <div style={styles.tagContainer}>
-                      {formData.specialties.map((spec) => (
-                        <span key={spec} style={styles.tag}>
-                          {spec}
-                          <button
-                            onClick={() => removeSpecialty(spec)}
-                            style={styles.removeTagButton}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <div style={styles.tagContainer}>
-                    {loadingSpecialties ? (
-                      <p style={styles.emptyText}>Carregando especialidades...</p>
-                    ) : vet.specialties && vet.specialties.length > 0 ? (
-                      vet.specialties.map((spec: string) => (
-                        <span key={spec} style={styles.tagReadOnly}>
-                          {getSpecialtyName(spec)}
-                        </span>
-                      ))
-                    ) : (
-                      <p style={styles.emptyText}>Nenhuma especialidade cadastrada</p>
-                    )}
                   </div>
-                )}
-              </div>
-
-              {/* Certificados */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Certificados</label>
-                {isEditing ? (
-                  <>
-                    <div style={styles.inputWithButton}>
-                      <input
-                        type="text"
-                        value={certificateInput}
-                        onChange={(e) => setCertificateInput(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCertificate())}
-                        placeholder="Adicionar certificado"
-                        style={styles.input}
-                      />
-                      <button onClick={addCertificate} style={styles.addButton}>
-                        + Adicionar
-                      </button>
-                    </div>
-                    <div style={styles.tagContainer}>
-                      {formData.certificates.map((cert) => (
-                        <span key={cert} style={styles.tag}>
-                          {cert}
-                          <button
-                            onClick={() => removeCertificate(cert)}
-                            style={styles.removeTagButton}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <div style={styles.tagContainer}>
-                    {vet.certificates && vet.certificates.length > 0 ? (
-                      vet.certificates.map((cert: string) => (
-                        <span key={cert} style={styles.tagReadOnly}>
-                          {cert}
-                        </span>
-                      ))
-                    ) : (
-                      <p style={styles.emptyText}>Nenhum certificado cadastrado</p>
-                    )}
+                </div>
+              ) : (
+                <div style={styles.vetInfoGrid}>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>Nome Completo</label>
+                    <p style={styles.vetFieldValue}>{vet.name}</p>
                   </div>
-                )}
-              </div>
-
-              {/* Biografia - apenas para próprio perfil */}
-              {isOwnProfile && (
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Biografia</label>
-                  {isEditing ? (
-                    <textarea
-                      value={formData.bio}
-                      onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                      placeholder="Conte um pouco sobre você..."
-                      style={styles.textarea}
-                      rows={4}
-                    />
-                  ) : (
-                    <p style={styles.value}>{vet.bio || 'Não informado'}</p>
-                  )}
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>Email</label>
+                    <p style={styles.vetFieldValue}>{vet.email}</p>
+                  </div>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>Telefone</label>
+                    <p style={styles.vetFieldValue}>{vet.phone || 'Não informado'}</p>
+                  </div>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>CRMV</label>
+                    <p style={styles.vetFieldValue}>{vet.crmv || 'Não informado'}</p>
+                  </div>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>Tipo de Documento</label>
+                    <p style={styles.vetFieldValue}>{vet.document_type || 'Não informado'}</p>
+                  </div>
+                  <div style={styles.vetInfoItem}>
+                    <label style={styles.vetFieldLabel}>Número do Documento</label>
+                    <p style={styles.vetFieldValue}>
+                      {vet.document_number ? maskDocument(vet.document_number) : 'Não informado'}
+                    </p>
+                  </div>
+                  <div style={styles.vetInfoItemFull}>
+                    <label style={styles.vetFieldLabel}>Endereço Completo</label>
+                    <p style={styles.vetFieldValue}>{vet.address || 'Não informado'}</p>
+                  </div>
                 </div>
               )}
-
-              {/* Experiência */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Experiência</label>
-                {isEditing ? (
-                  <textarea
-                    value={formData.experience}
-                    onChange={(e) => setFormData({ ...formData, experience: e.target.value })}
-                    style={styles.textarea}
-                    rows={4}
-                  />
-                ) : (
-                  <p style={styles.value}>{vet.experience || ''}</p>
-                )}
-              </div>
             </div>
 
-            {/* Informações da Conta */}
+            {/* Especialidades */}
+            <div style={styles.vetMainSection}>
+              <div style={styles.vetMainSectionHeader}>
+                <h2 style={styles.vetMainSectionTitle}>Especialidades</h2>
+                {editingSection === 'specialties' ? (
+                  <div style={styles.sectionButtonGroup}>
+                    <button
+                      type="button"
+                      onClick={() => handleCancelSection('specialties')}
+                      style={styles.cancelButton}
+                      disabled={saving}
+                    >
+                      Cancelar
+                    </button>
+                    <button type="button" onClick={handleSave} style={styles.saveButton} disabled={saving}>
+                      {saving ? 'Salvando...' : 'Salvar'}
+                    </button>
+                  </div>
+                ) : (
+                  editingSection === null && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingSection('specialties')}
+                      style={styles.sectionEditButton}
+                    >
+                      <Edit size={16} />
+                      <span>Editar</span>
+                    </button>
+                  )
+                )}
+              </div>
+              {editingSection === 'specialties' ? (
+                <>
+                  <div style={styles.inputWithButton}>
+                    <input
+                      type="text"
+                      value={specialtyInput}
+                      onChange={(e) => setSpecialtyInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addSpecialty();
+                        }
+                      }}
+                      placeholder="Adicionar especialidade"
+                      style={styles.input}
+                    />
+                    <button type="button" onClick={addSpecialty} style={styles.addButton}>
+                      + Adicionar
+                    </button>
+                  </div>
+                  <div style={styles.tagContainer}>
+                    {formData.specialties.map((spec) => (
+                      <span key={spec} style={styles.tag}>
+                        {getSpecialtyName(spec)}
+                        <button
+                          type="button"
+                          onClick={() => removeSpecialty(spec)}
+                          style={styles.removeTagButton}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : loadingSpecialties ? (
+                <p style={styles.emptyText}>Carregando especialidades...</p>
+              ) : vet.specialties && vet.specialties.length > 0 ? (
+                <div style={styles.tagContainer}>
+                  {vet.specialties.map((spec: string) => (
+                    <span key={spec} style={styles.tagReadOnly}>
+                      {getSpecialtyName(spec)}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p style={styles.emptyText}>Nenhuma especialidade cadastrada</p>
+              )}
+            </div>
+
+            {/* Certificados */}
+            <div style={styles.vetMainSection}>
+              <div style={styles.vetMainSectionHeader}>
+                <h2 style={styles.vetMainSectionTitle}>Certificados</h2>
+                {editingSection === 'certificates' ? (
+                  <div style={styles.sectionButtonGroup}>
+                    <button
+                      type="button"
+                      onClick={() => handleCancelSection('certificates')}
+                      style={styles.cancelButton}
+                      disabled={saving}
+                    >
+                      Cancelar
+                    </button>
+                    <button type="button" onClick={handleSave} style={styles.saveButton} disabled={saving}>
+                      {saving ? 'Salvando...' : 'Salvar'}
+                    </button>
+                  </div>
+                ) : (
+                  editingSection === null && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingSection('certificates')}
+                      style={styles.sectionEditButton}
+                    >
+                      <Edit size={16} />
+                      <span>Editar</span>
+                    </button>
+                  )
+                )}
+              </div>
+              {editingSection === 'certificates' ? (
+                <>
+                  <div style={styles.inputWithButton}>
+                    <input
+                      type="text"
+                      value={certificateInput}
+                      onChange={(e) => setCertificateInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addCertificate();
+                        }
+                      }}
+                      placeholder="Adicionar certificado"
+                      style={styles.input}
+                    />
+                    <button type="button" onClick={addCertificate} style={styles.addButton}>
+                      + Adicionar
+                    </button>
+                  </div>
+                  <div style={styles.tagContainer}>
+                    {formData.certificates.map((cert) => (
+                      <span key={cert} style={styles.tag}>
+                        {cert}
+                        <button
+                          type="button"
+                          onClick={() => removeCertificate(cert)}
+                          style={styles.removeTagButton}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : vet.certificates && vet.certificates.length > 0 ? (
+                <div style={styles.tagContainer}>
+                  {vet.certificates.map((cert: string) => (
+                    <span key={cert} style={styles.certTagReadOnly}>
+                      {cert}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p style={styles.emptyText}>Nenhum certificado cadastrado</p>
+              )}
+            </div>
+
+            {/* Biografia */}
+            <div style={styles.vetMainSection}>
+              <div style={styles.vetMainSectionHeader}>
+                <h2 style={styles.vetMainSectionTitle}>Biografia</h2>
+                {editingSection === 'bio' ? (
+                  <div style={styles.sectionButtonGroup}>
+                    <button
+                      type="button"
+                      onClick={() => handleCancelSection('bio')}
+                      style={styles.cancelButton}
+                      disabled={saving}
+                    >
+                      Cancelar
+                    </button>
+                    <button type="button" onClick={handleSave} style={styles.saveButton} disabled={saving}>
+                      {saving ? 'Salvando...' : 'Salvar'}
+                    </button>
+                  </div>
+                ) : (
+                  editingSection === null && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingSection('bio')}
+                      style={styles.sectionEditButton}
+                    >
+                      <Edit size={16} />
+                      <span>Editar</span>
+                    </button>
+                  )
+                )}
+              </div>
+              {editingSection === 'bio' ? (
+                <textarea
+                  value={formData.bio}
+                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                  placeholder="Conte um pouco sobre você..."
+                  style={styles.textarea}
+                  rows={4}
+                />
+              ) : (
+                <p style={styles.vetFieldValue}>{vet.bio || 'Não informado'}</p>
+              )}
+            </div>
+
+            {/* Experiência */}
+            <div style={styles.vetMainSection}>
+              <div style={styles.vetMainSectionHeader}>
+                <h2 style={styles.vetMainSectionTitle}>Experiência</h2>
+                {editingSection === 'experience' ? (
+                  <div style={styles.sectionButtonGroup}>
+                    <button
+                      type="button"
+                      onClick={() => handleCancelSection('experience')}
+                      style={styles.cancelButton}
+                      disabled={saving}
+                    >
+                      Cancelar
+                    </button>
+                    <button type="button" onClick={handleSave} style={styles.saveButton} disabled={saving}>
+                      {saving ? 'Salvando...' : 'Salvar'}
+                    </button>
+                  </div>
+                ) : (
+                  editingSection === null && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingSection('experience')}
+                      style={styles.sectionEditButton}
+                    >
+                      <Edit size={16} />
+                      <span>Editar</span>
+                    </button>
+                  )
+                )}
+              </div>
+              {editingSection === 'experience' ? (
+                <textarea
+                  value={formData.experience}
+                  onChange={(e) => setFormData({ ...formData, experience: e.target.value })}
+                  style={styles.textarea}
+                  rows={4}
+                />
+              ) : (
+                <p style={styles.vetFieldValue}>{vet.experience || 'Não informado'}</p>
+              )}
+            </div>
+
+            {/* Informações da Conta (somente leitura) */}
             {(vet.created_at || vet.updated_at) && (
-              <div style={styles.accountInfoSection}>
-                <h2 style={styles.sectionTitle}>Informações da Conta</h2>
-                <div style={styles.accountInfo}>
+              <div style={styles.vetMainSection}>
+                <h2 style={{ ...styles.vetMainSectionTitle, marginBottom: '20px' }}>Informações da Conta</h2>
+                <div style={styles.vetInfoGrid}>
                   {vet.created_at && (
-                    <div style={styles.accountInfoItem}>
-                      <span style={styles.accountInfoLabel}>Conta criada em:</span>
-                      <span style={styles.accountInfoValue}>
+                    <div style={styles.vetInfoItem}>
+                      <label style={styles.vetFieldLabel}>
+                        <Calendar size={16} style={{ marginRight: '8px' }} />
+                        Conta criada em
+                      </label>
+                      <p style={styles.vetFieldValue}>
                         {new Date(vet.created_at).toLocaleDateString('pt-BR', {
                           day: '2-digit',
                           month: '2-digit',
                           year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
                         })}
-                      </span>
+                      </p>
                     </div>
                   )}
                   {vet.updated_at && (
-                    <div style={styles.accountInfoItem}>
-                      <span style={styles.accountInfoLabel}>Última atualização:</span>
-                      <span style={styles.accountInfoValue}>
+                    <div style={styles.vetInfoItem}>
+                      <label style={styles.vetFieldLabel}>
+                        <Calendar size={16} style={{ marginRight: '8px' }} />
+                        Última atualização
+                      </label>
+                      <p style={styles.vetFieldValue}>
                         {new Date(vet.updated_at).toLocaleDateString('pt-BR', {
                           day: '2-digit',
                           month: '2-digit',
                           year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
                         })}
-                      </span>
+                      </p>
                     </div>
                   )}
                 </div>
@@ -963,6 +1252,96 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '32px',
     overflowY: 'auto',
     maxHeight: 'calc(100vh - 120px)',
+  },
+  vetMainSection: {
+    marginBottom: '24px',
+    padding: '24px',
+    backgroundColor: '#ffffff',
+    borderRadius: '12px',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+  },
+  vetMainSectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '16px',
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+  },
+  vetMainSectionTitle: {
+    fontFamily: 'Poppins, sans-serif',
+    fontSize: '20px',
+    fontWeight: '600',
+    color: '#262626',
+    margin: 0,
+  },
+  sectionEditButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 16px',
+    backgroundColor: '#ffffff',
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
+    borderRadius: '8px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  sectionButtonGroup: {
+    display: 'flex',
+    gap: '12px',
+    flexShrink: 0,
+  },
+  vetInfoGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '20px',
+  },
+  vetInfoItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  vetInfoItemFull: {
+    gridColumn: '1 / -1',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  vetFieldLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#262626',
+  },
+  vetFieldValue: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    color: '#262626',
+    margin: 0,
+    lineHeight: 1.6,
+  },
+  vetFieldValueMuted: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    color: '#737373',
+    margin: 0,
+    lineHeight: 1.6,
+  },
+  certTagReadOnly: {
+    padding: '8px 14px',
+    backgroundColor: '#fef3c7',
+    color: '#92400e',
+    borderRadius: '6px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '13px',
+    fontWeight: '500',
+    border: '1px solid #fbbf24',
   },
   profileHeader: {
     textAlign: 'center',
@@ -1263,6 +1642,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
     width: '100%',
     textAlign: 'left',
+  },
+  quickActionButtonDisabled: {
+    opacity: 0.55,
+    cursor: 'not-allowed',
   },
   accountInfoSection: {
     marginTop: '32px',

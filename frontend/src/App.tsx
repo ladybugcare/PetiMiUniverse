@@ -5,6 +5,7 @@ import { UnitProvider } from './contexts/UnitContext';
 import { AuthProvider } from './AuthContext';
 import ProtectedRoute from './routes/ProtectedRoute';
 import PublicRoute from './routes/PublicRoute';
+import VetFreelancerDemandsAccessRoute from './routes/VetFreelancerDemandsAccessRoute';
 import AuthListener from './components/AuthListener';
 import ErrorBoundary from './components/ErrorBoundary';
 import { enforceEnvConsistency } from './utils/envGuard';
@@ -134,7 +135,9 @@ function App() {
                 path="/demands"
                 element={
                   <ProtectedRoute>
-                    <DemandsPage />
+                    <VetFreelancerDemandsAccessRoute>
+                      <DemandsPage />
+                    </VetFreelancerDemandsAccessRoute>
                   </ProtectedRoute>
                 }
               />
@@ -142,7 +145,9 @@ function App() {
                 path="/demands/:id"
                 element={
                   <ProtectedRoute>
-                    <DemandDetailPage />
+                    <VetFreelancerDemandsAccessRoute>
+                      <DemandDetailPage />
+                    </VetFreelancerDemandsAccessRoute>
                   </ProtectedRoute>
                 }
               />
@@ -158,7 +163,9 @@ function App() {
                 path="/my-applications"
                 element={
                   <ProtectedRoute>
-                    <MyApplicationsPage />
+                    <VetFreelancerDemandsAccessRoute>
+                      <MyApplicationsPage />
+                    </VetFreelancerDemandsAccessRoute>
                   </ProtectedRoute>
                 }
               />

@@ -1,5 +1,6 @@
 import React from 'react';
 import colors from '../styles/colors';
+import CreateDemandHero from './CreateDemandHero';
 
 type CategoryType = 'vet' | 'freelancer' | 'clinic' | 'other';
 
@@ -42,32 +43,20 @@ const DemandReviewStep: React.FC<DemandReviewStepProps> = ({
   const totalVacancies = positions.reduce((sum, pos) => sum + (pos.slots || 0), 0);
   const totalInvestment = positions.reduce((sum, pos) => sum + pos.slots * pos.payment, 0);
 
-  const getCategoryInfo = (cat: CategoryType) => {
+  const getReviewBadge = (cat: CategoryType): string => {
     switch (cat) {
       case 'vet':
-        return {
-          title: 'Criar Demanda para Veterinário',
-          gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        };
+        return 'Veterinário';
       case 'freelancer':
-        return {
-          title: 'Criar Demanda para Freelancer',
-          gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-        };
+        return 'Freelancer';
       case 'clinic':
-        return {
-          title: 'Criar Demanda para Clínica Parceira',
-          gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-        };
+        return 'Clínica parceira';
       case 'other':
-        return {
-          title: 'Criar Demanda para Outros Profissionais',
-          gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-        };
+        return 'Outros profissionais';
     }
   };
 
-  const categoryInfo = getCategoryInfo(category);
+  const reviewBadge = getReviewBadge(category);
 
   // Formatar data
   const formatDate = (dateString: string) => {
@@ -82,19 +71,14 @@ const DemandReviewStep: React.FC<DemandReviewStepProps> = ({
   };
 
   return (
-    <div style={styles.container}>
-      {/* Header */}
-      <div
-        style={{
-          ...styles.header,
-          background: categoryInfo.gradient,
-        }}
-      >
-        <h1 style={styles.headerTitle}>Revisar Demanda</h1>
-        <p style={styles.headerSubtitle}>
-          Revise os detalhes antes de criar a demanda
-        </p>
-      </div>
+    <div style={styles.pageShell}>
+      <CreateDemandHero
+        category={category}
+        title="Revisar demanda"
+        subtitle="Confira os dados abaixo antes de publicar a vaga."
+        eyebrow="Revisão"
+        badge={reviewBadge.toUpperCase()}
+      />
 
       {/* Review Card */}
       <div style={styles.reviewCard}>
@@ -220,33 +204,23 @@ const DemandReviewStep: React.FC<DemandReviewStepProps> = ({
 };
 
 const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    maxWidth: '900px',
-    margin: '0 auto',
-  },
-  header: {
-    padding: '40px 32px',
-    borderRadius: '16px 16px 0 0',
-    marginBottom: '0',
-  },
-  headerTitle: {
-    fontFamily: 'Poppins, sans-serif',
-    fontSize: '32px',
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: '8px',
-    textShadow: '0 2px 4px rgba(0,0,0,0.1)',
-  },
-  headerSubtitle: {
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '16px',
-    color: 'rgba(255, 255, 255, 0.95)',
+  pageShell: {
+    maxWidth: '1180px',
+    marginLeft: 'auto',
+    marginRight: 'auto',
+    marginTop: '36px',
+    marginBottom: '24px',
+    borderRadius: '16px',
+    overflow: 'hidden',
+    boxShadow: '0 10px 40px rgba(15, 23, 42, 0.1)',
+    border: '1px solid rgba(15, 23, 42, 0.06)',
   },
   reviewCard: {
     backgroundColor: '#ffffff',
     borderRadius: '0 0 16px 16px',
     padding: '32px',
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+    boxShadow: 'none',
+    borderTop: '1px solid rgba(15, 23, 42, 0.06)',
   },
   section: {
     marginBottom: '32px',

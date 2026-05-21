@@ -37,7 +37,7 @@ interface LoginData {
 // ====================================================
 // Cache simples para evitar requisições duplicadas
 const requestCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 2000; // 2 segundos de cache
+const CACHE_TTL = 12000; // 12s — reduz rajadas de GET idênticos (ex.: 429 / vários mounts)
 
 const apiRequest = async (endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<any> => {
   const url = `${API_BASE_URL}${endpoint}`;

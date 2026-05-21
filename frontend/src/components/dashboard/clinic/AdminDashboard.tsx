@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUnit } from '../../../contexts/UnitContext';
+import { useAuth } from '../../../AuthContext';
 import { useAlert } from '../../../hooks/useAlert';
 import { statisticsApi } from '../../../services/statisticsApi';
 import { clinicUsersApi } from '../../../services/clinicUsersApi';
 import { unitsApi } from '../../../services/unitsApi';
-import { Building2, Users, ClipboardList, AlertCircle, BarChart2, UserPlus } from 'lucide-react';
+import { Building2, Users, ClipboardList, AlertCircle, BarChart2, UserPlus, MapPin, Star } from 'lucide-react';
 import { Role, Unit } from '../../../types/units';
 import colors from '../../../styles/colors';
+import { getStoredClinicId } from '../../../utils/authHelpers';
 
 interface AdminDashboardProps {
   activeSection: string;
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
-  const { units, loadUnits } = useUnit();
+  const { units } = useUnit();
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     totalUnits: 0,
     totalUsers: 0,
@@ -29,18 +32,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
     const loadStats = async () => {
       try {
         setLoading(true);
-        const userStr = localStorage.getItem('user');
-        const clinicUserStr = localStorage.getItem('clinic_user');
-        
-        if (!userStr || !clinicUserStr) return;
-        
-        const user = JSON.parse(userStr);
-        const clinicUser = JSON.parse(clinicUserStr);
-        // Sempre usar clinic_id do clinic_user quando disponível
-        // Fallback para user.id apenas se não houver clinic_user (clinic owner direto)
-        const clinicId = clinicUser?.clinic_id || user.user_metadata?.clinic_id || user.id;
-
-        console.log('Loading stats for clinic:', { clinicId, userId: user.id });
+        const clinicId = getStoredClinicId();
+        if (!clinicId) {
+          if (isMounted) setLoading(false);
+          return;
+        }
 
         // Get fresh units count directly from API to ensure accuracy
         const { units: allClinicUnits } = await unitsApi.getByClinic(clinicId);
@@ -93,14 +89,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
     };
   }, []); // Empty dependency array - only run once on mount
 
+  const welcomeName =
+    user?.user_metadata?.name ||
+    (typeof user?.email === 'string' ? user.email.split('@')[0] : null) ||
+    'Equipa';
+
   const renderSection = () => {
     switch (activeSection) {
       case 'resumo':
-        return <ResumoSection stats={stats} units={units} />;
+        return (
+          <ResumoSection
+            stats={stats}
+            units={units}
+            statsLoading={loading}
+            welcomeName={welcomeName}
+          />
+        );
       case 'audit':
         return <AuditLogsSection />;
       default:
-        return <ResumoSection stats={stats} units={units} />;
+        return (
+          <ResumoSection
+            stats={stats}
+            units={units}
+            statsLoading={loading}
+            welcomeName={welcomeName}
+          />
+        );
     }
   };
 
@@ -108,7 +123,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
 };
 
 // Resumo Section for CADMIN
-const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units }) => {
+const ResumoSection: React.FC<{
+  stats: {
+    totalUnits: number;
+    totalUsers: number;
+    totalDemands: number;
+    pendingApplications: number;
+  };
+  units: Unit[];
+  statsLoading: boolean;
+  welcomeName: string;
+}> = ({ stats, units, statsLoading, welcomeName }) => {
   const navigate = useNavigate();
   const { showSuccess, showError, showWarning } = useAlert();
   const { units: contextUnits, selectedUnit } = useUnit();
@@ -128,14 +153,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
 
   // Get clinic ID from localStorage
   const getClinicId = React.useCallback(() => {
-    const userStr = localStorage.getItem('user');
-    const clinicUserStr = localStorage.getItem('clinic_user');
-    
-    if (!userStr || !clinicUserStr) return null;
-    
-    const user = JSON.parse(userStr);
-    const clinicUser = JSON.parse(clinicUserStr);
-    return clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
+    return getStoredClinicId();
   }, []);
 
   // Handlers for button actions
@@ -217,12 +235,26 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
 
   return (
     <div style={styles.section}>
-      <h2 style={styles.sectionTitle}>Visão Geral - Todas as Unidades</h2>
+      <header style={styles.welcomeStrip}>
+        <p style={styles.welcomeEyebrow}>Painel da clínica</p>
+        <h1 style={styles.welcomeTitle}>Olá, {welcomeName}</h1>
+        <p style={styles.welcomeSubtitle}>
+          Acompanhe unidades, equipa e demandas num só lugar. Use os atalhos abaixo para agir mais rápido.
+        </p>
+      </header>
 
-      {/* Stats Cards */}
-      <div style={styles.statsGrid}>
+      <h2 style={styles.metricsHeading}>Indicadores</h2>
+
+      {statsLoading ? (
+        <div style={styles.statsGrid} aria-busy="true" aria-label="A carregar indicadores">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} style={styles.statSkeleton} />
+          ))}
+        </div>
+      ) : (
+        <div style={styles.statsGrid}>
         <div 
-          style={{ ...styles.statCard, borderLeftColor: colors.brand.primary[500] }}
+          style={{ ...styles.statCard, borderLeftColor: colors.brand.primary[500], cursor: 'pointer' }}
           onClick={() => navigate('/units')}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
@@ -304,7 +336,8 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
             <p style={styles.statLabel}>Candidaturas Pendentes</p>
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Units List */}
       <div style={styles.unitsSection}>
@@ -313,7 +346,12 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
           {loadingUnits ? (
             <p style={styles.loadingText}>Carregando unidades...</p>
           ) : allUnits.length === 0 ? (
-            <p style={styles.emptyText}>Nenhuma unidade cadastrada</p>
+            <div style={styles.emptyUnitsWrap}>
+              <p style={styles.emptyUnitsText}>Ainda não há unidades registadas nesta clínica.</p>
+              <button type="button" style={styles.emptyCta} onClick={handleNewUnit}>
+                Cadastrar primeira unidade
+              </button>
+            </div>
           ) : (
             allUnits.map((unit) => {
               const getStatusLabel = (status: string) => {
@@ -347,15 +385,21 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
                     e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.05)';
                   }}
                 >
-                  {unit.is_main && <span style={styles.mainBadge}>⭐ Principal</span>}
+                  {unit.is_main && (
+                    <span style={{ ...styles.mainBadge, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <Star size={12} fill="currentColor" aria-hidden />
+                      Principal
+                    </span>
+                  )}
                   <div style={styles.unitHeader}>
                     <h4 style={styles.unitName}>{unit.name}</h4>
                     <span style={{ ...styles.statusBadge, backgroundColor: `${statusInfo.color}20`, color: statusInfo.color, borderColor: statusInfo.color }}>
                       {statusInfo.label}
                     </span>
                   </div>
-                  <p style={styles.unitLocation}>
-                    📍 {unit.city}, {unit.state}
+                  <p style={{ ...styles.unitLocation, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <MapPin size={16} color="#6b7280" aria-hidden />
+                    {unit.city}, {unit.state}
                   </p>
                   <p style={styles.unitAddress}>{unit.address}</p>
                 </div>
@@ -385,7 +429,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
               e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
-              e.currentTarget.style.borderColor = '#d7c7ff';
+              e.currentTarget.style.borderColor = colors.brand.primary[200];
               if (icon) {
                 icon.style.transform = 'scale(1) rotate(0deg)';
               }
@@ -412,7 +456,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
               e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
-              e.currentTarget.style.borderColor = '#d7c7ff';
+              e.currentTarget.style.borderColor = colors.brand.primary[200];
               if (icon) {
                 icon.style.transform = 'scale(1) rotate(0deg)';
               }
@@ -439,7 +483,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
               e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
-              e.currentTarget.style.borderColor = '#d7c7ff';
+              e.currentTarget.style.borderColor = colors.brand.primary[200];
               if (icon) {
                 icon.style.transform = 'scale(1) rotate(0deg)';
               }
@@ -466,7 +510,7 @@ const ResumoSection: React.FC<{ stats: any; units: any[] }> = ({ stats, units })
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
               e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
-              e.currentTarget.style.borderColor = '#d7c7ff';
+              e.currentTarget.style.borderColor = colors.brand.primary[200];
               if (icon) {
                 icon.style.transform = 'scale(1) rotate(0deg)';
               }
@@ -612,8 +656,77 @@ const AuditLogsSection: React.FC = () => {
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
-    padding: '32px',
+    padding: '12px 0 48px',
     fontFamily: 'Inter, sans-serif',
+    maxWidth: '100%',
+  },
+  welcomeStrip: {
+    marginBottom: '28px',
+    padding: '22px 24px',
+    borderRadius: '14px',
+    background: `linear-gradient(135deg, ${colors.brand.primary[50]} 0%, #fff 55%, ${colors.brand.secondary[100]} 100%)`,
+    border: `1px solid ${colors.brand.primary[200]}`,
+    boxShadow: '0 2px 12px rgba(15, 23, 42, 0.04)',
+  },
+  welcomeEyebrow: {
+    margin: '0 0 8px 0',
+    fontSize: '11px',
+    fontWeight: 700,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: colors.brand.primary[600],
+  },
+  welcomeTitle: {
+    margin: '0 0 10px 0',
+    fontSize: 'clamp(1.35rem, 2.2vw, 1.65rem)',
+    fontWeight: 700,
+    fontFamily: 'Poppins, sans-serif',
+    color: colors.text,
+    lineHeight: 1.25,
+  },
+  welcomeSubtitle: {
+    margin: 0,
+    fontSize: '15px',
+    lineHeight: 1.55,
+    color: colors.textSecondary,
+    maxWidth: '640px',
+  },
+  metricsHeading: {
+    fontSize: '18px',
+    fontWeight: 600,
+    fontFamily: 'Poppins, sans-serif',
+    color: colors.text,
+    margin: '0 0 16px 0',
+  },
+  statSkeleton: {
+    minHeight: '100px',
+    borderRadius: '12px',
+    backgroundColor: '#f4f4f5',
+    border: '1px solid #e4e4e7',
+  },
+  emptyUnitsWrap: {
+    gridColumn: '1 / -1',
+    textAlign: 'center',
+    padding: '28px 20px',
+    backgroundColor: colors.brand.primary[50],
+    borderRadius: '12px',
+    border: `1px dashed ${colors.brand.primary[300]}`,
+  },
+  emptyUnitsText: {
+    margin: '0 0 14px 0',
+    fontSize: '15px',
+    color: colors.textSecondary,
+  },
+  emptyCta: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: 600,
+    fontFamily: 'Inter, sans-serif',
+    color: '#fff',
+    backgroundColor: colors.brand.primary[500],
+    border: 'none',
+    borderRadius: '10px',
+    cursor: 'pointer',
   },
   section: {
     marginBottom: '32px',
@@ -747,7 +860,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   actionButton: {
     backgroundColor: '#ffffff',
-    border: '1px solid #d7c7ff',
+    border: `1px solid ${colors.brand.primary[200]}`,
     borderRadius: '16px',
     padding: '24px 16px',
     display: 'flex',
@@ -774,7 +887,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   actionLabel: {
     fontSize: '14px',
     fontWeight: '600',
-    color: '#2d1b69',
+    color: colors.text,
     textAlign: 'center',
   },
   auditPlaceholder: {

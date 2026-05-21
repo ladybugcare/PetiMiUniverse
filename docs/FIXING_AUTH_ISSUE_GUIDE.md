@@ -380,5 +380,5 @@ Se ainda tiver problemas:
 
 **Versão:** 1.0.0  
 **Data:** 29 de Outubro, 2025  
-**Autor:** PetiVet Development Team
+**Autor:** PetMi Vet Development Team
 

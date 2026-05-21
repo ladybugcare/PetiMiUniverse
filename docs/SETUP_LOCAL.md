@@ -1,6 +1,6 @@
-# 🚀 Guia Rápido - Configuração Local do PetiVet
+# 🚀 Guia Rápido - Configuração Local do PetMi Vet
 
-Este guia mostra como configurar e rodar o projeto PetiVet na sua máquina local.
+Este guia mostra como configurar e rodar o projeto PetMi Vet na sua máquina local.
 
 ## 📋 Pré-requisitos
 
@@ -13,7 +13,7 @@ Este guia mostra como configurar e rodar o projeto PetiVet na sua máquina local
 
 ```bash
 git clone <repository-url>
-cd PetiVet
+cd PetiMiUniverse
 ```
 
 ## 📦 Passo 2: Instalar Dependências

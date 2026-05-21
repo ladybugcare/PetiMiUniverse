@@ -10,7 +10,7 @@ Use este checklist para acompanhar o processo de correção dos erros do banco d
 
 - [ ] Li o arquivo `FIX_DATABASE_ERRORS.md`
 - [ ] Tenho acesso ao Supabase Dashboard
-- [ ] Identifiquei meu projeto no Supabase (PetiVet)
+- [ ] Identifiquei meu projeto no Supabase (PetMi Vet)
 - [ ] Tenho permissão de administrador no projeto
 
 ---

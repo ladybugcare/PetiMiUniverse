@@ -7,7 +7,7 @@ import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 import { BRAZILIAN_STATES, getCitiesByState, STATE_NAMES } from '../utils/locationData';
 import { ibgeApi, IBGEState, IBGECity } from '../services/ibgeApi';
 import colors from '../styles/colors';
-import { Heart, ArrowRight, ArrowLeft, CheckCircle, AlertCircle, Briefcase, MapPin, Calendar, FileText, Lightbulb, LogOut, Stethoscope } from 'lucide-react';
+import { ArrowRight, ArrowLeft, CheckCircle, AlertCircle, Briefcase, MapPin, Calendar, FileText, Lightbulb, LogOut, Stethoscope } from 'lucide-react';
 import { useAlert } from '../hooks/useAlert';
 import IconWrapper from '../components/IconWrapper';
 import { useAuth } from '../AuthContext';
@@ -516,7 +516,7 @@ const FreelancerOnboardingPage: React.FC = () => {
       case 4:
         return 'Certificações e Descrição';
       case 5:
-        return 'Tudo certo por aqui! ✨';
+        return 'Tudo certo por aqui!';
       default:
         return '';
     }
@@ -729,7 +729,7 @@ const FreelancerOnboardingPage: React.FC = () => {
 
             <div style={styles.formGroup}>
               <label style={styles.label}>
-                Conte um pouco sobre sua trajetória 🐾 <span style={styles.required}>*</span>
+                Conte um pouco sobre sua trajetória <span style={styles.required}>*</span>
               </label>
               <p style={styles.stepHint}>
                 Fale um pouco sobre sua experiência, áreas que mais gosta de atuar e o que te motiva a cuidar dos pets...
@@ -771,7 +771,7 @@ const FreelancerOnboardingPage: React.FC = () => {
       case 5:
         return (
           <div style={styles.successContainer}>
-            <h2 style={styles.successTitle}>Tudo certo por aqui! ✨</h2>
+            <h2 style={styles.successTitle}>Tudo certo por aqui!</h2>
             <div style={styles.successMessage}>
               <p>
                 Seu cadastro e documentação estão em análise pela nossa equipe, pra garantir que tudo fique certinho antes de você começar a se candidatar nas demandas.
@@ -783,7 +783,7 @@ const FreelancerOnboardingPage: React.FC = () => {
                 Enquanto isso, pode explorar o marketplace, ver as oportunidades e conhecer melhor a plataforma.
               </p>
               <p style={styles.successFooter}>
-                É uma alegria ter você fazendo parte da PetiVet! 🐾
+                É uma alegria ter você fazendo parte da PetMi Vet!
               </p>
             </div>
             <button
@@ -832,31 +832,54 @@ const FreelancerOnboardingPage: React.FC = () => {
 
   if (step === 5) {
     return (
-      <div style={styles.container}>
-        <div style={styles.topHeader}>
-          <div style={styles.headerContent}>
-            <div style={styles.logoSection}>
-              <Heart size={24} color={colors.brand.primary[500]} />
-              <span style={styles.logoText}>PetiVet</span>
+      <>
+        <div style={styles.container}>
+          <div style={styles.topHeader}>
+            <div style={styles.headerContent}>
+              <div style={styles.logoSection}>
+                <img src="/logo_texto_lado.png" alt="PetMi Vet" style={styles.logoImage} />
+              </div>
+              <button
+                onClick={handleLogoutClick}
+                disabled={isLoggingOut}
+                style={{
+                  ...styles.logoutButton,
+                  ...(isLoggingOut ? styles.buttonDisabled : {}),
+                }}
+                title="Sair"
+              >
+                <LogOut size={18} />
+                <span>Sair</span>
+              </button>
             </div>
-            <button
-              onClick={handleLogoutClick}
-              disabled={isLoggingOut}
-              style={{
-                ...styles.logoutButton,
-                ...(isLoggingOut ? styles.buttonDisabled : {}),
-              }}
-              title="Sair"
-            >
-              <LogOut size={18} />
-              <span>Sair</span>
-            </button>
+          </div>
+          <div style={styles.card}>
+            {renderStepContent()}
           </div>
         </div>
-        <div style={styles.card}>
-          {renderStepContent()}
-        </div>
-      </div>
+        <LogoutConfirmModal
+          isOpen={showLogoutModal}
+          onClose={() => setShowLogoutModal(false)}
+          onSaveAndExit={handleSaveAndExit}
+          onExitWithoutSaving={handleExitWithoutSaving}
+          currentStep={step}
+          totalSteps={totalSteps}
+        />
+        {savedProgress && (
+          <RestoreProgressModal
+            isOpen={showRestoreModal}
+            onClose={() => {
+              setShowRestoreModal(false);
+              setSavedProgress(null);
+            }}
+            onContinue={handleContinueProgress}
+            onStartOver={handleStartOver}
+            currentStep={savedProgress.step || 1}
+            totalSteps={totalSteps}
+            progressPercent={savedProgress.step ? Math.round((savedProgress.step / totalSteps) * 100) : 0}
+          />
+        )}
+      </>
     );
   }
 
@@ -865,8 +888,7 @@ const FreelancerOnboardingPage: React.FC = () => {
       <div style={styles.topHeader}>
         <div style={styles.headerContent}>
           <div style={styles.logoSection}>
-            <Heart size={24} color={colors.brand.primary[500]} />
-            <span style={styles.logoText}>PetiVet</span>
+            <img src="/logo_texto_lado.png" alt="PetMi Vet" style={styles.logoImage} />
           </div>
           <button
             onClick={handleLogoutClick}
@@ -1007,10 +1029,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
   },
-  logoText: {
-    fontSize: '18px',
-    fontWeight: '700',
-    color: colors.brand.primary[500],
+  logoImage: {
+    height: '36px',
+    width: 'auto',
+    objectFit: 'contain',
+    display: 'block',
   },
   logoutButton: {
     display: 'flex',

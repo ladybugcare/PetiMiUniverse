@@ -7,11 +7,20 @@ import { colors } from '../styles/colors';
 
 interface VetProfileAdminViewProps {
   vet: Vet;
+  /** Resolve UUID de especialidade para nome (quando o vet guarda IDs). */
+  getSpecialtyName?: (spec: string) => string;
   onApprove?: (vetId: string) => Promise<void>;
   onReject?: (vetId: string, reason: string) => Promise<void>;
 }
 
-const VetProfileAdminView: React.FC<VetProfileAdminViewProps> = ({ vet, onApprove, onReject }) => {
+const VetProfileAdminView: React.FC<VetProfileAdminViewProps> = ({
+  vet,
+  getSpecialtyName,
+  onApprove,
+  onReject,
+}) => {
+  const labelForSpecialty = (spec: string) =>
+    getSpecialtyName ? getSpecialtyName(spec) : spec;
   const navigate = useNavigate();
   const { showSuccess, showError, showConfirm } = useAlert();
   const [processing, setProcessing] = useState(false);
@@ -62,15 +71,48 @@ const VetProfileAdminView: React.FC<VetProfileAdminViewProps> = ({ vet, onApprov
     );
   };
 
+  /**
+   * `status` em `vets` é operacional (active/inactive). Moderação usa `approval_status`.
+   * Sem isto, um vet `pending_approval` com `status === 'active'` aparecia como "Aprovado".
+   */
   const getStatusBadge = () => {
-    const status = vet.status || 'pending';
-    const statusConfig = {
-      active: { label: 'Aprovado', color: '#22c55e', bgColor: '#dcfce7', icon: CheckCircle },
-      pending: { label: 'Pendente', color: '#f59e0b', bgColor: '#fef3c7', icon: Clock },
-      rejected: { label: 'Rejeitado', color: '#ef4444', bgColor: '#fee2e2', icon: XCircle },
-      inactive: { label: 'Inativo', color: '#6b7280', bgColor: '#f3f4f6', icon: XCircle },
+    const a = vet.approval_status;
+    let config: {
+      label: string;
+      color: string;
+      bgColor: string;
+      icon: typeof CheckCircle;
     };
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
+
+    if (a === 'approved') {
+      config = { label: 'Aprovado', color: '#22c55e', bgColor: '#dcfce7', icon: CheckCircle };
+    } else if (a === 'rejected') {
+      config = { label: 'Rejeitado', color: '#ef4444', bgColor: '#fee2e2', icon: XCircle };
+    } else if (a === 'pending_review') {
+      config = { label: 'Em revisão', color: '#f59e0b', bgColor: '#fef3c7', icon: Clock };
+    } else if (a === 'pending_approval') {
+      config = { label: 'Pendente', color: '#f59e0b', bgColor: '#fef3c7', icon: Clock };
+    } else if (a === 'pending') {
+      config = {
+        label: 'Aguardando onboarding',
+        color: '#f59e0b',
+        bgColor: '#fef3c7',
+        icon: Clock,
+      };
+    } else {
+      const legacy = vet.status || 'pending';
+      const legacyMap: Record<
+        string,
+        { label: string; color: string; bgColor: string; icon: typeof CheckCircle }
+      > = {
+        active: { label: 'Aprovado', color: '#22c55e', bgColor: '#dcfce7', icon: CheckCircle },
+        pending: { label: 'Pendente', color: '#f59e0b', bgColor: '#fef3c7', icon: Clock },
+        rejected: { label: 'Rejeitado', color: '#ef4444', bgColor: '#fee2e2', icon: XCircle },
+        inactive: { label: 'Inativo', color: '#6b7280', bgColor: '#f3f4f6', icon: XCircle },
+      };
+      config = legacyMap[legacy] || legacyMap.pending;
+    }
+
     const Icon = config.icon;
     
     return (
@@ -156,7 +198,7 @@ const VetProfileAdminView: React.FC<VetProfileAdminViewProps> = ({ vet, onApprov
         <div style={styles.moderationSection}>
           <h3 style={styles.moderationTitle}>Ações de Moderação</h3>
           <div style={styles.moderationButtons}>
-            {vet.status !== 'active' && (
+            {vet.approval_status === 'pending_approval' && (
               <button
                 onClick={handleApprove}
                 disabled={processing}
@@ -169,7 +211,7 @@ const VetProfileAdminView: React.FC<VetProfileAdminViewProps> = ({ vet, onApprov
                 Aprovar Perfil
               </button>
             )}
-            {vet.status !== 'rejected' && (
+            {vet.approval_status === 'pending_approval' && (
               <button
                 onClick={handleReject}
                 disabled={processing}
@@ -179,7 +221,7 @@ const VetProfileAdminView: React.FC<VetProfileAdminViewProps> = ({ vet, onApprov
                 }}
               >
                 <XCircle size={18} />
-                Reprovar
+                Rejeitar
               </button>
             )}
             <button
@@ -248,7 +290,7 @@ const VetProfileAdminView: React.FC<VetProfileAdminViewProps> = ({ vet, onApprov
             <div style={styles.tagContainer}>
               {vet.specialties.map((spec, index) => (
                 <span key={index} style={styles.tag}>
-                  {spec}
+                  {labelForSpecialty(spec)}
                 </span>
               ))}
             </div>

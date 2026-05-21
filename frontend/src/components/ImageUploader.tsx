@@ -1,4 +1,5 @@
 import React, { useState, useRef, ChangeEvent } from 'react';
+import { AlertTriangle, ImagePlus, X } from 'lucide-react';
 import { colors } from '../styles/colors';
 
 interface ImageUploaderProps {
@@ -113,7 +114,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
           style={styles.hiddenInput}
         />
         
-        <div style={styles.uploadIcon}>📸</div>
+        <div style={styles.uploadIcon} aria-hidden>
+          <ImagePlus size={40} color={colors.brand.primary[400]} strokeWidth={1.5} />
+        </div>
         <p style={styles.uploadText}>
           Arraste suas fotos aqui ou <span style={styles.browseText}>clique para escolher</span>
         </p>
@@ -124,8 +127,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
 
       {/* Error Message */}
       {error && (
-        <div style={styles.errorMessage}>
-          ⚠️ {error}
+        <div style={{ ...styles.errorMessage, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <AlertTriangle size={18} color="#b45309" aria-hidden />
+          <span>{error}</span>
         </div>
       )}
 
@@ -142,8 +146,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
                   handleRemoveImage(index);
                 }}
                 style={styles.removeButton}
+                aria-label="Remover imagem"
               >
-                ✕
+                <X size={16} aria-hidden />
               </button>
               {index === 0 && (
                 <div style={styles.mainBadge}>Principal</div>
@@ -180,7 +185,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'none',
   },
   uploadIcon: {
-    fontSize: '48px',
+    display: 'flex',
+    justifyContent: 'center',
     marginBottom: '16px',
   },
   uploadText: {

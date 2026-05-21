@@ -21,6 +21,8 @@ export interface PendingUnit {
     email: string;
     cnpj?: string;
     phone?: string;
+    /** Presente nas respostas da API; usado para fila quando clínica aguarda aprovação */
+    status?: string;
   };
 }
 

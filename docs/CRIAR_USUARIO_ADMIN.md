@@ -1,6 +1,6 @@
 # 🔐 Como Criar um Usuário Admin pelo Banco de Dados
 
-Este guia mostra como criar um usuário administrador do sistema PetiVet diretamente pelo banco de dados Supabase.
+Este guia mostra como criar um usuário administrador do sistema PetMi Vet diretamente pelo banco de dados Supabase.
 
 ## 📋 Método Recomendado: Via Supabase Dashboard
 
@@ -91,7 +91,7 @@ WHERE raw_user_meta_data->>'role' = 'admin';
 
 ## ⚠️ Notas Importantes
 
-- **Role 'admin'** = Administrador do SISTEMA PetiVet (acesso total)
+- **Role 'admin'** = Administrador do SISTEMA PetMi Vet (acesso total)
 - **Role 'CADMIN'** = Administrador de CLÍNICA (acesso limitado à clínica)
 - Guarde a senha em um local seguro!
 - O email deve estar confirmado (`email_confirmed_at` não deve ser NULL)
