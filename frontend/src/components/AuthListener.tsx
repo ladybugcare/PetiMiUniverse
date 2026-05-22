@@ -20,6 +20,10 @@ const AuthListener: React.FC = () => {
       return;
     }
 
+    if (location.pathname === '/reset-password') {
+      return;
+    }
+
     // Detectar confirmação de email via hash na URL (apenas se não estamos em /email-confirmed)
     // Usar debounce para evitar múltiplas execuções
     let hashChangeTimeout: NodeJS.Timeout | null = null;
@@ -47,10 +51,15 @@ const AuthListener: React.FC = () => {
 
       // Se é um recovery (reset de senha)
       if (type === 'recovery' && accessToken) {
+        if (location.pathname === '/reset-password') {
+          hashProcessedRef.current = true;
+          return;
+        }
         isProcessingRef.current = true;
         hashProcessedRef.current = true;
         console.log('✅ Password recovery detected via hash');
-        navigate('/reset-password', { replace: true });
+        const h = window.location.hash;
+        navigate({ pathname: '/reset-password', hash: h || undefined }, { replace: true });
         return;
       }
     };
@@ -101,6 +110,10 @@ const AuthListener: React.FC = () => {
         return;
       }
 
+      if (location.pathname === '/reset-password') {
+        return;
+      }
+
       if (event === 'SIGNED_IN') {
         // Marcar como processado para evitar múltiplas execuções
         authEventProcessed = true;
@@ -121,8 +134,11 @@ const AuthListener: React.FC = () => {
       }
 
       if (event === 'PASSWORD_RECOVERY') {
-        console.log('✅ Password recovery - redirecting to reset password');
-        navigate('/reset-password', { replace: true });
+        if (location.pathname !== '/reset-password') {
+          console.log('✅ Password recovery - redirecting to reset password');
+          const h = window.location.hash;
+          navigate({ pathname: '/reset-password', hash: h || undefined }, { replace: true });
+        }
       }
     });
 

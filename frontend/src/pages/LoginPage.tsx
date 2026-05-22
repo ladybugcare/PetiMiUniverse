@@ -1,430 +1,209 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { login, resendConfirmationEmail, API_BASE_URL } from '../services/api';
-import HomeHeader from '../components/HomeHeader';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Mail, Lock, ArrowRight } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
-import EmailNotConfirmedModal from '../components/EmailNotConfirmedModal';
-import { useAlert } from '../hooks/useAlert';
-import colors from '../styles/colors';
-import { Mail, Lock } from 'lucide-react';
+import { login } from '../services/api';
 import { useAuth } from '../AuthContext';
-import { getUserRole, getDashboardPathForRole } from '../utils/authHelpers';
+import { getDashboardPathForRole, getUserRole } from '../utils/authHelpers';
+
+const REMEMBER_KEY = 'petimi_login_remember';
+const REMEMBER_EMAIL_KEY = 'petimi_login_email';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showEmailNotConfirmedModal, setShowEmailNotConfirmedModal] = useState(false);
-  const [emailForResend, setEmailForResend] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [passwordResetNotice, setPasswordResetNotice] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const navigate = useNavigate();
-  const { showError, showWarning, showSuccess } = useAlert();
+  const location = useLocation();
   const { setAuthFromLogin } = useAuth();
+
+  useEffect(() => {
+    try {
+      const remembered = localStorage.getItem(REMEMBER_KEY) === '1';
+      const savedEmail = localStorage.getItem(REMEMBER_EMAIL_KEY);
+      if (remembered && savedEmail) {
+        setRememberMe(true);
+        setEmail(savedEmail);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    const st = (location.state as { passwordReset?: boolean } | null)?.passwordReset;
+    if (st) {
+      setPasswordResetNotice(true);
+    }
+  }, [location.state]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!email || !password) {
-      showWarning('Por favor, preencha todos os campos.');
-      return;
-    }
+    setLoading(true);
+    setError(null);
+    setPasswordResetNotice(false);
 
     try {
-      setLoading(true);
-      const result = await login({ email, password });
+      const data = await login({
+        email: email.trim(),
+        password,
+      });
 
-      if (!result?.user) {
-        setLoading(false);
-        setTimeout(() => {
-          showError('Falha ao obter informações do usuário.', 'Erro no login');
-        }, 100);
-        return;
+      await setAuthFromLogin(data);
+
+      try {
+        if (rememberMe) {
+          localStorage.setItem(REMEMBER_KEY, '1');
+          localStorage.setItem(REMEMBER_EMAIL_KEY, email.trim());
+        } else {
+          localStorage.removeItem(REMEMBER_KEY);
+          localStorage.removeItem(REMEMBER_EMAIL_KEY);
+        }
+      } catch {
+        /* ignore */
       }
 
-      console.log('Login result:', result);
-
-      // Centraliza persistência de auth (user/session/onboarding/etc).
-      // Deve ser awaited: setSession é async e ClinicDashboard usa getStoredClinicId() no primeiro paint.
-      await setAuthFromLogin(result);
-
-      // Usar getUserRole() para detecção robusta e consistente
-      const userRole = getUserRole(result.user);
-      const onboardingInfo = result.onboarding;
-      const vetOnboardingInfo = result.vetOnboarding;
-      const freelancerOnboardingInfo = result.freelancerOnboarding;
-
-      // Regras de redirecionamento pós-login baseadas na role
-      if (userRole === 'ADMIN') {
-        navigate('/admin-dashboard', { replace: true });
-        return;
-      }
-
-      // VET: Verificar onboarding e aprovação
-      if (userRole === 'VET') {
-        // REGRA CRÍTICA: Se onboarding já foi completado (onboardingCompleted === true),
-        // NUNCA redirecionar para onboarding, mesmo se needsOnboarding for true
-        if (vetOnboardingInfo?.onboardingCompleted === true) {
-          // Onboarding já foi completado, ir para dashboard
-          if (!vetOnboardingInfo?.isApproved) {
-            navigate('/vet-dashboard', { replace: true });
-            return;
-          }
-          navigate('/vet-dashboard', { replace: true });
-          return;
-        }
-        
-        // Se não tem dados de onboarding OU precisa completar onboarding, redirecionar
-        // (email já está confirmado, verificado no backend)
-        if (!vetOnboardingInfo || vetOnboardingInfo?.needsOnboarding) {
-          navigate('/vet-onboarding', { replace: true });
-          return;
-        }
-
-        // Se não está aprovado, mostrar mensagem e redirecionar para página de aguardo
-        if (!vetOnboardingInfo?.isApproved) {
-          // Pode redirecionar para uma página de "aguardando aprovação" ou mostrar mensagem
-          // Por enquanto, vamos para o dashboard que vai verificar e mostrar mensagem
-          navigate('/vet-dashboard', { replace: true });
-          return;
-        }
-
-        // Aprovado e onboarding completo: ir para dashboard
-        navigate('/vet-dashboard', { replace: true });
-        return;
-      }
-
-      // FREELANCER: Verificar onboarding e aprovação
-      if (userRole === 'FREELANCER') {
-        // REGRA CRÍTICA: Se onboarding já foi completado (onboardingCompleted === true),
-        // NUNCA redirecionar para onboarding, mesmo se needsOnboarding for true
-        if (freelancerOnboardingInfo?.onboardingCompleted === true) {
-          // Onboarding já foi completado, ir para dashboard
-          navigate('/freelancer-dashboard', { replace: true });
-          return;
-        }
-        
-        // Se não tem dados de onboarding OU precisa completar onboarding
-        if (!freelancerOnboardingInfo || freelancerOnboardingInfo?.needsOnboarding) {
-          // Redirecionar para onboarding
-          navigate('/freelancer-onboarding', { replace: true });
-          return;
-        }
-
-        // Se não está aprovado, mostrar mensagem e redirecionar para página de aguardo
-        if (!freelancerOnboardingInfo?.isApproved) {
-          // Pode redirecionar para uma página de "aguardando aprovação" ou mostrar mensagem
-          // Por enquanto, vamos para o dashboard que vai verificar e mostrar mensagem
-          navigate('/freelancer-dashboard', { replace: true });
-          return;
-        }
-
-        // Aprovado e onboarding completo: ir para dashboard
-        navigate('/freelancer-dashboard', { replace: true });
-        return;
-      }
-
-      // Clínicas (CADMIN ou CMANAGER) têm lógica especial de onboarding
-      if (userRole === 'CADMIN' || userRole === 'CMANAGER') {
-        const clinicUserPayload = result.clinicUser as { clinic_id?: string | null } | null | undefined;
-
-        // Onboarding de clínica - verificar se precisa criar primeira unidade
-        if (onboardingInfo?.shouldCompleteFirstUnit) {
-          navigate('/units/create-first', { replace: true });
-          return;
-        }
-
-        // Sem clinic_id = ainda não existe registro em `clinics` (fluxo pós-signup público)
-        if (onboardingInfo?.needsOnboarding && !onboardingInfo?.hasUnits) {
-          navigate('/units/create-first', { replace: true });
-          return;
-        }
-        if (!clinicUserPayload?.clinic_id) {
-          if (onboardingInfo?.hasUnits) {
-            navigate('/clinic-dashboard', { replace: true });
-            return;
-          }
-          navigate('/units/create-first', { replace: true });
-          return;
-        }
-
-        // Verificar status da clínica (usar ID da clínica, NÃO o user.id do Auth)
-        try {
-          const clinicIdToFetch = clinicUserPayload.clinic_id || onboardingInfo?.clinicId;
-          if (!clinicIdToFetch) {
-            navigate('/units/create-first', { replace: true });
-            return;
-          }
-
-          const response = await fetch(`${API_BASE_URL}/clinics/${clinicIdToFetch}`, {
-            headers: {
-              Authorization: `Bearer ${result.session.access_token}`,
-            },
-          });
-
-          if (response.ok) {
-            const { clinic } = await response.json();
-            if (clinic.status === 'pending_unit' && !onboardingInfo?.hasUnits) {
-              navigate('/units/create-first', { replace: true });
-            } else {
-              navigate('/clinic-dashboard', { replace: true });
-            }
-          } else if (response.status === 404) {
-            navigate('/units/create-first', { replace: true });
-          } else {
-            navigate('/clinic-dashboard', { replace: true });
-          }
-        } catch (error) {
-          console.error('Erro ao verificar status da clínica:', error);
-          navigate('/clinic-dashboard', { replace: true });
-        }
-        return;
-      }
-
-      // Fallback para roles desconhecidas - usar getDashboardPathForRole
-      const fallback = getDashboardPathForRole(userRole);
-      console.warn('[LoginPage] Role desconhecida, redirecionando para:', fallback);
-      navigate(fallback, { replace: true });
-    } catch (error: any) {
-      console.error('Erro no login:', error);
-      
-      // Verificar se é erro de email não confirmado
-      // O erro pode vir como string na mensagem ou como propriedade error
-      const errorMessage = error?.message || error?.error || '';
-      if (errorMessage.includes('EMAIL_NOT_CONFIRMED') || errorMessage === 'EMAIL_NOT_CONFIRMED') {
-        setEmailForResend(email);
-        setShowEmailNotConfirmedModal(true);
-        setLoading(false);
-        return;
-      }
-      
-      // Melhorar mensagens de erro para credenciais inválidas
-      let userFriendlyMessage = '';
-      const lowerErrorMessage = errorMessage.toLowerCase();
-      
-      if (lowerErrorMessage.includes('invalid') || 
-          lowerErrorMessage.includes('credencial') ||
-          lowerErrorMessage.includes('senha') ||
-          lowerErrorMessage.includes('password') ||
-          lowerErrorMessage.includes('email') ||
-          lowerErrorMessage.includes('user not found') ||
-          lowerErrorMessage.includes('incorrect') ||
-          lowerErrorMessage.includes('wrong')) {
-        userFriendlyMessage = 'Email ou senha incorretos. Verifique suas credenciais e tente novamente.';
-      } else if (errorMessage) {
-        userFriendlyMessage = errorMessage;
-      } else {
-        userFriendlyMessage = 'Erro ao fazer login. Tente novamente em instantes.';
-      }
-      
-      // Garantir que o loading seja false antes de mostrar o erro
-      setLoading(false);
-      
-      // Usar setTimeout para garantir que o alerta seja exibido após qualquer re-renderização
-      // Isso evita que o alerta desapareça rapidamente devido a re-renderizações do componente
-      // Aumentar o timeout para garantir que todas as atualizações de estado sejam concluídas
-      setTimeout(() => {
-        showError(userFriendlyMessage, 'Erro no login');
-      }, 200);
+      const nextUser = data?.user;
+      const dest = nextUser ? getDashboardPathForRole(getUserRole(nextUser)) : '/';
+      navigate(dest, { replace: true });
+    } catch (err: any) {
+      const msg =
+        typeof err?.message === 'string' ? err.message : 'Erro inesperado ao fazer login';
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResendEmail = async (emailToResend: string) => {
-    try {
-      await resendConfirmationEmail(emailToResend);
-      showSuccess('Email de confirmação reenviado! Verifique sua caixa de entrada.');
-    } catch (error: any) {
-      showError('Erro ao reenviar email: ' + (error.message || 'Tente novamente.'));
-      throw error;
-    }
-  };
-
   return (
-    <>
-      <HomeHeader />
-      <div className="clinic-signup-container">
-        <div className="clinic-signup-content">
-          <div className="signup-form-section">
-            <h1 className="text-display text-3xl font-bold mb-2 text-neutral-800">
-              Bem-vindo de volta
-            </h1>
-            <p className="text-neutral-600 mb-8">
-              Acesse sua conta PetMi Vet
-            </p>
+    <div className="login-page-root">
+      <Link to="/" className="login-page-back">
+        ← Início
+      </Link>
 
-            <form onSubmit={handleLogin} className="space-y-6">
-              {/* Campo de email */}
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Mail size={18} color={colors.brand.primary[500]} />
-                    <span>Email</span>
-                  </div>
-                </label>
-                <input
-                  type="email"
-                  placeholder="seu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="input"
-                  required
-                />
-              </div>
+      <div className="login-page-card">
+        <div className="login-page-logo-row">
+          {/* Mesmo ficheiro que `frontend/assets/favicon.png` — servido em `public/favicon.png` */}
+          <img
+            src={`${process.env.PUBLIC_URL || ''}/favicon.png`}
+            alt="PetMi"
+            className="login-page-logo-img"
+          />
+          <div className="login-page-brand-block">
+            <span className="login-page-brand-name">PetMi Vet</span>
+            <span className="login-page-tagline">CUIDADO QUE CONECTA</span>
+          </div>
+        </div>
 
-              {/* Campo de senha */}
-              <div style={{ marginTop: '32px' }}>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Lock size={18} color={colors.brand.primary[500]} />
-                    <span>Senha</span>
-                  </div>
-                </label>
+        <h1 className="login-page-welcome">Bem-vindo de volta! 👋</h1>
+        <p className="login-page-subwelcome">
+          Faça login para acessar sua conta PetMi Vet
+        </p>
+
+        <form onSubmit={handleLogin}>
+          <div style={{ marginBottom: '18px' }}>
+            <label htmlFor="login-email" className="login-page-label">
+              Email
+            </label>
+            <div className="login-page-field-row">
+              <span className="login-page-field-icon" aria-hidden>
+                <Mail size={20} color="#c46c6a" strokeWidth={2} />
+              </span>
+              <input
+                id="login-email"
+                type="email"
+                className="input login-page-text-input"
+                placeholder="seu.email@exemplo.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '4px' }}>
+            <label htmlFor="login-password" className="login-page-label">
+              Senha
+            </label>
+            <div className="login-page-field-row">
+              <span className="login-page-field-icon" aria-hidden>
+                <Lock size={20} color="#c46c6a" strokeWidth={2} />
+              </span>
+              <div className="login-page-password-slot">
                 <PasswordInput
+                  id="login-password"
                   value={password}
-                  onChange={setPassword}
+                  onChange={(value) => setPassword(value)}
                   placeholder="Digite sua senha"
+                  required
+                  autoComplete="current-password"
                   showStrength={false}
                   showRequirements={false}
                 />
               </div>
-
-              {/* Botão de entrar */}
-              <div style={{ marginTop: '32px' }}>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    width: '100%',
-                    padding: '12px 24px',
-                    backgroundColor: loading ? colors.brand.primary[100] : colors.brand.primary[500],
-                    color: colors.surface,
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    transition: 'background-color 0.2s',
-                    opacity: loading ? 0.5 : 1,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!loading)
-                      e.currentTarget.style.backgroundColor = colors.brand.primary[600];
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!loading)
-                      e.currentTarget.style.backgroundColor = colors.brand.primary[500];
-                  }}
-                >
-                  {loading ? 'Entrando...' : 'Entrar'}
-                </button>
-              </div>
-            </form>
-
-            <div className="text-center" style={{ marginTop: '24px' }}>
-              <Link
-                to="/forgot-password"
-                className="text-primary-600 hover:text-primary-700 text-sm transition-colors"
-              >
-                Esqueci minha senha
-              </Link>
             </div>
           </div>
 
-          {/* Lado direito - imagens */}
-          <div className="signup-images-section">
-            <h2 className="text-display hero-headline">
-              Conectando quem cuida, quem ama e{' '}
-              <span className="hero-headline__accent">quem precisa.</span>
-            </h2>
-            <p>
-              Acesse sua conta PetMi Vet para gerenciar suas demandas, visualizar candidaturas e
-              encontrar as melhores oportunidades na área veterinária. Conecte-se com profissionais
-              qualificados e clínicas de confiança.
-            </p>
-            <div className="hero-images-right">
-              <div style={{ position: 'relative', width: '100%', maxWidth: '320px', height: '320px' }}>
-                <div
-                  className="hero-image-circle animate-float"
-                  style={{
-                    position: 'absolute',
-                    top: '10px',
-                    left: '10px',
-                    width: '120px',
-                    height: '120px',
-                    zIndex: 3,
-                  }}
-                >
-                  <img src="/pets/pet-showcase-1.png" alt="Pet" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-                <div
-                  className="hero-image-circle"
-                  style={{
-                    position: 'absolute',
-                    top: '40px',
-                    right: '30px',
-                    width: '110px',
-                    height: '110px',
-                    zIndex: 4,
-                    animationDelay: '0.3s',
-                  }}
-                >
-                  <img src="/pets/pet-showcase-2.png" alt="Pet feliz" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-                <div
-                  className="hero-image-circle animate-float"
-                  style={{
-                    position: 'absolute',
-                    bottom: '60px',
-                    right: '40px',
-                    width: '140px',
-                    height: '140px',
-                    zIndex: 5,
-                    animationDelay: '0.15s',
-                  }}
-                >
-                  <img src="/pets/pet-showcase-3.png" alt="Pet" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-                <div
-                  className="hero-image-circle"
-                  style={{
-                    position: 'absolute',
-                    bottom: '30px',
-                    left: '0',
-                    width: '95px',
-                    height: '95px',
-                    zIndex: 2,
-                    animationDelay: '0.5s',
-                  }}
-                >
-                  <img src="/pets/pet-showcase-4.png" alt="Pet" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-                <div
-                  className="hero-image-circle animate-float"
-                  style={{
-                    position: 'absolute',
-                    bottom: '0',
-                    right: '15px',
-                    width: '85px',
-                    height: '85px',
-                    zIndex: 1,
-                    animationDelay: '0.7s',
-                  }}
-                >
-                  <img src="/pets/pet-showcase-5.png" alt="Cuidado animal" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-              </div>
-            </div>
+          <div className="login-page-options">
+            <label className="login-page-remember">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+              />
+              Lembrar de mim
+            </label>
+            <Link to="/forgot-password" className="login-page-forgot">
+              Esqueci minha senha
+            </Link>
           </div>
-        </div>
+
+          {passwordResetNotice && (
+            <div
+              className="success-message"
+              style={{
+                marginTop: '14px',
+                textAlign: 'center',
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: '#ecfdf5',
+                color: '#065f46',
+                fontSize: '14px',
+              }}
+            >
+              Senha atualizada. Faça login com a nova senha.
+            </div>
+          )}
+
+          {error && (
+            <div
+              className="error-message"
+              style={{ marginTop: '14px', textAlign: 'center' }}
+            >
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="login-page-submit"
+            disabled={loading}
+          >
+            {loading ? 'Entrando...' : 'Entrar'}
+            {!loading && <ArrowRight size={20} aria-hidden />}
+          </button>
+        </form>
+
+        <p className="login-page-footer">
+          Ainda não tem uma conta?{' '}
+          <Link to="/clinic-signup">Criar conta →</Link>
+        </p>
       </div>
-
-      <EmailNotConfirmedModal
-        isOpen={showEmailNotConfirmedModal}
-        onClose={() => setShowEmailNotConfirmedModal(false)}
-        email={emailForResend}
-        onResendEmail={handleResendEmail}
-      />
-    </>
+    </div>
   );
 };
 

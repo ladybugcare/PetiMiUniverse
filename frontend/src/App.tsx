@@ -6,6 +6,7 @@ import { AuthProvider } from './AuthContext';
 import ProtectedRoute from './routes/ProtectedRoute';
 import PublicRoute from './routes/PublicRoute';
 import VetFreelancerDemandsAccessRoute from './routes/VetFreelancerDemandsAccessRoute';
+import DashboardRedirect from './routes/DashboardRedirect';
 import AuthListener from './components/AuthListener';
 import ErrorBoundary from './components/ErrorBoundary';
 import { enforceEnvConsistency } from './utils/envGuard';
@@ -15,6 +16,7 @@ import './App.css';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import ClinicSignUpPage from './pages/ClinicSignUpPage';
 import VetSignUpPage from './pages/VetSignUpPage';
 import FreelancerSignUpPage from './pages/FreelancerSignUpPage';
@@ -98,6 +100,9 @@ function App() {
                   </PublicRoute>
                 }
               />
+              {/* Recuperação: sessão temporária do Supabase — não usar PublicRoute (redirecionaria para o dashboard) */}
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/dashboard" element={<DashboardRedirect />} />
 
               {/* Signup — protegidas: redirecionam se já logado */}
               <Route

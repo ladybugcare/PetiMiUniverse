@@ -170,7 +170,7 @@ const AdminProfilePage: React.FC = () => {
               <h3 style={styles.quickActionsTitle}>Ações Rápidas</h3>
               <div style={styles.quickActionsList}>
                 <button
-                  onClick={() => navigate('/admin/dashboard')}
+                  onClick={() => navigate('/admin-dashboard')}
                   style={styles.quickActionButton}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#f3f4f6';
