@@ -1,0 +1,49 @@
+name: Web builds
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'apps/hub-web/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main, staging]
+    paths:
+      - 'frontend/**'
+      - 'apps/hub-web/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install root workspaces
+        run: npm install
+
+      - name: Env files for CI build
+        run: |
+          printf '%s\n' \
+            'REACT_APP_SUPABASE_URL=https://placeholder.supabase.co' \
+            'REACT_APP_SUPABASE_ANON_KEY=ci-placeholder-anon-key-min-length' \
+            'REACT_APP_API_URL=http://localhost:3000' >> frontend/.env
+          printf '%s\n' \
+            'VITE_SUPABASE_URL=https://placeholder.supabase.co' \
+            'VITE_SUPABASE_ANON_KEY=ci-placeholder-anon-key-min-length' \
+            'VITE_API_URL=http://localhost:3000' >> apps/hub-web/.env
+
+      - name: Build PetMi Vet web (CRA)
+        run: npm run build:frontend
+
+      - name: Build PetMi Hub web (Vite)
+        run: npm run build:hub-web

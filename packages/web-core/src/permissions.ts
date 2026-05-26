@@ -1,8 +1,6 @@
-// Permission system for role-based access control (RBAC)
+import type { ClinicStaffRole } from './types';
 
-export type Role = 'CADMIN' | 'CMANAGER' | 'CASSISTANT' | 'CVET_INTERNAL';
-
-export const PERMISSIONS: Record<Role, string[]> = {
+export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
   CADMIN: [
     'unit.create',
     'unit.edit',
@@ -91,18 +89,8 @@ export const PERMISSIONS: Record<Role, string[]> = {
   ],
 };
 
-export const hasPermission = (role: Role, permission: string): boolean => {
+export const hasPermission = (role: ClinicStaffRole | null, permission: string): boolean => {
+  if (!role) return false;
   const rolePermissions = PERMISSIONS[role];
   return rolePermissions ? rolePermissions.includes(permission) : false;
 };
-
-export const getRoleDisplayName = (role: Role): string => {
-  const names: Record<Role, string> = {
-    CADMIN: 'Administrador da Clínica',
-    CMANAGER: 'Gestor de Unidade',
-    CASSISTANT: 'Assistente/Secretário',
-    CVET_INTERNAL: 'Veterinário Interno',
-  };
-  return names[role] || role;
-};
-

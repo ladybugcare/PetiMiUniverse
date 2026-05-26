@@ -1,0 +1,60 @@
+/* Hub /hub/estoque — alinhado a clientes + serviços */
+.hub-estoque-page {
+  --hc-brand: #f0642f;
+  --hc-brand-hover: #d85526;
+}
+
+.hub-estoque-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  min-height: calc(100vh - 120px);
+}
+
+.hub-estoque-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 0 14px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--hc-border, #e5dcd6);
+}
+
+.hub-estoque-subnav__link {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-text-muted, #8e6e67);
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.hub-estoque-subnav__link:hover {
+  background: #fdf6f2;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-estoque-subnav__link--active {
+  background: color-mix(in srgb, var(--hc-brand) 12%, white);
+  color: var(--hc-brand);
+  border-color: color-mix(in srgb, var(--hc-brand) 25%, transparent);
+}
+
+.hub-estoque-page .hub-estoque__hint-ean {
+  font-size: 12px;
+  color: var(--hc-text-muted);
+  margin-top: 4px;
+}
+
+.hub-estoque-page .hub-estoque__encounter-note {
+  font-size: 12px;
+  color: var(--hc-text-muted);
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #f5f1ef;
+  border-radius: 8px;
+  border: 1px solid var(--hc-border);
+}

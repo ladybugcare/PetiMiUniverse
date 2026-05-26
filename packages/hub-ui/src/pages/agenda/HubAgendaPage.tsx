@@ -1,0 +1,1510 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Navigate, useSearchParams } from 'react-router-dom';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Search,
+  X,
+  User,
+  Heart,
+  Stethoscope,
+  MessageSquare,
+  CalendarClock,
+  Ban,
+  CheckCircle2,
+} from 'lucide-react';
+import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
+import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
+import { useAlert } from '../../components/AlertProvider';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
+import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
+import {
+  hubAgendaApi,
+  type HubAgendaCalendarBlock,
+  type HubAppointmentStatus,
+  type ListHubAppointmentsParams,
+} from '../../api/hubAgendaApi';
+import { hubStaffApi } from '../../api/hubStaffApi';
+import type { HubStaffMember } from '../../api/hubStaffApi';
+import { hubServiceTypesApi } from '../../api/hubServiceTypesApi';
+import type { HubServiceType } from '../../api/hubServiceTypesApi';
+import { NewAppointmentModal } from './NewAppointmentModal';
+import type { NewAppointmentInitial } from './NewAppointmentModal';
+import { SERVICE_GROUP_OPTIONS, resolveServiceAccentColor } from '../../utils/serviceTypeSlug';
+import '../clientes/clientes.css';
+import '../servicos/servicos-page.css';
+import './hub-agenda-page.css';
+import {
+  type AgendaAppointment,
+  type AgendaGroupMode,
+  type AgendaStatus,
+  type AgendaView,
+  STATUS_META,
+  minutesSinceDayStart,
+  formatHm,
+  formatWeekdayShort,
+  formatMonthYear,
+  startOfWeekMonday,
+  addDays,
+  isSameDay,
+  startOfDay,
+  startOfMonth,
+  monthMatrix,
+  serviceGroupLabel,
+  laneKeyForAppointment,
+  computeOverlapConflictIds,
+} from './agendaModel';
+import { mapHubAppointmentToAgenda } from './mapHubAgenda';
+
+const FILTERS_STORAGE_KEY = 'petmi-hub-agenda-filters-v1';
+
+const START_HOUR = 7;
+const END_HOUR = 20;
+const SLOT_MIN = 30;
+const SLOT_H = 26;
+const HEADER_H = 44;
+
+type PersistedFilters = {
+  unit: string;
+  professional: string;
+  group: string;
+  status: string;
+  groupMode: AgendaGroupMode;
+  resource_label: string;
+  service_type_id: string;
+};
+
+function parseYmd(s: string | null): Date | null {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(y!, (m ?? 1) - 1, d);
+  if (Number.isNaN(dt.getTime())) return null;
+  return startOfDay(dt);
+}
+
+function toYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function loadPersistedFilters(): Partial<PersistedFilters> {
+  try {
+    const raw = sessionStorage.getItem(FILTERS_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Partial<PersistedFilters>;
+  } catch {
+    return {};
+  }
+}
+
+function savePersistedFilters(p: PersistedFilters) {
+  try {
+    sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(p));
+  } catch {
+    /* ignore */
+  }
+}
+
+const HubAgendaPage: React.FC = () => {
+  const { showInfo, showError, showConfirm } = useAlert();
+  const { user, role: authRole } = useAuth();
+  const { hasPermission, loading: permLoading } = usePermissions();
+  const clinicId = getStoredClinicId();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const accessAllowed = hasPermission('hub.appointments.read');
+  const canWrite = hasPermission('hub.appointments.write');
+
+  const persisted = useMemo(() => loadPersistedFilters(), []);
+
+  const [view, setView] = useState<AgendaView>('day');
+  const [cursorDate, setCursorDate] = useState<Date>(() => {
+    const fromUrl = parseYmd(searchParams.get('date'));
+    return fromUrl ?? startOfDay(new Date());
+  });
+
+  const [groupMode, setGroupMode] = useState<AgendaGroupMode>(persisted.groupMode ?? 'professional');
+  const [unitFilter, setUnitFilter] = useState(persisted.unit ?? 'all');
+  const [professionalFilter, setProfessionalFilter] = useState(persisted.professional ?? 'all');
+  const [groupFilter, setGroupFilter] = useState(persisted.group ?? 'all');
+  const [statusFilter, setStatusFilter] = useState(persisted.status ?? 'all');
+  const [resourceFilter, setResourceFilter] = useState((persisted as Partial<PersistedFilters>).resource_label ?? 'all');
+  const [serviceTypeFilter, setServiceTypeFilter] = useState(
+    (persisted as Partial<PersistedFilters>).service_type_id ?? 'all',
+  );
+  const [searchQ, setSearchQ] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
+  const [rawList, setRawList] = useState<AgendaAppointment[]>([]);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [staffOptions, setStaffOptions] = useState<{ id: string; name: string; role: string; hasLogin: boolean }[]>([]);
+  const [fullStaff, setFullStaff] = useState<HubStaffMember[]>([]);
+  const [serviceTypes, setServiceTypes] = useState<{ id: string; name: string }[]>([]);
+  const [fullSvcTypes, setFullSvcTypes] = useState<HubServiceType[]>([]);
+  const [calendarBlocks, setCalendarBlocks] = useState<HubAgendaCalendarBlock[]>([]);
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createInitial, setCreateInitial] = useState<NewAppointmentInitial | null>(null);
+
+  const allAppointments = rawList;
+
+  useEffect(() => {
+    if (permLoading) return;
+    if (!accessAllowed) redirectAwayFromHub(authRole as AppRole);
+  }, [permLoading, accessAllowed, authRole]);
+
+  useEffect(() => {
+    const p: PersistedFilters = {
+      unit: unitFilter,
+      professional: professionalFilter,
+      group: groupFilter,
+      status: statusFilter,
+      groupMode,
+      resource_label: resourceFilter,
+      service_type_id: serviceTypeFilter,
+    };
+    savePersistedFilters(p);
+  }, [unitFilter, professionalFilter, groupFilter, statusFilter, groupMode, resourceFilter, serviceTypeFilter]);
+
+  useEffect(() => {
+    setSearchParams({ date: toYmd(cursorDate) }, { replace: true });
+  }, [cursorDate, setSearchParams]);
+
+  const bumpReload = useCallback(() => setReloadToken((t) => t + 1), []);
+
+  const openCreateModal = useCallback(
+    (initial?: NewAppointmentInitial | null) => {
+      setCreateInitial(initial ?? null);
+      setCreateOpen(true);
+    },
+    [],
+  );
+
+  const rangeIso = useMemo(() => {
+    if (view === 'day') {
+      const y = cursorDate.getFullYear();
+      const m = cursorDate.getMonth();
+      const d = cursorDate.getDate();
+      const from = new Date(y, m, d, 0, 0, 0, 0);
+      const to = new Date(y, m, d, 23, 59, 59, 999);
+      return { from: from.toISOString(), to: to.toISOString() };
+    }
+    if (view === 'week') {
+      const ws = startOfWeekMonday(cursorDate);
+      const we = addDays(ws, 7);
+      return { from: startOfDay(ws).toISOString(), to: new Date(we.getTime() - 1).toISOString() };
+    }
+    const sm = startOfMonth(cursorDate);
+    const em = new Date(cursorDate.getFullYear(), cursorDate.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { from: sm.toISOString(), to: em.toISOString() };
+  }, [view, cursorDate]);
+
+  useEffect(() => {
+    if (!clinicId || permLoading || !accessAllowed) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { staff } = await hubStaffApi.list(clinicId, { active_only: true });
+        if (cancelled) return;
+        setFullStaff(staff ?? []);
+        setStaffOptions(
+          (staff ?? []).map((s) => ({
+            id: s.id,
+            name: s.full_name,
+            role: s.job_title,
+            hasLogin: s.has_hub_access,
+          })),
+        );
+      } catch {
+        if (!cancelled) setStaffOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, permLoading, accessAllowed]);
+
+  useEffect(() => {
+    if (!clinicId || permLoading || !accessAllowed) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { service_types } = await hubServiceTypesApi.list(clinicId);
+        if (cancelled) return;
+        const active = (service_types ?? []).filter((st) => !st.deleted_at && st.active !== false);
+        setFullSvcTypes(active);
+        setServiceTypes(active.map((st) => ({ id: st.id, name: st.name })));
+      } catch {
+        if (!cancelled) setServiceTypes([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, permLoading, accessAllowed]);
+
+  useEffect(() => {
+    if (!clinicId || permLoading || !accessAllowed || view !== 'month') return;
+    let cancelled = false;
+    const sm = startOfMonth(cursorDate);
+    const em = new Date(cursorDate.getFullYear(), cursorDate.getMonth() + 1, 0);
+    const fromY = toYmd(sm);
+    const toY = toYmd(em);
+    (async () => {
+      try {
+        const { blocks } = await hubAgendaApi.listCalendarBlocks(clinicId, fromY, toY);
+        if (!cancelled) setCalendarBlocks(blocks ?? []);
+      } catch {
+        if (!cancelled) setCalendarBlocks([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, permLoading, accessAllowed, view, cursorDate, reloadToken]);
+
+  useEffect(() => {
+    if (!clinicId || permLoading || !accessAllowed) return;
+    let cancelled = false;
+    (async () => {
+      setRemoteLoading(true);
+      try {
+        const params: ListHubAppointmentsParams = {
+          clinic_id: clinicId,
+          from: rangeIso.from,
+          to: rangeIso.to,
+        };
+        if (unitFilter !== 'all') params.unit_id = unitFilter;
+        if (professionalFilter === '__na__') params.hub_staff_member_id = '__na__';
+        else if (professionalFilter !== 'all') params.hub_staff_member_id = professionalFilter;
+        if (groupFilter !== 'all') params.service_group = groupFilter;
+        if (statusFilter !== 'all') params.status = statusFilter as HubAppointmentStatus;
+        if (resourceFilter !== 'all') params.resource_label = resourceFilter;
+        if (serviceTypeFilter !== 'all') params.hub_service_type_id = serviceTypeFilter;
+
+        const { appointments } = await hubAgendaApi.list(params);
+        if (cancelled) return;
+        setRawList((appointments ?? []).map(mapHubAppointmentToAgenda));
+        setAppointmentsError(null);
+      } catch {
+        if (!cancelled) {
+          setAppointmentsError(
+            'Não foi possível carregar os agendamentos. Verifique a ligação e se a migração da agenda foi aplicada no Supabase.',
+          );
+          setRawList([]);
+        }
+      } finally {
+        if (!cancelled) setRemoteLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    clinicId,
+    permLoading,
+    accessAllowed,
+    rangeIso.from,
+    rangeIso.to,
+    unitFilter,
+    professionalFilter,
+    groupFilter,
+    statusFilter,
+    resourceFilter,
+    serviceTypeFilter,
+    reloadToken,
+  ]);
+
+  useEffect(() => {
+    if (!clinicId || permLoading || !accessAllowed) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible') bumpReload();
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [clinicId, permLoading, accessAllowed, bumpReload]);
+
+  const unitOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of allAppointments) s.add(a.unitName);
+    return ['all', ...Array.from(s).sort()];
+  }, [allAppointments]);
+
+  const resourceOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of allAppointments) {
+      const r = (a.resourceLabel ?? '').trim();
+      if (r && r !== '—') s.add(r);
+    }
+    return ['all', ...Array.from(s).sort()];
+  }, [allAppointments]);
+
+  const unitComboOptions = useMemo((): HubComboboxOption[] => {
+    const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todas' }];
+    for (const u of unitOptions.filter((x) => x !== 'all')) {
+      rows.push({ value: u, label: u });
+    }
+    if (unitFilter !== 'all' && !rows.some((o) => o.value === unitFilter)) {
+      rows.push({ value: unitFilter, label: unitFilter });
+    }
+    return rows;
+  }, [unitOptions, unitFilter]);
+
+  const professionalComboOptions = useMemo((): HubComboboxOption[] => {
+    const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todos' }];
+    for (const p of staffOptions) {
+      rows.push({ value: p.id, label: p.name });
+    }
+    rows.push({ value: '__na__', label: 'Não atribuído' });
+    if (
+      professionalFilter !== 'all' &&
+      professionalFilter !== '__na__' &&
+      !staffOptions.some((s) => s.id === professionalFilter)
+    ) {
+      rows.push({
+        value: professionalFilter,
+        label:
+          professionalFilter.length > 12
+            ? `Profissional (${professionalFilter.slice(0, 8)}…)`
+            : `Profissional (${professionalFilter})`,
+      });
+    }
+    return rows;
+  }, [staffOptions, professionalFilter]);
+
+  const groupComboOptions = useMemo(
+    (): HubComboboxOption[] => [
+      { value: 'all', label: 'Todos' },
+      ...SERVICE_GROUP_OPTIONS.map((g) => ({ value: g.value, label: g.label })),
+    ],
+    [],
+  );
+
+  const resourceComboOptions = useMemo((): HubComboboxOption[] => {
+    const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todos' }];
+    for (const r of resourceOptions.filter((x) => x !== 'all')) {
+      rows.push({ value: r, label: r });
+    }
+    if (resourceFilter !== 'all' && !rows.some((o) => o.value === resourceFilter)) {
+      rows.push({ value: resourceFilter, label: resourceFilter });
+    }
+    return rows;
+  }, [resourceOptions, resourceFilter]);
+
+  const serviceTypeComboOptions = useMemo((): HubComboboxOption[] => {
+    const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todos' }];
+    for (const st of serviceTypes) {
+      rows.push({ value: st.id, label: st.name });
+    }
+    if (serviceTypeFilter !== 'all' && !serviceTypes.some((s) => s.id === serviceTypeFilter)) {
+      rows.push({
+        value: serviceTypeFilter,
+        label:
+          serviceTypeFilter.length > 12
+            ? `Tipo (${serviceTypeFilter.slice(0, 8)}…)`
+            : `Tipo (${serviceTypeFilter})`,
+      });
+    }
+    return rows;
+  }, [serviceTypes, serviceTypeFilter]);
+
+  const statusComboOptions = useMemo(
+    (): HubComboboxOption[] => [
+      { value: 'all', label: 'Todos' },
+      ...(Object.keys(STATUS_META) as AgendaStatus[]).map((s) => ({
+        value: s,
+        label: STATUS_META[s].label,
+      })),
+    ],
+    [],
+  );
+
+  const filtered = useMemo(() => {
+    const q = searchQ.trim().toLowerCase();
+    return allAppointments.filter((a) => {
+      if (unitFilter !== 'all' && a.unitName !== unitFilter) return false;
+      if (professionalFilter !== 'all') {
+        if (professionalFilter === '__na__') {
+          if (a.professionalId !== null) return false;
+        } else if (a.professionalId !== professionalFilter) return false;
+      }
+      if (groupFilter !== 'all' && a.group !== groupFilter) return false;
+      if (statusFilter !== 'all' && a.status !== statusFilter) return false;
+      if (resourceFilter !== 'all') {
+        const r = (a.resourceLabel ?? '').trim();
+        if (r !== resourceFilter) return false;
+      }
+      if (serviceTypeFilter !== 'all') {
+        if (a.hub_service_type_id !== serviceTypeFilter) return false;
+      }
+      if (q) {
+        const blob = `${a.petName} ${a.guardianName} ${a.serviceName} ${a.professionalName}`.toLowerCase();
+        if (!blob.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [
+    allAppointments,
+    unitFilter,
+    professionalFilter,
+    groupFilter,
+    statusFilter,
+    resourceFilter,
+    serviceTypeFilter,
+    searchQ,
+  ]);
+
+  const selected = useMemo(
+    () => filtered.find((x) => x.id === selectedId) ?? allAppointments.find((x) => x.id === selectedId) ?? null,
+    [filtered, allAppointments, selectedId],
+  );
+
+  const goToday = useCallback(() => {
+    setCursorDate(startOfDay(new Date()));
+  }, []);
+
+  const goNow = useCallback(() => {
+    const n = new Date();
+    setCursorDate(startOfDay(n));
+    setView('day');
+    showInfo('Linha «Agora» visível na vista diária.', 'Agenda');
+  }, [showInfo]);
+
+  const shiftDay = (delta: number) => {
+    setCursorDate((d) => addDays(d, delta));
+  };
+
+  const shiftWeek = (delta: number) => {
+    setCursorDate((d) => addDays(d, delta * 7));
+  };
+
+  const shiftMonth = (delta: number) => {
+    setCursorDate((d) => {
+      const x = new Date(d);
+      x.setMonth(x.getMonth() + delta);
+      return startOfDay(x);
+    });
+  };
+
+  const weekStart = useMemo(() => startOfWeekMonday(cursorDate), [cursorDate]);
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+
+  const dayAppointments = useMemo(() => {
+    return filtered.filter((a) => isSameDay(a.start, cursorDate));
+  }, [filtered, cursorDate]);
+
+  const overlapIdsDay = useMemo(
+    () => computeOverlapConflictIds(dayAppointments, groupMode),
+    [dayAppointments, groupMode],
+  );
+
+  const dayAppointmentsUI = useMemo(
+    () => dayAppointments.map((a) => ({ ...a, conflict: overlapIdsDay.has(a.id) })),
+    [dayAppointments, overlapIdsDay],
+  );
+
+  const weekAppointments = useMemo(() => {
+    const end = addDays(weekStart, 7);
+    return filtered.filter((a) => a.start >= weekStart && a.start < end);
+  }, [filtered, weekStart]);
+
+  const monthAppointments = useMemo(() => {
+    const sm = startOfMonth(cursorDate);
+    const em = new Date(cursorDate.getFullYear(), cursorDate.getMonth() + 1, 0, 23, 59, 59, 999);
+    return filtered.filter((a) => a.start >= sm && a.start <= em);
+  }, [filtered, cursorDate]);
+
+  const slots = useMemo(() => {
+    const n = ((END_HOUR - START_HOUR) * 60) / SLOT_MIN;
+    const arr: Date[] = [];
+    const base = startOfDay(cursorDate);
+    base.setHours(START_HOUR, 0, 0, 0);
+    for (let i = 0; i < n; i++) {
+      arr.push(new Date(base.getTime() + i * SLOT_MIN * 60_000));
+    }
+    return arr;
+  }, [cursorDate]);
+
+  const laneH = slots.length * SLOT_H;
+  const dayStart = useMemo(() => {
+    const b = startOfDay(cursorDate);
+    b.setHours(START_HOUR, 0, 0, 0);
+    return b;
+  }, [cursorDate]);
+
+  const pxPerMin = SLOT_H / SLOT_MIN;
+
+  const nowLineTop = useMemo(() => {
+    if (!isSameDay(cursorDate, new Date())) return null;
+    const now = new Date();
+    const mins = minutesSinceDayStart(now, dayStart);
+    const maxM = (END_HOUR - START_HOUR) * 60;
+    if (mins < 0 || mins > maxM) return null;
+    return mins * pxPerMin;
+  }, [cursorDate, dayStart, pxPerMin]);
+
+  const dayColumns = useMemo(() => {
+    if (groupMode === 'professional') {
+      const cols = staffOptions.map((p) => ({
+        key: p.id,
+        title: p.name,
+        subtitle: p.role + (p.hasLogin ? '' : ' · sem login'),
+      }));
+      cols.push({ key: '__na__', title: 'Não atribuído', subtitle: 'Recepção define depois' });
+      return cols;
+    }
+    if (groupMode === 'category') {
+      return SERVICE_GROUP_OPTIONS.map((g) => ({
+        key: g.value,
+        title: g.label,
+        subtitle: 'Grupo de serviço',
+      }));
+    }
+    const keys = new Set<string>();
+    const source = view === 'day' ? dayAppointments : weekAppointments;
+    source.forEach((a) => keys.add(laneKeyForAppointment(a, 'resource')));
+    if (keys.size === 0) keys.add('__none__');
+    return [...keys].sort().map((k) => ({
+      key: k,
+      title: k === '__none__' ? 'Sem recurso/sala' : k,
+      subtitle: 'Recurso',
+    }));
+  }, [groupMode, view, dayAppointments, weekAppointments, staffOptions]);
+
+  const weekRows = dayColumns;
+
+  const apptsForDayColumn = (colKey: string) => {
+    if (groupMode === 'professional') {
+      if (colKey === '__na__') return dayAppointmentsUI.filter((a) => a.professionalId === null);
+      return dayAppointmentsUI.filter((a) => a.professionalId === colKey);
+    }
+    if (groupMode === 'category') {
+      return dayAppointmentsUI.filter((a) => a.group === colKey);
+    }
+    if (colKey === '__none__') {
+      return dayAppointmentsUI.filter((a) => laneKeyForAppointment(a, 'resource') === '__none__');
+    }
+    return dayAppointmentsUI.filter((a) => laneKeyForAppointment(a, 'resource') === colKey);
+  };
+
+  const apptsForWeekCell = (rowKey: string, day: Date) => {
+    const dayList = weekAppointments.filter((a) => isSameDay(a.start, day));
+    if (groupMode === 'professional') {
+      if (rowKey === '__na__') return dayList.filter((a) => a.professionalId === null);
+      return dayList.filter((a) => a.professionalId === rowKey);
+    }
+    if (groupMode === 'category') {
+      return dayList.filter((a) => a.group === rowKey);
+    }
+    if (rowKey === '__none__') {
+      return dayList.filter((a) => laneKeyForAppointment(a, 'resource') === '__none__');
+    }
+    return dayList.filter((a) => laneKeyForAppointment(a, 'resource') === rowKey);
+  };
+
+  const monthGrid = useMemo(() => monthMatrix(cursorDate), [cursorDate]);
+
+  const monthDayMap = useMemo(() => {
+    const m = new Map<string, AgendaAppointment[]>();
+    for (const a of monthAppointments) {
+      const k = toYmd(startOfDay(a.start));
+      const arr = m.get(k) ?? [];
+      arr.push(a);
+      m.set(k, arr);
+    }
+    return m;
+  }, [monthAppointments]);
+
+  const blockByYmd = useMemo(() => {
+    const m = new Map<string, HubAgendaCalendarBlock>();
+    for (const b of calendarBlocks) {
+      m.set(b.block_date, b);
+    }
+    return m;
+  }, [calendarBlocks]);
+
+  const sidebarMetrics = useMemo(() => {
+    const list = view === 'day' ? dayAppointments : view === 'week' ? weekAppointments : monthAppointments;
+    const pets = new Set(list.map((a) => a.petName));
+    const mins = list.reduce((acc, a) => acc + (a.end.getTime() - a.start.getTime()) / 60_000, 0);
+    const overlapSet = computeOverlapConflictIds(list, groupMode);
+    return {
+      total: list.length,
+      pets: pets.size,
+      hours: Math.round((mins / 60) * 10) / 10,
+      conflicts: overlapSet.size,
+    };
+  }, [view, dayAppointments, weekAppointments, monthAppointments, groupMode]);
+
+  const onStubAction = (label: string) => {
+    showInfo(`«${label}» será ligado à API de agenda (drag-and-drop e tempo real em evolução).`, 'Em breve');
+  };
+
+  const patchAppointmentStatus = async (status: AgendaStatus) => {
+    if (!clinicId || !selected || !canWrite) return;
+    try {
+      await hubAgendaApi.patch(selected.id, { clinic_id: clinicId, status });
+      bumpReload();
+      showInfo('Atendimento atualizado.', 'Agenda');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao atualizar');
+    }
+  };
+
+  const handleDropOnLane = async (e: React.DragEvent, colKey: string) => {
+    e.preventDefault();
+    if (!canWrite || !clinicId) return;
+    const id = e.dataTransfer.getData('text/appt-id');
+    if (!id) return;
+    const ap = allAppointments.find((x) => x.id === id);
+    if (!ap) return;
+    const lane = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+    const y = e.clientY - lane.top;
+    let minutesFromStart = y / pxPerMin;
+    minutesFromStart = Math.max(0, Math.min(minutesFromStart, (END_HOUR - START_HOUR) * 60 - 15));
+    const snapped = Math.round(minutesFromStart / 15) * 15;
+    const newStart = new Date(dayStart.getTime() + snapped * 60_000);
+    const durMs = ap.end.getTime() - ap.start.getTime();
+    const newEnd = new Date(newStart.getTime() + durMs);
+    if (groupMode === 'professional') {
+      const staffId = colKey === '__na__' ? null : colKey;
+      try {
+        await hubAgendaApi.patch(id, {
+          clinic_id: clinicId,
+          starts_at: newStart.toISOString(),
+          ends_at: newEnd.toISOString(),
+          hub_staff_member_id: staffId,
+        });
+        bumpReload();
+      } catch (err: unknown) {
+        showError((err as Error)?.message || 'Não foi possível mover');
+      }
+      return;
+    }
+    if (groupMode === 'resource') {
+      const label = colKey === '__none__' ? null : colKey;
+      try {
+        await hubAgendaApi.patch(id, {
+          clinic_id: clinicId,
+          starts_at: newStart.toISOString(),
+          ends_at: newEnd.toISOString(),
+          resource_label: label,
+        });
+        bumpReload();
+      } catch (err: unknown) {
+        showError((err as Error)?.message || 'Não foi possível mover');
+      }
+      return;
+    }
+    try {
+      await hubAgendaApi.patch(id, {
+        clinic_id: clinicId,
+        starts_at: newStart.toISOString(),
+        ends_at: newEnd.toISOString(),
+      });
+      bumpReload();
+    } catch (err: unknown) {
+      showError((err as Error)?.message || 'Não foi possível mover');
+    }
+  };
+
+  const navLabel = useMemo(() => {
+    if (view === 'day') {
+      return cursorDate.toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    }
+    if (view === 'week') {
+      const end = addDays(weekStart, 6);
+      return `${weekStart.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })} — ${end.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    }
+    return formatMonthYear(cursorDate);
+  }, [view, cursorDate, weekStart]);
+
+  const handleLaneClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>, colKey: string) => {
+      if (!canWrite) return;
+      const lane = e.currentTarget.getBoundingClientRect();
+      const y = e.clientY - lane.top;
+      let minutesFromStart = y / pxPerMin;
+      minutesFromStart = Math.max(0, Math.min(minutesFromStart, (END_HOUR - START_HOUR) * 60 - 30));
+      const snapped = Math.round(minutesFromStart / 15) * 15;
+      const startsDate = new Date(dayStart.getTime() + snapped * 60_000);
+      const endsDate = new Date(startsDate.getTime() + 60 * 60_000);
+      const initial: NewAppointmentInitial = {
+        date: toYmd(cursorDate),
+        starts_at: startsDate.toISOString(),
+        ends_at: endsDate.toISOString(),
+      };
+      if (groupMode === 'professional' && colKey !== '__na__') {
+        initial.hub_staff_member_id = colKey;
+      }
+      if (groupMode === 'resource' && colKey !== '__none__') {
+        initial.resource_label = colKey;
+      }
+      openCreateModal(initial);
+    },
+    [canWrite, pxPerMin, dayStart, cursorDate, groupMode, openCreateModal],
+  );
+
+  const renderDayLane = (colKey: string) => {
+    const list = apptsForDayColumn(colKey);
+    const lines: React.ReactNode[] = [];
+    for (let h = START_HOUR; h <= END_HOUR; h++) {
+      const top = ((h - START_HOUR) * 60) * pxPerMin;
+      lines.push(<div key={h} className="hub-agenda-day__hour-line" style={{ top }} />);
+    }
+    return (
+      <div
+        className="hub-agenda-day__lane"
+        style={{ ['--ag-lane-h' as string]: `${laneH}px` }}
+        onDragOver={(e) => {
+          if (canWrite) e.preventDefault();
+        }}
+        onDrop={(e) => void handleDropOnLane(e, colKey)}
+        onClick={(e) => handleLaneClick(e, colKey)}
+      >
+        {lines}
+        {nowLineTop !== null ? <div className="hub-agenda-day__now-line" style={{ top: nowLineTop }} /> : null}
+        {list.map((a) => {
+          const top = minutesSinceDayStart(a.start, dayStart) * pxPerMin;
+          const h = Math.max(((a.end.getTime() - a.start.getTime()) / 60_000) * pxPerMin, 22);
+          const color = resolveServiceAccentColor(a.agendaColor, a.group);
+          const st = STATUS_META[a.status];
+          return (
+            <button
+              key={a.id}
+              type="button"
+              draggable={canWrite}
+              onDragStart={(e) => {
+                e.dataTransfer.setData('text/appt-id', a.id);
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              className={`hub-agenda-day__card ${selectedId === a.id ? 'hub-agenda-day__card--selected' : ''} ${a.conflict ? 'hub-agenda-day__card--conflict' : ''}`}
+              style={{
+                top,
+                height: h,
+                backgroundColor: `${color}24`,
+                borderLeft: `4px solid ${color}`,
+                color: '#2d2424',
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedId(a.id);
+              }}
+            >
+              <div className="hub-agenda-day__card-time">
+                {formatHm(a.start)} – {formatHm(a.end)}
+              </div>
+              <div className="hub-agenda-day__card-pet">{a.petName}</div>
+              <div className="hub-agenda-day__card-meta">
+                {a.serviceName} · {a.guardianName}
+              </div>
+              <div style={{ marginTop: 2 }}>
+                <span className={`hub-agenda__pill ${st.pillClass}`}>{st.label}</span>
+              </div>
+              {a.conflict ? (
+                <div className="hub-agenda-day__card-meta" style={{ color: '#b71c1c', fontWeight: 700 }}>
+                  Possível conflito
+                </div>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  if (!user) return <Navigate to="/login" replace />;
+  if (!permLoading && !clinicId) {
+    return (
+      <div className="hub-clientes hub-agenda-page" style={{ padding: 24 }}>
+        <p className="hub-clientes__muted">Selecione uma clínica.</p>
+      </div>
+    );
+  }
+  if (permLoading || !accessAllowed) {
+    return (
+      <div className="hub-clientes hub-agenda-page" style={{ padding: 24 }}>
+        Carregando…
+      </div>
+    );
+  }
+
+  return (
+    <div className="hub-clientes hub-servicos-page hub-agenda-page">
+      <div className={`hub-agenda ${selected ? 'hub-agenda--with-panel' : ''}`}>
+        <div className="hub-agenda__main">
+          {appointmentsError ? (
+            <div
+              className="hub-clientes__muted"
+              style={{
+                margin: '0 0 14px',
+                padding: '12px 14px',
+                background: '#fff5f5',
+                border: '1px solid #fecaca',
+                borderRadius: 8,
+                color: '#991b1b',
+                fontSize: 14,
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <span>{appointmentsError}</span>
+              <button
+                type="button"
+                className="hub-agenda__view-btn hub-agenda__view-btn--active"
+                onClick={() => bumpReload()}
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : null}
+
+          <div className="hub-agenda__toolbar">
+            <div className="hub-agenda__view-switch" role="tablist" aria-label="Tipo de vista">
+              {(['day', 'week', 'month'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === v}
+                  className={`hub-agenda__view-btn ${view === v ? 'hub-agenda__view-btn--active' : ''}`}
+                  onClick={() => setView(v)}
+                >
+                  {v === 'day' ? 'Dia' : v === 'week' ? 'Semana' : 'Mês'}
+                </button>
+              ))}
+            </div>
+
+            <div className="hub-agenda__nav-cluster">
+              <button
+                type="button"
+                className="hub-agenda__icon-btn"
+                aria-label={view === 'day' ? 'Dia anterior' : view === 'week' ? 'Semana anterior' : 'Mês anterior'}
+                onClick={() => (view === 'day' ? shiftDay(-1) : view === 'week' ? shiftWeek(-1) : shiftMonth(-1))}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                type="button"
+                className="hub-agenda__icon-btn"
+                aria-label={view === 'day' ? 'Próximo dia' : view === 'week' ? 'Próxima semana' : 'Próximo mês'}
+                onClick={() => (view === 'day' ? shiftDay(1) : view === 'week' ? shiftWeek(1) : shiftMonth(1))}
+              >
+                <ChevronRight size={18} />
+              </button>
+              <input
+                className="hub-agenda__date-input"
+                type="date"
+                value={toYmd(cursorDate)}
+                onChange={(e) => {
+                  const d = parseYmd(e.target.value);
+                  if (d) setCursorDate(d);
+                }}
+                aria-label="Data de referência"
+              />
+              <button type="button" className="hub-agenda__today-btn" onClick={goToday}>
+                Hoje
+              </button>
+              <button type="button" className="hub-agenda__now-btn" onClick={goNow}>
+                Agora
+              </button>
+            </div>
+
+            {canWrite && (
+              <button
+                type="button"
+                className="hub-agenda__new-btn"
+                onClick={() => openCreateModal({ date: toYmd(cursorDate) })}
+              >
+                + Novo agendamento
+              </button>
+            )}
+
+            <div className="hub-agenda__search">
+              <label htmlFor="hub-agenda-search" className="hub-agenda__sr-only">
+                Busca global
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Search
+                  size={16}
+                  style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.45 }}
+                />
+                <input
+                  id="hub-agenda-search"
+                  placeholder="Pet, tutor, serviço…"
+                  value={searchQ}
+                  onChange={(e) => setSearchQ(e.target.value)}
+                  style={{ paddingLeft: 34 }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="hub-agenda__filters">
+            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
+              <label className="hub-clientes__label" htmlFor="ag-unit">
+                Unidade
+              </label>
+              <HubSearchableCombobox
+                id="ag-unit"
+                className="hub-combobox--clientes"
+                options={unitComboOptions}
+                value={unitFilter}
+                onChange={setUnitFilter}
+                placeholder="Todas"
+                searchPlaceholder="Buscar unidade…"
+                allowCreate={false}
+                clearable={false}
+                ariaLabel="Filtrar por unidade"
+              />
+            </div>
+            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
+              <label className="hub-clientes__label" htmlFor="ag-prof">
+                Profissional
+              </label>
+              <HubSearchableCombobox
+                id="ag-prof"
+                className="hub-combobox--clientes"
+                options={professionalComboOptions}
+                value={professionalFilter}
+                onChange={setProfessionalFilter}
+                placeholder="Todos"
+                searchPlaceholder="Buscar profissional…"
+                allowCreate={false}
+                clearable={false}
+                ariaLabel="Filtrar por profissional"
+              />
+            </div>
+            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
+              <label className="hub-clientes__label" htmlFor="ag-group">
+                Grupo de serviço
+              </label>
+              <HubSearchableCombobox
+                id="ag-group"
+                className="hub-combobox--clientes"
+                options={groupComboOptions}
+                value={groupFilter}
+                onChange={setGroupFilter}
+                placeholder="Todos"
+                searchPlaceholder="Buscar grupo…"
+                allowCreate={false}
+                clearable={false}
+                ariaLabel="Filtrar por grupo de serviço"
+              />
+            </div>
+            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
+              <label className="hub-clientes__label" htmlFor="ag-res">
+                Recurso / sala
+              </label>
+              <HubSearchableCombobox
+                id="ag-res"
+                className="hub-combobox--clientes"
+                options={resourceComboOptions}
+                value={resourceFilter}
+                onChange={setResourceFilter}
+                placeholder="Todos"
+                searchPlaceholder="Buscar recurso…"
+                allowCreate={false}
+                clearable={false}
+                ariaLabel="Filtrar por recurso ou sala"
+              />
+            </div>
+            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
+              <label className="hub-clientes__label" htmlFor="ag-svc-type">
+                Tipo de serviço
+              </label>
+              <HubSearchableCombobox
+                id="ag-svc-type"
+                className="hub-combobox--clientes"
+                options={serviceTypeComboOptions}
+                value={serviceTypeFilter}
+                onChange={setServiceTypeFilter}
+                placeholder="Todos"
+                searchPlaceholder="Buscar tipo de serviço…"
+                allowCreate={false}
+                clearable={false}
+                ariaLabel="Filtrar por tipo de serviço"
+              />
+            </div>
+            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
+              <label className="hub-clientes__label" htmlFor="ag-status">
+                Status
+              </label>
+              <HubSearchableCombobox
+                id="ag-status"
+                className="hub-combobox--clientes"
+                options={statusComboOptions}
+                value={statusFilter}
+                onChange={setStatusFilter}
+                placeholder="Todos"
+                searchPlaceholder="Buscar status…"
+                allowCreate={false}
+                clearable={false}
+                ariaLabel="Filtrar por status"
+              />
+            </div>
+            <div className="hub-servicos__filter-field hub-agenda__filter-field--toggle">
+              <span className="hub-clientes__label">Colunas / linhas</span>
+              <div className="hub-agenda__group-toggle" role="group" aria-label="Agrupar por">
+                <button
+                  type="button"
+                  className={groupMode === 'professional' ? 'hub-agenda__group-toggle--on' : ''}
+                  onClick={() => setGroupMode('professional')}
+                >
+                  Profissional
+                </button>
+                <button
+                  type="button"
+                  className={groupMode === 'category' ? 'hub-agenda__group-toggle--on' : ''}
+                  onClick={() => setGroupMode('category')}
+                >
+                  Categoria
+                </button>
+                <button
+                  type="button"
+                  className={groupMode === 'resource' ? 'hub-agenda__group-toggle--on' : ''}
+                  onClick={() => setGroupMode('resource')}
+                >
+                  Recurso
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="hub-agenda__legend">
+            <span className="hub-agenda__legend-title">Cores</span>
+            {SERVICE_GROUP_OPTIONS.map((g) => {
+              const hex = resolveServiceAccentColor(null, g.value);
+              return (
+                <span key={g.value} className="hub-agenda__legend-item">
+                  <span className="hub-agenda__legend-dot" style={{ background: hex }} />
+                  {g.label}
+                </span>
+              );
+            })}
+          </div>
+
+          <p className="hub-clientes__muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
+            <strong style={{ color: 'var(--hc-text, #4a3b3a)' }}>{navLabel}</strong>
+            {' · '}
+            {filtered.length} atendimento(s) no período filtrado
+            {remoteLoading ? ' · Atualizando…' : null}
+            {appointmentsError ? ' · Erro ao carregar' : null}
+          </p>
+
+          {view === 'day' ? (
+            <div
+              className="hub-agenda-day"
+              style={{ ['--ag-slot-h' as string]: `${SLOT_H}px`, ['--ag-lane-h' as string]: `${laneH}px` }}
+            >
+              <div className="hub-agenda-day__flex">
+                <div className="hub-agenda-day__gutter">
+                  <div className="hub-agenda-day__gutter-spacer" style={{ height: HEADER_H }} />
+                  {slots.map((t) => (
+                    <div key={t.toISOString()} className="hub-agenda-day__gutter-time" style={{ height: SLOT_H }}>
+                      {formatHm(t)}
+                    </div>
+                  ))}
+                </div>
+                <div className="hub-agenda-day__cols">
+                  {dayColumns.map((col) => (
+                    <div key={col.key} className="hub-agenda-day__col">
+                      <div className="hub-agenda-day__col-head" style={{ height: HEADER_H }}>
+                        <span>{col.title}</span>
+                        <small>{col.subtitle}</small>
+                      </div>
+                      {renderDayLane(col.key)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {view === 'week' ? (
+            <div className="hub-agenda-week">
+              <table className="hub-agenda-week__table">
+                <thead>
+                  <tr>
+                    <th>
+                      {groupMode === 'professional'
+                        ? 'Profissional'
+                        : groupMode === 'category'
+                          ? 'Categoria'
+                          : 'Recurso / sala'}
+                    </th>
+                    {weekDays.map((d) => (
+                      <th key={toYmd(d)}>
+                        {formatWeekdayShort(d)}
+                        <strong>{d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}</strong>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {weekRows.map((row) => (
+                    <tr key={row.key}>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{row.title}</div>
+                        <div className="hub-clientes__muted" style={{ fontSize: 11 }}>
+                          {row.subtitle}
+                        </div>
+                      </td>
+                      {weekDays.map((d) => {
+                        const cell = apptsForWeekCell(row.key, d).sort((a, b) => a.start.getTime() - b.start.getTime());
+                        const show = cell.slice(0, 3);
+                        const more = cell.length - show.length;
+                        return (
+                          <td key={toYmd(d)}>
+                            <div className="hub-agenda-week__cell-stack">
+                              {show.map((a) => {
+                                const color = resolveServiceAccentColor(a.agendaColor, a.group);
+                                const st = STATUS_META[a.status];
+                                return (
+                                  <button
+                                    key={a.id}
+                                    type="button"
+                                    className={`hub-agenda-week__mini ${selectedId === a.id ? 'hub-agenda-week__mini--selected' : ''}`}
+                                    style={{
+                                      background: `${color}18`,
+                                      borderLeft: `3px solid ${color}`,
+                                      textAlign: 'left',
+                                    }}
+                                    onClick={() => {
+                                      setSelectedId(a.id);
+                                      setCursorDate(startOfDay(d));
+                                      setView('day');
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: 700 }}>{formatHm(a.start)}</div>
+                                    <div>{a.petName}</div>
+                                    <div className="hub-clientes__muted" style={{ fontSize: 10 }}>
+                                      {a.serviceName}
+                                    </div>
+                                    <span className={`hub-agenda__pill ${st.pillClass}`} style={{ marginTop: 4 }}>
+                                      {st.short}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                              {more > 0 ? (
+                                <button
+                                  type="button"
+                                  className="hub-agenda-week__more"
+                                  onClick={() => {
+                                    setCursorDate(startOfDay(d));
+                                    setView('day');
+                                  }}
+                                >
+                                  +{more} atendimento{more > 1 ? 's' : ''}
+                                </button>
+                              ) : null}
+                              {(() => {
+                                const hotel = cell.filter((x) => x.appointment_kind === 'hotel_stay').length;
+                                const routes = cell.filter((x) => x.appointment_kind === 'pickup_route').length;
+                                if (!hotel && !routes) return null;
+                                return (
+                                  <div className="hub-clientes__muted" style={{ fontSize: 10, marginTop: 4 }}>
+                                    {hotel ? `Hotel: ${hotel}` : ''}
+                                    {hotel && routes ? ' · ' : ''}
+                                    {routes ? `Leva e traz: ${routes}` : ''}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {view === 'month' ? (
+            <div className="hub-agenda-month">
+              <div className="hub-agenda-month__grid">
+                {['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'].map((d) => (
+                  <div key={d} className="hub-agenda-month__dow">
+                    {d}
+                  </div>
+                ))}
+                {monthGrid.flat().map((d) => {
+                  const inMonth = d.getMonth() === cursorDate.getMonth();
+                  const k = toYmd(d);
+                  const list = monthDayMap.get(k) ?? [];
+                  const busy = list.length >= 8;
+                  const isToday = isSameDay(d, new Date());
+                  const blk = blockByYmd.get(k);
+                  const blockCls =
+                    blk?.kind === 'holiday'
+                      ? ' hub-agenda-month__day--holiday'
+                      : blk
+                        ? ' hub-agenda-month__day--blocked'
+                        : '';
+                  const groupsCount = new Map<string, number>();
+                  for (const a of list) {
+                    groupsCount.set(a.group, (groupsCount.get(a.group) ?? 0) + 1);
+                  }
+                  const topGroups = Array.from(groupsCount.entries())
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 3);
+                  return (
+                    <div
+                      key={k}
+                      role="button"
+                      tabIndex={0}
+                      title={blk?.label}
+                      className={`hub-agenda-month__day ${!inMonth ? 'hub-agenda-month__day--muted' : ''} ${busy ? 'hub-agenda-month__day--busy' : ''} ${isToday ? 'hub-agenda-month__day--today' : ''}${blockCls}`}
+                      onClick={() => {
+                        setCursorDate(startOfDay(d));
+                        setView('day');
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setCursorDate(startOfDay(d));
+                          setView('day');
+                        }
+                      }}
+                    >
+                      <div className="hub-agenda-month__day-num">{d.getDate()}</div>
+                      <div className="hub-agenda-month__counts">
+                        {list.length === 0 ? (
+                          blk ? (
+                            <div className="hub-agenda-month__block-chip" title={blk.label}>
+                              {blk.kind === 'holiday' ? 'Feriado' : blk.label}
+                            </div>
+                          ) : (
+                            '—'
+                          )
+                        ) : (
+                          <>
+                            <strong>{list.length}</strong> atend.
+                            {topGroups.length > 0 ? (
+                              <div>
+                                {topGroups.map(([g, n]) => (
+                                  <div key={g}>
+                                    {n} {serviceGroupLabel(g)}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                            {blk ? (
+                              <div className="hub-agenda-month__block-chip" title={blk.label}>
+                                {blk.kind === 'holiday' ? 'Feriado' : blk.label}
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {selected ? (
+          <aside className="hub-agenda__panel" aria-label="Detalhe do atendimento">
+            <div className="hub-agenda__panel-scroll">
+              <div className="hub-agenda__panel-head">
+                <h2 className="hub-agenda__panel-title">{selected.serviceName}</h2>
+                <button
+                  type="button"
+                  className="hub-agenda__panel-close"
+                  aria-label="Fechar painel"
+                  onClick={() => setSelectedId(null)}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div>
+                <span className={`hub-agenda__pill ${STATUS_META[selected.status].pillClass}`}>
+                  {STATUS_META[selected.status].label}
+                </span>
+                {selected.conflict ? (
+                  <span className="hub-agenda__pill hub-agenda__pill--st-cancelled" style={{ marginLeft: 8 }}>
+                    Conflito
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="hub-agenda__metrics">
+                <div className="hub-agenda__metric">
+                  <div className="hub-agenda__metric-val">{sidebarMetrics.total}</div>
+                  <div className="hub-agenda__metric-lab">No período da vista</div>
+                </div>
+                <div className="hub-agenda__metric">
+                  <div className="hub-agenda__metric-val">{sidebarMetrics.pets}</div>
+                  <div className="hub-agenda__metric-lab">Pets distintos</div>
+                </div>
+                <div className="hub-agenda__metric">
+                  <div className="hub-agenda__metric-val">{sidebarMetrics.hours}h</div>
+                  <div className="hub-agenda__metric-lab">Horas ocupadas (aprox.)</div>
+                </div>
+                <div className="hub-agenda__metric">
+                  <div className="hub-agenda__metric-val">{sidebarMetrics.conflicts}</div>
+                  <div className="hub-agenda__metric-lab">Alertas de conflito</div>
+                </div>
+              </div>
+
+              <div className="hub-agenda__panel-section">
+                <h4>Horário e duração</h4>
+                <div className="hub-agenda__panel-kv">
+                  <Clock size={14} style={{ verticalAlign: 'middle', marginRight: 6, opacity: 0.6 }} />
+                  {formatHm(selected.start)} – {formatHm(selected.end)} (
+                  {Math.round((selected.end.getTime() - selected.start.getTime()) / 60_000)} min)
+                </div>
+              </div>
+
+              <div className="hub-agenda__panel-section">
+                <h4>Pet e tutor</h4>
+                <div className="hub-agenda__panel-kv">
+                  <Heart size={14} style={{ verticalAlign: 'middle', marginRight: 6, opacity: 0.6 }} />
+                  {selected.petName}
+                  <br />
+                  <User size={14} style={{ verticalAlign: 'middle', marginRight: 6, opacity: 0.6 }} />
+                  {selected.guardianName}
+                </div>
+              </div>
+
+              <div className="hub-agenda__panel-section">
+                <h4>Equipe e local</h4>
+                <div className="hub-agenda__panel-kv">
+                  <Stethoscope size={14} style={{ verticalAlign: 'middle', marginRight: 6, opacity: 0.6 }} />
+                  {selected.professionalName}
+                  <br />
+                  <span className="hub-clientes__muted">Recurso:</span> {selected.resourceLabel}
+                  <br />
+                  <span className="hub-clientes__muted">Unidade:</span> {selected.unitName}
+                  <br />
+                  <span className="hub-clientes__muted">Grupo:</span> {serviceGroupLabel(selected.group)}
+                  <br />
+                  <span className="hub-clientes__muted">Tipo:</span>{' '}
+                  {selected.appointment_kind === 'hotel_stay'
+                    ? 'Hotel / hospedagem'
+                    : selected.appointment_kind === 'daycare_block'
+                      ? 'Creche'
+                      : selected.appointment_kind === 'pickup_route'
+                        ? 'Leva e traz'
+                        : 'Atendimento'}
+                </div>
+              </div>
+
+              {selected.notes ? (
+                <div className="hub-agenda__panel-section">
+                  <h4>Observações</h4>
+                  <div className="hub-agenda__panel-kv">{selected.notes}</div>
+                </div>
+              ) : null}
+
+              {selected.conflict ? (
+                <div className="hub-agenda__panel-section">
+                  <h4>Conflitos</h4>
+                  <div className="hub-agenda__panel-kv" style={{ color: '#b71c1c', fontWeight: 600 }}>
+                    Este horário sobrepõe outro atendimento no mesmo profissional ou recurso. Ajuste horário ou recurso
+                    antes de confirmar.
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="hub-agenda__panel-section">
+                <h4>Resumo rápido</h4>
+                <div className="hub-agenda__panel-kv hub-clientes__muted" style={{ fontSize: 12 }}>
+                  Histórico do pet e próximos agendamentos serão carregados quando existirem endpoints dedicados.
+                  Conflitos são calculados na vista atual (mesmo profissional ou recurso, conforme o modo de colunas).
+                </div>
+              </div>
+
+              <div className="hub-agenda__panel-actions">
+                {canWrite && (
+                  <button
+                    type="button"
+                    className="hub-agenda__action hub-agenda__action--primary"
+                    onClick={() =>
+                      openCreateModal({
+                        date: toYmd(startOfDay(selected!.start)),
+                        starts_at: selected!.start.toISOString(),
+                        ends_at: selected!.end.toISOString(),
+                        hub_staff_member_id: selected!.professionalId,
+                        resource_label: selected!.resourceLabel !== '—' ? selected!.resourceLabel : null,
+                      })
+                    }
+                  >
+                    Editar / Duplicar
+                  </button>
+                )}
+                <button type="button" className="hub-agenda__action" onClick={() => onStubAction('Check-in')}>
+                  Check-in
+                </button>
+                <button type="button" className="hub-agenda__action" onClick={() => onStubAction('Reagendar')}>
+                  <CalendarClock size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                  Reagendar
+                </button>
+                <button
+                  type="button"
+                  className="hub-agenda__action"
+                  disabled={!canWrite}
+                  onClick={() => {
+                    if (!canWrite) return;
+                    showConfirm('Cancelar este atendimento?', async () => {
+                      await patchAppointmentStatus('cancelled');
+                    }, 'Cancelar');
+                  }}
+                >
+                  <Ban size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="hub-agenda__action"
+                  disabled={!canWrite}
+                  onClick={() => void patchAppointmentStatus('done')}
+                >
+                  <CheckCircle2 size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                  Concluir
+                </button>
+                <button type="button" className="hub-agenda__action" onClick={() => onStubAction('Mensagem')}>
+                  <MessageSquare size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                  Mensagem
+                </button>
+                <button type="button" className="hub-agenda__action" onClick={() => onStubAction('Ficha do pet')}>
+                  <Heart size={14} style={{ verticalAlign: 'middle', marginRight: 6, opacity: 0.6 }} />
+                  Ficha do pet
+                </button>
+              </div>
+            </div>
+          </aside>
+        ) : null}
+      </div>
+
+      <NewAppointmentModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSaved={() => {
+          bumpReload();
+          setCreateOpen(false);
+        }}
+        initial={createInitial}
+        staffOptions={fullStaff}
+        serviceTypes={fullSvcTypes}
+      />
+    </div>
+  );
+};
+
+export default HubAgendaPage;
