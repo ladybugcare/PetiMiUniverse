@@ -82,19 +82,20 @@ exports.createUnit = createUnit;
 const getUnitsByClinic = async (req, res) => {
     const { clinic_id } = req.params;
     const user_id = req.user.id;
-    const includeAll = req.query.all === 'true'; // Query param to include all statuses
+    // Por defeito devolve todas as unidades (qualquer status), para fluxos de onboarding/redirecionamento.
+    // activeOnly=true → apenas active/approved (listagens operacionais).
+    const activeOnly = req.query.activeOnly === 'true';
     try {
         // Verify clinic access
         const hasAccess = await (0, authMiddleware_1.checkClinicAccess)(user_id, clinic_id);
         if (!hasAccess) {
             return res.status(403).json({ error: 'Acesso negado' });
         }
-        let query = supabase_1.supabase
+        let query = supabase_1.supabaseAdmin
             .from('units')
             .select('*')
             .eq('clinic_id', clinic_id);
-        // If all=true, return all units regardless of status, otherwise only active/approved
-        if (!includeAll) {
+        if (activeOnly) {
             query = query.in('status', ['active', 'approved']);
         }
         const { data, error } = await query
@@ -334,23 +335,23 @@ const getUnitStats = async (req, res) => {
                 else {
                     const compositeDemandIds = demandsData?.filter(d => d.is_composite).map(d => d.id) || [];
                     const simpleDemandIds = demandsData?.filter(d => !d.is_composite).map(d => d.id) || [];
-                    // Para demandas simples: buscar em applications
+                    // Para demandas simples: buscar em demand_applications
                     if (simpleDemandIds.length > 0) {
                         const { count: simpleApps, error: simpleAppsError } = await supabase_1.supabase
-                            .from('applications')
+                            .from('demand_applications')
                             .select('*', { count: 'exact', head: true })
                             .in('demand_id', simpleDemandIds);
                         if (simpleAppsError) {
-                            console.warn('Error getting simple applications (table may not exist):', JSON.stringify(simpleAppsError, null, 2));
+                            console.warn('Error getting simple applications:', JSON.stringify(simpleAppsError, null, 2));
                         }
                         else {
                             applicationsCount += simpleApps || 0;
                         }
                         const { count: simplePending, error: simplePendingError } = await supabase_1.supabase
-                            .from('applications')
+                            .from('demand_applications')
                             .select('*', { count: 'exact', head: true })
                             .in('demand_id', simpleDemandIds)
-                            .eq('status', 'pending');
+                            .in('status', ['applied', 'invited']);
                         if (simplePendingError) {
                             console.warn('Error getting simple pending applications:', JSON.stringify(simplePendingError, null, 2));
                         }

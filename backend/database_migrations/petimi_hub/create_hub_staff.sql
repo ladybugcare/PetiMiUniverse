@@ -49,7 +49,7 @@ CREATE INDEX IF NOT EXISTS idx_hub_staff_members_clinic_kind
   WHERE deleted_at IS NULL;
 
 COMMENT ON TABLE public.hub_staff_members IS 'Profissionais da clínica (Hub); opcional vínculo a clinic_users após convite.';
-COMMENT ON COLUMN public.hub_staff_members.email IS 'Contacto opcional.';
+COMMENT ON COLUMN public.hub_staff_members.email IS 'Contato opcional.';
 COMMENT ON COLUMN public.hub_staff_members.birth_date IS 'Data de nascimento (opcional).';
 COMMENT ON COLUMN public.hub_staff_members.job_title IS 'Função/cargo exibido (obrigatório na UI).';
 COMMENT ON COLUMN public.hub_staff_members.crmv IS 'Registro profissional (ex. CRMV) quando aplicável.';

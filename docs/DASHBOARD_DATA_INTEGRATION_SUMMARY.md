@@ -114,7 +114,7 @@ export const statisticsApi = {
 **Changes:**
 - ✅ Replaced hardcoded stats with `statisticsApi.getClinicStats()`
 - ✅ Fetches real user count from `clinicUsersApi.getClinicUsers()`
-- ✅ Displays actual demands and application counts
+- ✅ Displays atual demands and application counts
 - ✅ Shows units from context (already dynamic)
 - ✅ Added loading state
 
@@ -360,7 +360,7 @@ These features remain with placeholder data and are recommended for future sprin
 ### 1. Reviews/Ratings System
 - Database table for reviews
 - API endpoints for submitting and fetching reviews
-- Calculate actual average ratings
+- Calculate atual average ratings
 - Display reviews in dashboards
 
 ### 2. Messaging System

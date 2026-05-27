@@ -1,6 +1,6 @@
 import type { FC } from 'react';
 import type { LucideProps } from 'lucide-react';
-import { Hotel, Layers, Scissors, Stethoscope, Syringe, Truck, Users } from 'lucide-react';
+import { Hotel, Layers, Scissors, Stethoscope, Syringe, Truck, Users, Building2 } from 'lucide-react';
 import type { HubServiceGroupValue } from '../utils/serviceTypeSlug';
 
 const GROUP_ICONS: Record<HubServiceGroupValue, FC<LucideProps>> = {
@@ -10,6 +10,7 @@ const GROUP_ICONS: Record<HubServiceGroupValue, FC<LucideProps>> = {
   clinica: Stethoscope,
   cirurgia: Syringe,
   leva_traz: Truck,
+  internacao: Building2,
   outros: Layers,
 };
 

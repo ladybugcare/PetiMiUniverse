@@ -8,11 +8,12 @@ export type PetWizardState = {
   notes: string;
   primary_guardian_id: string;
   secondary_guardian_id: string;
-  /** Campos só UI (não persistidos na API actual). */
+  /** Campos só UI (não persistidos na API atual). */
   nickname: string;
   isSRD: boolean;
   neutered: '' | 'Y' | 'N';
   coatColor: string;
+  coatType: string;
   microchip: string;
   weightKg: string;
   heightCm: string;
@@ -35,6 +36,7 @@ export const initialPetWizardState = (): PetWizardState => ({
   isSRD: false,
   neutered: '',
   coatColor: '',
+  coatType: '',
   microchip: '',
   weightKg: '',
   heightCm: '',

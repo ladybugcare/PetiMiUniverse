@@ -4,11 +4,20 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
 import { hubGuardiansApi, type HubGuardian } from '../api/hubGuardiansApi';
 import { hubPetsApi } from '../api/hubPetsApi';
+import { hubQuotesApi } from '../api/hubQuotesApi';
+import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
+import type { CoatTypeValue } from '../utils/hubServiceTypesPricingMatrix';
 import { useAlert } from '../components/AlertProvider';
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import './pets/pets-page.css';
 import './pets/wizard/pet-wizard.css';
 import { initialPetWizardState, type PetWizardState, WIZARD_STEPS } from './pets/wizard/types';
+import { prefillPetWizardFromQuotePet } from './orcamentos/quoteToPetWizardPrefill';
+import {
+  clearManualQuoteConversion,
+  readManualQuoteConversion,
+  writeManualQuoteConversion,
+} from './orcamentos/quoteManualConversionStorage';
 import { PetWizardStepper } from './pets/wizard/PetWizardStepper';
 import { PetWizardSummary } from './pets/wizard/PetWizardSummary';
 import { PetWizardStepBasics } from './pets/wizard/steps/PetWizardStepBasics';
@@ -77,11 +86,61 @@ const HubPetWizardPage: React.FC = () => {
     })();
   }, [clinicId, accessAllowed]);
 
-  const preId = searchParams.get('guardianId');
+  const canWriteQuotes = hasPermission('hub.quotes.write');
+
+  const fromQuote = searchParams.get('fromQuote')?.trim() || '';
+  const petIndexRaw = searchParams.get('petIndex');
+  const petIndex = Math.max(0, Number.parseInt(petIndexRaw || '0', 10) || 0);
+  const guardianIdParam = searchParams.get('guardianId')?.trim() || '';
+  const preId = guardianIdParam;
   const prefillApplied = useRef<string | null>(null);
   useEffect(() => {
     prefillApplied.current = null;
   }, [preId]);
+
+  useEffect(() => {
+    setActiveStep(0);
+    setMaxReached(0);
+  }, [petIndex, fromQuote]);
+
+  useEffect(() => {
+    if (fromQuote && clinicId && petIndex === 0) {
+      clearManualQuoteConversion(fromQuote);
+    }
+  }, [fromQuote, clinicId, petIndex]);
+
+  useEffect(() => {
+    if (!fromQuote || !clinicId || !guardianIdParam) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { quote } = await hubQuotesApi.get(fromQuote, clinicId);
+        if (cancelled) return;
+        const petsSorted = [...(quote.pets ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+        const p = petsSorted[petIndex];
+        if (!p) {
+          showError('Este pet não existe neste orçamento.');
+          return;
+        }
+        setState({
+          ...initialPetWizardState(),
+          ...prefillPetWizardFromQuotePet(p),
+          primary_guardian_id: guardianIdParam,
+          secondary_guardian_id: '',
+        });
+        setPhotoPreview(null);
+        if (photoBlobRef.current) {
+          URL.revokeObjectURL(photoBlobRef.current);
+          photoBlobRef.current = null;
+        }
+      } catch (e: unknown) {
+        if (!cancelled) showError((e as Error)?.message || 'Erro ao carregar orçamento');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fromQuote, clinicId, petIndex, guardianIdParam, showError]);
 
   useEffect(() => {
     if (!preId || guardians.length === 0) return;
@@ -138,6 +197,10 @@ const HubPetWizardPage: React.FC = () => {
       return;
     }
     if (!clinicId || !canWrite) return;
+    if (fromQuote && !guardianIdParam) {
+      showError('Fluxo do orçamento incompleto: falta o tutor. Volte a Clientes.');
+      return;
+    }
     setSubmitting(true);
     try {
       const sexVal = state.sex === '' ? null : state.sex;
@@ -148,8 +211,9 @@ const HubPetWizardPage: React.FC = () => {
       const breedVal = state.isSRD ? null : state.breed.trim() || null;
       const obsParts = [state.otherObservations.trim(), state.notes.trim()].filter(Boolean);
       const notesVal = obsParts.length ? obsParts.join('\n\n') : null;
+      const sizeTier = resolvePetBodyPorteForApi(state.size || '', state.species.trim(), state.isSRD ? '' : state.breed.trim());
 
-      await hubPetsApi.create({
+      const { pet } = await hubPetsApi.create({
         clinic_id: clinicId,
         name: state.name.trim(),
         species: state.species.trim(),
@@ -157,9 +221,56 @@ const HubPetWizardPage: React.FC = () => {
         sex: sexVal,
         birth_date: state.birth_date.trim() || undefined,
         notes: notesVal,
+        size_tier: sizeTier,
+        coat_color: state.coatColor.trim() || null,
+        coat_type: state.coatType.trim() ? (state.coatType as CoatTypeValue) : null,
         primary_guardian_id: state.primary_guardian_id,
         secondary_guardian_id: sec,
       });
+
+      if (fromQuote && guardianIdParam) {
+        const { quote } = await hubQuotesApi.get(fromQuote, clinicId);
+        const petsSorted = [...(quote.pets ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+        const qp = petsSorted[petIndex];
+        if (!qp) {
+          showError('Pet do orçamento não encontrado.');
+          return;
+        }
+        const prev = readManualQuoteConversion(fromQuote) ?? { guardian_id: guardianIdParam, links: [] };
+        if (prev.guardian_id !== guardianIdParam) {
+          showError('Sessão do fluxo do orçamento inconsistente. Volte a Clientes e recomece.');
+          clearManualQuoteConversion(fromQuote);
+          return;
+        }
+        const links = [...prev.links, { quote_pet_id: qp.id, hub_pet_id: pet.id }];
+        writeManualQuoteConversion(fromQuote, { guardian_id: guardianIdParam, links });
+
+        if (petIndex + 1 < petsSorted.length) {
+          showSuccess(`Pet ${petIndex + 1} de ${petsSorted.length} registado — continue com o próximo.`);
+          navigate(
+            `/hub/pets/novo?fromQuote=${encodeURIComponent(fromQuote)}&guardianId=${encodeURIComponent(guardianIdParam)}&petIndex=${petIndex + 1}`
+          );
+          return;
+        }
+
+        if (!canWriteQuotes) {
+          showError(
+            'Pets criados, mas não tem permissão para fechar o orçamento na API. Peça a um gestor para finalizar a conversão.',
+          );
+          navigate(`/hub/orcamentos/${fromQuote}`);
+          return;
+        }
+        await hubQuotesApi.finalizeManualConversion(fromQuote, {
+          clinic_id: clinicId,
+          guardian_id: guardianIdParam,
+          manual_pet_links: links,
+        });
+        clearManualQuoteConversion(fromQuote);
+        showSuccess('Orçamento convertido com sucesso');
+        navigate(`/hub/orcamentos/${fromQuote}`);
+        return;
+      }
+
       showSuccess('Pet criado com sucesso');
       navigate('/hub/pets', { replace: false });
     } catch (e: unknown) {
@@ -189,6 +300,17 @@ const HubPetWizardPage: React.FC = () => {
     return <Navigate to="/hub/pets" replace />;
   }
 
+  if (fromQuote && !guardianIdParam) {
+    return (
+      <div className="hub-clientes hub-pets-page" style={{ padding: 24 }}>
+        <p className="hub-clientes__muted">Este fluxo do orçamento precisa do tutor na URL. Volte a Clientes e continue a partir do orçamento.</p>
+        <button type="button" className="pet-wizard__btn pet-wizard__btn--primary" onClick={() => navigate('/hub/clientes')}>
+          Ir a Clientes
+        </button>
+      </div>
+    );
+  }
+
   const stepContent = () => {
     switch (activeStep) {
       case 0:
@@ -208,6 +330,14 @@ const HubPetWizardPage: React.FC = () => {
 
   return (
     <div className="hub-clientes hub-pets-page pet-wizard">
+      {fromQuote ? (
+        <div className="hub-clientes__draft-banner" style={{ margin: '0 0 12px' }} role="status">
+          <p style={{ margin: 0 }}>
+            <strong>Conversão do orçamento</strong> — confirme a <strong>data de nascimento</strong> e os restantes
+            dados; a idade indicada no orçamento é apenas orientativa.
+          </p>
+        </div>
+      ) : null}
       <PetWizardStepper activeStep={activeStep} maxReached={maxReached} onSelect={setActiveStep} />
 
       <div className="pet-wizard__middle">

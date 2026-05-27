@@ -1,0 +1,352 @@
+/* HubDateField — campo de data dd/mm/aaaa (tokens: DESIGN.md / hubTheme) */
+
+.hub-date-field {
+  --hub-date-border: #d6d6d6;
+  --hub-date-border-hover: #c9b8b4;
+  --hub-date-border-focus: #c86a4d;
+  --hub-date-ring: rgba(200, 106, 77, 0.14);
+  --hub-date-text: #4a3b3a;
+  --hub-date-muted: #8e6e67;
+  --hub-date-icon: #8e6e67;
+  --hub-date-icon-focus: #c86a4d;
+  --hub-date-bg: #ffffff;
+  --hub-date-bg-disabled: #faf8f6;
+
+  width: 100%;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.hub-date-field__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--hub-date-muted);
+  cursor: default;
+}
+
+.hub-date-field__row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+.hub-date-field__control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--hub-date-border);
+  border-radius: 10px;
+  background: var(--hub-date-bg);
+  box-sizing: border-box;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hub-date-field:not(.hub-date-field--disabled) .hub-date-field__control:hover {
+  border-color: var(--hub-date-border-hover);
+}
+
+.hub-date-field__control:focus-within,
+.hub-date-field__control--open {
+  border-color: var(--hub-date-border-focus);
+  box-shadow: 0 0 0 3px var(--hub-date-ring);
+}
+
+.hub-date-field__control:focus-within .hub-date-field__icon-btn,
+.hub-date-field__control--open .hub-date-field__icon-btn {
+  color: var(--hub-date-icon-focus);
+}
+
+.hub-date-field--disabled .hub-date-field__control {
+  background: var(--hub-date-bg-disabled);
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
+.hub-date-field__icon-btn {
+  display: flex;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--hub-date-icon);
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 0;
+}
+
+.hub-date-field__icon-btn:hover:not(:disabled) {
+  background: rgba(200, 106, 77, 0.1);
+  color: var(--hub-date-icon-focus);
+}
+
+.hub-date-field__icon-btn:disabled {
+  cursor: not-allowed;
+}
+
+.hub-date-field__input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--hub-date-text);
+  box-sizing: border-box;
+}
+
+.hub-date-field__input:focus {
+  outline: none;
+}
+
+.hub-date-field__input::placeholder {
+  color: var(--hub-date-muted);
+  opacity: 0.85;
+}
+
+.hub-date-field__input:disabled {
+  cursor: not-allowed;
+}
+
+.hub-date-field__chevron-btn {
+  display: flex;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--hub-date-muted);
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 0;
+}
+
+.hub-date-field__chevron-btn:hover:not(:disabled) {
+  background: rgba(200, 106, 77, 0.1);
+  color: var(--hub-date-icon-focus);
+}
+
+.hub-date-field__chevron-btn:disabled {
+  cursor: not-allowed;
+}
+
+.hub-date-field__chevron-btn svg {
+  transition: transform 0.15s ease;
+}
+
+.hub-date-field__chevron--open {
+  transform: rotate(180deg);
+}
+
+.hub-date-field__today {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--hub-date-border-focus);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--hub-date-border-focus);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.hub-date-field__today:hover:not(:disabled) {
+  background: rgba(200, 106, 77, 0.08);
+}
+
+.hub-date-field__today:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Calendário (popover) ───────────────────────────────────────────────── */
+
+.hub-date-picker--portal {
+  box-sizing: border-box;
+}
+
+.hub-date-picker {
+  --hub-date-border-focus: #c86a4d;
+  --hub-date-text: #4a3b3a;
+  --hub-date-muted: #8e6e67;
+
+  background: #fff;
+  border: 1px solid #e8e4e0;
+  border-radius: 12px;
+  box-shadow:
+    0 4px 6px -1px rgba(74, 59, 58, 0.08),
+    0 16px 32px -8px rgba(74, 59, 58, 0.14);
+  padding: 12px 12px 10px;
+  font-family: inherit;
+  color: var(--hub-date-text);
+}
+
+.hub-date-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 0 4px;
+}
+
+.hub-date-picker__month {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hub-date-text);
+}
+
+.hub-date-picker__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hub-date-picker__nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--hub-date-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+}
+
+.hub-date-picker__nav-btn:hover {
+  background: #f5f0eb;
+  color: var(--hub-date-text);
+}
+
+.hub-date-picker__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+  padding: 0 2px;
+}
+
+.hub-date-picker__weekday {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--hub-date-muted);
+  line-height: 1.2;
+}
+
+.hub-date-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.hub-date-picker__day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--hub-date-text);
+  cursor: pointer;
+}
+
+.hub-date-picker__day:hover {
+  background: rgba(200, 106, 77, 0.12);
+}
+
+.hub-date-picker__day--muted {
+  color: #b5aba5;
+}
+
+.hub-date-picker__day--today {
+  font-weight: 700;
+  color: var(--hub-date-border-focus);
+}
+
+.hub-date-picker__day--today:not(.hub-date-picker__day--selected) {
+  box-shadow: inset 0 0 0 1px var(--hub-date-border-focus);
+}
+
+.hub-date-picker__day--selected {
+  background: var(--hub-date-border-focus);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.hub-date-picker__day--selected:hover {
+  background: #a85a40;
+}
+
+.hub-date-picker__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f0ede9;
+}
+
+.hub-date-picker__foot-btn {
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hub-date-border-focus);
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.hub-date-picker__foot-btn:hover {
+  background: rgba(200, 106, 77, 0.1);
+}
+
+.hub-date-field--invalid .hub-date-field__control {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.hub-date-field__hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--hub-date-muted);
+}
+
+.hub-date-field__error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #b91c1c;
+}

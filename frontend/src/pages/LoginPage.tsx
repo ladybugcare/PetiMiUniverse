@@ -86,7 +86,7 @@ const LoginPage: React.FC = () => {
 
       <div className="login-page-card">
         <div className="login-page-logo-row">
-          {/* Mesmo ficheiro que `frontend/assets/favicon.png` — servido em `public/favicon.png` */}
+          {/* Mesmo arquivo que `frontend/assets/favicon.png` — servido em `public/favicon.png` */}
           <img
             src={`${process.env.PUBLIC_URL || ''}/favicon.png`}
             alt="PetMi"

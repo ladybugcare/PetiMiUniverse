@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerClinicWithUnit = exports.deleteClinic = exports.updateClinicPhoto = exports.updateClinic = exports.getClinicById = exports.checkEmail = exports.checkCNPJ = exports.getClinics = exports.createClinic = void 0;
 const supabase_1 = require("../config/supabase");
 const cnpjUtils_1 = require("../utils/cnpjUtils");
+const logger_js_1 = require("../utils/logger.js");
 const createClinic = async (req, res) => {
     const { name, cnpj, address, email, password } = req.body;
     try {
@@ -127,7 +128,7 @@ exports.getClinics = getClinics;
 const checkCNPJ = async (req, res) => {
     const { cnpj } = req.params;
     try {
-        const { data, error } = await supabase_1.supabase
+        const { data, error } = await supabase_1.supabaseAdmin
             .from('clinics')
             .select('cnpj')
             .eq('cnpj', cnpj)
@@ -146,7 +147,7 @@ exports.checkCNPJ = checkCNPJ;
 const checkEmail = async (req, res) => {
     const { email } = req.params;
     try {
-        const { data, error } = await supabase_1.supabase
+        const { data, error } = await supabase_1.supabaseAdmin
             .from('clinics')
             .select('email')
             .eq('email', email)
@@ -246,10 +247,12 @@ const deleteClinic = async (req, res) => {
     }
     const timestamp = new Date().toISOString();
     try {
+        // Usar 'suspended' em vez de 'inactive' pois a constraint não permite 'inactive'
+        // 'suspended' é semanticamente equivalente a inativação
         const { data: clinic, error } = await supabase_1.supabaseAdmin
             .from('clinics')
             .update({
-            status: 'inactive',
+            status: 'suspended', // ✅ Corrigido: 'suspended' é permitido pela constraint
             deleted_at: timestamp,
             updated_at: timestamp,
         })
@@ -257,6 +260,11 @@ const deleteClinic = async (req, res) => {
             .select()
             .single();
         if (error) {
+            logger_js_1.logger.error('Erro ao suspender clínica', {
+                clinicId: id,
+                error: error.message,
+                correlationId: req.correlationId,
+            });
             return res.status(400).json({ error: error.message });
         }
         if (!clinic) {
@@ -306,15 +314,37 @@ const registerClinicWithUnit = async (req, res) => {
         if (!user_id) {
             return res.status(401).json({ error: 'Usuário não autenticado' });
         }
-        // ✅ 1. Verificar clinic_user (deve existir com clinic_id = NULL e status = 'pending_clinic')
-        const { data: clinicUser, error: clinicUserError } = await supabase_1.supabase
+        // ✅ 1. Verificar clinic_user — usar service role: o client `supabase` (anon) não carrega JWT e o RLS
+        //    esconde clinic_users, o que gerava 403 "sem permissão" mesmo com usuário válido.
+        const { data: clinicUserRows, error: clinicUserError } = await supabase_1.supabaseAdmin
             .from('clinic_users')
             .select('id, role, clinic_id, status')
             .eq('user_id', user_id)
-            .eq('role', 'CADMIN')
-            .maybeSingle();
+            .order('created_at', { ascending: true });
+        const clinicUser = clinicUserRows?.find((r) => r.role === 'CADMIN') ||
+            clinicUserRows?.find((r) => r.role === 'CMANAGER') ||
+            null;
         if (clinicUserError || !clinicUser) {
             return res.status(403).json({ error: 'Usuário não encontrado ou sem permissão' });
+        }
+        // Reconciliar dados órfãos: já existe linha em `clinics` com id = auth user (retry, migração, falha parcial),
+        // mas `clinic_users.clinic_id` ainda NULL → sem isso o próximo INSERT gera duplicate key em clinics_pkey.
+        if (!clinicUser.clinic_id) {
+            const { data: existingClinicForUser } = await supabase_1.supabaseAdmin
+                .from('clinics')
+                .select('id')
+                .eq('id', user_id)
+                .maybeSingle();
+            if (existingClinicForUser?.id) {
+                await supabase_1.supabaseAdmin
+                    .from('clinic_users')
+                    .update({
+                    clinic_id: user_id,
+                    updated_at: new Date().toISOString(),
+                })
+                    .eq('id', clinicUser.id);
+                clinicUser.clinic_id = user_id;
+            }
         }
         // Se clinic_id já existe, significa que já tem clínica
         if (clinicUser.clinic_id) {
@@ -336,7 +366,7 @@ const registerClinicWithUnit = async (req, res) => {
             if (clinicUser.clinic_id) {
                 clinicId = clinicUser.clinic_id;
                 // Atualizar clínica existente
-                const { data: updatedClinic, error: updateError } = await supabase_1.supabase
+                const { data: updatedClinic, error: updateError } = await supabase_1.supabaseAdmin
                     .from('clinics')
                     .update({
                     name,
@@ -368,7 +398,7 @@ const registerClinicWithUnit = async (req, res) => {
                     }
                 }
                 // Criar nova clínica
-                const { data: createdClinic, error: createError } = await supabase_1.supabase
+                const { data: createdClinic, error: createError } = await supabase_1.supabaseAdmin
                     .from('clinics')
                     .insert({
                     id: user_id, // Clinic ID = User ID
@@ -386,7 +416,7 @@ const registerClinicWithUnit = async (req, res) => {
                 newClinic = createdClinic;
                 clinicId = createdClinic.id;
                 // Atualizar clinic_user com clinic_id
-                await supabase_1.supabase
+                await supabase_1.supabaseAdmin
                     .from('clinic_users')
                     .update({
                     clinic_id: clinicId,
@@ -411,7 +441,7 @@ const registerClinicWithUnit = async (req, res) => {
                 const clinicCnpj = metadata.cnpj ? (0, cnpjUtils_1.normalizeCNPJ)(metadata.cnpj) : null;
                 const clinicAddress = metadata.address || '';
                 // Criar nova clínica
-                const { data: createdClinic, error: createError } = await supabase_1.supabase
+                const { data: createdClinic, error: createError } = await supabase_1.supabaseAdmin
                     .from('clinics')
                     .insert({
                     id: user_id,
@@ -428,7 +458,7 @@ const registerClinicWithUnit = async (req, res) => {
                 newClinic = createdClinic;
                 clinicId = createdClinic.id;
                 // Atualizar clinic_user com clinic_id
-                await supabase_1.supabase
+                await supabase_1.supabaseAdmin
                     .from('clinic_users')
                     .update({
                     clinic_id: clinicId,
@@ -456,7 +486,7 @@ const registerClinicWithUnit = async (req, res) => {
             return res.status(400).json({ error: 'O apelido deve ter no máximo 100 caracteres' });
         }
         // Verificar se nickname é único para esta clínica
-        const { data: existingUnit, error: existingError } = await supabase_1.supabase
+        const { data: existingUnit, error: existingError } = await supabase_1.supabaseAdmin
             .from('units')
             .select('id, name')
             .eq('clinic_id', clinicId)
@@ -471,7 +501,7 @@ const registerClinicWithUnit = async (req, res) => {
             });
         }
         // Try to insert with pending_review status first
-        let { data: newUnit, error: unitError } = await supabase_1.supabase
+        let { data: newUnit, error: unitError } = await supabase_1.supabaseAdmin
             .from('units')
             .insert({
             clinic_id: clinicId,
@@ -491,7 +521,7 @@ const registerClinicWithUnit = async (req, res) => {
         // If pending_review fails (constraint not updated), try with 'active' as fallback
         if (unitError && unitError.message?.includes('units_status_check')) {
             console.warn('Constraint units_status_check does not allow pending_review, using active as fallback. Please run migration fix_units_status_constraint.sql');
-            const { data: fallbackUnit, error: fallbackError } = await supabase_1.supabase
+            const { data: fallbackUnit, error: fallbackError } = await supabase_1.supabaseAdmin
                 .from('units')
                 .insert({
                 clinic_id: clinicId,
@@ -529,13 +559,13 @@ const registerClinicWithUnit = async (req, res) => {
             throw unitError;
         }
         // ✅ 5. Atualizar status da clínica para pending_approval
-        await supabase_1.supabase
+        await supabase_1.supabaseAdmin
             .from('clinics')
             .update({ status: 'pending_approval' })
             .eq('id', clinicId);
         const nowIso = new Date().toISOString();
         // ✅ 6. Vincular CADMIN à unidade e marcar conclusão do onboarding
-        await supabase_1.supabase
+        await supabase_1.supabaseAdmin
             .from('clinic_users')
             .update({
             clinic_id: clinicId, // ✅ Garantir que está vinculado

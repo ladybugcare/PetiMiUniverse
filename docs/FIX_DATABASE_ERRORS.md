@@ -14,7 +14,7 @@ Você está enfrentando **2 erros** relacionados ao schema do banco de dados:
 ### **PASSO 1: Diagnóstico** 🩺
 
 1. Abra o **Supabase Dashboard** → **SQL Editor**
-2. Abra o arquivo: `backend/database_migrations/00_DIAGNOSE_DATABASE.sql`
+2. Abra o arquivo: `backend/database_migrations/petimi_vet/00_DIAGNOSE_DATABASE.sql`
 3. Copie todo o conteúdo e cole no SQL Editor
 4. Clique em **Run**
 
@@ -30,7 +30,7 @@ Você tem **2 opções**:
 
 Execute tudo de uma vez:
 
-**Arquivo:** `backend/database_migrations/01_FIX_ALL_ERRORS.sql`
+**Arquivo:** `backend/database_migrations/petimi_vet/01_FIX_ALL_ERRORS.sql`
 
 ⚠️ **ATENÇÃO: Este script vai recriar a tabela `demands`**
 - Se você tem demandas já criadas, elas serão **apagadas**
@@ -54,7 +54,7 @@ Com base no diagnóstico, execute as migrations necessárias **NA ORDEM**:
 #### **Migration A: Criar Sistema de Posições**
 **Quando executar:** Se o diagnóstico mostrar que `end_time` não existe na tabela `demands`
 
-**Arquivo:** `backend/database_migrations/create_demand_positions_system.sql`
+**Arquivo:** `backend/database_migrations/petimi_vet/create_demand_positions_system.sql`
 
 **O que faz:**
 - ✅ Adiciona coluna `end_time` na tabela `demands`
@@ -74,7 +74,7 @@ Com base no diagnóstico, execute as migrations necessárias **NA ORDEM**:
 #### **Migration B: Corrigir Tipos da Tabela Position Applications**
 **Quando executar:** Se o diagnóstico mostrar que `position_applications` existe mas com tipo `bigint` ao invés de `uuid`
 
-**Arquivo:** `backend/database_migrations/fix_position_applications_types.sql`
+**Arquivo:** `backend/database_migrations/petimi_vet/fix_position_applications_types.sql`
 
 **O que faz:**
 - ✅ Faz backup dos dados existentes

@@ -3,10 +3,11 @@
  * @see docs/architecture/HUB_SERVICE_TYPES_PRICING_MATRIX.md
  */
 
-export const PORTE_VALUES = ['mini', 'pequeno', 'medio', 'grande', 'gigante'] as const;
+export const PORTE_VALUES = ['filhote', 'mini', 'pequeno', 'medio', 'grande', 'gigante'] as const;
 export type PorteValue = (typeof PORTE_VALUES)[number];
 
 export const PORTE_LABELS: Record<PorteValue, string> = {
+  filhote: 'Filhote',
   mini: 'Mini',
   pequeno: 'Pequeno',
   medio: 'Médio',
@@ -14,9 +15,36 @@ export const PORTE_LABELS: Record<PorteValue, string> = {
   gigante: 'Gigante',
 };
 
+/** Porte corporal do pet (cadastro); «filhote» existe só na matriz de preços / agendamento. */
+export const PET_BODY_PORTE_VALUES = ['mini', 'pequeno', 'medio', 'grande', 'gigante'] as const;
+export type PetBodyPorteValue = (typeof PET_BODY_PORTE_VALUES)[number];
+
+export const COAT_TYPE_VALUES = ['curto', 'medio', 'longo', 'duplo', 'encaracolado', 'sem_pelo', 'outro'] as const;
+export type CoatTypeValue = (typeof COAT_TYPE_VALUES)[number];
+
+export const COAT_TYPE_LABELS: Record<CoatTypeValue, string> = {
+  curto: 'Pelo curto',
+  medio: 'Pelo médio',
+  longo: 'Pelo longo',
+  duplo: 'Pelagem dupla',
+  encaracolado: 'Pelo encaracolado',
+  sem_pelo: 'Sem pelo',
+  outro: 'Outro',
+};
+
 export type HubServicePricingMatrixPorte = {
   kind: 'porte';
   tiers: Array<{ porte: PorteValue; cost_amount: number; sale_amount: number }>;
+};
+
+export type HubServicePricingMatrixPelagem = {
+  kind: 'pelagem';
+  tiers: Array<{ coat_type: CoatTypeValue; cost_amount: number; sale_amount: number }>;
+};
+
+export type HubServicePricingMatrixPortePelagem = {
+  kind: 'porte_pelagem';
+  tiers: Array<{ porte: PorteValue; coat_type: CoatTypeValue; cost_amount: number; sale_amount: number }>;
 };
 
 export type HubServicePricingMatrixPeriodo = {
@@ -42,6 +70,8 @@ export type HubServicePricingMatrixKmBanda = {
 
 export type HubServicePricingMatrix =
   | HubServicePricingMatrixPorte
+  | HubServicePricingMatrixPelagem
+  | HubServicePricingMatrixPortePelagem
   | HubServicePricingMatrixPeriodo
   | HubServicePricingMatrixConsulta
   | HubServicePricingMatrixKmBanda;
@@ -103,10 +133,40 @@ export function defaultPricingMatrixForGroup(
   return null;
 }
 
+export function defaultPricingMatrixForKind(
+  kind: 'porte' | 'pelagem' | 'porte_pelagem',
+  seed?: { cost_amount: number; sale_amount: number }
+): HubServicePricingMatrix {
+  const c = seed?.cost_amount ?? 0;
+  const s = seed?.sale_amount ?? 0;
+  if (kind === 'porte') {
+    return {
+      kind: 'porte',
+      tiers: PORTE_VALUES.map((porte) => ({ porte, cost_amount: c, sale_amount: s })),
+    };
+  }
+  if (kind === 'pelagem') {
+    return {
+      kind: 'pelagem',
+      tiers: COAT_TYPE_VALUES.map((coat_type) => ({ coat_type, cost_amount: c, sale_amount: s })),
+    };
+  }
+  return {
+    kind: 'porte_pelagem',
+    tiers: PORTE_VALUES.flatMap((porte) =>
+      COAT_TYPE_VALUES.map((coat_type) => ({ porte, coat_type, cost_amount: c, sale_amount: s })),
+    ),
+  };
+}
+
 function tierKeys(matrix: HubServicePricingMatrix): string[] {
   switch (matrix.kind) {
     case 'porte':
       return matrix.tiers.map((t) => t.porte);
+    case 'pelagem':
+      return matrix.tiers.map((t) => t.coat_type);
+    case 'porte_pelagem':
+      return matrix.tiers.map((t) => `${t.porte}|${t.coat_type}`);
     case 'periodo':
       return matrix.tiers.map((t) => t.period);
     case 'consulta':
@@ -130,8 +190,12 @@ export function validatePricingMatrixClient(
   if (!supportsPricingMatrixGroup(serviceGroup)) {
     return 'Este grupo não suporta matriz de preços';
   }
-  if (serviceGroup === 'banho_tosa' || serviceGroup === 'hotel') {
-    if (matrix.kind !== 'porte') return 'Para este grupo, use preços por porte';
+  if (serviceGroup === 'banho_tosa') {
+    if (matrix.kind !== 'porte' && matrix.kind !== 'pelagem' && matrix.kind !== 'porte_pelagem') {
+      return 'Para Banho & Tosa, use preços por porte, pelagem ou porte + pelagem';
+    }
+  } else if (serviceGroup === 'hotel') {
+    if (matrix.kind !== 'porte') return 'Para Hotel, use preços por porte';
   } else if (serviceGroup === 'creche') {
     if (matrix.kind !== 'periodo') return 'Para Creche, use período (dia completo / meio dia)';
   } else if (serviceGroup === 'clinica') {
@@ -141,6 +205,7 @@ export function validatePricingMatrixClient(
   }
 
   const keys = tierKeys(matrix);
+  if (keys.length === 0) return 'Defina pelo menos uma linha de preço';
   const seen = new Set<string>();
   for (const k of keys) {
     if (seen.has(k)) return 'Não repita a mesma linha (chave duplicada)';
@@ -186,7 +251,16 @@ export function saleRangeSummary(matrix: HubServicePricingMatrix): { min: number
 export function coercePricingMatrixFromApi(raw: unknown): HubServicePricingMatrix | null {
   if (raw == null || typeof raw !== 'object') return null;
   const o = raw as { kind?: string; tiers?: unknown };
-  if (o.kind !== 'porte' && o.kind !== 'periodo' && o.kind !== 'consulta' && o.kind !== 'km_banda') return null;
+  if (
+    o.kind !== 'porte' &&
+    o.kind !== 'pelagem' &&
+    o.kind !== 'porte_pelagem' &&
+    o.kind !== 'periodo' &&
+    o.kind !== 'consulta' &&
+    o.kind !== 'km_banda'
+  ) {
+    return null;
+  }
   if (!Array.isArray(o.tiers)) return null;
   return raw as HubServicePricingMatrix;
 }

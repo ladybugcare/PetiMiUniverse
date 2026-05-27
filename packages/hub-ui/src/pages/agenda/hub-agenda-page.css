@@ -148,25 +148,18 @@
   border-color: #dccbc4;
 }
 
-.hub-agenda__date-input {
-  border: 1px solid var(--ag-border);
-  border-radius: 8px;
-  padding: 7px 10px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--hc-text, #4a3b3a);
-  background: #fff;
+.hub-agenda__date-field {
+  width: auto;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
-.hub-agenda__today-btn {
-  border: 1px solid var(--hc-brand, #c86a4d);
-  color: var(--hc-brand, #c86a4d);
-  background: #fff;
-  border-radius: 8px;
-  padding: 7px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
+.hub-agenda__date-field .hub-date-field__row {
+  align-items: center;
+}
+
+.hub-agenda__date-field .hub-date-field__control {
+  min-width: 168px;
 }
 
 .hub-agenda__new-btn {
@@ -185,10 +178,6 @@
 
 .hub-agenda__new-btn:hover {
   background: #d9541f;
-}
-
-.hub-agenda__today-btn:hover {
-  background: #fdf6f2;
 }
 
 .hub-agenda__now-btn {
@@ -701,6 +690,174 @@
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.hub-agenda__panel-head-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.hub-agenda__panel-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ag-muted);
+  font-weight: 500;
+}
+
+.hub-agenda__panel-status-row {
+  margin-bottom: 4px;
+}
+
+.hub-agenda__panel-status-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ag-muted);
+  margin-bottom: 6px;
+}
+
+.hub-agenda__panel-kv-icon {
+  vertical-align: middle;
+  margin-right: 6px;
+  opacity: 0.6;
+}
+
+.hub-agenda__panel-kv--pre {
+  white-space: pre-wrap;
+}
+
+.hub-agenda__panel-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--ag-muted);
+}
+
+.hub-agenda__internal-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f3ede8;
+  color: #8e6e67;
+  vertical-align: middle;
+}
+
+.hub-agenda__panel-section--alert .hub-agenda__panel-kv {
+  color: #b71c1c;
+  font-weight: 600;
+}
+
+.hub-agenda__service-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hub-agenda__service-list-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f0ebe8;
+  font-size: 13px;
+}
+
+.hub-agenda__service-list-item:last-child {
+  border-bottom: none;
+}
+
+.hub-agenda__service-list-name {
+  font-weight: 500;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-agenda__service-list-meta {
+  flex-shrink: 0;
+  color: var(--ag-muted);
+  font-size: 12px;
+}
+
+.hub-agenda__service-total {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-agenda__action--icon {
+  padding: 8px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hub-agenda__action-menu-wrap {
+  position: relative;
+}
+
+.hub-agenda__action-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  min-width: 140px;
+  background: #fff;
+  border: 1px solid var(--ag-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(74, 59, 58, 0.12);
+  padding: 4px;
+  z-index: 20;
+}
+
+.hub-agenda__action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--hc-text, #4a3b3a);
+  text-align: left;
+}
+
+.hub-agenda__action-menu-item:hover:not(:disabled) {
+  background: #f6f1ee;
+}
+
+.hub-agenda__action-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hub-agenda__view-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  background: #faf8f6;
+  border: 1px solid var(--ag-border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ag-muted);
+}
+
+.hub-agenda__view-metrics-sep {
+  opacity: 0.5;
+}
+
+.hub-agenda__view-metrics--warn {
+  color: #b71c1c;
+  font-weight: 600;
 }
 
 .hub-agenda__panel-title {

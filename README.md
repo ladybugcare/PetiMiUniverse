@@ -1,8 +1,12 @@
 # 🐾 PetMi Vet
 
+**Ecossistema & arquitetura multi-produto:** visão de plataforma, fronteiras Hub / Vet-Match / Marketplace / PetMi ID, permissões e épicos do Hub estão em [`docs/architecture/README.md`](docs/architecture/README.md).
+
 PetMi Vet connects veterinary clinics and professionals. This workspace provides:
 - **Backend** (Express + TypeScript) in `backend/`
 - **Universal Frontend** (Expo/React Native) in `frontend/` which runs on web, iOS, and Android
+- **PetMi Hub web** (Vite + React) in [`apps/hub-web`](apps/hub-web) — operação clínica (tutores, pets, tipos de serviço); corre em servidor de desenvolvimento separado (`npm run dev:hub-web` na raiz, porta **3002**)
+- **Pacotes partilhados** em [`packages/web-core`](packages/web-core) e [`packages/hub-ui`](packages/hub-ui)
 
 > 🚀 **Quer começar rapidamente?** Veja o [SETUP_LOCAL.md](SETUP_LOCAL.md) para um guia passo a passo conciso.
 > 
@@ -123,7 +127,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 ### 4. Set up Supabase Database
 
-The database migrations are located in `backend/database_migrations/`. 
+The database migrations are located in `backend/database_migrations/` (`petimi_vet/` for PetMi Vet, `petimi_hub/` for PetMi Hub). 
 
 **Option 1: Run migrations manually**
    
@@ -360,7 +364,7 @@ PetiMiUniverse/
 │   │   ├── middleware/     # Auth and other middleware
 │   │   ├── utils/          # Utility functions
 │   │   └── index.ts        # Server entry point
-│   ├── database_migrations/  # SQL migration files
+│   ├── database_migrations/  # SQL: petimi_vet/, petimi_hub/ + READMEs
 │   ├── dist/               # Compiled JavaScript (generated)
 │   └── package.json
 │

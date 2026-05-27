@@ -15,6 +15,12 @@ import {
   bootstrapHubServiceTypes,
 } from '../hubServiceTypesController';
 import {
+  listHubServiceGroups,
+  createHubServiceGroup,
+  patchHubServiceGroup,
+  deleteHubServiceGroup,
+} from '../hubServiceGroupsController';
+import {
   listHubSuppliers,
   createHubSupplier,
   patchHubSupplier,
@@ -40,6 +46,30 @@ import {
   upsertHubAgendaCalendarBlock,
   deleteHubAgendaCalendarBlock,
 } from '../hubAppointmentsController';
+import { getHubClinicSettings, patchHubClinicSettings } from '../hubClinicSettingsController';
+import {
+  listHubProspects,
+  getHubProspect,
+  createHubProspect,
+  patchHubProspect,
+} from '../hubProspectsController';
+import {
+  listHubQuotes,
+  getHubQuote,
+  createHubQuote,
+  patchHubQuote,
+  deleteHubQuote,
+  sendHubQuote,
+  awaitingReturnHubQuote,
+  cancelHubQuote,
+  convertHubQuote,
+  finalizeManualConversionHubQuote,
+  duplicateHubQuote,
+  reopenHubQuoteAsDraft,
+  ensurePublicToken,
+  getHubQuotePdf,
+  suggestQuotePrice,
+} from '../hubQuotesController';
 
 /**
  * PetMi Hub API — rotas do sistema operacional do negócio pet.
@@ -90,6 +120,19 @@ router.patch(
   updateHubGuardian
 );
 
+router.get(
+  '/clinic-settings',
+  authenticateUser,
+  requirePermission('hub.appointments.read'),
+  getHubClinicSettings
+);
+router.patch(
+  '/clinic-settings',
+  authenticateUser,
+  requirePermission('hub.appointments.write'),
+  patchHubClinicSettings
+);
+
 router.get('/pets', authenticateUser, requirePermission('hub.pets.read'), listHubPets);
 
 router.post('/pets', authenticateUser, requirePermission('hub.pets.write'), createHubPet);
@@ -122,6 +165,31 @@ router.post(
   authenticateUser,
   requirePermission('hub.service_types.write'),
   bootstrapHubServiceTypes
+);
+
+router.get(
+  '/service-groups',
+  authenticateUser,
+  requirePermission('hub.service_types.read'),
+  listHubServiceGroups
+);
+router.post(
+  '/service-groups',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  createHubServiceGroup
+);
+router.patch(
+  '/service-groups/:id',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  patchHubServiceGroup
+);
+router.delete(
+  '/service-groups/:id',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  deleteHubServiceGroup
 );
 
 /* --- Inventário / Estoque --- */
@@ -179,5 +247,38 @@ router.delete(
 router.get('/appointments', authenticateUser, requirePermission('hub.appointments.read'), listHubAppointments);
 router.post('/appointments', authenticateUser, requirePermission('hub.appointments.write'), createHubAppointment);
 router.patch('/appointments/:id', authenticateUser, requirePermission('hub.appointments.write'), patchHubAppointment);
+
+/* --- Orçamentos / prospects --- */
+router.get('/prospects', authenticateUser, requirePermission('hub.prospects.read'), listHubProspects);
+router.get('/prospects/:id', authenticateUser, requirePermission('hub.prospects.read'), getHubProspect);
+router.post('/prospects', authenticateUser, requirePermission('hub.prospects.write'), createHubProspect);
+router.patch('/prospects/:id', authenticateUser, requirePermission('hub.prospects.write'), patchHubProspect);
+
+router.get('/quotes', authenticateUser, requirePermission('hub.quotes.read'), listHubQuotes);
+/** Rotas estáticas antes de `:id` (senão `suggest-price` é capturado como UUID). */
+router.post('/quotes/suggest-price', authenticateUser, requirePermission('hub.quotes.write'), suggestQuotePrice);
+router.post('/quotes', authenticateUser, requirePermission('hub.quotes.write'), createHubQuote);
+router.get('/quotes/:id', authenticateUser, requirePermission('hub.quotes.read'), getHubQuote);
+router.get('/quotes/:id/pdf', authenticateUser, requirePermission('hub.quotes.read'), getHubQuotePdf);
+router.patch('/quotes/:id', authenticateUser, requirePermission('hub.quotes.write'), patchHubQuote);
+router.delete('/quotes/:id', authenticateUser, requirePermission('hub.quotes.write'), deleteHubQuote);
+router.post('/quotes/:id/send', authenticateUser, requirePermission('hub.quotes.write'), sendHubQuote);
+router.post('/quotes/:id/awaiting-return', authenticateUser, requirePermission('hub.quotes.write'), awaitingReturnHubQuote);
+router.post('/quotes/:id/cancel', authenticateUser, requirePermission('hub.quotes.write'), cancelHubQuote);
+router.post(
+  '/quotes/:id/finalize-manual-conversion',
+  authenticateUser,
+  requirePermission('hub.quotes.write'),
+  finalizeManualConversionHubQuote
+);
+router.post('/quotes/:id/convert', authenticateUser, requirePermission('hub.quotes.write'), convertHubQuote);
+router.post('/quotes/:id/duplicate', authenticateUser, requirePermission('hub.quotes.write'), duplicateHubQuote);
+router.post(
+  '/quotes/:id/reopen-draft',
+  authenticateUser,
+  requirePermission('hub.quotes.write'),
+  reopenHubQuoteAsDraft
+);
+router.post('/quotes/:id/public-token', authenticateUser, requirePermission('hub.quotes.write'), ensurePublicToken);
 
 export default router;

@@ -18,7 +18,7 @@ Use este checklist para acompanhar o processo de correção dos erros do banco d
 ### 2️⃣ Diagnóstico (Opcional, mas Recomendado)
 
 - [ ] Abri Supabase Dashboard → SQL Editor
-- [ ] Executei o arquivo `backend/database_migrations/00_DIAGNOSE_DATABASE.sql`
+- [ ] Executei o arquivo `backend/database_migrations/petimi_vet/00_DIAGNOSE_DATABASE.sql`
 - [ ] Li os resultados do diagnóstico
 - [ ] Identifiquei os problemas:
   - [ ] Falta coluna `end_time` na tabela `demands`
@@ -28,7 +28,7 @@ Use este checklist para acompanhar o processo de correção dos erros do banco d
 
 ### 3️⃣ Execução da Migration
 
-- [ ] Abri o arquivo `backend/database_migrations/01_FIX_ALL_ERRORS.sql`
+- [ ] Abri o arquivo `backend/database_migrations/petimi_vet/01_FIX_ALL_ERRORS.sql`
 - [ ] Copiei TODO o conteúdo do arquivo (Ctrl/Cmd + A, depois Ctrl/Cmd + C)
 - [ ] Colei no SQL Editor do Supabase (Ctrl/Cmd + V)
 - [ ] Cliquei em "Run" (ou pressionei Ctrl/Cmd + Enter)

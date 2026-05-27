@@ -203,7 +203,7 @@ const ResetPasswordPage: React.FC = () => {
           )}
 
           <button type="submit" className="login-page-submit" disabled={loading}>
-            {loading ? 'A guardar...' : 'Guardar nova senha'}
+            {loading ? 'Salvando...' : 'Salvar nova senha'}
             {!loading && <ArrowRight size={20} aria-hidden />}
           </button>
         </form>

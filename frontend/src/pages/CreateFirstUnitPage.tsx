@@ -259,7 +259,24 @@ const CreateFirstUnitPage: React.FC = () => {
     if (dontShowAgain) {
       localStorage.setItem('hideWelcomeModal', 'true');
     }
-    navigate('/clinic-dashboard');
+    const sid = getStoredClinicId();
+    let onboard: { hasUnits?: boolean; clinicId?: string } | null = null;
+    try {
+      const raw = localStorage.getItem('clinicOnboarding');
+      onboard = raw ? JSON.parse(raw) : null;
+    } catch {
+      onboard = null;
+    }
+    const hasClinicContext =
+      Boolean(sid) ||
+      Boolean(onboard?.clinicId) ||
+      onboard?.hasUnits === true;
+    if (hasClinicContext) {
+      navigate('/clinic-dashboard');
+      return;
+    }
+    setShowWelcomeModal(false);
+    setCurrentStep('clinic');
   };
 
   const handleSaveClinicAndContinue = async () => {

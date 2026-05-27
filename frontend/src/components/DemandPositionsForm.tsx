@@ -207,7 +207,7 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({
               value={position.description || ''}
               onChange={(e) => updatePosition(position.id, 'description', e.target.value)}
               style={styles.textarea}
-              placeholder="Ex: Experiência mínima de 2 anos, disponibilidade para plantão..."
+              placeholder="Ex: Experiência mínima de 2 anos, disponibilidade para cobrir demandas..."
               rows={3}
             />
           </div>

@@ -12,7 +12,7 @@ Usage:
 Important:
   - Prefer creating schema on the NEW project via repo migrations
     (`supabase/migrations/petivet_prod_structure.sql` and/or
-    `backend/database_migrations/STAGING_CONSOLIDATED_MIGRATIONS.sql`,
+    `backend/database_migrations/petimi_vet/STAGING_CONSOLIDATED_MIGRATIONS.sql`,
     then `00_DIAGNOSE_DATABASE.sql` / `01_FIX_ALL_ERRORS.sql` as needed).
   - This dump's DDL may be older than the current app (e.g. legacy column types).
     Treat extracted SQL as a reference or for data-only workflows after review.

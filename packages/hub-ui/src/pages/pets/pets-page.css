@@ -397,3 +397,56 @@
   width: 100%;
   justify-content: center;
 }
+
+/* SRD toggle — cadastro rápido (alinhado visualmente ao wizard) */
+.hub-pets-srd-field {
+  margin-top: -4px;
+}
+
+.hub-pets-srd-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-pets-srd-label-inline {
+  margin: 0;
+  font-weight: 600;
+}
+
+.hub-pets-srd-hint {
+  display: inline-flex;
+  color: var(--hc-text-muted, #64748b);
+  cursor: help;
+}
+
+.hub-pets-srd-switch {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: none;
+  background: #e2e8f0;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.hub-pets-srd-switch--on {
+  background: var(--hc-brand, #f0642f);
+}
+
+.hub-pets-srd-switch::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.15s ease;
+}
+
+.hub-pets-srd-switch--on::after {
+  transform: translateX(20px);
+}

@@ -12,8 +12,12 @@ const reviewUnit = async (req, res) => {
     const { approved, rejection_reason } = req.body;
     const adminId = req.user?.id || 'system';
     try {
-        // 1️⃣ Verifica se a unidade existe e obtém dados completos
-        const { data: existing, error: fetchError } = await supabase_1.supabase
+        const role = String(req.user?.role || '').toLowerCase();
+        if (role !== 'admin') {
+            return res.status(403).json({ success: false, error: 'Acesso negado' });
+        }
+        // 1️⃣ Verifica se a unidade existe e obtém dados completos (service role — RLS não bloqueia admin)
+        const { data: existing, error: fetchError } = await supabase_1.supabaseAdmin
             .from('units')
             .select('id, name, status, clinic_id, is_main')
             .eq('id', id)
@@ -21,28 +25,43 @@ const reviewUnit = async (req, res) => {
         if (fetchError || !existing) {
             return res.status(404).json({ success: false, error: 'Unidade não encontrada' });
         }
-        // 2️⃣ Define novo status
+        // 2️⃣ Define novo status (schema novo: approved/rejected; schema legado: só active/inactive)
         const newStatus = approved ? 'approved' : 'rejected';
-        // 3️⃣ Atualiza unidade no banco
-        const { error: updateError } = await supabase_1.supabase
-            .from('units')
-            .update({
+        const unitUpdatePayload = {
             status: newStatus,
             rejection_reason: approved ? null : rejection_reason || 'Sem motivo especificado',
             reviewed_at: new Date().toISOString(),
             reviewed_by: adminId,
-        })
+        };
+        // 3️⃣ Atualiza unidade no banco
+        let { error: updateError } = await supabase_1.supabaseAdmin
+            .from('units')
+            .update(unitUpdatePayload)
             .eq('id', id);
-        if (updateError)
+        let finalStatus = newStatus;
+        if (updateError?.message?.includes('units_status_check')) {
+            const legacyStatus = approved ? 'active' : 'inactive';
+            console.warn(`[reviewUnit] units_status_check rejected "${newStatus}". Retrying with legacy status "${legacyStatus}". ` +
+                'Execute backend/database_migrations/petimi_vet/fix_units_status_constraint.sql (ou backend/database_migrations/petimi_vet/add_clinic_approval_system.sql) no Supabase.');
+            const retry = await supabase_1.supabaseAdmin
+                .from('units')
+                .update({ ...unitUpdatePayload, status: legacyStatus })
+                .eq('id', id);
+            if (retry.error)
+                throw retry.error;
+            finalStatus = legacyStatus;
+        }
+        else if (updateError) {
             throw updateError;
+        }
         // 4️⃣ Se aprovando e for unidade principal, ativa a clínica
         if (approved && existing.is_main && existing.clinic_id) {
-            await supabase_1.supabase
+            await supabase_1.supabaseAdmin
                 .from('clinics')
                 .update({ status: 'active' })
                 .eq('id', existing.clinic_id);
             // Ativa usuários da clínica
-            await supabase_1.supabase
+            await supabase_1.supabaseAdmin
                 .from('clinic_users')
                 .update({
                 status: 'active',
@@ -53,7 +72,7 @@ const reviewUnit = async (req, res) => {
         }
         // 5️⃣ Se rejeitando e for unidade principal, volta clínica para pending_unit
         if (!approved && existing.is_main && existing.clinic_id) {
-            await supabase_1.supabase
+            await supabase_1.supabaseAdmin
                 .from('clinics')
                 .update({ status: 'pending_unit' })
                 .eq('id', existing.clinic_id);
@@ -65,12 +84,12 @@ const reviewUnit = async (req, res) => {
             action: approved ? 'APPROVE_UNIT' : 'REJECT_UNIT',
             entity_type: 'unit',
             entity_id: id,
-            new_values: { status: newStatus, rejection_reason },
+            new_values: { status: finalStatus, rejection_reason },
             ...metadata,
         });
         return res.status(200).json({
             success: true,
-            status: newStatus,
+            status: finalStatus,
             message: approved
                 ? 'Unidade aprovada com sucesso!'
                 : 'Unidade rejeitada e arquivada com sucesso.',

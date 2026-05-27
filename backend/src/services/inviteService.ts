@@ -357,10 +357,10 @@ export class InviteService {
       await createNotification({
         user_id: vetId,
         type: 'demand_invite',
-        title: 'Convite para Plantão',
+        title: 'Convite para demanda',
         message: clinic
-          ? `A clínica ${clinic.name} te convidou para o plantão "${demandTitle}"`
-          : `Você foi convidado para o plantão "${demandTitle}"`,
+          ? `A clínica ${clinic.name} te convidou para a demanda "${demandTitle}"`
+          : `Você foi convidado para a demanda "${demandTitle}"`,
         link: `/demands/${demandId}`,
         entity_type: 'application',
         entity_id: demandId,

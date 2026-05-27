@@ -24,6 +24,7 @@ import DemandsPage from './pages/DemandsPage';
 import CreateDemandPage from './pages/CreateDemandPage';
 import MyApplicationsPage from './pages/MyApplicationsPage';
 import ClinicDashboardPage from './pages/ClinicDashboardPage';
+import HubLegacyRedirect from './routes/HubLegacyRedirect';
 import ClinicReportsPage from './pages/ClinicReportsPage';
 import VetDashboardPage from './pages/VetDashboardPage';
 import FreelancerDashboardPage from './pages/FreelancerDashboardPage';
@@ -298,6 +299,9 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route path="/hub/guardians" element={<HubLegacyRedirect />} />
+              <Route path="/hub/pets" element={<HubLegacyRedirect />} />
+              <Route path="/hub/service-types" element={<HubLegacyRedirect />} />
               <Route
                 path="/units"
                 element={

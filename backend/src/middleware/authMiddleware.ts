@@ -98,7 +98,7 @@ export const checkPermission = async (
   try {
     // Buscar role do usuário na clínica
     // Usar service role: estas verificações rodam após JWT válido; o client anon não tem
-    // sessão RLS do utilizador e devolve vazio → falsos negativos e 403 em /units/clinic/:id.
+    // sessão RLS do usuário e devolve vazio → falsos negativos e 403 em /units/clinic/:id.
     const { data: clinicUser, error } = await supabaseAdmin
       .from('clinic_users')
       .select('role')

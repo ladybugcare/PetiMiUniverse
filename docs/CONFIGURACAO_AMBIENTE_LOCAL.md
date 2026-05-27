@@ -317,7 +317,7 @@ O Inbucket é um servidor de email de teste integrado ao Supabase local. Ele cap
 Após configurar o ambiente local:
 
 1. **Aplicar migrations do banco:**
-   - Execute os arquivos SQL em `backend/database_migrations/` no Supabase Studio
+   - Execute os arquivos SQL em `backend/database_migrations/petimi_vet/` (e `petimi_hub/` para Hub) no Supabase Studio
    - Ou use: `supabase db reset` (cuidado: apaga dados existentes)
 
 2. **Testar autenticação:**

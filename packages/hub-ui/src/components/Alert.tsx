@@ -12,6 +12,7 @@ export interface AlertProps {
   confirmText?: string;
   cancelText?: string;
   onConfirm?: () => void;
+  onCancel?: () => void;
   showCancel?: boolean;
 }
 
@@ -24,6 +25,7 @@ const Alert: React.FC<AlertProps> = ({
   confirmText = 'OK',
   cancelText = 'Cancelar',
   onConfirm,
+  onCancel,
   showCancel = false,
 }) => {
   if (!isOpen) return null;
@@ -96,7 +98,10 @@ const Alert: React.FC<AlertProps> = ({
           {showCancel && (
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                onCancel?.();
+                onClose();
+              }}
               style={{
                 flex: 1,
                 padding: '12px 24px',

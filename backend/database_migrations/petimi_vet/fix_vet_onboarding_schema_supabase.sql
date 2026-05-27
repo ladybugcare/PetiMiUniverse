@@ -2,7 +2,7 @@
 -- Corrigir: column vets.onboarding_completed does not exist (onboarding vet)
 -- =============================================================================
 -- O backend (checkVetOnboarding / completeVetOnboarding / auth) usa estas
--- colunas. Este ficheiro aplica o equivalente a:
+-- colunas. Este arquivo aplica o equivalente a:
 --   1) add_vet_onboarding_fields.sql
 --   2) add_vet_approval_system.sql
 -- em ordem, de forma idempotente onde possível.

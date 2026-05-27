@@ -36,6 +36,10 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'hub.staff.invite',
     'hub.appointments.read',
     'hub.appointments.write',
+    'hub.prospects.read',
+    'hub.prospects.write',
+    'hub.quotes.read',
+    'hub.quotes.write',
   ],
   CMANAGER: [
     'unit.edit',
@@ -64,6 +68,10 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'hub.staff.invite',
     'hub.appointments.read',
     'hub.appointments.write',
+    'hub.prospects.read',
+    'hub.prospects.write',
+    'hub.quotes.read',
+    'hub.quotes.write',
   ],
   CASSISTANT: [
     'unit.view',
@@ -79,6 +87,8 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'hub.staff.read',
     'hub.appointments.read',
     'hub.appointments.write',
+    'hub.prospects.read',
+    'hub.quotes.read',
   ],
   CVET_INTERNAL: [
     'unit.view',

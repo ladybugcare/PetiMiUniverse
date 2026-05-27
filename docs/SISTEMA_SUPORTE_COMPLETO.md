@@ -120,8 +120,8 @@ CREATE TABLE support_tickets (
 ### 🛠 Arquivos Criados/Modificados
 
 #### Backend:
-- `backend/database_migrations/create_support_tickets_table.sql` - Tabela inicial
-- `backend/database_migrations/add_user_read_to_support_tickets.sql` - Adiciona coluna user_read
+- `backend/database_migrations/petimi_vet/create_support_tickets_table.sql` - Tabela inicial
+- `backend/database_migrations/petimi_vet/add_user_read_to_support_tickets.sql` - Adiciona coluna user_read
 - `backend/src/controllers/supportTicketsController.ts` - 6 endpoints
 - `backend/src/routes/supportTickets.ts` - Rotas
 - `backend/src/index.ts` - Registro de rotas
@@ -142,10 +142,10 @@ CREATE TABLE support_tickets (
 1. **Execute as migrações SQL no Supabase:**
    ```sql
    -- Primeiro: Criar tabela (se não existe)
-   -- Execute: backend/database_migrations/create_support_tickets_table.sql
+   -- Execute: backend/database_migrations/petimi_vet/create_support_tickets_table.sql
    
    -- Segundo: Adicionar coluna user_read (se tabela já existia)
-   -- Execute: backend/database_migrations/add_user_read_to_support_tickets.sql
+   -- Execute: backend/database_migrations/petimi_vet/add_user_read_to_support_tickets.sql
    ```
 
 2. **Reinicie o servidor backend** (se necessário)

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-/** Valores canónicos de `service_group` (alinhados à migration e à UI). */
+/** Valores canônicos de `service_group` (alinhados à migration e à UI). */
 export const SERVICE_GROUP_VALUES = [
   'banho_tosa',
   'hotel',
@@ -33,7 +33,7 @@ export function slugifyServiceNameToCode(name: string): string {
   return trimmed || 'servico';
 }
 
-/** Slug canónico para `service_group` (pré-definidos ou personalizados). */
+/** Slug canônico para `service_group` (pré-definidos ou personalizados). */
 export function slugifyServiceGroupLabel(raw: string): string {
   return slugifyServiceNameToCode(raw);
 }

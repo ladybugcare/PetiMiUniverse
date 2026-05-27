@@ -7,16 +7,19 @@ import {
   HubGuardianDetailPage,
   HubPetsPage,
   HubPetWizardPage,
-  HubServiceTypesPage,
   HubEstoqueRoutes,
+  HubServicosRoutes,
   HubStaffPage,
   HubAgendaPage,
+  HubOrcamentosRoutes,
 } from '@petimi/hub-ui';
 import HubProtectedRoute from './routes/HubProtectedRoute';
 import HubLoginPage from './pages/HubLoginPage';
 import HubAppShell from './components/HubAppShell';
 import HubComingSoonPage from './pages/HubComingSoonPage';
 import HubMeuPerfilPage from './pages/HubMeuPerfilPage';
+import HubDesignSystemPage from './pages/HubDesignSystemPage';
+import PublicQuotePage from './pages/PublicQuotePage';
 
 const App: React.FC = () => {
   return (
@@ -25,6 +28,7 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/meu-perfil" element={<Navigate to="/hub/meu-perfil" replace />} />
           <Route path="/login" element={<HubLoginPage />} />
+          <Route path="/orcamento/:token" element={<PublicQuotePage />} />
           <Route
             path="/hub/guardians"
             element={<Navigate to="/hub/clientes" replace />}
@@ -49,18 +53,22 @@ const App: React.FC = () => {
             <Route path="pets/novo" element={<HubPetWizardPage />} />
             <Route path="pets" element={<HubPetsPage />} />
             <Route path="financeiro" element={<HubComingSoonPage title="Financeiro" />} />
-            <Route path="servicos" element={<HubServiceTypesPage />} />
+            <Route path="caixa" element={<HubComingSoonPage title="Caixa" />} />
+            <Route path="orcamentos/*" element={<HubOrcamentosRoutes />} />
+            <Route path="servicos/*" element={<HubServicosRoutes />} />
+            <Route path="clinica" element={<HubComingSoonPage title="Clínica" />} />
             <Route
               path="hotel-creche"
               element={<HubComingSoonPage title="Hotel & Creche" />}
             />
             <Route path="banho-tosa" element={<HubComingSoonPage title="Banho & Tosa" />} />
+            <Route path="leva-e-traz" element={<HubComingSoonPage title="Leva e Traz" />} />
             <Route path="estoque/*" element={<HubEstoqueRoutes />} />
             <Route path="equipe" element={<HubStaffPage />} />
             <Route path="relatorios" element={<HubComingSoonPage title="Relatórios" />} />
-            <Route path="marketplace" element={<HubComingSoonPage title="Marketplace" />} />
             <Route path="encounters" element={<HubComingSoonPage title="Atendimentos" />} />
             <Route path="meu-perfil" element={<HubMeuPerfilPage />} />
+            <Route path="design-system" element={<HubDesignSystemPage />} />
             <Route
               path="configuracoes-sistema"
               element={

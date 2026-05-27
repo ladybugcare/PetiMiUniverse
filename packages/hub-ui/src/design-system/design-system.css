@@ -1,0 +1,95 @@
+/* Página de catálogo visual (Hub Design System) */
+
+.hub-ds {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #4a3b3a;
+  background: #faf7f4;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.hub-ds__header {
+  margin-bottom: 32px;
+}
+
+.hub-ds__title {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #4a3b3a;
+}
+
+.hub-ds__lead {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #8e6e67;
+}
+
+.hub-ds__section {
+  margin-bottom: 40px;
+}
+
+.hub-ds__section-title {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #4a3b3a;
+}
+
+.hub-ds__section-desc {
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #8e6e67;
+}
+
+.hub-ds__card {
+  background: #fff;
+  border: 1px solid #e8e4e0;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 2px rgba(74, 59, 58, 0.05);
+}
+
+.hub-ds__grid {
+  display: grid;
+  gap: 24px;
+}
+
+.hub-ds__grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 560px) {
+  .hub-ds__grid--2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-ds__example-label {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8e6e67;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hub-ds__code {
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: #f7f4f2;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b5654;
+  overflow-x: auto;
+}
+
+.hub-ds__code code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}

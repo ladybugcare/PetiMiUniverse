@@ -1,6 +1,8 @@
-import React, { useState, ReactNode } from 'react';
+import React, { useState, useEffect, ReactNode } from 'react';
 import DashboardHeader from './DashboardHeader';
 import DashboardSidebar, { MenuItem } from './DashboardSidebar';
+
+const CLINIC_DESKTOP_SIDEBAR_MQ = '(min-width: 1024px)';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -8,6 +10,8 @@ interface DashboardLayoutProps {
   menuItems: MenuItem[];
   activeSection?: string;
   onSectionChange?: (sectionId: string) => void;
+  /** Em desktop, abre o menu por defeito e sem overlay escuro (layout tipo backoffice clínica). */
+  persistentClinicNav?: boolean;
 }
 
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({
@@ -16,8 +20,37 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   menuItems,
   activeSection,
   onSectionChange,
+  persistentClinicNav = false,
 }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    if (persistentClinicNav && window.matchMedia(CLINIC_DESKTOP_SIDEBAR_MQ).matches) {
+      return true;
+    }
+    return false;
+  });
+
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(CLINIC_DESKTOP_SIDEBAR_MQ).matches : false
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia(CLINIC_DESKTOP_SIDEBAR_MQ);
+    const onMq = () => setIsDesktop(mq.matches);
+    onMq();
+    mq.addEventListener('change', onMq);
+    return () => mq.removeEventListener('change', onMq);
+  }, []);
+
+  useEffect(() => {
+    if (!persistentClinicNav) return;
+    const mq = window.matchMedia(CLINIC_DESKTOP_SIDEBAR_MQ);
+    const onShrink = () => {
+      if (!mq.matches) setIsSidebarOpen(false);
+    };
+    mq.addEventListener('change', onShrink);
+    return () => mq.removeEventListener('change', onShrink);
+  }, [persistentClinicNav]);
 
   // Get user info from localStorage
   const getUserFromStorage = () => {
@@ -43,6 +76,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     setIsSidebarOpen(false);
   };
 
+  const showSidebarBackdrop = !(persistentClinicNav && isDesktop);
+
   return (
     <div style={styles.container}>
       {/* Header */}
@@ -55,6 +90,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       <DashboardSidebar
         isOpen={isSidebarOpen}
         onClose={handleCloseSidebar}
+        showBackdrop={showSidebarBackdrop}
         menuItems={menuItems}
         userName={userName}
         userEmail={userEmail}

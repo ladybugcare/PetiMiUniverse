@@ -17,6 +17,7 @@ export type HubAppointmentServiceTypeRef = {
   code: string;
   service_group: string;
   agenda_color: string | null;
+  group_color?: string | null;
   default_duration_minutes: number | null;
 };
 
@@ -25,7 +26,12 @@ export type HubAppointmentStaffRef = {
   agenda_color: string | null;
 };
 
-export type HubAppointmentPetRef = { name: string };
+export type HubAppointmentPetRef = {
+  name: string;
+  size_tier?: string;
+  coat_type?: string | null;
+  birth_date?: string | null;
+};
 export type HubAppointmentGuardianRef = { full_name: string };
 export type HubAppointmentUnitRef = { name: string };
 
@@ -34,6 +40,11 @@ export type HubAppointmentServiceLine = {
   hub_service_type_id: string;
   duration_minutes: number;
   order_index: number;
+  pricing_porte_tier_applied?: string | null;
+  pricing_coat_type_applied?: string | null;
+  cost_amount_applied?: number | null;
+  sale_amount_applied?: number | null;
+  pricing_variant?: HubAppointmentPricingVariant | null;
   service_type: HubAppointmentServiceTypeRef | null;
 };
 
@@ -53,10 +64,13 @@ export type HubAppointment = {
   appointment_kind: HubAppointmentKind;
   title: string | null;
   description: string | null;
+  financial_notes?: string | null;
   series_id: string | null;
   series_occurrence_date: string | null;
   created_at: string;
   updated_at: string;
+  pricing_porte_tier?: string | null;
+  pricing_coat_type?: string | null;
   service_type: HubAppointmentServiceTypeRef | null;
   staff_member: HubAppointmentStaffRef | null;
   pet: HubAppointmentPetRef | null;
@@ -96,6 +110,17 @@ export type HubAppointmentRecurrenceRule = {
   occurrences?: number | null;
 };
 
+export type HubAppointmentPricingVariant = {
+  km_tier_index?: number;
+  period?: 'full_day' | 'half_day';
+  consult_type?: 'padrao' | 'retorno';
+};
+
+export type HubAppointmentPickupRoutePricing = {
+  hub_service_type_id: string;
+  pricing_variant: { km_tier_index: number };
+};
+
 export type CreatePickupRouteBlock = {
   starts_at: string;
   ends_at: string;
@@ -106,11 +131,18 @@ export type CreatePickupRouteBlock = {
 export type CreateExtraBlock = {
   starts_at: string;
   ends_at: string;
-  services: Array<{ hub_service_type_id: string; duration_minutes: number }>;
+  services: Array<{
+    hub_service_type_id: string;
+    duration_minutes: number;
+    pricing_porte_tier?: string | null;
+    pricing_coat_type?: string | null;
+    pricing_variant?: HubAppointmentPricingVariant | null;
+  }>;
   hub_staff_member_id?: string | null;
   resource_label?: string | null;
   status?: HubAppointmentStatus;
   notes?: string | null;
+  title?: string | null;
 };
 
 export type CreateHubAppointmentPayload = {
@@ -128,9 +160,19 @@ export type CreateHubAppointmentPayload = {
   appointment_kind?: HubAppointmentKind;
   title?: string | null;
   description?: string | null;
-  services?: Array<{ hub_service_type_id: string; duration_minutes: number }>;
+  financial_notes?: string | null;
+  services?: Array<{
+    hub_service_type_id: string;
+    duration_minutes: number;
+    pricing_porte_tier?: string | null;
+    pricing_coat_type?: string | null;
+    pricing_variant?: HubAppointmentPricingVariant | null;
+  }>;
+  pricing_porte_tier?: string | null;
+  pricing_coat_type?: string | null;
   with_pickup_route_before?: CreatePickupRouteBlock | null;
   with_pickup_route_after?: CreatePickupRouteBlock | null;
+  pickup_route_pricing?: HubAppointmentPickupRoutePricing | null;
   extra_blocks?: CreateExtraBlock[];
   recurrence?: HubAppointmentRecurrenceRule | null;
 };
@@ -151,7 +193,15 @@ export type PatchHubAppointmentPayload = {
   deleted?: boolean;
   title?: string | null;
   description?: string | null;
-  services?: Array<{ hub_service_type_id: string; duration_minutes: number }>;
+  services?: Array<{
+    hub_service_type_id: string;
+    duration_minutes: number;
+    pricing_porte_tier?: string | null;
+    pricing_coat_type?: string | null;
+    pricing_variant?: HubAppointmentPricingVariant | null;
+  }>;
+  pricing_porte_tier?: string | null;
+  pricing_coat_type?: string | null;
 };
 
 function listAppointmentsUrl(p: ListHubAppointmentsParams): string {

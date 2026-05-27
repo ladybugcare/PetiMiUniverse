@@ -8,7 +8,7 @@ This implementation adds a beautiful 2-step demand creation flow and role-based 
 
 ### 1. Database Changes
 - Added `demand_date`, `start_time`, and `duration_hours` columns to demands table
-- Migration file: `backend/database_migrations/add_datetime_fields.sql`
+- Migration file: `backend/database_migrations/petimi_vet/add_datetime_fields.sql`
 
 ### 2. Backend Updates
 ✅ Updated `DemandBody` interface with date/time fields
@@ -46,7 +46,7 @@ This implementation adds a beautiful 2-step demand creation flow and role-based 
 Open Supabase Dashboard → SQL Editor and run:
 
 ```sql
--- Copy content from backend/database_migrations/add_datetime_fields.sql
+-- Copy content from backend/database_migrations/petimi_vet/add_datetime_fields.sql
 ALTER TABLE demands 
 ADD COLUMN IF NOT EXISTS demand_date date NOT NULL DEFAULT CURRENT_DATE,
 ADD COLUMN IF NOT EXISTS start_time time NOT NULL DEFAULT '09:00:00',
@@ -215,7 +215,7 @@ If you have existing demands:
 ## 📁 Files Created/Modified
 
 ### New Files:
-- `backend/database_migrations/add_datetime_fields.sql`
+- `backend/database_migrations/petimi_vet/add_datetime_fields.sql`
 - `frontend/src/components/CategorySelectionStep.tsx`
 - `frontend/src/components/DemandFormStep.tsx`
 - `MULTI_STEP_DEMAND_GUIDE.md`

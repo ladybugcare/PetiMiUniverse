@@ -63,7 +63,9 @@ exports.authenticateUser = authenticateUser;
 const checkPermission = async (user_id, clinic_id, permission) => {
     try {
         // Buscar role do usuário na clínica
-        const { data: clinicUser, error } = await supabase_1.supabase
+        // Usar service role: estas verificações rodam após JWT válido; o client anon não tem
+        // sessão RLS do usuário e devolve vazio → falsos negativos e 403 em /units/clinic/:id.
+        const { data: clinicUser, error } = await supabase_1.supabaseAdmin
             .from('clinic_users')
             .select('role')
             .eq('user_id', user_id)
@@ -89,7 +91,7 @@ const checkClinicAccess = async (user_id, clinic_id) => {
         // First check if user is the clinic owner (clinic.id === user_id)
         if (user_id === clinic_id) {
             // Verify clinic exists
-            const { data: clinic, error: clinicError } = await supabase_1.supabase
+            const { data: clinic, error: clinicError } = await supabase_1.supabaseAdmin
                 .from('clinics')
                 .select('id')
                 .eq('id', clinic_id)
@@ -99,7 +101,7 @@ const checkClinicAccess = async (user_id, clinic_id) => {
             }
         }
         // Also check if user has a clinic_users entry
-        const { data, error } = await supabase_1.supabase
+        const { data, error } = await supabase_1.supabaseAdmin
             .from('clinic_users')
             .select('id')
             .eq('user_id', user_id)

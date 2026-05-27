@@ -2,10 +2,15 @@ import { z } from 'zod';
 
 const moneyAmountSchema = z.coerce.number().finite().min(0).max(99_999_999.99);
 
-export const PORTE_VALUES = ['mini', 'pequeno', 'medio', 'grande', 'gigante'] as const;
+export const PORTE_VALUES = ['filhote', 'mini', 'pequeno', 'medio', 'grande', 'gigante'] as const;
 export type PorteValue = (typeof PORTE_VALUES)[number];
 
 const porteEnum = z.enum(PORTE_VALUES);
+
+export const COAT_TYPE_VALUES = ['curto', 'medio', 'longo', 'duplo', 'encaracolado', 'sem_pelo', 'outro'] as const;
+export type CoatTypeValue = (typeof COAT_TYPE_VALUES)[number];
+
+const coatTypeEnum = z.enum(COAT_TYPE_VALUES);
 
 export const pricingMatrixPorteSchema = z.object({
   kind: z.literal('porte'),
@@ -13,6 +18,33 @@ export const pricingMatrixPorteSchema = z.object({
     .array(
       z.object({
         porte: porteEnum,
+        cost_amount: moneyAmountSchema,
+        sale_amount: moneyAmountSchema,
+      })
+    )
+    .min(1),
+});
+
+export const pricingMatrixPelagemSchema = z.object({
+  kind: z.literal('pelagem'),
+  tiers: z
+    .array(
+      z.object({
+        coat_type: coatTypeEnum,
+        cost_amount: moneyAmountSchema,
+        sale_amount: moneyAmountSchema,
+      })
+    )
+    .min(1),
+});
+
+export const pricingMatrixPortePelagemSchema = z.object({
+  kind: z.literal('porte_pelagem'),
+  tiers: z
+    .array(
+      z.object({
+        porte: porteEnum,
+        coat_type: coatTypeEnum,
         cost_amount: moneyAmountSchema,
         sale_amount: moneyAmountSchema,
       })
@@ -64,6 +96,8 @@ export const pricingMatrixKmBandaSchema = z.object({
 
 export const pricingMatrixSchema = z.discriminatedUnion('kind', [
   pricingMatrixPorteSchema,
+  pricingMatrixPelagemSchema,
+  pricingMatrixPortePelagemSchema,
   pricingMatrixPeriodoSchema,
   pricingMatrixConsultaSchema,
   pricingMatrixKmBandaSchema,
@@ -104,8 +138,14 @@ export function pricingMatrixKindMatchesGroup(
   if (!serviceGroupAllowsPricingMatrix(group)) {
     return { error: 'Este grupo não suporta matriz de preços' };
   }
-  if (group === 'banho_tosa' || group === 'hotel') {
-    if (matrix.kind !== 'porte') return { error: 'Para Banho & Tosa ou Hotel, a matriz deve ser por porte' };
+  if (group === 'banho_tosa') {
+    if (matrix.kind !== 'porte' && matrix.kind !== 'pelagem' && matrix.kind !== 'porte_pelagem') {
+      return { error: 'Para Banho & Tosa, use preços por porte, pelagem ou porte + pelagem' };
+    }
+    return true;
+  }
+  if (group === 'hotel') {
+    if (matrix.kind !== 'porte') return { error: 'Para Hotel, a matriz deve ser por porte' };
     return true;
   }
   if (group === 'creche') {
@@ -127,6 +167,10 @@ function tierKeys(matrix: HubServicePricingMatrix): string[] {
   switch (matrix.kind) {
     case 'porte':
       return matrix.tiers.map((t) => t.porte);
+    case 'pelagem':
+      return matrix.tiers.map((t) => t.coat_type);
+    case 'porte_pelagem':
+      return matrix.tiers.map((t) => `${t.porte}|${t.coat_type}`);
     case 'periodo':
       return matrix.tiers.map((t) => t.period);
     case 'consulta':

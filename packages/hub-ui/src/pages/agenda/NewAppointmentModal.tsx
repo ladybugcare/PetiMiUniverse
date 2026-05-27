@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, GripVertical, AlertCircle, CalendarDays, RefreshCw } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, Trash2, GripVertical, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, ChevronUp, User, Dog, Loader2 } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
-import { HubModal } from '../../components/HubModal';
+import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
-import { HubBrDateInput } from '../../components/HubBrDateInput';
+import { HubDateField } from '../../components/HubDateField';
 import {
   hubAgendaApi,
   type CreateHubAppointmentPayload,
@@ -12,10 +12,31 @@ import {
   type HubAppointmentRecurrenceRule,
 } from '../../api/hubAgendaApi';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
+import { hubClinicSettingsApi } from '../../api/hubClinicSettingsApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
+import {
+  COAT_TYPE_LABELS,
+  PORTE_LABELS,
+  PET_BODY_PORTE_VALUES,
+  type CoatTypeValue,
+  type PetBodyPorteValue,
+  type PorteValue,
+  coercePricingMatrixFromApi,
+} from '../../utils/hubServiceTypesPricingMatrix';
+import {
+  buildAgendaPricingPreview,
+  previewLevaTrazBandPricing,
+  unionCoatTypesForServiceSelection,
+  unionPorteTiersForServiceSelection,
+  validateAppointmentCoatOverride,
+  validateAppointmentPorteOverride,
+} from './agendaPortePricingPreview';
+import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
 import { STATUS_META, type AgendaStatus } from './agendaModel';
 import './new-appointment-modal.css';
+
+export type CreateHubAppointmentResult = Awaited<ReturnType<typeof hubAgendaApi.create>>;
 
 export type NewAppointmentInitial = {
   date?: string;
@@ -28,7 +49,7 @@ export type NewAppointmentInitial = {
 export type NewAppointmentModalProps = {
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onCreated: (result: CreateHubAppointmentResult) => void;
   initial?: NewAppointmentInitial | null;
   staffOptions: HubStaffMember[];
   serviceTypes: HubServiceType[];
@@ -40,8 +61,16 @@ type ServiceChip = {
   duration_minutes: number;
 };
 
+type GuardianPetOption = { id: string; name: string; size_tier: string; coat_type: string | null; birth_date: string | null };
+
 type ExtraBlock = {
   key: string;
+  expanded: boolean;
+  block_title: string;
+  block_description: string;
+  block_description_user_edited: boolean;
+  /** Filtro de grupo de serviço só para este bloco (`all` ou slug). */
+  group_filter: string;
   services: ServiceChip[];
   starts_hm: string;
   ends_hm: string;
@@ -49,12 +78,15 @@ type ExtraBlock = {
   resource_label: string;
 };
 
+/** Janela L&T: `ends_hm` mantém-se alinhado ao início (+1 h); não há campo «Fim» no formulário. */
 type PickupSubBlock = {
   starts_hm: string;
   ends_hm: string;
   hub_staff_member_id: string;
   resource_label: string;
 };
+
+const PICKUP_ROUTE_LEG_DURATION_MIN = 60;
 
 type RecurrenceForm = {
   kind: 'daily' | 'weekly' | 'monthly';
@@ -89,6 +121,28 @@ function addMinutes(hm: string, mins: number): string {
   return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
+function hmToMinutes(hm: string): number {
+  const [h, m] = hm.split(':').map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+function minHm(times: string[]): string {
+  if (times.length === 0) return '09:00';
+  return times.reduce((a, b) => (hmToMinutes(a) <= hmToMinutes(b) ? a : b));
+}
+
+function maxHm(times: string[]): string {
+  if (times.length === 0) return '10:00';
+  return times.reduce((a, b) => (hmToMinutes(a) >= hmToMinutes(b) ? a : b));
+}
+
+function minutesToHm(totalMin: number): string {
+  const t = ((totalMin % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(t / 60);
+  const m = t % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 function tsToHm(iso: string): string {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -99,10 +153,30 @@ function todayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Slug de grupo alinhado às opções do combobox (vazio → `outros`). */
+function normalizeServiceGroupSlug(raw: string | null | undefined): string {
+  const s = (raw ?? '').trim();
+  return s || 'outros';
+}
+
+/** Texto com bullets a partir das descrições dos tipos de serviço (cadastro). */
+function buildServiceDescriptionBullets(types: HubServiceType[], serviceIdsOrdered: string[]): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const id of serviceIdsOrdered) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const st = types.find((t) => t.id === id);
+    const d = (st?.description ?? '').trim();
+    if (d) lines.push(`- ${d}`);
+  }
+  return lines.join('\n');
+}
+
 export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   open,
   onClose,
-  onSaved,
+  onCreated,
   initial,
   staffOptions,
   serviceTypes,
@@ -127,14 +201,23 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [guardianName, setGuardianName] = useState('');
   const [petId, setPetId] = useState('');
   const [petName, setPetName] = useState('');
-  const [guardianPets, setGuardianPets] = useState<Array<{ id: string; name: string }>>([]);
+  const [guardianPets, setGuardianPets] = useState<GuardianPetOption[]>([]);
   const [guardianOptions, setGuardianOptions] = useState<HubComboboxOption[]>([]);
   const [guardiansLoading, setGuardiansLoading] = useState(false);
 
-  // ── Title / Description ───────────────────────────────────────────────────
+  const [puppyMaxMonths, setPuppyMaxMonths] = useState(8);
+  /** Vazio = automático (null no API). */
+  const [pricingApptPorteTier, setPricingApptPorteTier] = useState('');
+  /** Vazio = automático (pelagem do pet, quando existir). */
+  const [pricingApptCoatType, setPricingApptCoatType] = useState('');
+
+  // ── Title / bloco principal ───────────────────────────────────────────────
   const [titleOverridden, setTitleOverridden] = useState(false);
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [mainBlockNotes, setMainBlockNotes] = useState('');
+  const [mainBlockNotesUserEdited, setMainBlockNotesUserEdited] = useState(false);
+  const [mainBlockExpanded, setMainBlockExpanded] = useState(true);
+  const [financialNotes, setFinancialNotes] = useState('');
 
   // ── Recurrence ────────────────────────────────────────────────────────────
   const [withRecurrence, setWithRecurrence] = useState(false);
@@ -142,11 +225,102 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   // ── L&T ───────────────────────────────────────────────────────────────────
   const [withPickup, setWithPickup] = useState(false);
-  const [pickupBefore, setPickupBefore] = useState<PickupSubBlock>({ starts_hm: '08:00', ends_hm: '09:00', hub_staff_member_id: '', resource_label: '' });
-  const [pickupAfter, setPickupAfter] = useState<PickupSubBlock>({ starts_hm: '11:00', ends_hm: '12:00', hub_staff_member_id: '', resource_label: '' });
+  const [pickupBefore, setPickupBefore] = useState<PickupSubBlock>({
+    starts_hm: '08:00',
+    ends_hm: addMinutes('08:00', PICKUP_ROUTE_LEG_DURATION_MIN),
+    hub_staff_member_id: '',
+    resource_label: '',
+  });
+  const [pickupAfter, setPickupAfter] = useState<PickupSubBlock>({
+    starts_hm: '11:00',
+    ends_hm: addMinutes('11:00', PICKUP_ROUTE_LEG_DURATION_MIN),
+    hub_staff_member_id: '',
+    resource_label: '',
+  });
+  const [pickupLtServiceTypeId, setPickupLtServiceTypeId] = useState('');
+  const [pickupKmTierIndex, setPickupKmTierIndex] = useState(0);
+
+  const ltReturnDriverUnlinkedRef = useRef(false);
+  const lastMainBlockServiceSigRef = useRef('');
+  const lastExtraBlockServiceSigRef = useRef<Record<string, string>>({});
 
   // ── Extra blocks ──────────────────────────────────────────────────────────
   const [extraBlocks, setExtraBlocks] = useState<ExtraBlock[]>([]);
+
+  /** Primeiro início do dia (principal + extras com serviço) — fim da perna «busca» L&T. */
+  const pickupDayFirstStartHm = useMemo(
+    () => minHm([startsHm, ...extraBlocks.filter((b) => b.services.length > 0).map((b) => b.starts_hm)]),
+    [startsHm, extraBlocks],
+  );
+
+  /** Último fim do dia — base para sugerir o início do «retorno». */
+  const pickupDayLastEndHm = useMemo(
+    () => maxHm([endsHm, ...extraBlocks.filter((b) => b.services.length > 0).map((b) => b.ends_hm)]),
+    [endsHm, extraBlocks],
+  );
+
+  const mainServiceIdsSignature = useMemo(
+    () => services.map((s) => s.hub_service_type_id).join('|'),
+    [services],
+  );
+
+  const extraBlocksServiceSignature = useMemo(
+    () =>
+      extraBlocks
+        .map((b) => `${b.key}:${b.services.map((s) => s.hub_service_type_id).join(',')}`)
+        .join('|'),
+    [extraBlocks],
+  );
+
+  useEffect(() => {
+    if (!open) {
+      lastMainBlockServiceSigRef.current = '';
+      return;
+    }
+    const sig = mainServiceIdsSignature;
+    if (sig === lastMainBlockServiceSigRef.current) return;
+    lastMainBlockServiceSigRef.current = sig;
+    const next = buildServiceDescriptionBullets(
+      serviceTypes,
+      services.map((s) => s.hub_service_type_id),
+    );
+    if (!mainBlockNotesUserEdited) setMainBlockNotes(next);
+    else if (sig !== '' && window.confirm('Atualizar a descrição do bloco com base nos serviços seleccionados?')) {
+      setMainBlockNotes(next);
+      setMainBlockNotesUserEdited(false);
+    }
+  }, [open, mainServiceIdsSignature, services, serviceTypes, mainBlockNotesUserEdited]);
+
+  useEffect(() => {
+    if (!open) {
+      lastExtraBlockServiceSigRef.current = {};
+      return;
+    }
+    setExtraBlocks((prev) => {
+      let changed = false;
+      const next = prev.map((block) => {
+        const sig = block.services.map((s) => s.hub_service_type_id).join('|');
+        const lastSig = lastExtraBlockServiceSigRef.current[block.key];
+        if (lastSig === sig) return block;
+        lastExtraBlockServiceSigRef.current[block.key] = sig;
+
+        const bullets = buildServiceDescriptionBullets(
+          serviceTypes,
+          block.services.map((s) => s.hub_service_type_id),
+        );
+        if (!block.block_description_user_edited) {
+          changed = true;
+          return { ...block, block_description: bullets };
+        }
+        if (sig !== '' && window.confirm('Atualizar a descrição deste bloco com base nos serviços seleccionados?')) {
+          changed = true;
+          return { ...block, block_description: bullets, block_description_user_edited: false };
+        }
+        return block;
+      });
+      return changed ? next : prev;
+    });
+  }, [open, extraBlocksServiceSignature, serviceTypes]);
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
@@ -155,6 +329,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const totalDurationMin = useMemo(() => services.reduce((s, c) => s + c.duration_minutes, 0), [services]);
+  const extraBlocksDurationMin = useMemo(
+    () => extraBlocks.reduce((sum, b) => sum + b.services.reduce((s, c) => s + c.duration_minutes, 0), 0),
+    [extraBlocks],
+  );
+  const totalDurationAllBlocks = totalDurationMin + extraBlocksDurationMin;
 
   const autoTitle = useMemo(() => {
     const svcPart = services.map((s) => s.name).join(' + ') || '';
@@ -176,12 +355,20 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     }
   }, [totalDurationMin, startsHm]);
 
+  /** Sem campo «Fim» na busca: o fim da perna acompanha sempre o início do primeiro bloco do dia. */
+  useEffect(() => {
+    if (!withPickup) return;
+    setPickupBefore((b) => ({ ...b, ends_hm: pickupDayFirstStartHm }));
+  }, [withPickup, pickupDayFirstStartHm]);
+
   // Apply initial values when modal opens
   useEffect(() => {
     if (!open) return;
     setSaveError(null);
     setConflicts([]);
     setTitleOverridden(false);
+    setPricingApptPorteTier('');
+    setPricingApptCoatType('');
     if (initial) {
       if (initial.date) setDateYmd(initial.date);
       if (initial.starts_at) setStartsHm(tsToHm(initial.starts_at));
@@ -191,6 +378,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     }
   }, [open, initial]);
 
+  useEffect(() => {
+    if (!open || !clinicId) return;
+    hubClinicSettingsApi
+      .get(clinicId)
+      .then((r) => setPuppyMaxMonths(r.settings.pet_puppy_max_months))
+      .catch(() => setPuppyMaxMonths(8));
+  }, [open, clinicId]);
+
   // Load guardians
   useEffect(() => {
     if (!open || !clinicId) return;
@@ -198,7 +393,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     hubGuardiansApi
       .list(clinicId, false, { status: 'active' })
       .then(({ guardians }) => {
-        setGuardianOptions(guardians.map((g) => ({ value: g.id, label: g.full_name })));
+        setGuardianOptions(
+          guardians.map((g) => ({
+            value: g.id,
+            label: g.full_name,
+            icon: <User size={18} strokeWidth={2} aria-hidden />,
+          })),
+        );
       })
       .catch(() => setGuardianOptions([]))
       .finally(() => setGuardiansLoading(false));
@@ -213,10 +414,17 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       return;
     }
     hubGuardiansApi.getById(guardianId, clinicId).then(({ pets }) => {
-      setGuardianPets(pets.map((p) => ({ id: p.id, name: p.name })));
-      if (pets.length === 1) {
-        setPetId(pets[0]!.id);
-        setPetName(pets[0]!.name);
+      const mapped: GuardianPetOption[] = pets.map((p) => ({
+        id: p.id,
+        name: p.name,
+        size_tier: p.size_tier || 'medio',
+        coat_type: p.coat_type ?? null,
+        birth_date: p.birth_date,
+      }));
+      setGuardianPets(mapped);
+      if (mapped.length === 1) {
+        setPetId(mapped[0]!.id);
+        setPetName(mapped[0]!.name);
       } else {
         setPetId('');
         setPetName('');
@@ -229,16 +437,22 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     const seen = new Set<string>();
     const opts: HubComboboxOption[] = [{ value: 'all', label: 'Todos os grupos' }];
     for (const st of serviceTypes) {
-      if (!seen.has(st.service_group)) {
-        seen.add(st.service_group);
-        opts.push({ value: st.service_group, label: st.service_group });
+      const slug = normalizeServiceGroupSlug(st.service_group);
+      if (!seen.has(slug)) {
+        seen.add(slug);
+        opts.push({ value: slug, label: serviceGroupLabel(slug) });
       }
     }
     return opts;
   }, [serviceTypes]);
 
   const filteredServiceTypes = useMemo(
-    () => serviceTypes.filter((st) => st.allow_scheduling !== false && (groupFilter === 'all' || st.service_group === groupFilter)),
+    () =>
+      serviceTypes.filter(
+        (st) =>
+          st.allow_scheduling !== false &&
+          (groupFilter === 'all' || normalizeServiceGroupSlug(st.service_group) === groupFilter),
+      ),
     [serviceTypes, groupFilter],
   );
 
@@ -257,10 +471,187 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     [staffOptions],
   );
 
+  const levaTrazServiceTypes = useMemo(
+    () =>
+      serviceTypes.filter(
+        (st) => st.allow_scheduling !== false && normalizeServiceGroupSlug(st.service_group) === 'leva_traz',
+      ),
+    [serviceTypes],
+  );
+
+  const ltServiceComboOptions = useMemo<HubComboboxOption[]>(
+    () => levaTrazServiceTypes.map((st) => ({ value: st.id, label: st.name })),
+    [levaTrazServiceTypes],
+  );
+
+  const kmTierComboOptions = useMemo<HubComboboxOption[]>(() => {
+    const st = serviceTypes.find((s) => s.id === pickupLtServiceTypeId);
+    if (!st) return [];
+    const m = coercePricingMatrixFromApi(st.pricing_matrix);
+    if (!m || m.kind !== 'km_banda') return [{ value: '0', label: 'Preço base' }];
+    return m.tiers.map((t, i) => ({
+      value: String(i),
+      label: `${t.label || `Faixa ${i + 1}`} — R$ ${Number(t.sale_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    }));
+  }, [serviceTypes, pickupLtServiceTypeId]);
+
+  useEffect(() => {
+    if (!withPickup) return;
+    if (pickupLtServiceTypeId) return;
+    if (levaTrazServiceTypes.length === 1) setPickupLtServiceTypeId(levaTrazServiceTypes[0]!.id);
+  }, [withPickup, pickupLtServiceTypeId, levaTrazServiceTypes]);
+
+  useEffect(() => {
+    const st = serviceTypes.find((s) => s.id === pickupLtServiceTypeId);
+    if (!st || !pickupLtServiceTypeId) return;
+    const m = coercePricingMatrixFromApi(st.pricing_matrix);
+    if (m?.kind === 'km_banda' && pickupKmTierIndex >= m.tiers.length) {
+      setPickupKmTierIndex(0);
+    }
+  }, [pickupLtServiceTypeId, serviceTypes, pickupKmTierIndex]);
+
   const petComboOptions = useMemo<HubComboboxOption[]>(
-    () => guardianPets.map((p) => ({ value: p.id, label: p.name })),
+    () =>
+      guardianPets.map((p) => ({
+        value: p.id,
+        label: p.name,
+        icon: <Dog size={18} strokeWidth={2} aria-hidden />,
+      })),
     [guardianPets],
   );
+
+  const selectedPet = useMemo(() => guardianPets.find((p) => p.id === petId) ?? null, [guardianPets, petId]);
+
+  const serviceIdsForPorteUnion = useMemo(() => {
+    const ids = services.map((s) => s.hub_service_type_id);
+    for (const b of extraBlocks) {
+      for (const s of b.services) ids.push(s.hub_service_type_id);
+    }
+    return ids;
+  }, [services, extraBlocks]);
+
+  const unionPricingTiers = useMemo(
+    () => unionPorteTiersForServiceSelection(serviceIdsForPorteUnion, serviceTypes),
+    [serviceIdsForPorteUnion, serviceTypes],
+  );
+
+  const unionPricingCoatTypes = useMemo(
+    () => unionCoatTypesForServiceSelection(serviceIdsForPorteUnion, serviceTypes),
+    [serviceIdsForPorteUnion, serviceTypes],
+  );
+
+  useEffect(() => {
+    if (!pricingApptPorteTier) return;
+    if (!unionPricingTiers.some((x) => x === pricingApptPorteTier)) {
+      setPricingApptPorteTier('');
+    }
+  }, [unionPricingTiers, pricingApptPorteTier]);
+
+  useEffect(() => {
+    if (!pricingApptCoatType) return;
+    if (!unionPricingCoatTypes.some((x) => x === pricingApptCoatType)) {
+      setPricingApptCoatType('');
+    }
+  }, [unionPricingCoatTypes, pricingApptCoatType]);
+
+  const petBodyTierForPricing = useMemo(() => {
+    const st = selectedPet?.size_tier;
+    if (st && PET_BODY_PORTE_VALUES.includes(st as PetBodyPorteValue)) return st;
+    return 'medio';
+  }, [selectedPet]);
+
+  const pricingPreview = useMemo(
+    () =>
+      buildAgendaPricingPreview({
+        mainServices: services.map((s) => ({ hub_service_type_id: s.hub_service_type_id, name: s.name })),
+        extraServices: extraBlocks.flatMap((b) =>
+          b.services.map((s) => ({ hub_service_type_id: s.hub_service_type_id, name: s.name })),
+        ),
+        serviceTypes,
+        petSizeTier: petBodyTierForPricing,
+        petBirthDate: selectedPet?.birth_date ?? null,
+        petCoatType: selectedPet?.coat_type ?? null,
+        appointmentDateYmd: dateYmd,
+        puppyMaxMonths,
+        appointmentOverrideTier: pricingApptPorteTier.trim() || null,
+        appointmentOverrideCoatType: pricingApptCoatType.trim() || null,
+      }),
+    [
+      services,
+      extraBlocks,
+      serviceTypes,
+      petBodyTierForPricing,
+      selectedPet?.birth_date,
+      selectedPet?.coat_type,
+      dateYmd,
+      puppyMaxMonths,
+      pricingApptPorteTier,
+      pricingApptCoatType,
+    ],
+  );
+
+  const pickupPricingPreview = useMemo(() => {
+    if (!withPickup || !pickupLtServiceTypeId.trim()) return null;
+    const st = serviceTypes.find((s) => s.id === pickupLtServiceTypeId.trim());
+    if (!st) return null;
+    const band = previewLevaTrazBandPricing(st, pickupKmTierIndex);
+    return { band, saleRoundTrip: band.saleRoundTrip, costRoundTrip: band.costRoundTrip };
+  }, [withPickup, pickupLtServiceTypeId, pickupKmTierIndex, serviceTypes]);
+
+  const pricingTierComboOptions = useMemo<HubComboboxOption[]>(() => {
+    const auto: HubComboboxOption = { value: '', label: 'Automático (idade + porte do pet)' };
+    return [auto, ...unionPricingTiers.map((t) => ({ value: t, label: PORTE_LABELS[t] }))];
+  }, [unionPricingTiers]);
+
+  const pricingCoatComboOptions = useMemo<HubComboboxOption[]>(() => {
+    const auto: HubComboboxOption = { value: '', label: 'Automático (pelagem do pet)' };
+    return [auto, ...unionPricingCoatTypes.map((t) => ({ value: t, label: COAT_TYPE_LABELS[t] }))];
+  }, [unionPricingCoatTypes]);
+
+  const needsManualCoatType = pricingPreview.lines.some((ln) => ln.needsCoatType);
+
+  const showPricingOverrides = unionPricingTiers.length > 0 || unionPricingCoatTypes.length > 0;
+
+  const appointmentPricingFields = showPricingOverrides ? (
+    <div className="nam-section nam-section--pricing-overrides">
+      <div className="nam-row nam-row--cols2">
+        {unionPricingTiers.length > 0 ? (
+          <div className="nam-field">
+            <label className="nam-label">Preço por porte (este agendamento)</label>
+            <HubSearchableCombobox
+              id="nam-pricing-porte"
+              options={pricingTierComboOptions}
+              value={pricingApptPorteTier}
+              onChange={setPricingApptPorteTier}
+              placeholder="Automático"
+              clearable={false}
+            />
+            <p className="nam-muted" style={{ marginTop: 6, fontSize: 12 }}>
+              Limite de idade para filhote nesta clínica: {puppyMaxMonths} meses (face à data do agendamento).
+            </p>
+          </div>
+        ) : null}
+        {unionPricingCoatTypes.length > 0 ? (
+          <div className="nam-field">
+            <label className="nam-label">Preço por pelagem (este agendamento)</label>
+            <HubSearchableCombobox
+              id="nam-pricing-coat"
+              options={pricingCoatComboOptions}
+              value={pricingApptCoatType}
+              onChange={setPricingApptCoatType}
+              placeholder="Automático"
+              clearable={false}
+            />
+            {needsManualCoatType ? (
+              <p className="nam-footer-error" style={{ marginTop: 6 }}>
+                <AlertCircle size={14} /> Pelagem obrigatória para os serviços selecionados.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  ) : null;
 
   const statusComboOptions = useMemo<HubComboboxOption[]>(
     () =>
@@ -293,10 +684,25 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   // ── Extra blocks ──────────────────────────────────────────────────────────
   const addExtraBlock = () =>
-    setExtraBlocks((prev) => [
-      ...prev,
-      { key: String(Date.now()), services: [], starts_hm: endsHm, ends_hm: addMinutes(endsHm, 60), hub_staff_member_id: staffId, resource_label: resourceLabel },
-    ]);
+    setExtraBlocks((prev) => {
+      const collapsed = prev.map((b) => ({ ...b, expanded: false }));
+      return [
+        ...collapsed,
+        {
+          key: String(Date.now()),
+          expanded: true,
+          block_title: '',
+          block_description: '',
+          block_description_user_edited: false,
+          group_filter: groupFilter,
+          services: [],
+          starts_hm: endsHm,
+          ends_hm: addMinutes(endsHm, 60),
+          hub_staff_member_id: staffId,
+          resource_label: resourceLabel,
+        },
+      ];
+    });
   const removeExtraBlock = (key: string) => setExtraBlocks((prev) => prev.filter((b) => b.key !== key));
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -309,6 +715,39 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     if (!dateYmd) {
       setSaveError('Informe a data do agendamento.');
       return;
+    }
+
+    const tierErr = validateAppointmentPorteOverride(
+      pricingApptPorteTier.trim() || null,
+      serviceIdsForPorteUnion,
+      serviceTypes,
+    );
+    if (tierErr) {
+      setSaveError(tierErr);
+      return;
+    }
+    const coatErr = validateAppointmentCoatOverride(
+      pricingApptCoatType.trim() || null,
+      serviceIdsForPorteUnion,
+      serviceTypes,
+    );
+    if (coatErr) {
+      setSaveError(coatErr);
+      return;
+    }
+    if (needsManualCoatType) {
+      setSaveError('Selecione a pelagem para precificar os serviços escolhidos.');
+      return;
+    }
+    if (withPickup) {
+      if (!pickupLtServiceTypeId.trim()) {
+        setSaveError('Leva e Traz: selecione o tipo de serviço de transporte.');
+        return;
+      }
+      if (levaTrazServiceTypes.length === 0) {
+        setSaveError('Não há tipos de serviço «Leva e Traz» configurados na clínica.');
+        return;
+      }
     }
 
     setSaving(true);
@@ -330,7 +769,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         guardian_id: guardianId || null,
         resource_label: resourceLabel || null,
         title: title || null,
-        description: description || null,
+        description: null,
+        notes: mainBlockNotes.trim() || null,
+        financial_notes: financialNotes.trim() || null,
+        pricing_porte_tier: pricingApptPorteTier.trim() || null,
+        pricing_coat_type: pricingApptCoatType.trim() || null,
         services: services.map((s) => ({
           hub_service_type_id: s.hub_service_type_id,
           duration_minutes: s.duration_minutes,
@@ -350,6 +793,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           hub_staff_member_id: pickupAfter.hub_staff_member_id || null,
           resource_label: pickupAfter.resource_label || null,
         };
+        payload.pickup_route_pricing = {
+          hub_service_type_id: pickupLtServiceTypeId.trim(),
+          pricing_variant: { km_tier_index: pickupKmTierIndex },
+        };
       }
 
       if (extraBlocks.length > 0) {
@@ -364,6 +811,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             })),
             hub_staff_member_id: b.hub_staff_member_id || null,
             resource_label: b.resource_label || null,
+            title: b.block_title.trim() || null,
+            notes: b.block_description.trim() || null,
           }));
       }
 
@@ -388,9 +837,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         setConflicts(result.conflicts);
       }
 
-      onSaved();
-      onClose();
       resetForm();
+      onClose();
+      onCreated(result);
     } catch (e: unknown) {
       const msg = (e as { message?: string })?.message ?? 'Erro ao criar agendamento';
       setSaveError(msg);
@@ -405,16 +854,38 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setPetId('');
     setPetName('');
     setTitle('');
-    setDescription('');
+    setMainBlockNotes('');
+    setMainBlockNotesUserEdited(false);
+    setMainBlockExpanded(true);
+    setFinancialNotes('');
     setTitleOverridden(false);
     setWithRecurrence(false);
     setRecurrence({ ...DEFAULT_RECURRENCE });
     setWithPickup(false);
+    setPickupLtServiceTypeId('');
+    setPickupKmTierIndex(0);
+    ltReturnDriverUnlinkedRef.current = false;
+    lastMainBlockServiceSigRef.current = '';
+    lastExtraBlockServiceSigRef.current = {};
+    setPickupBefore({
+      starts_hm: '08:00',
+      ends_hm: addMinutes('08:00', PICKUP_ROUTE_LEG_DURATION_MIN),
+      hub_staff_member_id: '',
+      resource_label: '',
+    });
+    setPickupAfter({
+      starts_hm: '11:00',
+      ends_hm: addMinutes('11:00', PICKUP_ROUTE_LEG_DURATION_MIN),
+      hub_staff_member_id: '',
+      resource_label: '',
+    });
     setExtraBlocks([]);
     setSaveError(null);
     setConflicts([]);
     setResourceLabel('');
     setStatus('confirmed');
+    setPricingApptPorteTier('');
+    setPricingApptCoatType('');
   };
 
   const handleClose = () => {
@@ -427,27 +898,104 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     <div className="nam-aside">
       <p className="nam-aside__label">Resumo</p>
 
-      {services.length > 0 && (
+      {(services.length > 0 || extraBlocks.some((b) => b.services.length > 0)) && (
         <div className="nam-aside__section">
-          <p className="nam-aside__section-title">Serviços</p>
-          {services.map((s) => (
-            <div key={s.hub_service_type_id} className="nam-aside__row">
-              <span className="nam-aside__item">{s.name}</span>
-              <span className="nam-aside__muted">{s.duration_minutes}min</span>
-            </div>
-          ))}
+          <p className="nam-aside__section-title">Blocos no dia</p>
+          {services.length > 0 ? (
+            <p className="nam-aside__item">
+              {(() => {
+                const pt = title.trim() || autoTitle || '—';
+                return `Principal: ${pt.length > 48 ? `${pt.slice(0, 48)}…` : pt} · ${startsHm}–${endsHm} · ${totalDurationMin}min`;
+              })()}
+            </p>
+          ) : null}
+          {extraBlocks
+            .filter((b) => b.services.length > 0)
+            .map((b, i) => (
+              <p key={b.key} className="nam-aside__item">
+                Bloco {i + 2}: {(b.block_title || 'Sem título').slice(0, 40)} · {b.starts_hm}–{b.ends_hm} ·{' '}
+                {b.services.reduce((s, c) => s + c.duration_minutes, 0)}min
+              </p>
+            ))}
           <div className="nam-aside__total">
-            <span>Total</span>
-            <strong>{totalDurationMin}min</strong>
+            <span>Total duração</span>
+            <strong>{totalDurationAllBlocks}min</strong>
           </div>
         </div>
       )}
+
+      <div className="nam-aside__section">
+        <p className="nam-aside__section-title">Notas para o financeiro</p>
+        <textarea
+          className="nam-aside__textarea"
+          rows={4}
+          maxLength={4000}
+          placeholder="Ex.: desconto combinado com o tutor, ajustar valor manualmente na nota."
+          value={financialNotes}
+          onChange={(e) => setFinancialNotes(e.target.value)}
+        />
+      </div>
 
       {petName && (
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Pet</p>
           <p className="nam-aside__item">{petName}</p>
-          {guardianName && <p className="nam-aside__muted">{guardianName}</p>}
+          {selectedPet ? (
+            <>
+              <p className="nam-aside__muted">
+                Porte (cadastro): {PORTE_LABELS[petBodyTierForPricing as PetBodyPorteValue]}
+              </p>
+              <p className="nam-aside__muted">
+                Pelagem:{' '}
+                {selectedPet.coat_type && COAT_TYPE_LABELS[selectedPet.coat_type as CoatTypeValue]
+                  ? COAT_TYPE_LABELS[selectedPet.coat_type as CoatTypeValue]
+                  : 'não informada'}
+              </p>
+            </>
+          ) : null}
+          {guardianName ? <p className="nam-aside__muted">{guardianName}</p> : null}
+        </div>
+      )}
+
+      {(pricingPreview.lines.length > 0 || pickupPricingPreview) && (
+        <div className="nam-aside__section">
+          <p className="nam-aside__section-title">Preços (estimativa)</p>
+          <p className="nam-aside__muted" style={{ fontSize: 12, marginBottom: 6 }}>
+            {pricingApptPorteTier.trim()
+              ? `Override: ${PORTE_LABELS[pricingApptPorteTier.trim() as PorteValue] ?? pricingApptPorteTier}`
+              : 'Automático (idade + porte)'}
+            {pricingApptCoatType.trim()
+              ? ` · Pelagem: ${COAT_TYPE_LABELS[pricingApptCoatType.trim() as CoatTypeValue] ?? pricingApptCoatType}`
+              : ''}
+          </p>
+          {pricingPreview.lines.map((ln, i) => (
+            <div key={`${ln.hub_service_type_id}-${ln.name}-${i}`} className="nam-aside__row">
+              <span className="nam-aside__item">{ln.name}</span>
+              <span className="nam-aside__muted">
+                {ln.tierApplied ? PORTE_LABELS[ln.tierApplied as PorteValue] ?? ln.tierApplied : '—'}
+                {ln.coatTypeApplied ? ` / ${COAT_TYPE_LABELS[ln.coatTypeApplied as CoatTypeValue] ?? ln.coatTypeApplied}` : ''}
+                {ln.needsCoatType ? ' / selecione pelagem' : ''} ·{' '}
+                {ln.sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </span>
+            </div>
+          ))}
+          {pickupPricingPreview ? (
+            <div className="nam-aside__row">
+              <span className="nam-aside__item">Leva e Traz total ({pickupPricingPreview.band.bandLabel})</span>
+              <span className="nam-aside__muted">
+                {pickupPricingPreview.saleRoundTrip.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </span>
+            </div>
+          ) : null}
+          <div className="nam-aside__total">
+            <span>Total venda</span>
+            <strong>
+              {(pricingPreview.totalSale + (pickupPricingPreview?.saleRoundTrip ?? 0)).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}
+            </strong>
+          </div>
         </div>
       )}
 
@@ -475,19 +1023,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       {withPickup && (
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Leva e Traz</p>
-          <p className="nam-aside__item">Busca {pickupBefore.starts_hm}</p>
-          <p className="nam-aside__item">Retorno {pickupAfter.ends_hm}</p>
+          {pickupPricingPreview ? (
+            <p className="nam-aside__muted">{pickupPricingPreview.band.bandLabel}</p>
+          ) : null}
+          <p className="nam-aside__item">Busca {pickupBefore.starts_hm} – {pickupBefore.ends_hm}</p>
+          <p className="nam-aside__item">Retorno {pickupAfter.starts_hm} – {pickupAfter.ends_hm}</p>
         </div>
       )}
 
-      {extraBlocks.length > 0 && (
-        <div className="nam-aside__section">
-          <p className="nam-aside__section-title">Blocos adicionais</p>
-          {extraBlocks.map((b, i) => (
-            <p key={b.key} className="nam-aside__item">Bloco {i + 2}: {b.starts_hm}–{b.ends_hm}</p>
-          ))}
-        </div>
-      )}
     </div>
   );
 
@@ -509,17 +1052,128 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   );
 
   return (
-    <HubModal
+    <HubSidePanel
       open={open}
       onClose={handleClose}
       title="Novo agendamento"
+      titleIcon={<Calendar size={22} strokeWidth={2} aria-hidden />}
       subtitle={title || autoTitle || undefined}
-      size="xl"
       footer={footer}
       aside={asideContent}
     >
       <div className="nam-form">
-        {/* ── 1. Tipo de serviço (grupo) ───────────────────────────────── */}
+        <div className="nam-section nam-section--quick">
+          <div className="nam-quick-card">
+            <div className="nam-row nam-row--cols2">
+              <div className="nam-field">
+                <HubDateField id="nam-date" label="Data" valueIso={dateYmd} onChangeIso={setDateYmd} />
+              </div>
+              <div className="nam-field">
+                <label className="nam-label" htmlFor="nam-status">
+                  Situação
+                </label>
+                <HubSearchableCombobox
+                  id="nam-status"
+                  options={statusComboOptions}
+                  value={status}
+                  onChange={(v) => setStatus(v as AgendaStatus)}
+                  clearable={false}
+                />
+              </div>
+            </div>
+            <div className="nam-row nam-row--cols2">
+              <div className="nam-field">
+                <label className="nam-label" htmlFor="nam-guardian">
+                  Tutor
+                </label>
+                {guardiansLoading ? (
+                  <div className="nam-field-shell nam-field-shell--waiting" aria-busy="true">
+                    <span className="nam-field-shell__icon">
+                      <Loader2 size={18} strokeWidth={2} className="nam-field-shell__spin" aria-hidden />
+                    </span>
+                    <span className="nam-field-shell__text">Carregando tutores…</span>
+                  </div>
+                ) : (
+                  <HubSearchableCombobox
+                    id="nam-guardian"
+                    options={guardianOptions}
+                    value={guardianId}
+                    onChange={(v) => {
+                      setGuardianId(v);
+                      setGuardianName(guardianOptions.find((o) => o.value === v)?.label ?? '');
+                    }}
+                    placeholder="Buscar tutor…"
+                    triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
+                    ariaLabel="Selecionar tutor"
+                  />
+                )}
+              </div>
+              <div className="nam-field">
+                <label className="nam-label" htmlFor={guardianId ? 'nam-pet' : undefined}>
+                  Pet
+                </label>
+                {guardianId ? (
+                  petComboOptions.length > 0 ? (
+                    <HubSearchableCombobox
+                      id="nam-pet"
+                      options={petComboOptions}
+                      value={petId}
+                      onChange={(v) => {
+                        setPetId(v);
+                        const p = guardianPets.find((x) => x.id === v);
+                        setPetName(p?.name ?? '');
+                      }}
+                      placeholder="Selecionar pet…"
+                      triggerIcon={<Dog size={18} strokeWidth={2} aria-hidden />}
+                      ariaLabel="Selecionar pet"
+                    />
+                  ) : (
+                    <div className="nam-field-shell nam-field-shell--empty" role="status">
+                      <span className="nam-field-shell__icon" aria-hidden>
+                        <Dog size={18} strokeWidth={2} />
+                      </span>
+                      <span className="nam-field-shell__text">Nenhum pet cadastrado</span>
+                      <ChevronDown size={18} strokeWidth={2} className="nam-field-shell__chevron" aria-hidden />
+                    </div>
+                  )
+                ) : (
+                  <div className="nam-field-shell nam-field-shell--blocked" role="status">
+                    <span className="nam-field-shell__icon" aria-hidden>
+                      <Dog size={18} strokeWidth={2} />
+                    </span>
+                    <span className="nam-field-shell__text">Selecione um tutor primeiro</span>
+                    <ChevronDown size={18} strokeWidth={2} className="nam-field-shell__chevron" aria-hidden />
+                  </div>
+                )}
+              </div>
+            </div>
+            {petId && selectedPet ? (
+              <div className="nam-quick-card__pet-info">
+                <label className="nam-label">Dados do pet (cadastro)</label>
+                <p className="nam-muted nam-quick-card__pet-line">
+                  Porte: {PORTE_LABELS[petBodyTierForPricing as PetBodyPorteValue]}
+                </p>
+                <p className="nam-muted nam-quick-card__pet-line">
+                  Pelagem:{' '}
+                  {selectedPet.coat_type && COAT_TYPE_LABELS[selectedPet.coat_type as CoatTypeValue]
+                    ? COAT_TYPE_LABELS[selectedPet.coat_type as CoatTypeValue]
+                    : 'não informada'}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="nam-section nam-block-card">
+          <BlockCardHeader
+            blockNumber={1}
+            title="Bloco principal"
+            expanded={mainBlockExpanded}
+            onToggle={() => setMainBlockExpanded((e) => !e)}
+          />
+          {mainBlockExpanded && (
+            <div className="nam-block-card__body">
+        {/* ── Grupo + Serviços ─────────────────────────────────────────── */}
         <div className="nam-section">
           <div className="nam-row nam-row--cols2">
             <div className="nam-field">
@@ -534,29 +1188,17 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               />
             </div>
             <div className="nam-field">
-              <label className="nam-label">Situação</label>
+              <label className="nam-label">Serviços</label>
               <HubSearchableCombobox
-                id="nam-status"
-                options={statusComboOptions}
-                value={status}
-                onChange={(v) => setStatus(v as AgendaStatus)}
+                id="nam-service-search"
+                options={serviceComboOptions}
+                value={serviceSearchId}
+                onChange={addService}
+                placeholder="Buscar e adicionar serviço…"
                 clearable={false}
               />
             </div>
           </div>
-        </div>
-
-        {/* ── 2. Serviços ──────────────────────────────────────────────── */}
-        <div className="nam-section">
-          <label className="nam-label">Serviços</label>
-          <HubSearchableCombobox
-            id="nam-service-search"
-            options={serviceComboOptions}
-            value={serviceSearchId}
-            onChange={addService}
-            placeholder="Buscar e adicionar serviço…"
-            clearable={false}
-          />
           {services.length > 0 && (
             <div className="nam-chips">
               {services.map((chip, idx) => (
@@ -585,108 +1227,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           )}
         </div>
 
-        {/* ── 3 + 4. Profissional / Recurso ────────────────────────────── */}
-        <div className="nam-section">
-          <div className="nam-row nam-row--cols2">
-            <div className="nam-field">
-              <label className="nam-label">Profissional</label>
-              <HubSearchableCombobox
-                id="nam-staff"
-                options={staffComboOptions}
-                value={staffId}
-                onChange={setStaffId}
-                placeholder="Não atribuído"
-                clearable={false}
-              />
-            </div>
-            <div className="nam-field">
-              <label className="nam-label">Recurso / Sala</label>
-              <input
-                className="nam-input"
-                type="text"
-                placeholder="Ex.: Mesa 1, Van…"
-                value={resourceLabel}
-                onChange={(e) => setResourceLabel(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
+        {appointmentPricingFields}
 
-        {/* ── 5. Tutor + Pet ────────────────────────────────────────────── */}
         <div className="nam-section">
-          <div className="nam-row nam-row--cols2">
-            <div className="nam-field">
-              <label className="nam-label">Tutor</label>
-              {guardiansLoading ? (
-                <p className="nam-muted">Carregando tutores…</p>
-              ) : (
-                <HubSearchableCombobox
-                  id="nam-guardian"
-                  options={guardianOptions}
-                  value={guardianId}
-                  onChange={(v) => {
-                    setGuardianId(v);
-                    setGuardianName(guardianOptions.find((o) => o.value === v)?.label ?? '');
-                  }}
-                  placeholder="Buscar tutor…"
-                />
-              )}
-            </div>
-            <div className="nam-field">
-              <label className="nam-label">Pet</label>
-              {guardianId ? (
-                petComboOptions.length > 0 ? (
-                  <HubSearchableCombobox
-                    id="nam-pet"
-                    options={petComboOptions}
-                    value={petId}
-                    onChange={(v) => {
-                      setPetId(v);
-                      setPetName(petComboOptions.find((o) => o.value === v)?.label ?? '');
-                    }}
-                    placeholder="Selecionar pet…"
-                  />
-                ) : (
-                  <p className="nam-muted">Nenhum pet cadastrado</p>
-                )
-              ) : (
-                <p className="nam-muted">Selecione um tutor primeiro</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ── 6. Data / Hora ────────────────────────────────────────────── */}
-        <div className="nam-section">
-          <div className="nam-row nam-row--cols3">
-            <div className="nam-field">
-              <label className="nam-label">Data</label>
-              <HubBrDateInput id="nam-date" valueIso={dateYmd} onChangeIso={setDateYmd} />
-            </div>
-            <div className="nam-field">
-              <label className="nam-label">Início</label>
-              <input
-                className="nam-input"
-                type="time"
-                value={startsHm}
-                onChange={(e) => setStartsHm(e.target.value)}
-              />
-            </div>
-            <div className="nam-field">
-              <label className="nam-label">Fim previsto</label>
-              <input
-                className="nam-input"
-                type="time"
-                value={endsHm}
-                onChange={(e) => setEndsHm(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── 7. Título ─────────────────────────────────────────────────── */}
-        <div className="nam-section">
-          <label className="nam-label">Título</label>
+          <label className="nam-label">Título do bloco</label>
           <div className="nam-title-row">
             <input
               className="nam-input"
@@ -715,18 +1259,104 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           </div>
         </div>
 
-        {/* ── 8. Descrição ──────────────────────────────────────────────── */}
         <div className="nam-section">
-          <label className="nam-label">Observações</label>
+          <label className="nam-label">Descrição do bloco</label>
           <textarea
             className="nam-textarea"
             rows={3}
-            maxLength={300}
-            placeholder="Observações sobre o atendimento…"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            maxLength={8000}
+            placeholder="Preenchida automaticamente com as descrições dos serviços deste bloco; pode editar."
+            value={mainBlockNotes}
+            onChange={(e) => {
+              setMainBlockNotes(e.target.value);
+              setMainBlockNotesUserEdited(true);
+            }}
           />
-          <p className="nam-char-count">{description.length}/300</p>
+          <p className="nam-char-count">{mainBlockNotes.length}/8000</p>
+        </div>
+
+        {/* ── Horário do bloco principal ─────────────────────────────────── */}
+        <div className="nam-section">
+          <div className="nam-row nam-row--cols2">
+            <div className="nam-field">
+              <label className="nam-label">Início</label>
+              <input
+                className="nam-input"
+                type="time"
+                value={startsHm}
+                onChange={(e) => setStartsHm(e.target.value)}
+              />
+            </div>
+            <div className="nam-field">
+              <label className="nam-label">Fim previsto</label>
+              <input
+                className="nam-input"
+                type="time"
+                value={endsHm}
+                onChange={(e) => setEndsHm(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── 3 + 4. Profissional / Recurso ────────────────────────────── */}
+        <div className="nam-section">
+          <div className="nam-row nam-row--cols2">
+            <div className="nam-field">
+              <label className="nam-label">Profissional</label>
+              <HubSearchableCombobox
+                id="nam-staff"
+                options={staffComboOptions}
+                value={staffId}
+                onChange={setStaffId}
+                placeholder="Não atribuído"
+                clearable={false}
+              />
+            </div>
+            <div className="nam-field">
+              <label className="nam-label">Recurso / Sala</label>
+              <input
+                className="nam-input"
+                type="text"
+                placeholder="Ex.: Mesa 1, Van…"
+                value={resourceLabel}
+                onChange={(e) => setResourceLabel(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+            </div>
+          )}
+        </div>
+
+        {extraBlocks.length > 0 ? (
+          <div className="nam-section nam-extra-blocks">
+            {extraBlocks.map((block, bIdx) => (
+              <ExtraBlockCard
+                key={block.key}
+                block={block}
+                index={bIdx}
+                groups={groups}
+                staffComboOptions={staffComboOptions}
+                serviceTypes={serviceTypes}
+                onRemove={() => removeExtraBlock(block.key)}
+                onChange={(updated) =>
+                  setExtraBlocks((prev) => prev.map((b) => (b.key === block.key ? updated : b)))
+                }
+                onToggleExpand={() =>
+                  setExtraBlocks((prev) =>
+                    prev.map((b) => (b.key === block.key ? { ...b, expanded: !b.expanded } : b)),
+                  )
+                }
+              />
+            ))}
+          </div>
+        ) : null}
+
+        <div className="nam-section">
+          <button className="nam-btn-add-block" type="button" onClick={addExtraBlock}>
+            <Plus size={14} /> Adicionar outro bloco no dia
+          </button>
         </div>
 
         {/* ── 9. Repetição ─────────────────────────────────────────────── */}
@@ -825,14 +1455,12 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                       />
                     </>
                   ) : (
-                    <>
-                      <label className="nam-label">Até</label>
-                      <HubBrDateInput
-                        id="nam-recur-until"
-                        valueIso={recurrence.until_date}
-                        onChangeIso={(v) => setRecurrence((r) => ({ ...r, until_date: v }))}
-                      />
-                    </>
+                    <HubDateField
+                      id="nam-recur-until"
+                      label="Até"
+                      valueIso={recurrence.until_date}
+                      onChangeIso={(v) => setRecurrence((r) => ({ ...r, until_date: v }))}
+                    />
                   )}
                 </div>
               </div>
@@ -846,24 +1474,75 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             <input
               type="checkbox"
               checked={withPickup}
-              onChange={(e) => setWithPickup(e.target.checked)}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setWithPickup(v);
+                if (v) {
+                  const firstStart = pickupDayFirstStartHm;
+                  const lastEnd = pickupDayLastEndHm;
+                  const buscaEndMin = hmToMinutes(firstStart);
+                  const buscaStartMin = Math.max(0, buscaEndMin - PICKUP_ROUTE_LEG_DURATION_MIN);
+                  const voltaStartMin = hmToMinutes(lastEnd);
+                  const voltaEndMin = Math.min(24 * 60 - 1, voltaStartMin + PICKUP_ROUTE_LEG_DURATION_MIN);
+                  setPickupBefore((pb) => ({
+                    ...pb,
+                    starts_hm: minutesToHm(buscaStartMin),
+                    ends_hm: minutesToHm(buscaEndMin),
+                  }));
+                  setPickupAfter((pa) => ({
+                    ...pa,
+                    starts_hm: minutesToHm(voltaStartMin),
+                    ends_hm: minutesToHm(voltaEndMin),
+                  }));
+                }
+              }}
             />
             Incluir Leva e Traz
           </label>
 
           {withPickup && (
             <div className="nam-pickup">
-              <p className="nam-pickup__title">Busca (antes do atendimento)</p>
-              <div className="nam-row nam-row--cols3">
+              <p className="nam-aside__muted" style={{ marginBottom: 10, fontSize: 13 }}>
+                A busca termina no início do primeiro bloco do dia; o retorno dura 1 h a partir do início
+                indicado. Os horários sugeridos ao activar L&T seguem estes critérios.
+              </p>
+              <div className="nam-row nam-row--cols2" style={{ marginBottom: 12 }}>
                 <div className="nam-field">
-                  <label className="nam-label">Início</label>
-                  <input className="nam-input" type="time" value={pickupBefore.starts_hm}
-                    onChange={(e) => setPickupBefore((b) => ({ ...b, starts_hm: e.target.value }))} />
+                  <label className="nam-label">Serviço de transporte</label>
+                  <HubSearchableCombobox
+                    id="nam-pickup-lt-svc"
+                    options={ltServiceComboOptions}
+                    value={pickupLtServiceTypeId}
+                    onChange={(v) => {
+                      setPickupLtServiceTypeId(v);
+                      setPickupKmTierIndex(0);
+                    }}
+                    placeholder={levaTrazServiceTypes.length ? 'Selecionar…' : 'Sem serviços L&T'}
+                    clearable={false}
+                  />
                 </div>
                 <div className="nam-field">
-                  <label className="nam-label">Fim</label>
-                  <input className="nam-input" type="time" value={pickupBefore.ends_hm}
-                    onChange={(e) => setPickupBefore((b) => ({ ...b, ends_hm: e.target.value }))} />
+                  <label className="nam-label">Faixa de quilometragem</label>
+                  <HubSearchableCombobox
+                    id="nam-pickup-km-tier"
+                    options={kmTierComboOptions}
+                    value={String(pickupKmTierIndex)}
+                    onChange={(v) => setPickupKmTierIndex(Number(v) || 0)}
+                    placeholder="Faixa"
+                    clearable={false}
+                  />
+                </div>
+              </div>
+              <p className="nam-pickup__title">Busca (antes do atendimento)</p>
+              <div className="nam-row nam-row--cols2">
+                <div className="nam-field">
+                  <label className="nam-label">Início</label>
+                  <input
+                    className="nam-input"
+                    type="time"
+                    value={pickupBefore.starts_hm}
+                    onChange={(e) => setPickupBefore((b) => ({ ...b, starts_hm: e.target.value }))}
+                  />
                 </div>
                 <div className="nam-field">
                   <label className="nam-label">Motorista</label>
@@ -871,7 +1550,17 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     id="nam-pickup-before-staff"
                     options={staffComboOptions}
                     value={pickupBefore.hub_staff_member_id}
-                    onChange={(v) => setPickupBefore((b) => ({ ...b, hub_staff_member_id: v }))}
+                    onChange={(v) => {
+                      setPickupBefore((b) => ({ ...b, hub_staff_member_id: v }));
+                      if (!ltReturnDriverUnlinkedRef.current) {
+                        setPickupAfter((pa) => ({ ...pa, hub_staff_member_id: v }));
+                      } else if (
+                        window.confirm('Atualizar o motorista do retorno para o mesmo da busca?')
+                      ) {
+                        ltReturnDriverUnlinkedRef.current = false;
+                        setPickupAfter((pa) => ({ ...pa, hub_staff_member_id: v }));
+                      }
+                    }}
                     placeholder="Não atribuído"
                     clearable={false}
                   />
@@ -879,16 +1568,22 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               </div>
 
               <p className="nam-pickup__title" style={{ marginTop: 12 }}>Retorno (após atendimento)</p>
-              <div className="nam-row nam-row--cols3">
+              <div className="nam-row nam-row--cols2">
                 <div className="nam-field">
                   <label className="nam-label">Início</label>
-                  <input className="nam-input" type="time" value={pickupAfter.starts_hm}
-                    onChange={(e) => setPickupAfter((b) => ({ ...b, starts_hm: e.target.value }))} />
-                </div>
-                <div className="nam-field">
-                  <label className="nam-label">Fim</label>
-                  <input className="nam-input" type="time" value={pickupAfter.ends_hm}
-                    onChange={(e) => setPickupAfter((b) => ({ ...b, ends_hm: e.target.value }))} />
+                  <input
+                    className="nam-input"
+                    type="time"
+                    value={pickupAfter.starts_hm}
+                    onChange={(e) => {
+                      const starts_hm = e.target.value;
+                      setPickupAfter((b) => ({
+                        ...b,
+                        starts_hm,
+                        ends_hm: addMinutes(starts_hm, PICKUP_ROUTE_LEG_DURATION_MIN),
+                      }));
+                    }}
+                  />
                 </div>
                 <div className="nam-field">
                   <label className="nam-label">Motorista</label>
@@ -896,7 +1591,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     id="nam-pickup-after-staff"
                     options={staffComboOptions}
                     value={pickupAfter.hub_staff_member_id}
-                    onChange={(v) => setPickupAfter((b) => ({ ...b, hub_staff_member_id: v }))}
+                    onChange={(v) => {
+                      ltReturnDriverUnlinkedRef.current = v !== pickupBefore.hub_staff_member_id;
+                      setPickupAfter((b) => ({ ...b, hub_staff_member_id: v }));
+                    }}
                     placeholder="Não atribuído"
                     clearable={false}
                   />
@@ -904,27 +1602,6 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               </div>
             </div>
           )}
-        </div>
-
-        {/* ── 11. Outros blocos no dia ──────────────────────────────────── */}
-        <div className="nam-section">
-          {extraBlocks.map((block, bIdx) => (
-            <ExtraBlockCard
-              key={block.key}
-              block={block}
-              index={bIdx}
-              serviceComboOptions={serviceComboOptions}
-              staffComboOptions={staffComboOptions}
-              serviceTypes={serviceTypes}
-              onRemove={() => removeExtraBlock(block.key)}
-              onChange={(updated) =>
-                setExtraBlocks((prev) => prev.map((b) => (b.key === block.key ? updated : b)))
-              }
-            />
-          ))}
-          <button className="nam-btn-add-block" type="button" onClick={addExtraBlock}>
-            <Plus size={14} /> Adicionar outro bloco no dia
-          </button>
         </div>
 
         {/* ── Conflict feedback ─────────────────────────────────────────── */}
@@ -942,26 +1619,76 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           </div>
         )}
       </div>
-    </HubModal>
+    </HubSidePanel>
   );
 };
+
+// ── BlockCardHeader sub-component ──────────────────────────────────────────────
+
+type BlockCardHeaderProps = {
+  blockNumber: number;
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+  onRemove?: () => void;
+};
+
+const BlockCardHeader: React.FC<BlockCardHeaderProps> = ({
+  blockNumber, title, expanded, onToggle, onRemove,
+}) => (
+  <div className={`nam-block-card__header-row${expanded ? '' : ' nam-block-card__header-row--collapsed'}`}>
+    <button type="button" className="nam-block-card__header" onClick={onToggle}>
+      <span className="nam-block-card__header-left">
+        <span className="nam-block-card__badge" aria-hidden>{blockNumber}</span>
+        <span className="nam-block-card__title">{title}</span>
+      </span>
+      <span className="nam-block-card__toggle">
+        {expanded ? 'Recolher' : 'Expandir'}
+        {expanded ? <ChevronUp size={16} strokeWidth={2.5} /> : <ChevronDown size={16} strokeWidth={2.5} />}
+      </span>
+    </button>
+    {onRemove ? (
+      <button
+        type="button"
+        className="nam-block-card__remove"
+        onClick={onRemove}
+        aria-label="Remover bloco"
+      >
+        <Trash2 size={14} />
+      </button>
+    ) : null}
+  </div>
+);
 
 // ── ExtraBlockCard sub-component ─────────────────────────────────────────────
 
 type ExtraBlockCardProps = {
   block: ExtraBlock;
   index: number;
-  serviceComboOptions: HubComboboxOption[];
+  groups: HubComboboxOption[];
   staffComboOptions: HubComboboxOption[];
   serviceTypes: HubServiceType[];
   onRemove: () => void;
   onChange: (updated: ExtraBlock) => void;
+  onToggleExpand: () => void;
 };
 
 const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
-  block, index, serviceComboOptions, staffComboOptions, serviceTypes, onRemove, onChange,
+  block, index, groups, staffComboOptions, serviceTypes, onRemove, onChange, onToggleExpand,
 }) => {
   const [svcSearchId, setSvcSearchId] = useState('');
+
+  const blockServiceComboOptions = useMemo<HubComboboxOption[]>(() => {
+    const filtered = serviceTypes.filter(
+      (st) =>
+        st.allow_scheduling !== false &&
+        (block.group_filter === 'all' || normalizeServiceGroupSlug(st.service_group) === block.group_filter),
+    );
+    return filtered.map((st) => ({
+      value: st.id,
+      label: `${st.name}${st.default_duration_minutes ? ` (${st.default_duration_minutes}min)` : ''}`,
+    }));
+  }, [serviceTypes, block.group_filter]);
 
   const addSvc = (id: string) => {
     if (!id) return;
@@ -975,62 +1702,165 @@ const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
   const removeSvc = (svcId: string) =>
     onChange({ ...block, services: block.services.filter((s) => s.hub_service_type_id !== svcId) });
 
+  const updateSvcDuration = (idx: number, dur: number) =>
+    onChange({
+      ...block,
+      services: block.services.map((s, i) => (i === idx ? { ...s, duration_minutes: dur } : s)),
+    });
+
+  const blockDurationMin = useMemo(
+    () => block.services.reduce((sum, s) => sum + s.duration_minutes, 0),
+    [block.services],
+  );
+
   return (
-    <div className="nam-extra-block">
-      <div className="nam-extra-block__header">
-        <span className="nam-extra-block__title">Bloco {index + 2}</span>
-        <button className="nam-btn-icon nam-btn-icon--danger" type="button" onClick={onRemove}>
-          <Trash2 size={14} />
-        </button>
-      </div>
+    <div className="nam-section nam-block-card nam-extra-block">
+      <BlockCardHeader
+        blockNumber={index + 2}
+        title={block.block_title.trim() || `Bloco ${index + 2}`}
+        expanded={block.expanded}
+        onToggle={onToggleExpand}
+        onRemove={onRemove}
+      />
 
-      <div className="nam-row nam-row--cols2">
-        <div className="nam-field">
-          <label className="nam-label">Início</label>
-          <input className="nam-input" type="time" value={block.starts_hm}
-            onChange={(e) => onChange({ ...block, starts_hm: e.target.value })} />
-        </div>
-        <div className="nam-field">
-          <label className="nam-label">Fim</label>
-          <input className="nam-input" type="time" value={block.ends_hm}
-            onChange={(e) => onChange({ ...block, ends_hm: e.target.value })} />
-        </div>
-      </div>
-
-      <div className="nam-field" style={{ marginTop: 8 }}>
-        <label className="nam-label">Profissional</label>
-        <HubSearchableCombobox
-          id={`nam-eb-staff-${block.key}`}
-          options={staffComboOptions}
-          value={block.hub_staff_member_id}
-          onChange={(v) => onChange({ ...block, hub_staff_member_id: v })}
-          placeholder="Não atribuído"
-          clearable={false}
-        />
-      </div>
-
-      <div className="nam-field" style={{ marginTop: 8 }}>
-        <label className="nam-label">Serviços do bloco</label>
-        <HubSearchableCombobox
-          id={`nam-eb-svc-${block.key}`}
-          options={serviceComboOptions}
-          value={svcSearchId}
-          onChange={addSvc}
-          placeholder="Adicionar serviço…"
-          clearable={false}
-        />
-        <div className="nam-chips nam-chips--compact">
-          {block.services.map((s) => (
-            <div key={s.hub_service_type_id} className="nam-chip">
-              <span className="nam-chip__name">{s.name}</span>
-              <span className="nam-chip__unit">{s.duration_minutes}min</span>
-              <button className="nam-chip__remove" type="button" onClick={() => removeSvc(s.hub_service_type_id)}>
-                <Trash2 size={12} />
-              </button>
+      {block.expanded && (
+        <div className="nam-block-card__body">
+          <div className="nam-section">
+            <div className="nam-row nam-row--cols2">
+              <div className="nam-field">
+                <label className="nam-label">Grupo de serviço</label>
+                <HubSearchableCombobox
+                  id={`nam-eb-group-${block.key}`}
+                  options={groups}
+                  value={block.group_filter}
+                  onChange={(v) => onChange({ ...block, group_filter: v })}
+                  clearable={false}
+                  placeholder="Todos os grupos"
+                />
+              </div>
+              <div className="nam-field">
+                <label className="nam-label">Serviços</label>
+                <HubSearchableCombobox
+                  id={`nam-eb-svc-${block.key}`}
+                  options={blockServiceComboOptions}
+                  value={svcSearchId}
+                  onChange={addSvc}
+                  placeholder="Buscar e adicionar serviço…"
+                  clearable={false}
+                />
+              </div>
             </div>
-          ))}
+            {block.services.length > 0 && (
+              <div className="nam-chips">
+                {block.services.map((chip, idx) => (
+                  <div key={chip.hub_service_type_id} className="nam-chip">
+                    <GripVertical size={14} className="nam-chip__drag" />
+                    <span className="nam-chip__name">{chip.name}</span>
+                    <input
+                      className="nam-chip__dur"
+                      type="number"
+                      min={1}
+                      max={480}
+                      value={chip.duration_minutes}
+                      onChange={(e) => updateSvcDuration(idx, Number(e.target.value))}
+                      aria-label="Duração em minutos"
+                    />
+                    <span className="nam-chip__unit">min</span>
+                    <button
+                      className="nam-chip__remove"
+                      type="button"
+                      onClick={() => removeSvc(chip.hub_service_type_id)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+                <div className="nam-chips__total">
+                  Total: <strong>{blockDurationMin} min</strong>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="nam-section">
+            <label className="nam-label">Título do bloco</label>
+            <div className="nam-title-row">
+              <input
+                className="nam-input"
+                type="text"
+                maxLength={200}
+                placeholder={`Bloco ${index + 2}`}
+                value={block.block_title}
+                onChange={(e) => onChange({ ...block, block_title: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="nam-section">
+            <label className="nam-label">Descrição do bloco</label>
+            <textarea
+              className="nam-textarea"
+              rows={3}
+              maxLength={8000}
+              placeholder="Preenchida automaticamente com as descrições dos serviços deste bloco; pode editar."
+              value={block.block_description}
+              onChange={(e) =>
+                onChange({ ...block, block_description: e.target.value, block_description_user_edited: true })
+              }
+            />
+            <p className="nam-char-count">{block.block_description.length}/8000</p>
+          </div>
+
+          <div className="nam-section">
+            <div className="nam-row nam-row--cols2">
+              <div className="nam-field">
+                <label className="nam-label">Início</label>
+                <input
+                  className="nam-input"
+                  type="time"
+                  value={block.starts_hm}
+                  onChange={(e) => onChange({ ...block, starts_hm: e.target.value })}
+                />
+              </div>
+              <div className="nam-field">
+                <label className="nam-label">Fim previsto</label>
+                <input
+                  className="nam-input"
+                  type="time"
+                  value={block.ends_hm}
+                  onChange={(e) => onChange({ ...block, ends_hm: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="nam-section">
+            <div className="nam-row nam-row--cols2">
+              <div className="nam-field">
+                <label className="nam-label">Profissional</label>
+                <HubSearchableCombobox
+                  id={`nam-eb-staff-${block.key}`}
+                  options={staffComboOptions}
+                  value={block.hub_staff_member_id}
+                  onChange={(v) => onChange({ ...block, hub_staff_member_id: v })}
+                  placeholder="Não atribuído"
+                  clearable={false}
+                />
+              </div>
+              <div className="nam-field">
+                <label className="nam-label">Recurso / Sala</label>
+                <input
+                  className="nam-input"
+                  type="text"
+                  placeholder="Ex.: Mesa 1, Van…"
+                  value={block.resource_label}
+                  onChange={(e) => onChange({ ...block, resource_label: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

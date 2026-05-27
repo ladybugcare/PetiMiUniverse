@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { LucideProps } from 'lucide-react';
 import { Plus, CheckCircle, FileText, Activity } from 'lucide-react';
 import colors from '../../styles/colors';
 
@@ -96,10 +97,10 @@ const QuickActions: React.FC<QuickActionsProps> = ({ pendingCount = 0 }) => {
             }}
           >
             <div className="action-icon-circle" style={styles.actionIconCircle}>
-              {React.cloneElement(action.icon as React.ReactElement, { 
-                size: 28, 
-                strokeWidth: 1.5, 
-                color: "white" 
+              {React.cloneElement(action.icon as React.ReactElement<LucideProps>, {
+                size: 28,
+                strokeWidth: 1.5,
+                color: 'white',
               })}
             </div>
             <span style={styles.actionLabel}>{action.title}</span>

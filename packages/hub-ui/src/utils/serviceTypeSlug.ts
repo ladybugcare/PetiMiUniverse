@@ -19,6 +19,7 @@ export const SERVICE_GROUP_OPTIONS = [
   { value: 'clinica', label: 'Clínica' },
   { value: 'cirurgia', label: 'Cirurgia' },
   { value: 'leva_traz', label: 'Leva e Traz' },
+  { value: 'internacao', label: 'Internação' },
   { value: 'outros', label: 'Outros' },
 ] as const;
 
@@ -56,10 +57,14 @@ export const DEFAULT_GROUP_COLOR_HEX: Record<HubServiceGroupValue, string> = {
   clinica: '#7b1fa2',
   cirurgia: '#c62828',
   leva_traz: '#5d4037',
+  internacao: '#546e7a',
   outros: '#78909c',
 };
 
-/** Cor de acento na UI: preferir a cor na agenda definida pelo usuário. */
+/** Cor de acento UI para tier «filhote» na matriz de porte (não é grupo de serviço). */
+export const FILHOTE_TIER_COLOR_HEX = '#ec407a';
+
+/** Cor de acento na UI: `explicitHex` pode ser cor do grupo (`group_color`) ou legado `agenda_color` por serviço. */
 export function resolveServiceAccentColor(
   agendaColor: string | null | undefined,
   serviceGroup: string

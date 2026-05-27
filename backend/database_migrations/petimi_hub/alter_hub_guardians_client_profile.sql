@@ -1,4 +1,4 @@
--- PetMi Hub — estende `hub_guardians` com perfil de cliente (PF/PJ), morada e estado operacional.
+-- PetMi Hub — estende `hub_guardians` com perfil de cliente (PF/PJ), endereço e estado operacional.
 -- Executar no Supabase SQL Editor após `create_hub_guardians.sql`.
 -- LGPD: CPF/CNPJ e documentos são dados sensíveis; políticas de retenção e base legal ficam a cargo do produto.
 

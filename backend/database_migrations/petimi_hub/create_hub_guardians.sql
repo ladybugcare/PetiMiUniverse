@@ -2,7 +2,7 @@
 -- Executar no Supabase SQL Editor (ou psql) após existir `clinics` e, se aplicável, a função `moddatetime` (ver create_moddatetime_function.sql).
 --
 -- QA manual sugerido:
--- 1) Dois utilizadores de clínicas diferentes: GET /api/hub/guardians?clinic_id=... não deve cruzar linhas.
+-- 1) Dois usuários de clínicas diferentes: GET /api/hub/guardians?clinic_id=... não deve cruzar linhas.
 -- 2) CASSISTANT: GET OK se tiver hub.guardians.read; POST/PATCH 403 sem hub.guardians.write.
 -- 3) CVET_INTERNAL: sem permissões Hub → 403 em todas as rotas /api/hub/guardians.
 

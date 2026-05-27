@@ -187,7 +187,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
         {/* Right: Unit Selector + Support + Notifications + Avatar */}
         <div style={styles.rightSection}>
-          <UnitSelector />
+          {role !== 'CADMIN' && <UnitSelector />}
 
           {!isAdmin && (
             <button

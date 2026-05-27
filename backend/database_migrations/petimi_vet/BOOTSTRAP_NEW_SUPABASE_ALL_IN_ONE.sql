@@ -1,10 +1,10 @@
 -- =============================================================================
 -- PetMi Vet — bootstrap completo para NOVO projeto Supabase (banco vazio)
--- Execute no Dashboard: SQL Editor → colar este ficheiro → Run
+-- Execute no Dashboard: SQL Editor → colar este arquivo → Run
 -- Ordem: igual a scripts/bootstrap-new-supabase.sh
 --
--- Regenerar este ficheiro: ./scripts/generate-bootstrap-all-in-one.sh
--- Se der timeout no Run, execute secção a secção (marcadores -- FICHEIRO:).
+-- Regenerar este arquivo: ./scripts/generate-bootstrap-all-in-one.sh
+-- Se der timeout no Run, execute seção a seção (marcadores -- FICHEIRO:).
 -- =============================================================================
 
 
@@ -1848,7 +1848,7 @@ CREATE TRIGGER on_auth_user_created
 
 
 -- =============================================================================
--- FICHEIRO: backend/database_migrations/bootstrap_attach_auth_triggers.sql
+-- FICHEIRO: backend/database_migrations/petimi_vet/bootstrap_attach_auth_triggers.sql
 -- =============================================================================
 
 -- ========================================
@@ -1857,7 +1857,7 @@ CREATE TRIGGER on_auth_user_created
 --   - supabase/migrations/petivet_prod_structure.sql
 --   - supabase/migrations/20251108184400_update_vet_trigger_with_document_fields.sql
 --   - supabase/migrations/20251108184733_fix_vet_trigger_experience_field.sql
--- Do NOT run backend/database_migrations/create_auth_triggers.sql after the above:
+-- Do NOT run backend/database_migrations/petimi_vet/create_auth_triggers.sql after the above:
 -- it would replace handle_new_user with an older definition.
 -- ========================================
 
@@ -1877,7 +1877,7 @@ SELECT 'bootstrap_attach_auth_triggers.sql OK' AS status;
 
 
 -- =============================================================================
--- FICHEIRO: backend/database_migrations/create_freelancers_table.sql
+-- FICHEIRO: backend/database_migrations/petimi_vet/create_freelancers_table.sql
 -- =============================================================================
 
 -- ========================================
@@ -1959,7 +1959,7 @@ SELECT
 
 
 -- =============================================================================
--- FICHEIRO: backend/database_migrations/create_demand_applications_unified.sql
+-- FICHEIRO: backend/database_migrations/petimi_vet/create_demand_applications_unified.sql
 -- =============================================================================
 
 -- ========================================
@@ -2029,7 +2029,7 @@ SELECT 'Migration create_demand_applications_unified.sql concluída com sucesso!
 
 
 -- =============================================================================
--- FICHEIRO: backend/database_migrations/create_work_proof_table.sql
+-- FICHEIRO: backend/database_migrations/petimi_vet/create_work_proof_table.sql
 -- =============================================================================
 
 -- ========================================
@@ -2082,7 +2082,7 @@ SELECT 'Migration create_work_proof_table.sql concluída com sucesso!' as status
 
 
 -- =============================================================================
--- FICHEIRO: backend/database_migrations/create_messages_system.sql
+-- FICHEIRO: backend/database_migrations/petimi_vet/create_messages_system.sql
 -- =============================================================================
 
 -- ========================================
@@ -2246,7 +2246,7 @@ SELECT
 
 
 -- =============================================================================
--- FICHEIRO: backend/database_migrations/add_demand_id_to_messages.sql
+-- FICHEIRO: backend/database_migrations/petimi_vet/add_demand_id_to_messages.sql
 -- =============================================================================
 
 -- ========================================
@@ -2268,7 +2268,7 @@ COMMENT ON COLUMN messages.demand_id IS 'ID da demanda relacionada à mensagem (
 
 
 -- =============================================================================
--- FICHEIRO: backend/database_migrations/create_notifications_system.sql
+-- FICHEIRO: backend/database_migrations/petimi_vet/create_notifications_system.sql
 -- =============================================================================
 
 -- ========================================
@@ -2362,7 +2362,7 @@ FROM notifications;
 
 
 -- =============================================================================
--- FICHEIRO: backend/database_migrations/create_storage_buckets.sql
+-- FICHEIRO: backend/database_migrations/petimi_vet/create_storage_buckets.sql
 -- =============================================================================
 
 -- ========================================

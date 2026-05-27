@@ -1,5 +1,7 @@
 import { apiRequest } from '@petimi/web-core';
 
+import type { CoatTypeValue, PetBodyPorteValue } from '../utils/hubServiceTypesPricingMatrix';
+
 const basePath = '/api/hub/pets';
 
 export interface HubPetGuardianRef {
@@ -17,6 +19,9 @@ export interface HubPet {
   sex: string | null;
   birth_date: string | null;
   notes: string | null;
+  size_tier: PetBodyPorteValue;
+  coat_color: string | null;
+  coat_type: CoatTypeValue | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -43,6 +48,9 @@ export const hubPetsApi = {
     sex?: 'M' | 'F' | 'U' | null;
     birth_date?: string;
     notes?: string | null;
+    size_tier: PetBodyPorteValue;
+    coat_color?: string | null;
+    coat_type?: CoatTypeValue | null;
     primary_guardian_id: string;
     secondary_guardian_id?: string | null;
   }): Promise<{ pet: HubPet }> {
@@ -62,6 +70,9 @@ export const hubPetsApi = {
       sex?: 'M' | 'F' | 'U' | null;
       birth_date?: string | null;
       notes?: string | null;
+      size_tier?: PetBodyPorteValue;
+      coat_color?: string | null;
+      coat_type?: CoatTypeValue | null;
       archived?: boolean;
       primary_guardian_id?: string;
       secondary_guardian_id?: string | null;

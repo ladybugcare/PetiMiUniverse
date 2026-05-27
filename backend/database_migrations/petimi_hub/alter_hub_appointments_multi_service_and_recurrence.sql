@@ -43,7 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_hub_appointments_series_id
   ON public.hub_appointments (series_id)
   WHERE series_id IS NOT NULL AND deleted_at IS NULL;
 
-COMMENT ON COLUMN public.hub_appointments.title IS 'Título do agendamento (gerado ou editado pelo utilizador).';
+COMMENT ON COLUMN public.hub_appointments.title IS 'Título do agendamento (gerado ou editado pelo usuário).';
 COMMENT ON COLUMN public.hub_appointments.description IS 'Observações/notas detalhadas (substitui notes progressivamente).';
 COMMENT ON COLUMN public.hub_appointments.series_id IS 'Série de recorrência à qual este slot pertence.';
 COMMENT ON COLUMN public.hub_appointments.series_occurrence_date IS 'Data original do slot (útil quando o slot foi movido dentro da série).';

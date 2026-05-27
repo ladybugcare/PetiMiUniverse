@@ -10,6 +10,9 @@ export interface HubGuardianPet {
   name: string;
   species: string;
   role: 'primary' | 'secondary';
+  size_tier: string;
+  coat_type: string | null;
+  birth_date: string | null;
 }
 
 export interface HubGuardian {
@@ -61,7 +64,7 @@ export type HubGuardianCreatePayload = {
   legal_name?: string | null;
   birth_date?: string | null;
   sex?: 'M' | 'F' | 'U' | null;
-  tax_id?: string | null;
+  tax_id: string;
   id_doc_type?: string | null;
   id_doc_number?: string | null;
   lead_source?: string | null;

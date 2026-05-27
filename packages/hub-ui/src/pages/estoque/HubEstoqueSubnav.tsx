@@ -14,13 +14,13 @@ const links: { to: string; label: string }[] = [
 
 const HubEstoqueSubnav: React.FC = () => {
   return (
-    <nav className="hub-estoque-subnav" aria-label="Secções de estoque">
+    <nav className="hub-clientes__tabs" aria-label="Secções de estoque">
       {links.map(({ to, label }) => (
         <NavLink
           key={to}
           to={to}
           className={({ isActive }) =>
-            ['hub-estoque-subnav__link', isActive ? 'hub-estoque-subnav__link--active' : ''].join(' ')
+            ['hub-clientes__tab', isActive ? 'hub-clientes__tab--active' : ''].filter(Boolean).join(' ')
           }
         >
           {label}

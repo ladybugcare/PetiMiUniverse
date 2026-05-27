@@ -6,7 +6,7 @@ Adicionar um botão de suporte no cabeçalho do dashboard que permite a todos os
 ## Implementação Backend
 
 ### 1. Migração de Banco de Dados
-Criar `backend/database_migrations/create_support_tickets_table.sql`:
+Criar `backend/database_migrations/petimi_vet/create_support_tickets_table.sql`:
 
 **Tabela: `support_tickets`**
 - `id` (uuid, chave primária)

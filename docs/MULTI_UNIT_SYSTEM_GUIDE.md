@@ -19,10 +19,10 @@ Run the migrations in the following order:
 
 ```bash
 # 1. Create the core tables
-psql -U your_user -d your_database -f backend/database_migrations/create_units_and_permissions_system.sql
+psql -U your_user -d your_database -f backend/database_migrations/petimi_vet/create_units_and_permissions_system.sql
 
 # 2. Migrate existing clinics (if applicable)
-psql -U your_user -d your_database -f backend/database_migrations/migrate_existing_clinics_to_units.sql
+psql -U your_user -d your_database -f backend/database_migrations/petimi_vet/migrate_existing_clinics_to_units.sql
 ```
 
 ### 2. Backend Setup

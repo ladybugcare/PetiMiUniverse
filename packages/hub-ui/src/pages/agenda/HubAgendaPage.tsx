@@ -3,22 +3,14 @@ import { Navigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
-  Clock,
   Search,
-  X,
-  User,
-  Heart,
-  Stethoscope,
-  MessageSquare,
-  CalendarClock,
-  Ban,
-  CheckCircle2,
 } from 'lucide-react';
 import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
+import { HubDateField } from '../../components/HubDateField';
 import {
   hubAgendaApi,
   type HubAgendaCalendarBlock,
@@ -29,8 +21,9 @@ import { hubStaffApi } from '../../api/hubStaffApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
 import { hubServiceTypesApi } from '../../api/hubServiceTypesApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
+import { AppointmentDetailPanel } from './AppointmentDetailPanel';
 import { NewAppointmentModal } from './NewAppointmentModal';
-import type { NewAppointmentInitial } from './NewAppointmentModal';
+import type { CreateHubAppointmentResult, NewAppointmentInitial } from './NewAppointmentModal';
 import { SERVICE_GROUP_OPTIONS, resolveServiceAccentColor } from '../../utils/serviceTypeSlug';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
@@ -109,7 +102,7 @@ function savePersistedFilters(p: PersistedFilters) {
 }
 
 const HubAgendaPage: React.FC = () => {
-  const { showInfo, showError, showConfirm } = useAlert();
+  const { showAlert, showInfo, showError, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
   const clinicId = getStoredClinicId();
@@ -150,6 +143,7 @@ const HubAgendaPage: React.FC = () => {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createInitial, setCreateInitial] = useState<NewAppointmentInitial | null>(null);
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
 
   const allAppointments = rawList;
 
@@ -184,6 +178,57 @@ const HubAgendaPage: React.FC = () => {
     },
     [],
   );
+
+  const focusAppointmentOnAgenda = useCallback(
+    (appointmentId: string, startsAtIso: string) => {
+      const start = new Date(startsAtIso);
+      if (!Number.isNaN(start.getTime())) {
+        setView('day');
+        setCursorDate(startOfDay(start));
+      }
+      setPendingFocusId(appointmentId);
+      setSelectedId(appointmentId);
+      bumpReload();
+    },
+    [bumpReload],
+  );
+
+  const handleAppointmentCreated = useCallback(
+    (result: CreateHubAppointmentResult) => {
+      const { appointment, created_count, conflicts } = result;
+      let message = 'Deseja criar outro agendamento ou voltar à agenda com este agendamento em foco?';
+      if (created_count > 1) {
+        message = `${created_count} ocorrências foram criadas na série. ${message}`;
+      }
+      if (conflicts && conflicts.length > 0) {
+        message = `${conflicts.length} data(s) da série entraram em conflito e não foram criadas. ${message}`;
+      }
+
+      showAlert({
+        type: 'success',
+        title: 'Agendamento criado!',
+        message,
+        showCancel: true,
+        cancelText: 'Fechar',
+        confirmText: 'Novo agendamento',
+        onConfirm: () => {
+          bumpReload();
+          openCreateModal(null);
+        },
+        onCancel: () => focusAppointmentOnAgenda(appointment.id, appointment.starts_at),
+      });
+    },
+    [showAlert, openCreateModal, focusAppointmentOnAgenda, bumpReload],
+  );
+
+  useEffect(() => {
+    if (!pendingFocusId) return;
+    const found = allAppointments.some((a) => a.id === pendingFocusId);
+    if (found) {
+      setSelectedId(pendingFocusId);
+      setPendingFocusId(null);
+    }
+  }, [allAppointments, pendingFocusId]);
 
   const rangeIso = useMemo(() => {
     if (view === 'day') {
@@ -463,10 +508,6 @@ const HubAgendaPage: React.FC = () => {
     [filtered, allAppointments, selectedId],
   );
 
-  const goToday = useCallback(() => {
-    setCursorDate(startOfDay(new Date()));
-  }, []);
-
   const goNow = useCallback(() => {
     const n = new Date();
     setCursorDate(startOfDay(n));
@@ -640,10 +681,6 @@ const HubAgendaPage: React.FC = () => {
     };
   }, [view, dayAppointments, weekAppointments, monthAppointments, groupMode]);
 
-  const onStubAction = (label: string) => {
-    showInfo(`«${label}» será ligado à API de agenda (drag-and-drop e tempo real em evolução).`, 'Em breve');
-  };
-
   const patchAppointmentStatus = async (status: AgendaStatus) => {
     if (!clinicId || !selected || !canWrite) return;
     try {
@@ -654,6 +691,42 @@ const HubAgendaPage: React.FC = () => {
       showError((e as Error)?.message || 'Erro ao atualizar');
     }
   };
+
+  const handleAppointmentStatusChange = useCallback(
+    async (status: AgendaStatus) => {
+      if (!selected || !canWrite) return;
+      if (status === 'cancelled' && selected.status !== 'cancelled') {
+        showConfirm(
+          'Cancelar este atendimento?',
+          () => void patchAppointmentStatus('cancelled'),
+          'Cancelar',
+        );
+        return;
+      }
+      await patchAppointmentStatus(status);
+    },
+    [selected, canWrite, showConfirm, clinicId],
+  );
+
+  const duplicateSelectedAppointment = useCallback(() => {
+    if (!selected) return;
+    openCreateModal({
+      date: toYmd(startOfDay(selected.start)),
+      starts_at: selected.start.toISOString(),
+      ends_at: selected.end.toISOString(),
+      hub_staff_member_id: selected.professionalId,
+      resource_label: selected.resourceLabel !== '—' ? selected.resourceLabel : null,
+    });
+  }, [selected, openCreateModal]);
+
+  const requestCancelSelected = useCallback(() => {
+    if (!canWrite) return;
+    showConfirm(
+      'Cancelar este atendimento?',
+      () => void patchAppointmentStatus('cancelled'),
+      'Cancelar',
+    );
+  }, [canWrite, showConfirm, selected, clinicId]);
 
   const handleDropOnLane = async (e: React.DragEvent, colKey: string) => {
     e.preventDefault();
@@ -903,19 +976,16 @@ const HubAgendaPage: React.FC = () => {
               >
                 <ChevronRight size={18} />
               </button>
-              <input
-                className="hub-agenda__date-input"
-                type="date"
-                value={toYmd(cursorDate)}
-                onChange={(e) => {
-                  const d = parseYmd(e.target.value);
+              <HubDateField
+                id="hub-agenda-date"
+                className="hub-agenda__date-field"
+                valueIso={toYmd(cursorDate)}
+                onChangeIso={(iso) => {
+                  if (!iso) return;
+                  const d = parseYmd(iso);
                   if (d) setCursorDate(d);
                 }}
-                aria-label="Data de referência"
               />
-              <button type="button" className="hub-agenda__today-btn" onClick={goToday}>
-                Hoje
-              </button>
               <button type="button" className="hub-agenda__now-btn" onClick={goNow}>
                 Agora
               </button>
@@ -950,6 +1020,30 @@ const HubAgendaPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {!remoteLoading && !appointmentsError ? (
+            <div className="hub-agenda__view-metrics" aria-label="Resumo da vista">
+              <span>{sidebarMetrics.total} atend.</span>
+              <span className="hub-agenda__view-metrics-sep" aria-hidden>
+                ·
+              </span>
+              <span>{sidebarMetrics.pets} pets</span>
+              <span className="hub-agenda__view-metrics-sep" aria-hidden>
+                ·
+              </span>
+              <span>{sidebarMetrics.hours}h</span>
+              {sidebarMetrics.conflicts > 0 ? (
+                <>
+                  <span className="hub-agenda__view-metrics-sep" aria-hidden>
+                    ·
+                  </span>
+                  <span className="hub-agenda__view-metrics--warn">
+                    {sidebarMetrics.conflicts} conflito{sidebarMetrics.conflicts !== 1 ? 's' : ''}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="hub-agenda__filters">
             <div className="hub-servicos__filter-field hub-agenda__filter-combo">
@@ -1319,186 +1413,21 @@ const HubAgendaPage: React.FC = () => {
         </div>
 
         {selected ? (
-          <aside className="hub-agenda__panel" aria-label="Detalhe do atendimento">
-            <div className="hub-agenda__panel-scroll">
-              <div className="hub-agenda__panel-head">
-                <h2 className="hub-agenda__panel-title">{selected.serviceName}</h2>
-                <button
-                  type="button"
-                  className="hub-agenda__panel-close"
-                  aria-label="Fechar painel"
-                  onClick={() => setSelectedId(null)}
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div>
-                <span className={`hub-agenda__pill ${STATUS_META[selected.status].pillClass}`}>
-                  {STATUS_META[selected.status].label}
-                </span>
-                {selected.conflict ? (
-                  <span className="hub-agenda__pill hub-agenda__pill--st-cancelled" style={{ marginLeft: 8 }}>
-                    Conflito
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="hub-agenda__metrics">
-                <div className="hub-agenda__metric">
-                  <div className="hub-agenda__metric-val">{sidebarMetrics.total}</div>
-                  <div className="hub-agenda__metric-lab">No período da vista</div>
-                </div>
-                <div className="hub-agenda__metric">
-                  <div className="hub-agenda__metric-val">{sidebarMetrics.pets}</div>
-                  <div className="hub-agenda__metric-lab">Pets distintos</div>
-                </div>
-                <div className="hub-agenda__metric">
-                  <div className="hub-agenda__metric-val">{sidebarMetrics.hours}h</div>
-                  <div className="hub-agenda__metric-lab">Horas ocupadas (aprox.)</div>
-                </div>
-                <div className="hub-agenda__metric">
-                  <div className="hub-agenda__metric-val">{sidebarMetrics.conflicts}</div>
-                  <div className="hub-agenda__metric-lab">Alertas de conflito</div>
-                </div>
-              </div>
-
-              <div className="hub-agenda__panel-section">
-                <h4>Horário e duração</h4>
-                <div className="hub-agenda__panel-kv">
-                  <Clock size={14} style={{ verticalAlign: 'middle', marginRight: 6, opacity: 0.6 }} />
-                  {formatHm(selected.start)} – {formatHm(selected.end)} (
-                  {Math.round((selected.end.getTime() - selected.start.getTime()) / 60_000)} min)
-                </div>
-              </div>
-
-              <div className="hub-agenda__panel-section">
-                <h4>Pet e tutor</h4>
-                <div className="hub-agenda__panel-kv">
-                  <Heart size={14} style={{ verticalAlign: 'middle', marginRight: 6, opacity: 0.6 }} />
-                  {selected.petName}
-                  <br />
-                  <User size={14} style={{ verticalAlign: 'middle', marginRight: 6, opacity: 0.6 }} />
-                  {selected.guardianName}
-                </div>
-              </div>
-
-              <div className="hub-agenda__panel-section">
-                <h4>Equipe e local</h4>
-                <div className="hub-agenda__panel-kv">
-                  <Stethoscope size={14} style={{ verticalAlign: 'middle', marginRight: 6, opacity: 0.6 }} />
-                  {selected.professionalName}
-                  <br />
-                  <span className="hub-clientes__muted">Recurso:</span> {selected.resourceLabel}
-                  <br />
-                  <span className="hub-clientes__muted">Unidade:</span> {selected.unitName}
-                  <br />
-                  <span className="hub-clientes__muted">Grupo:</span> {serviceGroupLabel(selected.group)}
-                  <br />
-                  <span className="hub-clientes__muted">Tipo:</span>{' '}
-                  {selected.appointment_kind === 'hotel_stay'
-                    ? 'Hotel / hospedagem'
-                    : selected.appointment_kind === 'daycare_block'
-                      ? 'Creche'
-                      : selected.appointment_kind === 'pickup_route'
-                        ? 'Leva e traz'
-                        : 'Atendimento'}
-                </div>
-              </div>
-
-              {selected.notes ? (
-                <div className="hub-agenda__panel-section">
-                  <h4>Observações</h4>
-                  <div className="hub-agenda__panel-kv">{selected.notes}</div>
-                </div>
-              ) : null}
-
-              {selected.conflict ? (
-                <div className="hub-agenda__panel-section">
-                  <h4>Conflitos</h4>
-                  <div className="hub-agenda__panel-kv" style={{ color: '#b71c1c', fontWeight: 600 }}>
-                    Este horário sobrepõe outro atendimento no mesmo profissional ou recurso. Ajuste horário ou recurso
-                    antes de confirmar.
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="hub-agenda__panel-section">
-                <h4>Resumo rápido</h4>
-                <div className="hub-agenda__panel-kv hub-clientes__muted" style={{ fontSize: 12 }}>
-                  Histórico do pet e próximos agendamentos serão carregados quando existirem endpoints dedicados.
-                  Conflitos são calculados na vista atual (mesmo profissional ou recurso, conforme o modo de colunas).
-                </div>
-              </div>
-
-              <div className="hub-agenda__panel-actions">
-                {canWrite && (
-                  <button
-                    type="button"
-                    className="hub-agenda__action hub-agenda__action--primary"
-                    onClick={() =>
-                      openCreateModal({
-                        date: toYmd(startOfDay(selected!.start)),
-                        starts_at: selected!.start.toISOString(),
-                        ends_at: selected!.end.toISOString(),
-                        hub_staff_member_id: selected!.professionalId,
-                        resource_label: selected!.resourceLabel !== '—' ? selected!.resourceLabel : null,
-                      })
-                    }
-                  >
-                    Editar / Duplicar
-                  </button>
-                )}
-                <button type="button" className="hub-agenda__action" onClick={() => onStubAction('Check-in')}>
-                  Check-in
-                </button>
-                <button type="button" className="hub-agenda__action" onClick={() => onStubAction('Reagendar')}>
-                  <CalendarClock size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                  Reagendar
-                </button>
-                <button
-                  type="button"
-                  className="hub-agenda__action"
-                  disabled={!canWrite}
-                  onClick={() => {
-                    if (!canWrite) return;
-                    showConfirm('Cancelar este atendimento?', async () => {
-                      await patchAppointmentStatus('cancelled');
-                    }, 'Cancelar');
-                  }}
-                >
-                  <Ban size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  className="hub-agenda__action"
-                  disabled={!canWrite}
-                  onClick={() => void patchAppointmentStatus('done')}
-                >
-                  <CheckCircle2 size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                  Concluir
-                </button>
-                <button type="button" className="hub-agenda__action" onClick={() => onStubAction('Mensagem')}>
-                  <MessageSquare size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                  Mensagem
-                </button>
-                <button type="button" className="hub-agenda__action" onClick={() => onStubAction('Ficha do pet')}>
-                  <Heart size={14} style={{ verticalAlign: 'middle', marginRight: 6, opacity: 0.6 }} />
-                  Ficha do pet
-                </button>
-              </div>
-            </div>
-          </aside>
+          <AppointmentDetailPanel
+            appointment={selected}
+            canWrite={canWrite}
+            onClose={() => setSelectedId(null)}
+            onStatusChange={handleAppointmentStatusChange}
+            onDuplicate={duplicateSelectedAppointment}
+            onCancel={requestCancelSelected}
+          />
         ) : null}
       </div>
 
       <NewAppointmentModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onSaved={() => {
-          bumpReload();
-          setCreateOpen(false);
-        }}
+        onCreated={handleAppointmentCreated}
         initial={createInitial}
         staffOptions={fullStaff}
         serviceTypes={fullSvcTypes}

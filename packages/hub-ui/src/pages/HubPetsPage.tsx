@@ -14,6 +14,8 @@ import { PetsPagination } from './pets/PetsPagination';
 import { PetForm } from './pets/PetForm';
 import { PetDetailPanel } from './pets/PetDetailPanel';
 import { emptyPetForm, type PetFormValues } from './pets/PetFormValues';
+import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
+import type { CoatTypeValue, PetBodyPorteValue } from '../utils/hubServiceTypesPricingMatrix';
 
 const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
 
@@ -29,13 +31,19 @@ function useDebounced<T>(value: T, ms: number): T {
 }
 
 function petToForm(p: HubPet): PetFormValues {
+  const st = (p as HubPet & { size_tier?: PetBodyPorteValue }).size_tier;
+  const sizeOk = st && (['mini', 'pequeno', 'medio', 'grande', 'gigante'] as const).includes(st as PetBodyPorteValue);
   return {
     name: p.name,
     species: p.species,
     breed: p.breed || '',
+    isSRD: !(p.breed && String(p.breed).trim()),
     sex: (p.sex as PetFormValues['sex']) || '',
     birth_date: p.birth_date || '',
     notes: p.notes || '',
+    size_tier: sizeOk ? (st as PetFormValues['size_tier']) : '',
+    coat_color: p.coat_color || '',
+    coat_type: p.coat_type ? (p.coat_type as CoatTypeValue) : '',
     primary_guardian_id: p.primary_guardian?.guardian_id || '',
     secondary_guardian_id: p.secondary_guardian?.guardian_id || '',
   };
@@ -233,6 +241,10 @@ const HubPetsPage: React.FC = () => {
       showError('Tutor principal é obrigatório');
       return;
     }
+    if (!form.isSRD && !form.breed.trim()) {
+      showError('Indique a raça ou active SRD.');
+      return;
+    }
     setSubmitting(true);
     try {
       const sexVal = form.sex === '' ? null : form.sex;
@@ -241,15 +253,24 @@ const HubPetsPage: React.FC = () => {
           ? form.secondary_guardian_id
           : null;
 
+      const sizeTier = resolvePetBodyPorteForApi(
+        form.size_tier || '',
+        form.species.trim(),
+        form.isSRD ? '' : form.breed.trim(),
+      );
+
       if (editingId) {
         await hubPetsApi.update(editingId, {
           clinic_id: clinicId,
           name: form.name.trim(),
           species: form.species.trim(),
-          breed: form.breed.trim() || null,
+          breed: form.isSRD ? null : form.breed.trim() || null,
           sex: sexVal,
           birth_date: form.birth_date.trim() || null,
           notes: form.notes.trim() || null,
+          size_tier: sizeTier,
+          coat_color: form.coat_color.trim() || null,
+          coat_type: form.coat_type || null,
           primary_guardian_id: form.primary_guardian_id,
           secondary_guardian_id: sec,
         });
@@ -262,10 +283,13 @@ const HubPetsPage: React.FC = () => {
           clinic_id: clinicId,
           name: form.name.trim(),
           species: form.species.trim(),
-          breed: form.breed.trim() || null,
+          breed: form.isSRD ? null : form.breed.trim() || null,
           sex: sexVal,
           birth_date: form.birth_date.trim() || undefined,
           notes: form.notes.trim() || null,
+          size_tier: sizeTier,
+          coat_color: form.coat_color.trim() || null,
+          coat_type: form.coat_type || null,
           primary_guardian_id: form.primary_guardian_id,
           secondary_guardian_id: sec,
         });

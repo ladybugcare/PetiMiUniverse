@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useAuth,
   getStoredClinicId,
@@ -21,6 +21,9 @@ import {
 } from './clientes/GuardianCreateForm';
 import { GuardianDetailPanel } from './clientes/GuardianDetailPanel';
 import { formValuesToCreatePayload, formValuesToUpdatePayload } from './clientes/guardianFormPayload';
+import { hubQuotesApi, type HubQuote } from '../api/hubQuotesApi';
+import { quoteProspectToGuardianFormValues, prospectFromQuote } from './orcamentos/quoteToGuardianForm';
+import { clearManualQuoteConversion } from './orcamentos/quoteManualConversionStorage';
 
 const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
 
@@ -37,6 +40,10 @@ function useDebounced<T>(value: T, ms: number): T {
 }
 
 const HubGuardiansPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const fromQuoteId = searchParams.get('fromQuote')?.trim() || '';
+  const linkGuardianId = searchParams.get('linkGuardianId')?.trim() || '';
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
   const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
@@ -57,6 +64,8 @@ const HubGuardiansPage: React.FC = () => {
   const [form, setForm] = useState<GuardianFormValues>(emptyGuardianForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [quoteForConversion, setQuoteForConversion] = useState<HubQuote | null>(null);
+  const [quoteConversionLoading, setQuoteConversionLoading] = useState(false);
 
   const accessAllowed =
     clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
@@ -110,9 +119,56 @@ const HubGuardiansPage: React.FC = () => {
   }, [clinicId, accessAllowed, loadStats]);
 
   useEffect(() => {
-    if (!clinicId || !accessAllowed) return;
-    void loadList();
-  }, [clinicId, accessAllowed, loadList]);
+    if (fromQuoteId) setMainTab('tutores');
+  }, [fromQuoteId]);
+
+  useEffect(() => {
+    if (!fromQuoteId || !clinicId) {
+      setQuoteForConversion(null);
+      setQuoteConversionLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setQuoteConversionLoading(true);
+    void (async () => {
+      try {
+        const { quote } = await hubQuotesApi.get(fromQuoteId, clinicId);
+        if (cancelled) return;
+        const prospect = prospectFromQuote(quote);
+        if (!prospect) {
+          showError('Orçamento sem dados de contacto.');
+          setQuoteForConversion(null);
+          return;
+        }
+        setQuoteForConversion(quote);
+        setSelectedId(null);
+        setPanelMode('create');
+        setEditingId(null);
+        setForm(quoteProspectToGuardianFormValues(quote, prospect));
+      } catch (e: unknown) {
+        if (!cancelled) {
+          showError((e as Error)?.message || 'Erro ao carregar orçamento');
+          setQuoteForConversion(null);
+        }
+      } finally {
+        if (!cancelled) setQuoteConversionLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fromQuoteId, clinicId, showError]);
+
+  const continueToPetsWithExistingGuardian = useCallback(() => {
+    if (!fromQuoteId || !linkGuardianId) return;
+    clearManualQuoteConversion(fromQuoteId);
+    navigate(
+      `/hub/pets/novo?fromQuote=${encodeURIComponent(fromQuoteId)}&guardianId=${encodeURIComponent(linkGuardianId)}&petIndex=0`
+    );
+  }, [fromQuoteId, linkGuardianId, navigate]);
+
+  const quoteConvShort = quoteForConversion?.id.slice(0, 8).toUpperCase() ?? fromQuoteId.slice(0, 8).toUpperCase();
+
 
   const selectedGuardian = useMemo(
     () => (selectedId ? guardiansRaw.find((g) => g.id === selectedId) ?? null : null),
@@ -133,8 +189,14 @@ const HubGuardiansPage: React.FC = () => {
     setSelectedId(null);
     setPanelMode('create');
     setEditingId(null);
-    setForm(emptyGuardianForm);
-  }, []);
+    if (fromQuoteId && quoteForConversion) {
+      const prospect = prospectFromQuote(quoteForConversion);
+      if (prospect) setForm(quoteProspectToGuardianFormValues(quoteForConversion, prospect));
+      else setForm(emptyGuardianForm);
+    } else {
+      setForm(emptyGuardianForm);
+    }
+  }, [fromQuoteId, quoteForConversion]);
 
   const selectGuardian = useCallback((g: HubGuardian) => {
     setSelectedId(g.id);
@@ -183,6 +245,10 @@ const HubGuardiansPage: React.FC = () => {
       showError('Telefone é obrigatório');
       return;
     }
+    if (!form.tax_id.trim()) {
+      showError('CPF/CNPJ é obrigatório');
+      return;
+    }
     setSubmitting(true);
     try {
       if (editingId) {
@@ -192,6 +258,13 @@ const HubGuardiansPage: React.FC = () => {
         setEditingId(null);
       } else {
         const { guardian } = await hubGuardiansApi.create(formValuesToCreatePayload(form, clinicId));
+        if (fromQuoteId && !linkGuardianId) {
+          clearManualQuoteConversion(fromQuoteId);
+          navigate(
+            `/hub/pets/novo?fromQuote=${encodeURIComponent(fromQuoteId)}&guardianId=${encodeURIComponent(guardian.id)}&petIndex=0`
+          );
+          return;
+        }
         showSuccess('Cliente criado');
         setSelectedId(guardian.id);
         setPanelMode('detail');
@@ -328,15 +401,86 @@ const HubGuardiansPage: React.FC = () => {
                 title=""
               />
             </>
+          ) : linkGuardianId && fromQuoteId ? (
+            <>
+              {fromQuoteId ? (
+                <div className="hub-clientes__draft-banner" style={{ marginBottom: 12 }} role="status">
+                  <p style={{ margin: 0 }}>
+                    {quoteConversionLoading ? (
+                      'A carregar orçamento…'
+                    ) : (
+                      <>
+                        A concluir conversão do orçamento #{quoteConvShort}.{' '}
+                        <strong>Será usado o tutor existente</strong> — confira os dados do contacto do orçamento e
+                        continue para cadastrar os pets.
+                      </>
+                    )}
+                  </p>
+                </div>
+              ) : null}
+              <div className="hub-clientes__panel-header">
+                <h2 className="hub-clientes__form-title" style={{ margin: 0 }}>
+                  Rever contacto do orçamento
+                </h2>
+              </div>
+              <dl className="hub-clientes__muted" style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+                <div>
+                  <dt style={{ fontWeight: 600, color: 'var(--hub-text, #333)' }}>Nome</dt>
+                  <dd style={{ margin: 0 }}>{form.full_name || '—'}</dd>
+                </div>
+                <div>
+                  <dt style={{ fontWeight: 600, color: 'var(--hub-text, #333)' }}>Telefone</dt>
+                  <dd style={{ margin: 0 }}>{form.phone || '—'}</dd>
+                </div>
+                <div>
+                  <dt style={{ fontWeight: 600, color: 'var(--hub-text, #333)' }}>CPF / CNPJ</dt>
+                  <dd style={{ margin: 0 }}>{form.tax_id?.trim() || '—'}</dd>
+                </div>
+                <div>
+                  <dt style={{ fontWeight: 600, color: 'var(--hub-text, #333)' }}>E-mail</dt>
+                  <dd style={{ margin: 0 }}>{form.email?.trim() || '—'}</dd>
+                </div>
+              </dl>
+              {!form.tax_id?.trim() ? (
+                <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>
+                  É obrigatório um CPF/CNPJ no contacto do orçamento para continuar. Atualize o orçamento ou o prospecto
+                  e volte a abrir esta conversão.
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                disabled={quoteConversionLoading || !form.tax_id?.trim()}
+                onClick={() => continueToPetsWithExistingGuardian()}
+              >
+                Continuar para pets
+              </button>
+            </>
           ) : (
-            <GuardianCreateForm
-              value={form}
-              onChange={setForm}
-              onSubmit={handleSubmit}
-              submitting={submitting}
-              canWrite={canWrite}
-              title="Cadastrar novo cliente"
-            />
+            <>
+              {fromQuoteId ? (
+                <div className="hub-clientes__draft-banner" style={{ marginBottom: 12 }} role="status">
+                  <p style={{ margin: 0 }}>
+                    {quoteConversionLoading ? (
+                      'A carregar orçamento…'
+                    ) : (
+                      <>
+                        A concluir conversão do orçamento #{quoteConvShort}. Confirme ou ajuste os dados do tutor e
+                        salve para seguir ao cadastro dos pets.
+                      </>
+                    )}
+                  </p>
+                </div>
+              ) : null}
+              <GuardianCreateForm
+                value={form}
+                onChange={setForm}
+                onSubmit={handleSubmit}
+                submitting={submitting}
+                canWrite={canWrite}
+                title="Cadastrar novo cliente"
+              />
+            </>
           )}
         </div>
       </aside>

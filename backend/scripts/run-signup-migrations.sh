@@ -7,7 +7,7 @@
 
 set -e
 
-MIGRATIONS_DIR="$(cd "$(dirname "$0")/../database_migrations" && pwd)"
+MIGRATIONS_DIR="$(cd "$(dirname "$0")/../database_migrations/petimi_vet" && pwd)"
 MIGRATIONS=(
   "make_clinic_id_nullable_in_clinic_users.sql"
   "add_pending_clinic_status.sql"

@@ -30,6 +30,8 @@ interface DashboardSidebarProps {
   userEmail: string;
   activeSection?: string;
   onSectionChange?: (sectionId: string) => void;
+  /** Se false, não mostra overlay semitransparente (ex.: menu fixo em desktop). */
+  showBackdrop?: boolean;
 }
 
 const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
@@ -40,6 +42,7 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
   userEmail,
   activeSection,
   onSectionChange,
+  showBackdrop = true,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -164,7 +167,11 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
     }
     
     if (item.action === 'navigate' && item.path) {
-      navigate(item.path);
+      if (/^https?:\/\//i.test(item.path)) {
+        window.location.href = item.path;
+      } else {
+        navigate(item.path);
+      }
       onClose();
     } else if (item.action === 'section' && item.sectionId) {
       onSectionChange?.(item.sectionId);
@@ -286,7 +293,7 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
   return (
     <>
       {/* Overlay */}
-      {isOpen && (
+      {isOpen && showBackdrop && (
         <div
           style={styles.overlay}
           onClick={onClose}
@@ -424,7 +431,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#404040',
   },
   menuButtonActive: {
-    backgroundColor: '#ede9fe',
+    backgroundColor: colors.brand.primary[100],
     color: colors.brand.primary[500],
     fontWeight: '500',
   },
@@ -432,7 +439,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: 'transparent',
     color: colors.brand.primary[500],
     fontWeight: '500',
-    borderLeft: '3px solid colors.brand.primary[500]',
+    borderLeft: `3px solid ${colors.brand.primary[500]}`,
   },
   menuIcon: {
     fontSize: '20px',

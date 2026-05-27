@@ -4,7 +4,7 @@
 --   - supabase/migrations/petivet_prod_structure.sql
 --   - supabase/migrations/20251108184400_update_vet_trigger_with_document_fields.sql
 --   - supabase/migrations/20251108184733_fix_vet_trigger_experience_field.sql
--- Do NOT run backend/database_migrations/create_auth_triggers.sql after the above:
+-- Do NOT run backend/database_migrations/petimi_vet/create_auth_triggers.sql after the above:
 -- it would replace handle_new_user with an older definition.
 -- ========================================
 

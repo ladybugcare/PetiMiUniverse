@@ -1,19 +1,8 @@
 import type { HubComboboxOption } from '../../../components/HubSearchableCombobox';
-import { wizardBreedOptionsForSpecies } from './petSpeciesBreedOptions';
+import { wizardBreedOptionsForSpecies, WIZARD_SPECIES_CANONICAL } from './petSpeciesBreedOptions';
 
-/** Espécies canónicas (combobox; sem ícones — alinhado ao modelo Hub unificado). */
-export const WIZARD_SPECIES_COMBO_ROWS: { value: string; label: string }[] = [
-  { value: 'Cão', label: 'Cão' },
-  { value: 'Gato', label: 'Gato' },
-  { value: 'Ave', label: 'Ave' },
-  { value: 'Roedor', label: 'Roedor' },
-  { value: 'Réptil', label: 'Réptil' },
-  { value: 'Coelho', label: 'Coelho' },
-  { value: 'Furão', label: 'Furão' },
-  { value: 'Peixe', label: 'Peixe' },
-  { value: 'Equino', label: 'Equino' },
-  { value: 'Outro', label: 'Outro' },
-];
+/** Re-export: mesma ordem e rótulos que `WIZARD_SPECIES_OPTIONS` (cadastro completo). */
+export const WIZARD_SPECIES_COMBO_ROWS = WIZARD_SPECIES_CANONICAL;
 
 export function mergeSpeciesComboboxOptions(storedSpecies: string): HubComboboxOption[] {
   const t = storedSpecies.trim();

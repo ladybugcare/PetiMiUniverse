@@ -226,7 +226,7 @@ export const useSidebarMenu = (role: Role | string, currentPath?: string) => {
   const menuItems = useMemo(() => {
     // Ordenar por grupo e depois por order
     const sorted = [...menuItemsWithBadges].sort((a, b) => {
-      const groupOrder = ['Principal', 'Gerenciamento', 'Operacional', 'Suporte', 'Perfil'];
+      const groupOrder = ['Principal', 'PetMi Hub', 'Gerenciamento', 'Operacional', 'Suporte', 'Perfil'];
       const aGroupIndex = groupOrder.indexOf(a.group || '');
       const bGroupIndex = groupOrder.indexOf(b.group || '');
       

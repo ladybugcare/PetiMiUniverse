@@ -6,6 +6,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const demandPositionsController_1 = require("../controllers/demandPositionsController");
 const router = express_1.default.Router();
+/**
+ * @deprecated Use POST /api/demands instead (createDemandV2)
+ */
 // Criar demanda composta com posições
 router.post('/composite', demandPositionsController_1.createCompositeDemand);
 // Listar posições disponíveis

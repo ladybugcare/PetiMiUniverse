@@ -12,7 +12,7 @@ export type HubComboboxOption = {
 export type HubSearchableComboboxProps = {
   id: string;
   className?: string;
-  /** Opções (sem entrada vazia fictícia — valor vazio = nada seleccionado). */
+  /** Opções (sem entrada vazia fictícia — valor vazio = nada selecionado). */
   options: HubComboboxOption[];
   value: string;
   onChange: (value: string) => void;

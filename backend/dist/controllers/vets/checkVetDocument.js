@@ -34,7 +34,7 @@ const checkVetDocument = async (req, res) => {
         // Verificar se a coluna existe antes de fazer a query
         // Se não existir, retorna false (documento não existe)
         // Timeout de 10 segundos para evitar que o servidor trave
-        const { data, error } = await withTimeout(supabase_1.supabase
+        const { data, error } = await withTimeout(supabase_1.supabaseAdmin
             .from('vets')
             .select('id')
             .eq('document_number', normalizedDocument)

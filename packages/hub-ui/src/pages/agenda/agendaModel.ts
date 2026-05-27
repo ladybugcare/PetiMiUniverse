@@ -60,7 +60,19 @@ export type AgendaAppointment = {
   /** Título editável do agendamento. */
   title?: string;
   /** Serviços detalhados da linha N:M. */
-  services?: Array<{ id: string; hub_service_type_id: string; name: string; durationMin: number }>;
+  services?: Array<{
+    id: string;
+    hub_service_type_id: string;
+    name: string;
+    durationMin: number;
+    saleAmount?: number | null;
+  }>;
+  description?: string;
+  financial_notes?: string;
+  /** Soma de sale_amount_applied das linhas (quando existir snapshot). */
+  saleTotal?: number | null;
+  petId?: string | null;
+  guardianId?: string | null;
 };
 
 export function startOfDay(d: Date): Date {

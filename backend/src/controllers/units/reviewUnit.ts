@@ -53,7 +53,7 @@ export const reviewUnit = async (req: Request, res: Response) => {
       const legacyStatus = approved ? 'active' : 'inactive';
       console.warn(
         `[reviewUnit] units_status_check rejected "${newStatus}". Retrying with legacy status "${legacyStatus}". ` +
-          'Execute backend/database_migrations/fix_units_status_constraint.sql (ou add_clinic_approval_system.sql) no Supabase.'
+          'Execute backend/database_migrations/petimi_vet/fix_units_status_constraint.sql (ou backend/database_migrations/petimi_vet/add_clinic_approval_system.sql) no Supabase.'
       );
       const retry = await supabaseAdmin
         .from('units')

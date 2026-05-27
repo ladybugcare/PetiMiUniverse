@@ -2,6 +2,14 @@ import React from 'react';
 import { Bookmark, Lightbulb } from 'lucide-react';
 import type { PetWizardState } from './types';
 import { petAgeLabel } from '../petAge';
+import {
+  COAT_TYPE_LABELS,
+  COAT_TYPE_VALUES,
+  PET_BODY_PORTE_VALUES,
+  PORTE_LABELS,
+  type CoatTypeValue,
+  type PetBodyPorteValue,
+} from '../../../utils/hubServiceTypesPricingMatrix';
 
 function sexLabel(s: string): string {
   if (s === 'M') return 'Macho';
@@ -38,8 +46,21 @@ export const PetWizardSummary: React.FC<Props> = ({
     { k: 'Castrado(a)', v: state.neutered === 'Y' ? 'Sim' : state.neutered === 'N' ? 'Não' : '—' },
     { k: 'Nascimento', v: state.birth_date || '—' },
     { k: 'Idade', v: petAgeLabel(state.birth_date || null) },
-    { k: 'Cor / pelagem', v: state.coatColor || '—' },
-    { k: 'Porte', v: state.size || '—' },
+    { k: 'Cor', v: state.coatColor || '—' },
+    {
+      k: 'Pelagem',
+      v:
+        state.coatType && COAT_TYPE_VALUES.includes(state.coatType as CoatTypeValue)
+          ? COAT_TYPE_LABELS[state.coatType as CoatTypeValue]
+          : '—',
+    },
+    {
+      k: 'Porte',
+      v:
+        state.size && PET_BODY_PORTE_VALUES.includes(state.size as PetBodyPorteValue)
+          ? PORTE_LABELS[state.size as PetBodyPorteValue]
+          : '—',
+    },
     { k: 'Peso', v: state.weightKg ? `${state.weightKg} kg` : '—' },
     { k: 'Altura', v: state.heightCm ? `${state.heightCm} cm` : '—' },
     { k: 'Microchip', v: state.microchip || '—' },

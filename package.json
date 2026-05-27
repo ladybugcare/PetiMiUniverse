@@ -5,16 +5,28 @@
   "private": true,
   "workspaces": [
     "backend",
-    "frontend"
+    "frontend",
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm start",
+    "dev:vet-web": "cd frontend && npm run web",
+    "dev:hub-web": "npm run dev --workspace=@petimi/hub-web",
     "dev:web": "cd frontend && npm run web",
     "build:backend": "cd backend && npm run build",
-    "build:frontend": "cd frontend && npm run build:web"
+    "build:frontend": "cd frontend && npm run build:web",
+    "build:hub-web": "npm run build --workspace=@petimi/hub-web",
+    "seed:clinic-e2e-demands": "node scripts/seed-clinic-e2e-demands.mjs"
   },
   "dependencies": {
-    "react": "^18.2.0"
+    "react": "18.2.0"
+  },
+  "overrides": {
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "@types/react": "18.2.79",
+    "@types/react-dom": "18.2.25"
   }
 }

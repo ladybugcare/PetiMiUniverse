@@ -4,6 +4,8 @@ exports.getVetById = void 0;
 const supabase_1 = require("../../config/supabase");
 /**
  * ✅ Retorna os detalhes de um veterinário específico pelo ID
+ * Usa supabaseAdmin para não depender de RLS (o cliente anon do backend não carrega a sessão do vet).
+ * Alinhado a getVets / getPendingVets, que já leem `vets` via service role.
  */
 const getVetById = async (req, res) => {
     const { id } = req.params;
@@ -11,7 +13,7 @@ const getVetById = async (req, res) => {
         return res.status(400).json({ error: 'ID do veterinário é obrigatório.' });
     }
     try {
-        const { data, error } = await supabase_1.supabase
+        const { data, error } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('*')
             .eq('id', id)

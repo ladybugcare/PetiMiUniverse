@@ -128,7 +128,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
                     <MapPin size={18} strokeWidth={1.75} />
                   </span>
                   <div className="hub-clientes__contact-row-text">
-                    <strong>Morada:</strong> {addr}
+                    <strong>Endereço:</strong> {addr}
                   </div>
                 </li>
                 <li className="hub-clientes__contact-row">

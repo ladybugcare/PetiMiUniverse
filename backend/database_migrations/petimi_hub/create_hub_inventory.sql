@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS public.hub_inventory_lots (
 CREATE INDEX IF NOT EXISTS idx_hub_inventory_lots_item ON public.hub_inventory_lots (item_id);
 CREATE INDEX IF NOT EXISTS idx_hub_inventory_lots_expiry ON public.hub_inventory_lots (clinic_id, expiry_date) WHERE expiry_date IS NOT NULL;
 
-COMMENT ON TABLE public.hub_inventory_lots IS 'Lotes por item; quantidade actual vem dos movimentos.';
+COMMENT ON TABLE public.hub_inventory_lots IS 'Lotes por item; quantidade atual vem dos movimentos.';
 
 -- Movimentos (ledger)
 CREATE TABLE IF NOT EXISTS public.hub_stock_movements (

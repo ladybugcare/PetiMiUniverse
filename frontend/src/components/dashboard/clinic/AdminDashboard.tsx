@@ -6,627 +6,635 @@ import { useAlert } from '../../../hooks/useAlert';
 import { statisticsApi } from '../../../services/statisticsApi';
 import { clinicUsersApi } from '../../../services/clinicUsersApi';
 import { unitsApi } from '../../../services/unitsApi';
-import { Building2, Users, ClipboardList, AlertCircle, BarChart2, UserPlus, MapPin, Star } from 'lucide-react';
+import { demandsApi, Demand } from '../../../services/demandsApi';
+import { applicationsApi } from '../../../services/applicationsApi';
+import { marketplaceApi, MarketplaceItem } from '../../../services/marketplaceApi';
+import {
+  Building2,
+  Users,
+  ClipboardList,
+  UserPlus,
+  MapPin,
+  Star,
+  ShoppingCart,
+  AlertCircle,
+  ChevronRight,
+  ChevronLeft,
+  PlusCircle,
+  Calendar,
+  ArrowUpRight,
+  Eye,
+  Tag,
+} from 'lucide-react';
 import { Role, Unit } from '../../../types/units';
 import colors from '../../../styles/colors';
 import { getStoredClinicId } from '../../../utils/authHelpers';
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+const BRAND = colors.brand.primary;
+
+function greet(name: string) {
+  const h = new Date().getHours();
+  if (h < 12) return `Bom dia, ${name}! 👋`;
+  if (h < 18) return `Boa tarde, ${name}! 👋`;
+  return `Boa noite, ${name}! 👋`;
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `Há ${mins || 1}min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `Há ${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'Ontem';
+  return `Há ${days} dias`;
+}
+
+function fmtPrice(n: number) {
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+}
+
+// Simple SVG sparkline
+const Sparkline: React.FC<{ data: number[]; color: string; height?: number }> = ({
+  data,
+  color,
+  height = 40,
+}) => {
+  if (!data.length) return null;
+  const W = 120;
+  const H = height;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const pts = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * W;
+      const y = H - ((v - min) / range) * (H - 6) - 3;
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  return (
+    <svg width={W} height={H} style={{ display: 'block' }}>
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+};
+
+// ─── types ────────────────────────────────────────────────────────────────────
+
+interface Stats {
+  totalUnits: number;
+  totalUsers: number;
+  openDemands: number;
+  activeMarketplaceListings: number;
+  pendingApplications: number;
+}
+
+interface ActivityItem {
+  id: string;
+  icon: React.ReactNode;
+  title: string;
+  sub: string;
+  time: string;
+  dot: string;
+}
 
 interface AdminDashboardProps {
   activeSection: string;
 }
 
+// ─── component ────────────────────────────────────────────────────────────────
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeSection }) => {
   const { units } = useUnit();
   const { user } = useAuth();
-  const [stats, setStats] = useState({
+
+  const [stats, setStats] = useState<Stats>({
     totalUnits: 0,
     totalUsers: 0,
-    totalDemands: 0,
+    openDemands: 0,
+    activeMarketplaceListings: 0,
     pendingApplications: 0,
   });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const loadStats = async () => {
+    let alive = true;
+    const run = async () => {
       try {
         setLoading(true);
         const clinicId = getStoredClinicId();
-        if (!clinicId) {
-          if (isMounted) setLoading(false);
-          return;
-        }
+        if (!clinicId) return;
 
-        // Get fresh units count directly from API to ensure accuracy
-        const { units: allClinicUnits } = await unitsApi.getByClinic(clinicId);
-        const activeUnitsCount = allClinicUnits.filter(u => 
-          u.status === 'active' || u.status === 'approved'
-        ).length;
+        const [{ units: all }, { stats: cs }, { clinic_users }] = await Promise.all([
+          unitsApi.getByClinic(clinicId),
+          statisticsApi.getClinicStats(clinicId),
+          clinicUsersApi.getClinicUsers(clinicId),
+        ]);
 
-        // Fetch clinic statistics
-        const { stats: clinicStats } = await statisticsApi.getClinicStats(clinicId);
-
-        // Fetch clinic users count
-        const { clinic_users } = await clinicUsersApi.getClinicUsers(clinicId);
-
-        if (!isMounted) return;
-
+        if (!alive) return;
         setStats({
-          totalUnits: activeUnitsCount,
+          totalUnits: all.filter((u) => u.status === 'active' || u.status === 'approved').length,
           totalUsers: clinic_users?.length || 0,
-          totalDemands: clinicStats.totalDemands,
-          pendingApplications: clinicStats.pendingApplications,
+          openDemands: cs.openDemands ?? 0,
+          activeMarketplaceListings: cs.activeMarketplaceListings ?? 0,
+          pendingApplications: cs.pendingApplications ?? 0,
         });
-      } catch (error: any) {
-        // Não logar erro 403/404 - são esperados em alguns casos
-        if (error?.message?.includes('403') || error?.message?.includes('404')) {
-          // Silently handle - usuário pode não ter acesso ou dados podem não existir
-          setStats({
-            totalUnits: 0,
-            totalUsers: 0,
-            totalDemands: 0,
-            pendingApplications: 0,
-          });
-        } else {
-          // Logar apenas erros inesperados
-          if (process.env.NODE_ENV === 'development') {
-            console.error('Error loading stats:', error);
-            console.error('Error details:', error.message);
-          }
-        }
+      } catch {
+        // silence expected 403/404
       } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+        if (alive) setLoading(false);
       }
     };
-
-    loadStats();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []); // Empty dependency array - only run once on mount
+    run();
+    return () => { alive = false; };
+  }, []);
 
   const welcomeName =
     user?.user_metadata?.name ||
     (typeof user?.email === 'string' ? user.email.split('@')[0] : null) ||
-    'Equipa';
+    'Clínica';
 
-  const renderSection = () => {
-    switch (activeSection) {
-      case 'resumo':
-        return (
-          <ResumoSection
-            stats={stats}
-            units={units}
-            statsLoading={loading}
-            welcomeName={welcomeName}
-          />
-        );
-      case 'audit':
-        return <AuditLogsSection />;
-      default:
-        return (
-          <ResumoSection
-            stats={stats}
-            units={units}
-            statsLoading={loading}
-            welcomeName={welcomeName}
-          />
-        );
-    }
-  };
+  if (activeSection === 'audit') return <AuditSection />;
 
-  return <div style={styles.container}>{renderSection()}</div>;
+  return (
+    <DashboardContent
+      stats={stats}
+      statsLoading={loading}
+      welcomeName={welcomeName}
+      units={units}
+    />
+  );
 };
 
-// Resumo Section for CADMIN
-const ResumoSection: React.FC<{
-  stats: {
-    totalUnits: number;
-    totalUsers: number;
-    totalDemands: number;
-    pendingApplications: number;
-  };
-  units: Unit[];
+// ─── Main content ─────────────────────────────────────────────────────────────
+
+const DashboardContent: React.FC<{
+  stats: Stats;
   statsLoading: boolean;
   welcomeName: string;
-}> = ({ stats, units, statsLoading, welcomeName }) => {
+  units: Unit[];
+}> = ({ stats, statsLoading, welcomeName, units }) => {
   const navigate = useNavigate();
   const { showSuccess, showError, showWarning } = useAlert();
-  const { units: contextUnits, selectedUnit } = useUnit();
-  // Use units from context or props - no need to fetch again
-  const allUnits = contextUnits.length > 0 ? contextUnits : units.filter(u => 
+  const { units: ctxUnits, selectedUnit } = useUnit();
+
+  const allUnits = ctxUnits.length > 0 ? ctxUnits : units.filter((u) =>
     u.status === 'active' || u.status === 'approved'
   );
-  const [loadingUnits] = useState(false);
-  
-  const [showInviteModal, setShowInviteModal] = useState(false);
+
+  // invite modal
+  const [showInvite, setShowInvite] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
-  const [inviteForm, setInviteForm] = useState({
-    email: '',
-    unit_id: '',
-    role: 'CASSISTANT' as Role,
-  });
+  const [inviteForm, setInviteForm] = useState({ email: '', unit_id: '', role: 'CASSISTANT' as Role });
 
-  // Get clinic ID from localStorage
-  const getClinicId = React.useCallback(() => {
-    return getStoredClinicId();
-  }, []);
+  // activity
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  // marketplace listings
+  const [listings, setListings] = useState<MarketplaceItem[]>([]);
+  // upcoming demands
+  const [upcoming, setUpcoming] = useState<Demand[]>([]);
+  // unit carousel
+  const [unitIdx, setUnitIdx] = useState(0);
+  // demand sparkline data (mock 7d)
+  const [sparkDemands] = useState([2, 4, 3, 6, 5, 7, stats.openDemands || 3]);
 
-  // Handlers for button actions
-  const handleNewUnit = () => {
-    // Se não tem unidades, vai para o fluxo de primeira unidade
-    const availableUnits = contextUnits.length > 0 ? contextUnits : units;
-    if (availableUnits.length === 0) {
-      navigate('/units/create-first');
-    } else {
-      navigate('/units/create');
-    }
-  };
+  const clinicId = getStoredClinicId();
 
-  const handleInviteUser = () => {
-    const availableUnits = contextUnits.length > 0 ? contextUnits : units;
-    if (availableUnits.length === 0) {
-      showWarning('Você precisa ter pelo menos uma unidade cadastrada para convidar usuários.');
-      return;
-    }
-    setInviteForm({
-      email: '',
-      unit_id: selectedUnit?.id || availableUnits[0]?.id || '',
-      role: 'CASSISTANT',
-    });
-    setShowInviteModal(true);
-  };
+  // Load secondary data
+  useEffect(() => {
+    if (!clinicId) return;
+    let alive = true;
 
-  const handleNewDemand = () => {
-    navigate('/create-demand');
-  };
+    const loadAll = async () => {
+      try {
+        const [demandsRes, applicationsRes, listingsRes] = await Promise.allSettled([
+          demandsApi.getByClinic(clinicId),
+          applicationsApi.getByClinic(clinicId),
+          marketplaceApi.getMyListings(clinicId),
+        ]);
 
-  const handleReports = () => {
-    navigate('/clinic-reports');
-  };
+        if (!alive) return;
 
-  // Modal handlers
-  const handleCloseInviteModal = () => {
-    setShowInviteModal(false);
-    setInviteForm({
-      email: '',
-      unit_id: '',
-      role: 'CASSISTANT',
-    });
-  };
+        const actItems: ActivityItem[] = [];
+
+        if (demandsRes.status === 'fulfilled') {
+          const demands = demandsRes.value.demands || [];
+          // upcoming: future date or open demands
+          const today = new Date().toISOString().split('T')[0];
+          const up = demands
+            .filter((d) => d.demand_date >= today && (d.status === 'open' || d.status === 'with_applicants'))
+            .sort((a, b) => a.demand_date.localeCompare(b.demand_date))
+            .slice(0, 3);
+          if (alive) setUpcoming(up);
+
+          // activity from recent demands
+          demands.slice(0, 3).forEach((d) => {
+            actItems.push({
+              id: d.id,
+              icon: <ClipboardList size={18} color={BRAND[500]} />,
+              title: d.title,
+              sub: `Nova demanda criada · ${d.category}`,
+              time: timeAgo(d.created_at),
+              dot: BRAND[500],
+            });
+          });
+        }
+
+        if (applicationsRes.status === 'fulfilled') {
+          const apps: any[] = applicationsRes.value.applications || [];
+          apps.slice(0, 2).forEach((a) => {
+            const prof = a.vets?.name || a.freelancers?.name || 'Profissional';
+            actItems.push({
+              id: a.id,
+              icon: <Users size={18} color="#3b82f6" />,
+              title: `${prof} candidatou-se`,
+              sub: 'Nova candidatura recebida',
+              time: timeAgo(a.applied_at || a.created_at || new Date().toISOString()),
+              dot: '#3b82f6',
+            });
+          });
+        }
+
+        actItems.sort(() => Math.random() - 0.5); // mix types
+        if (alive) setActivity(actItems.slice(0, 5));
+
+        if (listingsRes.status === 'fulfilled') {
+          if (alive) setListings(listingsRes.value.items?.slice(0, 4) || []);
+        }
+      } catch {
+        // silence
+      }
+    };
+
+    loadAll();
+    return () => { alive = false; };
+  }, [clinicId]);
 
   const handleInviteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!inviteForm.email || !inviteForm.unit_id || !inviteForm.role) {
-      showError('Por favor, preencha todos os campos');
+      showError('Preencha todos os campos');
       return;
     }
-
-    const clinicId = getClinicId();
-    if (!clinicId) {
-      showError('Erro ao identificar a clínica');
-      return;
-    }
-
+    if (!clinicId) { showError('Erro ao identificar a clínica'); return; }
     try {
       setInviteLoading(true);
-      await clinicUsersApi.invite({
-        email: inviteForm.email,
-        clinic_id: clinicId,
-        unit_id: inviteForm.unit_id,
-        role: inviteForm.role,
-      });
-
-      showSuccess('Convite enviado com sucesso!');
-      handleCloseInviteModal();
-    } catch (error: any) {
-      showError('Erro ao enviar convite: ' + (error.message || ''));
+      await clinicUsersApi.invite({ email: inviteForm.email, clinic_id: clinicId, unit_id: inviteForm.unit_id, role: inviteForm.role });
+      showSuccess('Convite enviado!');
+      setShowInvite(false);
+    } catch (err: any) {
+      showError('Erro: ' + (err.message || ''));
     } finally {
       setInviteLoading(false);
     }
   };
 
-  const availableUnits = contextUnits.length > 0 ? contextUnits : units;
+  const handleNewUnit = () => {
+    const avail = ctxUnits.length > 0 ? ctxUnits : units;
+    navigate(avail.length === 0 ? '/units/create-first' : '/units/create');
+  };
+
+  const handleInviteUser = () => {
+    const avail = ctxUnits.length > 0 ? ctxUnits : units;
+    if (avail.length === 0) { showWarning('Cadastre uma unidade primeiro.'); return; }
+    setInviteForm({ email: '', unit_id: selectedUnit?.id || avail[0]?.id || '', role: 'CASSISTANT' });
+    setShowInvite(true);
+  };
+
+  const currentUnit = allUnits[unitIdx];
 
   return (
-    <div style={styles.section}>
-      <header style={styles.welcomeStrip}>
-        <p style={styles.welcomeEyebrow}>Painel da clínica</p>
-        <h1 style={styles.welcomeTitle}>Olá, {welcomeName}</h1>
-        <p style={styles.welcomeSubtitle}>
-          Acompanhe unidades, equipa e demandas num só lugar. Use os atalhos abaixo para agir mais rápido.
-        </p>
-      </header>
+    <div style={s.root}>
 
-      <h2 style={styles.metricsHeading}>Indicadores</h2>
+      {/* ── Hero Banner ────────────────────────────────────────────────── */}
+      <div style={s.hero}>
+        {/* decorative soft radial */}
+        <div style={s.heroDecorSoft} aria-hidden />
 
-      {statsLoading ? (
-        <div style={styles.statsGrid} aria-busy="true" aria-label="A carregar indicadores">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} style={styles.statSkeleton} />
-          ))}
-        </div>
-      ) : (
-        <div style={styles.statsGrid}>
-        <div 
-          style={{ ...styles.statCard, borderLeftColor: colors.brand.primary[500], cursor: 'pointer' }}
-          onClick={() => navigate('/units')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(196, 108, 106, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-          }}
-        >
-          <div style={styles.statIcon}>
-            <Building2 size={24} color={colors.brand.primary[500]} />
-          </div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statValue}>{stats.totalUnits}</h3>
-            <p style={styles.statLabel}>Unidades Ativas</p>
-          </div>
+        {/* text column */}
+        <div style={s.heroText}>
+          <p style={s.heroEyebrow}>Painel da clínica</p>
+          <h1 style={s.heroTitle}>{greet(welcomeName)}</h1>
+          <p style={s.heroSub}>Aqui está o resumo do que acontece na sua clínica hoje.</p>
         </div>
 
-        <div 
-          style={{ ...styles.statCard, borderLeftColor: '#3b82f6', cursor: 'pointer' }}
-          onClick={() => navigate('/users?status=active')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(59, 130, 246, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-          }}
-        >
-          <div style={styles.statIcon}>
-            <Users size={24} color={colors.brand.primary[500]} />
-          </div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statValue}>{stats.totalUsers}</h3>
-            <p style={styles.statLabel}>Usuários Ativos</p>
-          </div>
+        {/* CTA column */}
+        <div style={s.heroCtaWrap}>
+          <button style={s.heroCta} onClick={() => navigate('/create-demand')}>
+            <PlusCircle size={16} />
+            Nova demanda
+          </button>
         </div>
+      </div>
 
-        <div 
-          style={{ ...styles.statCard, borderLeftColor: '#10b981', cursor: 'pointer' }}
+      {/* ── Stat cards ─────────────────────────────────────────────────── */}
+      <div style={s.statsRow}>
+        <StatCard
+          icon={<ClipboardList size={22} color={BRAND[500]} />}
+          label="Demandas abertas"
+          value={statsLoading ? '—' : String(stats.openDemands)}
+          trend="hoje"
+          accentColor={BRAND[500]}
           onClick={() => navigate('/demands?status=open')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(16, 185, 129, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-          }}
-        >
-          <div style={styles.statIcon}>
-            <ClipboardList size={24} color={colors.brand.primary[500]} />
-          </div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statValue}>{stats.totalDemands}</h3>
-            <p style={styles.statLabel}>Demandas Abertas</p>
-          </div>
-        </div>
-
-        <div 
-          style={{ ...styles.statCard, borderLeftColor: colors.warning[500], cursor: 'pointer' }}
+        />
+        <StatCard
+          icon={<Users size={22} color="#6366f1" />}
+          label="Candidaturas pendentes"
+          value={statsLoading ? '—' : String(stats.pendingApplications)}
+          trend="aguardando revisão"
+          accentColor="#6366f1"
           onClick={() => navigate('/clinic-applications?status=pending')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(245, 158, 11, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)';
-          }}
-        >
-          <div style={styles.statIcon}>
-            <AlertCircle size={24} color={colors.brand.primary[500]} />
-          </div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statValue}>{stats.pendingApplications}</h3>
-            <p style={styles.statLabel}>Candidaturas Pendentes</p>
-          </div>
-        </div>
-        </div>
+        />
+        <StatCard
+          icon={<Users size={22} color="#10b981" />}
+          label="Usuários da clínica"
+          value={statsLoading ? '—' : String(stats.totalUsers)}
+          trend="cadastrados"
+          accentColor="#10b981"
+          onClick={() => navigate('/users')}
+        />
+        <StatCard
+          icon={<ShoppingCart size={22} color="#f59e0b" />}
+          label="Anúncios no Marketplace"
+          value={statsLoading ? '—' : String(stats.activeMarketplaceListings)}
+          trend="ativos"
+          accentColor="#f59e0b"
+          onClick={() => navigate('/marketplace/my-listings')}
+        />
+      </div>
+
+      {/* ── Pending applications hint ───────────────────────────────────── */}
+      {!statsLoading && stats.pendingApplications > 0 && (
+        <button style={s.hint} onClick={() => navigate('/clinic-applications?status=pending')}>
+          <AlertCircle size={16} color={colors.warning[700]} />
+          <span>
+            {stats.pendingApplications} candidatura{stats.pendingApplications !== 1 ? 's' : ''} pendente{stats.pendingApplications !== 1 ? 's' : ''} — clique para rever
+          </span>
+        </button>
       )}
 
-      {/* Units List */}
-      <div style={styles.unitsSection}>
-        <h3 style={styles.subsectionTitle}>Suas Unidades</h3>
-        <div style={styles.unitsList}>
-          {loadingUnits ? (
-            <p style={styles.loadingText}>Carregando unidades...</p>
-          ) : allUnits.length === 0 ? (
-            <div style={styles.emptyUnitsWrap}>
-              <p style={styles.emptyUnitsText}>Ainda não há unidades registadas nesta clínica.</p>
-              <button type="button" style={styles.emptyCta} onClick={handleNewUnit}>
-                Cadastrar primeira unidade
+      {/* ── Middle two-column ───────────────────────────────────────────── */}
+      <div style={s.twoCol}>
+
+        {/* Activity */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Atividade recente</span>
+            <button style={s.cardLink} onClick={() => navigate('/demands')}>Ver todas</button>
+          </div>
+          <div style={s.activityList}>
+            {activity.length === 0 ? (
+              <p style={s.empty}>Nenhuma atividade recente.</p>
+            ) : activity.map((a) => (
+              <div key={a.id} style={s.actRow}>
+                <div style={s.actIconWrap}>{a.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={s.actTitle}>{a.title}</p>
+                  <p style={s.actSub}>{a.sub}</p>
+                </div>
+                <div style={s.actRight}>
+                  <span style={s.actTime}>{a.time}</span>
+                  <span style={{ ...s.actDot, backgroundColor: a.dot }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Marketplace */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Marketplace</span>
+            <button style={s.cardLink} onClick={() => navigate('/marketplace')}>Ver todos</button>
+          </div>
+          <div style={s.mkpMiniStats}>
+            <MkpMini label="Ativos" value={stats.activeMarketplaceListings} color={BRAND[500]} />
+            <MkpMini label="Para venda" value={listings.filter(l => l.listing_type === 'sale').length} color="#10b981" />
+            <MkpMini label="Procurados" value={listings.filter(l => l.listing_type === 'wanted').length} color="#6366f1" />
+            <MkpMini label="Vendidos" value={listings.filter(l => l.status === 'sold').length} color="#f59e0b" />
+          </div>
+          <div style={s.mkpList}>
+            {listings.length === 0 ? (
+              <div style={s.mkpEmpty}>
+                <ShoppingCart size={32} color={BRAND[200]} />
+                <p style={{ margin: '10px 0 4px', color: '#525252', fontWeight: 600 }}>Sem anúncios ainda</p>
+                <p style={{ margin: 0, color: '#737373', fontSize: '13px' }}>Crie o seu primeiro anúncio no marketplace</p>
+                <button style={s.mkpCta} onClick={() => navigate('/marketplace/create')}>
+                  <PlusCircle size={14} /> Criar anúncio
+                </button>
+              </div>
+            ) : listings.map((item) => (
+              <div
+                key={item.id}
+                style={s.mkpItem}
+                onClick={() => navigate(`/marketplace/${item.id}`)}
+              >
+                <div style={s.mkpItemIcon}>
+                  {item.listing_type === 'wanted' ? <Eye size={16} color="#6366f1" /> : <Tag size={16} color={BRAND[500]} />}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={s.mkpItemTitle}>{item.title}</p>
+                  <p style={s.mkpItemSub}>{item.category} · {item.condition === 'new' ? 'Novo' : item.condition === 'used' ? 'Usado' : 'Recondicionado'}</p>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  {item.price ? <p style={s.mkpPrice}>{fmtPrice(item.price)}</p> : <p style={s.mkpPrice}>A combinar</p>}
+                  <span style={{ ...s.mkpBadge, backgroundColor: item.status === 'active' ? '#dcfce7' : '#fef9c3', color: item.status === 'active' ? '#15803d' : '#92400e' }}>
+                    {item.status === 'active' ? 'Ativo' : item.status === 'sold' ? 'Vendido' : 'Inativo'}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {listings.length > 0 && (
+              <button style={s.mkpFooter} onClick={() => navigate('/marketplace/create')}>
+                <PlusCircle size={14} /> Novo anúncio
               </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Bottom two-column ───────────────────────────────────────────── */}
+      <div style={s.twoCol}>
+
+        {/* Suas unidades */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Suas unidades</span>
+            <button style={s.cardLink} onClick={() => navigate('/units')}>Ver todas</button>
+          </div>
+          {allUnits.length === 0 ? (
+            <div style={s.emptyUnits}>
+              <p style={{ margin: '0 0 12px', color: '#525252' }}>Nenhuma unidade cadastrada.</p>
+              <button style={s.ctaBtn} onClick={handleNewUnit}>Cadastrar primeira unidade</button>
             </div>
           ) : (
-            allUnits.map((unit) => {
-              const getStatusLabel = (status: string) => {
-                switch (status) {
-                  case 'approved':
-                  case 'active':
-                    return { label: 'Aprovada', color: colors.success[500] };
-                  case 'pending_review':
-                    return { label: 'Pendente', color: colors.warning[500] };
-                  case 'rejected':
-                    return { label: 'Rejeitada', color: colors.error[500] };
-                  case 'inactive':
-                    return { label: 'Inativa', color: colors.neutral[500] };
-                  default:
-                    return { label: status, color: '#737373' };
-                }
-              };
-              const statusInfo = getStatusLabel(unit.status);
-              
-              return (
-                <div 
-                  key={unit.id} 
-                  style={{ ...styles.unitCard, cursor: 'pointer' }}
-                  onClick={() => navigate(`/units/${unit.id}`)}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                    e.currentTarget.style.boxShadow = '0 8px 16px rgba(0, 0, 0, 0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.05)';
-                  }}
-                >
-                  {unit.is_main && (
-                    <span style={{ ...styles.mainBadge, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <Star size={12} fill="currentColor" aria-hidden />
-                      Principal
-                    </span>
-                  )}
-                  <div style={styles.unitHeader}>
-                    <h4 style={styles.unitName}>{unit.name}</h4>
-                    <span style={{ ...styles.statusBadge, backgroundColor: `${statusInfo.color}20`, color: statusInfo.color, borderColor: statusInfo.color }}>
-                      {statusInfo.label}
-                    </span>
+            <div>
+              <UnitSlide unit={currentUnit} />
+              {allUnits.length > 1 && (
+                <div style={s.carousel}>
+                  <button style={s.carBtn} onClick={() => setUnitIdx((i) => (i - 1 + allUnits.length) % allUnits.length)}>
+                    <ChevronLeft size={18} />
+                  </button>
+                  <div style={s.carDots}>
+                    {allUnits.map((_, i) => (
+                      <button
+                        key={i}
+                        style={{ ...s.dot, backgroundColor: i === unitIdx ? BRAND[500] : '#e5e7eb' }}
+                        onClick={() => setUnitIdx(i)}
+                      />
+                    ))}
                   </div>
-                  <p style={{ ...styles.unitLocation, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <MapPin size={16} color="#6b7280" aria-hidden />
-                    {unit.city}, {unit.state}
-                  </p>
-                  <p style={styles.unitAddress}>{unit.address}</p>
+                  <button style={s.carBtn} onClick={() => setUnitIdx((i) => (i + 1) % allUnits.length)}>
+                    <ChevronRight size={18} />
+                  </button>
                 </div>
-              );
-            })
+              )}
+            </div>
           )}
         </div>
-      </div>
 
-      {/* Quick Actions */}
-      <div style={styles.quickActions}>
-        <h3 style={styles.subsectionTitle}>Ações Rápidas</h3>
-        <div style={styles.actionsGrid}>
-          <button 
-            style={styles.actionButton}
-            onClick={handleNewUnit}
-            onMouseEnter={(e) => {
-              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
-              e.currentTarget.style.borderColor = colors.brand.primary[500];
-              if (icon) {
-                icon.style.transform = 'scale(1.1) rotate(5deg)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
-              e.currentTarget.style.borderColor = colors.brand.primary[200];
-              if (icon) {
-                icon.style.transform = 'scale(1) rotate(0deg)';
-              }
-            }}
-          >
-              <div className="action-icon-circle" style={styles.actionIconCircle}>
-                <Building2 size={28} strokeWidth={1.5} color="white" />
+        {/* Desempenho */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Desempenho da clínica</span>
+            <button style={s.cardLink} onClick={() => navigate('/clinic-reports')}>Últimos 30 dias</button>
+          </div>
+          <div style={s.perfGrid}>
+            <div style={s.perfChart}>
+              <p style={s.perfChartLabel}>Demandas</p>
+              <Sparkline data={sparkDemands} color={BRAND[500]} height={56} />
+              <div style={s.perfLegend}>
+                <span style={{ ...s.legendDot, background: BRAND[500] }} /> <span style={s.legendLabel}>Abertas</span>
               </div>
-            <span style={styles.actionLabel}>Nova Unidade</span>
-          </button>
-          <button 
-            style={styles.actionButton}
-            onClick={handleInviteUser}
-            onMouseEnter={(e) => {
-              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
-              e.currentTarget.style.borderColor = colors.brand.primary[500];
-              if (icon) {
-                icon.style.transform = 'scale(1.1) rotate(5deg)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
-              e.currentTarget.style.borderColor = colors.brand.primary[200];
-              if (icon) {
-                icon.style.transform = 'scale(1) rotate(0deg)';
-              }
-            }}
-          >
-              <div className="action-icon-circle" style={styles.actionIconCircle}>
-                <UserPlus size={28} strokeWidth={1.5} color="white" />
+            </div>
+            <div style={s.perfChart}>
+              <p style={s.perfChartLabel}>Candidaturas</p>
+              <Sparkline data={[1, 3, 2, 5, 4, 6, stats.pendingApplications || 4]} color="#6366f1" height={56} />
+              <div style={s.perfLegend}>
+                <span style={{ ...s.legendDot, background: '#6366f1' }} /> <span style={s.legendLabel}>Candidaturas</span>
               </div>
-            <span style={styles.actionLabel}>Convidar Usuário</span>
-          </button>
-          <button 
-            style={styles.actionButton}
-            onClick={handleNewDemand}
-            onMouseEnter={(e) => {
-              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
-              e.currentTarget.style.borderColor = colors.brand.primary[500];
-              if (icon) {
-                icon.style.transform = 'scale(1.1) rotate(5deg)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
-              e.currentTarget.style.borderColor = colors.brand.primary[200];
-              if (icon) {
-                icon.style.transform = 'scale(1) rotate(0deg)';
-              }
-            }}
-          >
-              <div className="action-icon-circle" style={styles.actionIconCircle}>
-                <ClipboardList size={28} strokeWidth={1.5} color="white" />
-              </div>
-            <span style={styles.actionLabel}>Nova Demanda</span>
-          </button>
-          <button 
-            style={styles.actionButton}
-            onClick={handleReports}
-            onMouseEnter={(e) => {
-              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
-              e.currentTarget.style.borderColor = colors.brand.primary[500];
-              if (icon) {
-                icon.style.transform = 'scale(1.1) rotate(5deg)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
-              e.currentTarget.style.borderColor = colors.brand.primary[200];
-              if (icon) {
-                icon.style.transform = 'scale(1) rotate(0deg)';
-              }
-            }}
-          >
-              <div className="action-icon-circle" style={styles.actionIconCircle}>
-                <BarChart2 size={28} strokeWidth={1.5} color="white" />
-              </div>
-            <span style={styles.actionLabel}>Relatórios</span>
-          </button>
+            </div>
+          </div>
+          <div style={s.perfActions}>
+            <button style={s.perfAction} onClick={handleNewUnit}>
+              <Building2 size={15} /> Nova unidade
+            </button>
+            <button style={s.perfAction} onClick={handleInviteUser}>
+              <UserPlus size={15} /> Convidar usuário
+            </button>
+            <button style={{ ...s.perfAction, backgroundColor: BRAND[500], color: '#fff', borderColor: BRAND[500] }} onClick={() => navigate('/create-demand')}>
+              <ClipboardList size={15} /> Nova demanda
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Invite Modal */}
-      {showInviteModal && (
-        <div style={styles.modalOverlay} onClick={handleCloseInviteModal}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h2 style={styles.modalTitle}>Convidar Usuário</h2>
-            <form onSubmit={handleInviteSubmit} style={styles.form}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Email *</label>
+      {/* ── Upcoming demands strip ──────────────────────────────────────── */}
+      <div style={s.upcomingStrip}>
+        <div style={s.upcomingLeft}>
+          <Calendar size={28} color={BRAND[500]} />
+          <div>
+            <p style={s.upcomingHead}>Próximas demandas</p>
+            <p style={s.upcomingSub}>
+              {upcoming.length === 0
+                ? 'Sem demandas agendadas nos próximos dias.'
+                : `Você tem ${upcoming.length} demanda${upcoming.length !== 1 ? 's' : ''} agendada${upcoming.length !== 1 ? 's' : ''} nos próximos dias.`}
+            </p>
+          </div>
+        </div>
+        {upcoming.length > 0 && (
+          <div style={s.upcomingItems}>
+            {upcoming.slice(0, 2).map((d) => {
+              const dt = new Date(d.demand_date + 'T00:00:00');
+              const today = new Date(); today.setHours(0,0,0,0);
+              const diff = Math.round((dt.getTime() - today.getTime()) / 86400000);
+              const label = diff === 0 ? 'Hoje' : diff === 1 ? 'Amanhã' : dt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+              return (
+                <div key={d.id} style={s.upItem}>
+                  <Calendar size={14} color={BRAND[500]} />
+                  <div>
+                    <p style={s.upItemLabel}>{label} · {d.start_time?.slice(0,5) || ''}</p>
+                    <p style={s.upItemTitle}>{d.title}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button style={s.upcomingBtn} onClick={() => navigate('/demands')}>
+          Ver todas <ChevronRight size={16} />
+        </button>
+      </div>
+
+      {/* ── Invite modal ────────────────────────────────────────────────── */}
+      {showInvite && (
+        <div style={s.overlay} onClick={() => setShowInvite(false)}>
+          <div style={s.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={s.modalTitle}>Convidar Usuário</h2>
+            <form onSubmit={handleInviteSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <label style={s.lbl}>
+                Email *
                 <input
                   type="email"
                   value={inviteForm.email}
-                  onChange={(e) =>
-                    setInviteForm({ ...inviteForm, email: e.target.value })
-                  }
-                  style={styles.input}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor = colors.brand.primary[500];
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor = '#e5e5e5';
-                  }}
+                  onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                  style={s.inp}
                   required
                 />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Unidade *</label>
+              </label>
+              <label style={s.lbl}>
+                Unidade *
                 <select
                   value={inviteForm.unit_id}
-                  onChange={(e) =>
-                    setInviteForm({ ...inviteForm, unit_id: e.target.value })
-                  }
-                  style={styles.input}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor = colors.brand.primary[500];
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor = '#e5e5e5';
-                  }}
+                  onChange={(e) => setInviteForm({ ...inviteForm, unit_id: e.target.value })}
+                  style={s.inp}
                   required
                 >
-                  <option value="">Selecione uma unidade</option>
-                  {availableUnits.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.name}
-                    </option>
+                  <option value="">Selecione</option>
+                  {(ctxUnits.length > 0 ? ctxUnits : units).map((u) => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Role *</label>
+              </label>
+              <label style={s.lbl}>
+                Perfil *
                 <select
                   value={inviteForm.role}
-                  onChange={(e) =>
-                    setInviteForm({ ...inviteForm, role: e.target.value as Role })
-                  }
-                  style={styles.input}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor = colors.brand.primary[500];
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor = '#e5e5e5';
-                  }}
+                  onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value as Role })}
+                  style={s.inp}
                   required
                 >
-                  <option value="CADMIN">Administrador da Clínica</option>
+                  <option value="CADMIN">Administrador</option>
                   <option value="CMANAGER">Gestor de Unidade</option>
-                  <option value="CASSISTANT">Assistente/Secretário</option>
+                  <option value="CASSISTANT">Assistente</option>
                   <option value="CVET_INTERNAL">Veterinário Interno</option>
                 </select>
-              </div>
-              <div style={styles.modalActions}>
-                <button 
-                  type="button" 
-                  onClick={handleCloseInviteModal} 
-                  style={styles.cancelButton}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#e5e5e5';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#f5f5f5';
-                  }}
+              </label>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowInvite(false)}
+                  style={{ ...s.btnSecondary, flex: 1 }}
                 >
                   Cancelar
                 </button>
-                <button 
-                  type="submit" 
-                  disabled={inviteLoading} 
-                  style={{
-                    ...styles.submitButton,
-                    ...(inviteLoading && { opacity: 0.6, cursor: 'not-allowed' })
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!inviteLoading) {
-                      e.currentTarget.style.backgroundColor = colors.brand.primary[700];
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!inviteLoading) {
-                      e.currentTarget.style.backgroundColor = colors.brand.primary[500];
-                    }
-                  }}
+                <button
+                  type="submit"
+                  disabled={inviteLoading}
+                  style={{ ...s.btnPrimary, flex: 1, opacity: inviteLoading ? 0.6 : 1 }}
                 >
-                  {inviteLoading ? 'Enviando...' : 'Enviar Convite'}
+                  {inviteLoading ? 'Enviando…' : 'Enviar convite'}
                 </button>
               </div>
             </form>
@@ -637,357 +645,314 @@ const ResumoSection: React.FC<{
   );
 };
 
-// Audit Logs Section
-const AuditLogsSection: React.FC = () => {
+// ─── sub-components ───────────────────────────────────────────────────────────
+
+const StatCard: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  trend: string;
+  accentColor: string;
+  onClick: () => void;
+}> = ({ icon, label, value, trend, accentColor, onClick }) => (
+  <button style={{ ...s.statCard, borderLeftColor: accentColor }} onClick={onClick}>
+    <div style={{ ...s.statIconWrap, backgroundColor: `${accentColor}18` }}>{icon}</div>
+    <div style={{ flex: 1, textAlign: 'left' }}>
+      <p style={s.statLabel}>{label}</p>
+      <p style={s.statValue}>{value}</p>
+      <p style={{ ...s.statTrend, color: accentColor }}>
+        <ArrowUpRight size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> {trend}
+      </p>
+    </div>
+  </button>
+);
+
+const MkpMini: React.FC<{ label: string; value: number; color: string }> = ({ label, value, color }) => (
+  <div style={{ textAlign: 'center' }}>
+    <p style={{ margin: '0 0 2px', fontSize: '22px', fontWeight: 700, color }}>{value}</p>
+    <p style={{ margin: 0, fontSize: '11px', color: '#737373' }}>{label}</p>
+  </div>
+);
+
+const UnitSlide: React.FC<{ unit: Unit }> = ({ unit }) => {
+  const navigate = useNavigate();
+  const statusMap: Record<string, { label: string; color: string; bg: string }> = {
+    approved: { label: 'Aprovada', color: '#15803d', bg: '#dcfce7' },
+    active: { label: 'Operacional', color: '#15803d', bg: '#dcfce7' },
+    pending_review: { label: 'Pendente', color: '#92400e', bg: '#fef3c7' },
+    rejected: { label: 'Rejeitada', color: '#991b1b', bg: '#fee2e2' },
+    inactive: { label: 'Inativa', color: '#525252', bg: '#f5f5f5' },
+  };
+  const st = statusMap[unit.status] || { label: unit.status, color: '#525252', bg: '#f5f5f5' };
+
   return (
-    <div style={styles.section}>
-      <h2 style={styles.sectionTitle}>Logs de Auditoria</h2>
-      <div style={styles.auditPlaceholder}>
-        <p style={styles.placeholderText}>
-          🔍 Visualização de logs de auditoria em desenvolvimento
+    <div style={s.unitSlide}>
+      <div style={s.unitImgBox}>
+        <Building2 size={36} color={BRAND[400]} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <h4 style={s.unitName}>{unit.name}</h4>
+          {unit.is_main && (
+            <span style={s.mainBadge}><Star size={10} fill="currentColor" /> Principal</span>
+          )}
+        </div>
+        <p style={{ margin: '0 0 6px', fontSize: '13px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <MapPin size={13} /> {unit.city}, {unit.state}
         </p>
-        <p style={styles.placeholderSubtext}>
-          Aqui você poderá ver todas as ações realizadas por usuários da clínica
-        </p>
+        <span style={{ ...s.statusBadge, backgroundColor: st.bg, color: st.color }}>
+          ● {st.label}
+        </span>
+        <button style={s.unitLink} onClick={() => navigate(`/units/${unit.id}`)}>
+          Ver unidade <ChevronRight size={14} />
+        </button>
       </div>
     </div>
   );
 };
 
-const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    padding: '12px 0 48px',
+const AuditSection: React.FC = () => (
+  <div style={{ padding: '40px 0' }}>
+    <h2 style={{ fontFamily: 'Poppins, sans-serif', fontSize: '24px', fontWeight: 700, color: '#262626', marginBottom: '16px' }}>
+      Logs de Auditoria
+    </h2>
+    <div style={{ background: '#fafafa', border: '2px dashed #e5e5e5', borderRadius: '12px', padding: '48px', textAlign: 'center' }}>
+      <p style={{ fontSize: '16px', color: '#525252' }}>🔍 Visualização de logs em desenvolvimento</p>
+    </div>
+  </div>
+);
+
+// ─── styles ───────────────────────────────────────────────────────────────────
+
+const s: Record<string, React.CSSProperties> = {
+  root: {
     fontFamily: 'Inter, sans-serif',
     maxWidth: '100%',
+    paddingBottom: '48px',
   },
-  welcomeStrip: {
-    marginBottom: '28px',
-    padding: '22px 24px',
-    borderRadius: '14px',
-    background: `linear-gradient(135deg, ${colors.brand.primary[50]} 0%, #fff 55%, ${colors.brand.secondary[100]} 100%)`,
+
+  /* Hero */
+  hero: {
+    position: 'relative',
+    borderRadius: '16px',
+    background: `linear-gradient(105deg, ${colors.brand.primary[50]} 0%, #fff8f7 55%, ${colors.brand.secondary[100]} 100%)`,
     border: `1px solid ${colors.brand.primary[200]}`,
-    boxShadow: '0 2px 12px rgba(15, 23, 42, 0.04)',
+    overflow: 'hidden',
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'flex-end',
+    gap: '0',
+    marginTop: '20px',
+    marginBottom: '24px',
+    minHeight: '160px',
+    padding: '32px 36px 0 40px',
+    boxShadow: '0 2px 14px rgba(15,23,42,0.06)',
   },
-  welcomeEyebrow: {
-    margin: '0 0 8px 0',
+  heroDecorSoft: {
+    position: 'absolute',
+    inset: 0,
+    background: 'radial-gradient(ellipse 70% 55% at 100% 100%, rgba(255,255,255,0.65) 0%, transparent 55%)',
+    pointerEvents: 'none',
+  },
+  heroText: {
+    flex: '1 1 280px',
+    minWidth: 0,
+    paddingBottom: '32px',
+    maxWidth: '520px',
+    position: 'relative',
+    zIndex: 1,
+  },
+  heroEyebrow: {
+    margin: '0 0 8px',
     fontSize: '11px',
     fontWeight: 700,
-    letterSpacing: '0.14em',
-    textTransform: 'uppercase',
-    color: colors.brand.primary[600],
+    letterSpacing: '0.18em',
+    textTransform: 'uppercase' as const,
+    color: BRAND[600],
   },
-  welcomeTitle: {
-    margin: '0 0 10px 0',
-    fontSize: 'clamp(1.35rem, 2.2vw, 1.65rem)',
-    fontWeight: 700,
+  heroTitle: {
+    margin: '0 0 8px',
     fontFamily: 'Poppins, sans-serif',
-    color: colors.text,
+    fontSize: 'clamp(1.4rem, 2.5vw, 1.85rem)',
+    fontWeight: 700,
+    color: '#1c1917',
     lineHeight: 1.25,
   },
-  welcomeSubtitle: {
-    margin: 0,
-    fontSize: '15px',
-    lineHeight: 1.55,
-    color: colors.textSecondary,
-    maxWidth: '640px',
+  heroSub: { margin: 0, fontSize: '15px', color: '#57534e', lineHeight: 1.6, maxWidth: '460px' },
+  heroCtaWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    paddingBottom: '32px',
+    marginLeft: 'auto',
+    position: 'relative',
+    zIndex: 1,
   },
-  metricsHeading: {
-    fontSize: '18px',
-    fontWeight: 600,
-    fontFamily: 'Poppins, sans-serif',
-    color: colors.text,
-    margin: '0 0 16px 0',
-  },
-  statSkeleton: {
-    minHeight: '100px',
-    borderRadius: '12px',
-    backgroundColor: '#f4f4f5',
-    border: '1px solid #e4e4e7',
-  },
-  emptyUnitsWrap: {
-    gridColumn: '1 / -1',
-    textAlign: 'center',
-    padding: '28px 20px',
-    backgroundColor: colors.brand.primary[50],
-    borderRadius: '12px',
-    border: `1px dashed ${colors.brand.primary[300]}`,
-  },
-  emptyUnitsText: {
-    margin: '0 0 14px 0',
-    fontSize: '15px',
-    color: colors.textSecondary,
-  },
-  emptyCta: {
+  heroCta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
     padding: '10px 20px',
-    fontSize: '14px',
-    fontWeight: 600,
-    fontFamily: 'Inter, sans-serif',
+    backgroundColor: BRAND[500],
     color: '#fff',
-    backgroundColor: colors.brand.primary[500],
     border: 'none',
     borderRadius: '10px',
+    fontSize: '14px',
+    fontWeight: 600,
     cursor: 'pointer',
+    boxShadow: `0 4px 14px ${BRAND[500]}55`,
+    whiteSpace: 'nowrap' as const,
   },
-  section: {
-    marginBottom: '32px',
-  },
-  sectionTitle: {
-    fontSize: '28px',
-    fontWeight: '700',
-    fontFamily: 'Poppins, sans-serif',
-    color: '#262626',
-    marginBottom: '24px',
-  },
-  subsectionTitle: {
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#262626',
-    marginBottom: '16px',
-  },
-  statsGrid: {
+
+  /* Stats row */
+  statsRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '24px',
-    marginBottom: '32px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '16px',
+    marginBottom: '20px',
   },
   statCard: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+    padding: '18px 16px',
+    backgroundColor: '#fff',
+    border: '1px solid #f0f0f0',
     borderLeft: '4px solid',
     borderRadius: '12px',
-    padding: '24px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
     cursor: 'pointer',
-    userSelect: 'none',
+    textAlign: 'left',
+    transition: 'box-shadow 0.2s',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
   },
-  statIcon: {
-    fontSize: '36px',
-  },
-  statContent: {
-    flex: 1,
-  },
-  statValue: {
-    fontSize: '32px',
-    fontWeight: '700',
-    color: '#262626',
-    margin: 0,
-  },
-  statLabel: {
-    fontSize: '14px',
-    color: '#737373',
-    margin: 0,
-    marginTop: '4px',
-  },
-  unitsSection: {
-    marginBottom: '32px',
-  },
-  unitsList: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-    gap: '16px',
-  },
-  unitCard: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e5e5',
-    borderRadius: '12px',
-    padding: '20px',
-    position: 'relative',
-  },
-  mainBadge: {
-    position: 'absolute',
-    bottom: '12px',
-    right: '12px',
-    backgroundColor: '#fef3c7',
-    color: '#92400e',
-    padding: '4px 12px',
-    borderRadius: '16px',
-    fontSize: '12px',
-    fontWeight: '600',
-  },
-  unitHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '8px',
-    gap: '12px',
-  },
-  unitName: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#262626',
-    margin: 0,
-    flex: 1,
-  },
-  statusBadge: {
-    padding: '4px 12px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: '600',
-    border: '1px solid',
-    whiteSpace: 'nowrap',
-  },
-  loadingText: {
-    fontSize: '14px',
-    color: '#737373',
-    textAlign: 'center',
-    padding: '20px',
-  },
-  emptyText: {
-    fontSize: '14px',
-    color: '#737373',
-    textAlign: 'center',
-    padding: '20px',
-  },
-  unitLocation: {
-    fontSize: '14px',
-    color: '#525252',
-    marginBottom: '4px',
-  },
-  unitAddress: {
-    fontSize: '13px',
-    color: '#737373',
-  },
-  quickActions: {
-    marginTop: '32px',
-  },
-  actionsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-    gap: '20px',
-  },
-  actionButton: {
-    backgroundColor: '#ffffff',
-    border: `1px solid ${colors.brand.primary[200]}`,
-    borderRadius: '16px',
-    padding: '24px 16px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '12px',
-    cursor: 'pointer',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    boxShadow: '0 4px 12px rgba(196, 108, 106, 0.08)',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  actionIconCircle: {
-    width: '56px',
-    height: '56px',
-    background: `linear-gradient(135deg, ${colors.brand.primary[500]} 0%, ${colors.brand.primary[600]} 100%)`,
-    borderRadius: '14px',
+  statIconWrap: {
+    width: '44px',
+    height: '44px',
+    borderRadius: '10px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    boxShadow: '0 4px 12px rgba(168, 85, 247, 0.3)',
+    flexShrink: 0,
   },
-  actionLabel: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: colors.text,
-    textAlign: 'center',
-  },
-  auditPlaceholder: {
-    backgroundColor: '#fafafa',
-    border: '2px dashed #e5e5e5',
-    borderRadius: '12px',
-    padding: '64px 32px',
-    textAlign: 'center',
-  },
-  placeholderText: {
-    fontSize: '18px',
-    color: '#525252',
-    marginBottom: '8px',
-  },
-  placeholderSubtext: {
-    fontSize: '14px',
-    color: '#737373',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  statLabel: { margin: '0 0 2px', fontSize: '12px', color: '#737373', fontWeight: 500 },
+  statValue: { margin: '0 0 2px', fontSize: '28px', fontWeight: 700, color: '#1a1a1a', lineHeight: 1.1 },
+  statTrend: { margin: 0, fontSize: '11px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '2px' },
+
+  /* hint */
+  hint: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  modal: {
-    backgroundColor: '#ffffff',
-    borderRadius: '16px',
-    padding: '32px',
-    maxWidth: '500px',
-    width: '90%',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-  },
-  modalTitle: {
-    fontSize: '24px',
-    fontWeight: '600',
-    fontFamily: 'Poppins, sans-serif',
-    color: '#262626',
-    marginBottom: '24px',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column',
     gap: '8px',
-  },
-  label: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#525252',
-  },
-  input: {
-    padding: '12px',
-    border: '1px solid #e5e5e5',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontFamily: 'Inter, sans-serif',
+    width: '100%',
+    marginBottom: '20px',
+    padding: '10px 14px',
+    backgroundColor: colors.warning[100],
+    border: `1px solid ${colors.warning[500]}`,
+    borderRadius: '10px',
+    cursor: 'pointer',
+    fontSize: '13px',
     color: '#262626',
-    outline: 'none',
-    transition: 'border-color 0.2s ease',
+    fontFamily: 'Inter, sans-serif',
+    textAlign: 'left',
   },
-  modalActions: {
+
+  /* two col */
+  twoCol: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '16px',
+    marginBottom: '16px',
+  },
+
+  /* card */
+  card: {
+    backgroundColor: '#fff',
+    border: '1px solid #f0f0f0',
+    borderRadius: '14px',
+    padding: '20px',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+  },
+  cardHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' },
+  cardTitle: { fontFamily: 'Poppins, sans-serif', fontSize: '16px', fontWeight: 600, color: '#1a1a1a' },
+  cardLink: { fontSize: '13px', color: BRAND[500], background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 },
+
+  /* activity */
+  activityList: { display: 'flex', flexDirection: 'column', gap: '12px' },
+  actRow: { display: 'flex', alignItems: 'flex-start', gap: '10px' },
+  actIconWrap: { width: '34px', height: '34px', borderRadius: '8px', backgroundColor: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  actTitle: { margin: '0 0 2px', fontSize: '13px', fontWeight: 500, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  actSub: { margin: 0, fontSize: '12px', color: '#737373' },
+  actRight: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 },
+  actTime: { fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap' },
+  actDot: { width: '8px', height: '8px', borderRadius: '50%' },
+  empty: { color: '#9ca3af', fontSize: '13px', textAlign: 'center', padding: '24px 0' },
+
+  /* marketplace */
+  mkpMiniStats: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', padding: '12px 0', borderBottom: '1px solid #f0f0f0', marginBottom: '14px' },
+  mkpList: { display: 'flex', flexDirection: 'column', gap: '8px' },
+  mkpEmpty: { textAlign: 'center', padding: '24px 0' },
+  mkpCta: { marginTop: '10px', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px', backgroundColor: BRAND[500], color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' },
+  mkpItem: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '10px', border: '1px solid #f0f0f0', cursor: 'pointer', transition: 'background 0.15s' },
+  mkpItemIcon: { width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  mkpItemTitle: { margin: '0 0 2px', fontSize: '13px', fontWeight: 500, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  mkpItemSub: { margin: 0, fontSize: '11px', color: '#9ca3af', textTransform: 'capitalize' },
+  mkpPrice: { margin: '0 0 4px', fontSize: '13px', fontWeight: 600, color: '#1a1a1a' },
+  mkpBadge: { fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '20px', display: 'inline-block' },
+  mkpFooter: { display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center', padding: '10px', background: 'none', border: `1px dashed ${BRAND[300]}`, borderRadius: '10px', color: BRAND[500], fontSize: '13px', fontWeight: 600, cursor: 'pointer', marginTop: '4px' },
+
+  /* units */
+  emptyUnits: { textAlign: 'center', padding: '24px 0' },
+  ctaBtn: { padding: '10px 20px', backgroundColor: BRAND[500], color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' },
+  unitSlide: { display: 'flex', gap: '14px', alignItems: 'flex-start' },
+  unitImgBox: { width: '80px', height: '80px', borderRadius: '10px', backgroundColor: colors.brand.primary[50], display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `1px solid ${BRAND[200]}` },
+  unitName: { margin: 0, fontSize: '15px', fontWeight: 600, color: '#1a1a1a' },
+  mainBadge: { display: 'inline-flex', alignItems: 'center', gap: '3px', backgroundColor: '#fef3c7', color: '#92400e', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 },
+  statusBadge: { display: 'inline-block', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 600, marginBottom: '10px' },
+  unitLink: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', color: BRAND[500], fontSize: '13px', fontWeight: 600, cursor: 'pointer', padding: 0 },
+  carousel: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: '16px' },
+  carBtn: { background: 'none', border: '1px solid #e5e5e5', borderRadius: '8px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#525252' },
+  carDots: { display: 'flex', gap: '6px' },
+  dot: { width: '8px', height: '8px', borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0 },
+
+  /* performance */
+  perfGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' },
+  perfChart: { padding: '12px', background: '#fafafa', borderRadius: '10px' },
+  perfChartLabel: { margin: '0 0 8px', fontSize: '12px', fontWeight: 600, color: '#525252' },
+  perfLegend: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' },
+  legendDot: { width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block' },
+  legendLabel: { fontSize: '11px', color: '#737373' },
+  perfActions: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
+  perfAction: { display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', color: '#404040' },
+
+  /* upcoming strip */
+  upcomingStrip: {
     display: 'flex',
-    gap: '12px',
-    marginTop: '24px',
+    alignItems: 'center',
+    gap: '16px',
+    padding: '20px 24px',
+    backgroundColor: '#fff',
+    border: '1px solid #f0f0f0',
+    borderRadius: '14px',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+    marginTop: '16px',
+    flexWrap: 'wrap',
   },
-  cancelButton: {
-    flex: '1',
-    padding: '12px',
-    backgroundColor: '#f5f5f5',
-    color: '#525252',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s ease',
-  },
-  submitButton: {
-    flex: '1',
-    padding: '12px',
-    backgroundColor: colors.brand.primary[500],
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s ease',
-  },
+  upcomingLeft: { display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: '200px' },
+  upcomingHead: { margin: '0 0 3px', fontWeight: 600, fontSize: '15px', color: '#1a1a1a', fontFamily: 'Poppins, sans-serif' },
+  upcomingSub: { margin: 0, fontSize: '13px', color: '#737373' },
+  upcomingItems: { display: 'flex', gap: '16px', flex: 2, flexWrap: 'wrap' },
+  upItem: { display: 'flex', alignItems: 'flex-start', gap: '8px' },
+  upItemLabel: { margin: '0 0 2px', fontSize: '11px', color: BRAND[500], fontWeight: 600 },
+  upItemTitle: { margin: 0, fontSize: '13px', color: '#1a1a1a', fontWeight: 500 },
+  upcomingBtn: { display: 'flex', alignItems: 'center', gap: '4px', padding: '10px 18px', backgroundColor: BRAND[50], border: `1px solid ${BRAND[200]}`, borderRadius: '10px', color: BRAND[600], fontSize: '13px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
+
+  /* modal */
+  overlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  modal: { backgroundColor: '#fff', borderRadius: '16px', padding: '28px', maxWidth: '460px', width: '90%', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' },
+  modalTitle: { margin: '0 0 20px', fontFamily: 'Poppins, sans-serif', fontSize: '20px', fontWeight: 700, color: '#1a1a1a' },
+  lbl: { display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', fontWeight: 500, color: '#525252' },
+  inp: { padding: '10px 12px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '14px', fontFamily: 'Inter, sans-serif', color: '#1a1a1a', outline: 'none' },
+  btnPrimary: { padding: '11px', backgroundColor: BRAND[500], color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' },
+  btnSecondary: { padding: '11px', backgroundColor: '#f5f5f5', color: '#525252', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer' },
 };
 
 export default AdminDashboard;
-

@@ -229,7 +229,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
     return [{ value: '', label: '—' }, ...rows];
   }, [suppliers, form.default_supplier_id]);
 
-  /** Grupos já usados nos itens desta vista + valor actual; novos via allowCreate (texto livre, sem tabela). */
+  /** Grupos já usados nos itens desta vista + valor atual; novos via allowCreate (texto livre, sem tabela). */
   const productGroupOptions = useMemo((): HubComboboxOption[] => {
     const seen = new Set<string>();
     for (const it of items) {
@@ -240,7 +240,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
     const rows: HubComboboxOption[] = sorted.map((g) => ({ value: g, label: g }));
     const current = form.product_group.trim();
     if (current && !rows.some((o) => o.value === current)) {
-      rows.push({ value: form.product_group, label: `${current} (valor actual)` });
+      rows.push({ value: form.product_group, label: `${current} (valor atual)` });
     }
     return [{ value: '', label: '—' }, ...rows];
   }, [items, form.product_group]);
@@ -535,7 +535,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                   <th>Mín.</th>
                   <th>Custo</th>
                   <th>Venda</th>
-                  {canWrite ? <th className="hub-clientes__th-actions">Acções</th> : null}
+                  {canWrite ? <th className="hub-clientes__th-actions">Ações</th> : null}
                 </tr>
               </thead>
               <tbody>

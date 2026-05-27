@@ -18,7 +18,7 @@ Sistema completo de notificações in-app implementado para todos os usuários d
 - ✅ 8 tipos de notificação suportados
 - ✅ Função de limpeza automática de notificações antigas
 
-**Arquivo:** `backend/database_migrations/create_notifications_system.sql`
+**Arquivo:** `backend/database_migrations/petimi_vet/create_notifications_system.sql`
 
 #### Controller
 - ✅ `getNotifications` - Buscar notificações (paginadas)

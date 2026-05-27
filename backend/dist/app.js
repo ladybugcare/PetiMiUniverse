@@ -33,6 +33,10 @@ const notifications_js_1 = __importDefault(require("./routes/notifications.js"))
 const messages_js_1 = __importDefault(require("./routes/messages.js"));
 const messageReports_js_1 = __importDefault(require("./routes/messageReports.js"));
 const health_js_1 = __importDefault(require("./routes/health.js"));
+const demandInvites_js_1 = __importDefault(require("./routes/demandInvites.js"));
+const workProof_js_1 = __importDefault(require("./routes/workProof.js"));
+const index_js_1 = __importDefault(require("./modules/hub/routes/index.js"));
+const publicQuotes_js_1 = __importDefault(require("./modules/hub/routes/publicQuotes.js"));
 // 🔹 Variáveis de ambiente são carregadas automaticamente por loadEnv.ts
 // quando importamos supabase (config/supabase.ts importa './loadEnv')
 // Ordem de carregamento: .env.${NODE_ENV}.local > .env.${NODE_ENV} > .env.local > .env
@@ -94,8 +98,12 @@ app.use((0, cors_1.default)({
             return callback(new Error('Not allowed by CORS'));
         }
         const normalizedOrigin = origin.replace(/\/$/, '');
+        // Dev: acesso pelo IP da rede local (ex.: http://192.168.x.x:3001 no celular)
+        const isLanDevOrigin = process.env.NODE_ENV === 'development' &&
+            /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:(3000|3001|3002)$/.test(normalizedOrigin);
         // Verifica se a origem está na lista de permitidas
-        const isAllowed = normalizedOrigins.includes(normalizedOrigin) ||
+        const isAllowed = isLanDevOrigin ||
+            normalizedOrigins.includes(normalizedOrigin) ||
             allowedOrigins.includes(origin) ||
             allowedOrigins.includes(normalizedOrigin);
         if (isAllowed) {
@@ -157,6 +165,10 @@ app.use('/support', supportTickets_js_1.default);
 app.use('/notifications', notifications_js_1.default);
 app.use('/api/messages', messages_js_1.default);
 app.use('/api/messages/admin', messageReports_js_1.default);
+app.use('/api', demandInvites_js_1.default);
+app.use('/api', workProof_js_1.default);
+app.use('/api/hub', index_js_1.default);
+app.use('/api/public', publicQuotes_js_1.default);
 app.use('/health', health_js_1.default);
 // 🔹 Healthcheck melhorado (verifica dependências)
 app.get('/', async (req, res) => {

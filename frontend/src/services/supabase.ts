@@ -26,7 +26,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
     "[PetMi Vet] Supabase URL ou anon key em falta. Crie frontend/.env.local com " +
       "REACT_APP_SUPABASE_URL e REACT_APP_SUPABASE_ANON_KEY (veja frontend/.env.example). " +
-      "Reinicie o servidor depois de guardar o ficheiro."
+      "Reinicie o servidor depois de salvar o arquivo."
   );
 }
 

@@ -12,35 +12,17 @@
   min-height: calc(100vh - 120px);
 }
 
-.hub-estoque-subnav {
-  display: flex;
+/* Tokens para abas (igual lógica a Clientes; brand laranja Estoque) */
+.hub-estoque-shell--tabs {
+  --hc-brand: #f0642f;
+  --hc-brand-hover: #d85526;
+  --hc-text: #4a3b3a;
+  --hc-text-muted: #8e6e67;
+  --hc-border: #e5dcd6;
+}
+
+.hub-estoque-shell--tabs .hub-clientes__tabs {
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 0 14px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--hc-border, #e5dcd6);
-}
-
-.hub-estoque-subnav__link {
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--hc-text-muted, #8e6e67);
-  text-decoration: none;
-  border: 1px solid transparent;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.hub-estoque-subnav__link:hover {
-  background: #fdf6f2;
-  color: var(--hc-text, #4a3b3a);
-}
-
-.hub-estoque-subnav__link--active {
-  background: color-mix(in srgb, var(--hc-brand) 12%, white);
-  color: var(--hc-brand);
-  border-color: color-mix(in srgb, var(--hc-brand) 25%, transparent);
 }
 
 .hub-estoque-page .hub-estoque__hint-ean {

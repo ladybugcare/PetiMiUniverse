@@ -31,6 +31,8 @@ import messageReportsRoutes from './routes/messageReports.js';
 import healthRoutes from './routes/health.js';
 import demandInvitesRoutes from './routes/demandInvites.js';
 import workProofRoutes from './routes/workProof.js';
+import hubRoutes from './modules/hub/routes/index.js';
+import publicQuotesRoutes from './modules/hub/routes/publicQuotes.js';
 
 // 🔹 Variáveis de ambiente são carregadas automaticamente por loadEnv.ts
 // quando importamos supabase (config/supabase.ts importa './loadEnv')
@@ -120,7 +122,7 @@ app.use(
       
       const normalizedOrigin = origin.replace(/\/$/, '');
 
-      // Dev: acesso pelo IP da rede local (ex.: http://192.168.x.x:3001 no telemóvel)
+      // Dev: acesso pelo IP da rede local (ex.: http://192.168.x.x:3001 no celular)
       const isLanDevOrigin =
         process.env.NODE_ENV === 'development' &&
         /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:(3000|3001|3002)$/.test(normalizedOrigin);
@@ -200,6 +202,8 @@ app.use('/api/messages', messagesRoutes);
 app.use('/api/messages/admin', messageReportsRoutes);
 app.use('/api', demandInvitesRoutes);
 app.use('/api', workProofRoutes);
+app.use('/api/hub', hubRoutes);
+app.use('/api/public', publicQuotesRoutes);
 app.use('/health', healthRoutes);
 
 // 🔹 Healthcheck melhorado (verifica dependências)

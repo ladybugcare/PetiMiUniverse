@@ -290,7 +290,7 @@ const DemandFormStep: React.FC<DemandFormStepProps> = ({ category, onBack, onRev
       );
       showSuccess('Rascunho guardado neste dispositivo.');
     } catch {
-      showError('Não foi possível guardar o rascunho.');
+      showError('Não foi possível salvar o rascunho.');
     }
   };
 
@@ -814,6 +814,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
+    marginTop: '20px',
     padding: '16px',
     backgroundColor: '#fafafa',
     borderRadius: '12px',

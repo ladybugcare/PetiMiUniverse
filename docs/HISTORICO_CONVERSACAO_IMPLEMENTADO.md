@@ -257,7 +257,7 @@ CREATE TABLE ticket_evaluations (
 ### 1. Executar Migração do Banco
 ```bash
 # Execute a migração no Supabase SQL Editor
-backend/database_migrations/add_conversation_and_evaluation.sql
+backend/database_migrations/petimi_vet/add_conversation_and_evaluation.sql
 ```
 
 ### 2. Reiniciar Backend

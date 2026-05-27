@@ -93,6 +93,17 @@
   border-bottom-color: var(--hc-brand);
 }
 
+/* Rotas com NavLink (Estoque, Serviços) — mesmo visual que botões Tutores/Empresas */
+a.hub-clientes__tab {
+  text-decoration: none;
+  color: var(--hc-text-muted);
+  box-sizing: border-box;
+}
+
+a.hub-clientes__tab.hub-clientes__tab--active {
+  color: var(--hc-brand);
+}
+
 .hub-clientes__metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -190,6 +201,15 @@
   border: 1px solid var(--hc-border);
   background: #fff;
   color: var(--hc-text);
+}
+
+a.hub-clientes__btn {
+  text-decoration: none;
+}
+
+a.hub-clientes__btn:hover,
+a.hub-clientes__btn:focus-visible {
+  text-decoration: none;
 }
 
 .hub-clientes__btn--primary {

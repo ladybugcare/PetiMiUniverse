@@ -7,6 +7,8 @@ export interface ClinicStats {
   totalApplications: number;
   pendingApplications: number;
   totalUsers: number;
+  /** Anúncios ativos da clínica no marketplace */
+  activeMarketplaceListings: number;
 }
 
 export interface VetStats {

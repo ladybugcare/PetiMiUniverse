@@ -1,6 +1,39 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { ensureDefaultHubServiceGroups } from './hubServiceGroupsController';
+import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
+import { COAT_TYPE_VALUES, PORTE_VALUES, parsePricingMatrixJson, roundMoney2 } from './hubServiceTypesPricingMatrix';
+import {
+  PET_BODY_SIZE_TIERS,
+  requiresCoatPricing,
+  resolveServiceLinePricing,
+  validateCoatOverrideForServiceTypes,
+  validatePorteOverrideForServiceTypes,
+  type HubQuotePricingVariantInput,
+  type PetPricingFields,
+  type ServiceTypePricingRow,
+} from './hubPricingResolve';
+
+/** Reparte um total comercial (ex.: ida+volta L&T) em duas linhas contábeis com soma exacta. */
+function splitMoneyTotalAcrossTwoLegs(total: number): [number, number] {
+  const a = roundMoney2(total / 2);
+  const b = roundMoney2(total - a);
+  return [a, b];
+}
+
+function validateLevaTrazServiceType(st: ServiceTypePricingRow | undefined): string | null {
+  if (!st) return 'Tipo de serviço de Leva e Traz inválido.';
+  const g = String(st.service_group ?? '').trim();
+  if (g !== 'leva_traz') return 'O serviço de transporte deve pertencer ao grupo Leva e Traz.';
+  return null;
+}
+
+function pickupLegMinutes(startsAt: string, endsAt: string): number {
+  const ms = new Date(endsAt).getTime() - new Date(startsAt).getTime();
+  const m = Math.round(ms / 60_000);
+  return Math.max(1, Number.isFinite(m) ? m : 1);
+}
 
 const uuidStr = z.string().uuid();
 
@@ -166,6 +199,275 @@ async function assertUnitInClinic(clinicId: string, unitId: string | null): Prom
   return true;
 }
 
+const PRICING_TIER_SET = new Set<string>(PORTE_VALUES as unknown as string[]);
+const PRICING_COAT_SET = new Set<string>(COAT_TYPE_VALUES as unknown as string[]);
+const PET_BODY_SET = new Set<string>(PET_BODY_SIZE_TIERS as unknown as string[]);
+
+const optionalPricingPorte = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((v) => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim()));
+
+const optionalPricingCoat = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((v) => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim()));
+
+async function fetchServiceTypesMap(clinicId: string, ids: string[]): Promise<Map<string, ServiceTypePricingRow>> {
+  const uniq = [...new Set(ids)];
+  if (uniq.length === 0) return new Map();
+  const { data, error } = await supabaseAdmin
+    .from('hub_service_types')
+    .select('id, service_group, pricing_matrix, cost_amount, sale_amount')
+    .eq('clinic_id', clinicId)
+    .in('id', uniq)
+    .is('deleted_at', null);
+  if (error) throw new Error(error.message);
+  const m = new Map<string, ServiceTypePricingRow>();
+  for (const row of data ?? []) {
+    const r = row as Record<string, unknown>;
+    m.set(String(r.id), {
+      id: String(r.id),
+      service_group: String(r.service_group ?? ''),
+      pricing_matrix: r.pricing_matrix,
+      cost_amount: Number(r.cost_amount) || 0,
+      sale_amount: Number(r.sale_amount) || 0,
+    });
+  }
+  return m;
+}
+
+async function fetchPetPricingFields(
+  clinicId: string,
+  petId: string | null,
+): Promise<PetPricingFields> {
+  if (!petId) return { size_tier: 'medio', birth_date: null, coat_type: null };
+  const { data, error } = await supabaseAdmin
+    .from('hub_pets')
+    .select('size_tier, birth_date, coat_type')
+    .eq('id', petId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error || !data) return { size_tier: 'medio', birth_date: null, coat_type: null };
+  const d = data as { size_tier?: string | null; birth_date?: string | null; coat_type?: string | null };
+  const st = d.size_tier && PET_BODY_SET.has(String(d.size_tier)) ? String(d.size_tier) : 'medio';
+  const bd = d.birth_date && /^\d{4}-\d{2}-\d{2}$/.test(String(d.birth_date)) ? String(d.birth_date) : null;
+  const ct = d.coat_type && PRICING_COAT_SET.has(String(d.coat_type)) ? String(d.coat_type) : null;
+  return { size_tier: st, birth_date: bd, coat_type: ct };
+}
+
+function validatePricingPorteInputs(params: {
+  appointmentOverride: string | null;
+  appointmentCoatOverride: string | null;
+  pet: PetPricingFields;
+  lines: Array<{ hub_service_type_id: string; pricing_porte_tier?: string | null; pricing_coat_type?: string | null }>;
+  stMap: Map<string, ServiceTypePricingRow>;
+}): { error?: string } {
+  const { appointmentOverride, appointmentCoatOverride, pet, lines, stMap } = params;
+  const checkTier = (t: string | null): string | undefined => {
+    if (!t) return undefined;
+    if (!PRICING_TIER_SET.has(t)) return `Porte de preço inválido: ${t}`;
+    return undefined;
+  };
+  const checkCoat = (t: string | null): string | undefined => {
+    if (!t) return undefined;
+    if (!PRICING_COAT_SET.has(t)) return `Pelagem inválida: ${t}`;
+    return undefined;
+  };
+  const e0 = checkTier(appointmentOverride);
+  if (e0) return { error: e0 };
+  const c0 = checkCoat(appointmentCoatOverride);
+  if (c0) return { error: c0 };
+  for (const line of lines) {
+    const te = checkTier(line.pricing_porte_tier ?? null);
+    if (te) return { error: te };
+    const ce = checkCoat(line.pricing_coat_type ?? null);
+    if (ce) return { error: ce };
+  }
+  const stListForAppt = [...new Set(lines.map((l) => l.hub_service_type_id))]
+    .map((id) => stMap.get(id))
+    .filter(Boolean) as ServiceTypePricingRow[];
+  const v = validatePorteOverrideForServiceTypes(stListForAppt, appointmentOverride);
+  if (v !== true) return { error: v.error };
+  const cv = validateCoatOverrideForServiceTypes(stListForAppt, appointmentCoatOverride);
+  if (cv !== true) return { error: cv.error };
+  for (const st of stListForAppt) {
+    if (requiresCoatPricing(st) && !(appointmentCoatOverride || pet.coat_type)) {
+      return { error: 'Selecione a pelagem do pet para precificar serviços de Banho & Tosa por pelagem.' };
+    }
+  }
+  for (const line of lines) {
+    const t = line.pricing_porte_tier?.trim() || null;
+    if (!t) continue;
+    const st = stMap.get(line.hub_service_type_id);
+    if (!st) continue;
+    const vv = validatePorteOverrideForServiceTypes([st], t);
+    if (vv !== true) return { error: vv.error };
+  }
+  for (const line of lines) {
+    const t = line.pricing_coat_type?.trim() || null;
+    if (!t) continue;
+    const st = stMap.get(line.hub_service_type_id);
+    if (!st) continue;
+    const vv = validateCoatOverrideForServiceTypes([st], t);
+    if (vv !== true) return { error: vv.error };
+  }
+  return {};
+}
+
+function normalizeCreateServiceLines(b: {
+  hub_service_type_id: string;
+  services?: Array<{
+    hub_service_type_id: string;
+    duration_minutes: number;
+    pricing_porte_tier?: string | null;
+    pricing_coat_type?: string | null;
+    pricing_variant?: HubQuotePricingVariantInput | null;
+  }>;
+}): Array<{
+  hub_service_type_id: string;
+  duration_minutes: number;
+  pricing_porte_tier?: string | null;
+  pricing_coat_type?: string | null;
+  pricing_variant?: HubQuotePricingVariantInput | null;
+}> {
+  if (b.services && b.services.length > 0) {
+    return b.services.map((s) => ({
+      hub_service_type_id: s.hub_service_type_id,
+      duration_minutes: s.duration_minutes,
+      pricing_porte_tier: s.pricing_porte_tier ?? null,
+      pricing_coat_type: s.pricing_coat_type ?? null,
+      pricing_variant: s.pricing_variant ?? null,
+    }));
+  }
+  return [
+    {
+      hub_service_type_id: b.hub_service_type_id,
+      duration_minutes: 60,
+      pricing_porte_tier: null,
+      pricing_coat_type: null,
+      pricing_variant: null,
+    },
+  ];
+}
+
+function buildServiceLineSnapshots(params: {
+  lines: Array<{
+    hub_service_type_id: string;
+    duration_minutes: number;
+    pricing_porte_tier?: string | null;
+    pricing_coat_type?: string | null;
+    pricing_variant?: HubQuotePricingVariantInput | null;
+    sale_amount_override?: number | null;
+    cost_amount_override?: number | null;
+  }>;
+  stMap: Map<string, ServiceTypePricingRow>;
+  pet: PetPricingFields;
+  appointmentYmd: string;
+  puppyMaxMonths: number;
+  appointmentOverride: string | null;
+  appointmentCoatOverride: string | null;
+}): Array<{
+  hub_service_type_id: string;
+  duration_minutes: number;
+  order_index: number;
+  pricing_porte_tier_applied: string | null;
+  pricing_coat_type_applied: string | null;
+  cost_amount_applied: number;
+  sale_amount_applied: number;
+  pricing_variant: HubQuotePricingVariantInput | null;
+}> {
+  const { lines, stMap, pet, appointmentYmd, puppyMaxMonths, appointmentOverride, appointmentCoatOverride } = params;
+  return lines.map((line, idx) => {
+    const st = stMap.get(line.hub_service_type_id);
+    if (!st) {
+      throw new Error(`Tipo de serviço não encontrado: ${line.hub_service_type_id}`);
+    }
+    const lineOverride = line.pricing_porte_tier?.trim() || null;
+    const lineCoatOverride = line.pricing_coat_type?.trim() || null;
+    const effPorte = lineOverride ?? appointmentOverride;
+    const effCoat = lineCoatOverride ?? appointmentCoatOverride;
+    const r = resolveServiceLinePricing({
+      serviceType: st,
+      pet,
+      appointmentDateYmd: appointmentYmd,
+      puppyMaxMonths,
+      overrideTier: effPorte,
+      overrideCoatType: effCoat,
+      pricing_variant: line.pricing_variant ?? undefined,
+    });
+    const sale =
+      line.sale_amount_override != null && Number.isFinite(line.sale_amount_override)
+        ? roundMoney2(line.sale_amount_override)
+        : r.sale;
+    const cost =
+      line.cost_amount_override != null && Number.isFinite(line.cost_amount_override)
+        ? roundMoney2(line.cost_amount_override)
+        : r.cost;
+    return {
+      hub_service_type_id: line.hub_service_type_id,
+      duration_minutes: line.duration_minutes,
+      order_index: idx,
+      pricing_porte_tier_applied: r.porteTierApplied,
+      pricing_coat_type_applied: r.coatTypeApplied,
+      cost_amount_applied: cost,
+      sale_amount_applied: sale,
+      pricing_variant: r.pricing_variant,
+    };
+  });
+}
+
+async function refreshSnapshotsForAppointment(
+  clinicId: string,
+  appointmentId: string,
+  startsAt: string,
+  petId: string | null,
+  pricingPorteTier: string | null,
+  pricingCoatType: string | null,
+): Promise<void> {
+  const { data: lines, error: le } = await supabaseAdmin
+    .from('hub_appointment_services')
+    .select('id, hub_service_type_id, duration_minutes, order_index, pricing_variant')
+    .eq('appointment_id', appointmentId)
+    .order('order_index');
+  if (le || !lines?.length) return;
+  const ids = [...new Set((lines as { hub_service_type_id: string }[]).map((l) => l.hub_service_type_id))];
+  const stMap = await fetchServiceTypesMap(clinicId, ids);
+  const pet = await fetchPetPricingFields(clinicId, petId);
+  const { pet_puppy_max_months } = await getOrCreateHubClinicSettings(clinicId);
+  const ymd = startsAt.slice(0, 10);
+  const normLines = (lines as { hub_service_type_id: string; duration_minutes: number; pricing_variant?: unknown }[]).map((l) => ({
+    hub_service_type_id: l.hub_service_type_id,
+    duration_minutes: l.duration_minutes,
+    pricing_porte_tier: null as string | null,
+    pricing_coat_type: null as string | null,
+    pricing_variant: (l.pricing_variant as HubQuotePricingVariantInput | null) ?? null,
+  }));
+  const snaps = buildServiceLineSnapshots({
+    lines: normLines,
+    stMap,
+    pet,
+    appointmentYmd: ymd,
+    puppyMaxMonths: pet_puppy_max_months,
+    appointmentOverride: pricingPorteTier,
+    appointmentCoatOverride: pricingCoatType,
+  });
+  for (let i = 0; i < lines.length; i++) {
+    const row = lines[i] as { id: string };
+    const s = snaps[i];
+    if (!s) continue;
+    await supabaseAdmin
+      .from('hub_appointment_services')
+      .update({
+        pricing_porte_tier_applied: s.pricing_porte_tier_applied,
+        pricing_coat_type_applied: s.pricing_coat_type_applied,
+        cost_amount_applied: s.cost_amount_applied,
+        sale_amount_applied: s.sale_amount_applied,
+        pricing_variant: s.pricing_variant as unknown as Record<string, unknown> | null,
+      })
+      .eq('id', row.id);
+  }
+}
+
 // ── Recurrence helpers ──────────────────────────────────────────────────────
 
 const MAX_OCCURRENCES = 52;
@@ -257,7 +559,7 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       ? supabaseAdmin.from('hub_staff_members').select('id, full_name, agenda_color').in('id', staffIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     petIds.length
-      ? supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds)
+      ? supabaseAdmin.from('hub_pets').select('id, name, size_tier, coat_type, birth_date').in('id', petIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     guIds.length
       ? supabaseAdmin.from('hub_guardians').select('id, full_name').in('id', guIds)
@@ -268,13 +570,36 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
     apptIds.length
       ? supabaseAdmin
           .from('hub_appointment_services')
-          .select('appointment_id, hub_service_type_id, duration_minutes, order_index')
+          .select(
+            'id, appointment_id, hub_service_type_id, duration_minutes, order_index, pricing_porte_tier_applied, pricing_coat_type_applied, cost_amount_applied, sale_amount_applied, pricing_variant',
+          )
           .in('appointment_id', apptIds)
           .order('order_index')
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ]);
 
-  const stMap = new Map((stRes.data ?? []).map((x: Record<string, unknown>) => [x.id as string, x]));
+  const clinicId = (rows[0]?.clinic_id as string) || '';
+  const groupColorBySlug = new Map<string, string>();
+  if (clinicId) {
+    await ensureDefaultHubServiceGroups(clinicId);
+    const { data: grpRows } = await supabaseAdmin
+      .from('hub_service_groups')
+      .select('slug, color')
+      .eq('clinic_id', clinicId);
+    for (const g of grpRows ?? []) {
+      const gr = g as { slug: string; color: string };
+      if (gr.slug && gr.color && /^#[0-9A-Fa-f]{6}$/.test(gr.color)) {
+        groupColorBySlug.set(gr.slug, gr.color);
+      }
+    }
+  }
+
+  const stMap = new Map(
+    (stRes.data ?? []).map((x: Record<string, unknown>) => {
+      const sg = String(x.service_group || 'outros').trim();
+      return [x.id as string, { ...x, group_color: groupColorBySlug.get(sg) ?? null }];
+    })
+  );
   const staffMap = new Map((staffRes.data ?? []).map((x: Record<string, unknown>) => [x.id as string, x]));
   const petMap = new Map((petsRes.data ?? []).map((x: Record<string, unknown>) => [x.id as string, x]));
   const guMap = new Map((guRes.data ?? []).map((x: Record<string, unknown>) => [x.id as string, x]));
@@ -301,6 +626,17 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       hub_service_type_id: l.hub_service_type_id as string,
       duration_minutes: l.duration_minutes as number,
       order_index: l.order_index as number,
+      pricing_porte_tier_applied: (l.pricing_porte_tier_applied as string | null) ?? null,
+      pricing_coat_type_applied: (l.pricing_coat_type_applied as string | null) ?? null,
+      cost_amount_applied:
+        l.cost_amount_applied != null && l.cost_amount_applied !== ''
+          ? Number(l.cost_amount_applied)
+          : null,
+      sale_amount_applied:
+        l.sale_amount_applied != null && l.sale_amount_applied !== ''
+          ? Number(l.sale_amount_applied)
+          : null,
+      pricing_variant: (l.pricing_variant as Record<string, unknown> | null) ?? null,
       service_type: stMap.get(l.hub_service_type_id as string) ?? null,
     }));
     return {
@@ -329,9 +665,22 @@ const listQuerySchema = z.object({
   resource_label: z.string().trim().max(120).optional(),
 });
 
+const linePricingVariantSchema = z
+  .object({
+    km_tier_index: z.number().int().min(0).optional(),
+    period: z.enum(['full_day', 'half_day']).optional(),
+    consult_type: z.enum(['padrao', 'retorno']).optional(),
+  })
+  .strict()
+  .optional()
+  .nullable();
+
 const serviceLineSchema = z.object({
   hub_service_type_id: uuidStr,
   duration_minutes: z.number().int().positive(),
+  pricing_porte_tier: optionalPricingPorte.optional(),
+  pricing_coat_type: optionalPricingCoat.optional(),
+  pricing_variant: linePricingVariantSchema,
 });
 
 const pickupBlockSchema = z.object({
@@ -349,7 +698,19 @@ const extraBlockSchema = z.object({
   resource_label: optionalTrim(120).optional(),
   status: appointmentStatusSchema.optional(),
   notes: optionalTrim(8000).optional(),
+  title: optionalTrim(200).optional(),
 });
+
+const pickupRoutePricingSchema = z
+  .object({
+    hub_service_type_id: uuidStr,
+    pricing_variant: z
+      .object({
+        km_tier_index: z.number().int().min(0),
+      })
+      .strict(),
+  })
+  .strict();
 
 const recurrenceSchema = z.object({
   kind: z.enum(['daily', 'weekly', 'monthly']),
@@ -376,9 +737,13 @@ const createAppointmentSchema = z
     appointment_kind: appointmentKindSchema.optional(),
     title: optionalTrim(200).optional(),
     description: optionalTrim(8000).optional(),
+    financial_notes: optionalTrim(8000).optional(),
     services: z.array(serviceLineSchema).optional(),
+    pricing_porte_tier: optionalPricingPorte.optional(),
+    pricing_coat_type: optionalPricingCoat.optional(),
     with_pickup_route_before: pickupBlockSchema.optional().nullable(),
     with_pickup_route_after: pickupBlockSchema.optional().nullable(),
+    pickup_route_pricing: pickupRoutePricingSchema.optional().nullable(),
     extra_blocks: z.array(extraBlockSchema).optional(),
     recurrence: recurrenceSchema.optional().nullable(),
   })
@@ -402,6 +767,8 @@ const patchAppointmentSchema = z
     title: optionalTrim(200).optional().nullable(),
     description: optionalTrim(8000).optional().nullable(),
     services: z.array(serviceLineSchema).optional(),
+    pricing_porte_tier: optionalPricingPorte.optional(),
+    pricing_coat_type: optionalPricingCoat.optional(),
   })
   .strict();
 
@@ -494,6 +861,112 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       }
     }
 
+    const hasPickupRoutes = Boolean(b.with_pickup_route_before ?? b.with_pickup_route_after);
+    if (b.pickup_route_pricing && !hasPickupRoutes) {
+      return res.status(400).json({ error: 'pickup_route_pricing só é permitido com rotas de transporte.' });
+    }
+    if (hasPickupRoutes && !b.pickup_route_pricing) {
+      return res.status(400).json({ error: 'Leva e Traz: indique o tipo de serviço e a faixa de quilómetros.' });
+    }
+
+    const normLines = normalizeCreateServiceLines(b);
+    const extraIds: string[] = [];
+    for (const block of b.extra_blocks ?? []) {
+      for (const s of block.services) extraIds.push(s.hub_service_type_id);
+    }
+    const ltSvcId = b.pickup_route_pricing?.hub_service_type_id;
+    const allStIds = [...new Set([...normLines.map((l) => l.hub_service_type_id), ...extraIds, ...(ltSvcId ? [ltSvcId] : [])])];
+    let stMap: Map<string, ServiceTypePricingRow>;
+    try {
+      stMap = await fetchServiceTypesMap(b.clinic_id, allStIds);
+    } catch (e) {
+      return res.status(500).json({ error: (e as Error).message });
+    }
+    for (const id of allStIds) {
+      if (!stMap.has(id)) {
+        return res.status(400).json({ error: `Tipo de serviço inválido: ${id}` });
+      }
+    }
+
+    if (hasPickupRoutes && b.pickup_route_pricing) {
+      const ltSt = stMap.get(b.pickup_route_pricing.hub_service_type_id);
+      const ge = validateLevaTrazServiceType(ltSt);
+      if (ge) return res.status(400).json({ error: ge });
+      const parsedM = parsePricingMatrixJson(ltSt!.pricing_matrix);
+      if (!parsedM || typeof parsedM !== 'object' || ('error' in parsedM && (parsedM as { error?: string }).error)) {
+        return res.status(400).json({ error: 'O serviço de Leva e Traz deve ter matriz de preços por faixas de km.' });
+      }
+      if (!('kind' in parsedM) || (parsedM as { kind: string }).kind !== 'km_banda') {
+        return res.status(400).json({ error: 'O serviço de Leva e Traz deve ter matriz de preços por faixas de km.' });
+      }
+      const m = parsedM as { kind: 'km_banda'; tiers: unknown[] };
+      const kmIdx = b.pickup_route_pricing.pricing_variant.km_tier_index;
+      if (kmIdx < 0 || kmIdx >= m.tiers.length) {
+        return res.status(400).json({ error: 'Faixa de km inválida para o serviço de Leva e Traz.' });
+      }
+    }
+
+    const pet = await fetchPetPricingFields(b.clinic_id, b.pet_id ?? null);
+    const puppy = await getOrCreateHubClinicSettings(b.clinic_id);
+    const apptOverride = b.pricing_porte_tier ?? null;
+    const apptCoatOverride = b.pricing_coat_type ?? null;
+    const allLinesForVal = [
+      ...normLines,
+      ...(b.extra_blocks ?? []).flatMap((bl) =>
+        bl.services.map((s) => ({
+          hub_service_type_id: s.hub_service_type_id,
+          pricing_porte_tier: s.pricing_porte_tier ?? null,
+          pricing_coat_type: s.pricing_coat_type ?? null,
+        })),
+      ),
+    ];
+    const valErr = validatePricingPorteInputs({
+      appointmentOverride: apptOverride,
+      appointmentCoatOverride: apptCoatOverride,
+      pet,
+      lines: allLinesForVal,
+      stMap,
+    });
+    if (valErr.error) {
+      return res.status(400).json({ error: valErr.error });
+    }
+
+    let pickupPricingBase: {
+      ltId: string;
+      kmVariant: HubQuotePricingVariantInput;
+      /** Preço da matriz km_banda = ida+volta (uma cobrança); reparte-se nas duas pernas. */
+      matrixSaleRoundTrip: number;
+      matrixCostRoundTrip: number;
+    } | null = null;
+    if (hasPickupRoutes && b.pickup_route_pricing) {
+      const ltId = b.pickup_route_pricing.hub_service_type_id;
+      const kmVariant: HubQuotePricingVariantInput = {
+        km_tier_index: b.pickup_route_pricing.pricing_variant.km_tier_index,
+      };
+      const ymdRef = b.starts_at.slice(0, 10);
+      try {
+        const baseRows = buildServiceLineSnapshots({
+          lines: [{ hub_service_type_id: ltId, duration_minutes: 1, pricing_variant: kmVariant }],
+          stMap,
+          pet,
+          appointmentYmd: ymdRef,
+          puppyMaxMonths: puppy.pet_puppy_max_months,
+          appointmentOverride: apptOverride,
+          appointmentCoatOverride: apptCoatOverride,
+        });
+        const br = baseRows[0];
+        if (!br) throw new Error('Preço Leva e Traz inválido');
+        pickupPricingBase = {
+          ltId,
+          kmVariant,
+          matrixSaleRoundTrip: br.sale_amount_applied,
+          matrixCostRoundTrip: br.cost_amount_applied,
+        };
+      } catch (e) {
+        return res.status(400).json({ error: (e as Error).message || 'Erro ao precificar Leva e Traz' });
+      }
+    }
+
     // ── Create series if recurrence requested ─────────────────────────────
     let seriesId: string | null = null;
     let occurrenceDates: string[] = [];
@@ -528,19 +1001,82 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       const startsAt = seriesId ? shiftTimestampToDate(b.starts_at, occDate) : b.starts_at;
       const endsAt = seriesId ? shiftTimestampToDate(b.ends_at, occDate) : b.ends_at;
 
-      const check = await assertNoScheduleConflict(
-        b.clinic_id,
-        [],
-        b.hub_staff_member_id ?? null,
-        b.resource_label ?? null,
-        b.unit_id ?? null,
-        startsAt,
-        endsAt,
-      );
-      if (check.conflict) {
-        conflicts.push({ date: occDate, reason: check.reason, conflictingId: check.conflictingId });
-        continue;
+      const conflictWindows: Array<{
+        staff: string | null;
+        resource: string | null;
+        starts: string;
+        ends: string;
+        label: string;
+      }> = [];
+
+      if (b.with_pickup_route_before) {
+        const pb = b.with_pickup_route_before;
+        const pStarts = seriesId ? shiftTimestampToDate(pb.starts_at, occDate) : pb.starts_at;
+        const pEnds = seriesId ? shiftTimestampToDate(pb.ends_at, occDate) : pb.ends_at;
+        conflictWindows.push({
+          staff: pb.hub_staff_member_id ?? null,
+          resource: pb.resource_label ?? null,
+          starts: pStarts,
+          ends: pEnds,
+          label: 'Busca (Leva e Traz)',
+        });
       }
+
+      conflictWindows.push({
+        staff: b.hub_staff_member_id ?? null,
+        resource: b.resource_label ?? null,
+        starts: startsAt,
+        ends: endsAt,
+        label: 'Atendimento principal',
+      });
+
+      for (const block of b.extra_blocks ?? []) {
+        const bStarts = seriesId ? shiftTimestampToDate(block.starts_at, occDate) : block.starts_at;
+        const bEnds = seriesId ? shiftTimestampToDate(block.ends_at, occDate) : block.ends_at;
+        conflictWindows.push({
+          staff: block.hub_staff_member_id ?? null,
+          resource: block.resource_label ?? null,
+          starts: bStarts,
+          ends: bEnds,
+          label: 'Bloco extra',
+        });
+      }
+
+      if (b.with_pickup_route_after) {
+        const pa = b.with_pickup_route_after;
+        const pStarts = seriesId ? shiftTimestampToDate(pa.starts_at, occDate) : pa.starts_at;
+        const pEnds = seriesId ? shiftTimestampToDate(pa.ends_at, occDate) : pa.ends_at;
+        conflictWindows.push({
+          staff: pa.hub_staff_member_id ?? null,
+          resource: pa.resource_label ?? null,
+          starts: pStarts,
+          ends: pEnds,
+          label: 'Retorno (Leva e Traz)',
+        });
+      }
+
+      let skipOcc = false;
+      for (const w of conflictWindows) {
+        const chk = await assertNoScheduleConflict(
+          b.clinic_id,
+          [],
+          w.staff,
+          w.resource,
+          b.unit_id ?? null,
+          w.starts,
+          w.ends,
+        );
+        if (chk.conflict) {
+          conflicts.push({
+            date: occDate,
+            reason: `${w.label}: ${chk.reason}`,
+            conflictingId: chk.conflictingId,
+          });
+          skipOcc = true;
+          break;
+        }
+      }
+      if (skipOcc) continue;
 
       const insert = {
         clinic_id: b.clinic_id,
@@ -557,8 +1093,11 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         appointment_kind: b.appointment_kind ?? 'standard',
         title: b.title ?? null,
         description: b.description ?? null,
+        financial_notes: b.financial_notes ?? null,
         series_id: seriesId,
         series_occurrence_date: seriesId ? occDate : null,
+        pricing_porte_tier: apptOverride,
+        pricing_coat_type: apptCoatOverride,
       };
 
       const { data: apptRow, error: apptErr } = await supabaseAdmin
@@ -570,50 +1109,113 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       const apptId = (apptRow as { id: string }).id;
       createdIds.push(apptId);
 
-      // insert N:M service lines
-      const svcLines =
-        b.services && b.services.length > 0
-          ? b.services
-          : [{ hub_service_type_id: b.hub_service_type_id, duration_minutes: 60 }];
-
-      const svcInsert = svcLines.map((s, idx) => ({
+      const ymd = startsAt.slice(0, 10);
+      let snapRows: ReturnType<typeof buildServiceLineSnapshots>;
+      try {
+        snapRows = buildServiceLineSnapshots({
+          lines: normLines,
+          stMap,
+          pet,
+          appointmentYmd: ymd,
+          puppyMaxMonths: puppy.pet_puppy_max_months,
+          appointmentOverride: apptOverride,
+          appointmentCoatOverride: apptCoatOverride,
+        });
+      } catch (e) {
+        return res.status(500).json({ error: (e as Error).message });
+      }
+      const svcInsert = snapRows.map((row) => ({
         appointment_id: apptId,
-        hub_service_type_id: s.hub_service_type_id,
-        duration_minutes: s.duration_minutes,
-        order_index: idx,
+        hub_service_type_id: row.hub_service_type_id,
+        duration_minutes: row.duration_minutes,
+        order_index: row.order_index,
+        pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+        pricing_coat_type_applied: row.pricing_coat_type_applied,
+        cost_amount_applied: row.cost_amount_applied,
+        sale_amount_applied: row.sale_amount_applied,
+        pricing_variant: row.pricing_variant as unknown as Record<string, unknown> | null,
       }));
       const { error: svcErr } = await supabaseAdmin.from('hub_appointment_services').insert(svcInsert);
       if (svcErr) return res.status(500).json({ error: svcErr.message });
 
-      // pickup_route blocks
-      for (const [kind, pickupBlock] of [
-        ['before', b.with_pickup_route_before] as const,
-        ['after', b.with_pickup_route_after] as const,
+      const ltCfg = b.pickup_route_pricing;
+      // L&T: uma cobrança ida+volta (valor da matriz); overrides de total foram removidos do produto.
+      const [saleBeforeLeg, saleAfterLeg] = pickupPricingBase
+        ? splitMoneyTotalAcrossTwoLegs(pickupPricingBase.matrixSaleRoundTrip)
+        : [0, 0];
+      const [costBeforeLeg, costAfterLeg] = pickupPricingBase
+        ? splitMoneyTotalAcrossTwoLegs(pickupPricingBase.matrixCostRoundTrip)
+        : [0, 0];
+
+      for (const [_kind, pickupBlock, saleLeg, costLeg] of [
+        ['before', b.with_pickup_route_before, saleBeforeLeg, costBeforeLeg] as const,
+        ['after', b.with_pickup_route_after, saleAfterLeg, costAfterLeg] as const,
       ]) {
-        if (!pickupBlock) continue;
-        const pStarts = kind === 'before'
-          ? (seriesId ? shiftTimestampToDate(pickupBlock.starts_at, occDate) : pickupBlock.starts_at)
-          : (seriesId ? shiftTimestampToDate(pickupBlock.starts_at, occDate) : pickupBlock.starts_at);
+        if (!pickupBlock || !ltCfg || !pickupPricingBase) continue;
+        const pStarts = seriesId ? shiftTimestampToDate(pickupBlock.starts_at, occDate) : pickupBlock.starts_at;
         const pEnds = seriesId ? shiftTimestampToDate(pickupBlock.ends_at, occDate) : pickupBlock.ends_at;
-        const { error: pErr } = await supabaseAdmin.from('hub_appointments').insert({
-          clinic_id: b.clinic_id,
-          unit_id: b.unit_id ?? null,
-          hub_service_type_id: b.hub_service_type_id,
-          hub_staff_member_id: pickupBlock.hub_staff_member_id ?? null,
-          pet_id: b.pet_id ?? null,
-          guardian_id: b.guardian_id ?? null,
-          starts_at: pStarts,
-          ends_at: pEnds,
-          status: b.status ?? 'confirmed',
-          resource_label: pickupBlock.resource_label ?? null,
-          appointment_kind: 'pickup_route',
-          series_id: seriesId,
-          series_occurrence_date: seriesId ? occDate : null,
-        });
-        if (pErr) return res.status(500).json({ error: pErr.message });
+        const legDur = pickupLegMinutes(pStarts, pEnds);
+        const { data: pRow, error: pInsErr } = await supabaseAdmin
+          .from('hub_appointments')
+          .insert({
+            clinic_id: b.clinic_id,
+            unit_id: b.unit_id ?? null,
+            hub_service_type_id: ltCfg.hub_service_type_id,
+            hub_staff_member_id: pickupBlock.hub_staff_member_id ?? null,
+            pet_id: b.pet_id ?? null,
+            guardian_id: b.guardian_id ?? null,
+            starts_at: pStarts,
+            ends_at: pEnds,
+            status: b.status ?? 'confirmed',
+            resource_label: pickupBlock.resource_label ?? null,
+            appointment_kind: 'pickup_route',
+            series_id: seriesId,
+            series_occurrence_date: seriesId ? occDate : null,
+            pricing_porte_tier: apptOverride,
+            pricing_coat_type: apptCoatOverride,
+          })
+          .select('id')
+          .single();
+        if (pInsErr || !pRow) return res.status(500).json({ error: pInsErr?.message || 'Erro ao criar transporte' });
+        const pickupApptId = (pRow as { id: string }).id;
+
+        let pickupSnaps: ReturnType<typeof buildServiceLineSnapshots>;
+        try {
+          pickupSnaps = buildServiceLineSnapshots({
+            lines: [
+              {
+                hub_service_type_id: ltCfg.hub_service_type_id,
+                duration_minutes: legDur,
+                pricing_variant: pickupPricingBase.kmVariant,
+                sale_amount_override: saleLeg,
+                cost_amount_override: costLeg,
+              },
+            ],
+            stMap,
+            pet,
+            appointmentYmd: ymd,
+            puppyMaxMonths: puppy.pet_puppy_max_months,
+            appointmentOverride: apptOverride,
+            appointmentCoatOverride: apptCoatOverride,
+          });
+        } catch (e) {
+          return res.status(500).json({ error: (e as Error).message });
+        }
+        const pickupSvcInsert = pickupSnaps.map((row) => ({
+          appointment_id: pickupApptId,
+          hub_service_type_id: row.hub_service_type_id,
+          duration_minutes: row.duration_minutes,
+          order_index: row.order_index,
+          pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+          pricing_coat_type_applied: row.pricing_coat_type_applied,
+          cost_amount_applied: row.cost_amount_applied,
+          sale_amount_applied: row.sale_amount_applied,
+          pricing_variant: row.pricing_variant as unknown as Record<string, unknown> | null,
+        }));
+        const { error: pSvcErr } = await supabaseAdmin.from('hub_appointment_services').insert(pickupSvcInsert);
+        if (pSvcErr) return res.status(500).json({ error: pSvcErr.message });
       }
 
-      // extra_blocks
       for (const block of b.extra_blocks ?? []) {
         const bStarts = seriesId ? shiftTimestampToDate(block.starts_at, occDate) : block.starts_at;
         const bEnds = seriesId ? shiftTimestampToDate(block.ends_at, occDate) : block.ends_at;
@@ -632,19 +1234,49 @@ export const createHubAppointment = async (req: Request, res: Response) => {
             status: block.status ?? b.status ?? 'confirmed',
             resource_label: block.resource_label ?? null,
             notes: block.notes ?? null,
+            title: block.title ?? null,
             appointment_kind: 'standard',
             series_id: seriesId,
             series_occurrence_date: seriesId ? occDate : null,
+            pricing_porte_tier: apptOverride,
+            pricing_coat_type: apptCoatOverride,
           })
           .select('id')
           .single();
         if (blockErr) return res.status(500).json({ error: blockErr.message });
         const blockId = (blockRow as { id: string }).id;
-        const blockSvcInsert = block.services.map((s, idx) => ({
-          appointment_id: blockId,
+        const blockNormLines = block.services.map((s) => ({
           hub_service_type_id: s.hub_service_type_id,
           duration_minutes: s.duration_minutes,
-          order_index: idx,
+          pricing_porte_tier: s.pricing_porte_tier ?? null,
+          pricing_coat_type: s.pricing_coat_type ?? null,
+          pricing_variant: s.pricing_variant ?? null,
+        }));
+        const blockYmd = bStarts.slice(0, 10);
+        let blockSnaps: ReturnType<typeof buildServiceLineSnapshots>;
+        try {
+          blockSnaps = buildServiceLineSnapshots({
+            lines: blockNormLines,
+            stMap,
+            pet,
+            appointmentYmd: blockYmd,
+            puppyMaxMonths: puppy.pet_puppy_max_months,
+            appointmentOverride: apptOverride,
+            appointmentCoatOverride: apptCoatOverride,
+          });
+        } catch (e) {
+          return res.status(500).json({ error: (e as Error).message });
+        }
+        const blockSvcInsert = blockSnaps.map((row) => ({
+          appointment_id: blockId,
+          hub_service_type_id: row.hub_service_type_id,
+          duration_minutes: row.duration_minutes,
+          order_index: row.order_index,
+          pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+          pricing_coat_type_applied: row.pricing_coat_type_applied,
+          cost_amount_applied: row.cost_amount_applied,
+          sale_amount_applied: row.sale_amount_applied,
+          pricing_variant: row.pricing_variant as unknown as Record<string, unknown> | null,
         }));
         const { error: bSvcErr } = await supabaseAdmin.from('hub_appointment_services').insert(blockSvcInsert);
         if (bSvcErr) return res.status(500).json({ error: bSvcErr.message });
@@ -787,6 +1419,12 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     if (b.appointment_kind !== undefined) patch.appointment_kind = b.appointment_kind;
     if (b.title !== undefined) patch.title = b.title;
     if (b.description !== undefined) patch.description = b.description;
+    if (b.pricing_porte_tier !== undefined) patch.pricing_porte_tier = b.pricing_porte_tier;
+    if (b.pricing_coat_type !== undefined) patch.pricing_coat_type = b.pricing_coat_type;
+
+    if (b.services && b.services.length > 0) {
+      patch.hub_service_type_id = b.services[0]!.hub_service_type_id;
+    }
 
     if (Object.keys(patch).length === 0 && !b.services) {
       return res.status(400).json({ error: 'Nada para atualizar' });
@@ -809,6 +1447,95 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       targetIds = (seriesRows ?? []).map((r: Record<string, unknown>) => r.id as string);
     }
 
+    let patchServicePayload: {
+      normLines: Array<{
+        hub_service_type_id: string;
+        duration_minutes: number;
+        pricing_porte_tier?: string | null;
+        pricing_coat_type?: string | null;
+        pricing_variant?: HubQuotePricingVariantInput | null;
+      }>;
+      stMap: Map<string, ServiceTypePricingRow>;
+    } | null = null;
+
+    if (b.services && b.services.length > 0) {
+      const normPatchLines = b.services.map((s) => ({
+        hub_service_type_id: s.hub_service_type_id,
+        duration_minutes: s.duration_minutes,
+        pricing_porte_tier: s.pricing_porte_tier ?? null,
+        pricing_coat_type: s.pricing_coat_type ?? null,
+        pricing_variant: s.pricing_variant ?? null,
+      }));
+      const svcIds = [...new Set(normPatchLines.map((l) => l.hub_service_type_id))];
+      let stMap: Map<string, ServiceTypePricingRow>;
+      try {
+        stMap = await fetchServiceTypesMap(b.clinic_id, svcIds);
+      } catch (e) {
+        return res.status(500).json({ error: (e as Error).message });
+      }
+      for (const sid of svcIds) {
+        if (!stMap.has(sid)) {
+          return res.status(400).json({ error: `Tipo de serviço inválido: ${sid}` });
+        }
+      }
+      const mergedPricing =
+        b.pricing_porte_tier !== undefined
+          ? b.pricing_porte_tier
+          : ((existing as Record<string, unknown>).pricing_porte_tier as string | null) ?? null;
+      const mergedCoatPricing =
+        b.pricing_coat_type !== undefined
+          ? b.pricing_coat_type
+          : ((existing as Record<string, unknown>).pricing_coat_type as string | null) ?? null;
+      const mergedPetId =
+        b.pet_id !== undefined ? b.pet_id : ((existing as Record<string, unknown>).pet_id as string | null) ?? null;
+      const pet = await fetchPetPricingFields(b.clinic_id, mergedPetId);
+      const valErr = validatePricingPorteInputs({
+        appointmentOverride: mergedPricing,
+        appointmentCoatOverride: mergedCoatPricing,
+        pet,
+        lines: normPatchLines,
+        stMap,
+      });
+      if (valErr.error) {
+        return res.status(400).json({ error: valErr.error });
+      }
+      patchServicePayload = { normLines: normPatchLines, stMap };
+    } else if (
+      b.pet_id !== undefined ||
+      b.starts_at !== undefined ||
+      b.pricing_porte_tier !== undefined ||
+      b.pricing_coat_type !== undefined
+    ) {
+      const { data: existingLines, error: existingLinesErr } = await supabaseAdmin
+        .from('hub_appointment_services')
+        .select('hub_service_type_id')
+        .eq('appointment_id', id);
+      if (existingLinesErr) return res.status(500).json({ error: existingLinesErr.message });
+      const lineIds = [...new Set((existingLines ?? []).map((l: { hub_service_type_id: string }) => l.hub_service_type_id))];
+      const stMap = await fetchServiceTypesMap(b.clinic_id, lineIds);
+      const mergedPricing =
+        b.pricing_porte_tier !== undefined
+          ? b.pricing_porte_tier
+          : ((existing as Record<string, unknown>).pricing_porte_tier as string | null) ?? null;
+      const mergedCoatPricing =
+        b.pricing_coat_type !== undefined
+          ? b.pricing_coat_type
+          : ((existing as Record<string, unknown>).pricing_coat_type as string | null) ?? null;
+      const mergedPetId =
+        b.pet_id !== undefined ? b.pet_id : ((existing as Record<string, unknown>).pet_id as string | null) ?? null;
+      const pet = await fetchPetPricingFields(b.clinic_id, mergedPetId);
+      const valErr = validatePricingPorteInputs({
+        appointmentOverride: mergedPricing,
+        appointmentCoatOverride: mergedCoatPricing,
+        pet,
+        lines: lineIds.map((hub_service_type_id) => ({ hub_service_type_id })),
+        stMap,
+      });
+      if (valErr.error) {
+        return res.status(400).json({ error: valErr.error });
+      }
+    }
+
     for (const tid of targetIds) {
       if (Object.keys(patch).length > 0) {
         const { error: pErr } = await supabaseAdmin
@@ -819,17 +1546,66 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
         if (pErr) return res.status(500).json({ error: pErr.message });
       }
 
-      if (b.services && b.services.length > 0) {
-        // replace service lines
+      if (patchServicePayload) {
         await supabaseAdmin.from('hub_appointment_services').delete().eq('appointment_id', tid);
-        const svcInsert = b.services.map((s, idx) => ({
+        const { data: apRow, error: apErr } = await supabaseAdmin
+          .from('hub_appointments')
+          .select('pet_id, starts_at, pricing_porte_tier, pricing_coat_type')
+          .eq('id', tid)
+          .single();
+        if (apErr || !apRow) return res.status(500).json({ error: apErr?.message || 'Erro ao recarregar agendamento' });
+        const ar = apRow as { pet_id: string | null; starts_at: string; pricing_porte_tier: string | null; pricing_coat_type: string | null };
+        const pet = await fetchPetPricingFields(b.clinic_id, ar.pet_id);
+        const puppy = await getOrCreateHubClinicSettings(b.clinic_id);
+        let snaps: ReturnType<typeof buildServiceLineSnapshots>;
+        try {
+          snaps = buildServiceLineSnapshots({
+            lines: patchServicePayload.normLines,
+            stMap: patchServicePayload.stMap,
+            pet,
+            appointmentYmd: ar.starts_at.slice(0, 10),
+            puppyMaxMonths: puppy.pet_puppy_max_months,
+            appointmentOverride: ar.pricing_porte_tier ?? null,
+            appointmentCoatOverride: ar.pricing_coat_type ?? null,
+          });
+        } catch (e) {
+          return res.status(500).json({ error: (e as Error).message });
+        }
+        const svcInsert = snaps.map((row) => ({
           appointment_id: tid,
-          hub_service_type_id: s.hub_service_type_id,
-          duration_minutes: s.duration_minutes,
-          order_index: idx,
+          hub_service_type_id: row.hub_service_type_id,
+          duration_minutes: row.duration_minutes,
+          order_index: row.order_index,
+          pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+          pricing_coat_type_applied: row.pricing_coat_type_applied,
+          cost_amount_applied: row.cost_amount_applied,
+          sale_amount_applied: row.sale_amount_applied,
+          pricing_variant: row.pricing_variant as unknown as Record<string, unknown> | null,
         }));
         const { error: svcErr } = await supabaseAdmin.from('hub_appointment_services').insert(svcInsert);
         if (svcErr) return res.status(500).json({ error: svcErr.message });
+      } else if (
+        b.pet_id !== undefined ||
+        b.starts_at !== undefined ||
+        b.pricing_porte_tier !== undefined ||
+        b.pricing_coat_type !== undefined
+      ) {
+        const { data: apRow } = await supabaseAdmin
+          .from('hub_appointments')
+          .select('pet_id, starts_at, pricing_porte_tier, pricing_coat_type')
+          .eq('id', tid)
+          .single();
+        if (apRow) {
+          const ar = apRow as { pet_id: string | null; starts_at: string; pricing_porte_tier: string | null; pricing_coat_type: string | null };
+          await refreshSnapshotsForAppointment(
+            b.clinic_id,
+            tid,
+            ar.starts_at,
+            ar.pet_id,
+            ar.pricing_porte_tier ?? null,
+            ar.pricing_coat_type ?? null,
+          );
+        }
       }
     }
 

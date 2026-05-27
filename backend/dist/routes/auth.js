@@ -52,39 +52,73 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
     let vetOnboarding = null;
     let freelancerOnboarding = null;
     let clinicUserRecord = null;
+    /** clinic_id resolvido (linha + metadata + qualquer membership) — usado no payload e contagens */
+    let lastResolvedClinicId = null;
     const userRole = user?.user_metadata?.role || user?.role;
     const allowedRolesForOnboarding = ['CADMIN', 'CMANAGER'];
     let clinicStatus = null;
     let clinicUserStatus = null;
     try {
         if (user) {
-            const { data: clinicUser, error: clinicUserError, } = await supabase_1.supabaseAdmin
+            const { data: clinicUserRows, error: clinicUserError, } = await supabase_1.supabaseAdmin
                 .from('clinic_users')
                 .select('id, clinic_id, user_id, role, status, unit_id, first_login_at, first_login_completed_at, onboarding_state')
                 .eq('user_id', user.id)
-                .in('role', allowedRolesForOnboarding)
-                .order('created_at', { ascending: true })
-                .limit(1)
-                .maybeSingle();
+                .order('created_at', { ascending: true });
+            if (clinicUserError) {
+                logger_js_1.logger.warn('Erro ao buscar clinic_users no login', {
+                    userId: user.id,
+                    error: clinicUserError.message,
+                    correlationId: req.correlationId,
+                });
+            }
+            const rows = clinicUserRows || [];
+            // Preferir linha de dono/gestor para onboarding (evita .in() que falha se role vier diferente na DB)
+            const clinicUser = rows.find((r) => allowedRolesForOnboarding.includes(String(r.role || ''))) ||
+                rows[0] ||
+                null;
             clinicUserRecord = clinicUser;
             const clinicUserRole = clinicUser?.role;
             clinicUserStatus = clinicUser?.status;
-            // ✅ clinic_id pode ser NULL (usuário ainda não criou clínica)
-            const clinicId = clinicUser?.clinic_id || null;
+            // ✅ clinic_id pode ser NULL na linha escolhida; outra membership ou user_metadata pode ter o UUID
+            const clinicIdFromPrimaryRow = clinicUser?.clinic_id || null;
+            const clinicIdFromAnyMembership = rows
+                .map((r) => r?.clinic_id)
+                .find((id) => id != null && String(id).trim() !== '') || null;
+            const metaClinicRaw = user?.user_metadata?.clinic_id;
+            const metaClinicId = metaClinicRaw != null && String(metaClinicRaw).trim() !== ''
+                ? String(metaClinicRaw).trim()
+                : null;
+            let resolvedClinicId = clinicIdFromPrimaryRow || metaClinicId || clinicIdFromAnyMembership;
             const isEligibleClinicUser = clinicUserRole ? allowedRolesForOnboarding.includes(clinicUserRole) : false;
-            const isClinicOwner = userRole === 'clinic';
+            const isClinicOwnerMetadata = String(userRole || '').toLowerCase() === 'clinic';
+            // Dono sem clinic_id na linha/metadata: último recurso — clínica criada com o mesmo email
+            if (!resolvedClinicId && isClinicOwnerMetadata && user?.email) {
+                const emailTrim = String(user.email).trim();
+                const { data: clinicByEmail, error: clinicByEmailErr } = await supabase_1.supabaseAdmin
+                    .from('clinics')
+                    .select('id')
+                    .eq('email', emailTrim)
+                    .maybeSingle();
+                if (!clinicByEmailErr && clinicByEmail?.id) {
+                    resolvedClinicId = String(clinicByEmail.id);
+                }
+            }
+            lastResolvedClinicId = resolvedClinicId;
+            // Qualquer vínculo clinic_users ou dono em metadata entra no bloco (ex.: CASSISTANT com clinic_id preenchido)
+            const participatesInClinicOnboarding = isClinicOwnerMetadata || isEligibleClinicUser || Boolean(clinicUser);
             // ✅ Ajustar: considerar usuários sem clínica (clinic_id NULL)
-            if ((isEligibleClinicUser || isClinicOwner) && clinicUser) {
-                // Garantir que first_login_at seja registrado na primeira autenticação
-                if (!clinicUser.first_login_at) {
+            if (participatesInClinicOnboarding && (clinicUser || isClinicOwnerMetadata)) {
+                // Garantir que first_login_at seja registrado na primeira autenticação (só se existe linha)
+                if (clinicUser && !clinicUser.first_login_at) {
                     const updateData = { first_login_at: new Date().toISOString() };
-                    // Só adicionar clinic_id na query se não for NULL
-                    if (clinicId) {
+                    const rowClinicId = clinicUser.clinic_id || null;
+                    if (rowClinicId) {
                         await supabase_1.supabaseAdmin
                             .from('clinic_users')
                             .update(updateData)
                             .eq('user_id', user.id)
-                            .eq('clinic_id', clinicId);
+                            .eq('clinic_id', rowClinicId);
                     }
                     else {
                         await supabase_1.supabaseAdmin
@@ -96,17 +130,17 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
                 }
                 let hasUnits = false;
                 let clinicStatusValue = null;
-                // ✅ Só buscar clinic e units se clinic_id não for NULL
-                if (clinicId) {
+                // ✅ Contar unidades / status usando clinic_id da linha OU do metadata (evita hasUnits falso)
+                if (resolvedClinicId) {
                     // Buscar status da clínica
                     const { data: clinic, error: clinicError, } = await supabase_1.supabaseAdmin
                         .from('clinics')
                         .select('status')
-                        .eq('id', clinicId)
+                        .eq('id', resolvedClinicId)
                         .maybeSingle();
                     if (clinicError) {
                         logger_js_1.logger.warn('Erro ao buscar clínica durante login', {
-                            clinicId,
+                            clinicId: resolvedClinicId,
                             userId: user.id,
                             error: clinicError.message,
                             correlationId: req.correlationId,
@@ -116,10 +150,10 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
                     const { count: unitCount, error: unitsError, } = await supabase_1.supabaseAdmin
                         .from('units')
                         .select('id', { count: 'exact', head: true })
-                        .eq('clinic_id', clinicId);
+                        .eq('clinic_id', resolvedClinicId);
                     if (unitsError) {
                         logger_js_1.logger.warn('Erro ao contar unidades durante login', {
-                            clinicId,
+                            clinicId: resolvedClinicId,
                             userId: user.id,
                             error: unitsError.message,
                             correlationId: req.correlationId,
@@ -129,20 +163,18 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
                     clinicStatusValue = clinic?.status || null;
                 }
                 else {
-                    // ✅ Se clinic_id é NULL, usuário precisa criar clínica (primeira unidade)
+                    // ✅ Sem clinic_id resolvido (DB + metadata): tratar como sem clínica vinculada
                     clinicStatusValue = null;
                     hasUnits = false;
                 }
                 const firstLoginCompletedAt = clinicUser?.first_login_completed_at || null;
                 const firstLoginAt = clinicUser?.first_login_at || null;
-                // ✅ needsOnboarding se:
-                // - clinic_id é NULL (não tem clínica ainda)
-                // - clinic_status é 'pending_unit' (tem clínica mas não tem unidade)
-                // - não tem unidades
-                const needsOnboarding = !clinicId || clinicStatusValue === 'pending_unit' || !hasUnits;
-                const shouldCompleteFirstUnit = needsOnboarding && (isEligibleClinicUser || isClinicOwner);
+                // ✅ needsOnboarding: falta clínica vinculada OU ainda não existe nenhuma unidade cadastrada.
+                // `pending_unit` no registro da clínica não deve forçar onboarding se já houver linha em `units`.
+                const needsOnboarding = !resolvedClinicId || !hasUnits;
+                const shouldCompleteFirstUnit = needsOnboarding && (isEligibleClinicUser || isClinicOwnerMetadata);
                 onboarding = {
-                    clinicId, // Pode ser null
+                    clinicId: resolvedClinicId,
                     clinicStatus: clinicStatusValue,
                     hasUnits,
                     isFirstLogin: !firstLoginCompletedAt,
@@ -151,9 +183,12 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
                     firstLoginAt,
                     firstLoginCompletedAt,
                     onboardingState: clinicUser?.onboarding_state || {},
-                    clinicUserRole: clinicUserRole || (isClinicOwner ? 'CADMIN' : null),
+                    clinicUserRole: clinicUserRole || (isClinicOwnerMetadata ? 'CADMIN' : null),
                     clinicUserStatus,
                 };
+                if (clinicStatusValue) {
+                    clinicStatus = clinicStatusValue;
+                }
             }
         }
     }
@@ -275,10 +310,11 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
         });
         throw new errors_js_1.UnauthorizedError('Seu acesso como membro da clínica foi inativado. Solicite reativação ao administrador.');
     }
+    const isClinicOwnerRole = String(userRole || '').toLowerCase() === 'clinic';
     const clinicUserPayload = clinicUserRecord
         ? {
             id: clinicUserRecord.id,
-            clinic_id: clinicUserRecord.clinic_id,
+            clinic_id: clinicUserRecord.clinic_id ?? lastResolvedClinicId,
             user_id: clinicUserRecord.user_id,
             role: clinicUserRecord.role,
             status: clinicUserRecord.status,
@@ -287,7 +323,19 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
             first_login_completed_at: clinicUserRecord.first_login_completed_at,
             onboarding_state: clinicUserRecord.onboarding_state,
         }
-        : null;
+        : isClinicOwnerRole && lastResolvedClinicId
+            ? {
+                id: null,
+                clinic_id: lastResolvedClinicId,
+                user_id: user.id,
+                role: 'CADMIN',
+                status: 'active',
+                unit_id: null,
+                first_login_at: null,
+                first_login_completed_at: null,
+                onboarding_state: {},
+            }
+            : null;
     logger_js_1.logger.info('Login realizado com sucesso', {
         userId: user.id,
         email: user.email,

@@ -63,7 +63,7 @@ const VetProfilePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  /** Edição por secção (perfil próprio, layout em cartões). */
+  /** Edição por seção (perfil próprio, layout em cartões). */
   const [editingSection, setEditingSection] = useState<VetOwnProfileEditSection>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 

@@ -57,7 +57,7 @@ Foi implementado um sistema completo de demandas compostas que permite criar uma
 ## 📦 Arquivos Criados/Modificados
 
 ### Backend
-- ✅ `backend/database_migrations/create_demand_positions_system.sql` - Migration completa
+- ✅ `backend/database_migrations/petimi_vet/create_demand_positions_system.sql` - Migration completa
 - ✅ `backend/src/controllers/demandPositionsController.ts` - Controlador da API
 - ✅ `backend/src/routes/demandPositions.ts` - Rotas da API
 - ✅ `backend/src/index.ts` - Registro das rotas
@@ -81,7 +81,7 @@ Acesse o dashboard do Supabase e vá para **SQL Editor**.
 
 Copie e execute o conteúdo do arquivo:
 ```
-backend/database_migrations/create_demand_positions_system.sql
+backend/database_migrations/petimi_vet/create_demand_positions_system.sql
 ```
 
 Esta migration irá:

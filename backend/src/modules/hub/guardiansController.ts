@@ -33,7 +33,7 @@ const createHubGuardianBodySchema = z.object({
     .transform((v) => (v === undefined || v === null || v === '' ? undefined : String(v)))
     .refine((v) => v === undefined || /^\d{4}-\d{2}-\d{2}$/.test(v), { message: 'Data inválida (use AAAA-MM-DD)' }),
   sex: sexSchema,
-  tax_id: optionalTrimmed(32).optional(),
+  tax_id: z.string().trim().min(1, 'CPF/CNPJ é obrigatório').max(32),
   id_doc_type: optionalTrimmed(80).optional(),
   id_doc_number: optionalTrimmed(80).optional(),
   lead_source: optionalTrimmed(120).optional(),
@@ -65,7 +65,12 @@ const updateHubGuardianBodySchema = z.object({
       message: 'Data inválida (use AAAA-MM-DD)',
     }),
   sex: z.enum(['M', 'F', 'U']).nullable().optional(),
-  tax_id: optionalTrimmed(32).optional(),
+  tax_id: z
+    .union([z.undefined(), z.string(), z.null()])
+    .transform((v) => (v === undefined ? undefined : v == null ? '' : String(v).trim()))
+    .optional()
+    .refine((v) => v === undefined || v.length >= 1, { message: 'CPF/CNPJ é obrigatório' })
+    .refine((v) => v === undefined || v.length <= 32, { message: 'CPF/CNPJ muito longo' }),
   id_doc_type: optionalTrimmed(80).optional(),
   id_doc_number: optionalTrimmed(80).optional(),
   lead_source: optionalTrimmed(120).optional(),
@@ -84,6 +89,9 @@ export type HubGuardianPetRow = {
   name: string;
   species: string;
   role: 'primary' | 'secondary';
+  size_tier: string;
+  coat_type: string | null;
+  birth_date: string | null;
 };
 
 async function fetchPetsByGuardianIds(
@@ -95,7 +103,7 @@ async function fetchPetsByGuardianIds(
 
   const { data, error } = await supabaseAdmin
     .from('hub_pet_guardians')
-    .select('guardian_id, role, hub_pets(id, name, species, clinic_id, deleted_at)')
+    .select('guardian_id, role, hub_pets(id, name, species, size_tier, coat_type, birth_date, clinic_id, deleted_at)')
     .in('guardian_id', guardianIds);
 
   if (error || !data) {
@@ -107,6 +115,9 @@ async function fetchPetsByGuardianIds(
     id: string;
     name: string;
     species: string;
+    size_tier: string;
+    coat_type: string | null;
+    birth_date: string | null;
     clinic_id: string;
     deleted_at: string | null;
   };
@@ -127,6 +138,9 @@ async function fetchPetsByGuardianIds(
       name: pet.name,
       species: pet.species,
       role: row.role as 'primary' | 'secondary',
+      size_tier: pet.size_tier || 'medio',
+      coat_type: pet.coat_type ?? null,
+      birth_date: pet.birth_date ?? null,
     });
     map.set(row.guardian_id, list);
   }
@@ -338,7 +352,7 @@ export const createHubGuardian = async (req: Request, res: Response) => {
       legal_name: d.legal_name ?? null,
       birth_date: d.birth_date ?? null,
       sex: d.sex ?? null,
-      tax_id: d.tax_id ?? null,
+      tax_id: d.tax_id,
       id_doc_type: d.id_doc_type ?? null,
       id_doc_number: d.id_doc_number ?? null,
       lead_source: d.lead_source ?? null,

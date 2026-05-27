@@ -16,6 +16,9 @@ export const WIZARD_SPECIES_OPTIONS: WizardSelectOption[] = [
   { value: 'Outro', label: 'Outro' },
 ];
 
+/** Espécies para combobox e filtros (sem linha vazia). Fonte única: wizard e cadastro rápido. */
+export const WIZARD_SPECIES_CANONICAL: WizardSelectOption[] = WIZARD_SPECIES_OPTIONS.filter((o) => o.value !== '');
+
 const DOG_BREEDS = [
   'Beagle',
   'Border Collie',

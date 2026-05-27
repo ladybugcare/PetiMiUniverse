@@ -5,7 +5,7 @@ const supabase_1 = require("../../config/supabase");
 const checkVetEmail = async (req, res) => {
     const { email } = req.params;
     try {
-        const { data, error } = await supabase_1.supabase
+        const { data, error } = await supabase_1.supabaseAdmin
             .from('vets')
             .select('id')
             .eq('email', email)

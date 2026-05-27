@@ -92,7 +92,7 @@ const createClinicPublic = async (req, res) => {
         }
         // 2️⃣ Verifica se clinic_users foi criado pelo trigger
         // O trigger handle_new_user deve ter criado clinic_users com clinic_id = NULL
-        const { data: existingClinicUser, error: fetchError } = await supabase_js_1.supabase
+        const { data: existingClinicUser, error: fetchError } = await supabase_js_1.supabaseAdmin
             .from('clinic_users')
             .select('id, status, clinic_id')
             .eq('user_id', userId)
@@ -106,7 +106,7 @@ const createClinicPublic = async (req, res) => {
         // Se o trigger não criou, cria manualmente
         if (!existingClinicUser) {
             console.log('🔹 Trigger não criou clinic_users, criando manualmente...');
-            const { error: insertError } = await supabase_js_1.supabase.from('clinic_users').insert([
+            const { error: insertError } = await supabase_js_1.supabaseAdmin.from('clinic_users').insert([
                 {
                     id: crypto_1.default.randomUUID(),
                     user_id: userId,
@@ -128,7 +128,7 @@ const createClinicPublic = async (req, res) => {
             // Atualiza clinic_users se necessário (garantir role e status corretos)
             if (existingClinicUser.status !== 'pending_clinic' || existingClinicUser.clinic_id !== null) {
                 console.log('🔹 Atualizando clinic_users para status correto...');
-                const { error: updateError } = await supabase_js_1.supabase
+                const { error: updateError } = await supabase_js_1.supabaseAdmin
                     .from('clinic_users')
                     .update({
                     clinic_id: null, // ✅ Garantir que é NULL

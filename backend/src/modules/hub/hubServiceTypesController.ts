@@ -15,6 +15,7 @@ import {
   serviceGroupAllowsPricingMatrix,
   type HubServicePricingMatrix,
 } from './hubServiceTypesPricingMatrix';
+import { ensureDefaultHubServiceGroups } from './hubServiceGroupsController';
 
 const uuidStr = z.string().uuid();
 
@@ -32,10 +33,6 @@ const serviceGroupSchema = z
       .max(64, { message: 'Grupo muito longo' })
       .regex(/^[a-z0-9_]+$/, { message: 'Grupo: use letras minúsculas, números e _ (sem espaços)' })
   );
-
-const optionalAgendaColor = z
-  .union([z.string().regex(/^#[0-9A-Fa-f]{6}$/), z.literal(''), z.null()])
-  .optional();
 
 const moneyAmountSchema = z.coerce.number().finite().min(0, { message: 'O valor não pode ser negativo' }).max(99_999_999.99, {
   message: 'Valor muito alto',
@@ -55,7 +52,6 @@ const createServiceTypeBodySchema = z
     default_duration_minutes: z.number().int().positive().optional().nullable(),
     description: z.string().max(4000).optional().nullable(),
     allow_scheduling: z.boolean().optional(),
-    agenda_color: optionalAgendaColor,
     internal_notes: z.string().max(4000).optional().nullable(),
     /** Matriz opcional (porte, período, consulta, km); alinhada a `service_group`. */
     pricing_matrix: z.unknown().optional().nullable(),
@@ -80,7 +76,6 @@ const updateServiceTypeBodySchema = z
     default_duration_minutes: z.number().int().positive().optional().nullable(),
     description: z.string().max(4000).optional().nullable(),
     allow_scheduling: z.boolean().optional(),
-    agenda_color: optionalAgendaColor,
     internal_notes: z.string().max(4000).optional().nullable(),
     pricing_matrix: z.unknown().optional().nullable(),
     code_locked: z.boolean().optional(),
@@ -91,6 +86,54 @@ const updateServiceTypeBodySchema = z
 
 const SELECT_FIELDS =
   'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, default_duration_minutes, active, allow_scheduling, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+
+type ServiceTypeRow = Record<string, unknown> & { service_group?: string | null };
+
+async function fetchGroupColorMap(clinicId: string): Promise<Map<string, string>> {
+  await ensureDefaultHubServiceGroups(clinicId);
+  const map = new Map<string, string>();
+  const { data, error } = await supabaseAdmin
+    .from('hub_service_groups')
+    .select('slug, color')
+    .eq('clinic_id', clinicId);
+  if (error) {
+    console.warn('[hub_service_types] fetchGroupColorMap', error.message);
+    return map;
+  }
+  for (const row of data ?? []) {
+    const r = row as { slug: string; color: string };
+    if (r.slug && r.color && /^#[0-9A-Fa-f]{6}$/.test(r.color)) {
+      map.set(r.slug, r.color);
+    }
+  }
+  return map;
+}
+
+function enrichRowsWithGroupColor<T extends ServiceTypeRow>(
+  rows: T[],
+  colorBySlug: Map<string, string>
+): Array<T & { group_color: string | null }> {
+  return rows.map((r) => ({
+    ...r,
+    group_color: colorBySlug.get((r.service_group || 'outros').toString().trim()) ?? null,
+  }));
+}
+
+/** Se existir linha em `hub_service_groups` com o slug e `archived_at` preenchido, devolve mensagem de erro. */
+async function assertHubServiceGroupNotArchived(clinicId: string, slug: string): Promise<string | null> {
+  const s = (slug || 'outros').trim();
+  const { data, error } = await supabaseAdmin
+    .from('hub_service_groups')
+    .select('archived_at')
+    .eq('clinic_id', clinicId)
+    .eq('slug', s)
+    .maybeSingle();
+  if (error || !data) return null;
+  if ((data as { archived_at?: string | null }).archived_at) {
+    return 'Este grupo de serviço está arquivado. Restaure-o em Configurações → Grupos de serviços ou escolha outro grupo.';
+  }
+  return null;
+}
 
 const DEFAULT_TYPES: Array<{
   code: string;
@@ -152,7 +195,10 @@ export const listHubServiceTypes = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Erro ao listar tipos de serviço' });
     }
 
-    return res.json({ service_types: data ?? [] });
+    const colorMap = await fetchGroupColorMap(clinic_id);
+    const service_types = enrichRowsWithGroupColor((data ?? []) as ServiceTypeRow[], colorMap);
+
+    return res.json({ service_types });
   } catch (e) {
     console.error('[hub_service_types] list', e);
     return res.status(500).json({ error: 'Erro interno' });
@@ -174,13 +220,17 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       default_duration_minutes,
       description,
       allow_scheduling,
-      agenda_color,
       internal_notes,
       code: codeOverride,
       pricing_matrix: pricing_matrix_raw,
     } = body.data;
 
     const group = service_group;
+
+    const archivedGroupErr = await assertHubServiceGroupNotArchived(clinic_id, group);
+    if (archivedGroupErr) {
+      return res.status(400).json({ error: archivedGroupErr });
+    }
 
     let pricing_matrix: HubServicePricingMatrix | null = null;
     if (pricing_matrix_raw !== undefined && pricing_matrix_raw !== null) {
@@ -234,8 +284,7 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       pricing_matrix,
       description: description ?? null,
       allow_scheduling: allow_scheduling ?? true,
-      agenda_color:
-        agenda_color === undefined || agenda_color === null || agenda_color === '' ? null : agenda_color,
+      agenda_color: null,
       internal_notes: internal_notes ?? null,
       code_locked: false,
       active: true,
@@ -256,7 +305,10 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Erro ao criar tipo de serviço' });
     }
 
-    return res.status(201).json({ service_type: data });
+    const colorMap = await fetchGroupColorMap(clinic_id);
+    const service_type = enrichRowsWithGroupColor([data as ServiceTypeRow], colorMap)[0];
+
+    return res.status(201).json({ service_type });
   } catch (e) {
     console.error('[hub_service_types] create', e);
     return res.status(500).json({ error: 'Erro interno' });
@@ -284,7 +336,6 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       default_duration_minutes,
       description,
       allow_scheduling,
-      agenda_color,
       internal_notes,
       code_locked,
       active,
@@ -300,7 +351,6 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       default_duration_minutes === undefined &&
       description === undefined &&
       allow_scheduling === undefined &&
-      agenda_color === undefined &&
       internal_notes === undefined &&
       code_locked === undefined &&
       active === undefined &&
@@ -323,6 +373,13 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Tipo não pertence a esta clínica' });
     }
 
+    if (service_group !== undefined) {
+      const archivedGroupErr = await assertHubServiceGroupNotArchived(clinic_id, service_group);
+      if (archivedGroupErr) {
+        return res.status(400).json({ error: archivedGroupErr });
+      }
+    }
+
     const patch: Record<string, unknown> = {};
     if (archived === true) patch.deleted_at = new Date().toISOString();
     else if (archived === false) patch.deleted_at = null;
@@ -333,9 +390,6 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
     if (default_duration_minutes !== undefined) patch.default_duration_minutes = default_duration_minutes;
     if (description !== undefined) patch.description = description;
     if (allow_scheduling !== undefined) patch.allow_scheduling = allow_scheduling;
-    if (agenda_color !== undefined) {
-      patch.agenda_color = agenda_color === '' || agenda_color === null ? null : agenda_color;
-    }
     if (internal_notes !== undefined) patch.internal_notes = internal_notes;
     if (code_locked !== undefined) patch.code_locked = code_locked;
     if (active !== undefined) patch.active = active;
@@ -405,7 +459,10 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Erro ao atualizar tipo' });
     }
 
-    return res.json({ service_type: data });
+    const colorMap = await fetchGroupColorMap(clinic_id);
+    const service_type = enrichRowsWithGroupColor([data as ServiceTypeRow], colorMap)[0];
+
+    return res.json({ service_type });
   } catch (e) {
     console.error('[hub_service_types] update', e);
     return res.status(500).json({ error: 'Erro interno' });
@@ -420,6 +477,8 @@ export const bootstrapHubServiceTypes = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'clinic_id é obrigatório e deve ser UUID' });
     }
     const clinic_id = parsed.data;
+
+    await ensureDefaultHubServiceGroups(clinic_id);
 
     const { data: existing, error: listErr } = await supabaseAdmin
       .from('hub_service_types')
@@ -474,9 +533,12 @@ export const bootstrapHubServiceTypes = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Erro ao listar tipos após bootstrap' });
     }
 
+    const colorMap = await fetchGroupColorMap(clinic_id);
+    const service_types = enrichRowsWithGroupColor((all ?? []) as ServiceTypeRow[], colorMap);
+
     return res.json({
       inserted: toInsert.length,
-      service_types: all ?? [],
+      service_types,
     });
   } catch (e) {
     console.error('[hub_service_types] bootstrap', e);

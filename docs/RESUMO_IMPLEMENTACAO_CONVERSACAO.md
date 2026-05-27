@@ -96,7 +96,7 @@ Implementar sistema de histórico de conversação com múltiplas mensagens por 
 
 ### Backend (3 arquivos)
 ```
-✅ backend/database_migrations/add_conversation_and_evaluation.sql (NOVO)
+✅ backend/database_migrations/petimi_vet/add_conversation_and_evaluation.sql (NOVO)
 ✅ backend/src/controllers/supportTicketsController.ts (MODIFICADO)
 ✅ backend/src/routes/supportTickets.ts (MODIFICADO)
 ```
@@ -181,7 +181,7 @@ Implementar sistema de histórico de conversação com múltiplas mensagens por 
 
 1. **Executar migração SQL no Supabase**
    ```
-   backend/database_migrations/add_conversation_and_evaluation.sql
+   backend/database_migrations/petimi_vet/add_conversation_and_evaluation.sql
    ```
 
 2. **Reiniciar backend** (se estiver rodando)

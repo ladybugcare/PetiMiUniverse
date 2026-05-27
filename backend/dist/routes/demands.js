@@ -6,9 +6,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const demandsController_1 = require("../controllers/demandsController");
 const requireActiveClinic_1 = require("../middleware/requireActiveClinic");
+const authMiddleware_1 = require("../middleware/authMiddleware");
+const authMiddleware_2 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
+/**
+ * @deprecated Use POST / instead (createDemandV2)
+ */
 // Create demand (requires active clinic)
 router.post('/create', requireActiveClinic_1.requireActiveClinic, demandsController_1.createDemand);
+// Create demand V2 (new endpoint with full validations and lifecycle)
+router.post('/', authMiddleware_1.authenticateUser, requireActiveClinic_1.requireActiveClinic, (0, authMiddleware_2.requirePermission)('demand.create'), demandsController_1.createDemandV2);
 router.get('/open', demandsController_1.getDemands);
 router.get('/all', demandsController_1.getAllDemands);
 router.get('/recent-activity', demandsController_1.getRecentActivity);

@@ -87,24 +87,26 @@ async function assertStaffInClinic(clinicId: string, staffId: string) {
   return data;
 }
 
-async function assertServiceTypesInClinic(clinicId: string, ids: string[]): Promise<boolean> {
-  if (ids.length === 0) return true;
+/** IDs únicos presentes em `hub_service_types` desta clínica, ativos (`deleted_at` nulo). */
+async function fetchActiveServiceTypeIdsForClinic(clinicId: string, ids: string[]): Promise<string[]> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return [];
   const { data, error } = await supabaseAdmin
     .from('hub_service_types')
     .select('id')
     .eq('clinic_id', clinicId)
     .is('deleted_at', null)
-    .in('id', ids);
-  if (error || !data) return false;
-  return data.length === ids.length;
+    .in('id', unique);
+  if (error || !data) return [];
+  const allowed = new Set(data.map((r) => r.id as string));
+  return unique.filter((id) => allowed.has(id));
 }
 
 async function replaceStaffServiceTypes(staffId: string, clinicId: string, serviceTypeIds: string[]) {
   await supabaseAdmin.from('hub_staff_service_types').delete().eq('staff_id', staffId);
-  if (serviceTypeIds.length === 0) return;
-  const ok = await assertServiceTypesInClinic(clinicId, serviceTypeIds);
-  if (!ok) throw new Error('Um ou mais tipos de serviço não pertencem à clínica');
-  const rows = serviceTypeIds.map((service_type_id) => ({ staff_id: staffId, service_type_id }));
+  const valid = await fetchActiveServiceTypeIdsForClinic(clinicId, serviceTypeIds);
+  if (valid.length === 0) return;
+  const rows = valid.map((service_type_id) => ({ staff_id: staffId, service_type_id }));
   const { error } = await supabaseAdmin.from('hub_staff_service_types').insert(rows);
   if (error) throw error;
 }
@@ -241,9 +243,12 @@ export const createHubStaff = async (req: Request, res: Response) => {
       if (!u || u.clinic_id !== d.clinic_id) return res.status(400).json({ error: 'Unidade inválida para esta clínica' });
     }
     const serviceIds = d.service_type_ids ?? [];
-    if (serviceIds.length > 0) {
-      const ok = await assertServiceTypesInClinic(d.clinic_id, serviceIds);
-      if (!ok) return res.status(400).json({ error: 'Tipo de serviço inválido' });
+    const serviceIdsUnique = [...new Set(serviceIds.filter(Boolean))];
+    const validNew = await fetchActiveServiceTypeIdsForClinic(d.clinic_id, serviceIdsUnique);
+    if (serviceIdsUnique.length > 0 && validNew.length === 0) {
+      return res.status(400).json({
+        error: 'Nenhum dos tipos de serviço indicados está ativo nesta clínica (podem estar arquivados).',
+      });
     }
     const insertRow = {
       clinic_id: d.clinic_id,
@@ -276,7 +281,7 @@ export const createHubStaff = async (req: Request, res: Response) => {
       console.error('[hub_staff] create', error);
       return res.status(500).json({ error: error?.message || 'Erro ao criar profissional' });
     }
-    await replaceStaffServiceTypes(created.id as string, d.clinic_id, serviceIds);
+    await replaceStaffServiceTypes(created.id as string, d.clinic_id, validNew);
     const [enriched] = await enrichStaffRows(d.clinic_id, [created as StaffRow]);
     return res.status(201).json({ staff: enriched });
   } catch (e) {

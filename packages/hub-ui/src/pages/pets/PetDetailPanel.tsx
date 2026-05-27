@@ -12,6 +12,12 @@ import {
 } from 'lucide-react';
 import type { HubPet } from '../../api/hubPetsApi';
 import { petAgeDetailedLabel } from './petAge';
+import {
+  COAT_TYPE_LABELS,
+  PORTE_LABELS,
+  type CoatTypeValue,
+  type PetBodyPorteValue,
+} from '../../utils/hubServiceTypesPricingMatrix';
 
 interface PetDetailPanelProps {
   pet: HubPet;
@@ -225,11 +231,25 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
                 <InfoPair label="Espécie" value={pet.species || '—'} />
                 <InfoPair label="Data de nascimento" value={formatDateBR(pet.birth_date)} />
                 <InfoPair label="Raça" value={pet.breed || '—'} />
-                <InfoPair label="Microchip" value="—" />
+                <InfoPair label="Cor" value={pet.coat_color || '—'} />
                 <InfoPair label="Sexo" value={sexLabel(pet.sex)} />
-                <InfoPair label="Cor / pelagem" value="—" />
+                <InfoPair
+                  label="Pelagem"
+                  value={
+                    pet.coat_type && COAT_TYPE_LABELS[pet.coat_type as CoatTypeValue]
+                      ? COAT_TYPE_LABELS[pet.coat_type as CoatTypeValue]
+                      : '—'
+                  }
+                />
                 <InfoPair label="Castrado(a)" value="—" />
-                <InfoPair label="Porte" value="—" />
+                <InfoPair
+                  label="Porte"
+                  value={
+                    pet.size_tier && PORTE_LABELS[pet.size_tier as PetBodyPorteValue]
+                      ? PORTE_LABELS[pet.size_tier as PetBodyPorteValue]
+                      : '—'
+                  }
+                />
               </div>
             </div>
           </div>

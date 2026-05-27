@@ -7,6 +7,8 @@ import type { PetWizardState } from '../types';
 import { mergeBreedComboboxOptions, mergeSpeciesComboboxOptions } from '../petSpeciesComboboxData';
 import { wizardBreedOptionsForSpecies } from '../petSpeciesBreedOptions';
 import { petAgeLabel } from '../../petAge';
+import { defaultBodyPorteForBreed } from '../../../../data/breedDefaultSizeTier';
+import { COAT_TYPE_LABELS, COAT_TYPE_VALUES } from '../../../../utils/hubServiceTypesPricingMatrix';
 
 const SIZE_OPTIONS: HubComboboxOption[] = [
   { value: '', label: '—' },
@@ -25,6 +27,11 @@ const REFERRAL_OPTIONS: HubComboboxOption[] = [
   { value: 'Já era cliente', label: 'Já era cliente' },
   { value: 'Passante', label: 'Passante' },
   { value: 'Outro', label: 'Outro' },
+];
+
+const COAT_TYPE_OPTIONS: HubComboboxOption[] = [
+  { value: '', label: '—' },
+  ...COAT_TYPE_VALUES.map((v) => ({ value: v, label: COAT_TYPE_LABELS[v] })),
 ];
 
 type Props = {
@@ -46,15 +53,18 @@ export const PetWizardStepBasics: React.FC<Props> = ({ state, update, photoPrevi
 
   const onSpeciesChange = (species: string) => {
     if (!species.trim()) {
-      update({ species: '', breed: '', isSRD: false });
+      update({ species: '', breed: '', isSRD: false, size: '' });
       return;
     }
     const nextBreeds = wizardBreedOptionsForSpecies(species).filter((o) => o.value !== '');
     const keepBreed = !!state.breed.trim() && nextBreeds.some((o) => o.value === state.breed);
+    const nextBreed = keepBreed ? state.breed : '';
+    const sug = nextBreed ? defaultBodyPorteForBreed(species, nextBreed) : '';
     update({
       species,
-      breed: keepBreed ? state.breed : '',
+      breed: nextBreed,
       isSRD: false,
+      ...(sug ? { size: sug } : { size: '' }),
     });
   };
 
@@ -150,7 +160,10 @@ export const PetWizardStepBasics: React.FC<Props> = ({ state, update, photoPrevi
               className="pet-wizard__combobox"
               options={breedComboOptions}
               value={state.isSRD ? '' : state.breed}
-              onChange={(v) => update({ breed: v, isSRD: false })}
+              onChange={(v) => {
+                const sug = speciesTrim ? defaultBodyPorteForBreed(speciesTrim, v) : '';
+                update({ breed: v, isSRD: false, ...(sug ? { size: sug } : {}) });
+              }}
               placeholder="Selecionar raça"
               searchPlaceholder="Buscar raça…"
               allowCreate
@@ -243,12 +256,28 @@ export const PetWizardStepBasics: React.FC<Props> = ({ state, update, photoPrevi
             <input className="pet-wizard__input pet-wizard__input--readonly" value={age} readOnly tabIndex={-1} aria-readonly />
           </div>
           <div>
-            <label className="pet-wizard__label">Cor / pelagem</label>
+            <label className="pet-wizard__label">Cor</label>
             <input
               className="pet-wizard__input"
               value={state.coatColor}
               onChange={(e) => update({ coatColor: e.target.value })}
               placeholder="Ex.: Caramelo"
+            />
+          </div>
+          <div>
+            <label className="pet-wizard__label" htmlFor="pet-wizard-coat-type">
+              Pelagem
+            </label>
+            <HubSearchableCombobox
+              id="pet-wizard-coat-type"
+              className="pet-wizard__combobox"
+              options={COAT_TYPE_OPTIONS}
+              value={state.coatType}
+              onChange={(v) => update({ coatType: v })}
+              placeholder="Selecionar pelagem"
+              searchPlaceholder="Buscar pelagem…"
+              allowCreate={false}
+              ariaLabel="Pelagem do pet"
             />
           </div>
           <div>

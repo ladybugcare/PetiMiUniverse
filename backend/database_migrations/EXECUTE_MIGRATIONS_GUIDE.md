@@ -2,7 +2,7 @@
 
 ## ⚠️ IMPORTANTE: Execute as migrations NA ORDEM especificada abaixo!
 
-Este guia lista todas as migrations que devem ser executadas para corrigir os erros de schema no banco de dados.
+Este guia lista migrations em **`backend/database_migrations/petimi_vet/`** que corrigem erros de schema comuns.
 
 ---
 
@@ -18,11 +18,11 @@ Este guia lista todas as migrations que devem ser executadas para corrigir os er
 
 ## 🩺 PASSO 0: DIAGNÓSTICO (EXECUTE PRIMEIRO!)
 
-**Arquivo:** `00_DIAGNOSE_DATABASE.sql`  
+**Arquivo:** `petimi_vet/00_DIAGNOSE_DATABASE.sql`  
 **Descrição:** Verifica o estado atual do banco de dados e indica quais migrations são necessárias.
 
 **Como usar:**
-1. Copie e execute o conteúdo de `00_DIAGNOSE_DATABASE.sql` no SQL Editor
+1. Copie e execute o conteúdo de `petimi_vet/00_DIAGNOSE_DATABASE.sql` no SQL Editor
 2. Leia os resultados - ele mostrará:
    - ✅ O que está correto
    - ❌ O que precisa ser corrigido
@@ -35,7 +35,7 @@ Este guia lista todas as migrations que devem ser executadas para corrigir os er
 ## 📝 Ordem de Execução das Migrations
 
 ### ✅ **1. Fix Position Applications Types** 
-**Arquivo:** `fix_position_applications_types.sql`  
+**Arquivo:** `petimi_vet/fix_position_applications_types.sql`  
 **Descrição:** Corrige os tipos de dados na tabela `position_applications` (bigint → uuid)
 
 **Por que executar:** Resolve o erro de candidatura de veterinários.
@@ -43,7 +43,7 @@ Este guia lista todas as migrations que devem ser executadas para corrigir os er
 ---
 
 ### ✅ **2. Create Demand Positions System**
-**Arquivo:** `create_demand_positions_system.sql`  
+**Arquivo:** `petimi_vet/create_demand_positions_system.sql`  
 **Descrição:** Adiciona a coluna `end_time` e remove `duration_hours` da tabela `demands`
 
 **Por que executar:** Resolve o erro "Could not find the 'end_time' column".
@@ -93,8 +93,8 @@ ORDER BY column_name;
 
 ## 📋 Checklist de Execução
 
-- [ ] Migration 1: `fix_position_applications_types.sql` executada
-- [ ] Migration 2: `create_demand_positions_system.sql` executada
+- [ ] Migration 1: `petimi_vet/fix_position_applications_types.sql` executada
+- [ ] Migration 2: `petimi_vet/create_demand_positions_system.sql` executada
 - [ ] Queries de verificação executadas
 - [ ] Schema correto confirmado
 - [ ] Teste de criar demanda ✅

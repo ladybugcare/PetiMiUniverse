@@ -51,14 +51,27 @@ const ClinicDashboardPage: React.FC = () => {
       return;
     }
 
-    // Dono de clínica (metadata role "clinic") sem clinic_id persistido → primeira unidade
+    // Dono de clínica (metadata role "clinic") sem clinic_id persistido → primeira unidade,
+    // exceto quando o último login já marcou unidades / onboarding concluído (evita loop).
     const rawMetaRole = user?.user_metadata?.role;
-    if (
-      String(rawMetaRole || '').toLowerCase() === 'clinic' &&
-      !getStoredClinicId()
-    ) {
-      navigate('/units/create-first', { replace: true });
-      return;
+    const isClinicOwnerMeta = String(rawMetaRole || '').toLowerCase() === 'clinic';
+    if (isClinicOwnerMeta && !getStoredClinicId()) {
+      let onboard: { hasUnits?: boolean; shouldCompleteFirstUnit?: boolean; clinicId?: string } | null =
+        null;
+      try {
+        const raw = localStorage.getItem('clinicOnboarding');
+        onboard = raw ? JSON.parse(raw) : null;
+      } catch {
+        onboard = null;
+      }
+      const onboardingSaysDone =
+        onboard?.hasUnits === true ||
+        onboard?.shouldCompleteFirstUnit === false ||
+        Boolean(onboard?.clinicId);
+      if (!onboardingSaysDone) {
+        navigate('/units/create-first', { replace: true });
+        return;
+      }
     }
     
     // Usar getUserRole() para detecção robusta da role
@@ -594,6 +607,7 @@ const ClinicDashboardPage: React.FC = () => {
         menuItems={menuItems}
         activeSection={activeSection}
         onSectionChange={setActiveSection}
+        persistentClinicNav
       >
         <div style={clinicPageStyles.shell}>
           <ClinicStatusBanner />

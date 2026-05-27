@@ -10,7 +10,7 @@ import colors from '../styles/colors';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../AuthContext';
 import { messagesApi } from '../services/messagesApi';
-import { getUserRole } from '../utils/authHelpers';
+import { getUserRole, getStoredClinicId } from '../utils/authHelpers';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { statisticsApi, ClinicStats } from '../services/statisticsApi';
 import AddressAutocomplete from '../components/AddressAutocomplete';
@@ -31,7 +31,8 @@ const ClinicProfilePage: React.FC = () => {
   
   // Se há um ID na URL, é visualização pública (não edição)
   const isPublicView = !!id;
-  const isOwnProfile = !isPublicView || (user?.id === id);
+  const storedClinicId = getStoredClinicId();
+  const isOwnProfile = !isPublicView || id === storedClinicId;
 
   // Get menu items using hook
   const userRole = user ? getUserRole(user) : 'CADMIN';
@@ -61,20 +62,22 @@ const ClinicProfilePage: React.FC = () => {
 
   useEffect(() => {
     loadProfile();
-  }, [id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega ao mudar rota / sessão
+  }, [id, user?.id]);
 
   const loadProfile = async () => {
     try {
       setLoading(true);
       
-      // Se há um ID na URL, carrega aquele perfil (visualização pública)
-      // Caso contrário, carrega o perfil do usuário logado
-      const clinicId = id || user?.id;
+      // Se há um ID na URL, carrega aquele perfil (visualização pública).
+      // Sem ID: usar sempre o ID da clínica persistido (nunca o UUID do Auth como clinic id).
+      const clinicId = id || getStoredClinicId();
       
       if (!clinicId) {
         if (!isPublicView) {
-        navigate('/login');
-        return;
+          showError('Não foi possível identificar a clínica. Entre novamente ou complete o onboarding.');
+          navigate('/clinic-dashboard');
+          return;
         } else {
           showError('Clínica não encontrada');
           navigate('/demands');

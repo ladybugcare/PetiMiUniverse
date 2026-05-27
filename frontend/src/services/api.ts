@@ -1,4 +1,3 @@
-import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { handleInvalidToken } from '../utils/envGuard';
 
@@ -13,7 +12,7 @@ console.log('🌎 API_BASE_URL em uso:', API_BASE_URL);
 // ====================================================// 🧠 Funções utilitárias
 // ====================================================
 const getStorageItem = (key: string): string | null => {
-  if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+  if (typeof localStorage !== 'undefined') {
     return localStorage.getItem(key);
   }
   return null;
@@ -107,7 +106,7 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}, retryCoun
   }
 
   // Fallback: buscar token do localStorage se Supabase não retornar
-  if (!authToken && Platform.OS === 'web') {
+  if (!authToken && typeof localStorage !== 'undefined') {
     const userStr = getStorageItem('user');
     const sessionStr = getStorageItem('session');
 
@@ -206,7 +205,7 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}, retryCoun
           await handleInvalidToken();
           
           // Redirecionar para login apenas no web
-          if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          if (typeof window !== 'undefined') {
             // Usar setTimeout para evitar problemas de navegação durante o tratamento de erro
             setTimeout(() => {
               window.location.href = '/login';

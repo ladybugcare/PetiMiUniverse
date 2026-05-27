@@ -6,7 +6,7 @@
 
 Acesse o **Supabase SQL Editor** e execute o arquivo:
 ```
-backend/database_migrations/add_conversation_and_evaluation.sql
+backend/database_migrations/petimi_vet/add_conversation_and_evaluation.sql
 ```
 
 O script irá:
@@ -143,7 +143,7 @@ npm start
 **Solução:** Execute o script de correção:
 ```sql
 -- No Supabase SQL Editor
-backend/database_migrations/fix_message_constraint.sql
+backend/database_migrations/petimi_vet/fix_message_constraint.sql
 ```
 Ou execute diretamente:
 ```sql

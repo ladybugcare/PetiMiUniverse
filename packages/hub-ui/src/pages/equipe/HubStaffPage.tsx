@@ -59,6 +59,11 @@ const JOB_FUNCTION_OPTIONS: { value: string; label: string; description: string 
     description: 'Responsável por treinamentos e comportamento.',
   },
   {
+    value: 'Recreador(a)',
+    label: 'Recreador(a)',
+    description: 'Recreação, brincadeiras e socialização dos pets (ex.: creche, área de lazer).',
+  },
+  {
     value: 'Motorista',
     label: 'Motorista',
     description: 'Transporte de pets no serviço Leva e Traz.',
@@ -80,6 +85,7 @@ function professionalKindFromJobTitle(jobTitle: string): HubProfessionalKind {
     'Auxiliar Veterinário(a)': 'assistant',
     'Enfermeiro(a) Veterinário(a)': 'assistant',
     'Adestrador(a)': 'caretaker',
+    'Recreador(a)': 'caretaker',
     Motorista: 'driver',
     Outros: 'other',
   };
@@ -182,8 +188,13 @@ function isoDateOnlyFromApi(raw: string | null | undefined): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
 }
 
-const fromRow = (m: HubStaffMember): FormState => {
+const fromRow = (m: HubStaffMember, activeServiceTypeIds?: Set<string>): FormState => {
   const wh = parseWorkHours(m.work_hours);
+  const linkedIds = (m.service_types ?? []).map((s) => s.id);
+  const service_type_ids =
+    activeServiceTypeIds != null && activeServiceTypeIds.size > 0
+      ? linkedIds.filter((id) => activeServiceTypeIds.has(id))
+      : linkedIds;
   return {
     full_name: m.full_name,
     display_name: m.display_name ?? '',
@@ -208,7 +219,7 @@ const fromRow = (m: HubStaffMember): FormState => {
     break_minutes: m.break_minutes != null ? String(m.break_minutes) : '',
     default_unit_id: m.default_unit_id ?? '',
     agenda_color: m.agenda_color || '#3B82F6',
-    service_type_ids: (m.service_types ?? []).map((s) => s.id),
+    service_type_ids,
   };
 };
 
@@ -285,7 +296,7 @@ const HubStaffPage: React.FC = () => {
     return { total, active, withAccess };
   }, [staff]);
 
-  /** Opções canónicas + valor actual (`job_title`) para texto livre / função criada na pesquisa. */
+  /** Opções canônicas + valor atual (`job_title`) para texto livre / função criada na pesquisa. */
   const jobTitleComboboxOptions = useMemo((): HubComboboxOption[] => {
     const rows: HubComboboxOption[] = JOB_FUNCTION_OPTIONS.map((o) => ({ value: o.value, label: o.label }));
     const jt = form.job_title.trim();
@@ -321,8 +332,12 @@ const HubStaffPage: React.FC = () => {
       const typesIn = serviceTypesByGroup.get(opt.value) ?? [];
       const ids = typesIn.map((t) => t.id);
       const nSel = ids.filter((id) => form.service_type_ids.includes(id)).length;
-      const firstHex = typesIn.find((t) => t.agenda_color && /^#[0-9A-Fa-f]{6}$/.test(t.agenda_color.trim()));
-      const accent = firstHex?.agenda_color?.trim() ?? resolveServiceAccentColor(null, opt.value);
+      const firstHex = typesIn.find((t) => {
+        const c = (t.group_color ?? t.agenda_color)?.trim();
+        return c && /^#[0-9A-Fa-f]{6}$/.test(c);
+      });
+      const accent =
+        (firstHex?.group_color ?? firstHex?.agenda_color)?.trim() ?? resolveServiceAccentColor(null, opt.value);
       return {
         opt,
         disabled: typesIn.length === 0,
@@ -429,7 +444,8 @@ const HubStaffPage: React.FC = () => {
     clearStaffPhotoLocal();
     setPanelMode('edit');
     setEditingId(m.id);
-    setForm(fromRow(m));
+    const activeIds = new Set(serviceTypes.map((t) => t.id));
+    setForm(fromRow(m, activeIds));
   };
 
   const closePanel = () => {
@@ -792,7 +808,7 @@ const HubStaffPage: React.FC = () => {
                     ) : null}
                     <p className="hub-pets-photo-field__hint">
                       PNG, JPG ou WEBP até 5 MB. Pode arrastar para a fotografia ou usar «Escolher imagem». O envio é
-                      imediato; grave o formulário para guardar todos os dados do profissional.
+                      imediato; salve o formulário para registrar todos os dados do profissional.
                     </p>
                   </div>
                 </div>

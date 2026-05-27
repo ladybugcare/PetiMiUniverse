@@ -3,6 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.cancelApplication = exports.getVetApplications = exports.getDemandWithPositions = exports.getPositionApplications = exports.rejectApplication = exports.acceptApplication = exports.applyToPosition = exports.getAvailablePositions = exports.createCompositeDemand = void 0;
 const supabase_1 = require("../config/supabase");
 const notificationsController_1 = require("./notificationsController");
+/**
+ * @deprecated Use POST /api/demands (createDemandV2) instead
+ */
 // Criar demanda composta com posições
 const createCompositeDemand = async (req, res) => {
     const { title, description, clinic_id, unit_id, demand_date, start_time, end_time, category, is_overnight, positions, // [{specialties: ["Anestesista", "Cirurgião"], slots: 2, payment: 500, description: ""}, ...]

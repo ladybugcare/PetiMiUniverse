@@ -790,40 +790,6 @@ body {
   --orbit-r: min(16.25rem, 43vw);
 }
 
-.hero-visual-org {
-  position: absolute;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.hero-visual-org--1 {
-  width: min(300px, 72vw);
-  height: min(300px, 72vw);
-  border-radius: 58% 42% 48% 52% / 52% 48% 58% 42%;
-  background: linear-gradient(145deg, rgba(196, 108, 106, 0.42), rgba(196, 108, 106, 0.12));
-  top: 8%;
-  right: 6%;
-  filter: blur(0.5px);
-}
-
-.hero-visual-org--2 {
-  width: min(260px, 65vw);
-  height: min(260px, 65vw);
-  border-radius: 42% 58% 55% 45% / 48% 42% 58% 52%;
-  background: linear-gradient(165deg, rgba(250, 243, 239, 0.95), rgba(245, 209, 208, 0.55));
-  bottom: 18%;
-  left: 0;
-}
-
-.hero-visual-org--3 {
-  width: min(200px, 50vw);
-  height: min(200px, 50vw);
-  border-radius: 50% 50% 42% 58% / 45% 55% 50% 50%;
-  background: rgba(196, 108, 106, 0.18);
-  top: 40%;
-  left: 28%;
-}
-
 .hero-phone-wrap {
   position: absolute;
   left: 50%;
@@ -1049,38 +1015,62 @@ body {
 }
 
 /*
- * Três pets em círculo ao redor do centro do telefone (sem ficar por cima do ecrã).
- * Ângulos: 180° esquerda, ~-36° topo-direita, 135° baixo-esquerda (evita empilhar à direita).
+ * Cinco pets em órbita ao redor do centro do telefone (ângulos repartidos, sem amontoar à direita).
  */
 .hero-pet-float--1 {
-  left: calc(var(--phone-cx) + cos(180deg) * var(--orbit-r));
-  top: calc(var(--phone-cy) + sin(180deg) * var(--orbit-r));
+  left: calc(var(--phone-cx) + cos(198deg) * var(--orbit-r));
+  /* Sobe um pouco para não cortar na base (hero com overflow + altura fixa da composição). */
+  top: calc(var(--phone-cy) + sin(198deg) * var(--orbit-r) - clamp(0.75rem, 2.5vw, 1.25rem));
 }
 
 .hero-pet-float--2 {
-  left: calc(var(--phone-cx) + cos(-36deg) * var(--orbit-r));
-  top: calc(var(--phone-cy) + sin(-36deg) * var(--orbit-r));
+  /* Mais à esquerda que -32°: aproxima do pet do topo e alinha a borda direita do círculo com a do telefone. */
+  left: calc(
+    var(--phone-cx) + cos(-50deg) * var(--orbit-r) - clamp(0.75rem, 2.8vw, 2.25rem)
+  );
+  top: calc(var(--phone-cy) + sin(-50deg) * var(--orbit-r));
 }
 
 .hero-pet-float--3 {
-  left: calc(var(--phone-cx) + cos(135deg) * var(--orbit-r));
-  top: calc(var(--phone-cy) + sin(135deg) * var(--orbit-r));
+  /* Antes ~132° (muito baixo, cortava na base). Mais alto e mais perto do pet superior à esquerda. */
+  left: calc(var(--phone-cx) + cos(158deg) * var(--orbit-r));
+  top: calc(var(--phone-cy) + sin(158deg) * var(--orbit-r) - clamp(0.5rem, 2.2vw, 1.25rem));
+}
+
+.hero-pet-float--4 {
+  left: calc(var(--phone-cx) + cos(72deg) * var(--orbit-r));
+  top: calc(var(--phone-cy) + sin(72deg) * var(--orbit-r));
+}
+
+.hero-pet-float--5 {
+  left: calc(var(--phone-cx) + cos(-112deg) * var(--orbit-r));
+  top: calc(var(--phone-cy) + sin(-112deg) * var(--orbit-r));
 }
 
 @supports not (width: calc(1px * cos(45deg))) {
   .hero-pet-float--1 {
     left: calc(50% - 16.25rem);
-    top: 52%;
+    top: calc(52% - 1rem);
   }
 
   .hero-pet-float--2 {
-    left: calc(50% + 13.25rem);
-    top: 22%;
+    left: calc(50% + 11rem);
+    top: 20%;
   }
 
   .hero-pet-float--3 {
     left: calc(50% - 11.5rem);
-    top: 72%;
+    top: calc(58% - 0.5rem);
+  }
+
+  .hero-pet-float--4 {
+    left: calc(50% + 11rem);
+    top: 58%;
+  }
+
+  .hero-pet-float--5 {
+    left: calc(50% - 10rem);
+    top: 28%;
   }
 }
 

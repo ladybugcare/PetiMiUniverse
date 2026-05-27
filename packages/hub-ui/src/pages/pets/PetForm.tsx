@@ -1,4 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { HelpCircle } from 'lucide-react';
 import type { HubGuardian } from '../../api/hubGuardiansApi';
 import type { PetFormValues } from './PetFormValues';
 import { HubBrDateInput } from '../../components/HubBrDateInput';
@@ -6,12 +7,29 @@ import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { mergeBreedComboboxOptions, mergeSpeciesComboboxOptions } from './wizard/petSpeciesComboboxData';
 import { wizardBreedOptionsForSpecies } from './wizard/petSpeciesBreedOptions';
+import { defaultBodyPorteForBreed } from '../../data/breedDefaultSizeTier';
+import {
+  COAT_TYPE_LABELS,
+  COAT_TYPE_VALUES,
+  PET_BODY_PORTE_VALUES,
+  PORTE_LABELS,
+} from '../../utils/hubServiceTypesPricingMatrix';
 
 const PET_FORM_SEX_OPTIONS: HubComboboxOption[] = [
   { value: '', label: '—' },
   { value: 'M', label: 'Macho' },
   { value: 'F', label: 'Fêmea' },
   { value: 'U', label: 'Indefinido' },
+];
+
+const PET_FORM_PORTE_OPTIONS: HubComboboxOption[] = [
+  { value: '', label: '—' },
+  ...PET_BODY_PORTE_VALUES.map((v) => ({ value: v, label: PORTE_LABELS[v] })),
+];
+
+const PET_FORM_COAT_OPTIONS: HubComboboxOption[] = [
+  { value: '', label: '—' },
+  ...COAT_TYPE_VALUES.map((v) => ({ value: v, label: COAT_TYPE_LABELS[v] })),
 ];
 
 interface PetFormProps {
@@ -74,12 +92,19 @@ export const PetForm: React.FC<PetFormProps> = ({
 
   const onSpeciesChange = (species: string) => {
     if (!species.trim()) {
-      patch({ species: '', breed: '' });
+      patch({ species: '', breed: '', size_tier: '', isSRD: false });
       return;
     }
     const nextBreeds = wizardBreedOptionsForSpecies(species).filter((o) => o.value !== '');
     const keepBreed = !!breedTrim && nextBreeds.some((o) => o.value === value.breed);
-    patch({ species, breed: keepBreed ? value.breed : '' });
+    const nextBreed = keepBreed ? value.breed : '';
+    const sug = nextBreed ? defaultBodyPorteForBreed(species, nextBreed) : '';
+    patch({
+      species,
+      breed: nextBreed,
+      isSRD: false,
+      ...(sug ? { size_tier: sug } : { size_tier: '' }),
+    });
   };
 
   const clearPhoto = () => {
@@ -180,20 +205,86 @@ export const PetForm: React.FC<PetFormProps> = ({
       </div>
       <div className="hub-clientes__field">
         <label className="hub-clientes__label" htmlFor="pet-form-breed">
-          Raça
+          Raça{!value.isSRD ? ' *' : ''}
         </label>
         <HubSearchableCombobox
           id="pet-form-breed"
           className="hub-combobox--clientes"
           options={breedComboOptions}
-          value={value.breed}
-          onChange={(v) => patch({ breed: v })}
+          value={value.isSRD ? '' : value.breed}
+          onChange={(v) => {
+            const sug = speciesTrim ? defaultBodyPorteForBreed(speciesTrim, v) : '';
+            patch({ breed: v, isSRD: false, ...(sug ? { size_tier: sug } : {}) });
+          }}
           placeholder="Selecionar raça"
           searchPlaceholder="Buscar raça…"
           allowCreate
           createEntityLabel="raça"
-          disabled={!speciesTrim}
+          disabled={value.isSRD || !speciesTrim}
           ariaLabel="Raça do pet"
+        />
+      </div>
+      <div className="hub-clientes__field hub-pets-srd-field">
+        <div className="hub-pets-srd-toggle-row">
+          <button
+            type="button"
+            className={`hub-pets-srd-switch ${value.isSRD ? 'hub-pets-srd-switch--on' : ''}`}
+            role="switch"
+            aria-checked={value.isSRD}
+            aria-label="SRD — sem raça definida"
+            onClick={() => {
+              const next = !value.isSRD;
+              patch({ isSRD: next, breed: next ? '' : value.breed });
+            }}
+          />
+          <span className="hub-clientes__label hub-pets-srd-label-inline">SRD</span>
+          <span className="hub-pets-srd-hint" title="Sem raça definida — raça desconhecida ou vira-lata">
+            <HelpCircle size={16} strokeWidth={2} aria-hidden />
+          </span>
+        </div>
+      </div>
+      <div className="hub-clientes__field">
+        <label className="hub-clientes__label" htmlFor="pet-form-porte">
+          Porte *
+        </label>
+        <HubSearchableCombobox
+          id="pet-form-porte"
+          className="hub-combobox--clientes"
+          options={PET_FORM_PORTE_OPTIONS}
+          value={value.size_tier}
+          onChange={(v) => patch({ size_tier: v as PetFormValues['size_tier'] })}
+          placeholder="Selecionar porte"
+          searchPlaceholder="Buscar porte…"
+          allowCreate={false}
+          ariaLabel="Porte do pet"
+        />
+      </div>
+      <div className="hub-clientes__field">
+        <label className="hub-clientes__label" htmlFor="pet-form-coat-color">
+          Cor
+        </label>
+        <input
+          id="pet-form-coat-color"
+          className="hub-clientes__input"
+          value={value.coat_color}
+          onChange={(e) => patch({ coat_color: e.target.value })}
+          placeholder="Ex.: Caramelo, preto e branco"
+        />
+      </div>
+      <div className="hub-clientes__field">
+        <label className="hub-clientes__label" htmlFor="pet-form-coat-type">
+          Pelagem
+        </label>
+        <HubSearchableCombobox
+          id="pet-form-coat-type"
+          className="hub-combobox--clientes"
+          options={PET_FORM_COAT_OPTIONS}
+          value={value.coat_type}
+          onChange={(v) => patch({ coat_type: v as PetFormValues['coat_type'] })}
+          placeholder="Selecionar pelagem"
+          searchPlaceholder="Buscar pelagem…"
+          allowCreate={false}
+          ariaLabel="Pelagem do pet"
         />
       </div>
       <div className="hub-clientes__field">

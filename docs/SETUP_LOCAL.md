@@ -19,12 +19,7 @@ cd PetiMiUniverse
 ## 📦 Passo 2: Instalar Dependências
 
 ```bash
-# Backend
-cd backend
-npm install
-
-# Frontend
-cd ../frontend
+# Na raiz do monorepo (instala backend, frontend, apps/hub-web e packages)
 npm install
 ```
 
@@ -60,21 +55,36 @@ Crie um arquivo `.env.local` em `frontend/.env.local`:
 REACT_APP_SUPABASE_URL=your_supabase_project_url
 REACT_APP_SUPABASE_ANON_KEY=your_supabase_anon_key
 REACT_APP_API_URL=http://localhost:3000
+# Opcional: URL da app PetMi Hub (Vite, porta 3002 por defeito) para os links do menu abrirem o Hub noutro host
+REACT_APP_HUB_WEB_URL=http://localhost:3002
 ```
+
+### 3.3 PetMi Hub (app web separada)
+
+Na raiz do monorepo, após `npm install`, crie `apps/hub-web/.env.local`:
+
+```env
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_API_URL=http://localhost:3000
+VITE_VET_WEB_URL=http://localhost:3001
+```
+
+Use as mesmas credenciais Supabase do backend. `VITE_VET_WEB_URL` é opcional (links «PetMi Vet» e redirecionamentos quando o papel não é staff de clínica no Hub).
 
 ⚠️ **Importante**: Use as mesmas credenciais do Supabase configuradas no backend.
 
 ## 🗄️ Passo 4: Configurar Banco de Dados
 
 1. Acesse o SQL Editor do seu projeto no Supabase Dashboard
-2. Execute os arquivos SQL na pasta `backend/database_migrations/` em ordem
+2. Execute os arquivos SQL em `backend/database_migrations/petimi_vet/` (e `petimi_hub/` se usar Hub) em ordem
 3. Verifique se as tabelas foram criadas corretamente
 
 > 💡 **Dica**: Execute primeiro os arquivos base do schema e depois as migrations específicas.
 
 ## 🏃 Passo 5: Rodar o Projeto
 
-Abra **dois terminais**:
+Abra **dois ou três terminais** (backend, Vet web, opcionalmente Hub web):
 
 ### Terminal 1 - Backend
 
@@ -85,22 +95,30 @@ npm run dev
 
 O backend estará rodando em: **http://localhost:3000**
 
-### Terminal 2 - Frontend
+### Terminal 2 - PetMi Vet (web)
 
 ```bash
 cd frontend
-npm start
+npm run web
 ```
 
-Escolha a plataforma:
-- Pressione `w` para web
-- Pressione `i` para iOS (requer macOS + Xcode)
-- Pressione `a` para Android (requer Android Studio)
+Por defeito a web Vet usa a porta **3001** (ver `frontend/package.json`).
+
+### Terminal 3 (opcional) - PetMi Hub
+
+Na raiz do repositório:
+
+```bash
+npm run dev:hub-web
+```
+
+A app Hub sobe em **http://localhost:3002**. A sessão é independente da app Vet (origem diferente); faça login também no Hub se precisar de testar só o Hub.
 
 ## ✅ Verificação
 
-1. **Backend**: Acesse http://localhost:3000 - deve retornar status da API
-2. **Frontend Web**: Abra http://localhost:19006 (porta padrão do Expo) ou siga a URL exibida no terminal
+1. **Backend**: Acesse http://localhost:3000 — deve responder à API
+2. **PetMi Vet (web)**: http://localhost:3001 (script `npm run web` em `frontend/`)
+3. **PetMi Hub (web)**: http://localhost:3002 (`npm run dev:hub-web` na raiz)
 
 ## 📱 Testando no Dispositivo Móvel
 

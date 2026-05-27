@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
 import { hubServiceTypesApi, type HubServiceType } from '../api/hubServiceTypesApi';
+import { hubServiceGroupsApi, type HubServiceGroupRow } from '../api/hubServiceGroupsApi';
 import { useAlert } from '../components/AlertProvider';
 import { HubSearchableCombobox } from '../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../components/HubSearchableCombobox';
@@ -10,7 +11,7 @@ import {
   Archive,
   CalendarCheck2,
   CalendarX2,
-  Check,
+  Copy,
   Layers,
   LayoutGrid,
   PauseCircle,
@@ -36,6 +37,7 @@ import {
   coercePricingMatrixFromApi,
   computeReferenceFromMatrix,
   defaultPricingMatrixForGroup,
+  defaultPricingMatrixForKind,
   matrixKindForGroup,
   saleRangeSummary,
   supportsPricingMatrixGroup,
@@ -83,6 +85,16 @@ function moneyCell(n: number): string {
   return formatMoneyCurrencyBrl(n);
 }
 
+function pricingCategoryLabel(kind: HubServicePricingMatrix['kind']): string {
+  if (kind === 'porte') return 'Por porte';
+  if (kind === 'pelagem') return 'Por pelagem';
+  if (kind === 'porte_pelagem') return 'Por porte + pelagem';
+  if (kind === 'periodo') return 'Por período';
+  if (kind === 'consulta') return 'Por tipo de consulta';
+  if (kind === 'km_banda') return 'Por faixa de km';
+  return 'Por categorias';
+}
+
 /** Margem sobre o preço de venda (informativa): (venda − custo) / venda × 100 */
 function marginOverSalePct(cost: number, sale: number): number | null {
   if (!(sale > 0)) return null;
@@ -93,19 +105,19 @@ const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
 
 const SERVICE_GROUP_HINTS: Record<string, string> = {
   banho_tosa:
-    'Pode usar uma única linha de serviço com preços diferentes por porte (Mini a Gigante), alinhados ao cadastro do pet.',
+    'Pode usar uma única linha de serviço com preços diferentes por porte, por pelagem ou pela combinação porte + pelagem.',
   hotel: 'Mesmo modelo por porte: um serviço «hotel» com tabela por tamanho do animal.',
   creche: 'Defina valores para dia completo e meio dia no mesmo serviço, quando activar a tabela de preços.',
   clinica: 'Consulta padrão e retorno no mesmo registo; retorno pode ter venda 0 (gratuita).',
   cirurgia: 'Precificação única (custo e venda) por serviço, salvo extensões futuras.',
   leva_traz: 'Adicione faixas de quilometragem com nome e valores; pode haver várias linhas no mesmo serviço.',
+  internacao: 'Hospitalização ou internamento: preço único por serviço ou pacotes por dia.',
   outros: 'Serviços gerais: preço único por linha.',
 };
 
 const CUSTOM_GROUP_HINT =
   'Grupo personalizado: precificação única (sem tabela por porte, período ou km). O nome é guardado como identificador interno (slug). Pode reutilizar este grupo noutros serviços.';
 
-const AGENDA_SWATCHES = ['#f0642f', '#7b1fa2', '#00897b', '#1565c0', '#f9a825', '#c62828', '#78909c'] as const;
 const DESC_MAX = 300;
 
 function truncateDesc(s: string, max: number): string {
@@ -126,7 +138,6 @@ type FormState = {
   default_duration_minutes: string;
   description: string;
   allow_scheduling: boolean;
-  agenda_color: string;
   internal_notes: string;
   code_locked: boolean;
 };
@@ -141,7 +152,6 @@ const emptyForm = (): FormState => ({
   default_duration_minutes: '',
   description: '',
   allow_scheduling: true,
-  agenda_color: '#f0642f',
   internal_notes: '',
   code_locked: false,
 });
@@ -165,23 +175,12 @@ const fromRow = (t: HubServiceType): FormState => {
     default_duration_minutes: t.default_duration_minutes != null ? String(t.default_duration_minutes) : '',
     description: t.description ?? '',
     allow_scheduling: t.allow_scheduling !== false,
-    agenda_color:
-      (() => {
-        const raw = (t.agenda_color ?? '').trim();
-        if (raw && /^#[0-9A-Fa-f]{6}$/.test(raw)) return raw;
-        return resolveServiceAccentColor(null, group);
-      })(),
     internal_notes: t.internal_notes ?? '',
     code_locked: Boolean(t.code_locked),
   };
 };
 
-function applySvcGroupChange(
-  prev: FormState,
-  newGroup: string,
-  panelMode: PanelMode,
-  agendaColorTouched: boolean
-): FormState {
+function applySvcGroupChange(prev: FormState, newGroup: string): FormState {
   const seedCost = parseMoneyInput(prev.cost_amount) ?? 0;
   const seedSale = parseMoneyInput(prev.sale_amount) ?? 0;
   const prevMatrix = prev.pricing_matrix;
@@ -227,11 +226,6 @@ function applySvcGroupChange(
     }
   }
 
-  let agenda_color = prev.agenda_color;
-  if (panelMode === 'create' && !agendaColorTouched) {
-    agenda_color = resolveServiceAccentColor(null, newGroup);
-  }
-
   if (pricing_mode === 'matrix' && pricing_matrix) {
     const ref = computeReferenceFromMatrix(pricing_matrix);
     return {
@@ -239,7 +233,6 @@ function applySvcGroupChange(
       service_group: newGroup,
       pricing_mode,
       pricing_matrix,
-      agenda_color,
       cost_amount: formatMoneyNumberBrl(ref.cost),
       sale_amount: formatMoneyNumberBrl(ref.sale),
     };
@@ -250,7 +243,6 @@ function applySvcGroupChange(
     service_group: newGroup,
     pricing_mode,
     pricing_matrix,
-    agenda_color,
   };
 }
 
@@ -276,7 +268,7 @@ function pricingMatrixMoneyCells(t: HubServiceType): {
     costLabel,
     saleLabel,
     detailTitle:
-      'Varia por dimensão (porte, período, tipo de consulta ou km). Na listagem: intervalo mínimo–máximo; margem usa o preço de referência (menor venda).',
+      `Varia ${pricingCategoryLabel(m.kind).toLowerCase()}. Na listagem: intervalo mínimo–máximo; margem usa o preço de referência (menor venda).`,
   };
 }
 
@@ -287,6 +279,7 @@ function rowStatus(t: HubServiceType): 'ativo' | 'inativo' | 'arquivado' {
 }
 
 const HubServiceTypesPage: React.FC = () => {
+  const navigate = useNavigate();
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
   const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
@@ -307,7 +300,7 @@ const HubServiceTypesPage: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
-  const agendaColorUserTouchedRef = useRef(false);
+  const [serviceGroups, setServiceGroups] = useState<HubServiceGroupRow[]>([]);
 
   const accessAllowed =
     clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
@@ -316,8 +309,12 @@ const HubServiceTypesPage: React.FC = () => {
     if (!clinicId) return;
     setLoading(true);
     try {
-      const res = await hubServiceTypesApi.list(clinicId, true, includeArchived);
-      setTypes(res.service_types || []);
+      const [typesRes, groupsRes] = await Promise.all([
+        hubServiceTypesApi.list(clinicId, true, includeArchived),
+        hubServiceGroupsApi.list(clinicId, true).catch(() => ({ service_groups: [] as HubServiceGroupRow[] })),
+      ]);
+      setTypes(typesRes.service_types || []);
+      setServiceGroups(groupsRes.service_groups || []);
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar serviços');
     } finally {
@@ -336,6 +333,21 @@ const HubServiceTypesPage: React.FC = () => {
     if (!clinicId || !accessAllowed) return;
     void load();
   }, [clinicId, accessAllowed, load]);
+
+  const groupColorBySlug = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of serviceGroups) {
+      if (g.slug && g.color) m.set(g.slug, g.color);
+    }
+    return m;
+  }, [serviceGroups]);
+
+  const formGroupPreviewHex = useMemo(() => {
+    const slug = (form.service_group || 'outros').trim();
+    const fromRow = groupColorBySlug.get(slug);
+    if (fromRow && /^#[0-9A-Fa-f]{6}$/.test(fromRow)) return fromRow;
+    return resolveServiceAccentColor(null, slug);
+  }, [form.service_group, groupColorBySlug]);
 
   const groupComboOptionsExtended = useMemo((): HubComboboxOption[] => {
     const customs: HubComboboxOption[] = [];
@@ -422,23 +434,18 @@ const HubServiceTypesPage: React.FC = () => {
   );
 
   const openCreate = () => {
-    agendaColorUserTouchedRef.current = false;
-    setPanelMode('create');
-    setEditingId(null);
-    setSelectedId(null);
-    setForm(emptyForm());
+    navigate('/hub/servicos/servicos/novo');
   };
 
   const openEdit = (t: HubServiceType) => {
-    agendaColorUserTouchedRef.current = false;
-    setPanelMode('edit');
-    setEditingId(t.id);
-    setSelectedId(t.id);
-    setForm(fromRow(t));
+    navigate(`/hub/servicos/servicos/${t.id}/editar`);
+  };
+
+  const openDuplicate = (t: HubServiceType) => {
+    navigate(`/hub/servicos/servicos/novo?duplicar=${encodeURIComponent(t.id)}`);
   };
 
   const closePanel = () => {
-    agendaColorUserTouchedRef.current = false;
     setPanelMode('none');
     setEditingId(null);
     setSelectedId(null);
@@ -449,10 +456,10 @@ const HubServiceTypesPage: React.FC = () => {
     if (!clinicId || !canWrite) return;
     try {
       const res = await hubServiceTypesApi.bootstrap(clinicId, includeArchived);
-      setTypes(res.service_types || []);
       showSuccess(
         res.inserted > 0 ? `Tipos padrão criados (${res.inserted}).` : 'Tipos padrão já existiam; lista atualizada.'
       );
+      await load();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro no bootstrap');
     }
@@ -464,13 +471,6 @@ const HubServiceTypesPage: React.FC = () => {
     const n = Number(s);
     if (!Number.isFinite(n) || n <= 0) return null;
     return Math.floor(n);
-  };
-
-  const normalizeHex = (): string | null => {
-    const s = form.agenda_color.trim();
-    if (!s) return null;
-    if (/^#[0-9A-Fa-f]{6}$/.test(s)) return s;
-    return null;
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -488,11 +488,6 @@ const HubServiceTypesPage: React.FC = () => {
     const dur = parseDuration();
     if (form.default_duration_minutes.trim() && dur == null) {
       showError('Duração inválida: use um número inteiro maior que zero ou deixe vazio.');
-      return;
-    }
-    const hex = normalizeHex();
-    if (form.agenda_color.trim() && !hex) {
-      showError('Cor na agenda: use formato #RRGGBB (ex.: #f0642f) ou deixe vazio.');
       return;
     }
     let costVal = parseMoneyInput(form.cost_amount);
@@ -538,7 +533,6 @@ const HubServiceTypesPage: React.FC = () => {
           default_duration_minutes: dur,
           description: form.description.trim() || null,
           allow_scheduling: form.allow_scheduling,
-          agenda_color: hex,
           internal_notes: form.internal_notes.trim() || null,
         });
         showSuccess('Serviço criado');
@@ -553,7 +547,6 @@ const HubServiceTypesPage: React.FC = () => {
         default_duration_minutes: dur,
           description: form.description.trim() || null,
           allow_scheduling: form.allow_scheduling,
-          agenda_color: hex,
           internal_notes: form.internal_notes.trim() || null,
           code_locked: form.code_locked,
       });
@@ -651,7 +644,7 @@ const HubServiceTypesPage: React.FC = () => {
             <div className="hub-servicos__metric-card__text">
               <div className="hub-servicos__metric-label">Total de serviços</div>
               <div className="hub-servicos__metric-value">{loading ? '—' : metrics.total.toLocaleString('pt-BR')}</div>
-              <div className="hub-servicos__metric-sub">Nesta clínica (lista actual)</div>
+              <div className="hub-servicos__metric-sub">Nesta clínica (lista atual)</div>
             </div>
             <div className="hub-servicos__metric-icon" aria-hidden>
               <LayoutGrid size={22} strokeWidth={1.75} />
@@ -780,14 +773,14 @@ const HubServiceTypesPage: React.FC = () => {
                   <th>Duração</th>
                   <th>Agend.</th>
                   <th>Estado</th>
-                  <th className="hub-clientes__th-actions">Acções</th>
+                  <th className="hub-clientes__th-actions">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="hub-clientes__muted" style={{ textAlign: 'center', padding: 24 }}>
-                      Nenhum serviço com os filtros seleccionados.
+                      Nenhum serviço com os filtros selecionados.
                     </td>
                   </tr>
                 ) : (
@@ -802,7 +795,10 @@ const HubServiceTypesPage: React.FC = () => {
                       m != null
                         ? `${m.toLocaleString('pt-BR', { maximumFractionDigits: 1, minimumFractionDigits: 0 })} %`
                         : '—';
-                    const accent = resolveServiceAccentColor(t.agenda_color, t.service_group || 'outros');
+                    const accent = resolveServiceAccentColor(
+                      t.group_color ?? t.agenda_color,
+                      t.service_group || 'outros'
+                    );
                     const desc = (t.description || '').trim();
                     return (
                       <tr
@@ -870,6 +866,14 @@ const HubServiceTypesPage: React.FC = () => {
                               <button type="button" className="hub-servicos__icon-btn" title="Editar" onClick={() => openEdit(t)}>
                                 <Pencil size={18} strokeWidth={2} />
                               </button>
+                              <button
+                                type="button"
+                                className="hub-servicos__icon-btn"
+                                title="Duplicar serviço"
+                                onClick={() => openDuplicate(t)}
+                              >
+                                <Copy size={18} strokeWidth={2} />
+                              </button>
                               {!t.deleted_at ? (
                                 <>
                                   <button
@@ -909,6 +913,7 @@ const HubServiceTypesPage: React.FC = () => {
         )}
       </div>
 
+      {false ? (
       <aside className="hub-clientes__panel">
         <div className="hub-clientes__panel-scroll">
           {panelMode === 'none' ? (
@@ -944,7 +949,7 @@ const HubServiceTypesPage: React.FC = () => {
                     value={form.service_group}
                     onChange={(raw) => {
                       const slug = normalizeServiceGroupInput(raw);
-                      setForm((f) => applySvcGroupChange(f, slug, panelMode, agendaColorUserTouchedRef.current));
+                      setForm((f) => applySvcGroupChange(f, slug));
                     }}
                     placeholder="Selecionar grupo"
                     searchPlaceholder="Buscar ou criar grupo…"
@@ -956,6 +961,23 @@ const HubServiceTypesPage: React.FC = () => {
                   <p className="hub-servicos__margin-info" style={{ marginTop: 6 }}>
                     {SERVICE_GROUP_HINTS[form.service_group] ?? CUSTOM_GROUP_HINT}
                   </p>
+                  <div className="hub-servicos__group-color-preview">
+                    <span
+                      className="hub-servicos__group-color-preview-dot"
+                      style={{
+                        backgroundColor: formGroupPreviewHex,
+                        boxShadow: `0 0 0 2px ${hexToSoftFill(formGroupPreviewHex, 0.4)}`,
+                      }}
+                      aria-hidden
+                    />
+                    <p className="hub-servicos__margin-info hub-servicos__group-color-preview-text">
+                      Cor na agenda para este grupo vem de{' '}
+                      <Link to="../configuracoes" className="hub-servicos-config__back-link">
+                        Configurações → Grupos de serviços
+                      </Link>
+                      .
+                    </p>
+                  </div>
                 </div>
 
                 <div className="hub-clientes__field">
@@ -975,7 +997,7 @@ const HubServiceTypesPage: React.FC = () => {
                 <div className="hub-clientes__field">
                   <span className="hub-clientes__label">Código</span>
                   <div className="hub-servicos__code-box">
-                    {panelMode === 'edit' && editingRow ? editingRow.code : codePreview || '…'}
+                    {panelMode === 'edit' && editingRow ? editingRow!.code : codePreview || '…'}
                   </div>
                   <div className="hub-servicos__code-box-muted">Gerado automaticamente a partir do nome (ajustável com sufixo se houver duplicados).</div>
                   {panelMode === 'edit' && editingRow ? (
@@ -1063,8 +1085,8 @@ const HubServiceTypesPage: React.FC = () => {
                       >
                         Preço único
                       </button>
-                <button
-                  type="button"
+                      <button
+                        type="button"
                         className={form.pricing_mode === 'matrix' ? 'hub-servicos__seg--active' : ''}
                         onClick={() => {
                           setForm((f) => {
@@ -1086,20 +1108,60 @@ const HubServiceTypesPage: React.FC = () => {
                           });
                         }}
                       >
-                        Tabela por dimensão
-                </button>
+                        Preço por categorias
+                      </button>
                     </div>
                     <p className="hub-servicos__margin-info" style={{ marginTop: 6 }}>
-                      Um único serviço na lista pode ter vários preços (porte, período, tipo de consulta ou faixas de km).
+                      Um único serviço pode ter vários preços por categorias, como porte, pelagem, período, consulta ou km.
                     </p>
                   </div>
                 ) : null}
 
                 {form.pricing_mode === 'matrix' && form.pricing_matrix ? (
                   <>
+                    {form.service_group === 'banho_tosa' ? (
+                      <div className="hub-clientes__field">
+                        <span className="hub-clientes__label">Categoria de preço</span>
+                        <div className="hub-servicos__seg" role="group" aria-label="Categoria de preço">
+                          {(
+                            [
+                              ['porte', 'Por porte'],
+                              ['pelagem', 'Por pelagem'],
+                              ['porte_pelagem', 'Por porte + pelagem'],
+                            ] as const
+                          ).map(([kind, label]) => (
+                            <button
+                              key={kind}
+                              type="button"
+                              className={form.pricing_matrix?.kind === kind ? 'hub-servicos__seg--active' : ''}
+                              onClick={() => {
+                                setForm((f) => {
+                                  const seedC = parseMoneyInput(f.cost_amount) ?? 0;
+                                  const seedS = parseMoneyInput(f.sale_amount) ?? 0;
+                                  const next = defaultPricingMatrixForKind(kind, {
+                                    cost_amount: seedC,
+                                    sale_amount: seedS,
+                                  });
+                                  const ref = computeReferenceFromMatrix(next);
+                                  return {
+                                    ...f,
+                                    pricing_mode: 'matrix',
+                                    pricing_matrix: next,
+                                    cost_amount: formatMoneyNumberBrl(ref.cost),
+                                    sale_amount: formatMoneyNumberBrl(ref.sale),
+                                  };
+                                });
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     <ServicePricingMatrixEditor
                       serviceGroup={form.service_group}
-                      matrix={form.pricing_matrix}
+                      matrix={form.pricing_matrix!}
                       formatMoneyNumber={formatMoneyNumberBrl}
                       parseMoney={parseMoneyInput}
                       onChange={(next) => {
@@ -1172,64 +1234,6 @@ const HubServiceTypesPage: React.FC = () => {
               </div>
 
               <div className="hub-servicos__form-section">
-                <h3 className="hub-servicos__form-section-title">Visual &amp; cor na agenda</h3>
-                <div className="hub-clientes__field">
-                  <span className="hub-clientes__label">Cor na agenda</span>
-                  <p className="hub-servicos__margin-info" style={{ marginTop: 0 }}>
-                    A cor aplica-se ao ícone do serviço e ao texto do grupo na tabela.
-                  </p>
-                  <div className="hub-servicos__swatch-row" role="list">
-                    {AGENDA_SWATCHES.map((hex) => {
-                      const normalized = form.agenda_color.trim().toLowerCase();
-                      const selected = normalized === hex.toLowerCase();
-                      return (
-                        <button
-                          key={hex}
-                          type="button"
-                          className={`hub-servicos__swatch ${selected ? 'hub-servicos__swatch--selected' : ''}`}
-                          style={{ backgroundColor: hex }}
-                          title={hex}
-                          onClick={() => {
-                            agendaColorUserTouchedRef.current = true;
-                            setForm((f) => ({ ...f, agenda_color: hex }));
-                          }}
-                          aria-label={`Cor ${hex}`}
-                          aria-pressed={selected}
-                        >
-                          {selected ? (
-                            <span className="hub-servicos__swatch-check">
-                              <Check size={16} strokeWidth={3} />
-                            </span>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="hub-servicos__color-row">
-                    <input
-                      type="color"
-                      value={/^#[0-9A-Fa-f]{6}$/.test(form.agenda_color.trim()) ? form.agenda_color.trim() : '#f0642f'}
-                      onChange={(e) => {
-                        agendaColorUserTouchedRef.current = true;
-                        setForm((f) => ({ ...f, agenda_color: e.target.value }));
-                      }}
-                      aria-label="Escolher cor personalizada"
-                    />
-                    <input
-                      className="hub-clientes__input"
-                      style={{ maxWidth: 120 }}
-                      value={form.agenda_color}
-                      onChange={(e) => {
-                        agendaColorUserTouchedRef.current = true;
-                        setForm((f) => ({ ...f, agenda_color: e.target.value }));
-                      }}
-                      placeholder="#RRGGBB"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="hub-servicos__form-section">
                 <h3 className="hub-servicos__form-section-title">Observações internas</h3>
                 <div className="hub-clientes__field">
                   <label className="hub-clientes__label" htmlFor="svc-notes">
@@ -1286,6 +1290,7 @@ const HubServiceTypesPage: React.FC = () => {
           )}
         </div>
       </aside>
+      ) : null}
       </div>
   );
 };

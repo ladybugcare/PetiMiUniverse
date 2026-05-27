@@ -15,7 +15,7 @@ export interface Position {
  */
 export class DemandValidationService {
   /**
-   * Valida se a clínica existe, o utilizador pertence a ela e a clínica pode operar
+   * Valida se a clínica existe, o usuário pertence a ela e a clínica pode operar
    * (`active`, ou `pending_approval` com pelo menos uma unidade aprovada).
    */
   static async validateClinic(clinicId: string, userId: string): Promise<void> {

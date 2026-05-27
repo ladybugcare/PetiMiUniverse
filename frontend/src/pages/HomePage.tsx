@@ -111,10 +111,6 @@ const HomePage: React.FC = () => {
 
             <div className="hero-images-right animate-scale-in animate-delay-300">
               <div className="hero-visual-composition">
-                <div className="hero-visual-org hero-visual-org--1" aria-hidden />
-                <div className="hero-visual-org hero-visual-org--2" aria-hidden />
-                <div className="hero-visual-org hero-visual-org--3" aria-hidden />
-
                 <div className="hero-pet-float hero-pet-float--1">
                   <div className="hero-pet-float__inner animate-float">
                     <img src="/pets/pet-showcase-1.png" alt="Cão" loading="lazy" />
@@ -130,12 +126,22 @@ const HomePage: React.FC = () => {
                     <img src="/pets/pet-showcase-6.png" alt="Pet" loading="lazy" />
                   </div>
                 </div>
+                <div className="hero-pet-float hero-pet-float--4">
+                  <div className="hero-pet-float__inner animate-float" style={{ animationDelay: '0.75s' }}>
+                    <img src="/pets/pet-showcase-3.png" alt="Pet" loading="lazy" />
+                  </div>
+                </div>
+                <div className="hero-pet-float hero-pet-float--5">
+                  <div className="hero-pet-float__inner animate-float" style={{ animationDelay: '1s' }}>
+                    <img src="/pets/pet-showcase-5.png" alt="Pet" loading="lazy" />
+                  </div>
+                </div>
 
                 <div className="hero-phone-wrap animate-float" style={{ animationDelay: '0.15s' }}>
                   <div className="hero-phone-shell">
                     <div className="hero-phone-inner">
                       <div className="hero-phone-bar" />
-                      <p className="hero-phone-greet">Olá, Amanda!</p>
+                      <p className="hero-phone-greet">Olá, Beatriz!</p>
                       <p className="hero-phone-sub">Bem-vindo de volta</p>
 
                       <div className="hero-phone-pet-card">
@@ -148,7 +154,7 @@ const HomePage: React.FC = () => {
                         />
                         <div className="hero-phone-pet-card__text">
                           <span className="hero-phone-pet-card__label">Meu pet</span>
-                          <span className="hero-phone-pet-card__name">Mel</span>
+                          <span className="hero-phone-pet-card__name">Lua</span>
                         </div>
                       </div>
 

@@ -18,6 +18,8 @@ export interface HubServiceType {
   active: boolean;
   allow_scheduling?: boolean;
   agenda_color: string | null;
+  /** Cor definida em Configurações → Grupos (`hub_service_groups`), quando existir linha com o mesmo slug. */
+  group_color?: string | null;
   description: string | null;
   internal_notes: string | null;
   code_locked?: boolean;
@@ -67,7 +69,6 @@ export const hubServiceTypesApi = {
     default_duration_minutes?: number | null;
     description?: string | null;
     allow_scheduling?: boolean;
-    agenda_color?: string | null;
     internal_notes?: string | null;
     code?: string;
     pricing_matrix?: HubServicePricingMatrix | null;
@@ -89,7 +90,6 @@ export const hubServiceTypesApi = {
       default_duration_minutes?: number | null;
       description?: string | null;
       allow_scheduling?: boolean;
-      agenda_color?: string | null;
       internal_notes?: string | null;
       code_locked?: boolean;
       active?: boolean;

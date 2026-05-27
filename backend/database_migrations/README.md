@@ -5,9 +5,9 @@ Este diretório agrupa migrations SQL por produto:
 | Pasta | Conteúdo |
 |--------|----------|
 | **`petimi_vet/`** | PetMi Vet (demandas, unidades, auth, suporte, seeds, diagnósticos, `BOOTSTRAP_NEW_SUPABASE_ALL_IN_ONE.sql`) |
-| **`petimi_hub/`** | PetMi Hub (`hub_guardians` + extensões CRM, `hub_pets`, `hub_service_types`, `hub_appointments`, blocos de calendário, `hub_appointment_series`, `hub_appointment_services`) |
+| **`petimi_hub/`** | PetMi Hub (`hub_guardians` + extensões CRM, `hub_pets`, `hub_service_types`, `hub_service_groups`, `hub_appointments`, blocos de calendário, `hub_appointment_series`, `hub_appointment_services`) |
 
-Os ficheiros `.md` de apoio (`README.md`, `EXECUTE_MIGRATIONS_GUIDE.md`, `README_STAGING.md`, …) ficam na **raiz** deste diretório.
+Os arquivos `.md` de apoio (`README.md`, `EXECUTE_MIGRATIONS_GUIDE.md`, `README_STAGING.md`, …) ficam na **raiz** deste diretório.
 
 ## 🚨 Resolução Rápida de Erros
 
@@ -66,7 +66,7 @@ Se você está com erros ao criar demandas ou candidatar-se a vagas:
 
 - **`petimi_vet/seed_specialties_petimi.sql`** — Garante a tabela `specialties`, colunas `role` / `active`, constraints compatíveis com o backend e **insere ou atualiza** ~50 especialidades (vet + freelancer).  
   **Quando usar:** Supabase novo ou tabela vazia / sem `role` (a API `/specialties` filtra por `role`; sem dados ou com `role` NULL a lista aparece vazia).  
-  **Como:** Supabase Dashboard → SQL Editor → colar o ficheiro → Run.
+  **Como:** Supabase Dashboard → SQL Editor → colar o arquivo → Run.
 
 - **`petimi_vet/seed_specialties_clinic_other_minimal.sql`** — Insere especialidades com `role` `clinic` e `other` (necessárias para criar demandas nessas categorias). **Quando usar:** `GET /specialties?category=clinic` ou `...other` devolve `[]`.
 
@@ -75,14 +75,14 @@ Se você está com erros ao criar demandas ou candidatar-se a vagas:
 ### PetMi Hub (operação / tutores)
 
 - **`petimi_hub/create_hub_guardians.sql`** — Cria `hub_guardians` (tutores por `clinic_id`, soft delete `deleted_at`) + índice + trigger `updated_at` via `moddatetime`.  
-  **Pré-requisito:** função/trigger `moddatetime` já aplicada (`petimi_vet/create_moddatetime_function.sql`). Se o trigger falhar, criar a função primeiro ou comentar o bloco `CREATE TRIGGER` no ficheiro.  
+  **Pré-requisito:** função/trigger `moddatetime` já aplicada (`petimi_vet/create_moddatetime_function.sql`). Se o trigger falhar, criar a função primeiro ou comentar o bloco `CREATE TRIGGER` no arquivo.  
   **Quando usar:** antes de usar `GET/POST/PATCH /api/hub/guardians` em staging/produção.
 
 - **`petimi_hub/create_hub_pets_and_pet_guardians.sql`** — Cria `hub_pets` (`petmi_pet_id`, dados do animal, soft delete) e `hub_pet_guardians` (primary/secondary, um primary por pet). **Executar depois** de `petimi_hub/create_hub_guardians.sql`.
 
-- **`petimi_hub/alter_hub_guardians_client_profile.sql`** — Adiciona a `hub_guardians` perfil de cliente: `client_kind` (PF/PJ), `legal_name`, documentos, morada, `client_status`, etc. **Executar depois** de `create_hub_guardians.sql`. Ver `petimi_hub/README.md`.
+- **`petimi_hub/alter_hub_guardians_client_profile.sql`** — Adiciona a `hub_guardians` perfil de cliente: `client_kind` (PF/PJ), `legal_name`, documentos, endereço, `client_status`, etc. **Executar depois** de `create_hub_guardians.sql`. Ver `petimi_hub/README.md`.
 
-- **`petimi_hub/create_hub_staff.sql`** — Equipe Hub (`hub_staff_members`, `hub_staff_service_types`). Ver comentários no ficheiro.
+- **`petimi_hub/create_hub_staff.sql`** — Equipe Hub (`hub_staff_members`, `hub_staff_service_types`). Ver comentários no arquivo.
 
 - **`petimi_hub/alter_hub_staff_birth_date.sql`** — Adiciona `birth_date` (date, opcional) a `hub_staff_members` se ainda não existir.
 
@@ -94,7 +94,7 @@ Se você está com erros ao criar demandas ou candidatar-se a vagas:
 
 - **`petimi_vet/fix_vet_onboarding_schema_supabase.sql`** — Adiciona em `public.vets` as colunas `onboarding_completed`, `crmv_file_url`, `service_regions`, `experience_year` e o bloco de **aprovação** (`approval_status`, etc.), como nas migrations `petimi_vet/add_vet_onboarding_fields.sql` + `petimi_vet/add_vet_approval_system.sql`.  
   **Sintoma:** ao finalizar onboarding, mensagem *column vets.onboarding_completed does not exist*.  
-  **Como:** SQL Editor → executar este ficheiro (ou as duas migrations originais **nessa ordem**).
+  **Como:** SQL Editor → executar este arquivo (ou as duas migrations originais **nessa ordem**).
 
 ### Cadastro público de clínica (`POST /clinics`)
 
@@ -148,15 +148,15 @@ Execute na ordem cronológica (da mais antiga para a mais recente):
 
 Para **criar schema do zero** num projeto novo (sem importar dump de cluster inteiro):
 
-- **Um só ficheiro:** `petimi_vet/BOOTSTRAP_NEW_SUPABASE_ALL_IN_ONE.sql` — cole no SQL Editor e execute (se der timeout, use a opção em passos abaixo). Para regenerar após alterar migrações: `./scripts/generate-bootstrap-all-in-one.sh`.
+- **Um só arquivo:** `petimi_vet/BOOTSTRAP_NEW_SUPABASE_ALL_IN_ONE.sql` — cole no SQL Editor e execute (se der timeout, use a opção em passos abaixo). Para regenerar após alterar migrações: `./scripts/generate-bootstrap-all-in-one.sh`.
 
-1. No repositório, execute: `./scripts/bootstrap-new-supabase.sh` — lista a **ordem** dos ficheiros SQL.
-2. No **Supabase Dashboard → SQL Editor**, cole e execute **cada** ficheiro **por ordem** (um de cada vez).
+1. No repositório, execute: `./scripts/bootstrap-new-supabase.sh` — lista a **ordem** dos arquivos SQL.
+2. No **Supabase Dashboard → SQL Editor**, cole e execute **cada** arquivo **por ordem** (um de cada vez).
 3. Depois, opcional: `petimi_vet/00_DIAGNOSE_DATABASE.sql` e, só se fizer falta, `petimi_vet/01_FIX_ALL_ERRORS.sql`.
 
 Importante: **não** execute `petimi_vet/create_auth_triggers.sql` depois de `petivet_prod_structure.sql` + migrações em `supabase/migrations/`, pois sobrescreve `handle_new_user`. Use `petimi_vet/bootstrap_attach_auth_triggers.sql` (só liga os triggers em `auth.users`).
 
-Dump antigo (`.backup`): não colar o ficheiro inteiro no SQL Editor. Para extrair só `public`: `python3 scripts/extract_public_from_supabase_cluster_dump.py …` (ver comentário no script).
+Dump antigo (`.backup`): não colar o arquivo inteiro no SQL Editor. Para extrair só `public`: `python3 scripts/extract_public_from_supabase_cluster_dump.py …` (ver comentário no script).
 
 ---
 

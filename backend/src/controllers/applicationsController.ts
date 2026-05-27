@@ -586,7 +586,7 @@ export const updateApplicationStatus = async (
     // Criar notificação para o vet/freelancer
     const applicant = (application as any).vets || (application as any).freelancers;
     if (applicant) {
-      const notificationType = status === 'approved' ? 'application_approved' : 'application_rejected';
+      const notificationType = status === 'approved' ? 'application_accepted' : 'application_rejected';
       const notificationMessage = status === 'approved'
         ? `Sua candidatura foi aprovada para a demanda "${demand.title}"`
         : `Sua candidatura foi rejeitada para a demanda "${demand.title}"`;

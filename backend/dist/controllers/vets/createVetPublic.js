@@ -151,7 +151,7 @@ const createVetPublic = async (req, res) => {
             vetData.specialties = specialties;
         if (experience)
             vetData.experience = experience;
-        const { data: vet, error: vetError } = await supabase_1.supabase
+        const { data: vet, error: vetError } = await supabase_1.supabaseAdmin
             .from('vets')
             .insert([vetData])
             .select()
@@ -171,7 +171,7 @@ const createVetPublic = async (req, res) => {
                     fallbackData.specialties = specialties;
                 if (experience)
                     fallbackData.experience = experience;
-                const { data: fallbackVet, error: fallbackError } = await supabase_1.supabase
+                const { data: fallbackVet, error: fallbackError } = await supabase_1.supabaseAdmin
                     .from('vets')
                     .insert([fallbackData])
                     .select()

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { brDateToIso, isoDateToBr } from '../pages/clientes/formatters';
+import { brDateToIso, isoDateToBr, normalizeBrDateTyping } from '../utils/hubBrDate';
 
 export type HubBrDateInputProps = {
   id: string;
@@ -12,17 +12,9 @@ export type HubBrDateInputProps = {
   required?: boolean;
 };
 
-/** Formata digitação para dd/mm/aaaa (até 8 dígitos). */
-function normalizeBrDateTyping(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
-
 /**
- * Campo de data em texto dd/mm/aaaa, alinhado ao Hub (evita o date picker nativo).
- * Valor externo em ISO; ao blur valida e reverte texto inválido.
+ * Input de data dd/mm/aaaa sem moldura Hub (rótulo/ícones).
+ * Preferir {@link HubDateField} em telas novas.
  */
 export const HubBrDateInput: React.FC<HubBrDateInputProps> = ({
   id,

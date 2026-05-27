@@ -81,6 +81,19 @@ export const getClinicStats = async (req: Request<{ clinicId: string }>, res: Re
 
     if (usersError) throw usersError;
 
+    // Anúncios ativos no marketplace (vendedor = clínica; seller_id costuma coincidir com clinic_id do dono)
+    let activeMarketplaceListings = 0;
+    const { count: marketplaceActiveCount, error: marketplaceCountError } = await supabase
+      .from('marketplace_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('seller_id', clinicId)
+      .eq('seller_type', 'clinic')
+      .eq('status', 'active');
+
+    if (!marketplaceCountError) {
+      activeMarketplaceListings = marketplaceActiveCount || 0;
+    }
+
     res.json({
       stats: {
         totalDemands: totalDemands || 0,
@@ -88,6 +101,7 @@ export const getClinicStats = async (req: Request<{ clinicId: string }>, res: Re
         totalApplications: applicationsCount,
         pendingApplications: pendingApplicationsCount,
         totalUsers: totalUsers || 0,
+        activeMarketplaceListings,
       },
     });
   } catch (error: any) {

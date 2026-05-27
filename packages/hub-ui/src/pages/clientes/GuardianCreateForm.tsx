@@ -190,6 +190,18 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
       )}
 
       <div className="hub-clientes__field">
+        <label className="hub-clientes__label">CPF / CNPJ *</label>
+        <input
+          className="hub-clientes__input"
+          value={value.tax_id}
+          onChange={(e) => patch({ tax_id: e.target.value })}
+          placeholder="Obrigatório"
+          required
+          aria-required
+        />
+      </div>
+
+      <div className="hub-clientes__field">
         <label className="hub-clientes__label">E-mail</label>
         <input
           className="hub-clientes__input"
@@ -197,16 +209,6 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
           value={value.email}
           onChange={(e) => patch({ email: e.target.value })}
           placeholder="opcional"
-        />
-      </div>
-
-      <div className="hub-clientes__field">
-        <label className="hub-clientes__label">CPF / CNPJ</label>
-        <input
-          className="hub-clientes__input"
-          value={value.tax_id}
-          onChange={(e) => patch({ tax_id: e.target.value })}
-          placeholder="Opcional"
         />
       </div>
 
@@ -288,7 +290,7 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
       <hr style={{ border: 'none', borderTop: '1px solid var(--hc-border)', margin: '16px 0' }} />
 
       <p className="hub-clientes__section-title" style={{ marginBottom: 10 }}>
-        Morada
+        Endereço
       </p>
 
       <div className="hub-clientes__row2">
