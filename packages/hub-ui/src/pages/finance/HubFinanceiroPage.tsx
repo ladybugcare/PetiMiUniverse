@@ -219,6 +219,92 @@ const HubFinanceiroPage: React.FC = () => {
     }
   };
 
+  const onUpsertCommissionRule = async () => {
+    if (!clinicId) return;
+    if (!hasPermission('hub.financial.write')) {
+      showError('Sem permissão para alterar regras de comissão.');
+      return;
+    }
+    if (!commSvcId) {
+      showError('Escolha um tipo de serviço.');
+      return;
+    }
+    const rate = Number(String(commRate).replace(',', '.'));
+    if (Number.isNaN(rate) || rate < 0) {
+      showError('Indique uma taxa válida.');
+      return;
+    }
+    if (commBasis === 'percent_of_sale' && rate > 100) {
+      showError('Percentagem não pode exceder 100.');
+      return;
+    }
+    try {
+      await hubFinancialApi.upsertCommissionRule({
+        clinic_id: clinicId,
+        hub_service_type_id: commSvcId,
+        basis: commBasis,
+        rate,
+        notes: commNotes.trim() || null,
+      });
+      showSuccess('Regra guardada.');
+      setCommNotes('');
+      await loadCommissions();
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro ao guardar regra');
+    }
+  };
+
+  const onToggleCommissionRule = async (rule: HubCommissionRule) => {
+    if (!clinicId) return;
+    if (!hasPermission('hub.financial.write')) {
+      showError('Sem permissão.');
+      return;
+    }
+    try {
+      await hubFinancialApi.patchCommissionRule(rule.id, {
+        clinic_id: clinicId,
+        active: !rule.active,
+      });
+      await loadCommissions();
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro ao actualizar');
+    }
+  };
+
+  const onDeleteCommissionRule = async (ruleId: string) => {
+    if (!clinicId) return;
+    if (!hasPermission('hub.financial.write')) {
+      showError('Sem permissão.');
+      return;
+    }
+    if (!window.confirm('Remover esta regra de comissão?')) return;
+    try {
+      await hubFinancialApi.deleteCommissionRule(ruleId, clinicId);
+      showSuccess('Regra removida.');
+      setCommPreview(null);
+      await loadCommissions();
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro ao remover');
+    }
+  };
+
+  const onRunCommissionPreview = async () => {
+    if (!clinicId || !previewReceivableId) {
+      showError('Seleccione um recebível para pré-visualizar.');
+      return;
+    }
+    setCommPreviewLoading(true);
+    try {
+      const p = await hubFinancialApi.getCommissionPreview(clinicId, previewReceivableId);
+      setCommPreview(p);
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro ao calcular pré-visualização');
+      setCommPreview(null);
+    } finally {
+      setCommPreviewLoading(false);
+    }
+  };
+
   if (!permLoading && !hasPermission('hub.financial.read')) {
     return <Navigate to="/hub/clientes" replace />;
   }
@@ -237,7 +323,9 @@ const HubFinanceiroPage: React.FC = () => {
     <>
       <div className="hub-clientes__title-block">
         <h1 className="hub-clientes__title">Financeiro</h1>
-        <p className="hub-clientes__subtitle">Recebíveis, despesas e fluxo de caixa da unidade seleccionada.</p>
+        <p className="hub-clientes__subtitle">
+          Recebíveis, despesas, fluxo de caixa e regras de comissão por tipo de serviço (unidade seleccionada).
+        </p>
       </div>
 
       <div className="hub-servicos__metrics" aria-live="polite">
@@ -280,6 +368,15 @@ const HubFinanceiroPage: React.FC = () => {
           onClick={() => setTab('cashflow')}
         >
           Fluxo de caixa
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'commissions'}
+          className={`hub-clientes__tab ${tab === 'commissions' ? 'hub-clientes__tab--active' : ''}`}
+          onClick={() => setTab('commissions')}
+        >
+          Comissões
         </button>
       </div>
 
@@ -483,6 +580,223 @@ const HubFinanceiroPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
+          )}
+        </section>
+      ) : null}
+
+      {tab === 'commissions' ? (
+        <section className="hub-finance-page__section">
+          <h2 className="hub-clientes__form-title">Comissões por tipo de serviço</h2>
+          <p className="hub-clientes__subtitle" style={{ marginBottom: 16 }}>
+            Defina percentagem sobre o valor da linha do recebível ou valor fixo por linha (limitado ao total da linha).
+            Guardar com o mesmo tipo de serviço actualiza a regra existente.
+          </p>
+          {commLoading ? (
+            <p className="hub-clientes__muted">A carregar…</p>
+          ) : (
+            <>
+              {hasPermission('hub.financial.write') ? (
+                <div className="hub-finance-page__expense-toolbar" style={{ marginBottom: 20 }}>
+                  <div className="hub-clientes__field hub-finance-page__field-grow">
+                    <label className="hub-clientes__label" htmlFor="fin-comm-svc">
+                      Tipo de serviço
+                    </label>
+                    <select
+                      id="fin-comm-svc"
+                      className="hub-clientes__select-input"
+                      value={commSvcId}
+                      onChange={(e) => setCommSvcId(e.target.value)}
+                    >
+                      <option value="">—</option>
+                      {commissionServiceTypes
+                        .filter((s) => s.active && !s.deleted_at)
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.code})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="hub-clientes__field hub-finance-page__field-compact">
+                    <label className="hub-clientes__label" htmlFor="fin-comm-basis">
+                      Critério
+                    </label>
+                    <select
+                      id="fin-comm-basis"
+                      className="hub-clientes__select-input"
+                      value={commBasis}
+                      onChange={(e) => setCommBasis(e.target.value as HubCommissionBasis)}
+                    >
+                      {(Object.keys(COMMISSION_BASIS_LABELS) as HubCommissionBasis[]).map((k) => (
+                        <option key={k} value={k}>
+                          {COMMISSION_BASIS_LABELS[k]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="hub-clientes__field hub-finance-page__field-compact">
+                    <label className="hub-clientes__label" htmlFor="fin-comm-rate">
+                      {commBasis === 'percent_of_sale' ? 'Taxa (%)' : 'Valor (R$)'}
+                    </label>
+                    <input
+                      id="fin-comm-rate"
+                      className="hub-clientes__input"
+                      value={commRate}
+                      onChange={(e) => setCommRate(e.target.value)}
+                      inputMode="decimal"
+                    />
+                  </div>
+                  <div className="hub-clientes__field hub-finance-page__field-grow">
+                    <label className="hub-clientes__label" htmlFor="fin-comm-notes">
+                      Notas (opcional)
+                    </label>
+                    <input
+                      id="fin-comm-notes"
+                      className="hub-clientes__input"
+                      value={commNotes}
+                      onChange={(e) => setCommNotes(e.target.value)}
+                      placeholder="Ex.: comissão groomer"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="hub-clientes__btn hub-clientes__btn--primary hub-finance-page__btn-align"
+                    onClick={() => void onUpsertCommissionRule()}
+                  >
+                    Guardar regra
+                  </button>
+                </div>
+              ) : (
+                <p className="hub-clientes__muted" style={{ marginBottom: 16 }}>
+                  Apenas leitura — sem permissão para alterar regras.
+                </p>
+              )}
+
+              <h3 className="hub-clientes__form-title" style={{ fontSize: '1rem', marginBottom: 8 }}>
+                Regras
+              </h3>
+              {commissionRules.length === 0 ? (
+                <p className="hub-clientes__muted">Nenhuma regra definida para esta clínica.</p>
+              ) : (
+                <div className="hub-clientes__table-wrap">
+                  <table className="hub-clientes__table hub-finance-page__table">
+                    <thead>
+                      <tr>
+                        <th>Serviço</th>
+                        <th>Critério</th>
+                        <th className="hub-finance-page__th-num">Taxa</th>
+                        <th>Activa</th>
+                        {hasPermission('hub.financial.write') ? <th /> : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {commissionRules.map((r) => (
+                        <tr key={r.id} className={!r.active ? 'hub-clientes__muted' : undefined}>
+                          <td>{commissionRuleServiceLabel(r, commissionServiceTypes)}</td>
+                          <td>{COMMISSION_BASIS_LABELS[r.basis] ?? r.basis}</td>
+                          <td className="hub-finance-page__td-num">{formatCommissionRate(r.basis, Number(r.rate))}</td>
+                          <td>{r.active ? 'Sim' : 'Não'}</td>
+                          {hasPermission('hub.financial.write') ? (
+                            <td>
+                              <button
+                                type="button"
+                                className="hub-clientes__btn hub-clientes__btn--ghost"
+                                style={{ marginRight: 8 }}
+                                onClick={() => void onToggleCommissionRule(r)}
+                              >
+                                {r.active ? 'Desactivar' : 'Activar'}
+                              </button>
+                              <button
+                                type="button"
+                                className="hub-clientes__btn hub-clientes__btn--ghost"
+                                onClick={() => void onDeleteCommissionRule(r.id)}
+                              >
+                                Remover
+                              </button>
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <h3 className="hub-clientes__form-title" style={{ fontSize: '1rem', marginTop: 24, marginBottom: 8 }}>
+                Pré-visualização por recebível
+              </h3>
+              <p className="hub-clientes__subtitle" style={{ marginBottom: 12 }}>
+                Usa as linhas do recebível e as regras <strong>activas</strong> desta clínica (até 80 recebíveis recentes
+                desta unidade).
+              </p>
+              <div className="hub-finance-page__expense-toolbar" style={{ marginBottom: 16 }}>
+                <div className="hub-clientes__field hub-finance-page__field-grow">
+                  <label className="hub-clientes__label" htmlFor="fin-comm-prev-rec">
+                    Recebível
+                  </label>
+                  <select
+                    id="fin-comm-prev-rec"
+                    className="hub-clientes__select-input"
+                    value={previewReceivableId}
+                    onChange={(e) => {
+                      setPreviewReceivableId(e.target.value);
+                      setCommPreview(null);
+                    }}
+                  >
+                    <option value="">—</option>
+                    {commPreviewReceivables.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.status} · {formatBrl(Number(r.final_amount))} · {r.source_type}{' '}
+                        ({r.source_id.slice(0, 8)}…)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--primary hub-finance-page__btn-align"
+                  disabled={!previewReceivableId || commPreviewLoading}
+                  onClick={() => void onRunCommissionPreview()}
+                >
+                  {commPreviewLoading ? 'A calcular…' : 'Calcular'}
+                </button>
+              </div>
+              {commPreview ? (
+                <>
+                  <p className="hub-clientes__subtitle" style={{ marginBottom: 8 }}>
+                    Total comissão estimada:{' '}
+                    <strong>{formatBrl(commPreview.total_commission)}</strong> (recebível final{' '}
+                    {formatBrl(commPreview.receivable_final_amount)})
+                  </p>
+                  <div className="hub-clientes__table-wrap">
+                    <table className="hub-clientes__table hub-finance-page__table">
+                      <thead>
+                        <tr>
+                          <th>Descrição</th>
+                          <th className="hub-finance-page__th-num">Linha</th>
+                          <th>Critério</th>
+                          <th className="hub-finance-page__th-num">Comissão</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {commPreview.lines.map((ln) => (
+                          <tr key={ln.line_id}>
+                            <td>{ln.description}</td>
+                            <td className="hub-finance-page__td-num">{formatBrl(ln.line_total)}</td>
+                            <td>
+                              {ln.basis && ln.rate != null
+                                ? `${COMMISSION_BASIS_LABELS[ln.basis as HubCommissionBasis] ?? ln.basis} (${formatCommissionRate(ln.basis as HubCommissionBasis, ln.rate)})`
+                                : '—'}
+                            </td>
+                            <td className="hub-finance-page__td-num">{formatBrl(ln.commission_amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : null}
+            </>
           )}
         </section>
       ) : null}

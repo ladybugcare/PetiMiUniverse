@@ -87,10 +87,17 @@ Receivable → PaymentIntent (pending | succeeded | failed | cancelled) → Paym
 
 Regras por **`hub_service_type_id`**, não por rótulos genéricos “Banho / Consulta”.
 
+### `hub_commission_rules`
+
+- `clinic_id`, `hub_service_type_id` — no máximo uma regra activa por par (índice único parcial com `deleted_at IS NULL`).
+- `basis`: `percent_of_sale` (taxa em % sobre `line_total` da linha do recebível) ou `fixed_per_sale` (valor fixo por linha, limitado ao total da linha).
+- `rate` (numeric), `active`, `notes`, `created_at` / `updated_at`, `deleted_at` (soft delete).
+- A pré-visualização e relatórios futuros percorrem `hub_receivable_lines` e aplicam a regra activa cujo `hub_service_type_id` coincide com o da linha.
+
 ## Permissões (alvo)
 
-- `hub.financial.read` — listagens, dashboard, “sem cobrança”.
-- `hub.financial.write` — despesas, ajustes, waive.
+- `hub.financial.read` — listagens, dashboard, “sem cobrança”, pré-visualização de comissões.
+- `hub.financial.write` — despesas, ajustes, waive, **regras de comissão** (criar/editar/remover).
 - `hub.receivables.create` — gerar cobrança (pode coincidir com `hub.financial.write` no MVP).
 - `hub.cash.session` — abrir/fechar caixa, sangria/suprimento.
 - `hub.cash.receive` — registar pagamento na recepção.

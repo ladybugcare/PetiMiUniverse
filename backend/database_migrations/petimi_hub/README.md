@@ -99,3 +99,5 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 36. **`alter_hub_financial_waive_quote_billing.sql`** — `billing_waived_at` / `billing_waive_reason` em `hub_grooming_sessions` e `hub_encounters`; `billing_state` e waive em `hub_quotes`. Executar depois do item 35 e das tabelas de grooming (31) e encounters (25).
 
 37. **`create_hub_expenses.sql`** — `hub_expenses` (despesas por unidade; dashboard e fluxo de caixa). Executar depois do item 35. Ver [HUB_FINANCIAL_IMPLEMENTATION_PLAN.md](../../docs/architecture/HUB_FINANCIAL_IMPLEMENTATION_PLAN.md) (Fase 2).
+
+38. **`create_hub_commission_rules.sql`** — `hub_commission_rules` (comissão por `hub_service_type_id`: `percent_of_sale` ou `fixed_per_sale`; soft delete). Executar depois dos itens 3 e 35. API: `GET|POST /api/hub/finance/commission-rules`, `PATCH|DELETE …/commission-rules/:id`, `GET …/commission-preview`. Ver [HUB_FINANCIAL_MODEL.md](../../docs/architecture/HUB_FINANCIAL_MODEL.md) (comissões).

@@ -1,6 +1,6 @@
 # Plano de implementação — Financeiro e Caixa (PetMi Hub)
 
-> **Nota (mai/2026):** Fase 1: migrações 35–36. **Fase 2:** aplicar também **`create_hub_expenses.sql`** (item 37 no README de migrações).
+> **Nota (mai/2026):** Fase 1: migrações 35–36. **Fase 2:** **`create_hub_expenses.sql`** (item 37). **Fase 3:** **`create_hub_commission_rules.sql`** (item 38).
 
 Documento espelhado do plano aprovado. **Fonte de trabalho:** manter este ficheiro alinhado às entregas por fase.
 
@@ -10,7 +10,7 @@ Documento espelhado do plano aprovado. **Fonte de trabalho:** manter este fichei
 |------|--------|-----------|
 | **1** | 01–03 + UI mínima | Recebíveis (criação explícita), caixa, pagamentos, lista **Atendimentos sem cobrança**, card no Caixa, `billing_state` em orçamentos, API preview/create (iterativo) |
 | **2** | 04–06 | Dashboard gerencial, despesas, fluxo de caixa — **entregue (mai/2026):** migração `create_hub_expenses.sql`; API `GET /finance/dashboard-summary`, `GET /finance/cash-flow`, `GET|POST /finance/expenses`, `POST /finance/cash-sessions/:id/movements`; UI `/hub/dashboard`, separadores Despesas e Fluxo em `/hub/financeiro`, sangria/suprimento no Caixa. |
-| **3** | 07 | Comissões por `hub_service_type_id` |
+| **3** | 07 | Comissões por `hub_service_type_id` — **entregue (mai/2026):** migração `create_hub_commission_rules.sql`; API `GET|POST /finance/commission-rules`, `PATCH|DELETE /finance/commission-rules/:id`, `GET /finance/commission-preview`; separador **Comissões** em `/hub/financeiro`. |
 | **4** | 08–09 | Integrações (interface), relatórios |
 | **Defer** | 10 | Centro de custos (colunas reservadas) |
 
