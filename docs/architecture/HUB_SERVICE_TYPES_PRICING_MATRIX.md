@@ -128,6 +128,23 @@ Valores de `period`: `full_day`, `half_day`.
 - `km_min` / `km_max`: opcionais, número ≥ 0 ou `null` (sem limite desse lado).
 - Pelo menos uma linha em `tiers`.
 
+### `personalizado`
+
+Campos de preço nomeados pelo utilizador (ex.: «Com escova do tutor» vs «Com escova da clínica»). Permitido em **qualquer** `service_group`, inclusive `outros` e grupos personalizados.
+
+```json
+{
+  "kind": "personalizado",
+  "tiers": [
+    { "label": "Com escova do tutor", "cost_amount": 5, "sale_amount": 25 },
+    { "label": "Com escova da clínica", "cost_amount": 12, "sale_amount": 40 }
+  ]
+}
+```
+
+- `label`: texto curto (1–120 caracteres), obrigatório; chaves únicas por matriz.
+- Na agenda e orçamentos: `pricing_variant: { "custom_tier_index": 0 }` (índice em `tiers`).
+
 ## Validação
 
 - Backend: [`hubServiceTypesPricingMatrix.ts`](../../backend/src/modules/hub/hubServiceTypesPricingMatrix.ts) (Zod) + `pricingMatrixKindMatchesGroup`.
@@ -140,6 +157,6 @@ Valores de `period`: `full_day`, `half_day`.
 3. Se `kind === 'porte'`, resolver o tier (automático ou override do agendamento) e usar os valores desse tier; persistir snapshots em `hub_appointment_services` (ver seção «Agenda e snapshots» acima).
 4. Se `kind === 'pelagem'`, usar `hub_pets.coat_type` ou `pricing_coat_type` do agendamento. Se nenhum existir, devolver erro claro para seleção manual.
 5. Se `kind === 'porte_pelagem'`, resolver porte e pelagem e buscar a combinação exata; `pricing_porte_tier` e `pricing_coat_type` são overrides só daquele agendamento.
-6. Outros `kind` (`periodo`, `consulta`, `km_banda`): na fase atual da agenda, as linhas usam sobretudo os valores de referência do tipo quando não há contexto adicional — evoluir por dimensão em iterações futuras.
+6. `periodo`, `consulta`, `km_banda`, `personalizado`: escolha explícita via `pricing_variant` na linha (`period`, `consult_type`, `km_tier_index`, `custom_tier_index`).
 
 A listagem no Hub continua a mostrar intervalos mín–máx derivados dos tiers para custo e venda quando existe matriz.

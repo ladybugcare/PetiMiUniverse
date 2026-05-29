@@ -6,7 +6,7 @@ import './estoque.css';
 
 const HubEstoqueShell: React.FC = () => {
   return (
-    <div className="hub-estoque-shell hub-estoque-shell--tabs">
+    <div className="hub-clientes hub-estoque-shell hub-estoque-shell--tabs">
       <HubEstoqueSubnav />
       <Outlet />
     </div>

@@ -550,7 +550,7 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
   const unitIds = [...new Set(rows.map((r) => r.unit_id).filter(Boolean))] as string[];
   const apptIds = rows.map((r) => r.id as string);
 
-  const [stRes, staffRes, petsRes, guRes, unitsRes, svcLinesRes] = await Promise.all([
+  const [stRes, staffRes, petsRes, guRes, unitsRes, svcLinesRes, encRes] = await Promise.all([
     supabaseAdmin
       .from('hub_service_types')
       .select('id, name, code, service_group, agenda_color, default_duration_minutes')
@@ -575,6 +575,13 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
           )
           .in('appointment_id', apptIds)
           .order('order_index')
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    apptIds.length
+      ? supabaseAdmin
+          .from('hub_encounters')
+          .select('id, hub_appointment_id, status')
+          .in('hub_appointment_id', apptIds)
+          .is('deleted_at', null)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ]);
 
@@ -604,6 +611,11 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
   const petMap = new Map((petsRes.data ?? []).map((x: Record<string, unknown>) => [x.id as string, x]));
   const guMap = new Map((guRes.data ?? []).map((x: Record<string, unknown>) => [x.id as string, x]));
   const unitMap = new Map((unitsRes.data ?? []).map((x: Record<string, unknown>) => [x.id as string, x]));
+  const encByAppt = new Map<string, { id: string; status: string }>();
+  for (const enc of (encRes.data ?? []) as Record<string, unknown>[]) {
+    const apptId = enc.hub_appointment_id as string | null;
+    if (apptId) encByAppt.set(apptId, { id: enc.id as string, status: String(enc.status) });
+  }
 
   // group service lines by appointment
   const svcByAppt = new Map<string, Record<string, unknown>[]>();
@@ -639,6 +651,7 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       pricing_variant: (l.pricing_variant as Record<string, unknown> | null) ?? null,
       service_type: stMap.get(l.hub_service_type_id as string) ?? null,
     }));
+    const linked = encByAppt.get(r.id as string);
     return {
       ...r,
       service_type: st ?? null,
@@ -647,6 +660,8 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       guardian: gu ?? null,
       unit: un ?? null,
       services,
+      hub_encounter_id: linked?.id ?? null,
+      hub_encounter_status: linked?.status ?? null,
     };
   });
 }
@@ -668,6 +683,7 @@ const listQuerySchema = z.object({
 const linePricingVariantSchema = z
   .object({
     km_tier_index: z.number().int().min(0).optional(),
+    custom_tier_index: z.number().int().min(0).optional(),
     period: z.enum(['full_day', 'half_day']).optional(),
     consult_type: z.enum(['padrao', 'retorno']).optional(),
   })

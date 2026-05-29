@@ -89,8 +89,13 @@ router.post('/login', authLimiter, asyncHandler(async (req, res) => {
 
       const rows = clinicUserRows || [];
       // Preferir linha de dono/gestor para onboarding (evita .in() que falha se role vier diferente na DB)
+      const hasClinicId = (r: any) => r?.clinic_id != null && String(r.clinic_id).trim() !== '';
       const clinicUser =
+        rows.find(
+          (r: any) => allowedRolesForOnboarding.includes(String(r.role || '')) && hasClinicId(r),
+        ) ||
         rows.find((r: any) => allowedRolesForOnboarding.includes(String(r.role || ''))) ||
+        rows.find((r: any) => hasClinicId(r)) ||
         rows[0] ||
         null;
 
@@ -216,6 +221,10 @@ router.post('/login', authLimiter, asyncHandler(async (req, res) => {
         const shouldCompleteFirstUnit =
           needsOnboarding && (isEligibleClinicUser || isClinicOwnerMetadata);
 
+        const shouldCompleteClinicProfile =
+          (!resolvedClinicId || !hasUnits) &&
+          (isEligibleClinicUser || isClinicOwnerMetadata || clinicUserRole === 'CADMIN');
+
         onboarding = {
           clinicId: resolvedClinicId,
           clinicStatus: clinicStatusValue,
@@ -223,6 +232,7 @@ router.post('/login', authLimiter, asyncHandler(async (req, res) => {
           isFirstLogin: !firstLoginCompletedAt,
           needsOnboarding,
           shouldCompleteFirstUnit,
+          shouldCompleteClinicProfile,
           firstLoginAt,
           firstLoginCompletedAt,
           onboardingState: clinicUser?.onboarding_state || {},

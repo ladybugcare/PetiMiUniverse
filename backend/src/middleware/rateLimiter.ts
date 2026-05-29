@@ -1,6 +1,19 @@
 import rateLimit from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
+import '../config/loadEnv.js';
+
+/** Em .env.local: DISABLE_RATE_LIMIT=true (apenas NODE_ENV=development) */
+export function isRateLimitDisabled(): boolean {
+  return (
+    process.env.NODE_ENV === 'development' && process.env.DISABLE_RATE_LIMIT === 'true'
+  );
+}
+
+function shouldSkipRateLimit(req: { path: string }): boolean {
+  if (isRateLimitDisabled()) return true;
+  return req.path === '/' || req.path === '/health';
+}
 
 /**
  * Rate limiter geral para todas as rotas
@@ -21,10 +34,7 @@ export const generalLimiter = rateLimit({
   },
   standardHeaders: true, // Retorna rate limit info nos headers `RateLimit-*`
   legacyHeaders: false, // Desabilita headers `X-RateLimit-*`
-  // Skip healthcheck endpoint para não contar requisições de monitoramento
-  skip: (req) => {
-    return req.path === '/' || req.path === '/health';
-  },
+  skip: (req) => shouldSkipRateLimit(req),
 });
 
 /**
@@ -40,6 +50,7 @@ export const authLimiter = rateLimit({
   skipSuccessfulRequests: true, // Não conta requisições bem-sucedidas
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => isRateLimitDisabled(),
 });
 
 /**
@@ -54,6 +65,7 @@ export const createLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => isRateLimitDisabled(),
 });
 
 /**
@@ -74,9 +86,7 @@ export const statsLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => {
-    return req.path === '/' || req.path === '/health';
-  },
+  skip: (req) => shouldSkipRateLimit(req),
 });
 
 /**
@@ -99,6 +109,10 @@ export const userRateLimiter = (maxRequests: number = 200, windowMs: number = 15
   }, 60000); // Limpar a cada minuto
 
   return (req: Request, res: Response, next: NextFunction) => {
+    if (isRateLimitDisabled()) {
+      return next();
+    }
+
     const userId = (req as any).user?.id;
 
     // Se não houver usuário autenticado, usar limiter geral

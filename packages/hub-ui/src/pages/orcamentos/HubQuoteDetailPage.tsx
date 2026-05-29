@@ -8,6 +8,7 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { hubFinancialApi } from '../../api/hubFinancialApi';
 import { hubQuotesApi, openHubQuotePdf, type HubQuote } from '../../api/hubQuotesApi';
 import { hubGuardiansApi, type HubGuardian } from '../../api/hubGuardiansApi';
 import HubQuoteDetailLayout from './HubQuoteDetailLayout';
@@ -39,6 +40,7 @@ const HubQuoteDetailPage: React.FC = () => {
   const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.quotes.write');
+  const canCreateReceivable = hasPermission('hub.receivables.create');
 
   const [loading, setLoading] = useState(true);
   const [quote, setQuote] = useState<HubQuote | null>(null);
@@ -145,6 +147,27 @@ const HubQuoteDetailPage: React.FC = () => {
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao abrir PDF');
     }
+  };
+
+  const generateReceivableFromQuote = async () => {
+    if (!clinicId || !id || !quote) return;
+    const brl = Number(quote.total_amount || 0).toLocaleString('pt-BR', { style: 'currency', currency: quote.currency || 'BRL' });
+    showConfirm(`Gerar cobrança de ${brl} a partir deste orçamento?`, async () => {
+      setSaving(true);
+      try {
+        await hubFinancialApi.createReceivable({
+          clinic_id: clinicId,
+          source_type: 'quote',
+          source_id: id,
+        });
+        showSuccess('Cobrança criada.');
+        await load();
+      } catch (e: unknown) {
+        showError((e as Error)?.message || 'Erro ao gerar cobrança');
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   if (!user) return <Navigate to="/login" replace />;
@@ -270,6 +293,14 @@ const HubQuoteDetailPage: React.FC = () => {
                   void handleConvert();
                 },
               )
+          : undefined
+      }
+      onGenerateReceivable={
+        canWrite &&
+        canCreateReceivable &&
+        quote.status === 'accepted' &&
+        quote.billing_state === 'awaiting_billing'
+          ? () => void generateReceivableFromQuote()
           : undefined
       }
     />

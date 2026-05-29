@@ -186,7 +186,7 @@ Objetivo: cadastro utilizável para agenda e check-in.
 **Extensões por módulo** (tabelas ou JSON estrito com schema)
 
 - `encounter_clinic` — sinais vitais, SOAP resumido, anexos (Fase Clinic).
-- `encounter_grooming` — checklist, fotos, fila (Fase Grooming).
+- `encounter_grooming` — checklist, fotos, fila (Fase Grooming). Implementação detalhada: [HUB_GROOMING_OPERATIONAL_PLAN.md](./HUB_GROOMING_OPERATIONAL_PLAN.md) (`hub_grooming_sessions` + estágios operacionais).
 - `encounter_boarding` — diário, medicações (Fase Hotel).
 
 **Invariantes**

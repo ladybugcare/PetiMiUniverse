@@ -8,6 +8,7 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { HubCancelButton } from '../../components/HubCancelButton';
 import { hubProspectsApi } from '../../api/hubProspectsApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import HubQuoteWorkspace, { type HubQuoteCreateContext } from './HubQuoteWorkspace';
@@ -132,9 +133,7 @@ const HubQuoteNewPage: React.FC = () => {
           </p>
         </div>
         <div className="hub-orcamento-novo__topbar-actions">
-          <button type="button" className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost" onClick={() => navigate('/hub/orcamentos')}>
-            Cancelar
-          </button>
+          <HubCancelButton onClick={() => navigate('/hub/orcamentos')} />
           <button
             type="button"
             className="hub-orcamento-novo__btn hub-orcamento-novo__btn--icon hub-orcamento-novo__btn--ghost"

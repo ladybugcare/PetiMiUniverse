@@ -950,6 +950,38 @@ body {
   margin: 0 auto 16px;
 }
 
+.hub-meu-perfil__clinic-logo {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: #fdf6f2;
+  border: 1px solid rgba(200, 106, 77, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.hub-pets-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.hub-profile-photo-picker__hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #8e6e67;
+  text-align: center;
+}
+
 .hub-meu-perfil__camera-btn {
   position: absolute;
   right: 0;
@@ -1405,11 +1437,8 @@ body {
   user-select: none;
 }
 
-.hub-login-page-remember input {
-  width: 16px;
-  height: 16px;
-  accent-color: #c86a4d;
-  cursor: pointer;
+.hub-login-page-remember.hub-checkbox {
+  margin: 0;
 }
 
 .hub-login-page-forgot {

@@ -3,6 +3,7 @@ import { X, ExternalLink, Phone, Mail, MapPin, Info, Pencil } from 'lucide-react
 import type { HubGuardian, HubGuardianPet } from '../../api/hubGuardiansApi';
 import { formatGuardianAddress } from './formatters';
 import { GuardianDetailQuickActions } from './GuardianDetailQuickActions';
+import { HubTabs } from '../../components/HubTabs';
 
 type DetailTab = 'resumo' | 'pets' | 'historico' | 'financeiro';
 
@@ -75,25 +76,18 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
         onArchive={onArchive}
       />
 
-      <div className="hub-clientes__detail-tabs">
-        {(
-          [
-            ['resumo', 'Resumo'],
-            ['pets', `Pets (${pets.length})`],
-            ['historico', 'Histórico'],
-            ['financeiro', 'Financeiro'],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={`hub-clientes__detail-tab ${tab === id ? 'hub-clientes__detail-tab--active' : ''}`}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <HubTabs
+        variant="detail"
+        ariaLabel="Detalhe do tutor"
+        activeId={tab}
+        onTabChange={(id) => setTab(id as DetailTab)}
+        items={[
+          { id: 'resumo', label: 'Resumo' },
+          { id: 'pets', label: `Pets (${pets.length})` },
+          { id: 'historico', label: 'Histórico' },
+          { id: 'financeiro', label: 'Financeiro' },
+        ]}
+      />
 
       {tab === 'resumo' && (
         <>

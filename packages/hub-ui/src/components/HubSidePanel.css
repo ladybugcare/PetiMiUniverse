@@ -37,6 +37,12 @@
   overflow: hidden;
   border-radius: 16px 0 0 16px;
   animation: hub-side-panel-sheet-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  /* Tokens Hub (footer usa `hub-clientes__btn`; portal não herda de `.hub-clientes`). */
+  --hc-brand: #c86a4d;
+  --hc-brand-hover: #a85a40;
+  --hc-text: #4a3b3a;
+  --hc-text-muted: #8e6e67;
+  --hc-border: #e5dcd6;
 }
 
 @keyframes hub-side-panel-sheet-in {

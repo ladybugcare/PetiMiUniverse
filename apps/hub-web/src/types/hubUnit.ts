@@ -5,4 +5,9 @@ export type HubUnit = {
   nickname?: string;
   is_main: boolean;
   status?: string;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  phone?: string | null;
+  created_at?: string | null;
 };

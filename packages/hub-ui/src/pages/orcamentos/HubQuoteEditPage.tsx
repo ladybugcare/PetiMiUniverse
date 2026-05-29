@@ -8,6 +8,7 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { HubCancelButton } from '../../components/HubCancelButton';
 import { hubQuotesApi, type HubQuote } from '../../api/hubQuotesApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import HubQuoteWorkspace from './HubQuoteWorkspace';
@@ -113,9 +114,7 @@ const HubQuoteEditPage: React.FC = () => {
           <p className="hub-orcamento-novo__topbar-subtitle">Rascunho — altere pets, serviços e valores; depois envie ao cliente.</p>
         </div>
         <div className="hub-orcamento-novo__topbar-actions">
-          <button type="button" className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost" onClick={() => navigate(`/hub/orcamentos/${id}`)}>
-            Fechar editor
-          </button>
+          <HubCancelButton onClick={() => navigate(`/hub/orcamentos/${id}`)}>Fechar editor</HubCancelButton>
         </div>
       </header>
 

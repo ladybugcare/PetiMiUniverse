@@ -5,6 +5,8 @@ import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubDateField } from '../../components/HubDateField';
+import { HubCancelButton } from '../../components/HubCancelButton';
+import { HubCheckbox } from '../../components/HubCheckbox';
 import {
   hubAgendaApi,
   type CreateHubAppointmentPayload,
@@ -14,7 +16,21 @@ import {
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { hubClinicSettingsApi } from '../../api/hubClinicSettingsApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
+import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
+import { hubServiceAddonsApi } from '../../api/hubServiceAddonsApi';
+import AppointmentAddonsSection from './AppointmentAddonsSection';
+import { validateSelectedAddonVariants } from './appointmentAddonsUtils';
+import { isStaffCompatibleWithServiceType, type GroupJobMappings } from '../../utils/staffServiceCompatibility';
+import { normalizeServiceGroupSlug } from '../../utils/serviceTypeSlug';
+import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
+import {
+  comboValueToVariant,
+  defaultPricingVariantForMatrix,
+  matrixNeedsVariantChoice,
+  variantComboboxOptionsForMatrix,
+  variantToComboValue,
+} from '../../utils/hubPricingVariantUi';
 import {
   COAT_TYPE_LABELS,
   PORTE_LABELS,
@@ -59,6 +75,7 @@ type ServiceChip = {
   hub_service_type_id: string;
   name: string;
   duration_minutes: number;
+  pricing_variant?: HubQuotePricingVariant | null;
 };
 
 type GuardianPetOption = { id: string; name: string; size_tier: string; coat_type: string | null; birth_date: string | null };
@@ -153,12 +170,6 @@ function todayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Slug de grupo alinhado às opções do combobox (vazio → `outros`). */
-function normalizeServiceGroupSlug(raw: string | null | undefined): string {
-  const s = (raw ?? '').trim();
-  return s || 'outros';
-}
-
 /** Texto com bullets a partir das descrições dos tipos de serviço (cadastro). */
 function buildServiceDescriptionBullets(types: HubServiceType[], serviceIdsOrdered: string[]): string {
   const seen = new Set<string>();
@@ -182,6 +193,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   serviceTypes,
 }) => {
   const clinicId = getStoredClinicId() ?? '';
+  const [jobMappings, setJobMappings] = useState<GroupJobMappings>({});
+
+  useEffect(() => {
+    if (!open || !clinicId) return;
+    let cancelled = false;
+    void hubServiceGroupsApi.getJobMappings(clinicId).then((res) => {
+      if (!cancelled) setJobMappings(res.mappings ?? {});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, clinicId]);
 
   // ── Core fields ────────────────────────────────────────────────────────────
   const [dateYmd, setDateYmd] = useState(todayYmd());
@@ -194,6 +217,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   // ── Services ───────────────────────────────────────────────────────────────
   const [groupFilter, setGroupFilter] = useState('all');
   const [services, setServices] = useState<ServiceChip[]>([]);
+  const [selectedAddons, setSelectedAddons] = useState<ServiceChip[]>([]);
+  const [availableAddons, setAvailableAddons] = useState<HubServiceType[]>([]);
+  const [addonsLoading, setAddonsLoading] = useState(false);
   const [serviceSearchId, setServiceSearchId] = useState('');
 
   // ── Pet / Guardian ────────────────────────────────────────────────────────
@@ -328,7 +354,15 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [conflicts, setConflicts] = useState<Array<{ date: string; reason: string }>>([]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const totalDurationMin = useMemo(() => services.reduce((s, c) => s + c.duration_minutes, 0), [services]);
+  const servicesDurationMin = useMemo(
+    () => services.reduce((s, c) => s + c.duration_minutes, 0),
+    [services]
+  );
+  const addonsDurationMin = useMemo(
+    () => selectedAddons.reduce((s, c) => s + c.duration_minutes, 0),
+    [selectedAddons]
+  );
+  const totalDurationMin = servicesDurationMin + addonsDurationMin;
   const extraBlocksDurationMin = useMemo(
     () => extraBlocks.reduce((sum, b) => sum + b.services.reduce((s, c) => s + c.duration_minutes, 0), 0),
     [extraBlocks],
@@ -450,6 +484,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     () =>
       serviceTypes.filter(
         (st) =>
+          !st.is_addon &&
           st.allow_scheduling !== false &&
           (groupFilter === 'all' || normalizeServiceGroupSlug(st.service_group) === groupFilter),
       ),
@@ -461,15 +496,55 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     [filteredServiceTypes],
   );
 
-  const staffComboOptions = useMemo<HubComboboxOption[]>(
-    () => [
-      { value: '', label: 'Não atribuído' },
-      ...staffOptions
-        .filter((s) => s.active && s.accepts_appointments)
-        .map((s) => ({ value: s.id, label: s.display_name ?? s.full_name })),
-    ],
-    [staffOptions],
-  );
+  const selectedServiceTypes = useMemo(() => {
+    const ids = new Set<string>();
+    for (const chip of services) ids.add(chip.hub_service_type_id);
+    for (const block of extraBlocks) {
+      for (const chip of block.services) ids.add(chip.hub_service_type_id);
+    }
+    return serviceTypes.filter((st) => ids.has(st.id));
+  }, [services, extraBlocks, serviceTypes]);
+
+  const suggestedStaffIds = useMemo(() => {
+    if (selectedServiceTypes.length === 0) return new Set<string>();
+    const eligible = staffOptions.filter((s) => s.active && s.accepts_appointments);
+    const compatible = eligible.filter((s) =>
+      selectedServiceTypes.every((st) => isStaffCompatibleWithServiceType(s, st, jobMappings)),
+    );
+    return new Set(compatible.map((s) => s.id));
+  }, [selectedServiceTypes, staffOptions, jobMappings]);
+
+  useEffect(() => {
+    if (selectedServiceTypes.length === 0) return;
+    if (suggestedStaffIds.size === 1) {
+      const only = [...suggestedStaffIds][0]!;
+      setStaffId((prev) => (prev === only ? prev : only));
+      return;
+    }
+    if (staffId && !suggestedStaffIds.has(staffId) && suggestedStaffIds.size > 0) {
+      setStaffId('');
+    }
+  }, [selectedServiceTypes, suggestedStaffIds, staffId]);
+
+  const staffComboOptions = useMemo<HubComboboxOption[]>(() => {
+    const eligible = staffOptions.filter((s) => s.active && s.accepts_appointments);
+    const suggested = eligible.filter((s) => suggestedStaffIds.has(s.id));
+    const others = eligible.filter((s) => !suggestedStaffIds.has(s.id));
+    const mapRow = (s: HubStaffMember, suffix: string): HubComboboxOption => ({
+      value: s.id,
+      label: `${s.display_name ?? s.full_name}${suffix}`,
+    });
+    const rows: HubComboboxOption[] = [{ value: '', label: 'Não atribuído' }];
+    if (selectedServiceTypes.length > 0 && suggested.length > 0) {
+      rows.push(...suggested.map((s) => mapRow(s, ' · sugerido')));
+      if (others.length > 0) {
+        rows.push(...others.map((s) => mapRow(s, '')));
+      }
+    } else {
+      rows.push(...eligible.map((s) => mapRow(s, '')));
+    }
+    return rows;
+  }, [staffOptions, suggestedStaffIds, selectedServiceTypes.length]);
 
   const levaTrazServiceTypes = useMemo(
     () =>
@@ -563,9 +638,26 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const pricingPreview = useMemo(
     () =>
       buildAgendaPricingPreview({
-        mainServices: services.map((s) => ({ hub_service_type_id: s.hub_service_type_id, name: s.name })),
+        mainServices: [
+          ...services.map((s) => ({
+            hub_service_type_id: s.hub_service_type_id,
+            name: s.name,
+            pricing_variant: s.pricing_variant,
+            isAddon: false as const,
+          })),
+          ...selectedAddons.map((s) => ({
+            hub_service_type_id: s.hub_service_type_id,
+            name: s.name,
+            pricing_variant: s.pricing_variant,
+            isAddon: true as const,
+          })),
+        ],
         extraServices: extraBlocks.flatMap((b) =>
-          b.services.map((s) => ({ hub_service_type_id: s.hub_service_type_id, name: s.name })),
+          b.services.map((s) => ({
+            hub_service_type_id: s.hub_service_type_id,
+            name: s.name,
+            pricing_variant: s.pricing_variant,
+          })),
         ),
         serviceTypes,
         petSizeTier: petBodyTierForPricing,
@@ -578,6 +670,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }),
     [
       services,
+      selectedAddons,
       extraBlocks,
       serviceTypes,
       petBodyTierForPricing,
@@ -669,9 +762,17 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         setServiceSearchId('');
         return;
       }
+      const matrix = coercePricingMatrixFromApi(st.pricing_matrix);
+      const pricing_variant =
+        matrix && matrixNeedsVariantChoice(matrix) ? defaultPricingVariantForMatrix(matrix) : null;
       setServices((prev) => [
         ...prev,
-        { hub_service_type_id: id, name: st.name, duration_minutes: st.default_duration_minutes ?? 60 },
+        {
+          hub_service_type_id: id,
+          name: st.name,
+          duration_minutes: st.default_duration_minutes ?? 60,
+          pricing_variant,
+        },
       ]);
       setServiceSearchId('');
     },
@@ -681,6 +782,88 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const removeService = (idx: number) => setServices((prev) => prev.filter((_, i) => i !== idx));
   const updateServiceDuration = (idx: number, dur: number) =>
     setServices((prev) => prev.map((s, i) => (i === idx ? { ...s, duration_minutes: dur } : s)));
+
+  const updateServicePricingVariant = (idx: number, variant: HubQuotePricingVariant | null) =>
+    setServices((prev) => prev.map((s, i) => (i === idx ? { ...s, pricing_variant: variant } : s)));
+
+  useEffect(() => {
+    if (!open || !clinicId || services.length === 0) {
+      setAvailableAddons([]);
+      return;
+    }
+    let cancelled = false;
+    setAddonsLoading(true);
+    void (async () => {
+      try {
+        const results = await Promise.all(
+          services.map((chip) => hubServiceAddonsApi.getAvailableAddons(chip.hub_service_type_id, clinicId))
+        );
+        const byId = new Map<string, HubServiceType>();
+        for (const res of results) {
+          for (const a of res.addons ?? []) {
+            if (!byId.has(a.id)) byId.set(a.id, a);
+          }
+        }
+        if (!cancelled) setAvailableAddons([...byId.values()]);
+      } catch {
+        if (!cancelled) setAvailableAddons([]);
+      } finally {
+        if (!cancelled) setAddonsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, clinicId, services]);
+
+  useEffect(() => {
+    const allowed = new Set(availableAddons.map((a) => a.id));
+    setSelectedAddons((prev) => prev.filter((s) => allowed.has(s.hub_service_type_id)));
+  }, [availableAddons]);
+
+  const toggleAddon = useCallback(
+    (addon: HubServiceType) => {
+      setSelectedAddons((prev) => {
+        if (prev.some((s) => s.hub_service_type_id === addon.id)) {
+          return prev.filter((s) => s.hub_service_type_id !== addon.id);
+        }
+        const matrix = coercePricingMatrixFromApi(addon.pricing_matrix);
+        const pricing_variant =
+          matrix && matrixNeedsVariantChoice(matrix) ? defaultPricingVariantForMatrix(matrix) : null;
+        return [
+          ...prev,
+          {
+            hub_service_type_id: addon.id,
+            name: addon.name,
+            duration_minutes: addon.default_duration_minutes ?? 15,
+            pricing_variant,
+          },
+        ];
+      });
+    },
+    []
+  );
+
+  const updateAddonPricingVariant = (addonId: string, variant: HubQuotePricingVariant | null) =>
+    setSelectedAddons((prev) =>
+      prev.map((s) => (s.hub_service_type_id === addonId ? { ...s, pricing_variant: variant } : s))
+    );
+
+  const servicesNeedingVariant = useMemo(() => {
+    return services
+      .map((s, idx) => {
+        const st = serviceTypes.find((x) => x.id === s.hub_service_type_id);
+        const matrix = st ? coercePricingMatrixFromApi(st.pricing_matrix) : null;
+        if (!matrix || !matrixNeedsVariantChoice(matrix)) return null;
+        return { idx, service: s, st, matrix };
+      })
+      .filter(Boolean) as Array<{
+      idx: number;
+      service: ServiceChip;
+      st: HubServiceType;
+      matrix: NonNullable<ReturnType<typeof coercePricingMatrixFromApi>>;
+    }>;
+  }, [services, serviceTypes]);
 
   // ── Extra blocks ──────────────────────────────────────────────────────────
   const addExtraBlock = () =>
@@ -739,6 +922,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       setSaveError('Selecione a pelagem para precificar os serviços escolhidos.');
       return;
     }
+    const addonVariantErr = validateSelectedAddonVariants(selectedAddons, availableAddons, serviceTypes);
+    if (addonVariantErr) {
+      setSaveError(addonVariantErr);
+      return;
+    }
     if (withPickup) {
       if (!pickupLtServiceTypeId.trim()) {
         setSaveError('Leva e Traz: selecione o tipo de serviço de transporte.');
@@ -774,9 +962,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         financial_notes: financialNotes.trim() || null,
         pricing_porte_tier: pricingApptPorteTier.trim() || null,
         pricing_coat_type: pricingApptCoatType.trim() || null,
-        services: services.map((s) => ({
+        services: [...services, ...selectedAddons].map((s) => ({
           hub_service_type_id: s.hub_service_type_id,
           duration_minutes: s.duration_minutes,
+          pricing_variant: s.pricing_variant ?? undefined,
         })),
       };
 
@@ -808,6 +997,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             services: b.services.map((s) => ({
               hub_service_type_id: s.hub_service_type_id,
               duration_minutes: s.duration_minutes,
+              pricing_variant: s.pricing_variant ?? undefined,
             })),
             hub_staff_member_id: b.hub_staff_member_id || null,
             resource_label: b.resource_label || null,
@@ -886,6 +1076,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setStatus('confirmed');
     setPricingApptPorteTier('');
     setPricingApptCoatType('');
+    setSelectedAddons([]);
+    setAvailableAddons([]);
+    setAddonsLoading(false);
   };
 
   const handleClose = () => {
@@ -969,13 +1162,24 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               : ''}
           </p>
           {pricingPreview.lines.map((ln, i) => (
-            <div key={`${ln.hub_service_type_id}-${ln.name}-${i}`} className="nam-aside__row">
-              <span className="nam-aside__item">{ln.name}</span>
+            <div
+              key={`${ln.hub_service_type_id}-${ln.name}-${i}`}
+              className={ln.isAddon ? 'nam-aside__row nam-aside__row--addon' : 'nam-aside__row'}
+            >
+              <span className="nam-aside__item">{ln.isAddon ? `Adicional: ${ln.name}` : ln.name}</span>
               <span className="nam-aside__muted">
-                {ln.tierApplied ? PORTE_LABELS[ln.tierApplied as PorteValue] ?? ln.tierApplied : '—'}
-                {ln.coatTypeApplied ? ` / ${COAT_TYPE_LABELS[ln.coatTypeApplied as CoatTypeValue] ?? ln.coatTypeApplied}` : ''}
-                {ln.needsCoatType ? ' / selecione pelagem' : ''} ·{' '}
-                {ln.sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {ln.isAddon
+                  ? ln.sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                  : (
+                      <>
+                        {ln.tierApplied ? PORTE_LABELS[ln.tierApplied as PorteValue] ?? ln.tierApplied : '—'}
+                        {ln.coatTypeApplied
+                          ? ` / ${COAT_TYPE_LABELS[ln.coatTypeApplied as CoatTypeValue] ?? ln.coatTypeApplied}`
+                          : ''}
+                        {ln.needsCoatType ? ' / selecione pelagem' : ''} ·{' '}
+                        {ln.sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </>
+                    )}
               </span>
             </div>
           ))}
@@ -1042,9 +1246,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           <AlertCircle size={14} /> {saveError}
         </span>
       )}
-      <button className="hub-btn hub-btn--ghost" type="button" onClick={handleClose} disabled={saving}>
-        Cancelar
-      </button>
+      <HubCancelButton onClick={handleClose} disabled={saving} />
       <button className="hub-btn hub-btn--primary" type="button" onClick={handleSave} disabled={saving || !clinicId}>
         {saving ? 'Salvando…' : withRecurrence ? 'Criar série' : 'Criar agendamento'}
       </button>
@@ -1220,9 +1422,48 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   </button>
                 </div>
               ))}
-              <div className="nam-chips__total">
-                Total: <strong>{totalDurationMin} min</strong>
+              <div className="nam-chips__duration-breakdown">
+                Serviços: <strong>{servicesDurationMin} min</strong>
+                {addonsDurationMin > 0 ? (
+                  <>
+                    {' '}
+                    · Adicionais: <strong>{addonsDurationMin} min</strong>
+                  </>
+                ) : null}
+                {' '}
+                · Total: <strong>{totalDurationMin} min</strong>
               </div>
+            </div>
+          )}
+          <AppointmentAddonsSection
+            hasMainServices={services.length > 0}
+            addonsLoading={addonsLoading}
+            availableAddons={availableAddons}
+            selectedAddons={selectedAddons}
+            onToggle={toggleAddon}
+            onVariantChange={updateAddonPricingVariant}
+          />
+          {servicesNeedingVariant.length > 0 && (
+            <div className="nam-section nam-section--pricing-variants" style={{ marginTop: 12 }}>
+              <p className="nam-label">Opção de preço por serviço</p>
+              {servicesNeedingVariant.map(({ idx, service, matrix }) => (
+                <div key={`${service.hub_service_type_id}-variant`} className="nam-field" style={{ marginTop: 8 }}>
+                  <label className="nam-muted" style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>
+                    {service.name}
+                  </label>
+                  <HubSearchableCombobox
+                    id={`nam-svc-variant-${idx}`}
+                    options={variantComboboxOptionsForMatrix(matrix)}
+                    value={variantToComboValue(matrix, service.pricing_variant ?? null)}
+                    onChange={(raw) => {
+                      const v = comboValueToVariant(matrix, raw);
+                      updateServicePricingVariant(idx, v);
+                    }}
+                    clearable={false}
+                    placeholder="Selecione a opção"
+                  />
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -1361,15 +1602,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
         {/* ── 9. Repetição ─────────────────────────────────────────────── */}
         <div className="nam-section">
-          <label className="nam-checkbox-label">
-            <input
-              type="checkbox"
-              checked={withRecurrence}
-              onChange={(e) => setWithRecurrence(e.target.checked)}
-            />
-            <CalendarDays size={15} />
-            Repetir agendamento
-          </label>
+          <HubCheckbox
+            className="nam-checkbox-label"
+            checked={withRecurrence}
+            onChange={setWithRecurrence}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <CalendarDays size={15} aria-hidden />
+              Repetir agendamento
+            </span>
+          </HubCheckbox>
 
           {withRecurrence && (
             <div className="nam-recurrence">
@@ -1470,35 +1712,33 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
         {/* ── 10. L&T ──────────────────────────────────────────────────── */}
         <div className="nam-section">
-          <label className="nam-checkbox-label">
-            <input
-              type="checkbox"
-              checked={withPickup}
-              onChange={(e) => {
-                const v = e.target.checked;
-                setWithPickup(v);
-                if (v) {
-                  const firstStart = pickupDayFirstStartHm;
-                  const lastEnd = pickupDayLastEndHm;
-                  const buscaEndMin = hmToMinutes(firstStart);
-                  const buscaStartMin = Math.max(0, buscaEndMin - PICKUP_ROUTE_LEG_DURATION_MIN);
-                  const voltaStartMin = hmToMinutes(lastEnd);
-                  const voltaEndMin = Math.min(24 * 60 - 1, voltaStartMin + PICKUP_ROUTE_LEG_DURATION_MIN);
-                  setPickupBefore((pb) => ({
-                    ...pb,
-                    starts_hm: minutesToHm(buscaStartMin),
-                    ends_hm: minutesToHm(buscaEndMin),
-                  }));
-                  setPickupAfter((pa) => ({
-                    ...pa,
-                    starts_hm: minutesToHm(voltaStartMin),
-                    ends_hm: minutesToHm(voltaEndMin),
-                  }));
-                }
-              }}
-            />
+          <HubCheckbox
+            className="nam-checkbox-label"
+            checked={withPickup}
+            onChange={(v) => {
+              setWithPickup(v);
+              if (v) {
+                const firstStart = pickupDayFirstStartHm;
+                const lastEnd = pickupDayLastEndHm;
+                const buscaEndMin = hmToMinutes(firstStart);
+                const buscaStartMin = Math.max(0, buscaEndMin - PICKUP_ROUTE_LEG_DURATION_MIN);
+                const voltaStartMin = hmToMinutes(lastEnd);
+                const voltaEndMin = Math.min(24 * 60 - 1, voltaStartMin + PICKUP_ROUTE_LEG_DURATION_MIN);
+                setPickupBefore((pb) => ({
+                  ...pb,
+                  starts_hm: minutesToHm(buscaStartMin),
+                  ends_hm: minutesToHm(buscaEndMin),
+                }));
+                setPickupAfter((pa) => ({
+                  ...pa,
+                  starts_hm: minutesToHm(voltaStartMin),
+                  ends_hm: minutesToHm(voltaEndMin),
+                }));
+              }
+            }}
+          >
             Incluir Leva e Traz
-          </label>
+          </HubCheckbox>
 
           {withPickup && (
             <div className="nam-pickup">
@@ -1695,7 +1935,21 @@ const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
     if (block.services.some((s) => s.hub_service_type_id === id)) { setSvcSearchId(''); return; }
     const st = serviceTypes.find((s) => s.id === id);
     if (!st) return;
-    onChange({ ...block, services: [...block.services, { hub_service_type_id: id, name: st.name, duration_minutes: st.default_duration_minutes ?? 60 }] });
+    const matrix = coercePricingMatrixFromApi(st.pricing_matrix);
+    const pricing_variant =
+      matrix && matrixNeedsVariantChoice(matrix) ? defaultPricingVariantForMatrix(matrix) : null;
+    onChange({
+      ...block,
+      services: [
+        ...block.services,
+        {
+          hub_service_type_id: id,
+          name: st.name,
+          duration_minutes: st.default_duration_minutes ?? 60,
+          pricing_variant,
+        },
+      ],
+    });
     setSvcSearchId('');
   };
 

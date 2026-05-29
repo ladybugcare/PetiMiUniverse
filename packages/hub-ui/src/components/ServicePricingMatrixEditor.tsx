@@ -538,6 +538,90 @@ export const ServicePricingMatrixEditor: React.FC<Props> = ({
     );
   }
 
+  if (matrix.kind === 'personalizado') {
+    return (
+      <div className="hub-servicos__matrix-wrap">
+        <table className={MATRIX_TABLE_UNIFIED}>
+          <thead>
+            <tr>
+              <th>Nome do campo</th>
+              <th className="hub-servicos__td-money">Custo (R$)</th>
+              <th className="hub-servicos__td-money">Venda (R$)</th>
+              <th className="hub-clientes__th-actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.tiers.map((row, idx) => (
+              <tr key={`personalizado-tier-${idx}`}>
+                <td>
+                  <input
+                    className="hub-clientes__input"
+                    value={row.label}
+                    onChange={(e) => {
+                      const label = e.target.value;
+                      const tiers = matrix.tiers.map((t, i) => (i === idx ? { ...t, label } : t));
+                      onChange({ kind: 'personalizado', tiers });
+                    }}
+                    placeholder="Ex.: Com escova da clínica"
+                  />
+                </td>
+                <td className="hub-servicos__td-money">
+                  <MoneyCell
+                    value={row.cost_amount}
+                    formatMoneyNumber={formatMoneyNumber}
+                    parseMoney={parseMoney}
+                    onCommit={(cost_amount) => {
+                      const tiers = matrix.tiers.map((t, i) => (i === idx ? { ...t, cost_amount } : t));
+                      onChange({ kind: 'personalizado', tiers });
+                    }}
+                  />
+                </td>
+                <td className="hub-servicos__td-money">
+                  <MoneyCell
+                    value={row.sale_amount}
+                    formatMoneyNumber={formatMoneyNumber}
+                    parseMoney={parseMoney}
+                    onCommit={(sale_amount) => {
+                      const tiers = matrix.tiers.map((t, i) => (i === idx ? { ...t, sale_amount } : t));
+                      onChange({ kind: 'personalizado', tiers });
+                    }}
+                  />
+                </td>
+                <td className="hub-clientes__td-actions">
+                  <button
+                    type="button"
+                    className="hub-servicos__icon-btn hub-servicos__icon-btn--danger"
+                    title="Remover campo"
+                    disabled={matrix.tiers.length <= 1}
+                    onClick={() => {
+                      const tiers = matrix.tiers.filter((_, i) => i !== idx);
+                      onChange({ kind: 'personalizado', tiers });
+                    }}
+                  >
+                    ×
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button
+          type="button"
+          className="hub-clientes__btn hub-clientes__btn--ghost"
+          style={{ marginTop: 8 }}
+          onClick={() => {
+            onChange({
+              kind: 'personalizado',
+              tiers: [...matrix.tiers, { label: 'Novo campo', cost_amount: 0, sale_amount: 0 }],
+            });
+          }}
+        >
+          Adicionar novo campo
+        </button>
+      </div>
+    );
+  }
+
   return (
     <p className="hub-clientes__muted">
       Matriz não aplicável a este grupo (recarregue ou altere o grupo).

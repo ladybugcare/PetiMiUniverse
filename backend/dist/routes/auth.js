@@ -74,7 +74,10 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
             }
             const rows = clinicUserRows || [];
             // Preferir linha de dono/gestor para onboarding (evita .in() que falha se role vier diferente na DB)
-            const clinicUser = rows.find((r) => allowedRolesForOnboarding.includes(String(r.role || ''))) ||
+            const hasClinicId = (r) => r?.clinic_id != null && String(r.clinic_id).trim() !== '';
+            const clinicUser = rows.find((r) => allowedRolesForOnboarding.includes(String(r.role || '')) && hasClinicId(r)) ||
+                rows.find((r) => allowedRolesForOnboarding.includes(String(r.role || ''))) ||
+                rows.find((r) => hasClinicId(r)) ||
                 rows[0] ||
                 null;
             clinicUserRecord = clinicUser;
@@ -173,6 +176,8 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
                 // `pending_unit` no registro da clínica não deve forçar onboarding se já houver linha em `units`.
                 const needsOnboarding = !resolvedClinicId || !hasUnits;
                 const shouldCompleteFirstUnit = needsOnboarding && (isEligibleClinicUser || isClinicOwnerMetadata);
+                const shouldCompleteClinicProfile = (!resolvedClinicId || !hasUnits) &&
+                    (isEligibleClinicUser || isClinicOwnerMetadata || clinicUserRole === 'CADMIN');
                 onboarding = {
                     clinicId: resolvedClinicId,
                     clinicStatus: clinicStatusValue,
@@ -180,6 +185,7 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
                     isFirstLogin: !firstLoginCompletedAt,
                     needsOnboarding,
                     shouldCompleteFirstUnit,
+                    shouldCompleteClinicProfile,
                     firstLoginAt,
                     firstLoginCompletedAt,
                     onboardingState: clinicUser?.onboarding_state || {},

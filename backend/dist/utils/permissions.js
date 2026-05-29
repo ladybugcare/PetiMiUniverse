@@ -1,7 +1,7 @@
 "use strict";
 // Permission system for role-based access control (RBAC)
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRoleDisplayName = exports.hasPermission = exports.PERMISSIONS = void 0;
+exports.getRoleDisplayName = exports.hasPermission = exports.isClinicAdminRole = exports.PERMISSIONS = void 0;
 exports.PERMISSIONS = {
     CADMIN: [
         'unit.create',
@@ -40,6 +40,15 @@ exports.PERMISSIONS = {
         'hub.prospects.write',
         'hub.quotes.read',
         'hub.quotes.write',
+        'hub.clinic.read',
+        'hub.clinic.write',
+        'grooming.queue.read',
+        'grooming.queue.manage',
+        'hub.financial.read',
+        'hub.financial.write',
+        'hub.receivables.create',
+        'hub.cash.session',
+        'hub.cash.receive',
     ],
     CMANAGER: [
         'unit.edit',
@@ -72,6 +81,15 @@ exports.PERMISSIONS = {
         'hub.prospects.write',
         'hub.quotes.read',
         'hub.quotes.write',
+        'hub.clinic.read',
+        'hub.clinic.write',
+        'grooming.queue.read',
+        'grooming.queue.manage',
+        'hub.financial.read',
+        'hub.financial.write',
+        'hub.receivables.create',
+        'hub.cash.session',
+        'hub.cash.receive',
     ],
     CASSISTANT: [
         'unit.view',
@@ -89,6 +107,13 @@ exports.PERMISSIONS = {
         'hub.appointments.write',
         'hub.prospects.read',
         'hub.quotes.read',
+        'hub.clinic.read',
+        'grooming.queue.read',
+        'grooming.queue.manage',
+        'hub.financial.read',
+        'hub.receivables.create',
+        'hub.cash.session',
+        'hub.cash.receive',
     ],
     CVET_INTERNAL: [
         'unit.view',
@@ -98,9 +123,17 @@ exports.PERMISSIONS = {
         'hub.inventory.read',
         'hub.staff.read',
         'hub.appointments.read',
+        'hub.clinic.read',
+        'hub.clinic.write',
+        'hub.financial.read',
     ],
 };
+/** CADMIN tem acesso irrestrito a todas as permissões do Hub e da clínica. */
+const isClinicAdminRole = (role) => String(role || '').toUpperCase() === 'CADMIN';
+exports.isClinicAdminRole = isClinicAdminRole;
 const hasPermission = (role, permission) => {
+    if ((0, exports.isClinicAdminRole)(role))
+        return true;
     const rolePermissions = exports.PERMISSIONS[role];
     return rolePermissions ? rolePermissions.includes(permission) : false;
 };

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, LogOut, ChevronDown, Settings } from 'lucide-react';
+import { User, LogOut, ChevronDown, Building2 } from 'lucide-react';
 import { useAuth, usePermissions } from '@petimi/web-core';
 import HubAvatar from './HubAvatar';
 import { getHubUserDisplayName, getHubUserPhotoUrl } from '../utils/hubUserDisplay';
@@ -68,10 +68,10 @@ const HubSidebarUserMenu: React.FC = () => {
             type="button"
             className="hub-sidebar__user-dropdown-item"
             role="menuitem"
-            onClick={() => goHub('/hub/configuracoes-sistema')}
+            onClick={() => goHub('/hub/perfil-clinica')}
           >
-            <Settings size={16} aria-hidden />
-            <span>Configurações</span>
+            <Building2 size={16} aria-hidden />
+            <span>Perfil da Clínica</span>
           </button>
           <div className="hub-sidebar__user-dropdown-divider" aria-hidden />
           <button

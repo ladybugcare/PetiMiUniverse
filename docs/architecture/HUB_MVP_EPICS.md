@@ -200,21 +200,24 @@ Qualquer outro role (`VET`, `FREELANCER`, `ADMIN`) que tente fazer login no Hub 
 
 ---
 
-## Epic 7 — Pagamentos simples
+## Epic 7 — Financeiro operacional (recebíveis, caixa, pagamentos)
 
-**Objetivo**: registrar cobrança pós-atendimento (sem gateway obrigatório no MVP).
+**Objetivo**: ledger mínimo integrado à operação — **sem** usar apenas `hub_appointments.status = paid` como fonte da verdade. Ver [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md) e [HUB_FINANCIAL_IMPLEMENTATION_PLAN.md](./HUB_FINANCIAL_IMPLEMENTATION_PLAN.md).
 
-**Entregas**
+**Entregas (evolução em relação ao MVP original)**
 
-- Tabela `hub_payments` ou `hub_invoices` simplificado: encounter_id, amount, currency, method, status, external_ref opcional.
-- API create/list; permissão `hub.payments.write`.
+- Tabelas: `hub_receivables`, `hub_receivable_lines`, `hub_financial_adjustments`, `hub_payments`, `hub_cash_sessions`, `hub_cash_movements`; waive e `billing_state` em fontes (ver migrações `petimi_hub`).
+- Recebível criado **só** após ação explícita «Gerar cobrança» (Grooming, Clínica, Orçamento); lista **Atendimentos sem cobrança** + contadores na Caixa/Dashboard.
+- API: pré-visualização, criação de recebível, pagamentos parciais, caixa, (fase seguinte) despesas e dashboard gerencial.
+- Permissões: `hub.financial.read` / `hub.financial.write`, `hub.cash.session`, `hub.cash.receive`, `hub.receivables.create` (ver [PERMISSIONS_ROADMAP.md](./PERMISSIONS_ROADMAP.md)).
 
-**Deps**: Epic 5.
+**Deps**: Epic 4–5 (agenda e encounters como fontes); Banho & Tosa operacional para `grooming_session`.
 
 **Aceite**
 
-- [ ] Encounter `completed` pode ter 0 ou 1 pagamento no MVP (definir cardinalidade e validar).
-- [ ] Relatório mínimo: soma do dia por unidade (pode ser endpoint agregado simples).
+- [ ] Nenhum recebível é criado automaticamente ao concluir encounter ou sessão de grooming nem ao aceitar orçamento.
+- [ ] Operador vê atendimentos concluídos **sem cobrança** e consegue iniciar «Gerar cobrança» ou registar **waive** com motivo.
+- [ ] Vários pagamentos por recebível; soma do dia por unidade coerente com `hub_payments`.
 
 ---
 
@@ -280,7 +283,7 @@ Conforme plano estratégico:
 2. Agendar serviço.
 3. Check-in → atendimento → check-out.
 4. Registrar observações (encounter notes).
-5. Registrar pagamento simples.
+5. Gerar cobrança e registar pagamento no ledger (`hub_receivables` / `hub_payments`), conforme [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md).
 6. Ver histórico/timeline do pet.
 7. Ver dashboard básico da unidade.
 8. (Opcional release) Disparar mensagem WhatsApp template.
@@ -292,6 +295,7 @@ Conforme plano estratégico:
 - Entitlements por módulo (`module.hub_core`, …).
 - Consentimento LGPD explícito em guardian/pet.
 - Integração bidirecional com vet-match (demanda gerada a partir de escala) — Fase ecossistema.
+- **Tela operacional Banho & Tosa** — plano em fases: [HUB_GROOMING_OPERATIONAL_PLAN.md](./HUB_GROOMING_OPERATIONAL_PLAN.md).
 
 ---
 

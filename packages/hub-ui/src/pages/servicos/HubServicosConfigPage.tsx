@@ -8,8 +8,12 @@ import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { Check, CheckCircle, Layers, LayoutGrid, Pencil, Plus, Search, Trash2, Archive, ArchiveRestore } from 'lucide-react';
 import { hexToSoftFill, resolveServiceAccentColor, serviceGroupLabel, slugifyServiceNameToCode } from '../../utils/serviceTypeSlug';
+import { HUB_JOB_FUNCTION_OPTIONS } from '../../constants/hubJobFunctions';
 import '../clientes/clientes.css';
 import '../pets/pets-page.css';
+import ServiceGroupAddonsEditor from './ServiceGroupAddonsEditor';
+import { HubCheckbox } from '../../components/HubCheckbox';
+import { HubCancelButton } from '../../components/HubCancelButton';
 import './servicos-page.css';
 
 const AGENDA_SWATCHES = ['#f0642f', '#7b1fa2', '#00897b', '#1565c0', '#f9a825', '#c62828', '#78909c'] as const;
@@ -23,6 +27,8 @@ const emptyDraft = () => ({
   slug: '',
   color: '#f0642f',
   display_order: '0',
+  description: '',
+  job_functions: [] as string[],
 });
 
 const HubServicosConfigPage: React.FC = () => {
@@ -137,6 +143,18 @@ const HubServicosConfigPage: React.FC = () => {
       slug: g.slug,
       color: g.color,
       display_order: String(g.display_order ?? 0),
+      description: g.description?.trim() ?? '',
+      job_functions: [...(g.job_functions ?? [])],
+    });
+  };
+
+  const toggleDraftJobFunction = (title: string) => {
+    setDraft((d) => {
+      const has = d.job_functions.includes(title);
+      return {
+        ...d,
+        job_functions: has ? d.job_functions.filter((t) => t !== title) : [...d.job_functions, title],
+      };
     });
   };
 
@@ -169,13 +187,20 @@ const HubServicosConfigPage: React.FC = () => {
     setSaving(true);
     try {
       if (inlineMode === 'create') {
-        await hubServiceGroupsApi.create({
+        const created = await hubServiceGroupsApi.create({
           clinic_id: clinicId,
           name,
           slug: draft.slug.trim() ? slugifyServiceNameToCode(draft.slug) : undefined,
           color: draft.color.trim(),
           display_order,
+          description: draft.description.trim() || null,
         });
+        if (draft.job_functions.length > 0) {
+          await hubServiceGroupsApi.patchJobFunctions(created.service_group.id, {
+            clinic_id: clinicId,
+            job_titles: draft.job_functions,
+          });
+        }
         showSuccess('Grupo criado');
       } else if (inlineMode === 'edit' && editingId) {
         await hubServiceGroupsApi.patch(editingId, {
@@ -183,6 +208,11 @@ const HubServicosConfigPage: React.FC = () => {
           name,
           color: draft.color.trim(),
           display_order,
+          description: draft.description.trim() || null,
+        });
+        await hubServiceGroupsApi.patchJobFunctions(editingId, {
+          clinic_id: clinicId,
+          job_titles: draft.job_functions,
         });
         showSuccess('Grupo atualizado');
       }
@@ -264,11 +294,11 @@ const HubServicosConfigPage: React.FC = () => {
       <div className="hub-clientes__main">
         <div className="hub-servicos-config__header">
           <div>
-            <h1 className="hub-servicos-config__title">Configurações</h1>
+            <h1 className="hub-servicos-config__title">Serviços e Funções</h1>
             <p className="hub-clientes__muted hub-servicos-config__lead">
-              Gerir grupos de serviços e a cor na agenda por grupo.{' '}
-              <Link to="../servicos" className="hub-servicos-config__back-link">
-                Voltar ao catálogo de serviços
+              Grupos de serviços, cores na agenda, funções da equipe por grupo e agenda de filhotes.{' '}
+              <Link to="/hub/servicos/servicos" className="hub-servicos-config__back-link">
+                Ir ao catálogo de serviços
               </Link>
             </p>
           </div>
@@ -421,6 +451,39 @@ const HubServicosConfigPage: React.FC = () => {
                 />
               </div>
             </div>
+            <div className="hub-clientes__field hub-servicos-config__field-full">
+              <label className="hub-clientes__label" htmlFor="grp-desc">
+                Descrição (opcional)
+              </label>
+              <textarea
+                id="grp-desc"
+                className="hub-clientes__input"
+                rows={2}
+                value={draft.description}
+                onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                placeholder="Ex.: serviços de estética e banho"
+              />
+            </div>
+            <div className="hub-clientes__field hub-servicos-config__field-full">
+              <span className="hub-clientes__label">Funções que podem realizar serviços deste grupo</span>
+              <p className="hub-clientes__muted" style={{ fontSize: 12, margin: '4px 0 10px' }}>
+                Usado na agenda para sugerir profissionais ao escolher um tipo de serviço.
+              </p>
+              <div className="hub-servicos-config__job-fn-grid">
+                {HUB_JOB_FUNCTION_OPTIONS.map((opt) => (
+                  <HubCheckbox
+                    key={opt.value}
+                    checked={draft.job_functions.includes(opt.value)}
+                    onChange={() => toggleDraftJobFunction(opt.value)}
+                  >
+                    {opt.label}
+                  </HubCheckbox>
+                ))}
+              </div>
+            </div>
+            {inlineMode === 'edit' && editingId && clinicId ? (
+              <ServiceGroupAddonsEditor groupId={editingId} clinicId={clinicId} canWrite={canWrite} />
+            ) : null}
             <div className="hub-clientes__field">
               <label className="hub-clientes__label" htmlFor="grp-order">
                 Ordem na lista
@@ -439,9 +502,7 @@ const HubServicosConfigPage: React.FC = () => {
               <button type="submit" className="hub-clientes__btn hub-clientes__btn--primary" disabled={saving}>
                 {saving ? 'Salvando…' : 'Salvar'}
               </button>
-              <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={cancelInline}>
-                Cancelar
-              </button>
+              <HubCancelButton onClick={cancelInline} />
             </div>
           </form>
         ) : null}

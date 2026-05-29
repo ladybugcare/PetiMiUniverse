@@ -21,7 +21,7 @@ A tabela `messages` não possui campo `demand_id` - precisamos adicionar via mig
 
 ### 1. Migration: Adicionar campo demand_id na tabela messages
 
-**Arquivo:** `backend/database_migrations/add_demand_id_to_messages.sql` (novo)
+**Arquivo:** `backend/database_migrations/petimi_vet/add_demand_id_to_messages.sql` (novo)
 
 - Adicionar coluna `demand_id uuid REFERENCES demands(id) ON DELETE SET NULL` na tabela `messages`
 - Criar índice para performance: `idx_messages_demand_id`
@@ -81,7 +81,7 @@ A tabela `messages` não possui campo `demand_id` - precisamos adicionar via mig
 
 ## Arquivos a Modificar
 
-1. `backend/database_migrations/add_demand_id_to_messages.sql` - Nova migration
+1. `backend/database_migrations/petimi_vet/add_demand_id_to_messages.sql` - Nova migration
 2. `backend/src/controllers/messagesController.ts` - Aceitar e retornar demand_id nas mensagens
 3. `frontend/src/pages/DemandDetailPage.tsx` - Enviar primeira mensagem com demand_id
 4. `frontend/src/services/messagesApi.ts` - Atualizar tipos TypeScript

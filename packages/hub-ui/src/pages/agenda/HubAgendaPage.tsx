@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
@@ -49,8 +49,14 @@ import {
   computeOverlapConflictIds,
 } from './agendaModel';
 import { mapHubAppointmentToAgenda } from './mapHubAgenda';
+import { hubEncountersApi } from '../../api/hubClinicalApi';
+import {
+  AGENDA_FILTERS_STORAGE_KEY,
+  loadAgendaPersistedFilters,
+  type AgendaPersistedFilters,
+} from './agendaFilters';
 
-const FILTERS_STORAGE_KEY = 'petmi-hub-agenda-filters-v1';
+const FILTERS_STORAGE_KEY = AGENDA_FILTERS_STORAGE_KEY;
 
 const START_HOUR = 7;
 const END_HOUR = 20;
@@ -58,15 +64,7 @@ const SLOT_MIN = 30;
 const SLOT_H = 26;
 const HEADER_H = 44;
 
-type PersistedFilters = {
-  unit: string;
-  professional: string;
-  group: string;
-  status: string;
-  groupMode: AgendaGroupMode;
-  resource_label: string;
-  service_type_id: string;
-};
+type PersistedFilters = AgendaPersistedFilters & { groupMode: AgendaGroupMode };
 
 function parseYmd(s: string | null): Date | null {
   if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
@@ -84,13 +82,7 @@ function toYmd(d: Date): string {
 }
 
 function loadPersistedFilters(): Partial<PersistedFilters> {
-  try {
-    const raw = sessionStorage.getItem(FILTERS_STORAGE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as Partial<PersistedFilters>;
-  } catch {
-    return {};
-  }
+  return loadAgendaPersistedFilters() as Partial<PersistedFilters>;
 }
 
 function savePersistedFilters(p: PersistedFilters) {
@@ -102,6 +94,7 @@ function savePersistedFilters(p: PersistedFilters) {
 }
 
 const HubAgendaPage: React.FC = () => {
+  const navigate = useNavigate();
   const { showAlert, showInfo, showError, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
@@ -110,6 +103,7 @@ const HubAgendaPage: React.FC = () => {
 
   const accessAllowed = hasPermission('hub.appointments.read');
   const canWrite = hasPermission('hub.appointments.write');
+  const canClinicWrite = hasPermission('hub.clinic.write');
 
   const persisted = useMemo(() => loadPersistedFilters(), []);
 
@@ -706,6 +700,19 @@ const HubAgendaPage: React.FC = () => {
       await patchAppointmentStatus(status);
     },
     [selected, canWrite, showConfirm, clinicId],
+  );
+
+  const handleOpenInClinic = useCallback(
+    async (appointmentId: string) => {
+      if (!clinicId || !canClinicWrite) return;
+      try {
+        const { encounter } = await hubEncountersApi.openFromAppointment(clinicId, appointmentId);
+        navigate(`/hub/clinica/atendimentos/${encounter.id}`);
+      } catch (e: unknown) {
+        showError((e as Error)?.message || 'Erro ao abrir na Clínica');
+      }
+    },
+    [clinicId, canClinicWrite, navigate, showError],
   );
 
   const duplicateSelectedAppointment = useCallback(() => {
@@ -1420,6 +1427,7 @@ const HubAgendaPage: React.FC = () => {
             onStatusChange={handleAppointmentStatusChange}
             onDuplicate={duplicateSelectedAppointment}
             onCancel={requestCancelSelected}
+            onOpenInClinic={canClinicWrite ? handleOpenInClinic : undefined}
           />
         ) : null}
       </div>

@@ -12,6 +12,9 @@ import {
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { useAlert } from '../../components/AlertProvider';
+import { HubCheckbox } from '../../components/HubCheckbox';
+import { HubDateField } from '../../components/HubDateField';
+import { HubCancelButton } from '../../components/HubCancelButton';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import '../clientes/clientes.css';
 import '../pets/pets-page.css';
@@ -671,14 +674,12 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                 />
               </div>
               <div className="hub-clientes__field">
-                <label className="hub-clientes__label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={form.allow_fractional}
-                    onChange={(e) => setForm((f) => ({ ...f, allow_fractional: e.target.checked }))}
-                  />
+                <HubCheckbox
+                  checked={form.allow_fractional}
+                  onChange={(allow_fractional) => setForm((f) => ({ ...f, allow_fractional }))}
+                >
                   Permite quantidades fracionadas
-                </label>
+                </HubCheckbox>
               </div>
 
               <h3 className="hub-servicos__form-section-title">Identificação e categorização</h3>
@@ -800,24 +801,24 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                 </div>
               </div>
               <div className="hub-clientes__field">
-                <label className="hub-clientes__label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={form.allow_price_override_on_sale}
-                    onChange={(e) => setForm((f) => ({ ...f, allow_price_override_on_sale: e.target.checked }))}
-                  />
+                <HubCheckbox
+                  checked={form.allow_price_override_on_sale}
+                  onChange={(allow_price_override_on_sale) =>
+                    setForm((f) => ({ ...f, allow_price_override_on_sale }))
+                  }
+                >
                   Permite alterar o preço durante a venda
-                </label>
+                </HubCheckbox>
               </div>
               <div className="hub-clientes__field">
-                <label className="hub-clientes__label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={form.generates_staff_commission}
-                    onChange={(e) => setForm((f) => ({ ...f, generates_staff_commission: e.target.checked }))}
-                  />
+                <HubCheckbox
+                  checked={form.generates_staff_commission}
+                  onChange={(generates_staff_commission) =>
+                    setForm((f) => ({ ...f, generates_staff_commission }))
+                  }
+                >
                   Gera comissão para funcionários
-                </label>
+                </HubCheckbox>
               </div>
 
               <h3 className="hub-servicos__form-section-title">Estoque</h3>
@@ -853,27 +854,22 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                 <>
                   <h3 className="hub-servicos__form-section-title">Lote inicial (opcional)</h3>
                   <div className="hub-clientes__field">
-                    <label className="hub-clientes__label" htmlFor="inv-recv">
-                      Data de entrada *
-                    </label>
-                    <input
+                    <HubDateField
                       id="inv-recv"
-                      type="date"
-                      className="hub-clientes__input"
-                      value={form.initial_received_at}
-                      onChange={(e) => setForm((f) => ({ ...f, initial_received_at: e.target.value }))}
+                      label="Data de entrada *"
+                      valueIso={form.initial_received_at}
+                      onChangeIso={(iso) =>
+                        setForm((f) => ({ ...f, initial_received_at: iso || new Date().toISOString().slice(0, 10) }))
+                      }
+                      required
                     />
                   </div>
                   <div className="hub-clientes__field">
-                    <label className="hub-clientes__label" htmlFor="inv-exp">
-                      Data de validade
-                    </label>
-                    <input
+                    <HubDateField
                       id="inv-exp"
-                      type="date"
-                      className="hub-clientes__input"
-                      value={form.initial_expiry_date}
-                      onChange={(e) => setForm((f) => ({ ...f, initial_expiry_date: e.target.value }))}
+                      label="Data de validade"
+                      valueIso={form.initial_expiry_date}
+                      onChangeIso={(iso) => setForm((f) => ({ ...f, initial_expiry_date: iso }))}
                     />
                   </div>
                   <div className="hub-clientes__field">
@@ -906,9 +902,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                   <button type="submit" className="hub-clientes__btn hub-clientes__btn--primary" disabled={saving}>
                     {saving ? 'Salvando…' : 'Salvar'}
                   </button>
-                  <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={closePanel}>
-                    Cancelar
-                  </button>
+                  <HubCancelButton onClick={closePanel} />
                 </div>
               </div>
             </form>

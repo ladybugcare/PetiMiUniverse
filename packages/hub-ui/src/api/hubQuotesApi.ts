@@ -10,6 +10,9 @@ export type HubQuoteStatus =
   | 'expired'
   | 'cancelled';
 
+/** Estado de faturação após aceite (Fase 1 financeiro). */
+export type HubQuoteBillingState = 'none' | 'awaiting_billing' | 'receivable_created';
+
 export type HubQuoteDiscountKind = 'percent' | 'fixed';
 export type HubQuoteSizeTier = 'mini' | 'pequeno' | 'medio' | 'grande' | 'gigante';
 export type HubQuotePetSex = 'M' | 'F' | 'U';
@@ -19,6 +22,7 @@ export type HubQuotePricingVariant = {
   period?: 'full_day' | 'half_day';
   consult_type?: 'padrao' | 'retorno';
   km_tier_index?: number;
+  custom_tier_index?: number;
 };
 
 export interface HubQuoteProspectEmbed {
@@ -83,6 +87,9 @@ export interface HubQuote {
   prospect_id: string;
   unit_id: string | null;
   status: HubQuoteStatus;
+  billing_state?: HubQuoteBillingState | null;
+  billing_waived_at?: string | null;
+  billing_waive_reason?: string | null;
   notes: string | null;
   client_notes: string | null;
   total_amount: number;

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { login, useAuth } from '@petimi/web-core';
 import { getHubPostLoginDestination } from '../authNavigation';
+import { applyHubSessionContext, hubSessionApi } from '../services/hubSessionApi';
+import { HubCheckbox } from '@petimi/hub-ui';
 
 const vetBase = (import.meta.env.VITE_VET_WEB_URL || '').replace(/\/$/, '');
 const REMEMBER_KEY = 'petimi_hub_login_remember';
@@ -53,6 +55,13 @@ const HubLoginPage: React.FC = () => {
         password,
       })) as Record<string, unknown>;
       await setAuthFromLogin(data);
+
+      try {
+        const ctx = await hubSessionApi.getContext();
+        applyHubSessionContext(ctx);
+      } catch {
+        /* login payload já trouxe clinic_user quando disponível */
+      }
 
       try {
         if (rememberMe) {
@@ -168,14 +177,9 @@ const HubLoginPage: React.FC = () => {
           </div>
 
           <div className="hub-login-page-options">
-            <label className="hub-login-page-remember">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-              />
+            <HubCheckbox className="hub-login-page-remember" checked={rememberMe} onChange={setRememberMe}>
               Lembrar de mim
-            </label>
+            </HubCheckbox>
             {vetForgot ? (
               <a href={vetForgot} className="hub-login-page-forgot">
                 Esqueci minha senha
@@ -197,13 +201,9 @@ const HubLoginPage: React.FC = () => {
           </button>
         </form>
 
-        {vetSignup ? (
-          <p className="hub-login-page-footer">
-            Ainda não tem uma conta? <a href={vetSignup}>Criar conta →</a>
-          </p>
-        ) : (
-          <p className="hub-login-page-footer">O registo de novas contas é feito na app PetMi Vet.</p>
-        )}
+        <p className="hub-login-page-footer">
+          Ainda não tem uma conta? <Link to="/signup">Criar conta no Hub →</Link>
+        </p>
 
         {vetLogin && (
           <p className="hub-login-page-secondary">

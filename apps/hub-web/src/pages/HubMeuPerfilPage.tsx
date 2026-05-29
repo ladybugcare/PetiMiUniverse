@@ -7,11 +7,10 @@ import {
   Globe,
   Lock,
   Pencil,
-  Camera,
 } from 'lucide-react';
 import { useAuth, usePermissions } from '@petimi/web-core';
 import { useAlert } from '@petimi/hub-ui';
-import HubAvatar from '../components/HubAvatar';
+import HubProfilePhotoPicker from '../components/HubProfilePhotoPicker';
 import {
   getHubUserDisplayName,
   getHubUserPhotoUrl,
@@ -90,18 +89,7 @@ const HubMeuPerfilPage: React.FC = () => {
     <div className="hub-meu-perfil">
       <aside className="hub-meu-perfil__sidebar">
         <div className="hub-meu-perfil__card hub-meu-perfil__summary">
-          <div className="hub-meu-perfil__avatar-block">
-            <HubAvatar src={photoUrl} name={displayName} size={96} />
-            <button
-              type="button"
-              className="hub-meu-perfil__camera-btn"
-              aria-label="Alterar foto de perfil"
-              title="Alterar foto de perfil"
-              onClick={emBreve}
-            >
-              <Camera size={16} strokeWidth={2} />
-            </button>
-          </div>
+          <HubProfilePhotoPicker mode={{ kind: 'user' }} photoUrl={photoUrl} displayName={displayName} size={96} />
           <h2 className="hub-meu-perfil__sidebar-name">{displayName}</h2>
           <span className="hub-meu-perfil__badge">{badge}</span>
           <div className="hub-meu-perfil__contact">

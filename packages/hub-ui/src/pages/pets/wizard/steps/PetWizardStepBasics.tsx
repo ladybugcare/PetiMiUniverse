@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Check, FileText, Heart, HelpCircle, X } from 'lucide-react';
-import { HubBrDateInput } from '../../../../components/HubBrDateInput';
+import { HubDateField } from '../../../../components/HubDateField';
 import { HubSearchableCombobox } from '../../../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../../../components/HubSearchableCombobox';
 import type { PetWizardState } from '../types';
@@ -240,14 +240,11 @@ export const PetWizardStepBasics: React.FC<Props> = ({ state, update, photoPrevi
             </div>
           </div>
           <div>
-            <label className="pet-wizard__label" htmlFor="pet-wizard-birth-date">
-              Data de nascimento <span className="req">*</span>
-            </label>
-            <HubBrDateInput
+            <HubDateField
               id="pet-wizard-birth-date"
+              label="Data de nascimento *"
               valueIso={state.birth_date}
               onChangeIso={(iso) => update({ birth_date: iso })}
-              className="pet-wizard__input"
               required
             />
           </div>

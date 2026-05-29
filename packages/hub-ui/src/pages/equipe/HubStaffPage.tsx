@@ -2,11 +2,20 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom';
 import { Check, Pencil, UserX } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
-import { hubStaffApi, type HubProfessionalKind, type HubStaffAccessRole, type HubStaffMember } from '../../api/hubStaffApi';
+import { hubStaffApi, type HubStaffAccessRole, type HubStaffMember } from '../../api/hubStaffApi';
+import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
+import {
+  HUB_JOB_FUNCTION_OPTIONS,
+  VET_JOB_TITLE_VALUE,
+  professionalKindFromJobTitle,
+} from '../../constants/hubJobFunctions';
+import { suggestServiceTypeIdsForJobTitle, type GroupJobMappings } from '../../utils/staffServiceCompatibility';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
-import { HubBrDateInput } from '../../components/HubBrDateInput';
+import { HubDateField } from '../../components/HubDateField';
+import { HubCheckbox } from '../../components/HubCheckbox';
+import { HubCancelButton } from '../../components/HubCancelButton';
 import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
 import { useAlert } from '../../components/AlertProvider';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
@@ -22,75 +31,6 @@ import '../pets/pets-page.css';
 import './equipe-page.css';
 
 const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL'] as const;
-
-/** Valor de `job_title` para médico veterinário — único caso em que pedimos CRMV/UF na UI. */
-const VET_JOB_TITLE_VALUE = 'Médico(a) Veterinário(a)';
-
-/** Função principal (cargo) — uma opção; valor persistido em `job_title` na API. */
-const JOB_FUNCTION_OPTIONS: { value: string; label: string; description: string }[] = [
-  {
-    value: VET_JOB_TITLE_VALUE,
-    label: VET_JOB_TITLE_VALUE,
-    description: 'Realiza consultas, exames e tratamentos veterinários.',
-  },
-  {
-    value: 'Banho & Tosa',
-    label: 'Banho & Tosa',
-    description: 'Responsável pelos serviços de banho, tosa e estética.',
-  },
-  {
-    value: 'Recepção',
-    label: 'Recepção',
-    description: 'Atendimento ao cliente, agendamentos e cadastros.',
-  },
-  {
-    value: 'Auxiliar Veterinário(a)',
-    label: 'Auxiliar Veterinário(a)',
-    description: 'Apoio em consultas, exames e procedimentos.',
-  },
-  {
-    value: 'Enfermeiro(a) Veterinário(a)',
-    label: 'Enfermeiro(a) Veterinário(a)',
-    description: 'Auxilia o veterinário em procedimentos e internação.',
-  },
-  {
-    value: 'Adestrador(a)',
-    label: 'Adestrador(a)',
-    description: 'Responsável por treinamentos e comportamento.',
-  },
-  {
-    value: 'Recreador(a)',
-    label: 'Recreador(a)',
-    description: 'Recreação, brincadeiras e socialização dos pets (ex.: creche, área de lazer).',
-  },
-  {
-    value: 'Motorista',
-    label: 'Motorista',
-    description: 'Transporte de pets no serviço Leva e Traz.',
-  },
-  {
-    value: 'Outros',
-    label: 'Outros',
-    description: 'Outras funções ou atividades na clínica.',
-  },
-];
-
-/** Deriva o enum da API a partir da função principal (campo único no formulário). */
-function professionalKindFromJobTitle(jobTitle: string): HubProfessionalKind {
-  const j = jobTitle.trim();
-  const map: Record<string, HubProfessionalKind> = {
-    [VET_JOB_TITLE_VALUE]: 'vet',
-    'Banho & Tosa': 'groomer',
-    Recepção: 'reception',
-    'Auxiliar Veterinário(a)': 'assistant',
-    'Enfermeiro(a) Veterinário(a)': 'assistant',
-    'Adestrador(a)': 'caretaker',
-    'Recreador(a)': 'caretaker',
-    Motorista: 'driver',
-    Outros: 'other',
-  };
-  return map[j] ?? 'other';
-}
 
 /** Rótulos produto → roles aceites em convites / `clinic_users`. */
 const HUB_ACCESS_ROLE_OPTIONS: { value: HubStaffAccessRole; label: string }[] = [
@@ -238,6 +178,7 @@ const HubStaffPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [activeOnly, setActiveOnly] = useState(false);
   const [serviceTypes, setServiceTypes] = useState<HubServiceType[]>([]);
+  const [jobMappings, setJobMappings] = useState<GroupJobMappings>({});
   const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
   const [panelMode, setPanelMode] = useState<PanelMode>('none');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -263,11 +204,13 @@ const HubStaffPage: React.FC = () => {
   const loadRefs = useCallback(async () => {
     if (!clinicId) return;
     try {
-      const [stRes, unitsRes] = await Promise.all([
+      const [stRes, unitsRes, mapRes] = await Promise.all([
         hubServiceTypesApi.list(clinicId, true, false),
         apiRequest(`/units/clinic/${encodeURIComponent(clinicId)}?activeOnly=true`) as Promise<{ units: { id: string; name: string }[] }>,
+        hubServiceGroupsApi.getJobMappings(clinicId).catch(() => ({ mappings: {} as GroupJobMappings })),
       ]);
       setServiceTypes((stRes.service_types || []).filter((t) => t.active && !t.deleted_at));
+      setJobMappings(mapRes.mappings ?? {});
       setUnits((unitsRes.units || []).map((u) => ({ id: u.id, name: u.name || 'Unidade' })));
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar serviços / unidades');
@@ -298,7 +241,7 @@ const HubStaffPage: React.FC = () => {
 
   /** Opções canônicas + valor atual (`job_title`) para texto livre / função criada na pesquisa. */
   const jobTitleComboboxOptions = useMemo((): HubComboboxOption[] => {
-    const rows: HubComboboxOption[] = JOB_FUNCTION_OPTIONS.map((o) => ({ value: o.value, label: o.label }));
+    const rows: HubComboboxOption[] = HUB_JOB_FUNCTION_OPTIONS.map((o) => ({ value: o.value, label: o.label }));
     const jt = form.job_title.trim();
     if (jt && !rows.some((r) => r.value === jt)) {
       rows.push({ value: jt, label: jt });
@@ -307,7 +250,7 @@ const HubStaffPage: React.FC = () => {
   }, [form.job_title]);
 
   const selectedJobFunctionDescription = useMemo(() => {
-    return JOB_FUNCTION_OPTIONS.find((o) => o.value === form.job_title.trim())?.description ?? '';
+    return HUB_JOB_FUNCTION_OPTIONS.find((o) => o.value === form.job_title.trim())?.description ?? '';
   }, [form.job_title]);
 
   const crmvFieldsVisible = form.job_title.trim() === VET_JOB_TITLE_VALUE;
@@ -608,10 +551,9 @@ const HubStaffPage: React.FC = () => {
                 aria-label="Buscar"
               />
             </div>
-            <label className="hub-clientes__muted" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
+            <HubCheckbox className="hub-clientes__muted" checked={activeOnly} onChange={setActiveOnly}>
               Só ativos
-            </label>
+            </HubCheckbox>
             <button type="button" className="hub-servicos__btn-ghost-sm" onClick={() => void loadStaff()}>
               Buscar
             </button>
@@ -839,14 +781,11 @@ const HubStaffPage: React.FC = () => {
                 />
               </div>
               <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="st-birth">
-                  Data de nascimento (opcional)
-                </label>
-                <HubBrDateInput
+                <HubDateField
                   id="st-birth"
+                  label="Data de nascimento (opcional)"
                   valueIso={form.birth_date}
                   onChangeIso={(iso) => setForm((f) => ({ ...f, birth_date: iso }))}
-                  className="hub-clientes__input"
                 />
               </div>
               <div className="hub-clientes__field">
@@ -894,7 +833,18 @@ const HubStaffPage: React.FC = () => {
                   className="hub-combobox--clientes"
                   options={jobTitleComboboxOptions}
                   value={form.job_title}
-                  onChange={(v) => setForm((f) => ({ ...f, job_title: v }))}
+                  onChange={(v) => {
+                    setForm((f) => {
+                      const next = { ...f, job_title: v };
+                      if (panelMode === 'create' && v.trim()) {
+                        const suggested = suggestServiceTypeIdsForJobTitle(v, jobMappings, serviceTypes);
+                        if (suggested.length > 0) {
+                          next.service_type_ids = [...new Set([...suggested, ...f.service_type_ids])];
+                        }
+                      }
+                      return next;
+                    });
+                  }}
                   placeholder="Selecionar ou buscar função principal"
                   searchPlaceholder="Buscar função principal…"
                   allowCreate={canWrite}
@@ -962,14 +912,17 @@ const HubStaffPage: React.FC = () => {
                 />
               </div>
               <div className="hub-clientes__field">
-                <label className="hub-clientes__label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} />
+                <HubCheckbox
+                  checked={form.active}
+                  onChange={(active) => setForm((f) => ({ ...f, active }))}
+                >
                   Profissional ativo
-                </label>
+                </HubCheckbox>
               </div>
 
               <h3 className="hub-servicos__form-section-title">Serviços que pode realizar</h3>
               <p className="hub-equipe__service-group-hint">
+                Sugeridos com base na função principal e nos grupos em Configurações; pode ajustar manualmente.
                 Selecione os grupos de serviço que este profissional pode realizar (o mesmo conjunto de categorias
                 que em «Grupo» nos tipos de serviço; cada cartão associa todos os serviços desse grupo no catálogo).
               </p>
@@ -1003,14 +956,12 @@ const HubStaffPage: React.FC = () => {
 
               <h3 className="hub-servicos__form-section-title hub-equipe__form-section-title-spaced">Acesso ao PetMi Hub</h3>
               <div className="hub-clientes__field">
-                <label className="hub-clientes__label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={form.has_hub_access}
-                    onChange={(e) => setForm((f) => ({ ...f, has_hub_access: e.target.checked }))}
-                  />
+                <HubCheckbox
+                  checked={form.has_hub_access}
+                  onChange={(has_hub_access) => setForm((f) => ({ ...f, has_hub_access }))}
+                >
                   Tem acesso ao PetMi Hub
-                </label>
+                </HubCheckbox>
                 <p className="hub-clientes__muted" style={{ fontSize: 12, marginTop: 4 }}>
                   Se não, o profissional pode aparecer na agenda e relatórios, mas não faz login.
                 </p>
@@ -1064,23 +1015,24 @@ const HubStaffPage: React.FC = () => {
 
               <h3 className="hub-servicos__form-section-title">Agenda</h3>
               <div className="hub-clientes__field">
-                <label className="hub-clientes__label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={form.accepts_appointments}
-                    onChange={(e) => setForm((f) => ({ ...f, accepts_appointments: e.target.checked }))}
-                  />
+                <HubCheckbox
+                  checked={form.accepts_appointments}
+                  onChange={(accepts_appointments) => setForm((f) => ({ ...f, accepts_appointments }))}
+                >
                   Pode receber atendimentos
-                </label>
+                </HubCheckbox>
               </div>
               <div className="hub-clientes__field">
                 <span className="hub-clientes__label">Dias disponíveis</span>
                 <div className="hub-equipe__days-row">
                   {WEEKDAY_OPTS.map(({ bit, label }) => (
-                    <label key={bit}>
-                      <input type="checkbox" checked={form.available_days.includes(bit)} onChange={() => toggleDay(bit)} />
+                    <HubCheckbox
+                      key={bit}
+                      checked={form.available_days.includes(bit)}
+                      onChange={() => toggleDay(bit)}
+                    >
                       {label}
-                    </label>
+                    </HubCheckbox>
                   ))}
                 </div>
               </div>
@@ -1159,9 +1111,7 @@ const HubStaffPage: React.FC = () => {
                 <button type="submit" className="hub-clientes__btn hub-clientes__btn--primary" disabled={saving}>
                   {saving ? 'Salvando…' : 'Salvar'}
                 </button>
-                <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={closePanel}>
-                  Cancelar
-                </button>
+                <HubCancelButton onClick={closePanel} />
               </div>
             </form>
           )}

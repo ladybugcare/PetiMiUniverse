@@ -105,6 +105,27 @@ function pickConsultaTier(matrix, pricingVariant) {
         sale: (0, hubServiceTypesPricingMatrix_1.roundMoney2)(row.sale_amount),
     };
 }
+function pickPersonalizadoTier(matrix, pricingVariant) {
+    const tiers = matrix.tiers;
+    if (tiers.length === 0) {
+        return { variant: {}, cost: 0, sale: 0 };
+    }
+    const idx = pricingVariant?.custom_tier_index;
+    if (typeof idx === 'number' && Number.isInteger(idx) && idx >= 0 && idx < tiers.length) {
+        const row = tiers[idx];
+        return {
+            variant: { custom_tier_index: idx },
+            cost: (0, hubServiceTypesPricingMatrix_1.roundMoney2)(row.cost_amount),
+            sale: (0, hubServiceTypesPricingMatrix_1.roundMoney2)(row.sale_amount),
+        };
+    }
+    const row = tiers[0];
+    return {
+        variant: { custom_tier_index: 0 },
+        cost: (0, hubServiceTypesPricingMatrix_1.roundMoney2)(row.cost_amount),
+        sale: (0, hubServiceTypesPricingMatrix_1.roundMoney2)(row.sale_amount),
+    };
+}
 function pickKmBandaTier(matrix, pricingVariant) {
     const tiers = matrix.tiers;
     if (tiers.length === 0) {
@@ -297,6 +318,16 @@ function resolveServiceLinePricing(input) {
             cost: p.cost,
             sale: p.sale,
             pricing_variant: typeof p.variant.km_tier_index === 'number' ? p.variant : null,
+        };
+    }
+    if (matrix.kind === 'personalizado') {
+        const p = pickPersonalizadoTier(matrix, pricing_variant);
+        return {
+            porteTierApplied: null,
+            coatTypeApplied: null,
+            cost: p.cost,
+            sale: p.sale,
+            pricing_variant: typeof p.variant.custom_tier_index === 'number' ? p.variant : null,
         };
     }
     return { porteTierApplied: null, coatTypeApplied: null, cost: refCost, sale: refSale, pricing_variant: null };

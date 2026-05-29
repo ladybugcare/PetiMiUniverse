@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { X, Clock, Heart, User, Stethoscope, MoreHorizontal, Copy, Ban } from 'lucide-react';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
@@ -9,6 +10,7 @@ import {
   type AgendaAppointment,
   type AgendaStatus,
 } from './agendaModel';
+import { isOperationalClinicalGroup } from '../../utils/serviceTypeSlug';
 
 export type AppointmentDetailPanelProps = {
   appointment: AgendaAppointment;
@@ -17,6 +19,8 @@ export type AppointmentDetailPanelProps = {
   onStatusChange: (status: AgendaStatus) => void | Promise<void>;
   onDuplicate: () => void;
   onCancel: () => void;
+  /** Abre atendimento clínico (serviços do grupo clínica). */
+  onOpenInClinic?: (appointmentId: string) => void | Promise<void>;
 };
 
 function formatPanelDate(d: Date): string {
@@ -138,6 +142,7 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
   onStatusChange,
   onDuplicate,
   onCancel,
+  onOpenInClinic,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -249,9 +254,24 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
             <User size={14} className="hub-agenda__panel-kv-icon" aria-hidden />
             {appt.guardianName}
           </div>
-          <p className="hub-agenda__panel-hint" title="Em breve">
-            Ficha do pet — em breve
-          </p>
+          {appt.petId ? (
+            <p className="hub-agenda__panel-actions">
+              <Link
+                to={`/hub/clinica/prontuarios?petId=${encodeURIComponent(appt.petId)}`}
+                className="hub-clientes__link"
+              >
+                Ver prontuário clínico
+              </Link>
+            </p>
+          ) : null}
+          {appt.hubEncounterId ? (
+            <p className="hub-clientes__muted" style={{ marginTop: 8 }}>
+              Atendimento clínico:{' '}
+              <Link to={`/hub/clinica/atendimentos/${appt.hubEncounterId}`}>
+                {appt.hubEncounterStatus || 'aberto'}
+              </Link>
+            </p>
+          ) : null}
         </div>
 
         <div className="hub-agenda__panel-section">
@@ -299,6 +319,28 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
 
         {canWrite && appt.status === 'confirmed' ? (
           <p className="hub-agenda__panel-hint">Arraste o card na grelha para reagendar.</p>
+        ) : null}
+
+        {isOperationalClinicalGroup(appt.group) ? (
+          <div className="hub-agenda__panel-section">
+            {appt.hubEncounterId ? (
+              <Link
+                to={`/hub/clinica/atendimentos/${appt.hubEncounterId}`}
+                className="hub-agenda__action hub-agenda__action--primary"
+              >
+                Continuar na Clínica
+              </Link>
+            ) : onOpenInClinic ? (
+              <button
+                type="button"
+                className="hub-agenda__action hub-agenda__action--primary"
+                disabled={!canWrite}
+                onClick={() => void onOpenInClinic(appt.id)}
+              >
+                Abrir na Clínica
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         <div className="hub-agenda__panel-actions">

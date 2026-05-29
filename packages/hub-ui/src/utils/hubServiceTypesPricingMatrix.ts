@@ -68,13 +68,28 @@ export type HubServicePricingMatrixKmBanda = {
   }>;
 };
 
+export type HubServicePricingMatrixPersonalizado = {
+  kind: 'personalizado';
+  tiers: Array<{ label: string; cost_amount: number; sale_amount: number }>;
+};
+
 export type HubServicePricingMatrix =
   | HubServicePricingMatrixPorte
   | HubServicePricingMatrixPelagem
   | HubServicePricingMatrixPortePelagem
   | HubServicePricingMatrixPeriodo
   | HubServicePricingMatrixConsulta
-  | HubServicePricingMatrixKmBanda;
+  | HubServicePricingMatrixKmBanda
+  | HubServicePricingMatrixPersonalizado;
+
+export function defaultPersonalizadoMatrix(seed?: { cost_amount: number; sale_amount: number }): HubServicePricingMatrixPersonalizado {
+  const c = seed?.cost_amount ?? 0;
+  const s = seed?.sale_amount ?? 0;
+  return {
+    kind: 'personalizado',
+    tiers: [{ label: 'Opção 1', cost_amount: c, sale_amount: s }],
+  };
+}
 
 export function supportsPricingMatrixGroup(serviceGroup: string): boolean {
   return (
@@ -84,6 +99,16 @@ export function supportsPricingMatrixGroup(serviceGroup: string): boolean {
     serviceGroup === 'clinica' ||
     serviceGroup === 'leva_traz'
   );
+}
+
+/** Matriz activa no formulário: grupos clássicos ou `personalizado` em qualquer grupo. */
+export function serviceTypeUsesPricingMatrix(
+  serviceGroup: string,
+  matrix: HubServicePricingMatrix | null | undefined
+): boolean {
+  if (!matrix) return false;
+  if (matrix.kind === 'personalizado') return true;
+  return supportsPricingMatrixGroup(serviceGroup);
 }
 
 export function matrixKindForGroup(serviceGroup: string): HubServicePricingMatrix['kind'] | null {
@@ -172,6 +197,7 @@ function tierKeys(matrix: HubServicePricingMatrix): string[] {
     case 'consulta':
       return matrix.tiers.map((t) => t.consult_type);
     case 'km_banda':
+    case 'personalizado':
       return matrix.tiers.map((t, i) => `${t.label}#${i}`);
     default:
       return [];
@@ -187,6 +213,22 @@ export function validatePricingMatrixClient(
   serviceGroup: string,
   matrix: HubServicePricingMatrix
 ): string | null {
+  if (matrix.kind === 'personalizado') {
+    for (const t of matrix.tiers) {
+      if (!t.label?.trim()) return 'Cada campo precisa de um nome';
+      if (!isFiniteMoney(t.cost_amount) || !isFiniteMoney(t.sale_amount)) {
+        return 'Custos e vendas devem ser números ≥ 0';
+      }
+    }
+    const keys = tierKeys(matrix);
+    const seen = new Set<string>();
+    for (const k of keys) {
+      if (seen.has(k)) return 'Não repita o mesmo nome de campo';
+      seen.add(k);
+    }
+    return keys.length === 0 ? 'Defina pelo menos um campo de preço' : null;
+  }
+
   if (!supportsPricingMatrixGroup(serviceGroup)) {
     return 'Este grupo não suporta matriz de preços';
   }
@@ -226,6 +268,12 @@ export function validatePricingMatrixClient(
     }
   }
 
+  if (matrix.kind === 'personalizado') {
+    for (const t of matrix.tiers) {
+      if (!t.label?.trim()) return 'Cada campo precisa de um nome';
+    }
+  }
+
   return null;
 }
 
@@ -257,7 +305,8 @@ export function coercePricingMatrixFromApi(raw: unknown): HubServicePricingMatri
     o.kind !== 'porte_pelagem' &&
     o.kind !== 'periodo' &&
     o.kind !== 'consulta' &&
-    o.kind !== 'km_banda'
+    o.kind !== 'km_banda' &&
+    o.kind !== 'personalizado'
   ) {
     return null;
   }

@@ -73,6 +73,8 @@ function pricingVariantPdfSuffix(raw) {
         return ' · Retorno';
     if (typeof o.km_tier_index === 'number' && Number.isFinite(o.km_tier_index))
         return ` · Faixa ${o.km_tier_index + 1}`;
+    if (typeof o.custom_tier_index === 'number' && Number.isFinite(o.custom_tier_index))
+        return ` · Opção ${o.custom_tier_index + 1}`;
     return '';
 }
 function lineServiceEmbed(ln) {

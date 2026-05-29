@@ -41,6 +41,7 @@ export type HubQuotePricingVariantInput = {
   period?: 'full_day' | 'half_day';
   consult_type?: 'padrao' | 'retorno';
   km_tier_index?: number;
+  custom_tier_index?: number;
 };
 
 function matrixPorteTierSet(matrix: HubServicePricingMatrix | null): Set<string> | null {
@@ -130,6 +131,31 @@ function pickConsultaTier(
   const row = padrao ?? tiers[0];
   return {
     variant: { consult_type: row.consult_type },
+    cost: roundMoney2(row.cost_amount),
+    sale: roundMoney2(row.sale_amount),
+  };
+}
+
+function pickPersonalizadoTier(
+  matrix: HubServicePricingMatrix & { kind: 'personalizado' },
+  pricingVariant: HubQuotePricingVariantInput | null | undefined
+): { variant: HubQuotePricingVariantInput; cost: number; sale: number } {
+  const tiers = matrix.tiers;
+  if (tiers.length === 0) {
+    return { variant: {}, cost: 0, sale: 0 };
+  }
+  const idx = pricingVariant?.custom_tier_index;
+  if (typeof idx === 'number' && Number.isInteger(idx) && idx >= 0 && idx < tiers.length) {
+    const row = tiers[idx];
+    return {
+      variant: { custom_tier_index: idx },
+      cost: roundMoney2(row.cost_amount),
+      sale: roundMoney2(row.sale_amount),
+    };
+  }
+  const row = tiers[0];
+  return {
+    variant: { custom_tier_index: 0 },
     cost: roundMoney2(row.cost_amount),
     sale: roundMoney2(row.sale_amount),
   };
@@ -373,6 +399,17 @@ export function resolveServiceLinePricing(input: {
       cost: p.cost,
       sale: p.sale,
       pricing_variant: typeof p.variant.km_tier_index === 'number' ? p.variant : null,
+    };
+  }
+
+  if (matrix.kind === 'personalizado') {
+    const p = pickPersonalizadoTier(matrix, pricing_variant);
+    return {
+      porteTierApplied: null,
+      coatTypeApplied: null,
+      cost: p.cost,
+      sale: p.sale,
+      pricing_variant: typeof p.variant.custom_tier_index === 'number' ? p.variant : null,
     };
   }
 

@@ -3,9 +3,11 @@ import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import {
   coercePricingMatrixFromApi,
   computeReferenceFromMatrix,
+  defaultPersonalizadoMatrix,
   defaultPricingMatrixForGroup,
   defaultPricingMatrixForKind,
   matrixKindForGroup,
+  serviceTypeUsesPricingMatrix,
   supportsPricingMatrixGroup,
   type HubServicePricingMatrix,
 } from '../../utils/hubServiceTypesPricingMatrix';
@@ -26,7 +28,15 @@ export function suggestedDuplicateServiceName(original: string): string {
   return `${base.slice(0, Math.max(1, keep))}${suffix}`;
 }
 
-export type PricingCategoryKind = 'simple' | 'porte' | 'pelagem' | 'porte_pelagem' | 'periodo' | 'consulta' | 'km_banda';
+export type PricingCategoryKind =
+  | 'simple'
+  | 'porte'
+  | 'pelagem'
+  | 'porte_pelagem'
+  | 'periodo'
+  | 'consulta'
+  | 'km_banda'
+  | 'personalizado';
 
 /** Unidade do campo «duração padrão» no formulário (API continua em minutos inteiros). */
 export type DurationInputUnit = 'min' | 'h';
@@ -170,7 +180,7 @@ export function fromRow(t: HubServiceType): FormState {
   const sale = Number(t.sale_amount ?? 0);
   const group = t.service_group || 'outros';
   const pm = coercePricingMatrixFromApi(t.pricing_matrix);
-  const useMatrix = pm != null && supportsPricingMatrixGroup(group);
+  const useMatrix = serviceTypeUsesPricingMatrix(group, pm);
   const pricing_mode: FormState['pricing_mode'] = useMatrix ? 'matrix' : 'simple';
   const pricing_matrix: HubServicePricingMatrix | null = useMatrix && pm ? pm : null;
   const ref = useMatrix && pm ? computeReferenceFromMatrix(pm) : { cost, sale };
@@ -213,7 +223,10 @@ export function applySvcGroupChange(prev: FormState, newGroup: string): FormStat
   let pricing_mode: FormState['pricing_mode'] = prev.pricing_mode;
   let pricing_matrix: HubServicePricingMatrix | null = prev.pricing_matrix;
 
-  if (!supportsPricingMatrixGroup(newGroup)) {
+  if (prevKind === 'personalizado' && prevMatrix) {
+    pricing_mode = 'matrix';
+    pricing_matrix = prevMatrix;
+  } else if (!supportsPricingMatrixGroup(newGroup)) {
     pricing_mode = 'simple';
     pricing_matrix = null;
   } else if (prev.pricing_mode === 'simple' && !prevMatrix) {
@@ -268,20 +281,31 @@ export function groupComboOptionsFromGroups(
   });
 }
 
+const PERSONALIZADO_OPTION = { kind: 'personalizado' as const, label: 'Personalizado' };
+
+/** Adicionais: apenas preço único ou personalizado. */
+export function pricingCategoryOptionsForAddon(): Array<{ kind: PricingCategoryKind; label: string }> {
+  return [
+    { kind: 'simple', label: 'Preço único' },
+    PERSONALIZADO_OPTION,
+  ];
+}
+
 export function pricingCategoryOptionsForGroup(serviceGroup: string): Array<{ kind: PricingCategoryKind; label: string }> {
+  const withPersonalizado = (opts: Array<{ kind: PricingCategoryKind; label: string }>) => [...opts, PERSONALIZADO_OPTION];
   if (serviceGroup === 'banho_tosa') {
-    return [
+    return withPersonalizado([
       { kind: 'simple', label: 'Preço único' },
       { kind: 'porte', label: 'Por porte' },
       { kind: 'pelagem', label: 'Por pelagem' },
       { kind: 'porte_pelagem', label: 'Por porte + pelagem' },
-    ];
+    ]);
   }
-  if (serviceGroup === 'hotel') return [{ kind: 'simple', label: 'Preço único' }, { kind: 'porte', label: 'Por porte' }];
-  if (serviceGroup === 'creche') return [{ kind: 'simple', label: 'Preço único' }, { kind: 'periodo', label: 'Por período' }];
-  if (serviceGroup === 'clinica') return [{ kind: 'simple', label: 'Preço único' }, { kind: 'consulta', label: 'Por tipo de consulta' }];
-  if (serviceGroup === 'leva_traz') return [{ kind: 'simple', label: 'Preço único' }, { kind: 'km_banda', label: 'Por faixa de km' }];
-  return [{ kind: 'simple', label: 'Preço único' }];
+  if (serviceGroup === 'hotel') return withPersonalizado([{ kind: 'simple', label: 'Preço único' }, { kind: 'porte', label: 'Por porte' }]);
+  if (serviceGroup === 'creche') return withPersonalizado([{ kind: 'simple', label: 'Preço único' }, { kind: 'periodo', label: 'Por período' }]);
+  if (serviceGroup === 'clinica') return withPersonalizado([{ kind: 'simple', label: 'Preço único' }, { kind: 'consulta', label: 'Por tipo de consulta' }]);
+  if (serviceGroup === 'leva_traz') return withPersonalizado([{ kind: 'simple', label: 'Preço único' }, { kind: 'km_banda', label: 'Por faixa de km' }]);
+  return withPersonalizado([{ kind: 'simple', label: 'Preço único' }]);
 }
 
 export function setPricingCategory(prev: FormState, kind: PricingCategoryKind): FormState {
@@ -289,9 +313,11 @@ export function setPricingCategory(prev: FormState, kind: PricingCategoryKind): 
   const seedC = parseMoneyInput(prev.cost_amount) ?? 0;
   const seedS = parseMoneyInput(prev.sale_amount) ?? 0;
   const next =
-    kind === 'porte' || kind === 'pelagem' || kind === 'porte_pelagem'
-      ? defaultPricingMatrixForKind(kind, { cost_amount: seedC, sale_amount: seedS })
-      : defaultPricingMatrixForGroup(prev.service_group, { cost_amount: seedC, sale_amount: seedS });
+    kind === 'personalizado'
+      ? defaultPersonalizadoMatrix({ cost_amount: seedC, sale_amount: seedS })
+      : kind === 'porte' || kind === 'pelagem' || kind === 'porte_pelagem'
+        ? defaultPricingMatrixForKind(kind, { cost_amount: seedC, sale_amount: seedS })
+        : defaultPricingMatrixForGroup(prev.service_group, { cost_amount: seedC, sale_amount: seedS });
   if (!next) return { ...prev, pricing_mode: 'simple', pricing_matrix: null };
   const ref = computeReferenceFromMatrix(next);
   return {

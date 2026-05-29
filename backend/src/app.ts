@@ -68,8 +68,12 @@ const getAllowedOrigins = (): string[] => {
   const origins: string[] = [];
 
   // Origens padrão para desenvolvimento
+  // HUB_DEV_ONLY=true — não aceita PetMi Vet (3001); só Hub (3002) e API local (3000)
   if (process.env.NODE_ENV === 'development') {
-    origins.push('http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002');
+    origins.push('http://localhost:3000', 'http://localhost:3002');
+    if (process.env.HUB_DEV_ONLY !== 'true') {
+      origins.push('http://localhost:3001');
+    }
   }
 
   // Origens de staging
@@ -123,9 +127,12 @@ app.use(
       const normalizedOrigin = origin.replace(/\/$/, '');
 
       // Dev: acesso pelo IP da rede local (ex.: http://192.168.x.x:3001 no celular)
+      const lanPorts = process.env.HUB_DEV_ONLY === 'true' ? '3000|3002' : '3000|3001|3002';
       const isLanDevOrigin =
         process.env.NODE_ENV === 'development' &&
-        /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:(3000|3001|3002)$/.test(normalizedOrigin);
+        new RegExp(`^http:\\/\\/192\\.168\\.\\d{1,3}\\.\\d{1,3}:(${lanPorts})$`).test(
+          normalizedOrigin,
+        );
 
       // Verifica se a origem está na lista de permitidas
       const isAllowed =
@@ -135,8 +142,8 @@ app.use(
         allowedOrigins.includes(normalizedOrigin);
       
       if (isAllowed) {
-        // Log para debug (apenas em staging/dev)
-        if (process.env.NODE_ENV !== 'production') {
+        // Log CORS só se DEBUG_CORS=true (evita flood no terminal em dev)
+        if (process.env.DEBUG_CORS === 'true') {
           console.log(`[CORS] Allowed origin: ${origin}`);
         }
         // Retorna a origem exata da requisição para o header CORS

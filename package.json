@@ -18,7 +18,8 @@
     "build:backend": "cd backend && npm run build",
     "build:frontend": "cd frontend && npm run build:web",
     "build:hub-web": "npm run build --workspace=@petimi/hub-web",
-    "seed:clinic-e2e-demands": "node scripts/seed-clinic-e2e-demands.mjs"
+    "seed:clinic-e2e-demands": "node scripts/seed-clinic-e2e-demands.mjs",
+    "seed:hub-beatriz-demo": "node scripts/seed-hub-beatriz-demo.mjs"
   },
   "dependencies": {
     "react": "18.2.0"

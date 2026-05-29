@@ -17,6 +17,8 @@ Este diretório documenta a estratégia oficial para evoluir o monorepo **PetiMi
 | [HUB_EPIC1_MANUAL_QA.md](./HUB_EPIC1_MANUAL_QA.md) | Checklist de QA manual do Epic 1 (tutores / `hub_guardians`) |
 | [HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md](./HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md) | **Backlog:** visão de cadastro no Hub — pessoa como admin, depois primeira unidade (vs. signup Vet centrado na empresa) |
 | [HUB_QUOTES_AND_PROSPECTS.md](./HUB_QUOTES_AND_PROSPECTS.md) | Orçamentos e contatos (prospects) sem «falso cliente»; API `/api/hub/prospects` e `/api/hub/quotes` + UI Hub em `/hub/orcamentos` |
+| [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md) | Modelo financeiro Hub: recebíveis, fluxo único «Gerar cobrança», sem cobrança, orçamentos, caixa, evolução (Payment Intent, comissões) |
+| [HUB_FINANCIAL_IMPLEMENTATION_PLAN.md](./HUB_FINANCIAL_IMPLEMENTATION_PLAN.md) | Plano por fases (Fase 1–4) e checklist de entrega do módulo Financeiro e Caixa |
 
 ## Princípios
 

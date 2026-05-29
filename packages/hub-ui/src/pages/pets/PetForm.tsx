@@ -2,7 +2,8 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { HelpCircle } from 'lucide-react';
 import type { HubGuardian } from '../../api/hubGuardiansApi';
 import type { PetFormValues } from './PetFormValues';
-import { HubBrDateInput } from '../../components/HubBrDateInput';
+import { HubDateField } from '../../components/HubDateField';
+import { HubCancelButton } from '../../components/HubCancelButton';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { mergeBreedComboboxOptions, mergeSpeciesComboboxOptions } from './wizard/petSpeciesComboboxData';
@@ -304,14 +305,11 @@ export const PetForm: React.FC<PetFormProps> = ({
         />
       </div>
       <div className="hub-clientes__field">
-        <label className="hub-clientes__label" htmlFor="pet-form-birth-date">
-          Data de nascimento
-        </label>
-        <HubBrDateInput
+        <HubDateField
           id="pet-form-birth-date"
+          label="Data de nascimento"
           valueIso={value.birth_date}
           onChangeIso={(iso) => patch({ birth_date: iso })}
-          className="hub-clientes__input"
         />
       </div>
       <div className="hub-clientes__field">
@@ -361,9 +359,7 @@ export const PetForm: React.FC<PetFormProps> = ({
           {isEdit ? 'Salvar alterações' : 'Adicionar pet'}
         </button>
         {isEdit && onCancelEdit && (
-          <button type="button" className="hub-clientes__btn hub-clientes__btn--outline" onClick={onCancelEdit}>
-            Cancelar edição
-          </button>
+          <HubCancelButton onClick={onCancelEdit}>Cancelar edição</HubCancelButton>
         )}
       </div>
     </form>

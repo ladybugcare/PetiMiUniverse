@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react';
 import type { HubPet } from '../../api/hubPetsApi';
+import { HubTabs } from '../../components/HubTabs';
 import { petAgeDetailedLabel } from './petAge';
 import {
   COAT_TYPE_LABELS,
@@ -120,24 +121,26 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
           </span>
           <span className="hub-pets-detail__quick-label">Agendar</span>
         </Link>
-        <button
-          type="button"
-          className="hub-pets-detail__quick-item"
-          title="Em breve"
-          disabled
-          aria-disabled="true"
+        <Link
+          to={`/hub/clinica/prontuarios?petId=${encodeURIComponent(pet.id)}`}
+          className="hub-pets-detail__quick-item hub-pets-detail__quick-link"
+          title="Prontuário clínico"
         >
-          <span className="hub-clientes__icon-btn hub-pets-detail__quick-icon--disabled" aria-hidden>
+          <span className="hub-clientes__icon-btn" aria-hidden>
             <FileText size={18} strokeWidth={1.75} />
           </span>
           <span className="hub-pets-detail__quick-label">Histórico</span>
-        </button>
-        <button type="button" className="hub-pets-detail__quick-item" title="Em breve" disabled aria-disabled="true">
-          <span className="hub-clientes__icon-btn hub-pets-detail__quick-icon--disabled" aria-hidden>
+        </Link>
+        <Link
+          to={`/hub/clinica/prontuarios?petId=${encodeURIComponent(pet.id)}&tab=vacinas`}
+          className="hub-pets-detail__quick-item hub-pets-detail__quick-link"
+          title="Vacinas no prontuário"
+        >
+          <span className="hub-clientes__icon-btn" aria-hidden>
             <Syringe size={18} strokeWidth={1.75} />
           </span>
           <span className="hub-pets-detail__quick-label">Vacinas</span>
-        </button>
+        </Link>
         {canWrite ? (
           <button type="button" className="hub-pets-detail__quick-item" title="Editar ficha" onClick={onStartEdit}>
             <span className="hub-clientes__icon-btn" aria-hidden>
@@ -194,25 +197,19 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
         )}
       </div>
 
-      <div className="hub-clientes__detail-tabs hub-pets-detail__tabs">
-        {(
-          [
-            ['resumo', 'Resumo'],
-            ['historico_saude', 'Histórico & Saúde'],
-            ['servicos', 'Serviços'],
-            ['financeiro', 'Financeiro'],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={`hub-clientes__detail-tab ${tab === id ? 'hub-clientes__detail-tab--active' : ''}`}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <HubTabs
+        className="hub-pets-detail__tabs"
+        variant="detail"
+        ariaLabel="Detalhe do pet"
+        activeId={tab}
+        onTabChange={(id) => setTab(id as PetDetailTab)}
+        items={[
+          { id: 'resumo', label: 'Resumo' },
+          { id: 'historico_saude', label: 'Histórico & Saúde' },
+          { id: 'servicos', label: 'Serviços' },
+          { id: 'financeiro', label: 'Financeiro' },
+        ]}
+      />
 
       {tab === 'resumo' && (
         <>

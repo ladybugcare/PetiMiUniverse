@@ -1,0 +1,380 @@
+/* Mesmos tokens que `.hub-clientes` (Clínica usa `hub-clientes` no shell; Banho & Tosa não). */
+.hub-grooming-page {
+  --hc-brand: #c86a4d;
+  --hc-brand-hover: #a85a40;
+  --hc-text: #4a3b3a;
+  --hc-text-muted: #8e6e67;
+  --hc-border: #e5dcd6;
+  --hc-card: #ffffff;
+  --hc-radius: 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--hc-text);
+  font-size: 14px;
+}
+
+.hub-grooming-page__metrics {
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.hub-grooming-page__perm-banner {
+  margin: 0 0 16px;
+}
+
+.hub-grooming-page__perm-banner code {
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Botões da fila: mesmo padrão visual da Clínica (primary terracotta + ghost com borda). */
+.hub-grooming-page .hub-clinic-queue__actions .hub-clientes__btn--sm {
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+.hub-grooming-page .hub-clinic-queue__actions .hub-clientes__btn--primary {
+  background: var(--hc-brand, #c86a4d);
+  border-color: var(--hc-brand, #c86a4d);
+  color: #fff;
+}
+
+.hub-grooming-page .hub-clinic-queue__actions .hub-clientes__btn--primary:hover {
+  background: var(--hc-brand-hover, #a85a40);
+  border-color: var(--hc-brand-hover, #a85a40);
+}
+
+.hub-grooming-page .hub-clinic-queue__actions .hub-clientes__btn--ghost {
+  background: #fff;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-grooming-page .hub-clinic-queue__actions .hub-clientes__btn--ghost:hover {
+  background: #faf7f4;
+}
+
+.hub-grooming-page .hub-clinic-queue__actions a.hub-clientes__btn--ghost {
+  text-decoration: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hub-grooming-queue__card--late {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25);
+}
+
+.hub-grooming-queue__late-tag {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.hub-grooming-queue__badge {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.hub-grooming-drawer__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+}
+
+.hub-grooming-drawer__section {
+  margin-bottom: 20px;
+}
+
+.hub-grooming-drawer__section--highlight {
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+.hub-grooming-drawer__heading {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-grooming-drawer__status {
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.hub-grooming-drawer__list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+.hub-grooming-drawer__list--compact {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.hub-grooming-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+}
+
+.hub-grooming-tags--card {
+  margin-top: 8px;
+}
+
+.hub-grooming-tags__pill {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.hub-grooming-drawer__lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hub-grooming-drawer__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hc-border, #e5dcd6);
+  font-size: 14px;
+}
+
+.hub-grooming-drawer__line:last-child {
+  border-bottom: none;
+}
+
+.hub-grooming-drawer__line-name {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.hub-grooming-drawer__line-price {
+  font-size: 13px;
+}
+
+.hub-grooming-drawer__executed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hub-grooming-drawer__extra-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.hub-grooming-drawer__extra-row .hub-clientes__select {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.hub-grooming-drawer__checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hub-grooming-drawer__checklist li {
+  padding: 6px 0;
+  font-size: 14px;
+}
+
+.hub-grooming-drawer__sync-hint {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.hub-grooming-queue--5col {
+  grid-template-columns: repeat(5, minmax(200px, 1fr));
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.hub-grooming-queue__card--priority {
+  border-color: #c2410c;
+  box-shadow: 0 0 0 1px rgba(194, 65, 12, 0.2);
+}
+
+.hub-grooming-queue__priority-tag {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #c2410c;
+}
+
+.hub-grooming-page__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+  align-items: center;
+}
+
+.hub-grooming-queue .hub-clinic-queue__card-top {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  justify-content: flex-start;
+}
+
+.hub-grooming-queue__pet-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid var(--hc-border, #e5dcd6);
+}
+
+.hub-grooming-queue__card-head-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.hub-grooming-queue__col--drop-over {
+  outline: 2px dashed var(--hc-brand, #c86a4d);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.hub-grooming-queue__draggable--enabled {
+  touch-action: none;
+  cursor: grab;
+}
+
+.hub-grooming-queue__draggable--enabled:active {
+  cursor: grabbing;
+}
+
+.hub-grooming-queue__badge--first {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.hub-grooming-queue__badge--paused {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.hub-grooming-queue__card--paused {
+  box-shadow: inset 0 0 0 2px rgba(146, 64, 14, 0.25);
+}
+
+.hub-grooming-page__filter-field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.hub-grooming-page__filter-label {
+  font-weight: 600;
+  color: var(--hc-muted, #6b5c55);
+}
+
+.hub-grooming-page__filter-select {
+  min-width: 140px;
+  max-width: 200px;
+}
+
+.hub-grooming-drawer__timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hub-grooming-drawer__timeline-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hc-border, #e5dcd6);
+}
+
+.hub-grooming-drawer__timeline-item:last-child {
+  border-bottom: none;
+}
+
+.hub-grooming-drawer__timeline-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hub-grooming-drawer__timeline-meta {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.hub-grooming-drawer__timeline-body {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+@media (max-width: 1400px) {
+  .hub-grooming-queue--5col {
+    grid-template-columns: repeat(5, minmax(240px, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .hub-grooming-queue--5col {
+    grid-template-columns: repeat(5, minmax(200px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .hub-grooming-queue--5col .hub-clinic-queue__card {
+    padding: 10px;
+  }
+
+  .hub-grooming-queue--5col .hub-clinic-queue__pet {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 640px) {
+  .hub-grooming-queue--5col {
+    grid-template-columns: minmax(260px, 1fr);
+  }
+}

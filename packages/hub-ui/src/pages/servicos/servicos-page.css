@@ -543,6 +543,227 @@
   border: 1px solid color-mix(in srgb, #c62828 26%, transparent);
 }
 
+.hub-service-type-form-page__review-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.hub-service-type-form-page__review-section {
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--hc-border) 80%, transparent);
+}
+
+.hub-service-type-form-page__review-section h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--hc-text-muted);
+}
+
+.hub-service-type-form-page__review-dl {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.hub-service-type-form-page__review-dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.hub-service-type-form-page__review-dl dt {
+  margin: 0;
+  color: var(--hc-text-muted);
+  font-weight: 600;
+}
+
+.hub-service-type-form-page__review-dl dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+  color: var(--hc-text);
+}
+
+.hub-service-type-form-page__review-addon-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hub-service-type-form-page__review-addon-list li {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hc-brand) 10%, #fff);
+  border: 1px solid color-mix(in srgb, var(--hc-brand) 22%, transparent);
+  color: var(--hc-text);
+}
+
+/* Passo Adicionais (serviço) */
+.hub-service-addons-step__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.hub-service-addons-step__lead {
+  margin: 0;
+  flex: 1;
+  min-width: 200px;
+  font-size: 14px;
+  color: var(--hc-text-muted);
+  line-height: 1.5;
+}
+
+.hub-service-addons-step__badge {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hc-brand) 12%, #fff);
+  color: var(--hc-brand);
+  border: 1px solid color-mix(in srgb, var(--hc-brand) 24%, transparent);
+}
+
+.hub-service-addons-step__bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.hub-service-addons-step__bulk-btn {
+  border: 1px solid var(--hc-border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-text);
+  cursor: pointer;
+}
+
+.hub-service-addons-step__bulk-btn:hover {
+  border-color: color-mix(in srgb, var(--hc-brand) 40%, var(--hc-border));
+  color: var(--hc-brand);
+}
+
+.hub-service-addons-step__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hub-service-addons-step__card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--hc-border);
+  border-radius: 12px;
+  background: #fff;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hub-service-addons-step__card--on {
+  border-color: color-mix(in srgb, var(--hc-brand) 35%, var(--hc-border));
+  background: color-mix(in srgb, var(--hc-brand) 4%, #fff);
+  box-shadow: 0 1px 2px rgba(240, 100, 47, 0.08);
+}
+
+.hub-service-addons-step__card-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.hub-service-addons-step__card-name {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--hc-text);
+  margin-bottom: 4px;
+}
+
+.hub-service-addons-step__card-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--hc-text-muted);
+}
+
+.hub-service-addons-step__card-meta-sep {
+  opacity: 0.5;
+}
+
+.hub-service-addons-step__toggle {
+  flex-shrink: 0;
+}
+
+.hub-service-addons-step__toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hub-service-addons-step__actions {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hc-border);
+}
+
+.hub-service-addons-step__empty {
+  border: 1px dashed var(--hc-border);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--svc-surface, #faf8f7);
+}
+
+.hub-service-addons-step__empty--pending {
+  background: color-mix(in srgb, var(--hc-brand) 5%, #fff);
+  border-color: color-mix(in srgb, var(--hc-brand) 25%, var(--hc-border));
+}
+
+.hub-service-addons-step__empty-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--hc-text);
+}
+
+.hub-service-addons-step__loading {
+  padding: 12px 0;
+}
+
+.hub-service-addons-step__draft-hint {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--hc-brand) 6%, #fff);
+  border: 1px solid color-mix(in srgb, var(--hc-brand) 18%, var(--hc-border));
+}
+
 .hub-servicos-page .hub-servicos__char-count {
   text-align: right;
   font-size: 11px;
@@ -822,17 +1043,17 @@
   min-height: calc(100vh - 120px);
 }
 
-/* Abas alinhadas a Clientes — tokens já vêm de .hub-servicos-page nos filhos; shell precisa de brand para tab activa */
-.hub-servicos-shell--tabs {
-  --hc-brand: #f0642f;
-  --hc-brand-hover: #d85526;
-  --hc-text: #4a3b3a;
-  --hc-text-muted: #8e6e67;
-  --hc-border: #e5dcd6;
+/* Abas: tokens de .hub-clientes (#c86a4d); conteúdo interno pode usar .hub-servicos-page */
+.hub-servicos-shell--tabs > .hub-clientes__tabs {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  padding: 0 24px;
+  box-sizing: border-box;
 }
 
-.hub-servicos-shell--tabs .hub-clientes__tabs {
-  flex-wrap: wrap;
+/* Evita que o subnav herde layout de .hub-clientes (flex row + min-height) */
+.hub-servicos-shell--tabs > .hub-clientes__tabs a.hub-clientes__tab--active {
+  border-bottom-color: var(--hc-brand);
 }
 
 .hub-servicos-config__back-link {
@@ -920,4 +1141,50 @@
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
+}
+
+.hub-servicos-config__field-full {
+  grid-column: 1 / -1;
+}
+
+.hub-servicos-config__job-fn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px 12px;
+}
+
+.hub-servicos__filter-field--check .hub-servicos__filter-checkbox {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.hub-servicos-config__addons-block {
+  margin-top: 8px;
+}
+
+.hub-servicos-config__addon-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hub-servicos-config__addon-deployments-list .hub-servicos-config__addon-deployment-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hub-servicos-config__addon-deployment-meta {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.hub-servicos-config__addon-deployment-partial {
+  margin: 0 0 0 30px;
+  font-size: 12px;
+  color: var(--hub-muted, #64748b);
 }

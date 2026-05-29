@@ -4,8 +4,19 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.uploadLimiter = exports.userRateLimiter = exports.statsLimiter = exports.createLimiter = exports.authLimiter = exports.generalLimiter = void 0;
+exports.isRateLimitDisabled = isRateLimitDisabled;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const logger_js_1 = require("../utils/logger.js");
+require("../config/loadEnv.js");
+/** Em .env.local: DISABLE_RATE_LIMIT=true (apenas NODE_ENV=development) */
+function isRateLimitDisabled() {
+    return (process.env.NODE_ENV === 'development' && process.env.DISABLE_RATE_LIMIT === 'true');
+}
+function shouldSkipRateLimit(req) {
+    if (isRateLimitDisabled())
+        return true;
+    return req.path === '/' || req.path === '/health';
+}
 /**
  * Rate limiter geral para todas as rotas
  * Limites diferentes por ambiente:
@@ -24,10 +35,7 @@ exports.generalLimiter = (0, express_rate_limit_1.default)({
     },
     standardHeaders: true, // Retorna rate limit info nos headers `RateLimit-*`
     legacyHeaders: false, // Desabilita headers `X-RateLimit-*`
-    // Skip healthcheck endpoint para não contar requisições de monitoramento
-    skip: (req) => {
-        return req.path === '/' || req.path === '/health';
-    },
+    skip: (req) => shouldSkipRateLimit(req),
 });
 /**
  * Rate limiter mais restritivo para autenticação
@@ -42,6 +50,7 @@ exports.authLimiter = (0, express_rate_limit_1.default)({
     skipSuccessfulRequests: true, // Não conta requisições bem-sucedidas
     standardHeaders: true,
     legacyHeaders: false,
+    skip: () => isRateLimitDisabled(),
 });
 /**
  * Rate limiter para criação de recursos
@@ -55,6 +64,7 @@ exports.createLimiter = (0, express_rate_limit_1.default)({
     },
     standardHeaders: true,
     legacyHeaders: false,
+    skip: () => isRateLimitDisabled(),
 });
 /**
  * Rate limiter mais permissivo para rotas de estatísticas/dashboard
@@ -73,9 +83,7 @@ exports.statsLimiter = (0, express_rate_limit_1.default)({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => {
-        return req.path === '/' || req.path === '/health';
-    },
+    skip: (req) => shouldSkipRateLimit(req),
 });
 /**
  * Rate limiter por usuário autenticado
@@ -95,6 +103,9 @@ const userRateLimiter = (maxRequests = 200, windowMs = 15 * 60 * 1000) => {
         }
     }, 60000); // Limpar a cada minuto
     return (req, res, next) => {
+        if (isRateLimitDisabled()) {
+            return next();
+        }
         const userId = req.user?.id;
         // Se não houver usuário autenticado, usar limiter geral
         if (!userId) {

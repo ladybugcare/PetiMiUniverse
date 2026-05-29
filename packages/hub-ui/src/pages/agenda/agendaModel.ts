@@ -73,6 +73,8 @@ export type AgendaAppointment = {
   saleTotal?: number | null;
   petId?: string | null;
   guardianId?: string | null;
+  hubEncounterId?: string | null;
+  hubEncounterStatus?: string | null;
 };
 
 export function startOfDay(d: Date): Date {

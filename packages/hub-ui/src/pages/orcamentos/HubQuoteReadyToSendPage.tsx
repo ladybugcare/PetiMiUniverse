@@ -9,6 +9,7 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { HubTabs } from '../../components/HubTabs';
 import { hubQuotesApi, downloadHubQuotePdf, type HubQuote } from '../../api/hubQuotesApi';
 import '../clientes/clientes.css';
 import './orcamentos-page.css';
@@ -212,26 +213,15 @@ const HubQuoteReadyToSendPage: React.FC = () => {
         </div>
       </header>
 
-      <div className="hub-quote-ready__segment" role="tablist" aria-label="Modelo de mensagem">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={messageVariant === 'link'}
-          className={`hub-quote-ready__segment-btn${messageVariant === 'link' ? ' hub-quote-ready__segment-btn--active' : ''}`}
-          onClick={() => setMessageVariant('link')}
-        >
-          Mensagem com link
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={messageVariant === 'pdf'}
-          className={`hub-quote-ready__segment-btn${messageVariant === 'pdf' ? ' hub-quote-ready__segment-btn--active' : ''}`}
-          onClick={() => setMessageVariant('pdf')}
-        >
-          Mensagem com PDF
-        </button>
-      </div>
+      <HubTabs
+        ariaLabel="Modelo de mensagem"
+        activeId={messageVariant}
+        onTabChange={(id) => setMessageVariant(id as 'link' | 'pdf')}
+        items={[
+          { id: 'link', label: 'Mensagem com link' },
+          { id: 'pdf', label: 'Mensagem com PDF' },
+        ]}
+      />
 
       <section className="hub-orcamento-novo__card hub-quote-ready__message-card">
         <pre className="hub-quote-ready__message-pre" tabIndex={0}>

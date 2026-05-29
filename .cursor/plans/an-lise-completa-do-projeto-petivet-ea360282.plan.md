@@ -53,7 +53,7 @@ if (demand.filled_positions >= demand.vacancies) {
 
 ### 1.2 Atualizar trigger SQL para cobrir todos os casos
 
-**Arquivo:** `backend/database_migrations/add_filled_positions_trigger.sql`
+**Arquivo:** `backend/database_migrations/petimi_vet/add_filled_positions_trigger.sql`
 
 **Problema:** Trigger não cobre `canceled_by_vet` e outros status que deveriam decrementar.
 
@@ -279,7 +279,7 @@ export const syncAllFilledPositions = async (req: Request, res: Response) => {
 
 ### 4.1 Criar trigger SQL para recalcular status da demanda automaticamente
 
-**Arquivo:** `backend/database_migrations/add_demand_status_trigger.sql` (novo)
+**Arquivo:** `backend/database_migrations/petimi_vet/add_demand_status_trigger.sql` (novo)
 
 **Problema:** Status da demanda depende de serviços TypeScript que podem falhar ou não ser chamados. Deveria ser atualizado automaticamente pelo banco.
 
@@ -588,7 +588,7 @@ $ LANGUAGE plpgsql IMMUTABLE;
 
 ### 4.4 Implementar rollback inteligente com transações no banco
 
-**Arquivo:** `backend/database_migrations/add_application_approval_transaction.sql` (novo)
+**Arquivo:** `backend/database_migrations/petimi_vet/add_application_approval_transaction.sql` (novo)
 
 **Problema:** Se a API falhar depois que o trigger atualiza `filled_positions` e `status`, pode deixar dados inconsistentes. Precisa de transação que envolva aplicação + status da demanda.
 

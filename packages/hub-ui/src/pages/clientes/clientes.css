@@ -64,6 +64,13 @@
   color: var(--hc-text-muted);
 }
 
+/* Abas sempre terracotta de Clientes, mesmo em páginas com --hc-brand laranja */
+.hub-clientes__tabs,
+.hub-clientes__detail-tabs {
+  --hc-brand: #c86a4d;
+  --hc-brand-hover: #a85a40;
+}
+
 .hub-clientes__tabs {
   display: flex;
   gap: 4px;

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase';
-import { PERMISSIONS, Role } from '../utils/permissions';
+import { PERMISSIONS, Role, isClinicAdminRole } from '../utils/permissions';
 
 // Extend Express Request to include user info
 declare global {
@@ -109,6 +109,10 @@ export const checkPermission = async (
 
     if (error || !clinicUser) {
       return false;
+    }
+
+    if (isClinicAdminRole(clinicUser.role)) {
+      return true;
     }
 
     // Verificar se role tem a permissão

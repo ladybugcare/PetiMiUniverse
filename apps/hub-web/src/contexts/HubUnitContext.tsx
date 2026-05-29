@@ -10,6 +10,7 @@ import React, {
 } from 'react';
 import { apiRequest, CLINIC_STORAGE_UPDATED_EVENT, getStoredClinicId } from '@petimi/web-core';
 import { hubUnitsApi } from '../services/hubUnitsApi';
+import { applyHubSessionContext, hubSessionApi } from '../services/hubSessionApi';
 import { HUB_UNIT_STORAGE_UPDATED_EVENT } from '../constants/hubUnitEvents';
 import type { HubUnit } from '../types/hubUnit';
 
@@ -68,13 +69,24 @@ export const HubUnitProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     const p = (async () => {
       setLoading(true);
-      const id = getStoredClinicId();
+      let id = getStoredClinicId();
+
+      if (!id) {
+        try {
+          const ctx = await hubSessionApi.getContext();
+          id = applyHubSessionContext(ctx);
+        } catch {
+          /* sessão sem clínica ou API indisponível */
+        }
+      }
+
       setClinicId(id);
 
       if (!id) {
         setClinicName('');
         setUnits([]);
         setSelectedUnitState(null);
+        setLoading(false);
         return;
       }
 

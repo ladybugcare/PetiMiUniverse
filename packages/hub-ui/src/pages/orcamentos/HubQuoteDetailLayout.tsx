@@ -80,6 +80,8 @@ export interface HubQuoteDetailLayoutProps {
   onGuidedConvert: (linkGuardianId?: string) => void;
   /** Conversão instantânea (cria tutor + pets) — menu «Mais». */
   onQuickConvert?: () => void;
+  /** Gera recebível no financeiro (orçamento aceite, aguardando cobrança). */
+  onGenerateReceivable?: () => void;
 }
 
 const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
@@ -102,6 +104,7 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
   onCopyPublic,
   onGuidedConvert,
   onQuickConvert,
+  onGenerateReceivable,
 }) => {
   const { showSuccess, showError } = useAlert();
   const prospect = embedOne(quote.prospect);
@@ -229,6 +232,18 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
               >
                 <Send size={18} strokeWidth={2} aria-hidden />
                 Enviar orçamento
+              </button>
+            ) : null}
+            {canWrite && quote.status === 'accepted' && onGenerateReceivable ? (
+              <button
+                type="button"
+                className="hub-quote-detail__btn hub-quote-detail__btn--primary"
+                disabled={saving}
+                onClick={onGenerateReceivable}
+                title="Criar recebível a partir deste orçamento"
+              >
+                <Receipt size={18} strokeWidth={2} aria-hidden />
+                Gerar cobrança
               </button>
             ) : null}
             {canWrite && isDraft ? (

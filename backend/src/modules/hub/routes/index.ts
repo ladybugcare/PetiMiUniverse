@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { authenticateUser, requirePermission } from '../../../middleware/authMiddleware';
+import { authLimiter } from '../../../middleware/rateLimiter.js';
+import { postHubSignup, postHubOnboardingClinic } from '../hubSignupController.js';
 import {
   listHubGuardians,
   createHubGuardian,
@@ -18,8 +20,19 @@ import {
   listHubServiceGroups,
   createHubServiceGroup,
   patchHubServiceGroup,
+  patchHubServiceGroupJobFunctions,
+  getHubServiceGroupJobMappings,
   deleteHubServiceGroup,
 } from '../hubServiceGroupsController';
+import {
+  getHubServiceGroupAddons,
+  putHubServiceGroupAddons,
+  getHubServiceTypeAddonAvailability,
+  putHubServiceTypeAddonAvailability,
+  getHubServiceTypeAvailableAddons,
+  getHubAddonDeployments,
+  putHubAddonDeployments,
+} from '../hubServiceAddonsController';
 import {
   listHubSuppliers,
   createHubSupplier,
@@ -38,6 +51,9 @@ import {
 } from '../hubInventoryController';
 import { listHubStaff, getHubStaff, createHubStaff, patchHubStaff, inviteHubStaff } from '../hubStaffController';
 import { postHubStaffPhoto } from '../hubStaffPhotoController';
+import { postHubClinicProfilePhoto, postHubUserProfilePhoto } from '../hubProfilePhotoController.js';
+import { patchHubClinicProfile, patchHubUnitProfile } from '../hubClinicProfileController.js';
+import { getHubSessionContext } from '../hubSessionController.js';
 import {
   listHubAppointments,
   createHubAppointment,
@@ -53,6 +69,55 @@ import {
   createHubProspect,
   patchHubProspect,
 } from '../hubProspectsController';
+import {
+  getHubEncountersDayBoard,
+  listHubEncounters,
+  getHubEncounter,
+  createHubEncounter,
+  openHubEncounterFromAppointment,
+  patchHubEncounter,
+  completeHubEncounter,
+} from '../hubEncountersController';
+import {
+  getHubGroomingDayBoard,
+  openHubGroomingSessionFromAppointment,
+  createHubGroomingSession,
+  patchHubGroomingSession,
+  advanceHubGroomingSession,
+  listHubGroomingSessionEvents,
+  postHubGroomingSessionEvent,
+} from '../hubGroomingController';
+import {
+  getHubGroomingSessionDrawer,
+  postHubGroomingSessionExtra,
+  patchHubGroomingAppointmentServiceLine,
+} from '../hubGroomingDrawerController';
+import {
+  listHubPetClinicalFlags,
+  upsertHubPetClinicalFlag,
+  listHubEncounterEvents,
+  createHubEncounterEvent,
+  listHubPrescriptions,
+  createHubPrescription,
+  listHubVaccinations,
+  createHubVaccination,
+  listHubClinicalAttachments,
+  createHubClinicalAttachment,
+  uploadHubClinicalAttachment,
+  listHubHospitalBeds,
+  createHubHospitalBed,
+  listHubHospitalizations,
+  createHubHospitalization,
+  patchHubHospitalization,
+  addHubHospitalizationDailyNote,
+  listHubSurgeries,
+  createHubSurgery,
+  patchHubSurgery,
+  listHubClinicalTemplates,
+  createHubClinicalTemplate,
+  applyHubClinicalTemplate,
+  getHubClinicalAlerts,
+} from '../hubClinicalModulesController';
 import {
   listHubQuotes,
   getHubQuote,
@@ -70,6 +135,30 @@ import {
   getHubQuotePdf,
   suggestQuotePrice,
 } from '../hubQuotesController';
+import {
+  getHubFinancePreview,
+  postHubFinanceReceivable,
+  postHubFinanceWaiveBilling,
+  postHubFinanceReceivablePayment,
+  listHubFinanceReceivables,
+  postHubFinanceCashSessionOpen,
+  postHubFinanceCashSessionClose,
+  getHubFinanceCashSessionOpen,
+  getHubFinanceUnbilledCompleted,
+  getHubFinancePendingBillingCount,
+  getHubFinanceDashboardSummary,
+  getHubFinanceCashFlow,
+  listHubFinanceExpenses,
+  postHubFinanceExpense,
+  postHubFinanceCashMovement,
+} from '../hubFinancialController';
+import {
+  listHubCommissionRules,
+  postHubCommissionRule,
+  patchHubCommissionRule,
+  deleteHubCommissionRule,
+  getHubCommissionPreview,
+} from '../hubCommissionRulesController';
 
 /**
  * PetMi Hub API — rotas do sistema operacional do negócio pet.
@@ -84,6 +173,16 @@ router.get('/health', (_req, res) => {
     message: 'Hub API module mounted',
   });
 });
+
+/** Cadastro Hub (público) e onboarding clínica+unidade */
+router.post('/signup', authLimiter, postHubSignup);
+router.post('/onboarding/clinic', authenticateUser, postHubOnboardingClinic);
+router.get('/session/context', authenticateUser, getHubSessionContext);
+
+router.post('/profile/me/photo', authenticateUser, postHubUserProfilePhoto);
+router.post('/clinic/profile/photo', authenticateUser, postHubClinicProfilePhoto);
+router.patch('/clinic/profile', authenticateUser, patchHubClinicProfile);
+router.patch('/units/:unitId', authenticateUser, patchHubUnitProfile);
 
 router.get(
   '/guardians/stats',
@@ -168,6 +267,56 @@ router.post(
 );
 
 router.get(
+  '/service-types/:id/available-addons',
+  authenticateUser,
+  requirePermission('hub.appointments.read'),
+  getHubServiceTypeAvailableAddons
+);
+router.get(
+  '/service-types/:id/addon-availability',
+  authenticateUser,
+  requirePermission('hub.service_types.read'),
+  getHubServiceTypeAddonAvailability
+);
+router.put(
+  '/service-types/:id/addon-availability',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  putHubServiceTypeAddonAvailability
+);
+router.get(
+  '/service-types/:id/addon-deployments',
+  authenticateUser,
+  requirePermission('hub.service_types.read'),
+  getHubAddonDeployments
+);
+router.put(
+  '/service-types/:id/addon-deployments',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  putHubAddonDeployments
+);
+
+router.get(
+  '/service-groups/:id/addons',
+  authenticateUser,
+  requirePermission('hub.service_types.read'),
+  getHubServiceGroupAddons
+);
+router.put(
+  '/service-groups/:id/addons',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  putHubServiceGroupAddons
+);
+
+router.get(
+  '/service-groups/job-mappings',
+  authenticateUser,
+  requirePermission('hub.appointments.read'),
+  getHubServiceGroupJobMappings
+);
+router.get(
   '/service-groups',
   authenticateUser,
   requirePermission('hub.service_types.read'),
@@ -184,6 +333,12 @@ router.patch(
   authenticateUser,
   requirePermission('hub.service_types.write'),
   patchHubServiceGroup
+);
+router.patch(
+  '/service-groups/:id/job-functions',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  patchHubServiceGroupJobFunctions
 );
 router.delete(
   '/service-groups/:id',
@@ -280,5 +435,347 @@ router.post(
   reopenHubQuoteAsDraft
 );
 router.post('/quotes/:id/public-token', authenticateUser, requirePermission('hub.quotes.write'), ensurePublicToken);
+
+/* --- Clínica / Atendimentos --- */
+router.get(
+  '/encounters/day-board',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  getHubEncountersDayBoard
+);
+router.get('/encounters', authenticateUser, requirePermission('hub.clinic.read'), listHubEncounters);
+router.get('/encounters/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubEncounter);
+router.post('/encounters', authenticateUser, requirePermission('hub.clinic.write'), createHubEncounter);
+router.post(
+  '/encounters/open-from-appointment',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  openHubEncounterFromAppointment
+);
+router.patch('/encounters/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubEncounter);
+router.post(
+  '/encounters/:id/complete',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  completeHubEncounter
+);
+
+/* --- Banho & Tosa (fila operacional) --- */
+router.get(
+  '/grooming/day-board',
+  authenticateUser,
+  requirePermission('grooming.queue.read'),
+  getHubGroomingDayBoard
+);
+router.post(
+  '/grooming/sessions/open-from-appointment',
+  authenticateUser,
+  requirePermission('grooming.queue.manage'),
+  openHubGroomingSessionFromAppointment
+);
+router.post(
+  '/grooming/sessions',
+  authenticateUser,
+  requirePermission('grooming.queue.manage'),
+  createHubGroomingSession
+);
+router.patch(
+  '/grooming/sessions/:id',
+  authenticateUser,
+  requirePermission('grooming.queue.manage'),
+  patchHubGroomingSession
+);
+router.post(
+  '/grooming/sessions/:id/advance',
+  authenticateUser,
+  requirePermission('grooming.queue.manage'),
+  advanceHubGroomingSession
+);
+router.get(
+  '/grooming/sessions/:id/events',
+  authenticateUser,
+  requirePermission('grooming.queue.read'),
+  listHubGroomingSessionEvents
+);
+router.post(
+  '/grooming/sessions/:id/events',
+  authenticateUser,
+  requirePermission('grooming.queue.manage'),
+  postHubGroomingSessionEvent
+);
+router.get(
+  '/grooming/sessions/:id/drawer',
+  authenticateUser,
+  requirePermission('grooming.queue.read'),
+  getHubGroomingSessionDrawer
+);
+router.post(
+  '/grooming/sessions/:id/extras',
+  authenticateUser,
+  requirePermission('grooming.queue.manage'),
+  postHubGroomingSessionExtra
+);
+router.patch(
+  '/grooming/appointment-service-lines/:lineId',
+  authenticateUser,
+  requirePermission('grooming.queue.manage'),
+  patchHubGroomingAppointmentServiceLine
+);
+
+router.get(
+  '/clinical/pet-flags',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubPetClinicalFlags
+);
+router.post(
+  '/clinical/pet-flags',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  upsertHubPetClinicalFlag
+);
+router.get(
+  '/clinical/encounter-events',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubEncounterEvents
+);
+router.post(
+  '/clinical/encounter-events',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubEncounterEvent
+);
+router.get(
+  '/clinical/alerts',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  getHubClinicalAlerts
+);
+
+router.get(
+  '/clinical/prescriptions',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubPrescriptions
+);
+router.post(
+  '/clinical/prescriptions',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubPrescription
+);
+router.get(
+  '/clinical/vaccinations',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubVaccinations
+);
+router.post(
+  '/clinical/vaccinations',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubVaccination
+);
+router.get(
+  '/clinical/attachments',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubClinicalAttachments
+);
+router.post(
+  '/clinical/attachments',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubClinicalAttachment
+);
+router.post(
+  '/clinical/attachments/upload',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  uploadHubClinicalAttachment
+);
+
+router.get(
+  '/clinical/hospital-beds',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubHospitalBeds
+);
+router.post(
+  '/clinical/hospital-beds',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubHospitalBed
+);
+router.get(
+  '/clinical/hospitalizations',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubHospitalizations
+);
+router.post(
+  '/clinical/hospitalizations',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubHospitalization
+);
+router.patch(
+  '/clinical/hospitalizations/:id',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  patchHubHospitalization
+);
+router.post(
+  '/clinical/hospitalizations/:id/daily-notes',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  addHubHospitalizationDailyNote
+);
+
+router.get('/clinical/surgeries', authenticateUser, requirePermission('hub.clinic.read'), listHubSurgeries);
+router.post('/clinical/surgeries', authenticateUser, requirePermission('hub.clinic.write'), createHubSurgery);
+router.patch('/clinical/surgeries/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubSurgery);
+
+router.get(
+  '/clinical/templates',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubClinicalTemplates
+);
+router.post(
+  '/clinical/templates',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubClinicalTemplate
+);
+router.post(
+  '/clinical/templates/:encounterId/apply',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  applyHubClinicalTemplate
+);
+
+/** Financeiro — Fase 1 (recebíveis, sem cobrança, caixa básico) */
+router.get(
+  '/finance/preview',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinancePreview
+);
+router.get(
+  '/finance/unbilled-completed',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceUnbilledCompleted
+);
+router.get(
+  '/finance/pending-billing-count',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinancePendingBillingCount
+);
+router.get(
+  '/finance/receivables',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  listHubFinanceReceivables
+);
+router.post(
+  '/finance/receivables',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  postHubFinanceReceivable
+);
+router.post(
+  '/finance/waive-billing',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubFinanceWaiveBilling
+);
+router.post(
+  '/finance/receivables/:id/payments',
+  authenticateUser,
+  requirePermission('hub.cash.receive'),
+  postHubFinanceReceivablePayment
+);
+router.get(
+  '/finance/cash-sessions/open',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceCashSessionOpen
+);
+router.post(
+  '/finance/cash-sessions/open',
+  authenticateUser,
+  requirePermission('hub.cash.session'),
+  postHubFinanceCashSessionOpen
+);
+router.post(
+  '/finance/cash-sessions/:id/close',
+  authenticateUser,
+  requirePermission('hub.cash.session'),
+  postHubFinanceCashSessionClose
+);
+router.get(
+  '/finance/dashboard-summary',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceDashboardSummary
+);
+router.get(
+  '/finance/cash-flow',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceCashFlow
+);
+router.get(
+  '/finance/expenses',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  listHubFinanceExpenses
+);
+router.post(
+  '/finance/expenses',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubFinanceExpense
+);
+router.post(
+  '/finance/cash-sessions/:id/movements',
+  authenticateUser,
+  requirePermission('hub.cash.session'),
+  postHubFinanceCashMovement
+);
+router.get(
+  '/finance/commission-preview',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubCommissionPreview
+);
+router.get(
+  '/finance/commission-rules',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  listHubCommissionRules
+);
+router.post(
+  '/finance/commission-rules',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubCommissionRule
+);
+router.patch(
+  '/finance/commission-rules/:id',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  patchHubCommissionRule
+);
+router.delete(
+  '/finance/commission-rules/:id',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  deleteHubCommissionRule
+);
 
 export default router;

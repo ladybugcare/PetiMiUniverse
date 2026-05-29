@@ -64,6 +64,7 @@ const pricingVariantSchema = z
     period: z.enum(['full_day', 'half_day']).optional(),
     consult_type: z.enum(['padrao', 'retorno']).optional(),
     km_tier_index: z.coerce.number().int().min(0).max(99).optional(),
+    custom_tier_index: z.coerce.number().int().min(0).max(99).optional(),
   })
   .strict();
 
@@ -76,6 +77,7 @@ function normalizeLinePricingVariant(pv: unknown): HubQuotePricingVariantInput |
   if (o.period) out.period = o.period;
   if (o.consult_type) out.consult_type = o.consult_type;
   if (o.km_tier_index != null) out.km_tier_index = o.km_tier_index;
+  if (o.custom_tier_index != null) out.custom_tier_index = o.custom_tier_index;
   return Object.keys(out).length ? out : null;
 }
 
@@ -382,6 +384,7 @@ const QUOTE_LIST_SELECT = `
   id, clinic_id, prospect_id, unit_id, status, notes, client_notes, total_amount, subtotal_amount,
   discount_kind, discount_value, currency, sent_at, expires_at, valid_days, public_token,
   guardian_id, converted_at, created_at, updated_at,
+  billing_state, billing_waived_at, billing_waive_reason,
   prospect:hub_prospects(id, full_name, tax_id, phone, email),
   pets:hub_quote_pets(id, quote_id, display_name, species, breed, sort_order)
 `;
@@ -390,6 +393,7 @@ const QUOTE_FULL_SELECT = `
   id, clinic_id, prospect_id, unit_id, status, notes, client_notes, total_amount, subtotal_amount,
   discount_kind, discount_value, currency, sent_at, expires_at, valid_days, public_token,
   guardian_id, converted_at, created_at, updated_at,
+  billing_state, billing_waived_at, billing_waive_reason,
   clinic:clinics(name),
   prospect:hub_prospects(id, clinic_id, full_name, tax_id, phone, email, created_at, updated_at, deleted_at),
   pets:hub_quote_pets(id, quote_id, display_name, species, breed, size_tier, coat_type, age_months, sex, sort_order, created_at),
@@ -1079,6 +1083,9 @@ export const reopenHubQuoteAsDraft = async (req: Request, res: Response) => {
         sent_at: null,
         expires_at: null,
         public_token: null,
+        billing_state: 'none',
+        billing_waived_at: null,
+        billing_waive_reason: null,
       })
       .eq('id', idParsed.data);
 
@@ -1457,9 +1464,10 @@ export const convertHubQuote = async (req: Request, res: Response) => {
         status: 'accepted',
         guardian_id: guardianId,
         converted_at: now,
+        billing_state: 'awaiting_billing',
       })
       .eq('id', idParsed.data)
-      .select('id, status, guardian_id, converted_at')
+      .select('id, status, guardian_id, converted_at, billing_state')
       .single();
 
     if (finErr) {
@@ -1605,9 +1613,10 @@ export const finalizeManualConversionHubQuote = async (req: Request, res: Respon
         status: 'accepted',
         guardian_id,
         converted_at: now,
+        billing_state: 'awaiting_billing',
       })
       .eq('id', idParsed.data)
-      .select('id, status, guardian_id, converted_at')
+      .select('id, status, guardian_id, converted_at, billing_state')
       .single();
 
     if (finErr) {

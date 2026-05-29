@@ -38,6 +38,15 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.prospects.write',
     'hub.quotes.read',
     'hub.quotes.write',
+    'hub.clinic.read',
+    'hub.clinic.write',
+    'grooming.queue.read',
+    'grooming.queue.manage',
+    'hub.financial.read',
+    'hub.financial.write',
+    'hub.receivables.create',
+    'hub.cash.session',
+    'hub.cash.receive',
   ],
   CMANAGER: [
     'unit.edit',
@@ -70,6 +79,15 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.prospects.write',
     'hub.quotes.read',
     'hub.quotes.write',
+    'hub.clinic.read',
+    'hub.clinic.write',
+    'grooming.queue.read',
+    'grooming.queue.manage',
+    'hub.financial.read',
+    'hub.financial.write',
+    'hub.receivables.create',
+    'hub.cash.session',
+    'hub.cash.receive',
   ],
   CASSISTANT: [
     'unit.view',
@@ -87,6 +105,13 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.appointments.write',
     'hub.prospects.read',
     'hub.quotes.read',
+    'hub.clinic.read',
+    'grooming.queue.read',
+    'grooming.queue.manage',
+    'hub.financial.read',
+    'hub.receivables.create',
+    'hub.cash.session',
+    'hub.cash.receive',
   ],
   CVET_INTERNAL: [
     'unit.view',
@@ -96,11 +121,19 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.inventory.read',
     'hub.staff.read',
     'hub.appointments.read',
+    'hub.clinic.read',
+    'hub.clinic.write',
+    'hub.financial.read',
   ],
 };
 
+/** CADMIN tem acesso irrestrito a todo o Hub. */
+export const isClinicAdminRole = (role: string | null | undefined): boolean =>
+  String(role || '').toUpperCase() === 'CADMIN';
+
 export const hasPermission = (role: ClinicStaffRole | null, permission: string): boolean => {
   if (!role) return false;
+  if (isClinicAdminRole(role)) return true;
   const rolePermissions = PERMISSIONS[role];
   return rolePermissions ? rolePermissions.includes(permission) : false;
 };

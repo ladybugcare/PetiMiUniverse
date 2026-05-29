@@ -75,6 +75,9 @@ const checkPermission = async (user_id, clinic_id, permission) => {
         if (error || !clinicUser) {
             return false;
         }
+        if ((0, permissions_1.isClinicAdminRole)(clinicUser.role)) {
+            return true;
+        }
         // Verificar se role tem a permissão
         const userPermissions = permissions_1.PERMISSIONS[clinicUser.role];
         return userPermissions ? userPermissions.includes(permission) : false;

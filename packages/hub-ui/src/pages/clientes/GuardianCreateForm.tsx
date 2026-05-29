@@ -1,7 +1,8 @@
 import React, { FormEvent, useCallback, useMemo } from 'react';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
-import { isoDateToBr } from './formatters';
+import { HubDateField } from '../../components/HubDateField';
+import { brDateToIso, isoDateToBr } from './formatters';
 
 export type GuardianFormValues = {
   full_name: string;
@@ -243,12 +244,11 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
       {!isCompany && (
         <>
           <div className="hub-clientes__field">
-            <label className="hub-clientes__label">Nascimento (dd/mm/aaaa)</label>
-            <input
-              className="hub-clientes__input"
-              value={value.birth_date_br}
-              onChange={(e) => patch({ birth_date_br: e.target.value })}
-              placeholder="dd/mm/aaaa"
+            <HubDateField
+              id="hub-guardian-form-birth"
+              label="Nascimento"
+              valueIso={brDateToIso(value.birth_date_br) ?? ''}
+              onChangeIso={(iso) => patch({ birth_date_br: iso ? isoDateToBr(iso) : '' })}
             />
           </div>
           <div className="hub-clientes__field">

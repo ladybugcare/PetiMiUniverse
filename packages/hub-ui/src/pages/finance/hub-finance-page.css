@@ -1,0 +1,128 @@
+/* Financeiro / Caixa / Dashboard — complementos ao layout hub-clientes + hub-servicos-page */
+
+.hub-finance-page .hub-clientes__main {
+  padding-right: 20px;
+  padding-bottom: 24px;
+}
+
+.hub-finance-page__section {
+  margin-bottom: 28px;
+}
+
+.hub-finance-page__subsection-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--hc-text, #4a3b3a);
+}
+
+/* Métricas: mais colunas em ecrãs largos (alinhado a Serviços) */
+.hub-finance-page .hub-servicos__metrics {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.hub-finance-page__metric-span {
+  grid-column: 1 / -1;
+}
+
+.hub-finance-page__dash-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-brand, #f0642f);
+  text-decoration: none;
+}
+
+.hub-finance-page__dash-link:hover {
+  text-decoration: underline;
+}
+
+/* Tabelas: sem cursor de «linha clicável» de clientes */
+.hub-finance-page__table tbody tr {
+  cursor: default;
+}
+
+.hub-finance-page__th-num,
+.hub-finance-page__td-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-finance-page__td-num--pos {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.hub-finance-page__td-num--neg {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.hub-finance-page__table-wrap--scroll {
+  max-height: 440px;
+  overflow-y: auto;
+}
+
+/* Toolbar de despesa / movimento (flex, uma linha quando cabe) */
+.hub-finance-page__expense-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: var(--svc-surface, #faf8f7);
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(74, 59, 58, 0.06);
+}
+
+.hub-finance-page__field-compact {
+  flex: 0 1 160px;
+  min-width: 120px;
+}
+
+.hub-finance-page__field-grow {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.hub-finance-page__btn-align {
+  align-self: flex-end;
+}
+
+/* Painel sessão de caixa */
+.hub-finance-page__card-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 16px;
+  background: var(--svc-surface, #faf8f7);
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(74, 59, 58, 0.06);
+}
+
+.hub-finance-page__card-panel--stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.hub-finance-page__close-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--hc-border, #e5dcd6);
+}
+
+.hub-finance-page .hub-clientes__td-actions-inner {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}

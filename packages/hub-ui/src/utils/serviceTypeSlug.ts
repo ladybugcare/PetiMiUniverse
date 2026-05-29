@@ -27,6 +27,18 @@ export const KNOWN_SERVICE_GROUP_SLUGS = new Set(SERVICE_GROUP_OPTIONS.map((o) =
 
 export type HubServiceGroupValue = (typeof SERVICE_GROUP_OPTIONS)[number]['value'];
 
+/** Grupos cuja agenda alimenta o painel Clínica → Atendimentos. */
+export const OPERATIONAL_CLINICAL_SERVICE_GROUPS = ['clinica', 'internacao', 'cirurgia'] as const;
+
+/** Grupo cuja agenda alimenta a fila operacional Banho & Tosa. */
+export const OPERATIONAL_GROOMING_SERVICE_GROUP = 'banho_tosa' as const;
+
+export type OperationalClinicalServiceGroup = (typeof OPERATIONAL_CLINICAL_SERVICE_GROUPS)[number];
+
+export function isOperationalClinicalGroup(group: string): group is OperationalClinicalServiceGroup {
+  return (OPERATIONAL_CLINICAL_SERVICE_GROUPS as readonly string[]).includes(group);
+}
+
 function humanizeGroupSlug(slug: string): string {
   return slug
     .split('_')
@@ -39,6 +51,12 @@ export function serviceGroupLabel(value: string): string {
   const o = SERVICE_GROUP_OPTIONS.find((x) => x.value === value);
   if (o) return o.label;
   return humanizeGroupSlug(value) || value;
+}
+
+/** Slug de `service_group` já persistido (vazio → `outros`). */
+export function normalizeServiceGroupSlug(raw: string | null | undefined): string {
+  const s = (raw ?? '').trim();
+  return s || 'outros';
 }
 
 /** Normaliza entrada do combobox (valor existente ou texto «criar novo») para slug de `service_group`. */

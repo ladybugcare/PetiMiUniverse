@@ -6,3 +6,5 @@ ALTER TABLE public.hub_appointment_services
 
 COMMENT ON COLUMN public.hub_appointment_services.pricing_variant IS
   'Variante de matriz aplicada (ex.: km_tier_index para Leva e Traz, period para creche).';
+
+NOTIFY pgrst, 'reload schema';

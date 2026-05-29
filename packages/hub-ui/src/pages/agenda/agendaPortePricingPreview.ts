@@ -1,3 +1,4 @@
+import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import {
   COAT_TYPE_VALUES,
@@ -162,7 +163,53 @@ export function resolvePorteLinePreview(input: {
       };
     }
   }
+  if (matrix.kind === 'personalizado') {
+    const t0 = matrix.tiers[0];
+    if (t0) {
+      return {
+        tierApplied: null,
+        coatTypeApplied: null,
+        cost: round2(t0.cost_amount),
+        sale: round2(t0.sale_amount),
+        needsCoatType: false,
+      };
+    }
+  }
   return { tierApplied: null, coatTypeApplied: null, cost: refCost, sale: refSale, needsCoatType: false };
+}
+
+function resolveVariantLinePreview(
+  serviceType: HubServiceType,
+  pricingVariant: HubQuotePricingVariant | null | undefined
+): { cost: number; sale: number } {
+  const refCost = round2(Number(serviceType.cost_amount) || 0);
+  const refSale = round2(Number(serviceType.sale_amount) || 0);
+  const matrix = parsePricingMatrix(serviceType);
+  if (!matrix) return { cost: refCost, sale: refSale };
+
+  if (matrix.kind === 'personalizado') {
+    const idx = pricingVariant?.custom_tier_index;
+    const i =
+      typeof idx === 'number' && Number.isInteger(idx) && idx >= 0 && idx < matrix.tiers.length ? idx : 0;
+    const row = matrix.tiers[i] ?? matrix.tiers[0];
+    return row ? { cost: round2(row.cost_amount), sale: round2(row.sale_amount) } : { cost: refCost, sale: refSale };
+  }
+  if (matrix.kind === 'km_banda') {
+    const idx = pricingVariant?.km_tier_index;
+    const i =
+      typeof idx === 'number' && Number.isInteger(idx) && idx >= 0 && idx < matrix.tiers.length ? idx : 0;
+    const row = matrix.tiers[i] ?? matrix.tiers[0];
+    return row ? { cost: round2(row.cost_amount), sale: round2(row.sale_amount) } : { cost: refCost, sale: refSale };
+  }
+  if (matrix.kind === 'periodo' && pricingVariant?.period) {
+    const row = matrix.tiers.find((t) => t.period === pricingVariant.period);
+    return row ? { cost: round2(row.cost_amount), sale: round2(row.sale_amount) } : { cost: refCost, sale: refSale };
+  }
+  if (matrix.kind === 'consulta' && pricingVariant?.consult_type) {
+    const row = matrix.tiers.find((t) => t.consult_type === pricingVariant.consult_type);
+    return row ? { cost: round2(row.cost_amount), sale: round2(row.sale_amount) } : { cost: refCost, sale: refSale };
+  }
+  return { cost: refCost, sale: refSale };
 }
 
 /** União ordenada dos tiers `porte` presentes nas matrizes dos serviços selecionados. */
@@ -244,11 +291,19 @@ export type AgendaPricingPreviewLine = {
   sale: number;
   cost: number;
   needsCoatType: boolean;
+  isAddon?: boolean;
+};
+
+export type AgendaPricingPreviewRow = {
+  hub_service_type_id: string;
+  name: string;
+  pricing_variant?: HubQuotePricingVariant | null;
+  isAddon?: boolean;
 };
 
 export function buildAgendaPricingPreview(input: {
-  mainServices: Array<{ hub_service_type_id: string; name: string }>;
-  extraServices: Array<{ hub_service_type_id: string; name: string }>;
+  mainServices: AgendaPricingPreviewRow[];
+  extraServices: AgendaPricingPreviewRow[];
   serviceTypes: HubServiceType[];
   petSizeTier: string;
   petBirthDate: string | null;
@@ -267,16 +322,51 @@ export function buildAgendaPricingPreview(input: {
   for (const row of all) {
     const st = serviceTypes.find((x) => x.id === row.hub_service_type_id);
     if (!st) continue;
-    const r = resolvePorteLinePreview({
-      serviceType: st,
-      petSizeTier,
-      petBirthDate,
-      appointmentDateYmd,
-      puppyMaxMonths,
-      appointmentOverrideTier,
-      petCoatType,
-      appointmentOverrideCoatType,
-    });
+    const isAddon = row.isAddon === true || st.is_addon === true;
+    const matrix = parsePricingMatrix(st);
+    if (isAddon) {
+      const p = resolveVariantLinePreview(st, row.pricing_variant);
+      lines.push({
+        hub_service_type_id: row.hub_service_type_id,
+        name: row.name,
+        tierApplied: null,
+        coatTypeApplied: null,
+        sale: p.sale,
+        cost: p.cost,
+        needsCoatType: false,
+        isAddon: true,
+      });
+      totalSale += p.sale;
+      totalCost += p.cost;
+      continue;
+    }
+    const variantPricing =
+      matrix &&
+      (matrix.kind === 'personalizado' ||
+        matrix.kind === 'km_banda' ||
+        matrix.kind === 'periodo' ||
+        matrix.kind === 'consulta');
+    const r = variantPricing
+      ? (() => {
+          const p = resolveVariantLinePreview(st, row.pricing_variant);
+          return {
+            tierApplied: null as string | null,
+            coatTypeApplied: null as string | null,
+            sale: p.sale,
+            cost: p.cost,
+            needsCoatType: false,
+          };
+        })()
+      : resolvePorteLinePreview({
+          serviceType: st,
+          petSizeTier,
+          petBirthDate,
+          appointmentDateYmd,
+          puppyMaxMonths,
+          appointmentOverrideTier,
+          petCoatType,
+          appointmentOverrideCoatType,
+        });
     lines.push({
       hub_service_type_id: row.hub_service_type_id,
       name: row.name,
@@ -285,6 +375,7 @@ export function buildAgendaPricingPreview(input: {
       sale: r.sale,
       cost: r.cost,
       needsCoatType: r.needsCoatType,
+      isAddon: false,
     });
     totalSale += r.sale;
     totalCost += r.cost;

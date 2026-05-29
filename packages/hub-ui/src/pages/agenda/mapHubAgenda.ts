@@ -61,5 +61,7 @@ export function mapHubAppointmentToAgenda(row: HubAppointment): AgendaAppointmen
     series_id: row.series_id ?? undefined,
     title: row.title ?? undefined,
     services,
+    hubEncounterId: (row as { hub_encounter_id?: string | null }).hub_encounter_id ?? null,
+    hubEncounterStatus: (row as { hub_encounter_status?: string | null }).hub_encounter_status ?? null,
   };
 }

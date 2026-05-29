@@ -8,6 +8,7 @@ import { hubQuotesApi } from '../api/hubQuotesApi';
 import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
 import type { CoatTypeValue } from '../utils/hubServiceTypesPricingMatrix';
 import { useAlert } from '../components/AlertProvider';
+import { HubCancelButton } from '../components/HubCancelButton';
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import './pets/pets-page.css';
 import './pets/wizard/pet-wizard.css';
@@ -356,14 +357,7 @@ const HubPetWizardPage: React.FC = () => {
       </div>
 
       <footer className="pet-wizard__footer">
-        <button
-          type="button"
-          className="pet-wizard__btn pet-wizard__btn--outline"
-          onClick={() => navigate('/hub/pets')}
-        >
-          <ChevronLeft size={18} strokeWidth={2} aria-hidden />
-          Cancelar
-        </button>
+        <HubCancelButton onClick={() => navigate('/hub/pets')} />
         <div className="pet-wizard__footer-right">
           {activeStep > 0 && (
             <button type="button" className="pet-wizard__btn pet-wizard__btn--outline" onClick={goBack}>

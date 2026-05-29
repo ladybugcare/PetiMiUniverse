@@ -1,7 +1,7 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { HubTabs } from '../../components/HubTabs';
 
-const links: { to: string; label: string }[] = [
+const links = [
   { to: 'produtos', label: 'Produtos' },
   { to: 'medicamentos', label: 'Medicamentos' },
   { to: 'vacinas', label: 'Vacinas' },
@@ -13,21 +13,7 @@ const links: { to: string; label: string }[] = [
 ];
 
 const HubEstoqueSubnav: React.FC = () => {
-  return (
-    <nav className="hub-clientes__tabs" aria-label="Secções de estoque">
-      {links.map(({ to, label }) => (
-        <NavLink
-          key={to}
-          to={to}
-          className={({ isActive }) =>
-            ['hub-clientes__tab', isActive ? 'hub-clientes__tab--active' : ''].filter(Boolean).join(' ')
-          }
-        >
-          {label}
-        </NavLink>
-      ))}
-    </nav>
-  );
+  return <HubTabs ariaLabel="Secções de estoque" items={links} />;
 };
 
 export default HubEstoqueSubnav;

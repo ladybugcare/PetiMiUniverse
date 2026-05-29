@@ -6,6 +6,7 @@ const supabase_1 = require("../../config/supabase");
 const serviceTypeCode_1 = require("./serviceTypeCode");
 const hubServiceTypesPricingMatrix_1 = require("./hubServiceTypesPricingMatrix");
 const hubServiceGroupsController_1 = require("./hubServiceGroupsController");
+const hubServiceAddonsController_1 = require("./hubServiceAddonsController");
 const uuidStr = zod_1.z.string().uuid();
 /** Grupo operacional: valores pré-definidos (banho_tosa, …) ou slug personalizado normalizado. */
 const serviceGroupSchema = zod_1.z
@@ -38,6 +39,7 @@ const createServiceTypeBodySchema = zod_1.z
     internal_notes: zod_1.z.string().max(4000).optional().nullable(),
     /** Matriz opcional (porte, período, consulta, km); alinhada a `service_group`. */
     pricing_matrix: zod_1.z.unknown().optional().nullable(),
+    is_addon: zod_1.z.boolean().optional(),
     /** Legado / migração: se enviado, deve coincidir com o slug gerado ou ser único. Preferir omitir. */
     code: zod_1.z
         .string()
@@ -60,14 +62,15 @@ const updateServiceTypeBodySchema = zod_1.z
     allow_scheduling: zod_1.z.boolean().optional(),
     internal_notes: zod_1.z.string().max(4000).optional().nullable(),
     pricing_matrix: zod_1.z.unknown().optional().nullable(),
+    is_addon: zod_1.z.boolean().optional(),
     code_locked: zod_1.z.boolean().optional(),
     active: zod_1.z.boolean().optional(),
     archived: zod_1.z.boolean().optional(),
 })
     .strict();
-const SELECT_FIELDS = 'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, default_duration_minutes, active, allow_scheduling, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+const SELECT_FIELDS = 'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
 async function fetchGroupColorMap(clinicId) {
-    await (0, hubServiceGroupsController_1.ensureDefaultHubServiceGroups)(clinicId);
+    await (0, hubServiceGroupsController_1.ensureDefaultGroupJobFunctions)(clinicId);
     const map = new Map();
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_service_groups')
@@ -141,10 +144,12 @@ const listHubServiceTypes = async (req, res) => {
         }
         const clinic_id = parsed.data;
         const includeArchived = req.query.include_archived === 'true' || req.query.include_archived === '1';
+        const addonsOnly = req.query.addons_only === 'true' || req.query.addons_only === '1';
         let q = supabase_1.supabaseAdmin
             .from('hub_service_types')
             .select(SELECT_FIELDS)
             .eq('clinic_id', clinic_id)
+            .eq('is_addon', addonsOnly)
             .order('name', { ascending: true });
         if (!includeArchived) {
             q = q.is('deleted_at', null);
@@ -170,17 +175,18 @@ const createHubServiceType = async (req, res) => {
         if (!body.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         }
-        const { clinic_id, name, service_group, cost_amount, sale_amount, default_duration_minutes, description, allow_scheduling, internal_notes, code: codeOverride, pricing_matrix: pricing_matrix_raw, } = body.data;
+        const { clinic_id, name, service_group, cost_amount, sale_amount, default_duration_minutes, description, allow_scheduling, internal_notes, code: codeOverride, pricing_matrix: pricing_matrix_raw, is_addon: is_addon_raw, } = body.data;
+        const is_addon = is_addon_raw === true;
         const group = service_group;
+        if (is_addon && (default_duration_minutes == null || default_duration_minutes < 1)) {
+            return res.status(400).json({ error: 'Adicionais exigem duração padrão em minutos (≥ 1)' });
+        }
         const archivedGroupErr = await assertHubServiceGroupNotArchived(clinic_id, group);
         if (archivedGroupErr) {
             return res.status(400).json({ error: archivedGroupErr });
         }
         let pricing_matrix = null;
         if (pricing_matrix_raw !== undefined && pricing_matrix_raw !== null) {
-            if (!(0, hubServiceTypesPricingMatrix_1.serviceGroupAllowsPricingMatrix)(group)) {
-                return res.status(400).json({ error: 'Este grupo não suporta matriz de preços' });
-            }
             const parsed = (0, hubServiceTypesPricingMatrix_1.parsePricingMatrixJson)(pricing_matrix_raw);
             if (typeof parsed === 'object' && parsed && 'error' in parsed) {
                 return res.status(400).json({ error: parsed.error });
@@ -189,9 +195,17 @@ const createHubServiceType = async (req, res) => {
                 pricing_matrix = null;
             }
             else {
-                const match = (0, hubServiceTypesPricingMatrix_1.pricingMatrixKindMatchesGroup)(group, parsed);
-                if (match !== true) {
-                    return res.status(400).json({ error: match.error });
+                if (is_addon) {
+                    const addonMatch = (0, hubServiceTypesPricingMatrix_1.pricingMatrixAllowedForAddon)(parsed);
+                    if (addonMatch !== true) {
+                        return res.status(400).json({ error: addonMatch.error });
+                    }
+                }
+                else {
+                    const match = (0, hubServiceTypesPricingMatrix_1.pricingMatrixAllowedForGroup)(group, parsed);
+                    if (match !== true) {
+                        return res.status(400).json({ error: match.error });
+                    }
                 }
                 pricing_matrix = parsed;
             }
@@ -223,7 +237,8 @@ const createHubServiceType = async (req, res) => {
             default_duration_minutes: default_duration_minutes ?? null,
             pricing_matrix,
             description: description ?? null,
-            allow_scheduling: allow_scheduling ?? true,
+            allow_scheduling: is_addon ? false : (allow_scheduling ?? true),
+            is_addon,
             agenda_color: null,
             internal_notes: internal_notes ?? null,
             code_locked: false,
@@ -244,6 +259,9 @@ const createHubServiceType = async (req, res) => {
         }
         const colorMap = await fetchGroupColorMap(clinic_id);
         const service_type = enrichRowsWithGroupColor([data], colorMap)[0];
+        if (!is_addon && data?.id) {
+            await (0, hubServiceAddonsController_1.seedAddonAvailabilityForNewService)(clinic_id, data.id, group);
+        }
         return res.status(201).json({ service_type });
     }
     catch (e) {
@@ -263,7 +281,7 @@ const updateHubServiceType = async (req, res) => {
         if (!body.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         }
-        const { clinic_id, name, service_group, cost_amount, sale_amount, default_duration_minutes, description, allow_scheduling, internal_notes, code_locked, active, archived, pricing_matrix: pricing_matrix_raw, } = body.data;
+        const { clinic_id, name, service_group, cost_amount, sale_amount, default_duration_minutes, description, allow_scheduling, internal_notes, code_locked, active, archived, pricing_matrix: pricing_matrix_raw, is_addon: is_addon_patch, } = body.data;
         if (name === undefined &&
             service_group === undefined &&
             cost_amount === undefined &&
@@ -275,12 +293,13 @@ const updateHubServiceType = async (req, res) => {
             code_locked === undefined &&
             active === undefined &&
             archived === undefined &&
-            pricing_matrix_raw === undefined) {
+            pricing_matrix_raw === undefined &&
+            is_addon_patch === undefined) {
             return res.status(400).json({ error: 'Nenhum campo para atualizar' });
         }
         const { data: existing, error: fetchErr } = await supabase_1.supabaseAdmin
             .from('hub_service_types')
-            .select('id, clinic_id, code, name, code_locked, deleted_at, service_group')
+            .select('id, clinic_id, code, name, code_locked, deleted_at, service_group, is_addon')
             .eq('id', id)
             .maybeSingle();
         if (fetchErr || !existing) {
@@ -312,8 +331,16 @@ const updateHubServiceType = async (req, res) => {
             patch.default_duration_minutes = default_duration_minutes;
         if (description !== undefined)
             patch.description = description;
-        if (allow_scheduling !== undefined)
-            patch.allow_scheduling = allow_scheduling;
+        const existingIsAddon = Boolean(existing.is_addon);
+        if (is_addon_patch !== undefined)
+            patch.is_addon = is_addon_patch;
+        const nextIsAddon = is_addon_patch !== undefined ? is_addon_patch : existingIsAddon;
+        if (allow_scheduling !== undefined) {
+            patch.allow_scheduling = nextIsAddon ? false : allow_scheduling;
+        }
+        else if (nextIsAddon) {
+            patch.allow_scheduling = false;
+        }
         if (internal_notes !== undefined)
             patch.internal_notes = internal_notes;
         if (code_locked !== undefined)
@@ -326,9 +353,6 @@ const updateHubServiceType = async (req, res) => {
                 patch.pricing_matrix = null;
             }
             else {
-                if (!(0, hubServiceTypesPricingMatrix_1.serviceGroupAllowsPricingMatrix)(nextGroup)) {
-                    return res.status(400).json({ error: 'Este grupo não suporta matriz de preços' });
-                }
                 const parsed = (0, hubServiceTypesPricingMatrix_1.parsePricingMatrixJson)(pricing_matrix_raw);
                 if (typeof parsed === 'object' && parsed && 'error' in parsed) {
                     return res.status(400).json({ error: parsed.error });
@@ -337,9 +361,17 @@ const updateHubServiceType = async (req, res) => {
                     patch.pricing_matrix = null;
                 }
                 else {
-                    const match = (0, hubServiceTypesPricingMatrix_1.pricingMatrixKindMatchesGroup)(nextGroup, parsed);
-                    if (match !== true) {
-                        return res.status(400).json({ error: match.error });
+                    if (nextIsAddon) {
+                        const addonMatch = (0, hubServiceTypesPricingMatrix_1.pricingMatrixAllowedForAddon)(parsed);
+                        if (addonMatch !== true) {
+                            return res.status(400).json({ error: addonMatch.error });
+                        }
+                    }
+                    else {
+                        const match = (0, hubServiceTypesPricingMatrix_1.pricingMatrixAllowedForGroup)(nextGroup, parsed);
+                        if (match !== true) {
+                            return res.status(400).json({ error: match.error });
+                        }
                     }
                     patch.pricing_matrix = parsed;
                     const ref = (0, hubServiceTypesPricingMatrix_1.computeReferenceAmountsFromMatrix)(parsed);
@@ -377,6 +409,12 @@ const updateHubServiceType = async (req, res) => {
             console.error('[hub_service_types] update', error);
             return res.status(500).json({ error: 'Erro ao atualizar tipo' });
         }
+        if (!nextIsAddon &&
+            service_group !== undefined &&
+            service_group !== existing.service_group &&
+            data?.id) {
+            await (0, hubServiceAddonsController_1.resyncAddonAvailabilityOnGroupChange)(clinic_id, id, service_group);
+        }
         const colorMap = await fetchGroupColorMap(clinic_id);
         const service_type = enrichRowsWithGroupColor([data], colorMap)[0];
         return res.json({ service_type });
@@ -395,7 +433,7 @@ const bootstrapHubServiceTypes = async (req, res) => {
             return res.status(400).json({ error: 'clinic_id é obrigatório e deve ser UUID' });
         }
         const clinic_id = parsed.data;
-        await (0, hubServiceGroupsController_1.ensureDefaultHubServiceGroups)(clinic_id);
+        await (0, hubServiceGroupsController_1.ensureDefaultGroupJobFunctions)(clinic_id);
         const { data: existing, error: listErr } = await supabase_1.supabaseAdmin
             .from('hub_service_types')
             .select('code')

@@ -12,15 +12,7 @@
   min-height: calc(100vh - 120px);
 }
 
-/* Tokens para abas (igual lógica a Clientes; brand laranja Estoque) */
-.hub-estoque-shell--tabs {
-  --hc-brand: #f0642f;
-  --hc-brand-hover: #d85526;
-  --hc-text: #4a3b3a;
-  --hc-text-muted: #8e6e67;
-  --hc-border: #e5dcd6;
-}
-
+/* Abas: tokens de .hub-clientes */
 .hub-estoque-shell--tabs .hub-clientes__tabs {
   flex-wrap: wrap;
 }

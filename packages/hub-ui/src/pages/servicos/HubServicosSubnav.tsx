@@ -1,27 +1,13 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { HubTabs } from '../../components/HubTabs';
 
-const links: { to: string; label: string }[] = [
-  { to: 'servicos', label: 'Serviços' },
-  { to: 'configuracoes', label: 'Configurações' },
+const links = [
+  { to: 'servicos', label: 'Serviços', end: true as const },
+  { to: 'adicionais', label: 'Adicionais' },
 ];
 
 const HubServicosSubnav: React.FC = () => {
-  return (
-    <nav className="hub-clientes__tabs" aria-label="Secções de serviços">
-      {links.map(({ to, label }) => (
-        <NavLink
-          key={to}
-          to={to}
-          className={({ isActive }) =>
-            ['hub-clientes__tab', isActive ? 'hub-clientes__tab--active' : ''].filter(Boolean).join(' ')
-          }
-        >
-          {label}
-        </NavLink>
-      ))}
-    </nav>
-  );
+  return <HubTabs ariaLabel="Secções de serviços" items={links} />;
 };
 
 export default HubServicosSubnav;

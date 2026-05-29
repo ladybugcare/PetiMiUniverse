@@ -12,7 +12,7 @@ function hubLandingForRole(role: AppRole): string {
     case 'CASSISTANT':
       return '/hub/appointments';
     case 'CVET_INTERNAL':
-      return '/hub/encounters';
+      return '/hub/clinica/atendimentos';
     default:
       return '/hub/clientes';
   }
@@ -45,18 +45,38 @@ export type PostLoginDestination =
  * Non-Hub roles are sent to Vet's /login page (not a dashboard — sessions are
  * per-origin and there is no cross-app token handoff by design).
  */
+function onboardingFromPayload(data: unknown): Record<string, unknown> | null {
+  const d = data as { onboarding?: Record<string, unknown> } | null;
+  return d?.onboarding ?? null;
+}
+
 export function getHubPostLoginDestination(
   data: unknown,
   vetWebUrl: string | undefined,
 ): PostLoginDestination {
-  // 1. Authoritative: server-resolved clinic_user role
+  const onboarding = onboardingFromPayload(data);
+
+  if (onboarding?.shouldCompleteClinicProfile === true) {
+    return { type: 'internal', path: '/hub/onboarding/clinica' };
+  }
+
   const staffRole = staffRoleFromLoginPayload(data);
+  const d = data as { user?: unknown; clinicUser?: { clinic_id?: string | null } } | null;
+  const cu = d?.clinicUser;
+  if (
+    staffRole === 'CADMIN' &&
+    (cu === null || cu === undefined || !cu.clinic_id) &&
+    onboarding?.needsOnboarding !== false
+  ) {
+    return { type: 'internal', path: '/hub/onboarding/clinica' };
+  }
+
+  // 1. Authoritative: server-resolved clinic_user role
   if (staffRole && (HUB_VALID_ROLES as string[]).includes(staffRole)) {
     return { type: 'internal', path: hubLandingForRole(staffRole as AppRole) };
   }
 
   // 2. Fallback: user metadata role
-  const d = data as { user?: unknown } | null;
   const role = getUserRole(d?.user);
   if (HUB_VALID_ROLES.includes(role)) {
     return { type: 'internal', path: hubLandingForRole(role) };

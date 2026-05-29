@@ -1,25 +1,6 @@
-/* Shell de Orçamentos — mesmos tokens de cor que Serviços (laranja Hub) */
-.hub-orcamentos-shell--tabs {
-  --hc-brand: #f0642f;
-  --hc-brand-hover: #d85526;
-  --hc-text: #4a3b3a;
-  --hc-text-muted: #8e6e67;
-  --hc-border: #e5dcd6;
-}
-
+/* Abas: herdam tokens de .hub-clientes (mesmo visual que /hub/clientes) */
 .hub-orcamentos-shell--tabs .hub-clientes__tabs {
   flex-wrap: wrap;
-}
-
-/* Abas estilo Serviços/Clientes, sem barra inferior laranja no item ativo (só cor do texto) */
-.hub-orcamentos-shell--tabs .hub-clientes__tab {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 10px;
-}
-
-.hub-orcamentos-shell--tabs .hub-clientes__tab--active {
-  border-bottom-color: transparent;
 }
 
 .hub-orcamentos__status {
@@ -1096,8 +1077,8 @@
   --qd-border: var(--hc-border, #e5dcd6);
   --qd-text: var(--hc-text, #4a3b3a);
   --qd-muted: var(--hc-text-muted, #8e6e67);
-  --qd-brand: var(--hc-brand, #f0642f);
-  --qd-brand-h: var(--hc-brand-hover, #d85526);
+  --qd-brand: var(--hc-brand, #c86a4d);
+  --qd-brand-h: var(--hc-brand-hover, #a85a40);
   background: var(--qd-bg);
   min-height: 100%;
   margin: 0 -4px;

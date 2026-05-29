@@ -1,10 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.pricingMatrixSchema = exports.pricingMatrixKmBandaSchema = exports.pricingMatrixConsultaSchema = exports.pricingMatrixPeriodoSchema = exports.pricingMatrixPortePelagemSchema = exports.pricingMatrixPelagemSchema = exports.pricingMatrixPorteSchema = exports.COAT_TYPE_VALUES = exports.PORTE_VALUES = void 0;
+exports.pricingMatrixSchema = exports.pricingMatrixPersonalizadoSchema = exports.pricingMatrixKmBandaSchema = exports.pricingMatrixConsultaSchema = exports.pricingMatrixPeriodoSchema = exports.pricingMatrixPortePelagemSchema = exports.pricingMatrixPelagemSchema = exports.pricingMatrixPorteSchema = exports.COAT_TYPE_VALUES = exports.PORTE_VALUES = void 0;
 exports.roundMoney2 = roundMoney2;
 exports.computeReferenceAmountsFromMatrix = computeReferenceAmountsFromMatrix;
 exports.serviceGroupAllowsPricingMatrix = serviceGroupAllowsPricingMatrix;
+exports.pricingMatrixAllowedForGroup = pricingMatrixAllowedForGroup;
 exports.pricingMatrixKindMatchesGroup = pricingMatrixKindMatchesGroup;
+exports.pricingMatrixAllowedForAddon = pricingMatrixAllowedForAddon;
 exports.assertUniqueTierKeys = assertUniqueTierKeys;
 exports.parsePricingMatrixJson = parsePricingMatrixJson;
 const zod_1 = require("zod");
@@ -77,6 +79,16 @@ exports.pricingMatrixKmBandaSchema = zod_1.z.object({
     }))
         .min(1),
 });
+exports.pricingMatrixPersonalizadoSchema = zod_1.z.object({
+    kind: zod_1.z.literal('personalizado'),
+    tiers: zod_1.z
+        .array(zod_1.z.object({
+        label: zod_1.z.string().trim().min(1).max(120),
+        cost_amount: moneyAmountSchema,
+        sale_amount: moneyAmountSchema,
+    }))
+        .min(1),
+});
 exports.pricingMatrixSchema = zod_1.z.discriminatedUnion('kind', [
     exports.pricingMatrixPorteSchema,
     exports.pricingMatrixPelagemSchema,
@@ -84,6 +96,7 @@ exports.pricingMatrixSchema = zod_1.z.discriminatedUnion('kind', [
     exports.pricingMatrixPeriodoSchema,
     exports.pricingMatrixConsultaSchema,
     exports.pricingMatrixKmBandaSchema,
+    exports.pricingMatrixPersonalizadoSchema,
 ]);
 function roundMoney2(n) {
     return Math.round(n * 100) / 100;
@@ -109,7 +122,18 @@ function computeReferenceAmountsFromMatrix(matrix) {
 function serviceGroupAllowsPricingMatrix(g) {
     return g === 'banho_tosa' || g === 'hotel' || g === 'creche' || g === 'clinica' || g === 'leva_traz';
 }
+/** `personalizado` é permitido em qualquer grupo; os demais `kind` seguem regras por grupo. */
+function pricingMatrixAllowedForGroup(group, matrix) {
+    if (matrix.kind === 'personalizado')
+        return true;
+    if (!serviceGroupAllowsPricingMatrix(group)) {
+        return { error: 'Este grupo não suporta matriz de preços' };
+    }
+    return pricingMatrixKindMatchesGroup(group, matrix);
+}
 function pricingMatrixKindMatchesGroup(group, matrix) {
+    if (matrix.kind === 'personalizado')
+        return true;
     if (!serviceGroupAllowsPricingMatrix(group)) {
         return { error: 'Este grupo não suporta matriz de preços' };
     }
@@ -141,6 +165,14 @@ function pricingMatrixKindMatchesGroup(group, matrix) {
     }
     return true;
 }
+/** Adicionais: apenas preço único (sem matriz) ou matriz `personalizado`. */
+function pricingMatrixAllowedForAddon(matrix) {
+    if (!matrix)
+        return true;
+    if (matrix.kind === 'personalizado')
+        return true;
+    return { error: 'Adicionais só permitem preço único ou personalizado' };
+}
 function tierKeys(matrix) {
     switch (matrix.kind) {
         case 'porte':
@@ -154,6 +186,7 @@ function tierKeys(matrix) {
         case 'consulta':
             return matrix.tiers.map((t) => t.consult_type);
         case 'km_banda':
+        case 'personalizado':
             return matrix.tiers.map((t, i) => `${t.label}#${i}`);
         default:
             return [];

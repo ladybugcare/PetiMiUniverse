@@ -1,0 +1,47 @@
+/* Botão Cancelar — design system Hub */
+
+.hub-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+  border: 2px solid #dc2626;
+  background: #fff;
+  color: #dc2626;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.hub-cancel-btn:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.hub-cancel-btn:focus-visible {
+  outline: 2px solid #dc2626;
+  outline-offset: 2px;
+}
+
+.hub-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hub-cancel-btn span {
+  line-height: 1.2;
+}
+
+.hub-cancel-btn--block {
+  flex: 1;
+  min-width: 0;
+}

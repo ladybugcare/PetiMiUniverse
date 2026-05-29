@@ -18,6 +18,15 @@
 
 `draft` → `sent` (envio) → `accepted` | `expired` | `cancelled`. `expired` é aplicado pela API ao listar quando `status = sent` e `expires_at < now()`.
 
+### Faturação após aceite (alinhado ao [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md))
+
+| Regra | Decisão |
+|--------|---------|
+| Recebível ao aceitar | **Não.** `status = accepted` significa apenas que o cliente aceitou a proposta. |
+| Fluxo | `accepted` → coluna `billing_state = awaiting_billing` → CTA **Gerar cobrança** na UI → criação de `hub_receivables` + linhas → `hub_payments`. |
+| `billing_state` | `none` \| `awaiting_billing` \| `receivable_created` (persistido em `hub_quotes` após migração). |
+| Waive | `billing_waived_at` + `billing_waive_reason` removem o orçamento da lista «sem cobrança» sem criar recebível. |
+
 ## Problema
 
 Nas plataformas atuais é comum **cadastrar a pessoa como cliente** (`hub_guardians` / ficha completa) só para **emitir um orçamento**. Se o negócio não fecha, a clínica fica com **cadastros a apagar** ou ruído no CRM. Queremos um fluxo com **dados mínimos**, **validade clara** e **reutilização** ou **conversão explícita** para tutor + pet.

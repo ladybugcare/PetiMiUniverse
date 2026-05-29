@@ -6,7 +6,7 @@ import './servicos-page.css';
 
 const HubServicosShell: React.FC = () => {
   return (
-    <div className="hub-servicos-shell hub-servicos-shell--tabs">
+    <div className="hub-clientes hub-servicos-shell hub-servicos-shell--tabs">
       <HubServicosSubnav />
       <Outlet />
     </div>

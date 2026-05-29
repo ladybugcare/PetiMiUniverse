@@ -26,14 +26,21 @@ export interface HubServiceType {
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
+  is_addon?: boolean;
 }
 
 export type HubServiceGroup = HubServiceType['service_group'];
 
-function listUrl(clinicId: string, bustCache: boolean, includeArchived: boolean): string {
+function listUrl(
+  clinicId: string,
+  bustCache: boolean,
+  includeArchived: boolean,
+  addonsOnly?: boolean
+): string {
   const q = new URLSearchParams({ clinic_id: clinicId });
   if (bustCache) q.set('_', String(Date.now()));
   if (includeArchived) q.set('include_archived', 'true');
+  if (addonsOnly) q.set('addons_only', 'true');
   return `${basePath}?${q.toString()}`;
 }
 
@@ -44,8 +51,15 @@ function bootstrapUrl(clinicId: string, includeArchived: boolean): string {
 }
 
 export const hubServiceTypesApi = {
-  async list(clinicId: string, bustCache = false, includeArchived = false): Promise<{ service_types: HubServiceType[] }> {
-    return apiRequest(listUrl(clinicId, bustCache, includeArchived)) as Promise<{ service_types: HubServiceType[] }>;
+  async list(
+    clinicId: string,
+    bustCache = false,
+    includeArchived = false,
+    addonsOnly = false
+  ): Promise<{ service_types: HubServiceType[] }> {
+    return apiRequest(listUrl(clinicId, bustCache, includeArchived, addonsOnly)) as Promise<{
+      service_types: HubServiceType[];
+    }>;
   },
 
   async bootstrap(
@@ -72,6 +86,7 @@ export const hubServiceTypesApi = {
     internal_notes?: string | null;
     code?: string;
     pricing_matrix?: HubServicePricingMatrix | null;
+    is_addon?: boolean;
   }): Promise<{ service_type: HubServiceType }> {
     return apiRequest(basePath, {
       method: 'POST',
@@ -95,6 +110,7 @@ export const hubServiceTypesApi = {
       active?: boolean;
       archived?: boolean;
       pricing_matrix?: HubServicePricingMatrix | null;
+      is_addon?: boolean;
     }
   ): Promise<{ service_type: HubServiceType }> {
     return apiRequest(`${basePath}/${id}`, {

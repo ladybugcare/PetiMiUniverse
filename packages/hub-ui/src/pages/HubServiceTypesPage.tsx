@@ -23,6 +23,8 @@ import {
   Timer,
 } from 'lucide-react';
 import { ServiceGroupIcon } from '../components/ServiceGroupIcon';
+import { HubCheckbox } from '../components/HubCheckbox';
+import { HubCancelButton } from '../components/HubCancelButton';
 import { ServicePricingMatrixEditor } from '../components/ServicePricingMatrixEditor';
 import {
   KNOWN_SERVICE_GROUP_SLUGS,
@@ -278,7 +280,16 @@ function rowStatus(t: HubServiceType): 'ativo' | 'inativo' | 'arquivado' {
   return 'ativo';
 }
 
-const HubServiceTypesPage: React.FC = () => {
+export type HubServiceCatalog = 'services' | 'addons';
+
+type HubServiceTypesPageProps = {
+  catalog?: HubServiceCatalog;
+};
+
+const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'services' }) => {
+  const isAddons = catalog === 'addons';
+  const basePath = isAddons ? '/hub/servicos/adicionais' : '/hub/servicos/servicos';
+  const catalogLabel = isAddons ? 'Adicionais' : 'Serviços';
   const navigate = useNavigate();
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
@@ -310,17 +321,17 @@ const HubServiceTypesPage: React.FC = () => {
     setLoading(true);
     try {
       const [typesRes, groupsRes] = await Promise.all([
-        hubServiceTypesApi.list(clinicId, true, includeArchived),
+        hubServiceTypesApi.list(clinicId, true, includeArchived, isAddons),
         hubServiceGroupsApi.list(clinicId, true).catch(() => ({ service_groups: [] as HubServiceGroupRow[] })),
       ]);
       setTypes(typesRes.service_types || []);
       setServiceGroups(groupsRes.service_groups || []);
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao carregar serviços');
+      showError((e as Error)?.message || `Erro ao carregar ${catalogLabel.toLowerCase()}`);
     } finally {
       setLoading(false);
     }
-  }, [clinicId, includeArchived, showError]);
+  }, [clinicId, includeArchived, isAddons, catalogLabel, showError]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -434,15 +445,15 @@ const HubServiceTypesPage: React.FC = () => {
   );
 
   const openCreate = () => {
-    navigate('/hub/servicos/servicos/novo');
+    navigate(`${basePath}/novo`);
   };
 
   const openEdit = (t: HubServiceType) => {
-    navigate(`/hub/servicos/servicos/${t.id}/editar`);
+    navigate(`${basePath}/${t.id}/editar`);
   };
 
   const openDuplicate = (t: HubServiceType) => {
-    navigate(`/hub/servicos/servicos/novo?duplicar=${encodeURIComponent(t.id)}`);
+    navigate(`${basePath}/novo?duplicar=${encodeURIComponent(t.id)}`);
   };
 
   const closePanel = () => {
@@ -630,7 +641,7 @@ const HubServiceTypesPage: React.FC = () => {
   return (
     <div className="hub-clientes hub-servicos-page hub-pets-page">
       <div className="hub-clientes__main">
-        {needsBootstrap && canWrite && (
+        {!isAddons && needsBootstrap && canWrite && (
           <div className="hub-clientes__empty-state" style={{ marginBottom: 20, textAlign: 'left' }}>
             <p style={{ margin: '0 0 12px' }}>Ainda não há serviços nesta clínica. Pode criar os tipos padrão (consulta, banho e tosa, hotel) com um clique.</p>
             <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={() => void handleBootstrap()}>
@@ -642,7 +653,7 @@ const HubServiceTypesPage: React.FC = () => {
         <div className="hub-servicos__metrics" aria-live="polite">
           <div className="hub-servicos__metric-card">
             <div className="hub-servicos__metric-card__text">
-              <div className="hub-servicos__metric-label">Total de serviços</div>
+              <div className="hub-servicos__metric-label">Total de {catalogLabel.toLowerCase()}</div>
               <div className="hub-servicos__metric-value">{loading ? '—' : metrics.total.toLocaleString('pt-BR')}</div>
               <div className="hub-servicos__metric-sub">Nesta clínica (lista atual)</div>
             </div>
@@ -684,17 +695,21 @@ const HubServiceTypesPage: React.FC = () => {
                 <input
                   type="search"
                   className="hub-servicos__search-input"
-                  placeholder="Buscar serviço por nome ou código…"
+                  placeholder={
+                    isAddons ? 'Buscar adicional por nome ou código…' : 'Buscar serviço por nome ou código…'
+                  }
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  aria-label="Buscar serviço por nome ou código"
+                  aria-label={
+                    isAddons ? 'Buscar adicional por nome ou código' : 'Buscar serviço por nome ou código'
+                  }
                 />
               </div>
             </div>
             {canWrite && (
               <button type="button" className="hub-servicos__btn-primary-icon" onClick={openCreate}>
                 <Plus size={20} strokeWidth={2.25} aria-hidden />
-                Novo serviço
+                {isAddons ? 'Novo adicional' : 'Novo serviço'}
               </button>
             )}
           </div>
@@ -729,26 +744,31 @@ const HubServiceTypesPage: React.FC = () => {
                 <option value="arquivado">Arquivado</option>
               </select>
             </div>
-            <div className="hub-servicos__filter-field">
-              <span className="hub-clientes__label">Agendamento</span>
-              <select
-                className="hub-clientes__select-input"
-                value={filterSchedule}
-                onChange={(e) => setFilterSchedule(e.target.value as typeof filterSchedule)}
-                aria-label="Filtrar por permite agendamento"
-              >
-                <option value="all">Todos</option>
-                <option value="yes">Permite</option>
-                <option value="no">Não permite</option>
-              </select>
-            </div>
-            <label className="hub-servicos__filter-field hub-servicos__filter-field--check">
+            {!isAddons ? (
+              <div className="hub-servicos__filter-field">
+                <span className="hub-clientes__label">Agendamento</span>
+                <select
+                  className="hub-clientes__select-input"
+                  value={filterSchedule}
+                  onChange={(e) => setFilterSchedule(e.target.value as typeof filterSchedule)}
+                  aria-label="Filtrar por permite agendamento"
+                >
+                  <option value="all">Todos</option>
+                  <option value="yes">Permite</option>
+                  <option value="no">Não permite</option>
+                </select>
+              </div>
+            ) : null}
+            <div className="hub-servicos__filter-field hub-servicos__filter-field--check">
               <span className="hub-clientes__label">Lista</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
-                <input type="checkbox" checked={includeArchived} onChange={(e) => setIncludeArchived(e.target.checked)} />
+              <HubCheckbox
+                className="hub-servicos__filter-checkbox"
+                checked={includeArchived}
+                onChange={setIncludeArchived}
+              >
                 Incluir arquivados
-              </span>
-            </label>
+              </HubCheckbox>
+            </div>
             <div style={{ flex: 1 }} />
             {canWrite && (
               <button type="button" className="hub-servicos__btn-ghost-sm" onClick={() => void handleBootstrap()}>
@@ -972,8 +992,11 @@ const HubServiceTypesPage: React.FC = () => {
                     />
                     <p className="hub-servicos__margin-info hub-servicos__group-color-preview-text">
                       Cor na agenda para este grupo vem de{' '}
-                      <Link to="../configuracoes" className="hub-servicos-config__back-link">
-                        Configurações → Grupos de serviços
+                      <Link
+                        to="/hub/configuracoes-sistema/servicos-funcoes"
+                        className="hub-servicos-config__back-link"
+                      >
+                        Configurações do Sistema → Serviços e Funções
                       </Link>
                       .
                     </p>
@@ -1254,24 +1277,12 @@ const HubServiceTypesPage: React.FC = () => {
                 <div className="hub-servicos__form-section">
                   <h3 className="hub-servicos__form-section-title">Código interno</h3>
                   <div className="hub-clientes__field">
-                    <label
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        cursor: 'pointer',
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: 'var(--hc-text)',
-                      }}
+                    <HubCheckbox
+                      checked={form.code_locked}
+                      onChange={(code_locked) => setForm((f) => ({ ...f, code_locked }))}
                     >
-                      <input
-                        type="checkbox"
-                        checked={form.code_locked}
-                        onChange={(e) => setForm((f) => ({ ...f, code_locked: e.target.checked }))}
-                      />
-                      <span>Fixar código interno (o nome já não atualiza o código automaticamente)</span>
-                    </label>
+                      Fixar código interno (o nome já não atualiza o código automaticamente)
+                    </HubCheckbox>
                         </div>
                       </div>
               )}
@@ -1281,9 +1292,7 @@ const HubServiceTypesPage: React.FC = () => {
                   <button type="submit" className="hub-clientes__btn hub-clientes__btn--primary" disabled={saving}>
                     {saving ? 'Salvando…' : 'Salvar serviço'}
                           </button>
-                  <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={closePanel}>
-                    Cancelar
-                          </button>
+                  <HubCancelButton onClick={closePanel} />
                         </div>
               </div>
             </form>

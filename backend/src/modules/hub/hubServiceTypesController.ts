@@ -11,11 +11,15 @@ import {
 import {
   computeReferenceAmountsFromMatrix,
   parsePricingMatrixJson,
-  pricingMatrixKindMatchesGroup,
-  serviceGroupAllowsPricingMatrix,
+  pricingMatrixAllowedForAddon,
+  pricingMatrixAllowedForGroup,
   type HubServicePricingMatrix,
 } from './hubServiceTypesPricingMatrix';
-import { ensureDefaultHubServiceGroups } from './hubServiceGroupsController';
+import { ensureDefaultGroupJobFunctions } from './hubServiceGroupsController';
+import {
+  resyncAddonAvailabilityOnGroupChange,
+  seedAddonAvailabilityForNewService,
+} from './hubServiceAddonsController';
 
 const uuidStr = z.string().uuid();
 
@@ -55,6 +59,7 @@ const createServiceTypeBodySchema = z
     internal_notes: z.string().max(4000).optional().nullable(),
     /** Matriz opcional (porte, período, consulta, km); alinhada a `service_group`. */
     pricing_matrix: z.unknown().optional().nullable(),
+    is_addon: z.boolean().optional(),
     /** Legado / migração: se enviado, deve coincidir com o slug gerado ou ser único. Preferir omitir. */
     code: z
       .string()
@@ -78,6 +83,7 @@ const updateServiceTypeBodySchema = z
     allow_scheduling: z.boolean().optional(),
     internal_notes: z.string().max(4000).optional().nullable(),
     pricing_matrix: z.unknown().optional().nullable(),
+    is_addon: z.boolean().optional(),
     code_locked: z.boolean().optional(),
     active: z.boolean().optional(),
     archived: z.boolean().optional(),
@@ -85,12 +91,12 @@ const updateServiceTypeBodySchema = z
   .strict();
 
 const SELECT_FIELDS =
-  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, default_duration_minutes, active, allow_scheduling, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
 
 type ServiceTypeRow = Record<string, unknown> & { service_group?: string | null };
 
 async function fetchGroupColorMap(clinicId: string): Promise<Map<string, string>> {
-  await ensureDefaultHubServiceGroups(clinicId);
+  await ensureDefaultGroupJobFunctions(clinicId);
   const map = new Map<string, string>();
   const { data, error } = await supabaseAdmin
     .from('hub_service_groups')
@@ -177,11 +183,13 @@ export const listHubServiceTypes = async (req: Request, res: Response) => {
     }
     const clinic_id = parsed.data;
     const includeArchived = req.query.include_archived === 'true' || req.query.include_archived === '1';
+    const addonsOnly = req.query.addons_only === 'true' || req.query.addons_only === '1';
 
     let q = supabaseAdmin
       .from('hub_service_types')
       .select(SELECT_FIELDS)
       .eq('clinic_id', clinic_id)
+      .eq('is_addon', addonsOnly)
       .order('name', { ascending: true });
 
     if (!includeArchived) {
@@ -223,9 +231,15 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       internal_notes,
       code: codeOverride,
       pricing_matrix: pricing_matrix_raw,
+      is_addon: is_addon_raw,
     } = body.data;
 
+    const is_addon = is_addon_raw === true;
     const group = service_group;
+
+    if (is_addon && (default_duration_minutes == null || default_duration_minutes < 1)) {
+      return res.status(400).json({ error: 'Adicionais exigem duração padrão em minutos (≥ 1)' });
+    }
 
     const archivedGroupErr = await assertHubServiceGroupNotArchived(clinic_id, group);
     if (archivedGroupErr) {
@@ -234,9 +248,6 @@ export const createHubServiceType = async (req: Request, res: Response) => {
 
     let pricing_matrix: HubServicePricingMatrix | null = null;
     if (pricing_matrix_raw !== undefined && pricing_matrix_raw !== null) {
-      if (!serviceGroupAllowsPricingMatrix(group)) {
-        return res.status(400).json({ error: 'Este grupo não suporta matriz de preços' });
-      }
       const parsed = parsePricingMatrixJson(pricing_matrix_raw);
       if (typeof parsed === 'object' && parsed && 'error' in parsed) {
         return res.status(400).json({ error: parsed.error });
@@ -244,9 +255,16 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       if (parsed === null) {
         pricing_matrix = null;
       } else {
-        const match = pricingMatrixKindMatchesGroup(group, parsed);
-        if (match !== true) {
-          return res.status(400).json({ error: match.error });
+        if (is_addon) {
+          const addonMatch = pricingMatrixAllowedForAddon(parsed);
+          if (addonMatch !== true) {
+            return res.status(400).json({ error: addonMatch.error });
+          }
+        } else {
+          const match = pricingMatrixAllowedForGroup(group, parsed);
+          if (match !== true) {
+            return res.status(400).json({ error: match.error });
+          }
         }
         pricing_matrix = parsed;
       }
@@ -283,7 +301,8 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       default_duration_minutes: default_duration_minutes ?? null,
       pricing_matrix,
       description: description ?? null,
-      allow_scheduling: allow_scheduling ?? true,
+      allow_scheduling: is_addon ? false : (allow_scheduling ?? true),
+      is_addon,
       agenda_color: null,
       internal_notes: internal_notes ?? null,
       code_locked: false,
@@ -307,6 +326,10 @@ export const createHubServiceType = async (req: Request, res: Response) => {
 
     const colorMap = await fetchGroupColorMap(clinic_id);
     const service_type = enrichRowsWithGroupColor([data as ServiceTypeRow], colorMap)[0];
+
+    if (!is_addon && data?.id) {
+      await seedAddonAvailabilityForNewService(clinic_id, data.id as string, group);
+    }
 
     return res.status(201).json({ service_type });
   } catch (e) {
@@ -341,6 +364,7 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       active,
       archived,
       pricing_matrix: pricing_matrix_raw,
+      is_addon: is_addon_patch,
     } = body.data;
 
     if (
@@ -355,14 +379,15 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       code_locked === undefined &&
       active === undefined &&
       archived === undefined &&
-      pricing_matrix_raw === undefined
+      pricing_matrix_raw === undefined &&
+      is_addon_patch === undefined
     ) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
     }
 
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from('hub_service_types')
-      .select('id, clinic_id, code, name, code_locked, deleted_at, service_group')
+      .select('id, clinic_id, code, name, code_locked, deleted_at, service_group, is_addon')
       .eq('id', id)
       .maybeSingle();
 
@@ -389,7 +414,14 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
     if (sale_amount !== undefined) patch.sale_amount = roundMoney2(sale_amount);
     if (default_duration_minutes !== undefined) patch.default_duration_minutes = default_duration_minutes;
     if (description !== undefined) patch.description = description;
-    if (allow_scheduling !== undefined) patch.allow_scheduling = allow_scheduling;
+    const existingIsAddon = Boolean(existing.is_addon);
+    if (is_addon_patch !== undefined) patch.is_addon = is_addon_patch;
+    const nextIsAddon = is_addon_patch !== undefined ? is_addon_patch : existingIsAddon;
+    if (allow_scheduling !== undefined) {
+      patch.allow_scheduling = nextIsAddon ? false : allow_scheduling;
+    } else if (nextIsAddon) {
+      patch.allow_scheduling = false;
+    }
     if (internal_notes !== undefined) patch.internal_notes = internal_notes;
     if (code_locked !== undefined) patch.code_locked = code_locked;
     if (active !== undefined) patch.active = active;
@@ -400,9 +432,6 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       if (pricing_matrix_raw === null) {
         patch.pricing_matrix = null;
       } else {
-        if (!serviceGroupAllowsPricingMatrix(nextGroup)) {
-          return res.status(400).json({ error: 'Este grupo não suporta matriz de preços' });
-        }
         const parsed = parsePricingMatrixJson(pricing_matrix_raw);
         if (typeof parsed === 'object' && parsed && 'error' in parsed) {
           return res.status(400).json({ error: parsed.error });
@@ -410,9 +439,16 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
         if (parsed === null) {
           patch.pricing_matrix = null;
         } else {
-          const match = pricingMatrixKindMatchesGroup(nextGroup, parsed);
-          if (match !== true) {
-            return res.status(400).json({ error: match.error });
+          if (nextIsAddon) {
+            const addonMatch = pricingMatrixAllowedForAddon(parsed);
+            if (addonMatch !== true) {
+              return res.status(400).json({ error: addonMatch.error });
+            }
+          } else {
+            const match = pricingMatrixAllowedForGroup(nextGroup, parsed);
+            if (match !== true) {
+              return res.status(400).json({ error: match.error });
+            }
           }
           patch.pricing_matrix = parsed;
           const ref = computeReferenceAmountsFromMatrix(parsed);
@@ -459,6 +495,15 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Erro ao atualizar tipo' });
     }
 
+    if (
+      !nextIsAddon &&
+      service_group !== undefined &&
+      service_group !== existing.service_group &&
+      data?.id
+    ) {
+      await resyncAddonAvailabilityOnGroupChange(clinic_id, id, service_group);
+    }
+
     const colorMap = await fetchGroupColorMap(clinic_id);
     const service_type = enrichRowsWithGroupColor([data as ServiceTypeRow], colorMap)[0];
 
@@ -478,7 +523,7 @@ export const bootstrapHubServiceTypes = async (req: Request, res: Response) => {
     }
     const clinic_id = parsed.data;
 
-    await ensureDefaultHubServiceGroups(clinic_id);
+    await ensureDefaultGroupJobFunctions(clinic_id);
 
     const { data: existing, error: listErr } = await supabaseAdmin
       .from('hub_service_types')

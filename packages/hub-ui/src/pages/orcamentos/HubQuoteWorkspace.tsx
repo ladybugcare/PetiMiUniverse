@@ -13,6 +13,7 @@ import {
 } from '../../api/hubQuotesApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
+import { HubDateField } from '../../components/HubDateField';
 import { COAT_TYPE_LABELS, COAT_TYPE_VALUES, coercePricingMatrixFromApi, type HubServicePricingMatrix } from '../../utils/hubServiceTypesPricingMatrix';
 import { useAlert } from '../../components/AlertProvider';
 import { mergeBreedComboboxOptions, mergeSpeciesComboboxOptions } from '../pets/wizard/petSpeciesComboboxData';
@@ -56,7 +57,12 @@ const CONSULT_LABELS: Record<'padrao' | 'retorno', string> = {
 
 function needsMatrixVariantChoice(matrix: HubServicePricingMatrix | null): boolean {
   if (!matrix) return false;
-  return matrix.kind === 'periodo' || matrix.kind === 'consulta' || matrix.kind === 'km_banda';
+  return (
+    matrix.kind === 'periodo' ||
+    matrix.kind === 'consulta' ||
+    matrix.kind === 'km_banda' ||
+    matrix.kind === 'personalizado'
+  );
 }
 
 function defaultPricingVariant(matrix: HubServicePricingMatrix): HubQuotePricingVariant {
@@ -66,6 +72,7 @@ function defaultPricingVariant(matrix: HubServicePricingMatrix): HubQuotePricing
     return { consult_type: t!.consult_type };
   }
   if (matrix.kind === 'km_banda') return { km_tier_index: 0 };
+  if (matrix.kind === 'personalizado') return { custom_tier_index: 0 };
   return {};
 }
 
@@ -86,6 +93,10 @@ function inferPricingVariantFromUnitPrice(
     const hits = matrix.tiers.map((t, i) => ({ i, t })).filter(({ t }) => round2(t.sale_amount) === target);
     if (hits.length === 1) return { km_tier_index: hits[0].i };
   }
+  if (matrix.kind === 'personalizado') {
+    const hits = matrix.tiers.map((t, i) => ({ i, t })).filter(({ t }) => round2(t.sale_amount) === target);
+    if (hits.length === 1) return { custom_tier_index: hits[0].i };
+  }
   return null;
 }
 
@@ -94,7 +105,11 @@ function linePricingVariantFromQuote(l: HubQuoteLine, serviceTypes: HubServiceTy
   const matrix = st ? coercePricingMatrixFromApi(st.pricing_matrix) : null;
   if (!matrix || !needsMatrixVariantChoice(matrix)) return null;
   const fromDb = l.pricing_variant;
-  if (fromDb && (fromDb.period || fromDb.consult_type || fromDb.km_tier_index != null)) return fromDb;
+  if (
+    fromDb &&
+    (fromDb.period || fromDb.consult_type || fromDb.km_tier_index != null || fromDb.custom_tier_index != null)
+  )
+    return fromDb;
   const firstLp = [...(l.line_pets ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))[0];
   const price = Number(firstLp?.unit_price ?? l.unit_price ?? 0);
   return inferPricingVariantFromUnitPrice(matrix, price) ?? defaultPricingVariant(matrix);
@@ -123,6 +138,12 @@ function variantComboboxOptions(matrix: HubServicePricingMatrix): HubComboboxOpt
       label: `${(t.label || `Faixa ${i + 1}`).trim()} — R$ ${fmtBrlShort(t.sale_amount)}`,
     }));
   }
+  if (matrix.kind === 'personalizado') {
+    return matrix.tiers.map((t, i) => ({
+      value: `custom:${i}`,
+      label: `${(t.label || `Opção ${i + 1}`).trim()} — R$ ${fmtBrlShort(t.sale_amount)}`,
+    }));
+  }
   return [];
 }
 
@@ -131,6 +152,8 @@ function variantToComboValue(matrix: HubServicePricingMatrix, v: HubQuotePricing
   if (matrix.kind === 'periodo' && v.period) return `period:${v.period}`;
   if (matrix.kind === 'consulta' && v.consult_type) return `consult:${v.consult_type}`;
   if (matrix.kind === 'km_banda' && typeof v.km_tier_index === 'number') return `km:${v.km_tier_index}`;
+  if (matrix.kind === 'personalizado' && typeof v.custom_tier_index === 'number')
+    return `custom:${v.custom_tier_index}`;
   return '';
 }
 
@@ -145,6 +168,10 @@ function comboValueToVariant(matrix: HubServicePricingMatrix, raw: string): HubQ
   if (matrix.kind === 'km_banda' && k === 'km') {
     const i = Number.parseInt(val, 10);
     if (Number.isInteger(i) && i >= 0 && i < matrix.tiers.length) return { km_tier_index: i };
+  }
+  if (matrix.kind === 'personalizado' && k === 'custom') {
+    const i = Number.parseInt(val, 10);
+    if (Number.isInteger(i) && i >= 0 && i < matrix.tiers.length) return { custom_tier_index: i };
   }
   return null;
 }
@@ -289,6 +316,7 @@ function formatDurationMin(m: number | null | undefined): string {
 
 /** Serviço disponível para orçamento: ativo e não arquivado (`deleted_at`). */
 function isQuotableServiceType(st: HubServiceType): boolean {
+  if (st.is_addon) return false;
   if (st.deleted_at) return false;
   if (st.active === false) return false;
   return true;
@@ -1124,8 +1152,12 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
           <h3 className="hub-orcamento-novo__card-title">Validade do orçamento</h3>
           <p className="hub-orcamento-novo__help">Após envio, a validade conta a partir da data de envio (usa “dias válidos”).</p>
           <div className="hub-orcamento-novo__field" style={{ marginTop: 8 }}>
-            <label className="hub-orcamento-novo__label">Válido até</label>
-            <input className="hub-orcamento-novo__input" type="date" value={expiresYmd} onChange={(e) => setExpiresYmd(e.target.value)} />
+            <HubDateField
+              id="hub-quote-expires"
+              label="Válido até"
+              valueIso={expiresYmd}
+              onChangeIso={setExpiresYmd}
+            />
           </div>
           <div className="hub-orcamento-novo__field" style={{ marginTop: 8 }}>
             <label className="hub-orcamento-novo__label">Dias após envio</label>

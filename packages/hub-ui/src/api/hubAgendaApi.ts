@@ -77,6 +77,8 @@ export type HubAppointment = {
   guardian: HubAppointmentGuardianRef | null;
   unit: HubAppointmentUnitRef | null;
   services: HubAppointmentServiceLine[];
+  hub_encounter_id?: string | null;
+  hub_encounter_status?: string | null;
 };
 
 export type HubAgendaCalendarBlock = {

@@ -451,7 +451,7 @@ async function enrichAppointments(rows) {
     const guIds = [...new Set(rows.map((r) => r.guardian_id).filter(Boolean))];
     const unitIds = [...new Set(rows.map((r) => r.unit_id).filter(Boolean))];
     const apptIds = rows.map((r) => r.id);
-    const [stRes, staffRes, petsRes, guRes, unitsRes, svcLinesRes] = await Promise.all([
+    const [stRes, staffRes, petsRes, guRes, unitsRes, svcLinesRes, encRes] = await Promise.all([
         supabase_1.supabaseAdmin
             .from('hub_service_types')
             .select('id, name, code, service_group, agenda_color, default_duration_minutes')
@@ -474,6 +474,13 @@ async function enrichAppointments(rows) {
                 .select('id, appointment_id, hub_service_type_id, duration_minutes, order_index, pricing_porte_tier_applied, pricing_coat_type_applied, cost_amount_applied, sale_amount_applied, pricing_variant')
                 .in('appointment_id', apptIds)
                 .order('order_index')
+            : Promise.resolve({ data: [] }),
+        apptIds.length
+            ? supabase_1.supabaseAdmin
+                .from('hub_encounters')
+                .select('id, hub_appointment_id, status')
+                .in('hub_appointment_id', apptIds)
+                .is('deleted_at', null)
             : Promise.resolve({ data: [] }),
     ]);
     const clinicId = rows[0]?.clinic_id || '';
@@ -499,6 +506,12 @@ async function enrichAppointments(rows) {
     const petMap = new Map((petsRes.data ?? []).map((x) => [x.id, x]));
     const guMap = new Map((guRes.data ?? []).map((x) => [x.id, x]));
     const unitMap = new Map((unitsRes.data ?? []).map((x) => [x.id, x]));
+    const encByAppt = new Map();
+    for (const enc of (encRes.data ?? [])) {
+        const apptId = enc.hub_appointment_id;
+        if (apptId)
+            encByAppt.set(apptId, { id: enc.id, status: String(enc.status) });
+    }
     // group service lines by appointment
     const svcByAppt = new Map();
     for (const line of (svcLinesRes.data ?? [])) {
@@ -530,6 +543,7 @@ async function enrichAppointments(rows) {
             pricing_variant: l.pricing_variant ?? null,
             service_type: stMap.get(l.hub_service_type_id) ?? null,
         }));
+        const linked = encByAppt.get(r.id);
         return {
             ...r,
             service_type: st ?? null,
@@ -538,6 +552,8 @@ async function enrichAppointments(rows) {
             guardian: gu ?? null,
             unit: un ?? null,
             services,
+            hub_encounter_id: linked?.id ?? null,
+            hub_encounter_status: linked?.status ?? null,
         };
     });
 }
@@ -556,6 +572,7 @@ const listQuerySchema = zod_1.z.object({
 const linePricingVariantSchema = zod_1.z
     .object({
     km_tier_index: zod_1.z.number().int().min(0).optional(),
+    custom_tier_index: zod_1.z.number().int().min(0).optional(),
     period: zod_1.z.enum(['full_day', 'half_day']).optional(),
     consult_type: zod_1.z.enum(['padrao', 'retorno']).optional(),
 })

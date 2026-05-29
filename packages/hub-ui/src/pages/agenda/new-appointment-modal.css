@@ -307,6 +307,110 @@
   color: #c86a4d;
 }
 
+.nam-chips__duration-breakdown {
+  font-size: 13px;
+  color: #6b6560;
+  padding: 4px 0 2px;
+  line-height: 1.45;
+}
+
+.nam-chips__duration-breakdown strong {
+  color: #c86a4d;
+}
+
+/* Adicionais (bloco principal) */
+.nam-addon-section {
+  margin-top: 16px;
+}
+
+.nam-addon-section__hint {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.nam-addon-section__loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #9b9590;
+  margin: 8px 0 0;
+}
+
+.nam-addon-section__spinner {
+  animation: nam-spin 0.8s linear infinite;
+}
+
+@keyframes nam-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.nam-addon-section__empty {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.nam-addon-card {
+  background: #faf8f6;
+  border: 1px solid #e8e4e0;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.nam-addon-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nam-addon-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nam-addon-row__check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.nam-addon-row__name {
+  font-weight: 600;
+  color: #2d2a28;
+}
+
+.nam-addon-row__meta {
+  font-size: 12px;
+  color: #9b9590;
+  font-weight: 500;
+}
+
+.nam-addon-row__variant {
+  padding-left: 26px;
+  max-width: 420px;
+}
+
+.nam-aside__row--addon {
+  padding-left: 8px;
+  border-left: 2px solid #f0642f;
+  margin-left: 2px;
+}
+
+.nam-aside__row--addon .nam-aside__item {
+  font-size: 13px;
+}
+
 /* Checkbox label */
 .nam-checkbox-label {
   display: flex;
@@ -319,11 +423,15 @@
   user-select: none;
 }
 
-.nam-checkbox-label input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-  accent-color: #c86a4d;
+.nam-checkbox-label.hub-checkbox {
+  font-weight: 500;
+}
+
+.nam-addon-row__check.hub-checkbox .hub-checkbox__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
 }
 
 /* Recurrence */

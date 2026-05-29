@@ -94,6 +94,19 @@ export const pricingMatrixKmBandaSchema = z.object({
     .min(1),
 });
 
+export const pricingMatrixPersonalizadoSchema = z.object({
+  kind: z.literal('personalizado'),
+  tiers: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(120),
+        cost_amount: moneyAmountSchema,
+        sale_amount: moneyAmountSchema,
+      })
+    )
+    .min(1),
+});
+
 export const pricingMatrixSchema = z.discriminatedUnion('kind', [
   pricingMatrixPorteSchema,
   pricingMatrixPelagemSchema,
@@ -101,6 +114,7 @@ export const pricingMatrixSchema = z.discriminatedUnion('kind', [
   pricingMatrixPeriodoSchema,
   pricingMatrixConsultaSchema,
   pricingMatrixKmBandaSchema,
+  pricingMatrixPersonalizadoSchema,
 ]);
 
 export type HubServicePricingMatrix = z.infer<typeof pricingMatrixSchema>;
@@ -131,10 +145,23 @@ export function serviceGroupAllowsPricingMatrix(g: string): boolean {
   return g === 'banho_tosa' || g === 'hotel' || g === 'creche' || g === 'clinica' || g === 'leva_traz';
 }
 
+/** `personalizado` é permitido em qualquer grupo; os demais `kind` seguem regras por grupo. */
+export function pricingMatrixAllowedForGroup(
+  group: string,
+  matrix: HubServicePricingMatrix
+): true | { error: string } {
+  if (matrix.kind === 'personalizado') return true;
+  if (!serviceGroupAllowsPricingMatrix(group)) {
+    return { error: 'Este grupo não suporta matriz de preços' };
+  }
+  return pricingMatrixKindMatchesGroup(group, matrix);
+}
+
 export function pricingMatrixKindMatchesGroup(
   group: string,
   matrix: HubServicePricingMatrix
 ): true | { error: string } {
+  if (matrix.kind === 'personalizado') return true;
   if (!serviceGroupAllowsPricingMatrix(group)) {
     return { error: 'Este grupo não suporta matriz de preços' };
   }
@@ -163,6 +190,13 @@ export function pricingMatrixKindMatchesGroup(
   return true;
 }
 
+/** Adicionais: apenas preço único (sem matriz) ou matriz `personalizado`. */
+export function pricingMatrixAllowedForAddon(matrix: HubServicePricingMatrix | null): true | { error: string } {
+  if (!matrix) return true;
+  if (matrix.kind === 'personalizado') return true;
+  return { error: 'Adicionais só permitem preço único ou personalizado' };
+}
+
 function tierKeys(matrix: HubServicePricingMatrix): string[] {
   switch (matrix.kind) {
     case 'porte':
@@ -176,6 +210,7 @@ function tierKeys(matrix: HubServicePricingMatrix): string[] {
     case 'consulta':
       return matrix.tiers.map((t) => t.consult_type);
     case 'km_banda':
+    case 'personalizado':
       return matrix.tiers.map((t, i) => `${t.label}#${i}`);
     default:
       return [];

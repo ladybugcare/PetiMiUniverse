@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info } from 'lucide-react';
+import { HubCancelButton } from './HubCancelButton';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info';
 
@@ -96,23 +97,15 @@ const Alert: React.FC<AlertProps> = ({
         </div>
         <div style={{ display: 'flex', gap: 12, width: '100%' }}>
           {showCancel && (
-            <button
-              type="button"
+            <HubCancelButton
+              className="hub-cancel-btn--block"
               onClick={() => {
                 onCancel?.();
                 onClose();
               }}
-              style={{
-                flex: 1,
-                padding: '12px 24px',
-                borderRadius: 8,
-                border: '1px solid #e5e5e5',
-                background: '#fafafa',
-                cursor: 'pointer',
-              }}
             >
               {cancelText}
-            </button>
+            </HubCancelButton>
           )}
           <button
             type="button"

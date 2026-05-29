@@ -8,6 +8,7 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import { useAlert } from '../components/AlertProvider';
+import { HubCancelButton } from '../components/HubCancelButton';
 import { hubGuardiansApi, type HubGuardian, type HubGuardianPet } from '../api/hubGuardiansApi';
 import './clientes/clientes.css';
 import { GuardianDetailPanel } from './clientes/GuardianDetailPanel';
@@ -154,9 +155,9 @@ const HubGuardianDetailPage: React.FC = () => {
               canWrite={canWrite}
               title=""
             />
-            <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" style={{ marginTop: 12 }} onClick={() => setEditing(false)}>
-              Cancelar
-            </button>
+            <div style={{ marginTop: 12 }}>
+              <HubCancelButton onClick={() => setEditing(false)} />
+            </div>
           </div>
         </>
       ) : (

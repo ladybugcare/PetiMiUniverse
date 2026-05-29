@@ -8,6 +8,7 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import { useAlert } from '../components/AlertProvider';
+import { HubTabs } from '../components/HubTabs';
 import { hubGuardiansApi, type HubGuardian, type HubGuardianStats } from '../api/hubGuardiansApi';
 import './clientes/clientes.css';
 import { ClientesMetricsRow } from './clientes/ClientesMetricsRow';
@@ -323,28 +324,18 @@ const HubGuardiansPage: React.FC = () => {
   return (
     <div className="hub-clientes">
       <div className="hub-clientes__main">
-        <div className="hub-clientes__tabs">
-          <button
-            type="button"
-            className={`hub-clientes__tab ${mainTab === 'tutores' ? 'hub-clientes__tab--active' : ''}`}
-            onClick={() => {
-              setMainTab('tutores');
-              closePanelDetail();
-            }}
-          >
-            Tutores
-          </button>
-          <button
-            type="button"
-            className={`hub-clientes__tab ${mainTab === 'empresas' ? 'hub-clientes__tab--active' : ''}`}
-            onClick={() => {
-              setMainTab('empresas');
-              closePanelDetail();
-            }}
-          >
-            Empresas
-          </button>
-        </div>
+        <HubTabs
+          ariaLabel="Clientes"
+          items={[
+            { id: 'tutores', label: 'Tutores' },
+            { id: 'empresas', label: 'Empresas' },
+          ]}
+          activeId={mainTab}
+          onTabChange={(id) => {
+            setMainTab(id as 'tutores' | 'empresas');
+            closePanelDetail();
+          }}
+        />
 
         <ClientesMetricsRow stats={stats} loading={loading && !stats} />
 
