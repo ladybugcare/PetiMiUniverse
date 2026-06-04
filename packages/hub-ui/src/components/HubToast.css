@@ -1,0 +1,102 @@
+/* ── HubToast — pilha fixa canto inferior direito ───────────────────────── */
+
+.hub-toast-region {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10050;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 10px;
+  max-width: min(400px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.hub-toast-region > * {
+  pointer-events: auto;
+}
+
+@keyframes hub-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.hub-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e8e4e0;
+  animation: hub-toast-enter 0.22s ease-out;
+  min-width: 0;
+  width: 100%;
+}
+
+.hub-toast__icon-wrap {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #d1fae5;
+  color: #059669;
+}
+
+.hub-toast__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-toast__title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a1714;
+  line-height: 1.3;
+}
+
+.hub-toast__message {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 400;
+  color: #525252;
+  line-height: 1.45;
+}
+
+.hub-toast__close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  color: #6b6560;
+  cursor: pointer;
+  margin: -4px -6px -4px 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.hub-toast__close:hover {
+  background: #f5f0eb;
+  color: #1a1714;
+}
+
+.hub-toast__close:focus-visible {
+  outline: 2px solid #059669;
+  outline-offset: 2px;
+}

@@ -237,6 +237,7 @@ Mapeamento orientador (não substitui inspeção de componentes React/CSS):
 - **Sucesso:** mensagens inline podem usar fundo translúcido de `success` (ver CSS login) — validar contraste do texto verde escuro sobre o wash.
 - **Cartões de perfil / painéis:** `card-elevated` com borda `rgba(74, 59, 58, 0.12)` no padrão atual.
 - **Data (`HubDateField`):** rótulo em caixa alta (`ui-label`), controle com borda `border-default`, foco com `primary` + anel `rgba(200, 106, 77, 0.14)`, ícone `Calendar`, chevron que abre **calendário** (grelha mensal, Limpar / Hoje no rodapé) e botão **Hoje** externo. Implementação: [`src/components/HubDateField.tsx`](src/components/HubDateField.tsx). Catálogo: [`src/design-system/README.md`](src/design-system/README.md).
+- **Toast de sucesso (`HubToast` / `HubToastRegion`):** feedback não bloqueante no canto inferior direito; em geral disparado por `showSuccess` no `AlertProvider` (substitui o modal de sucesso com um único OK). Implementação: [`src/components/HubToast.tsx`](src/components/HubToast.tsx).
 
 Novos componentes devem **reutilizar** estes padrões antes de introduzir novas cores.
 

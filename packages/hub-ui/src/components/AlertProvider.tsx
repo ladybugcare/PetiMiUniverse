@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useRef, useEffect } from 'react';
 import Alert, { AlertType } from './Alert';
+import { HubToastRegion, HubToastItemData } from './HubToast';
 
 interface AlertOptions {
   title?: string;
@@ -12,9 +13,20 @@ interface AlertOptions {
   showCancel?: boolean;
 }
 
+/** Opções opcionais do terceiro argumento de `showSuccess`. */
+export interface ShowSuccessToastOptions {
+  durationMs?: number;
+  onDismiss?: () => void;
+}
+
+interface ToastEntry extends HubToastItemData {
+  durationMs: number;
+  onDismiss?: () => void;
+}
+
 interface AlertContextType {
   showAlert: (options: AlertOptions) => void;
-  showSuccess: (message: string, title?: string) => void;
+  showSuccess: (message: string, title?: string, options?: ShowSuccessToastOptions) => void;
   showError: (message: string, title?: string) => void;
   showWarning: (message: string, title?: string) => void;
   showInfo: (message: string, title?: string) => void;
@@ -23,52 +35,113 @@ interface AlertContextType {
 
 const AlertContext = createContext<AlertContextType | undefined>(undefined);
 
+const DEFAULT_TOAST_MS = 4500;
+
 export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [alertState, setAlertState] = useState<AlertOptions & { isOpen: boolean }>({
     isOpen: false,
     message: '',
     type: 'info',
   });
+  const [toasts, setToasts] = useState<ToastEntry[]>([]);
   const alertIdRef = useRef(0);
+  const toastIdRef = useRef(0);
+  const toastTimeoutsRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const isClosingRef = useRef(false);
 
-  const showAlert = useCallback((options: AlertOptions) => {
+  const dismissToast = useCallback((id: number) => {
+    const t = toastTimeoutsRef.current.get(id);
+    if (t) {
+      clearTimeout(t);
+      toastTimeoutsRef.current.delete(id);
+    }
+    setToasts((prev) => {
+      const item = prev.find((x) => x.id === id);
+      if (item?.onDismiss) {
+        try {
+          item.onDismiss();
+        } catch (e) {
+          console.error('[hub-ui AlertProvider] onDismiss toast:', e);
+        }
+      }
+      return prev.filter((x) => x.id !== id);
+    });
+  }, []);
+
+  const enqueueSuccessToast = useCallback(
+    (message: string, title: string | undefined, durationMs: number, onDismiss?: () => void) => {
+      const id = ++toastIdRef.current;
+      const entry: ToastEntry = { id, message, title, durationMs, onDismiss };
+      setToasts((prev) => [...prev, entry]);
+      const timer = setTimeout(() => {
+        toastTimeoutsRef.current.delete(id);
+        dismissToast(id);
+      }, durationMs);
+      toastTimeoutsRef.current.set(id, timer);
+    },
+    [dismissToast],
+  );
+
+  useEffect(() => {
+    return () => {
+      toastTimeoutsRef.current.forEach(clearTimeout);
+      toastTimeoutsRef.current.clear();
+    };
+  }, []);
+
+  const openModal = useCallback((options: AlertOptions) => {
     alertIdRef.current += 1;
     isClosingRef.current = false;
     setAlertState({ ...options, isOpen: true });
   }, []);
 
-  const showSuccess = useCallback(
-    (message: string, title?: string) => {
-      showAlert({ message, title: title || 'Sucesso!', type: 'success' });
+  const showAlert = useCallback(
+    (options: AlertOptions) => {
+      if (options.type === 'success' && !options.showCancel && !options.onConfirm) {
+        enqueueSuccessToast(options.message, options.title, DEFAULT_TOAST_MS, undefined);
+        return;
+      }
+      openModal(options);
     },
-    [showAlert]
+    [openModal, enqueueSuccessToast],
+  );
+
+  const showSuccess = useCallback(
+    (message: string, title?: string, options?: ShowSuccessToastOptions) => {
+      enqueueSuccessToast(
+        message,
+        title || 'Sucesso!',
+        options?.durationMs ?? DEFAULT_TOAST_MS,
+        options?.onDismiss,
+      );
+    },
+    [enqueueSuccessToast],
   );
 
   const showError = useCallback(
     (message: string, title?: string) => {
-      showAlert({ message, title: title || 'Erro', type: 'error' });
+      openModal({ message, title: title || 'Erro', type: 'error' });
     },
-    [showAlert]
+    [openModal],
   );
 
   const showWarning = useCallback(
     (message: string, title?: string) => {
-      showAlert({ message, title: title || 'Atenção', type: 'warning' });
+      openModal({ message, title: title || 'Atenção', type: 'warning' });
     },
-    [showAlert]
+    [openModal],
   );
 
   const showInfo = useCallback(
     (message: string, title?: string) => {
-      showAlert({ message, title: title || 'Informação', type: 'info' });
+      openModal({ message, title: title || 'Informação', type: 'info' });
     },
-    [showAlert]
+    [openModal],
   );
 
   const showConfirm = useCallback(
     (message: string, onConfirm: () => void, title?: string) => {
-      showAlert({
+      openModal({
         message,
         title: title || 'Confirmação',
         type: 'warning',
@@ -77,7 +150,7 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         onConfirm,
       });
     },
-    [showAlert]
+    [openModal],
   );
 
   const closeAlert = useCallback(() => {
@@ -95,11 +168,14 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [alertState.isOpen, alertState.message]);
 
+  const toastItems: HubToastItemData[] = toasts.map(({ id, message, title }) => ({ id, message, title }));
+
   return (
     <AlertContext.Provider
       value={{ showAlert, showSuccess, showError, showWarning, showInfo, showConfirm }}
     >
       {children}
+      <HubToastRegion items={toastItems} onDismiss={dismissToast} />
       <Alert
         isOpen={alertState.isOpen}
         onClose={closeAlert}
