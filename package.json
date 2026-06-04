@@ -22,15 +22,21 @@
     "seed:hub-beatriz-demo": "node scripts/seed-hub-beatriz-demo.mjs"
   },
   "dependencies": {
-    "react": "18.2.0"
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
   },
   "overrides": {
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "@types/react": "18.2.79",
-    "@types/react-dom": "18.2.25"
+    "@types/react-dom": "18.2.25",
+    "@testing-library/react": {
+      "react": "18.2.0",
+      "react-dom": "18.2.0",
+      "@types/react-dom": "18.2.25"
+    }
   },
-  "devDependencies": {
+  "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "^4.61.0"
   }
 }
