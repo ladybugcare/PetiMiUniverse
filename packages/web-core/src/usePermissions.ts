@@ -53,17 +53,26 @@ export const usePermissions = () => {
   const { user, role: authRole, loading: authLoading } = useAuth();
   const [permissions, setPermissions] = useState<string[]>([]);
   const [role, setRole] = useState<ClinicStaffRole | null>(null);
+  // Começa `true` e só passa a `false` JUNTO com o `role` resolvido. Isto evita uma
+  // janela em que `loading === false` e `role === null` no mesmo render — que fazia as
+  // páginas dispararem `redirectAwayFromHub` antes do papel ser calculado (→ Dashboard).
+  const [resolved, setResolved] = useState(false);
 
   useEffect(() => {
+    // Aguarda o AuthContext terminar de carregar a sessão antes de decidir o papel.
+    if (authLoading) return;
+
     const loadPermissions = () => {
       try {
-        const resolved = resolveStaffRole(authRole, user);
-        setRole(resolved);
-        setPermissions(resolved ? PERMISSIONS[resolved] || [] : []);
+        const r = resolveStaffRole(authRole, user);
+        setRole(r);
+        setPermissions(r ? PERMISSIONS[r] || [] : []);
       } catch (error) {
         console.error('[usePermissions] Error loading permissions:', error);
         setPermissions([]);
         setRole(null);
+      } finally {
+        setResolved(true);
       }
     };
 
@@ -75,7 +84,7 @@ export const usePermissions = () => {
       window.removeEventListener('storage', loadPermissions);
       window.removeEventListener(CLINIC_STORAGE_UPDATED_EVENT, loadPermissions);
     };
-  }, [authRole, user]);
+  }, [authRole, user, authLoading]);
 
   const hasPermission = useCallback(
     (permission: string): boolean => {
@@ -87,9 +96,8 @@ export const usePermissions = () => {
   return {
     role,
     permissions,
-    // Enquanto a sessão do AuthContext carrega, as permissões ainda não são
-    // confiáveis — páginas usam isto para evitar redirecionar cedo demais.
-    loading: authLoading,
+    // Carregando enquanto a sessão não terminou OU o papel ainda não foi resolvido.
+    loading: authLoading || !resolved,
     hasPermission,
   };
 };
