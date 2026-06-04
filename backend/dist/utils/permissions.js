@@ -107,13 +107,7 @@ exports.PERMISSIONS = {
         'hub.appointments.write',
         'hub.prospects.read',
         'hub.quotes.read',
-        'hub.clinic.read',
         'grooming.queue.read',
-        'grooming.queue.manage',
-        'hub.financial.read',
-        'hub.receivables.create',
-        'hub.cash.session',
-        'hub.cash.receive',
     ],
     CVET_INTERNAL: [
         'unit.view',
@@ -126,6 +120,30 @@ exports.PERMISSIONS = {
         'hub.clinic.read',
         'hub.clinic.write',
         'hub.financial.read',
+    ],
+    CGROOMER: [
+        'unit.view',
+        'hub.guardians.read',
+        'hub.pets.read',
+        'hub.service_types.read',
+        'hub.appointments.read',
+        'grooming.queue.read',
+        'grooming.queue.manage',
+    ],
+    CFINANCE: [
+        'unit.view',
+        'hub.guardians.read',
+        'hub.pets.read',
+        'hub.service_types.read',
+        'hub.inventory.read',
+        'hub.inventory.write',
+        'hub.appointments.read',
+        'grooming.queue.read',
+        'hub.financial.read',
+        'hub.financial.write',
+        'hub.receivables.create',
+        'hub.cash.session',
+        'hub.cash.receive',
     ],
 };
 /** CADMIN tem acesso irrestrito a todas as permissões do Hub e da clínica. */
@@ -144,6 +162,8 @@ const getRoleDisplayName = (role) => {
         CMANAGER: 'Gestor de Unidade',
         CASSISTANT: 'Assistente/Secretário',
         CVET_INTERNAL: 'Veterinário Interno',
+        CGROOMER: 'Banho e Tosa',
+        CFINANCE: 'Financeiro',
     };
     return names[role] || role;
 };

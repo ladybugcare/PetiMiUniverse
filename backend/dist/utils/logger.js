@@ -24,22 +24,10 @@ exports.logger = winston_1.default.createLogger({
     format: process.env.NODE_ENV === 'production' ? logFormat : devFormat,
     defaultMeta: { service: 'petivet-api' },
     transports: [
-        // Escrever todos os logs em console
+        // Produção na Railway: só stdout/stderr (sem ficheiros em disco efémero)
         new winston_1.default.transports.Console({
             stderrLevels: ['error'],
         }),
-        // Em produção, também escrever erros em arquivo
-        ...(process.env.NODE_ENV === 'production'
-            ? [
-                new winston_1.default.transports.File({
-                    filename: 'logs/error.log',
-                    level: 'error',
-                }),
-                new winston_1.default.transports.File({
-                    filename: 'logs/combined.log',
-                }),
-            ]
-            : []),
     ],
 });
 // Se não estiver em produção, adicionar logs mais verbosos

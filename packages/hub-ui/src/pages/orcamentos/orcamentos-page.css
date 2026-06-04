@@ -1222,6 +1222,10 @@
   position: relative;
 }
 
+.hub-quote-detail__share-wrap .hub-quote-detail__more-panel {
+  z-index: 30;
+}
+
 .hub-quote-detail__more-summary {
   list-style: none;
   cursor: pointer;
@@ -1264,6 +1268,16 @@
 .hub-quote-detail__more-item--danger:hover {
   background: #ffebee;
   color: #b71c1c;
+}
+
+a.hub-quote-detail__more-item {
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+.hub-quote-detail__more-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .hub-quote-detail__draft-banner {
@@ -1315,6 +1329,11 @@
 
 .hub-quote-detail__card--flush {
   padding: 18px 0 0;
+}
+
+.hub-quote-detail__card--flush .hub-quote-detail__card-head {
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .hub-quote-detail__card--internal {
@@ -1685,6 +1704,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+  margin-top: 12px;
 }
 
 .hub-quote-detail__convert-tile {
@@ -1692,20 +1712,27 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
-  padding: 14px 12px;
-  border-radius: 10px;
+  padding: 14px;
+  border-radius: 12px;
   border: 1px solid var(--qd-border);
   background: #faf8f7;
   cursor: pointer;
   text-align: left;
   text-decoration: none;
   color: inherit;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.hub-quote-detail__convert-tile > svg {
+  color: var(--qd-brand);
+  margin-bottom: 4px;
 }
 
 .hub-quote-detail__convert-tile:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--qd-brand) 40%, var(--qd-border));
   background: #fff;
+  box-shadow: 0 2px 8px rgba(74, 59, 58, 0.08);
+  transform: translateY(-1px);
 }
 
 .hub-quote-detail__convert-tile:disabled {
@@ -1716,6 +1743,17 @@
 .hub-quote-detail__convert-tile--muted {
   cursor: default;
   opacity: 0.85;
+}
+
+.hub-quote-detail__convert-tile--muted:hover {
+  box-shadow: none;
+  transform: none;
+  background: #faf8f7;
+  border-color: var(--qd-border);
+}
+
+.hub-quote-detail__convert-tile--muted > svg {
+  color: var(--qd-muted);
 }
 
 .hub-quote-detail__convert-tile--link:hover {
@@ -1861,9 +1899,38 @@
   color: var(--hub-text, #4a3b3a);
 }
 
-.hub-quote-ready__btn-wide {
+.hub-quote-ready__message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.hub-quote-ready__message-actions .hub-orcamento-novo__btn {
+  flex: 1;
+  min-width: 160px;
   justify-content: center;
-  align-self: flex-start;
+}
+
+/* Primário desabilitado continua visível (mesmo contexto da página, sem portal) */
+.hub-quote-ready__message-actions .hub-orcamento-novo__btn--primary:disabled {
+  opacity: 1;
+  background: #ece8e4;
+  border-color: #d4ccc4;
+  color: #5a524d;
+  cursor: not-allowed;
+}
+
+.hub-quote-ready__message-actions .hub-orcamento-novo__btn--primary:disabled:hover {
+  background: #ece8e4;
+  border-color: #d4ccc4;
+}
+
+.hub-quote-ready__wa-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hub-text-muted, #8e6e67);
 }
 
 .hub-quote-ready__links-card {

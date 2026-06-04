@@ -1,6 +1,7 @@
 /* Checkbox — design system Hub (terracotta / tokens em hubTheme) */
 
 .hub-checkbox {
+  position: relative;
   display: inline-flex;
   align-items: flex-start;
   gap: 10px;

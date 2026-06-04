@@ -8,10 +8,17 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
-import { hubFinancialApi } from '../../api/hubFinancialApi';
+import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
+import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { hubQuotesApi, openHubQuotePdf, type HubQuote } from '../../api/hubQuotesApi';
 import { hubGuardiansApi, type HubGuardian } from '../../api/hubGuardiansApi';
 import HubQuoteDetailLayout from './HubQuoteDetailLayout';
+import {
+  buildWhatsAppMessageLinkVariant,
+  formatQuoteValidUntil,
+  prospectFirstName,
+  waMeUrlWithText,
+} from './hubQuoteShareUtils';
 import '../clientes/clientes.css';
 import './orcamentos-page.css';
 
@@ -45,6 +52,7 @@ const HubQuoteDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [quote, setQuote] = useState<HubQuote | null>(null);
   const [saving, setSaving] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [dupGuardians, setDupGuardians] = useState<HubGuardian[]>([]);
 
   const accessAllowed =
@@ -140,6 +148,45 @@ const HubQuoteDetailPage: React.FC = () => {
     }
   };
 
+  const openPublicQuoteInNewTab = async () => {
+    if (!clinicId || !id || !quote) return;
+    setSaving(true);
+    try {
+      const { public_token } = await hubQuotesApi.ensurePublicToken(id, clinicId);
+      const url = hubQuotesApi.publicLink(public_token);
+      setQuote((q) => (q ? { ...q, public_token } : q));
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao abrir link público');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const shareWhatsAppWithMessage = async () => {
+    if (!clinicId || !id || !quote) return;
+    setSaving(true);
+    try {
+      const { public_token } = await hubQuotesApi.ensurePublicToken(id, clinicId);
+      const publicUrl = hubQuotesApi.publicLink(public_token);
+      setQuote((q) => (q ? { ...q, public_token } : q));
+      const pr = embedOne(quote.prospect);
+      const firstName = prospectFirstName(pr?.full_name);
+      const validUntil = formatQuoteValidUntil(quote.expires_at);
+      const msg = buildWhatsAppMessageLinkVariant(firstName, publicUrl, validUntil);
+      const waUrl = waMeUrlWithText(pr?.phone, msg);
+      if (!waUrl) {
+        showError('Cadastre um telefone válido no contato do orçamento.');
+        return;
+      }
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao preparar WhatsApp');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openPdf = async () => {
     if (!clinicId || !id) return;
     try {
@@ -149,25 +196,25 @@ const HubQuoteDetailPage: React.FC = () => {
     }
   };
 
-  const generateReceivableFromQuote = async () => {
-    if (!clinicId || !id || !quote) return;
-    const brl = Number(quote.total_amount || 0).toLocaleString('pt-BR', { style: 'currency', currency: quote.currency || 'BRL' });
-    showConfirm(`Gerar cobrança de ${brl} a partir deste orçamento?`, async () => {
-      setSaving(true);
-      try {
-        await hubFinancialApi.createReceivable({
-          clinic_id: clinicId,
-          source_type: 'quote',
-          source_id: id,
-        });
-        showSuccess('Cobrança criada.');
-        await load();
-      } catch (e: unknown) {
-        showError((e as Error)?.message || 'Erro ao gerar cobrança');
-      } finally {
-        setSaving(false);
-      }
-    });
+  const openQuoteCheckout = () => {
+    if (!quote) return;
+    const uid = quote.unit_id || getSelectedUnitId();
+    if (!uid) {
+      showError('Defina a unidade do orçamento ou selecione uma unidade no cabeçalho para abrir o checkout.');
+      return;
+    }
+    setCheckoutOpen(true);
+  };
+
+  const openReceivableFromQuote = () => {
+    if (!id) return;
+    navigate(`/hub/financeiro?source_type=quote&source_id=${encodeURIComponent(id)}`);
+  };
+
+  const openAgendaFromQuote = () => {
+    if (!id) return;
+    const sp = new URLSearchParams({ fromQuote: id, openCreate: '1' });
+    navigate(`/hub/appointments?${sp.toString()}`);
   };
 
   if (!user) return <Navigate to="/login" replace />;
@@ -193,6 +240,7 @@ const HubQuoteDetailPage: React.FC = () => {
   if (loading || !quote) return <div style={{ padding: 24 }}>Carregando…</div>;
 
   return (
+    <>
     <HubQuoteDetailLayout
       quote={quote}
       quoteId={id}
@@ -278,6 +326,8 @@ const HubQuoteDetailPage: React.FC = () => {
       }}
       onOpenPdf={() => void openPdf()}
       onCopyPublic={() => void copyPublicLink()}
+      onShareOpenPublic={() => void openPublicQuoteInNewTab()}
+      onShareWhatsAppWithMessage={() => void shareWhatsAppWithMessage()}
       onGuidedConvert={(linkId) => {
         const sp = new URLSearchParams();
         sp.set('fromQuote', id);
@@ -295,15 +345,34 @@ const HubQuoteDetailPage: React.FC = () => {
               )
           : undefined
       }
-      onGenerateReceivable={
+      onOpenCheckout={
         canWrite &&
         canCreateReceivable &&
         quote.status === 'accepted' &&
-        quote.billing_state === 'awaiting_billing'
-          ? () => void generateReceivableFromQuote()
+        quote.billing_state !== 'receivable_created' &&
+        !quote.billing_waived_at
+          ? openQuoteCheckout
           : undefined
       }
+      onOpenReceivable={quote.status === 'accepted' ? openReceivableFromQuote : undefined}
+      onCreateAppointmentFromQuote={openAgendaFromQuote}
     />
+    {clinicId && id && quote && checkoutOpen ? (
+      <ComandaCheckoutDrawer
+        open={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        clinicId={clinicId}
+        unitId={(quote.unit_id || getSelectedUnitId()) as string}
+        originType="quote"
+        originId={id}
+        onSuccess={async () => {
+          showSuccess('Checkout concluído.');
+          setCheckoutOpen(false);
+          await load();
+        }}
+      />
+    ) : null}
+    </>
   );
 };
 

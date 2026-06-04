@@ -22,6 +22,8 @@ export { HubSidePanel } from './components/HubSidePanel';
 export type { HubSidePanelProps } from './components/HubSidePanel';
 export { setHubUiConfig, getVetWebUrl } from './config';
 export { hubAgendaApi } from './api/hubAgendaApi';
+export { hubAppointmentsApi } from './api/hubAppointmentsApi';
+export type { HubAppointmentsServiceGroupStat } from './api/hubAppointmentsApi';
 export type {
   HubAppointment,
   HubAgendaCalendarBlock,
@@ -80,6 +82,10 @@ export type {
   HubQuotePetInput,
   HubQuoteLine,
 } from './api/hubQuotesApi';
+export { hubComandaApi } from './api/hubComandaApi';
+export type { HubComandaOriginType, HubComandaItem, HubComandaDetailResponse } from './api/hubComandaApi';
+export { ComandaCheckoutDrawer } from './pages/finance/ComandaCheckoutDrawer';
+export type { ComandaCheckoutDrawerProps } from './pages/finance/ComandaCheckoutDrawer';
 export { hubFinancialApi } from './api/hubFinancialApi';
 export type {
   HubFinanceUnbilledItem,
@@ -89,13 +95,20 @@ export type {
   HubFinanceCashFlowDay,
   HubFinanceExpense,
   HubFinanceExpenseCategory,
+  HubPaymentMethod,
   HubCashSession,
   HubCommissionBasis,
   HubCommissionRule,
   HubCommissionPreviewLine,
   HubCommissionPreviewResponse,
+  HubFinanceRevenueReport,
+  HubFinanceRevenueSeriesReport,
+  HubFinanceTicketAverageReport,
+  HubFinanceTopServicesReport,
+  HubFinanceAgingReport,
 } from './api/hubFinancialApi';
 export { default as HubCaixaPage } from './pages/finance/HubCaixaPage';
 export { default as HubFinanceiroPage } from './pages/finance/HubFinanceiroPage';
 export { default as HubDashboardPage } from './pages/finance/HubDashboardPage';
+export { default as HubRelatoriosPage } from './pages/finance/HubRelatoriosPage';
 export { maskTaxIdForList } from './utils/maskTaxId';

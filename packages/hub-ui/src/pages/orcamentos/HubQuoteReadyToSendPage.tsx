@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { Copy, Download, ExternalLink } from 'lucide-react';
+import { Check, Copy, Download, ExternalLink, MessageCircle } from 'lucide-react';
 import {
   useAuth,
   getStoredClinicId,
@@ -11,54 +11,18 @@ import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubTabs } from '../../components/HubTabs';
 import { hubQuotesApi, downloadHubQuotePdf, type HubQuote } from '../../api/hubQuotesApi';
+import { embedOne } from './hubQuoteViewUtils';
+import {
+  buildWhatsAppMessageLinkVariant,
+  buildWhatsAppMessagePdfVariant,
+  formatQuoteValidUntil,
+  prospectFirstName,
+  waMeUrlWithText,
+} from './hubQuoteShareUtils';
 import '../clientes/clientes.css';
 import './orcamentos-page.css';
 
 const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
-function embedOne<T>(x: T | T[] | null | undefined): T | null {
-  if (x == null) return null;
-  return Array.isArray(x) ? x[0] ?? null : x;
-}
-
-function prospectFirstName(fullName: string | undefined | null): string {
-  const t = (fullName ?? '').trim();
-  if (!t) return 'cliente';
-  return t.split(/\s+/)[0] ?? t;
-}
-
-function formatQuoteValidUntil(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-function buildWhatsAppMessageLinkVariant(firstName: string, publicLink: string, validUntil: string): string {
-  return [
-    `Olá, ${firstName}! 😊`,
-    '',
-    'Segue o orçamento dos serviços dos seus pets:',
-    publicLink,
-    '',
-    `Válido até ${validUntil}.`,
-    'Qualquer dúvida, é só me chamar! 🧡',
-  ].join('\n');
-}
-
-function buildWhatsAppMessagePdfVariant(firstName: string, publicLink: string, validUntil: string): string {
-  return [
-    `Olá, ${firstName}! 😊`,
-    '',
-    'Segue o PDF do orçamento dos serviços dos seus pets.',
-    '',
-    'Você também pode visualizar online:',
-    publicLink,
-    '',
-    `Válido até ${validUntil}.`,
-    'Qualquer dúvida, é só me chamar! 🧡',
-  ].join('\n');
-}
 
 type MessageVariant = 'link' | 'pdf';
 
@@ -68,12 +32,14 @@ const HubQuoteReadyToSendPage: React.FC = () => {
   const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const { showError, showSuccess } = useAlert();
+  const copyDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [quote, setQuote] = useState<HubQuote | null>(null);
   const [publicUrl, setPublicUrl] = useState('');
   const [messageVariant, setMessageVariant] = useState<MessageVariant>('link');
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [messageCopied, setMessageCopied] = useState(false);
 
   const accessAllowed =
     clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
@@ -113,6 +79,7 @@ const HubQuoteReadyToSendPage: React.FC = () => {
   const prospect = useMemo(() => embedOne(quote?.prospect), [quote]);
   const firstName = useMemo(() => prospectFirstName(prospect?.full_name), [prospect]);
   const validUntilLabel = useMemo(() => formatQuoteValidUntil(quote?.expires_at), [quote?.expires_at]);
+  const prospectPhone = prospect?.phone?.trim() ?? '';
 
   const messageText = useMemo(() => {
     if (!publicUrl) return '';
@@ -121,14 +88,47 @@ const HubQuoteReadyToSendPage: React.FC = () => {
       : buildWhatsAppMessagePdfVariant(firstName, publicUrl, validUntilLabel);
   }, [firstName, messageVariant, publicUrl, validUntilLabel]);
 
+  const whatsAppHref = useMemo(() => {
+    if (!messageText) return null;
+    return waMeUrlWithText(prospectPhone, messageText);
+  }, [messageText, prospectPhone]);
+
+  useEffect(() => {
+    setMessageCopied(false);
+    if (copyDoneTimerRef.current) {
+      clearTimeout(copyDoneTimerRef.current);
+      copyDoneTimerRef.current = null;
+    }
+  }, [messageVariant, messageText]);
+
+  useEffect(
+    () => () => {
+      if (copyDoneTimerRef.current) clearTimeout(copyDoneTimerRef.current);
+    },
+    [],
+  );
+
   const copyMessage = async () => {
     if (!messageText) return;
     try {
       await navigator.clipboard.writeText(messageText);
-      showSuccess('Mensagem copiada');
+      setMessageCopied(true);
+      if (copyDoneTimerRef.current) clearTimeout(copyDoneTimerRef.current);
+      copyDoneTimerRef.current = setTimeout(() => {
+        setMessageCopied(false);
+        copyDoneTimerRef.current = null;
+      }, 2800);
     } catch {
       showError('Não foi possível copiar. Selecione o texto manualmente.');
     }
+  };
+
+  const openWhatsAppShare = () => {
+    if (!whatsAppHref) {
+      showError('Cadastre um telefone válido no contato do orçamento para abrir o WhatsApp.');
+      return;
+    }
+    window.open(whatsAppHref, '_blank', 'noopener,noreferrer');
   };
 
   const copyLink = async () => {
@@ -216,7 +216,7 @@ const HubQuoteReadyToSendPage: React.FC = () => {
       <HubTabs
         ariaLabel="Modelo de mensagem"
         activeId={messageVariant}
-        onTabChange={(id) => setMessageVariant(id as 'link' | 'pdf')}
+        onTabChange={(tabId) => setMessageVariant(tabId as 'link' | 'pdf')}
         items={[
           { id: 'link', label: 'Mensagem com link' },
           { id: 'pdf', label: 'Mensagem com PDF' },
@@ -227,14 +227,33 @@ const HubQuoteReadyToSendPage: React.FC = () => {
         <pre className="hub-quote-ready__message-pre" tabIndex={0}>
           {messageText}
         </pre>
-        <button
-          type="button"
-          className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary hub-quote-ready__btn-wide"
-          onClick={() => void copyMessage()}
-        >
-          <Copy size={18} aria-hidden />
-          Copiar mensagem
-        </button>
+        <div className="hub-quote-ready__message-actions">
+          <button
+            type="button"
+            className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline"
+            onClick={() => void copyMessage()}
+            aria-live="polite"
+          >
+            {messageCopied ? <Check size={18} aria-hidden /> : <Copy size={18} aria-hidden />}
+            {messageCopied ? 'Mensagem copiada!' : 'Copiar mensagem'}
+          </button>
+          <button
+            type="button"
+            className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary"
+            disabled={!whatsAppHref}
+            title={!whatsAppHref ? 'Cadastre o telefone do contato no orçamento para usar o WhatsApp' : undefined}
+            onClick={openWhatsAppShare}
+          >
+            <MessageCircle size={18} aria-hidden />
+            Abrir WhatsApp
+          </button>
+        </div>
+        {!whatsAppHref ? (
+          <p className="hub-quote-ready__wa-hint">
+            Sem telefone no contato: use «Copiar mensagem» ou edite o orçamento para incluir o número e habilitar o
+            WhatsApp.
+          </p>
+        ) : null}
       </section>
 
       <section className="hub-orcamento-novo__card hub-quote-ready__links-card">

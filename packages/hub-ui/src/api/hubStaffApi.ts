@@ -12,7 +12,7 @@ export type HubProfessionalKind =
   | 'assistant'
   | 'other';
 
-export type HubStaffAccessRole = 'CADMIN' | 'CMANAGER' | 'CASSISTANT' | 'CVET_INTERNAL';
+export type HubStaffAccessRole = 'CADMIN' | 'CMANAGER' | 'CASSISTANT' | 'CVET_INTERNAL' | 'CGROOMER' | 'CFINANCE';
 
 export interface HubStaffServiceTypeRef {
   id: string;

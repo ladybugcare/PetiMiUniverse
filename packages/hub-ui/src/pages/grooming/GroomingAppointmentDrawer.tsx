@@ -41,6 +41,10 @@ export type GroomingAppointmentDrawerProps = {
   onQuickAction: (item: GroomingDayBoardItem, action: GroomingQuickAction) => void | Promise<void>;
   onSessionUpdated?: () => void;
   busy?: boolean;
+  /** Abre checkout (comanda) da sessão de Banho & Tosa. */
+  onOpenCheckout?: () => void;
+  /** Exibir botão de checkout (ex.: permissão + unidade resolvida). */
+  checkoutEnabled?: boolean;
 };
 
 function formatHm(iso: string): string {
@@ -64,6 +68,14 @@ function formatEventAt(iso: string): string {
 function formatBrl(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—';
   return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function whatsappReadyLink(phone: string, petName: string): string | null {
+  const digits = phone.replace(/\D/g, '');
+  if (!digits) return null;
+  const brDigits = digits.startsWith('55') ? digits : `55${digits}`;
+  const text = encodeURIComponent(`Olá! ${petName} já está pronto(a) para retirada. PetMi`);
+  return `https://wa.me/${brDigits}?text=${text}`;
 }
 
 function resolveDrawerQuickAction(item: GroomingDayBoardItem, canWrite: boolean): GroomingQuickAction | null {
@@ -91,6 +103,8 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
   onClose,
   onQuickAction,
   onSessionUpdated,
+  onOpenCheckout,
+  checkoutEnabled = false,
   busy,
 }) => {
   const clinicId = getStoredClinicId();
@@ -243,6 +257,7 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
   const petName = item.pet?.name || 'Pet';
   const tutor = item.guardian?.full_name || '—';
   const phone = item.guardian?.phone?.trim();
+  const notifyTutorHref = phone && stage === 'ready' ? whatsappReadyLink(phone, petName) : null;
   const porte =
     item.pet?.size_tier && PORTE_LABELS[item.pet.size_tier as PetBodyPorteValue]
       ? PORTE_LABELS[item.pet.size_tier as PetBodyPorteValue]
@@ -281,6 +296,16 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
           onClick={() => void onQuickAction(item, quick)}
         >
           {primaryLabel}
+        </button>
+      ) : null}
+      {item.session_id && checkoutEnabled && onOpenCheckout ? (
+        <button
+          type="button"
+          className="hub-clientes__btn hub-clientes__btn--ghost"
+          disabled={busy}
+          onClick={() => void onOpenCheckout()}
+        >
+          Abrir checkout
         </button>
       ) : null}
       {item.appointment_id ? (
@@ -334,6 +359,17 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
           <h4 className="hub-grooming-drawer__heading">Tutor</h4>
           <p>{tutor}</p>
           {phone ? <p className="hub-clientes__muted">Tel.: {phone}</p> : null}
+          {notifyTutorHref ? (
+            <a
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              href={notifyTutorHref}
+              target="_blank"
+              rel="noreferrer"
+              style={{ marginTop: 10 }}
+            >
+              Avisar tutor
+            </a>
+          ) : null}
         </section>
 
         <section className="hub-grooming-drawer__section">

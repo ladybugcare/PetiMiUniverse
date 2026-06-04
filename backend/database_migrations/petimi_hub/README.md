@@ -101,3 +101,21 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 37. **`create_hub_expenses.sql`** — `hub_expenses` (despesas por unidade; dashboard e fluxo de caixa). Executar depois do item 35. Ver [HUB_FINANCIAL_IMPLEMENTATION_PLAN.md](../../docs/architecture/HUB_FINANCIAL_IMPLEMENTATION_PLAN.md) (Fase 2).
 
 38. **`create_hub_commission_rules.sql`** — `hub_commission_rules` (comissão por `hub_service_type_id`: `percent_of_sale` ou `fixed_per_sale`; soft delete). Executar depois dos itens 3 e 35. API: `GET|POST /api/hub/finance/commission-rules`, `PATCH|DELETE …/commission-rules/:id`, `GET …/commission-preview`. Ver [HUB_FINANCIAL_MODEL.md](../../docs/architecture/HUB_FINANCIAL_MODEL.md) (comissões).
+
+39. **`create_hub_comandas.sql`** + **`create_hub_comanda_items.sql`** — Comandas operacionais (checkout) por origem (`appointment`, `grooming_session`, `quote`, `encounter`, …) e itens faturáveis. Executar depois do núcleo financeiro (35), pets/tutores e tabelas de origem (agenda, grooming, orçamentos, clínica).
+
+40. **`alter_hub_receivables_comanda_and_unique.sql`** — Coluna `comanda_id` em `hub_receivables` e ajuste de índice único por origem (legado sem comanda). Executar depois dos itens 35 e 39.
+
+41. **`alter_hub_receivable_lines_comanda.sql`** — Colunas `comanda_id`, `comanda_item_id`, `pet_id` em `hub_receivable_lines`. Executar depois do item 40.
+
+42. **`alter_hub_receivable_lines_product.sql`** — Suporte a linhas de produto no recebível (se ainda não aplicado na base). Executar depois do item 35 e do inventário (8).
+
+43. **`alter_hub_quote_pets_hub_pet_id.sql`** — Ligação `hub_quote_pets.hub_pet_id` após conversão de orçamento. Executar depois do item 21/22.
+
+44. **`create_hub_customer_credit_movements.sql`** — Movimentos de crédito do tutor e inclusão de `customer_credit` como método de pagamento. Executar depois do item 35.
+
+45. **`create_hub_packages_and_subscriptions.sql`** — Pacotes de serviços e assinaturas (`hub_packages`, saldos, `hub_subscriptions`). Executar depois de tutores e tipos de serviço.
+
+46. **`alter_hub_appointments_billing_waive.sql`** — Waive de cobrança em agendamentos (se aplicável à base).
+
+47. **`alter_hub_roles_groomer_finance.sql`** — Papéis/permissões (ex.: groomer, financeiro) no Hub.

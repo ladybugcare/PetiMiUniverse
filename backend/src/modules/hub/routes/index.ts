@@ -56,6 +56,7 @@ import { patchHubClinicProfile, patchHubUnitProfile } from '../hubClinicProfileC
 import { getHubSessionContext } from '../hubSessionController.js';
 import {
   listHubAppointments,
+  getHubAppointmentsStatsByServiceGroup,
   createHubAppointment,
   patchHubAppointment,
   listHubAgendaCalendarBlocks,
@@ -99,6 +100,7 @@ import {
   createHubEncounterEvent,
   listHubPrescriptions,
   createHubPrescription,
+  getHubPrescriptionPdf,
   listHubVaccinations,
   createHubVaccination,
   listHubClinicalAttachments,
@@ -141,17 +143,39 @@ import {
   postHubFinanceWaiveBilling,
   postHubFinanceReceivablePayment,
   listHubFinanceReceivables,
+  getHubFinanceReceivableDetail,
+  getHubFinancePaymentReceipt,
   postHubFinanceCashSessionOpen,
   postHubFinanceCashSessionClose,
   getHubFinanceCashSessionOpen,
+  listHubFinanceCashSessionsClosed,
+  getHubFinanceCashSessionSummary,
   getHubFinanceUnbilledCompleted,
   getHubFinancePendingBillingCount,
   getHubFinanceDashboardSummary,
   getHubFinanceCashFlow,
+  getHubFinanceRevenueReport,
+  getHubFinanceRevenueSeries,
+  getHubFinanceTicketAverageReport,
+  getHubFinanceTopServicesReport,
+  getHubFinanceAgingReport,
   listHubFinanceExpenses,
   postHubFinanceExpense,
   postHubFinanceCashMovement,
+  postHubFinanceReceivableProductLine,
+  deleteHubFinanceReceivableProductLine,
+  postHubFinancePaymentReverse,
+  postHubFinanceReceivableCancel,
 } from '../hubFinancialController';
+import {
+  postHubComandaOpen,
+  getHubComandaDetail,
+  getHubComandaByOrigin,
+  postHubComandaCheckout,
+  listHubComandas,
+} from '../hubComandasController';
+import { postHubCustomerCreditMovement, getHubCustomerCreditBalance } from '../hubCustomerCreditController';
+import { listHubPackages, postHubPackage } from '../hubPackagesController';
 import {
   listHubCommissionRules,
   postHubCommissionRule,
@@ -399,6 +423,12 @@ router.delete(
   requirePermission('hub.appointments.write'),
   deleteHubAgendaCalendarBlock
 );
+router.get(
+  '/appointments/stats/by-service-group',
+  authenticateUser,
+  requirePermission('hub.appointments.read'),
+  getHubAppointmentsStatsByServiceGroup
+);
 router.get('/appointments', authenticateUser, requirePermission('hub.appointments.read'), listHubAppointments);
 router.post('/appointments', authenticateUser, requirePermission('hub.appointments.write'), createHubAppointment);
 router.patch('/appointments/:id', authenticateUser, requirePermission('hub.appointments.write'), patchHubAppointment);
@@ -559,6 +589,12 @@ router.get(
   requirePermission('hub.clinic.read'),
   listHubPrescriptions
 );
+router.get(
+  '/clinical/prescriptions/:id/pdf',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  getHubPrescriptionPdf
+);
 router.post(
   '/clinical/prescriptions',
   authenticateUser,
@@ -656,6 +692,38 @@ router.post(
   applyHubClinicalTemplate
 );
 
+/** Comandas / checkout operacional */
+router.get(
+  '/comandas',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  listHubComandas
+);
+router.get(
+  '/comandas/by-origin',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubComandaByOrigin
+);
+router.post(
+  '/comandas/open',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  postHubComandaOpen
+);
+router.get(
+  '/comandas/:id',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubComandaDetail
+);
+router.post(
+  '/comandas/:id/checkout',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  postHubComandaCheckout
+);
+
 /** Financeiro — Fase 1 (recebíveis, sem cobrança, caixa básico) */
 router.get(
   '/finance/preview',
@@ -681,11 +749,35 @@ router.get(
   requirePermission('hub.financial.read'),
   listHubFinanceReceivables
 );
+router.get(
+  '/finance/receivables/:id',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceReceivableDetail
+);
 router.post(
   '/finance/receivables',
   authenticateUser,
   requirePermission('hub.receivables.create'),
   postHubFinanceReceivable
+);
+router.post(
+  '/finance/receivables/:id/product-lines',
+  authenticateUser,
+  requirePermission('hub.inventory.write'),
+  postHubFinanceReceivableProductLine
+);
+router.delete(
+  '/finance/receivables/:id/product-lines/:lineId',
+  authenticateUser,
+  requirePermission('hub.inventory.write'),
+  deleteHubFinanceReceivableProductLine
+);
+router.post(
+  '/finance/receivables/:id/cancel',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubFinanceReceivableCancel
 );
 router.post(
   '/finance/waive-billing',
@@ -698,6 +790,24 @@ router.post(
   authenticateUser,
   requirePermission('hub.cash.receive'),
   postHubFinanceReceivablePayment
+);
+router.post(
+  '/finance/payments/:id/reverse',
+  authenticateUser,
+  requirePermission('hub.cash.receive'),
+  postHubFinancePaymentReverse
+);
+router.get(
+  '/finance/payments/:id/receipt',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinancePaymentReceipt
+);
+router.get(
+  '/finance/cash-sessions/closed',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  listHubFinanceCashSessionsClosed
 );
 router.get(
   '/finance/cash-sessions/open',
@@ -718,6 +828,12 @@ router.post(
   postHubFinanceCashSessionClose
 );
 router.get(
+  '/finance/cash-sessions/:id/summary',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceCashSessionSummary
+);
+router.get(
   '/finance/dashboard-summary',
   authenticateUser,
   requirePermission('hub.financial.read'),
@@ -728,6 +844,36 @@ router.get(
   authenticateUser,
   requirePermission('hub.financial.read'),
   getHubFinanceCashFlow
+);
+router.get(
+  '/finance/reports/revenue-series',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceRevenueSeries
+);
+router.get(
+  '/finance/reports/revenue',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceRevenueReport
+);
+router.get(
+  '/finance/reports/ticket-average',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceTicketAverageReport
+);
+router.get(
+  '/finance/reports/top-services',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceTopServicesReport
+);
+router.get(
+  '/finance/reports/aging',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceAgingReport
 );
 router.get(
   '/finance/expenses',
@@ -747,6 +893,31 @@ router.post(
   requirePermission('hub.cash.session'),
   postHubFinanceCashMovement
 );
+router.post(
+  '/finance/credit-movements',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubCustomerCreditMovement
+);
+router.get(
+  '/finance/credit-balance',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubCustomerCreditBalance
+);
+router.get(
+  '/finance/packages',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  listHubPackages
+);
+router.post(
+  '/finance/packages',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubPackage
+);
+
 router.get(
   '/finance/commission-preview',
   authenticateUser,

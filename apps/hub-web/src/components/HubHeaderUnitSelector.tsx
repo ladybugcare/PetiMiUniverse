@@ -8,7 +8,10 @@ const HubHeaderUnitSelector: React.FC = () => {
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const hasMultiple = units.length > 1;
-  const unitLabel = selectedUnit?.name?.trim() || (units.length === 1 ? units[0]?.name : 'Matriz');
+  const unitLabel =
+    selectedUnit?.name?.trim() ||
+    (units.length === 1 ? units[0]?.name?.trim() : '') ||
+    '—';
   const primaryLabel = clinicId ? clinicName : 'Sem clínica';
   const secondaryLabel = clinicId ? unitLabel || '—' : '—';
 

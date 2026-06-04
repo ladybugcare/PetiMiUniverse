@@ -12,7 +12,11 @@ export function isRateLimitDisabled(): boolean {
 
 function shouldSkipRateLimit(req: { path: string }): boolean {
   if (isRateLimitDisabled()) return true;
-  return req.path === '/' || req.path === '/health';
+  return (
+    req.path === '/' ||
+    req.path === '/health' ||
+    req.path === '/health/live'
+  );
 }
 
 /**

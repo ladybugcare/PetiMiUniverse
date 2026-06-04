@@ -36,8 +36,10 @@ const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL']
 const HUB_ACCESS_ROLE_OPTIONS: { value: HubStaffAccessRole; label: string }[] = [
   { value: 'CADMIN', label: 'Administrador' },
   { value: 'CMANAGER', label: 'Gerente / Financeiro' },
-  { value: 'CASSISTANT', label: 'Recepção / Operacional' },
+  { value: 'CASSISTANT', label: 'Recepção' },
   { value: 'CVET_INTERNAL', label: 'Veterinário (perfil interno)' },
+  { value: 'CGROOMER', label: 'Banho e Tosa' },
+  { value: 'CFINANCE', label: 'Financeiro' },
 ];
 
 const WEEKDAY_OPTS: { bit: number; label: string }[] = [

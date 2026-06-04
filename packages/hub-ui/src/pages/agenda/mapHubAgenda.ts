@@ -44,6 +44,7 @@ export function mapHubAppointmentToAgenda(row: HubAppointment): AgendaAppointmen
     professionalName: staff?.full_name ?? 'Não atribuído',
     resourceLabel: row.resource_label?.trim() || '—',
     unitName: un?.name ?? '—',
+    unitId: row.unit_id,
     petName: pet?.name ?? '—',
     guardianName: gu?.full_name ?? '—',
     petId: row.pet_id,

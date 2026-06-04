@@ -98,3 +98,15 @@ FRONTEND_URL=https://petivet.vercel.app
 - Nunca exponha `SUPABASE_SERVICE_ROLE_KEY` no frontend!
 - Esta chave tem acesso total ao banco de dados.
 
+## Produção na Railway (api.petmi.app)
+
+Guia passo a passo, CORS, healthcheck `/health/live`, ordem com a Vercel e Supabase Auth: ver **[RAILWAY.md](./RAILWAY.md)**.
+
+Em produção na Railway, define também:
+
+```env
+PRODUCTION_ORIGINS=https://petmi.app,https://hub.petmi.app,https://shift.petmi.app
+```
+
+(`PORT` costuma ser injetado pela Railway; o servidor usa `process.env.PORT`.)
+

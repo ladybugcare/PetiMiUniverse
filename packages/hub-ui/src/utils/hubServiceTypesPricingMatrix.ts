@@ -268,12 +268,6 @@ export function validatePricingMatrixClient(
     }
   }
 
-  if (matrix.kind === 'personalizado') {
-    for (const t of matrix.tiers) {
-      if (!t.label?.trim()) return 'Cada campo precisa de um nome';
-    }
-  }
-
   return null;
 }
 

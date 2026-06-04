@@ -1,6 +1,9 @@
 {
   "name": "backend",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:clean": "sh -c 'for p in $(lsof -ti tcp:3000 2>/dev/null); do kill -9 \"$p\" 2>/dev/null; done; true' && npm run dev",

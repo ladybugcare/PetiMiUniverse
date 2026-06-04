@@ -7,6 +7,7 @@ import {
   CLINICAL_ATTACHMENTS_MIGRATION_HINT,
   isMissingPostgrestRelation,
 } from '../../utils/supabaseSchemaErrors.js';
+import { streamPrescriptionPdf } from './hubPrescriptionPdf';
 
 const uuidStr = z.string().uuid();
 
@@ -216,6 +217,47 @@ export const createHubPrescription = async (req: Request, res: Response) => {
   const { error: itemsErr } = await supabaseAdmin.from('hub_prescription_items').insert(insertItems);
   if (itemsErr) return res.status(500).json({ error: itemsErr.message });
   return res.status(201).json({ prescription: { ...rx, items: insertItems } });
+};
+
+export const getHubPrescriptionPdf = async (req: Request, res: Response) => {
+  const id = uuidStr.safeParse(req.params.id);
+  const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+  if (!id.success || !clinic_id.success) return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+
+  const { data: rx, error } = await supabaseAdmin
+    .from('hub_prescriptions')
+    .select(
+      `
+      *,
+      clinic:clinics(name, phone, email),
+      pet:hub_pets(name, species, breed),
+      staff:hub_staff_members(full_name, crmv, crmv_uf)
+    `
+    )
+    .eq('id', id.data)
+    .eq('clinic_id', clinic_id.data)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  if (!rx) return res.status(404).json({ error: 'Prescrição não encontrada' });
+
+  const [{ data: items, error: itemsErr }, { data: petGuardian }] = await Promise.all([
+    supabaseAdmin
+      .from('hub_prescription_items')
+      .select('*')
+      .eq('prescription_id', id.data)
+      .order('order_index'),
+    supabaseAdmin
+      .from('hub_pet_guardians')
+      .select('guardian:hub_guardians(full_name, phone)')
+      .eq('pet_id', rx.pet_id)
+      .order('role', { ascending: true })
+      .limit(1),
+  ]);
+  if (itemsErr) return res.status(500).json({ error: itemsErr.message });
+
+  const guardianEmbed = petGuardian?.[0]?.guardian ?? null;
+  streamPrescriptionPdf(res, { ...rx, items: items ?? [], guardian: guardianEmbed });
 };
 
 // ── Vaccinations ────────────────────────────────────────────────────────────

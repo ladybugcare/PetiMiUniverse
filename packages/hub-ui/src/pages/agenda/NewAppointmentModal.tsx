@@ -60,6 +60,20 @@ export type NewAppointmentInitial = {
   ends_at?: string;
   hub_staff_member_id?: string | null;
   resource_label?: string | null;
+  guardian_id?: string | null;
+  guardian_name?: string | null;
+  pet_id?: string | null;
+  pet_name?: string | null;
+  services?: Array<{
+    hub_service_type_id: string;
+    name?: string | null;
+    duration_minutes?: number | null;
+    pricing_variant?: HubQuotePricingVariant | null;
+  }>;
+  title?: string | null;
+  notes?: string | null;
+  financial_notes?: string | null;
+  source_quote_id?: string | null;
 };
 
 export type NewAppointmentModalProps = {
@@ -269,6 +283,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const ltReturnDriverUnlinkedRef = useRef(false);
   const lastMainBlockServiceSigRef = useRef('');
   const lastExtraBlockServiceSigRef = useRef<Record<string, string>>({});
+  const initialPetIdRef = useRef<string | null>(null);
 
   // ── Extra blocks ──────────────────────────────────────────────────────────
   const [extraBlocks, setExtraBlocks] = useState<ExtraBlock[]>([]);
@@ -403,14 +418,43 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setTitleOverridden(false);
     setPricingApptPorteTier('');
     setPricingApptCoatType('');
+    initialPetIdRef.current = initial?.pet_id ?? null;
     if (initial) {
       if (initial.date) setDateYmd(initial.date);
       if (initial.starts_at) setStartsHm(tsToHm(initial.starts_at));
       if (initial.ends_at) setEndsHm(tsToHm(initial.ends_at));
       if (initial.hub_staff_member_id) setStaffId(initial.hub_staff_member_id);
       if (initial.resource_label) setResourceLabel(initial.resource_label);
+      if (initial.guardian_id) setGuardianId(initial.guardian_id);
+      if (initial.guardian_name) setGuardianName(initial.guardian_name);
+      if (initial.pet_id) setPetId(initial.pet_id);
+      if (initial.pet_name) setPetName(initial.pet_name);
+      if (initial.title) {
+        setTitle(initial.title);
+        setTitleOverridden(true);
+      }
+      if (initial.notes) {
+        setMainBlockNotes(initial.notes);
+        setMainBlockNotesUserEdited(true);
+      }
+      if (initial.financial_notes) setFinancialNotes(initial.financial_notes);
+      if (initial.services?.length) {
+        setServices(
+          initial.services
+            .filter((s) => s.hub_service_type_id)
+            .map((s) => {
+              const st = serviceTypes.find((t) => t.id === s.hub_service_type_id);
+              return {
+                hub_service_type_id: s.hub_service_type_id,
+                name: s.name || st?.name || 'Serviço',
+                duration_minutes: s.duration_minutes || st?.default_duration_minutes || 60,
+                pricing_variant: s.pricing_variant ?? null,
+              };
+            }),
+        );
+      }
     }
-  }, [open, initial]);
+  }, [open, initial, serviceTypes]);
 
   useEffect(() => {
     if (!open || !clinicId) return;
@@ -456,7 +500,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         birth_date: p.birth_date,
       }));
       setGuardianPets(mapped);
-      if (mapped.length === 1) {
+      const initialPetId = initialPetIdRef.current;
+      const initialPet = initialPetId ? mapped.find((p) => p.id === initialPetId) : null;
+      if (initialPet) {
+        setPetId(initialPet.id);
+        setPetName(initialPet.name);
+        initialPetIdRef.current = null;
+      } else if (mapped.length === 1) {
         setPetId(mapped[0]!.id);
         setPetName(mapped[0]!.name);
       } else {

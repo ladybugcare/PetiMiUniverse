@@ -310,7 +310,7 @@ const GroomingQueueBoard: React.FC<Props> = ({
               className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
               onClick={(e) => {
                 e.stopPropagation();
-                void onPauseToggle(item);
+                void onPauseToggle?.(item);
               }}
             >
               {paused ? 'Retomar' : 'Pausar'}

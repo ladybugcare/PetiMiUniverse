@@ -18,6 +18,7 @@ import {
   HubCaixaPage,
   HubFinanceiroPage,
   HubDashboardPage,
+  HubRelatoriosPage,
 } from '@petimi/hub-ui';
 import HubProtectedRoute from './routes/HubProtectedRoute';
 import HubLoginPage from './pages/HubLoginPage';
@@ -88,7 +89,7 @@ const App: React.FC = () => {
             <Route path="leva-e-traz" element={<HubComingSoonPage title="Leva e Traz" />} />
             <Route path="estoque/*" element={<HubEstoqueRoutes />} />
             <Route path="equipe" element={<HubStaffPage />} />
-            <Route path="relatorios" element={<HubComingSoonPage title="Relatórios" />} />
+            <Route path="relatorios" element={<HubRelatoriosPage />} />
             <Route path="encounters" element={<Navigate to="/hub/clinica/atendimentos" replace />} />
             <Route path="meu-perfil" element={<HubMeuPerfilPage />} />
             <Route path="perfil-clinica" element={<HubClinicaPerfilPage />} />

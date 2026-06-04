@@ -7,6 +7,10 @@ const express_1 = __importDefault(require("express"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const healthController_1 = require("../controllers/healthController");
 const router = express_1.default.Router();
+/** Liveness — sem Supabase (probes Railway / balanceadores) */
+router.get('/live', (_req, res) => {
+    res.status(200).json({ status: 'ok', service: 'petivet-api' });
+});
 // Health check detalhado (requer autenticação de admin)
 router.get('/system', authMiddleware_1.authenticateUser, healthController_1.getSystemHealth);
 exports.default = router;

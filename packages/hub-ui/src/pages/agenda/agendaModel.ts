@@ -44,6 +44,8 @@ export type AgendaAppointment = {
   professionalName: string;
   resourceLabel: string;
   unitName: string;
+  /** UUID da unidade (agenda Hub); usado em checkout/caixa. */
+  unitId?: string | null;
   petName: string;
   guardianName: string;
   start: Date;

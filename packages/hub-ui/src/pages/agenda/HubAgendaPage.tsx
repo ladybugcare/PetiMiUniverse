@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -21,6 +21,8 @@ import { hubStaffApi } from '../../api/hubStaffApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
 import { hubServiceTypesApi } from '../../api/hubServiceTypesApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
+import { hubGuardiansApi } from '../../api/hubGuardiansApi';
+import { hubQuotesApi, type HubQuoteLine, type HubQuoteLineServiceEmbed } from '../../api/hubQuotesApi';
 import { AppointmentDetailPanel } from './AppointmentDetailPanel';
 import { NewAppointmentModal } from './NewAppointmentModal';
 import type { CreateHubAppointmentResult, NewAppointmentInitial } from './NewAppointmentModal';
@@ -50,9 +52,12 @@ import {
 } from './agendaModel';
 import { mapHubAppointmentToAgenda } from './mapHubAgenda';
 import { hubEncountersApi } from '../../api/hubClinicalApi';
+import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
+import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import {
   AGENDA_FILTERS_STORAGE_KEY,
   loadAgendaPersistedFilters,
+  isUuid,
   type AgendaPersistedFilters,
 } from './agendaFilters';
 
@@ -93,6 +98,16 @@ function savePersistedFilters(p: PersistedFilters) {
   }
 }
 
+function embedOne<T>(x: T | T[] | null | undefined): T | null {
+  if (x == null) return null;
+  return Array.isArray(x) ? (x[0] ?? null) : x;
+}
+
+function quoteLineServiceName(line: HubQuoteLine): string | null {
+  const svc = embedOne<HubQuoteLineServiceEmbed>(line.hub_service_types);
+  return svc?.name ?? line.description ?? null;
+}
+
 const HubAgendaPage: React.FC = () => {
   const navigate = useNavigate();
   const { showAlert, showInfo, showError, showConfirm } = useAlert();
@@ -104,6 +119,7 @@ const HubAgendaPage: React.FC = () => {
   const accessAllowed = hasPermission('hub.appointments.read');
   const canWrite = hasPermission('hub.appointments.write');
   const canClinicWrite = hasPermission('hub.clinic.write');
+  const canCreateReceivable = hasPermission('hub.receivables.create');
 
   const persisted = useMemo(() => loadPersistedFilters(), []);
 
@@ -138,8 +154,16 @@ const HubAgendaPage: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [createInitial, setCreateInitial] = useState<NewAppointmentInitial | null>(null);
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutAppointmentId, setCheckoutAppointmentId] = useState<string | null>(null);
+  const consumedQuoteRef = useRef<string | null>(null);
 
   const allAppointments = rawList;
+
+  const fullSvcTypesRef = useRef(fullSvcTypes);
+  fullSvcTypesRef.current = fullSvcTypes;
+  const cursorDateRef = useRef(cursorDate);
+  cursorDateRef.current = cursorDate;
 
   useEffect(() => {
     if (permLoading) return;
@@ -160,7 +184,9 @@ const HubAgendaPage: React.FC = () => {
   }, [unitFilter, professionalFilter, groupFilter, statusFilter, groupMode, resourceFilter, serviceTypeFilter]);
 
   useEffect(() => {
-    setSearchParams({ date: toYmd(cursorDate) }, { replace: true });
+    const next = new URLSearchParams(window.location.search);
+    next.set('date', toYmd(cursorDate));
+    setSearchParams(next, { replace: true });
   }, [cursorDate, setSearchParams]);
 
   const bumpReload = useCallback(() => setReloadToken((t) => t + 1), []);
@@ -214,6 +240,81 @@ const HubAgendaPage: React.FC = () => {
     },
     [showAlert, openCreateModal, focusAppointmentOnAgenda, bumpReload],
   );
+
+  const fromQuoteParam = searchParams.get('fromQuote');
+  const shouldOpenFromQuote = searchParams.get('openCreate') === '1';
+
+  useEffect(() => {
+    if (!clinicId || !fromQuoteParam || !shouldOpenFromQuote) return;
+    if (consumedQuoteRef.current === fromQuoteParam) return;
+    // Marca como consumido imediatamente (via ref, sem re-render) para evitar
+    // que mudanças benignas de estado/URL (ex.: sincronização do parâmetro
+    // `date`, carregamento de tipos de serviço ou o double-invoke do StrictMode)
+    // disparem novamente este efeito e cancelem o fetch em andamento.
+    consumedQuoteRef.current = fromQuoteParam;
+    (async () => {
+      try {
+        const { quote } = await hubQuotesApi.get(fromQuoteParam, clinicId);
+        const guardianPayload = quote.guardian_id
+          ? await hubGuardiansApi.getById(quote.guardian_id, clinicId).catch(() => null)
+          : null;
+        const guardian = guardianPayload?.guardian ?? null;
+        const pets = guardianPayload?.pets ?? [];
+        const quotePets = [...(quote.pets ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+        const firstQuotePet = quotePets[0] ?? null;
+        const matchedPet =
+          firstQuotePet && pets?.length
+            ? pets.find((p) => {
+                const quoteName = (firstQuotePet.display_name || '').trim().toLowerCase();
+                const petName = (p.name || '').trim().toLowerCase();
+                if (quoteName && petName === quoteName) return true;
+                return (
+                  String(p.species || '').toLowerCase() === String(firstQuotePet.species || '').toLowerCase() &&
+                  String((p as { breed?: string | null }).breed || '').toLowerCase() ===
+                    String((firstQuotePet as { breed?: string | null }).breed || '').toLowerCase()
+                );
+              }) ?? pets[0]
+            : pets?.[0] ?? null;
+
+        const initialServices = (quote.lines ?? [])
+          .filter((line) => line.hub_service_type_id)
+          .map((line) => {
+            const serviceType = fullSvcTypesRef.current.find((st) => st.id === line.hub_service_type_id);
+            return {
+              hub_service_type_id: line.hub_service_type_id!,
+              name: quoteLineServiceName(line) || serviceType?.name || 'Serviço',
+              duration_minutes: serviceType?.default_duration_minutes || 60,
+              pricing_variant: line.pricing_variant ?? null,
+            };
+          });
+
+        openCreateModal({
+          date: toYmd(cursorDateRef.current),
+          guardian_id: quote.guardian_id ?? null,
+          guardian_name: guardian?.full_name ?? null,
+          pet_id: matchedPet?.id ?? null,
+          pet_name: matchedPet?.name ?? firstQuotePet?.display_name ?? null,
+          services: initialServices,
+          title: `Orçamento #${quote.id.slice(0, 8).toUpperCase()}${matchedPet?.name ? ` - ${matchedPet.name}` : ''}`,
+          notes: quote.client_notes || null,
+          financial_notes: [`Origem: orçamento #${quote.id.slice(0, 8).toUpperCase()}`, quote.notes || null]
+            .filter(Boolean)
+            .join('\n'),
+          source_quote_id: quote.id,
+        });
+        showInfo(
+          quote.guardian_id && matchedPet
+            ? 'Agenda aberta com dados do orçamento.'
+            : 'Agenda aberta com dados do orçamento. Complete tutor/pet antes de salvar.',
+          'Orçamentos',
+        );
+      } catch (e: unknown) {
+        // Em caso de falha, libera a trava para permitir nova tentativa.
+        consumedQuoteRef.current = null;
+        showError((e as Error)?.message || 'Erro ao abrir agendamento do orçamento');
+      }
+    })();
+  }, [clinicId, fromQuoteParam, shouldOpenFromQuote, openCreateModal, showError, showInfo]);
 
   useEffect(() => {
     if (!pendingFocusId) return;
@@ -714,6 +815,31 @@ const HubAgendaPage: React.FC = () => {
     },
     [clinicId, canClinicWrite, navigate, showError],
   );
+
+  const handleOpenCheckout = useCallback(
+    (appointmentId: string) => {
+      if (!clinicId || !canCreateReceivable) return;
+      const appt =
+        filtered.find((x) => x.id === appointmentId) ?? allAppointments.find((x) => x.id === appointmentId) ?? null;
+      const unitResolved = appt?.unitId ?? (isUuid(unitFilter) ? unitFilter : null) ?? getSelectedUnitId();
+      if (!unitResolved) {
+        showError('Selecione uma unidade no filtro da agenda ou no cabeçalho para abrir o checkout.');
+        return;
+      }
+      setCheckoutAppointmentId(appointmentId);
+      setCheckoutOpen(true);
+    },
+    [clinicId, canCreateReceivable, filtered, allAppointments, unitFilter, showError],
+  );
+
+  const checkoutUnitId = useMemo(() => {
+    if (!checkoutAppointmentId) return null;
+    const appt =
+      filtered.find((x) => x.id === checkoutAppointmentId) ??
+      allAppointments.find((x) => x.id === checkoutAppointmentId) ??
+      null;
+    return appt?.unitId ?? (isUuid(unitFilter) ? unitFilter : null) ?? getSelectedUnitId();
+  }, [checkoutAppointmentId, filtered, allAppointments, unitFilter]);
 
   const duplicateSelectedAppointment = useCallback(() => {
     if (!selected) return;
@@ -1427,6 +1553,7 @@ const HubAgendaPage: React.FC = () => {
             onStatusChange={handleAppointmentStatusChange}
             onDuplicate={duplicateSelectedAppointment}
             onCancel={requestCancelSelected}
+            onOpenCheckout={canCreateReceivable ? handleOpenCheckout : undefined}
             onOpenInClinic={canClinicWrite ? handleOpenInClinic : undefined}
           />
         ) : null}
@@ -1440,6 +1567,24 @@ const HubAgendaPage: React.FC = () => {
         staffOptions={fullStaff}
         serviceTypes={fullSvcTypes}
       />
+
+      {clinicId && checkoutOpen && checkoutAppointmentId && checkoutUnitId ? (
+        <ComandaCheckoutDrawer
+          open={checkoutOpen}
+          onClose={() => {
+            setCheckoutOpen(false);
+            setCheckoutAppointmentId(null);
+          }}
+          clinicId={clinicId}
+          unitId={checkoutUnitId}
+          originType="appointment"
+          originId={checkoutAppointmentId}
+          onSuccess={() => {
+            bumpReload();
+            showInfo('Checkout concluído.', 'Financeiro');
+          }}
+        />
+      ) : null}
     </div>
   );
 };

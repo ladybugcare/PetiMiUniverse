@@ -41,6 +41,9 @@ import publicQuotesRoutes from './modules/hub/routes/publicQuotes.js';
 // 🔹 Inicializa o Express
 const app = express();
 
+// Reverse proxy (Railway, Vercel, etc.): IP real do cliente para rate limit e logs
+app.set('trust proxy', 1);
+
 // 🔹 Helmet.js - Headers de segurança HTTP
 app.use(
   helmet({

@@ -26,6 +26,7 @@ const HubClinicPrescriptionsPage: React.FC = () => {
               <th>Posologia</th>
               <th>Pet</th>
               <th>Data</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -35,6 +36,17 @@ const HubClinicPrescriptionsPage: React.FC = () => {
                 <td>{String(p.posology || '—')}</td>
                 <td>{String(p.pet_id || '').slice(0, 8)}…</td>
                 <td>{String(p.created_at || '').slice(0, 10)}</td>
+                <td>
+                  {clinicId ? (
+                    <button
+                      type="button"
+                      className="hub-clientes__btn hub-clientes__btn--ghost"
+                      onClick={() => hubClinicalApi.openPrescriptionPdf(String(p.id), clinicId)}
+                    >
+                      Imprimir receita
+                    </button>
+                  ) : null}
+                </td>
               </tr>
             ))}
           </tbody>

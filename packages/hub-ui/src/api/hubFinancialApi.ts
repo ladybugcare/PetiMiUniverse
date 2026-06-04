@@ -1,8 +1,9 @@
-import { apiRequest } from '@petimi/web-core';
+import { apiRequest, getApiBaseUrl, getSupabase } from '@petimi/web-core';
 
 const base = '/api/hub/finance';
 
-export type HubFinanceUnbilledSourceType = 'grooming_session' | 'encounter' | 'quote';
+export type HubFinanceUnbilledSourceType = 'grooming_session' | 'encounter' | 'quote' | 'appointment';
+export type HubFinanceReceivableSourceType = HubFinanceUnbilledSourceType | 'manual';
 
 export type HubFinanceUnbilledItem = {
   source_type: HubFinanceUnbilledSourceType;
@@ -22,6 +23,7 @@ export type HubFinanceReceivable = {
   clinic_id: string;
   unit_id: string | null;
   guardian_id: string | null;
+  guardian?: { id: string; full_name: string } | null;
   source_type: string;
   source_id: string;
   original_amount: number;
@@ -31,17 +33,68 @@ export type HubFinanceReceivable = {
   due_date?: string | null;
   notes?: string | null;
   created_at: string;
-  lines?: unknown[];
+  lines?: Array<{
+    id: string;
+    line_kind: string;
+    description: string;
+    quantity: number;
+    unit_sale_amount: number;
+    line_total: number;
+    hub_service_type_id?: string | null;
+    hub_inventory_item_id?: string | null;
+    hub_inventory_lot_id?: string | null;
+    pet_id?: string | null;
+    pet?: { name: string } | null;
+    service_type?: { id: string; name: string; code?: string; service_group?: string } | null;
+    inventory_item?: { id: string; name: string; sku?: string | null } | null;
+    inventory_lot?: { id: string; lot_code?: string | null; expires_at?: string | null } | null;
+  }>;
+};
+
+export type HubFinancePayment = {
+  id: string;
+  clinic_id: string;
+  receivable_id: string;
+  cash_session_id?: string | null;
+  amount: number;
+  payment_method: HubPaymentMethod;
+  installments?: number;
+  payment_date: string;
+  notes?: string | null;
+  created_by_user_id?: string | null;
+  created_at?: string;
+};
+
+export type HubFinanceAdjustment = {
+  id: string;
+  adjustment_type: string;
+  amount: number;
+  reason?: string | null;
+  created_by_user_id?: string | null;
+  created_at: string;
+};
+
+export type HubFinanceReceivableDetail = HubFinanceReceivable & {
+  guardian?: { id: string; full_name: string; phone?: string | null; email?: string | null } | null;
+  unit?: { id: string; name?: string | null; nickname?: string | null } | null;
+  source?: Record<string, unknown> | null;
+  payments?: HubFinancePayment[];
+  adjustments?: HubFinanceAdjustment[];
+  paid_amount?: number;
+  balance_amount?: number;
 };
 
 export type HubFinanceDashboardSummary = {
   period: { from: string; to: string };
   pending_billing_count: number;
+  receivables_pending_count?: number;
   receivables_open_count: number;
   receivables_outstanding: number;
   payments_total_period: number;
   expenses_total_period: number;
   net_operational_period: number;
+  /** Pets distintos com agendamento no período (início do slot dentro do intervalo; exclui cancelados). */
+  pets_attended_distinct?: number;
 };
 
 export type HubFinanceCashFlowDay = {
@@ -61,6 +114,15 @@ export type HubFinanceExpenseCategory =
   | 'rent'
   | 'marketing'
   | 'other';
+
+export type HubPaymentMethod =
+  | 'pix'
+  | 'cash'
+  | 'credit_card'
+  | 'debit_card'
+  | 'transfer'
+  | 'payment_link'
+  | 'customer_credit';
 
 export type HubFinanceExpense = {
   id: string;
@@ -82,6 +144,31 @@ export type HubCashSession = {
   status: string;
   opening_balance?: number;
   opened_at?: string;
+  closed_at?: string | null;
+  expected_balance?: number | null;
+  closing_balance?: number | null;
+  difference_amount?: number | null;
+};
+
+export type HubCashSessionSummary = {
+  cash_session: HubCashSession;
+  payments: Array<HubFinancePayment & { receivable?: Partial<HubFinanceReceivable> | null }>;
+  movements: Array<{
+    id: string;
+    movement_type: 'withdrawal' | 'deposit' | 'opening_adjustment';
+    amount: number;
+    notes?: string | null;
+    created_at: string;
+  }>;
+  summary: {
+    opening_balance: number;
+    cash_payments_total: number;
+    cash_payments_from_receivables?: number;
+    credit_cash_in_total?: number;
+    deposits_total: number;
+    withdrawals_total: number;
+    expected_balance: number;
+  };
 };
 
 export type HubCommissionBasis = 'percent_of_sale' | 'fixed_per_sale';
@@ -119,6 +206,37 @@ export type HubCommissionPreviewResponse = {
   total_commission: number;
 };
 
+export type HubFinanceRevenueReport = {
+  period: { from: string; to: string };
+  total: number;
+  by_method: Record<string, number>;
+};
+
+export type HubFinanceTicketAverageReport = {
+  period: { from: string; to: string };
+  receivables_count: number;
+  total: number;
+  ticket_average: number;
+};
+
+export type HubFinanceTopServicesReport = {
+  period: { from: string; to: string };
+  items: Array<{ service_id: string; name: string; quantity: number; total: number }>;
+};
+
+export type HubFinanceRevenueSeriesPoint = { key: string; label: string; amount: number };
+
+export type HubFinanceRevenueSeriesReport = {
+  period: { from: string; to: string };
+  bucket: 'day' | 'week' | 'month';
+  points: HubFinanceRevenueSeriesPoint[];
+};
+
+export type HubFinanceAgingReport = {
+  as_of: string;
+  buckets: Record<string, { count: number; total: number }>;
+};
+
 export const hubFinancialApi = {
   async getPendingBillingCount(clinicId: string, unitId?: string | null): Promise<number> {
     const q = new URLSearchParams({ clinic_id: clinicId });
@@ -151,13 +269,87 @@ export const hubFinancialApi = {
 
   async createReceivable(body: {
     clinic_id: string;
-    source_type: HubFinanceUnbilledSourceType;
-    source_id: string;
+    source_type: HubFinanceReceivableSourceType;
+    source_id?: string;
+    unit_id?: string | null;
+    guardian_id?: string | null;
+    due_date?: string | null;
     notes?: string | null;
+    lines?: Array<{ description: string; quantity?: number; unit_sale_amount: number }>;
   }): Promise<{ receivable: HubFinanceReceivable }> {
     return apiRequest(`${base}/receivables`, { method: 'POST', body: JSON.stringify(body) }) as Promise<{
       receivable: HubFinanceReceivable;
     }>;
+  },
+
+  async getReceivableDetail(receivableId: string, clinicId: string): Promise<HubFinanceReceivableDetail> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    const res = (await apiRequest(`${base}/receivables/${encodeURIComponent(receivableId)}?${q}`)) as {
+      receivable?: HubFinanceReceivableDetail;
+    };
+    if (!res.receivable) throw new Error('Recebível não encontrado');
+    return res.receivable;
+  },
+
+  async addReceivableProductLine(
+    receivableId: string,
+    body: {
+      clinic_id: string;
+      item_id: string;
+      lot_id: string;
+      quantity: number;
+      unit_sale_amount: number;
+      description?: string | null;
+      notes?: string | null;
+    }
+  ): Promise<{ receivable: HubFinanceReceivable }> {
+    return apiRequest(`${base}/receivables/${encodeURIComponent(receivableId)}/product-lines`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ receivable: HubFinanceReceivable }>;
+  },
+
+  async removeReceivableProductLine(receivableId: string, lineId: string, clinicId: string): Promise<{ receivable: HubFinanceReceivable }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${base}/receivables/${encodeURIComponent(receivableId)}/product-lines/${encodeURIComponent(lineId)}?${q}`, {
+      method: 'DELETE',
+    }) as Promise<{ receivable: HubFinanceReceivable }>;
+  },
+
+  async cancelReceivable(receivableId: string, body: { clinic_id: string; reason: string }): Promise<{ receivable: HubFinanceReceivable }> {
+    return apiRequest(`${base}/receivables/${encodeURIComponent(receivableId)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ receivable: HubFinanceReceivable }>;
+  },
+
+  async createReceivablePayment(
+    receivableId: string,
+    body: {
+      clinic_id: string;
+      amount: number;
+      payment_method: HubPaymentMethod;
+      installments?: number;
+      notes?: string | null;
+      cash_session_id?: string | null;
+    }
+  ): Promise<{ payment: Record<string, unknown>; receivable_status: string }> {
+    return apiRequest(`${base}/receivables/${encodeURIComponent(receivableId)}/payments`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ payment: Record<string, unknown>; receivable_status: string }>;
+  },
+
+  async reversePayment(paymentId: string, body: { clinic_id: string; reason: string }): Promise<{ ok: boolean; receivable_status: string; warning?: string | null }> {
+    return apiRequest(`${base}/payments/${encodeURIComponent(paymentId)}/reverse`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ ok: boolean; receivable_status: string; warning?: string | null }>;
+  },
+
+  async getCashSessionSummary(sessionId: string, clinicId: string): Promise<HubCashSessionSummary> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${base}/cash-sessions/${encodeURIComponent(sessionId)}/summary?${q}`) as Promise<HubCashSessionSummary>;
   },
 
   async waiveBilling(body: {
@@ -220,6 +412,61 @@ export const hubFinancialApi = {
       period: { from: string; to: string };
       days: HubFinanceCashFlowDay[];
     }>;
+  },
+
+  async getRevenueReport(
+    clinicId: string,
+    unitId: string,
+    opts?: { days?: number; from?: string; to?: string }
+  ): Promise<HubFinanceRevenueReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    return apiRequest(`${base}/reports/revenue?${q}`) as Promise<HubFinanceRevenueReport>;
+  },
+
+  async getRevenueSeries(
+    clinicId: string,
+    unitId: string,
+    opts?: { days?: number; from?: string; to?: string; bucket?: 'day' | 'week' | 'month' }
+  ): Promise<HubFinanceRevenueSeriesReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    if (opts?.bucket) q.set('bucket', opts.bucket);
+    return apiRequest(`${base}/reports/revenue-series?${q}`) as Promise<HubFinanceRevenueSeriesReport>;
+  },
+
+  async getTicketAverageReport(
+    clinicId: string,
+    unitId: string,
+    opts?: { days?: number; from?: string; to?: string }
+  ): Promise<HubFinanceTicketAverageReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    return apiRequest(`${base}/reports/ticket-average?${q}`) as Promise<HubFinanceTicketAverageReport>;
+  },
+
+  async getTopServicesReport(
+    clinicId: string,
+    unitId: string,
+    opts?: { days?: number; from?: string; to?: string }
+  ): Promise<HubFinanceTopServicesReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    return apiRequest(`${base}/reports/top-services?${q}`) as Promise<HubFinanceTopServicesReport>;
+  },
+
+  async getAgingReport(clinicId: string, unitId: string, opts?: { as_of?: string }): Promise<HubFinanceAgingReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.as_of) q.set('as_of', opts.as_of);
+    return apiRequest(`${base}/reports/aging?${q}`) as Promise<HubFinanceAgingReport>;
   },
 
   async listExpenses(
@@ -309,4 +556,71 @@ export const hubFinancialApi = {
     const q = new URLSearchParams({ clinic_id: clinicId, receivable_id: receivableId });
     return apiRequest(`${base}/commission-preview?${q}`) as Promise<HubCommissionPreviewResponse>;
   },
+
+  async listClosedCashSessions(
+    clinicId: string,
+    unitId: string,
+    limit = 20
+  ): Promise<{ sessions: HubCashSession[] }> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId, limit: String(limit) });
+    return apiRequest(`${base}/cash-sessions/closed?${q}`) as Promise<{ sessions: HubCashSession[] }>;
+  },
+
+  async postCreditMovement(body: {
+    clinic_id: string;
+    guardian_id: string;
+    direction: 'in' | 'out';
+    amount: number;
+    reason: string;
+    comanda_id?: string | null;
+    receivable_id?: string | null;
+    payment_method?: 'pix' | 'cash' | 'credit_card' | 'debit_card' | 'transfer' | 'payment_link' | 'other';
+    cash_session_id?: string | null;
+    notes?: string | null;
+  }): Promise<{ movement: Record<string, unknown> }> {
+    return apiRequest(`${base}/credit-movements`, { method: 'POST', body: JSON.stringify(body) }) as Promise<{
+      movement: Record<string, unknown>;
+    }>;
+  },
+
+  async getCreditBalance(clinicId: string, guardianId: string): Promise<{ balance: number; movements_count: number }> {
+    const q = new URLSearchParams({ clinic_id: clinicId, guardian_id: guardianId });
+    return apiRequest(`${base}/credit-balance?${q}`) as Promise<{ balance: number; movements_count: number }>;
+  },
+
+  async listPackages(clinicId: string): Promise<{ packages: Array<Record<string, unknown>> }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${base}/packages?${q}`) as Promise<{ packages: Array<Record<string, unknown>> }>;
+  },
+
+  async createPackage(body: {
+    clinic_id: string;
+    name: string;
+    hub_service_type_id?: string | null;
+    sessions_total: number;
+    price: number;
+    validity_days?: number | null;
+    notes?: string | null;
+  }): Promise<{ package: Record<string, unknown> }> {
+    return apiRequest(`${base}/packages`, { method: 'POST', body: JSON.stringify(body) }) as Promise<{ package: Record<string, unknown> }>;
+  },
 };
+
+async function fetchHubPaymentReceiptPdfBlob(paymentId: string, clinicId: string): Promise<Blob> {
+  const token = (await getSupabase().auth.getSession()).data.session?.access_token;
+  if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+  const url = `${getApiBaseUrl()}${base}/payments/${encodeURIComponent(paymentId)}/receipt?${new URLSearchParams({ clinic_id: clinicId })}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string })?.error || 'Falha ao gerar comprovante');
+  }
+  return res.blob();
+}
+
+export async function openHubPaymentReceiptPdf(paymentId: string, clinicId: string): Promise<void> {
+  const blob = await fetchHubPaymentReceiptPdfBlob(paymentId, clinicId);
+  const objectUrl = URL.createObjectURL(blob);
+  window.open(objectUrl, '_blank', 'noopener,noreferrer');
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+}

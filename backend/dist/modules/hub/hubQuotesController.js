@@ -1328,6 +1328,11 @@ const convertHubQuote = async (req, res) => {
                 await supabase_1.supabaseAdmin.from('hub_pets').delete().eq('id', pet.id);
                 return res.status(500).json({ error: 'Erro ao associar pet ao tutor' });
             }
+            await supabase_1.supabaseAdmin
+                .from('hub_quote_pets')
+                .update({ hub_pet_id: pet.id })
+                .eq('id', p.id)
+                .eq('quote_id', idParsed.data);
         }
         const now = new Date().toISOString();
         const { data: updated, error: finErr } = await supabase_1.supabaseAdmin
@@ -1460,6 +1465,13 @@ const finalizeManualConversionHubQuote = async (req, res) => {
                     error: 'Cada pet deve estar associado ao tutor como responsável principal.',
                 });
             }
+        }
+        for (const l of manual_pet_links) {
+            await supabase_1.supabaseAdmin
+                .from('hub_quote_pets')
+                .update({ hub_pet_id: l.hub_pet_id })
+                .eq('id', l.quote_pet_id)
+                .eq('quote_id', idParsed.data);
         }
         const now = new Date().toISOString();
         const { data: updated, error: finErr } = await supabase_1.supabaseAdmin

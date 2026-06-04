@@ -19,6 +19,8 @@ export type AppointmentDetailPanelProps = {
   onStatusChange: (status: AgendaStatus) => void | Promise<void>;
   onDuplicate: () => void;
   onCancel: () => void;
+  /** Abre o drawer de checkout (comanda) para este agendamento. */
+  onOpenCheckout?: (appointmentId: string) => void | Promise<void>;
   /** Abre atendimento clínico (serviços do grupo clínica). */
   onOpenInClinic?: (appointmentId: string) => void | Promise<void>;
 };
@@ -63,7 +65,7 @@ function buildPanelActions(
     onConfirm: () => void;
     onCheckIn: () => void;
     onComplete: () => void;
-    onMarkPaid: () => void;
+    onOpenCheckout: () => void;
     onDuplicate: () => void;
     onCancel: () => void;
   },
@@ -113,7 +115,7 @@ function buildPanelActions(
     case 'done':
       return {
         primary: canWrite
-          ? { key: 'paid', label: 'Marcar pago', variant: 'primary', onClick: handlers.onMarkPaid }
+          ? { key: 'open-checkout', label: 'Abrir checkout', variant: 'primary', onClick: handlers.onOpenCheckout }
           : null,
         secondary: canWrite ? dup : null,
         menu: [],
@@ -142,6 +144,7 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
   onStatusChange,
   onDuplicate,
   onCancel,
+  onOpenCheckout,
   onOpenInClinic,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -169,14 +172,20 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
       onConfirm: () => void onStatusChange('confirmed'),
       onCheckIn: () => void onStatusChange('in_progress'),
       onComplete: () => void onStatusChange('done'),
-      onMarkPaid: () => void onStatusChange('paid'),
+      onOpenCheckout: () => void onOpenCheckout?.(appt.id),
       onDuplicate,
       onCancel,
     }),
-    [onStatusChange, onDuplicate, onCancel],
+    [onStatusChange, onOpenCheckout, appt.id, onDuplicate, onCancel],
   );
 
-  const { primary, secondary, menu } = buildPanelActions(appt.status, canWrite, handlers);
+  const { primary, secondary, menu } = useMemo(() => {
+    const base = buildPanelActions(appt.status, canWrite, handlers);
+    if (appt.status === 'done' && !onOpenCheckout) {
+      return { ...base, primary: null };
+    }
+    return base;
+  }, [appt.status, canWrite, handlers, onOpenCheckout]);
 
   const secondaryAsButton =
     secondary && secondary.key === 'duplicate'

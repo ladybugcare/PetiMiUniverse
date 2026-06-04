@@ -15,7 +15,9 @@ function isRateLimitDisabled() {
 function shouldSkipRateLimit(req) {
     if (isRateLimitDisabled())
         return true;
-    return req.path === '/' || req.path === '/health';
+    return (req.path === '/' ||
+        req.path === '/health' ||
+        req.path === '/health/live');
 }
 /**
  * Rate limiter geral para todas as rotas

@@ -1,0 +1,10 @@
+---
+description: Idioma fixo pt-BR — respostas e textos do projeto em português do Brasil
+alwaysApply: true
+---
+
+# Português do Brasil (pt-BR)
+
+- Responda **sempre** em **português do Brasil** (pt-BR): vocabulário, registro e gramática brasileiros.
+- O projeto é **brasileiro**: não use português de Portugal em explicações, documentação, strings de interface, comentários ou qualquer texto que produza neste repositório.
+- Evite léxico e construções europeias (Portugal); alinhe-se ao padrão brasileiro de escrita técnica e coloquial conforme o contexto.

@@ -3,12 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getHubClinicalAlerts = exports.applyHubClinicalTemplate = exports.createHubClinicalTemplate = exports.listHubClinicalTemplates = exports.patchHubSurgery = exports.createHubSurgery = exports.listHubSurgeries = exports.addHubHospitalizationDailyNote = exports.patchHubHospitalization = exports.createHubHospitalization = exports.listHubHospitalizations = exports.createHubHospitalBed = exports.listHubHospitalBeds = exports.uploadHubClinicalAttachment = exports.createHubClinicalAttachment = exports.listHubClinicalAttachments = exports.createHubVaccination = exports.listHubVaccinations = exports.createHubPrescription = exports.listHubPrescriptions = exports.createHubEncounterEvent = exports.listHubEncounterEvents = exports.upsertHubPetClinicalFlag = exports.listHubPetClinicalFlags = void 0;
+exports.getHubClinicalAlerts = exports.applyHubClinicalTemplate = exports.createHubClinicalTemplate = exports.listHubClinicalTemplates = exports.patchHubSurgery = exports.createHubSurgery = exports.listHubSurgeries = exports.addHubHospitalizationDailyNote = exports.patchHubHospitalization = exports.createHubHospitalization = exports.listHubHospitalizations = exports.createHubHospitalBed = exports.listHubHospitalBeds = exports.uploadHubClinicalAttachment = exports.createHubClinicalAttachment = exports.listHubClinicalAttachments = exports.createHubVaccination = exports.listHubVaccinations = exports.getHubPrescriptionPdf = exports.createHubPrescription = exports.listHubPrescriptions = exports.createHubEncounterEvent = exports.listHubEncounterEvents = exports.upsertHubPetClinicalFlag = exports.listHubPetClinicalFlags = void 0;
 const multer_1 = __importDefault(require("multer"));
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubClinicalFileUpload_js_1 = require("../../utils/hubClinicalFileUpload.js");
 const supabaseSchemaErrors_js_1 = require("../../utils/supabaseSchemaErrors.js");
+const hubPrescriptionPdf_1 = require("./hubPrescriptionPdf");
 const uuidStr = zod_1.z.string().uuid();
 // ── Pet clinical flags ───────────────────────────────────────────────────────
 const flagKeySchema = zod_1.z.enum(['allergy', 'cardiac', 'aggressive', 'diabetic', 'epileptic', 'other']);
@@ -225,6 +226,46 @@ const createHubPrescription = async (req, res) => {
     return res.status(201).json({ prescription: { ...rx, items: insertItems } });
 };
 exports.createHubPrescription = createHubPrescription;
+const getHubPrescriptionPdf = async (req, res) => {
+    const id = uuidStr.safeParse(req.params.id);
+    const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+    if (!id.success || !clinic_id.success)
+        return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+    const { data: rx, error } = await supabase_1.supabaseAdmin
+        .from('hub_prescriptions')
+        .select(`
+      *,
+      clinic:clinics(name, phone, email),
+      pet:hub_pets(name, species, breed),
+      staff:hub_staff_members(full_name, crmv, crmv_uf)
+    `)
+        .eq('id', id.data)
+        .eq('clinic_id', clinic_id.data)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (error)
+        return res.status(500).json({ error: error.message });
+    if (!rx)
+        return res.status(404).json({ error: 'Prescrição não encontrada' });
+    const [{ data: items, error: itemsErr }, { data: petGuardian }] = await Promise.all([
+        supabase_1.supabaseAdmin
+            .from('hub_prescription_items')
+            .select('*')
+            .eq('prescription_id', id.data)
+            .order('order_index'),
+        supabase_1.supabaseAdmin
+            .from('hub_pet_guardians')
+            .select('guardian:hub_guardians(full_name, phone)')
+            .eq('pet_id', rx.pet_id)
+            .order('role', { ascending: true })
+            .limit(1),
+    ]);
+    if (itemsErr)
+        return res.status(500).json({ error: itemsErr.message });
+    const guardianEmbed = petGuardian?.[0]?.guardian ?? null;
+    (0, hubPrescriptionPdf_1.streamPrescriptionPdf)(res, { ...rx, items: items ?? [], guardian: guardianEmbed });
+};
+exports.getHubPrescriptionPdf = getHubPrescriptionPdf;
 // ── Vaccinations ────────────────────────────────────────────────────────────
 const listHubVaccinations = async (req, res) => {
     const clinic_id = uuidStr.safeParse(req.query.clinic_id);

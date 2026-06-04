@@ -680,6 +680,17 @@ const listQuerySchema = z.object({
   resource_label: z.string().trim().max(120).optional(),
 });
 
+const statsByServiceGroupQuerySchema = z
+  .object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr,
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    hub_staff_member_id: z.union([uuidStr, z.literal('__na__')]).optional(),
+    hub_service_type_id: uuidStr.optional(),
+  })
+  .strict();
+
 const linePricingVariantSchema = z
   .object({
     km_tier_index: z.number().int().min(0).optional(),
@@ -838,6 +849,80 @@ export const listHubAppointments = async (req: Request, res: Response) => {
   } catch (e: unknown) {
     console.error('listHubAppointments', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro ao listar agendamentos' });
+  }
+};
+
+const SERVICE_GROUP_LABELS: Record<string, string> = {
+  clinica: 'Clínica',
+  banho_tosa: 'Banho & Tosa',
+  hotel: 'Hotel',
+  creche: 'Creche',
+  leva_traz: 'Leva e Traz',
+  cirurgia: 'Cirurgia',
+  internacao: 'Internação',
+  outros: 'Outros',
+};
+
+/** Contagem de agendamentos no intervalo por `hub_service_types.service_group` (slot sobrepõe [from,to]). */
+export const getHubAppointmentsStatsByServiceGroup = async (req: Request, res: Response) => {
+  try {
+    const parsed = statsByServiceGroupQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+    const { clinic_id, unit_id, from, to, hub_staff_member_id, hub_service_type_id } = parsed.data;
+    if (from > to) return res.status(400).json({ error: 'from não pode ser maior que to' });
+    const fromIso = `${from}T00:00:00.000Z`;
+    const toIso = `${to}T23:59:59.999Z`;
+
+    let q = supabaseAdmin
+      .from('hub_appointments')
+      .select('hub_service_type_id')
+      .eq('clinic_id', clinic_id)
+      .is('deleted_at', null)
+      .neq('status', 'cancelled')
+      .lt('starts_at', toIso)
+      .gt('ends_at', fromIso)
+      .or(`unit_id.eq.${unit_id},unit_id.is.null`);
+    if (hub_service_type_id) q = q.eq('hub_service_type_id', hub_service_type_id);
+    if (hub_staff_member_id === '__na__') q = q.is('hub_staff_member_id', null);
+    else if (hub_staff_member_id) q = q.eq('hub_staff_member_id', hub_staff_member_id);
+
+    const { data: rows, error } = await q;
+    if (error) return res.status(500).json({ error: error.message });
+    const typeIds = [...new Set((rows ?? []).map((r) => r.hub_service_type_id as string).filter(Boolean))];
+    if (typeIds.length === 0) {
+      return res.json({ period: { from, to }, items: [] as { service_group: string; label: string; count: number }[] });
+    }
+    const { data: types, error: te } = await supabaseAdmin
+      .from('hub_service_types')
+      .select('id, service_group')
+      .in('id', typeIds);
+    if (te) return res.status(500).json({ error: te.message });
+    const groupByType = new Map<string, string>();
+    for (const t of types ?? []) {
+      const raw = String((t as { service_group?: string }).service_group ?? '').trim();
+      const gid = raw || 'outros';
+      groupByType.set(t.id as string, gid);
+    }
+    const counts = new Map<string, number>();
+    for (const r of rows ?? []) {
+      const tid = r.hub_service_type_id as string | null;
+      if (!tid) continue;
+      const g = groupByType.get(tid) ?? 'outros';
+      counts.set(g, (counts.get(g) ?? 0) + 1);
+    }
+    const items = [...counts.entries()]
+      .map(([service_group, count]) => ({
+        service_group,
+        label: SERVICE_GROUP_LABELS[service_group] ?? service_group.replace(/_/g, ' '),
+        count,
+      }))
+      .sort((a, b) => b.count - a.count);
+    return res.json({ period: { from, to }, items });
+  } catch (e: unknown) {
+    console.error('getHubAppointmentsStatsByServiceGroup', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };
 

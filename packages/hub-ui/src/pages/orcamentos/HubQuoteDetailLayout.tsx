@@ -16,6 +16,7 @@ import {
   staffStatusClass,
   staffStatusLabel,
 } from './hubQuoteViewUtils';
+import { waMeBaseUrl } from './hubQuoteShareUtils';
 import {
   Calendar,
   ChevronRight,
@@ -38,13 +39,6 @@ import {
   User,
   Users,
 } from 'lucide-react';
-
-function waMeUrl(phone: string): string | null {
-  const d = phone.replace(/\D/g, '');
-  if (d.length < 10) return null;
-  const n = d.length <= 11 && !d.startsWith('55') ? `55${d}` : d;
-  return `https://wa.me/${n}`;
-}
 
 function daysUntilExpiry(quote: HubQuote): string | null {
   if (!quote.expires_at) return null;
@@ -76,12 +70,20 @@ export interface HubQuoteDetailLayoutProps {
   onDeleteDraft: () => void;
   onOpenPdf: () => void;
   onCopyPublic: () => void;
+  /** Abre o link público do orçamento em nova aba (garante token se necessário). */
+  onShareOpenPublic: () => void;
+  /** Abre WhatsApp com mensagem padrão (link + validade). */
+  onShareWhatsAppWithMessage: () => void;
   /** Abre fluxo guiado em Clientes (e pets); `linkGuardianId` quando associar tutor existente (CPF duplicado). */
   onGuidedConvert: (linkGuardianId?: string) => void;
   /** Conversão instantânea (cria tutor + pets) — menu «Mais». */
   onQuickConvert?: () => void;
-  /** Gera recebível no financeiro (orçamento aceite, aguardando cobrança). */
-  onGenerateReceivable?: () => void;
+  /** Abre checkout (comanda) para faturar o orçamento aceite. */
+  onOpenCheckout?: () => void;
+  /** Abre o recebível já criado para este orçamento no financeiro. */
+  onOpenReceivable?: () => void;
+  /** Abre a agenda já em modo de criação a partir deste orçamento. */
+  onCreateAppointmentFromQuote?: () => void;
 }
 
 const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
@@ -102,9 +104,13 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
   onDeleteDraft,
   onOpenPdf,
   onCopyPublic,
+  onShareOpenPublic,
+  onShareWhatsAppWithMessage,
   onGuidedConvert,
   onQuickConvert,
-  onGenerateReceivable,
+  onOpenCheckout,
+  onOpenReceivable,
+  onCreateAppointmentFromQuote,
 }) => {
   const { showSuccess, showError } = useAlert();
   const prospect = embedOne(quote.prospect);
@@ -191,8 +197,13 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
     }
   };
 
-  const wa = prospect?.phone ? waMeUrl(prospect.phone) : null;
+  const wa = prospect?.phone ? waMeBaseUrl(prospect.phone) : null;
+  const shareWhatsAppEnabled = Boolean(wa);
   const telHref = prospect?.phone ? `tel:${prospect.phone.replace(/\D/g, '')}` : null;
+
+  const closeShareDetails = (e: React.MouseEvent<HTMLElement>) => {
+    e.currentTarget.closest('details')?.removeAttribute('open');
+  };
 
   const metaParts: string[] = [];
   if (quote.created_at) {
@@ -234,16 +245,16 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
                 Enviar orçamento
               </button>
             ) : null}
-            {canWrite && quote.status === 'accepted' && onGenerateReceivable ? (
+            {canWrite && quote.status === 'accepted' && onOpenCheckout ? (
               <button
                 type="button"
                 className="hub-quote-detail__btn hub-quote-detail__btn--primary"
                 disabled={saving}
-                onClick={onGenerateReceivable}
-                title="Criar recebível a partir deste orçamento"
+                onClick={onOpenCheckout}
+                title="Conferir itens e registrar pagamento ou pendência"
               >
                 <Receipt size={18} strokeWidth={2} aria-hidden />
-                Gerar cobrança
+                Abrir checkout
               </button>
             ) : null}
             {canWrite && isDraft ? (
@@ -279,27 +290,78 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
                 <span className="hub-quote-detail__btn-text">Duplicar</span>
               </button>
             ) : null}
-            <button type="button" className="hub-quote-detail__btn hub-quote-detail__btn--outline" disabled={saving} onClick={onOpenPdf} title="PDF">
-              <FileDown size={18} strokeWidth={2} aria-hidden />
-              <span className="hub-quote-detail__btn-text">PDF</span>
-            </button>
-            {canWrite ? (
-              <button
-                type="button"
-                className="hub-quote-detail__btn hub-quote-detail__btn--outline"
-                disabled={saving}
-                onClick={onCopyPublic}
-                title="Copiar link público"
-              >
-                <Share2 size={18} strokeWidth={2} aria-hidden />
-                <span className="hub-quote-detail__btn-text">Compartilhar</span>
+            {!canWrite ? (
+              <button type="button" className="hub-quote-detail__btn hub-quote-detail__btn--outline" disabled={saving} onClick={onOpenPdf} title="PDF">
+                <FileDown size={18} strokeWidth={2} aria-hidden />
+                <span className="hub-quote-detail__btn-text">PDF</span>
               </button>
             ) : null}
-            {wa ? (
-              <a href={wa} target="_blank" rel="noopener noreferrer" className="hub-quote-detail__btn hub-quote-detail__btn--outline" title="WhatsApp">
-                <MessageCircle size={18} strokeWidth={2} aria-hidden />
-                <span className="hub-quote-detail__btn-text">WhatsApp</span>
-              </a>
+            {canWrite ? (
+              <details className="hub-quote-detail__more hub-quote-detail__share-wrap">
+                <summary
+                  className="hub-quote-detail__btn hub-quote-detail__btn--outline hub-quote-detail__more-summary"
+                  aria-label="Compartilhar orçamento"
+                >
+                  <Share2 size={18} strokeWidth={2} aria-hidden />
+                  <span className="hub-quote-detail__btn-text">Compartilhar</span>
+                </summary>
+                <div className="hub-quote-detail__more-panel">
+                  {!isDraft ? (
+                    <Link
+                      to={`/hub/orcamentos/${quoteId}/pronto-para-envio`}
+                      className="hub-quote-detail__more-item"
+                      onClick={closeShareDetails}
+                    >
+                      Ver mensagem pronta para envio
+                    </Link>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="hub-quote-detail__more-item"
+                    disabled={saving}
+                    onClick={(e) => {
+                      void onCopyPublic();
+                      closeShareDetails(e);
+                    }}
+                  >
+                    Copiar link público
+                  </button>
+                  <button
+                    type="button"
+                    className="hub-quote-detail__more-item"
+                    disabled={saving}
+                    onClick={(e) => {
+                      void onShareOpenPublic();
+                      closeShareDetails(e);
+                    }}
+                  >
+                    Abrir orçamento público
+                  </button>
+                  <button
+                    type="button"
+                    className="hub-quote-detail__more-item"
+                    disabled={saving}
+                    onClick={(e) => {
+                      onOpenPdf();
+                      closeShareDetails(e);
+                    }}
+                  >
+                    Baixar ou abrir PDF
+                  </button>
+                  <button
+                    type="button"
+                    className="hub-quote-detail__more-item"
+                    disabled={saving || !shareWhatsAppEnabled}
+                    title={!shareWhatsAppEnabled ? 'Cadastre um telefone válido no contato' : undefined}
+                    onClick={(e) => {
+                      void onShareWhatsAppWithMessage();
+                      closeShareDetails(e);
+                    }}
+                  >
+                    WhatsApp com mensagem
+                  </button>
+                </div>
+              </details>
             ) : null}
             {canWrite ? (
               <details className="hub-quote-detail__more">
@@ -608,13 +670,39 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
                 <Users size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
                 <div>
                   <h2 className="hub-quote-detail__card-title">Converter orçamento</h2>
-                  <p className="hub-quote-detail__card-sub">Converta este orçamento em registos oficiais quando o cliente aceitar.</p>
+                  <p className="hub-quote-detail__card-sub">Converta este orçamento em registros oficiais quando o cliente aceitar.</p>
                 </div>
               </div>
               {quote.status === 'accepted' && quote.guardian_id ? (
-                <Link to={`/hub/clientes/${quote.guardian_id}`} className="hub-quote-detail__btn hub-quote-detail__btn--primary hub-quote-detail__btn--block">
-                  Ver tutor
-                </Link>
+                <>
+                  <Link to={`/hub/clientes/${quote.guardian_id}`} className="hub-quote-detail__btn hub-quote-detail__btn--primary hub-quote-detail__btn--block">
+                    Ver tutor
+                  </Link>
+                  <div className="hub-quote-detail__convert-grid">
+                    <button
+                      type="button"
+                      className="hub-quote-detail__convert-tile"
+                      disabled={saving || !onCreateAppointmentFromQuote}
+                      onClick={onCreateAppointmentFromQuote}
+                    >
+                      <Calendar size={22} strokeWidth={1.75} aria-hidden />
+                      <span className="hub-quote-detail__convert-tile-title">Criar agendamento</span>
+                      <span className="hub-quote-detail__convert-tile-sub">Abrir agenda</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="hub-quote-detail__convert-tile"
+                      disabled={saving || (!onOpenCheckout && !onOpenReceivable)}
+                      onClick={onOpenCheckout ?? onOpenReceivable}
+                    >
+                      <Receipt size={22} strokeWidth={1.75} aria-hidden />
+                      <span className="hub-quote-detail__convert-tile-title">Gerar venda</span>
+                      <span className="hub-quote-detail__convert-tile-sub">
+                        {onOpenCheckout ? 'Abrir checkout' : 'Abrir financeiro'}
+                      </span>
+                    </button>
+                  </div>
+                </>
               ) : (
                 <>
                   <div className="hub-quote-detail__convert-grid">
@@ -633,16 +721,28 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
                       <span className="hub-quote-detail__convert-tile-title">Converter pets</span>
                       <span className="hub-quote-detail__convert-tile-sub">Com o tutor</span>
                     </div>
-                    <Link to="/hub/appointments" className="hub-quote-detail__convert-tile hub-quote-detail__convert-tile--link">
+                    <button
+                      type="button"
+                      className="hub-quote-detail__convert-tile"
+                      disabled={saving || !onCreateAppointmentFromQuote}
+                      onClick={onCreateAppointmentFromQuote}
+                    >
                       <Calendar size={22} strokeWidth={1.75} aria-hidden />
                       <span className="hub-quote-detail__convert-tile-title">Criar agendamento</span>
                       <span className="hub-quote-detail__convert-tile-sub">Abrir agenda</span>
-                    </Link>
-                    <Link to="/hub/financeiro" className="hub-quote-detail__convert-tile hub-quote-detail__convert-tile--link">
+                    </button>
+                    <button
+                      type="button"
+                      className="hub-quote-detail__convert-tile"
+                      disabled={saving || (!onOpenCheckout && !onOpenReceivable)}
+                      onClick={onOpenCheckout ?? onOpenReceivable}
+                    >
                       <Receipt size={22} strokeWidth={1.75} aria-hidden />
                       <span className="hub-quote-detail__convert-tile-title">Gerar venda</span>
-                      <span className="hub-quote-detail__convert-tile-sub">Financeiro</span>
-                    </Link>
+                      <span className="hub-quote-detail__convert-tile-sub">
+                        {onOpenCheckout ? 'Abrir checkout' : 'Abrir financeiro'}
+                      </span>
+                    </button>
                   </div>
                   {dupGuardians.length > 0 ? (
                     <div className="hub-quote-detail__dup-box">

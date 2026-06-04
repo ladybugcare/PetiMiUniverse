@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteHubAgendaCalendarBlock = exports.upsertHubAgendaCalendarBlock = exports.listHubAgendaCalendarBlocks = exports.patchHubAppointment = exports.createHubAppointment = exports.listHubAppointments = void 0;
+exports.deleteHubAgendaCalendarBlock = exports.upsertHubAgendaCalendarBlock = exports.listHubAgendaCalendarBlocks = exports.patchHubAppointment = exports.createHubAppointment = exports.getHubAppointmentsStatsByServiceGroup = exports.listHubAppointments = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubServiceGroupsController_1 = require("./hubServiceGroupsController");
@@ -569,6 +569,16 @@ const listQuerySchema = zod_1.z.object({
     status: appointmentStatusSchema.optional(),
     resource_label: zod_1.z.string().trim().max(120).optional(),
 });
+const statsByServiceGroupQuerySchema = zod_1.z
+    .object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr,
+    from: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    hub_staff_member_id: zod_1.z.union([uuidStr, zod_1.z.literal('__na__')]).optional(),
+    hub_service_type_id: uuidStr.optional(),
+})
+    .strict();
 const linePricingVariantSchema = zod_1.z
     .object({
     km_tier_index: zod_1.z.number().int().min(0).optional(),
@@ -726,6 +736,85 @@ const listHubAppointments = async (req, res) => {
     }
 };
 exports.listHubAppointments = listHubAppointments;
+const SERVICE_GROUP_LABELS = {
+    clinica: 'Clínica',
+    banho_tosa: 'Banho & Tosa',
+    hotel: 'Hotel',
+    creche: 'Creche',
+    leva_traz: 'Leva e Traz',
+    cirurgia: 'Cirurgia',
+    internacao: 'Internação',
+    outros: 'Outros',
+};
+/** Contagem de agendamentos no intervalo por `hub_service_types.service_group` (slot sobrepõe [from,to]). */
+const getHubAppointmentsStatsByServiceGroup = async (req, res) => {
+    try {
+        const parsed = statsByServiceGroupQuerySchema.safeParse(req.query);
+        if (!parsed.success) {
+            return res.status(400).json({ error: parsed.error.flatten() });
+        }
+        const { clinic_id, unit_id, from, to, hub_staff_member_id, hub_service_type_id } = parsed.data;
+        if (from > to)
+            return res.status(400).json({ error: 'from não pode ser maior que to' });
+        const fromIso = `${from}T00:00:00.000Z`;
+        const toIso = `${to}T23:59:59.999Z`;
+        let q = supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select('hub_service_type_id')
+            .eq('clinic_id', clinic_id)
+            .is('deleted_at', null)
+            .neq('status', 'cancelled')
+            .lt('starts_at', toIso)
+            .gt('ends_at', fromIso)
+            .or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        if (hub_service_type_id)
+            q = q.eq('hub_service_type_id', hub_service_type_id);
+        if (hub_staff_member_id === '__na__')
+            q = q.is('hub_staff_member_id', null);
+        else if (hub_staff_member_id)
+            q = q.eq('hub_staff_member_id', hub_staff_member_id);
+        const { data: rows, error } = await q;
+        if (error)
+            return res.status(500).json({ error: error.message });
+        const typeIds = [...new Set((rows ?? []).map((r) => r.hub_service_type_id).filter(Boolean))];
+        if (typeIds.length === 0) {
+            return res.json({ period: { from, to }, items: [] });
+        }
+        const { data: types, error: te } = await supabase_1.supabaseAdmin
+            .from('hub_service_types')
+            .select('id, service_group')
+            .in('id', typeIds);
+        if (te)
+            return res.status(500).json({ error: te.message });
+        const groupByType = new Map();
+        for (const t of types ?? []) {
+            const raw = String(t.service_group ?? '').trim();
+            const gid = raw || 'outros';
+            groupByType.set(t.id, gid);
+        }
+        const counts = new Map();
+        for (const r of rows ?? []) {
+            const tid = r.hub_service_type_id;
+            if (!tid)
+                continue;
+            const g = groupByType.get(tid) ?? 'outros';
+            counts.set(g, (counts.get(g) ?? 0) + 1);
+        }
+        const items = [...counts.entries()]
+            .map(([service_group, count]) => ({
+            service_group,
+            label: SERVICE_GROUP_LABELS[service_group] ?? service_group.replace(/_/g, ' '),
+            count,
+        }))
+            .sort((a, b) => b.count - a.count);
+        return res.json({ period: { from, to }, items });
+    }
+    catch (e) {
+        console.error('getHubAppointmentsStatsByServiceGroup', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.getHubAppointmentsStatsByServiceGroup = getHubAppointmentsStatsByServiceGroup;
 const createHubAppointment = async (req, res) => {
     try {
         const parsed = createAppointmentSchema.safeParse(req.body);

@@ -16,6 +16,15 @@ import type { HubUnit } from '../types/hubUnit';
 
 const SELECTED_UNIT_KEY = 'selected_unit_id';
 
+/** Unidades elegíveis para seleção no hub (inclui pendente de aprovação; exclui rejeitada/inativa). */
+function filterSelectableUnits(units: HubUnit[]): HubUnit[] {
+  return units.filter((u) => {
+    const s = (u.status || 'active').toLowerCase();
+    if (s === 'rejected' || s === 'inactive' || s === 'suspended') return false;
+    return true;
+  });
+}
+
 type ClinicRow = { name?: string };
 
 type HubUnitContextValue = {
@@ -38,6 +47,16 @@ function getClinicUserUnitId(): string | null {
     return cu?.unit_id ? String(cu.unit_id) : null;
   } catch {
     return null;
+  }
+}
+
+function persistSelectedUnitId(unitId: string): void {
+  try {
+    if (localStorage.getItem(SELECTED_UNIT_KEY) === unitId) return;
+    localStorage.setItem(SELECTED_UNIT_KEY, unitId);
+    window.dispatchEvent(new Event(HUB_UNIT_STORAGE_UPDATED_EVENT));
+  } catch {
+    /* ignore */
   }
 }
 
@@ -93,15 +112,18 @@ export const HubUnitProvider: React.FC<{ children: ReactNode }> = ({ children })
       try {
         const [clinicRes, unitsRes] = await Promise.all([
           apiRequest(`/clinics/${encodeURIComponent(id)}`) as Promise<{ clinic?: ClinicRow }>,
-          hubUnitsApi.getByClinic(id, true),
+          /* activeOnly=false: pending_review não aparece em active+approved e quebrava seleção/localStorage */
+          hubUnitsApi.getByClinic(id, false),
         ]);
         const name = clinicRes?.clinic?.name?.trim() || 'Clínica';
         setClinicName(name);
-        const list = unitsRes.units || [];
+        const raw = unitsRes.units || [];
+        const list = filterSelectableUnits(raw);
         setUnits(list);
         setSelectedUnitState((prev) => {
-          if (prev && list.some((u) => u.id === prev.id)) return prev;
-          return pickDefaultUnit(list);
+          const next = prev && list.some((u) => u.id === prev.id) ? prev : pickDefaultUnit(list);
+          if (next) persistSelectedUnitId(next.id);
+          return next;
         });
       } catch {
         setClinicName('Clínica');
@@ -136,8 +158,7 @@ export const HubUnitProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const setSelectedUnit = useCallback((unit: HubUnit) => {
     setSelectedUnitState(unit);
-    localStorage.setItem(SELECTED_UNIT_KEY, unit.id);
-    window.dispatchEvent(new Event(HUB_UNIT_STORAGE_UPDATED_EVENT));
+    persistSelectedUnitId(unit.id);
   }, []);
 
   const value = useMemo(

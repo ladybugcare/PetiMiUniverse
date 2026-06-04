@@ -277,6 +277,10 @@ export const hubClinicalApi = {
   }) {
     return apiRequest(`${clinicalBase}/prescriptions`, { method: 'POST', body: JSON.stringify(payload) });
   },
+  openPrescriptionPdf(prescriptionId: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    window.open(`${clinicalBase}/prescriptions/${encodeURIComponent(prescriptionId)}/pdf?${q}`, '_blank', 'noopener,noreferrer');
+  },
   listVaccinations(clinicId: string, petId?: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (petId) q.set('pet_id', petId);

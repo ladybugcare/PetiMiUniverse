@@ -14,6 +14,8 @@ import {
   type HubClinicalAttachment,
 } from '../../api/hubClinicalApi';
 import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryApi';
+import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
+import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { formatEventAt, formatEventBody, formatEventTitle, formatPrescriptionLine, todayYmd } from './clinicalDisplay';
 import { petAgeDetailedLabel } from '../pets/petAge';
 import './clinica-page.css';
@@ -77,6 +79,7 @@ const HubClinicalWorkspacePage: React.FC = () => {
   const { showError, showSuccess } = useAlert();
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission('hub.clinic.write');
+  const canCreateReceivable = hasPermission('hub.receivables.create');
 
   const [encounter, setEncounter] = useState<HubEncounter | null>(null);
   const [flags, setFlags] = useState<Array<{ flag_key: string; label: string }>>([]);
@@ -87,6 +90,7 @@ const HubClinicalWorkspacePage: React.FC = () => {
   const [saveHint, setSaveHint] = useState('');
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [templates, setTemplates] = useState<Array<Record<string, unknown>>>([]);
   const [templateId, setTemplateId] = useState('');
 
@@ -172,8 +176,10 @@ const HubClinicalWorkspacePage: React.FC = () => {
   const dx = (encounter.diagnosis || {}) as Record<string, unknown>;
   const weight = pe.weight_kg != null && pe.weight_kg !== '' ? `${pe.weight_kg} kg` : '—';
   const readOnly = !canWrite || encounter.status === 'completed';
+  const clinicalCheckoutUnitId = encounter.unit_id ?? getSelectedUnitId();
 
   return (
+    <>
     <div className="hub-clientes hub-clinic-workspace">
       <Link
         to="/hub/clinica/atendimentos"
@@ -423,14 +429,27 @@ const HubClinicalWorkspacePage: React.FC = () => {
 
       <footer className="hub-clinic-workspace__footer">
         <span className="hub-clinic-save-hint">{saveHint}</span>
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--ghost"
-          disabled
-          title="Em breve: integração com financeiro e orçamentos"
-        >
-          Gerar cobrança
-        </button>
+        {canCreateReceivable ? (
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost"
+            disabled={!clinicalCheckoutUnitId}
+            title={
+              clinicalCheckoutUnitId
+                ? 'Conferir itens e registrar pagamento ou pendência'
+                : 'Selecione uma unidade no cabeçalho para usar dinheiro no caixa.'
+            }
+            onClick={() => {
+              if (!clinicalCheckoutUnitId) {
+                showError('Selecione uma unidade no cabeçalho para abrir o checkout.');
+                return;
+              }
+              setCheckoutOpen(true);
+            }}
+          >
+            Abrir checkout
+          </button>
+        ) : null}
         {canWrite && encounter.status !== 'completed' && (
           <button
             type="button"
@@ -443,6 +462,22 @@ const HubClinicalWorkspacePage: React.FC = () => {
         )}
       </footer>
     </div>
+    {clinicId && checkoutOpen && clinicalCheckoutUnitId ? (
+      <ComandaCheckoutDrawer
+        open={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        clinicId={clinicId}
+        unitId={clinicalCheckoutUnitId}
+        originType="encounter"
+        originId={encounter.id}
+        onSuccess={() => {
+          showSuccess('Checkout concluído.');
+          setCheckoutOpen(false);
+          void load();
+        }}
+      />
+    ) : null}
+    </>
   );
 };
 

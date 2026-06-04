@@ -42,6 +42,8 @@ const publicQuotes_js_1 = __importDefault(require("./modules/hub/routes/publicQu
 // Ordem de carregamento: .env.${NODE_ENV}.local > .env.${NODE_ENV} > .env.local > .env
 // 🔹 Inicializa o Express
 const app = (0, express_1.default)();
+// Reverse proxy (Railway, Vercel, etc.): IP real do cliente para rate limit e logs
+app.set('trust proxy', 1);
 // 🔹 Helmet.js - Headers de segurança HTTP
 app.use((0, helmet_1.default)({
     contentSecurityPolicy: {
