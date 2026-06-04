@@ -496,6 +496,8 @@ Aprovação → dados mestres + caso + atendimento → agendamento/execução �
 - Alterações a este arquivo exigem **revisão explícita** (PM + RT ou equivalente).  
 - Versão: incrementar `Versão` no topo e registrar data no commit/PR de documentação.  
 - Implementação: features **não** podem contradizer este documento sem antes **atualizar** este documento.
+- **Plano de ondas (implementação):** [clinic-closeout-plan-revised.md](clinic-closeout-plan-revised.md) (ordem **A → B1 → B2 → C → D → E → F**; **G** separado).  
+- **Migrations da Clínica (ordem e checklist):** [README_CLINICA_MIGRATIONS.md](README_CLINICA_MIGRATIONS.md).
 
 ---
 
