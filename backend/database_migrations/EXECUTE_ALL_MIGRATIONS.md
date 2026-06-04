@@ -9,7 +9,7 @@ Execute estas migrations **NA ORDEM** para ativar todas as funcionalidades do si
 
 ```sql
 -- Copie e execute o conteúdo de:
-backend/database_migrations/add_photo_url_columns.sql
+backend/database_migrations/petimi_vet/add_photo_url_columns.sql
 ```
 
 **O que faz:**
@@ -26,7 +26,7 @@ backend/database_migrations/add_photo_url_columns.sql
 
 ```sql
 -- Copie e execute o conteúdo de:
-backend/database_migrations/add_clinic_approval_system.sql
+backend/database_migrations/petimi_vet/add_clinic_approval_system.sql
 ```
 
 **O que faz:**
@@ -43,7 +43,7 @@ backend/database_migrations/add_clinic_approval_system.sql
 
 ```sql
 -- Copie e execute o conteúdo de:
-backend/database_migrations/update_auth_trigger_approval_flow.sql
+backend/database_migrations/petimi_vet/update_auth_trigger_approval_flow.sql
 ```
 
 **O que faz:**
@@ -60,7 +60,7 @@ backend/database_migrations/update_auth_trigger_approval_flow.sql
 
 ```sql
 -- Copie e execute o conteúdo de:
-backend/database_migrations/migrate_existing_clinics_to_approval_flow.sql
+backend/database_migrations/petimi_vet/migrate_existing_clinics_to_approval_flow.sql
 ```
 
 **O que faz:**
@@ -76,12 +76,12 @@ backend/database_migrations/migrate_existing_clinics_to_approval_flow.sql
 
 ### 1️⃣ Acesse Supabase
 - URL: https://app.supabase.com
-- Projeto: PetiVet
+- Projeto: PetMi Vet
 - Navegue para: **SQL Editor** (⚡)
 
 ### 2️⃣ Execute Migration 1 (OBRIGATÓRIA)
 ```sql
--- Abra: backend/database_migrations/add_photo_url_columns.sql
+-- Abra: backend/database_migrations/petimi_vet/add_photo_url_columns.sql
 -- Copie todo o conteúdo
 -- Cole no SQL Editor
 -- Clique em "Run"
@@ -96,7 +96,7 @@ vets_photo_url_exists: 1
 
 ### 3️⃣ Execute Migration 2
 ```sql
--- Abra: backend/database_migrations/add_clinic_approval_system.sql
+-- Abra: backend/database_migrations/petimi_vet/add_clinic_approval_system.sql
 -- Copie todo o conteúdo
 -- Cole no SQL Editor
 -- Clique em "Run"
@@ -109,7 +109,7 @@ status: "Migration add_clinic_approval_system.sql concluída com sucesso!"
 
 ### 4️⃣ Execute Migration 3
 ```sql
--- Abra: backend/database_migrations/update_auth_trigger_approval_flow.sql
+-- Abra: backend/database_migrations/petimi_vet/update_auth_trigger_approval_flow.sql
 -- Copie todo o conteúdo
 -- Cole no SQL Editor
 -- Clique em "Run"
@@ -122,7 +122,7 @@ status: "Migration update_auth_trigger_approval_flow.sql concluída com sucesso!
 
 ### 5️⃣ Execute Migration 4
 ```sql
--- Abra: backend/database_migrations/migrate_existing_clinics_to_approval_flow.sql
+-- Abra: backend/database_migrations/petimi_vet/migrate_existing_clinics_to_approval_flow.sql
 -- Copie todo o conteúdo
 -- Cole no SQL Editor
 -- Clique em "Run"

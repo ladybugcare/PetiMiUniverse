@@ -1,6 +1,6 @@
 // Permission system for role-based access control (RBAC)
 
-export type Role = 'CADMIN' | 'CMANAGER' | 'CASSISTANT' | 'CVET_INTERNAL';
+export type Role = 'CADMIN' | 'CMANAGER' | 'CASSISTANT' | 'CVET_INTERNAL' | 'CGROOMER' | 'CFINANCE';
 
 export const PERMISSIONS: Record<Role, string[]> = {
   CADMIN: [
@@ -23,6 +23,32 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'marketplace.edit',
     'marketplace.delete',
     'audit.view',
+    'hub.guardians.read',
+    'hub.guardians.write',
+    'hub.pets.read',
+    'hub.pets.write',
+    'hub.service_types.read',
+    'hub.service_types.write',
+    'hub.inventory.read',
+    'hub.inventory.write',
+    'hub.staff.read',
+    'hub.staff.write',
+    'hub.staff.invite',
+    'hub.appointments.read',
+    'hub.appointments.write',
+    'hub.prospects.read',
+    'hub.prospects.write',
+    'hub.quotes.read',
+    'hub.quotes.write',
+    'hub.clinic.read',
+    'hub.clinic.write',
+    'grooming.queue.read',
+    'grooming.queue.manage',
+    'hub.financial.read',
+    'hub.financial.write',
+    'hub.receivables.create',
+    'hub.cash.session',
+    'hub.cash.receive',
   ],
   CMANAGER: [
     'unit.edit',
@@ -38,6 +64,32 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'application.view',
     'marketplace.create',
     'marketplace.edit',
+    'hub.guardians.read',
+    'hub.guardians.write',
+    'hub.pets.read',
+    'hub.pets.write',
+    'hub.service_types.read',
+    'hub.service_types.write',
+    'hub.inventory.read',
+    'hub.inventory.write',
+    'hub.staff.read',
+    'hub.staff.write',
+    'hub.staff.invite',
+    'hub.appointments.read',
+    'hub.appointments.write',
+    'hub.prospects.read',
+    'hub.prospects.write',
+    'hub.quotes.read',
+    'hub.quotes.write',
+    'hub.clinic.read',
+    'hub.clinic.write',
+    'grooming.queue.read',
+    'grooming.queue.manage',
+    'hub.financial.read',
+    'hub.financial.write',
+    'hub.receivables.create',
+    'hub.cash.session',
+    'hub.cash.receive',
   ],
   CASSISTANT: [
     'unit.view',
@@ -46,16 +98,61 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'demand.view',
     'application.view',
     'marketplace.view',
+    'hub.guardians.read',
+    'hub.pets.read',
+    'hub.service_types.read',
+    'hub.inventory.read',
+    'hub.staff.read',
+    'hub.appointments.read',
+    'hub.appointments.write',
+    'hub.prospects.read',
+    'hub.quotes.read',
+    'grooming.queue.read',
   ],
   CVET_INTERNAL: [
     'unit.view',
     'demand.view',
     'application.create.internal',
     'application.view.own',
+    'hub.inventory.read',
+    'hub.staff.read',
+    'hub.appointments.read',
+    'hub.clinic.read',
+    'hub.clinic.write',
+    'hub.financial.read',
+  ],
+  CGROOMER: [
+    'unit.view',
+    'hub.guardians.read',
+    'hub.pets.read',
+    'hub.service_types.read',
+    'hub.appointments.read',
+    'grooming.queue.read',
+    'grooming.queue.manage',
+  ],
+  CFINANCE: [
+    'unit.view',
+    'hub.guardians.read',
+    'hub.pets.read',
+    'hub.service_types.read',
+    'hub.inventory.read',
+    'hub.inventory.write',
+    'hub.appointments.read',
+    'grooming.queue.read',
+    'hub.financial.read',
+    'hub.financial.write',
+    'hub.receivables.create',
+    'hub.cash.session',
+    'hub.cash.receive',
   ],
 };
 
+/** CADMIN tem acesso irrestrito a todas as permissões do Hub e da clínica. */
+export const isClinicAdminRole = (role: string | null | undefined): boolean =>
+  String(role || '').toUpperCase() === 'CADMIN';
+
 export const hasPermission = (role: Role, permission: string): boolean => {
+  if (isClinicAdminRole(role)) return true;
   const rolePermissions = PERMISSIONS[role];
   return rolePermissions ? rolePermissions.includes(permission) : false;
 };
@@ -66,6 +163,8 @@ export const getRoleDisplayName = (role: Role): string => {
     CMANAGER: 'Gestor de Unidade',
     CASSISTANT: 'Assistente/Secretário',
     CVET_INTERNAL: 'Veterinário Interno',
+    CGROOMER: 'Banho e Tosa',
+    CFINANCE: 'Financeiro',
   };
   return names[role] || role;
 };

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.clearReadNotifications = exports.deleteNotification = exports.markAllAsRead = exports.markAsRead = exports.getUnreadCount = exports.getNotifications = exports.createNotification = void 0;
+exports.notifyProfessionalsByCategory = exports.clearReadNotifications = exports.deleteNotification = exports.markAllAsRead = exports.markAsRead = exports.getUnreadCount = exports.getNotifications = exports.createNotification = void 0;
 const supabase_1 = require("../config/supabase");
 // ========================================
 // HELPER: Criar Notificação (usado internamente)
@@ -193,3 +193,89 @@ const clearReadNotifications = async (req, res) => {
     }
 };
 exports.clearReadNotifications = clearReadNotifications;
+// ========================================
+// HELPER: Notificar profissionais por categoria
+// ========================================
+/**
+ * Notifica profissionais ativos de uma categoria específica sobre nova demanda
+ * @param category Categoria da demanda ('vet', 'freelancer', 'clinic', 'other')
+ * @param demandId ID da demanda criada
+ * @param clinicName Nome da clínica que criou a demanda
+ * @param demandTitle Título da demanda
+ */
+const notifyProfessionalsByCategory = async (category, demandId, clinicName, demandTitle) => {
+    try {
+        let professionals = [];
+        // Buscar profissionais ativos baseado na categoria
+        if (category === 'vet') {
+            const { data: vets, error: vetsError } = await supabase_1.supabase
+                .from('vets')
+                .select('id')
+                .eq('status', 'active');
+            if (vetsError) {
+                console.error('Error fetching vets for notification:', vetsError);
+                return; // Não falhar a criação da demanda
+            }
+            professionals = vets || [];
+        }
+        else if (category === 'freelancer') {
+            const { data: freelancers, error: freelancersError } = await supabase_1.supabase
+                .from('freelancers')
+                .select('id')
+                .eq('status', 'active');
+            if (freelancersError) {
+                console.error('Error fetching freelancers for notification:', freelancersError);
+                return; // Não falhar a criação da demanda
+            }
+            professionals = freelancers || [];
+        }
+        else if (category === 'clinic') {
+            // Para clínicas, buscar clínicas ativas (se aplicável)
+            // Por enquanto, não notificar outras clínicas sobre demandas de clínicas
+            // Isso pode ser implementado no futuro se necessário
+            return;
+        }
+        else if (category === 'other') {
+            // Para "other", buscar vets e freelancers ativos
+            const [vetsResult, freelancersResult] = await Promise.all([
+                supabase_1.supabase.from('vets').select('id').eq('status', 'active'),
+                supabase_1.supabase.from('freelancers').select('id').eq('status', 'active'),
+            ]);
+            if (vetsResult.error) {
+                console.error('Error fetching vets for notification:', vetsResult.error);
+            }
+            if (freelancersResult.error) {
+                console.error('Error fetching freelancers for notification:', freelancersResult.error);
+            }
+            const vets = vetsResult.data || [];
+            const freelancers = freelancersResult.data || [];
+            professionals = [...vets, ...freelancers];
+        }
+        else {
+            console.warn(`Unknown category for notification: ${category}`);
+            return;
+        }
+        // Criar notificações para todos os profissionais encontrados
+        if (professionals.length > 0) {
+            const notificationPromises = professionals.map((professional) => (0, exports.createNotification)({
+                user_id: professional.id,
+                type: 'new_demand_created',
+                title: 'Nova Oportunidade de Trabalho',
+                message: `Nova vaga disponível: "${demandTitle}" na ${clinicName}`,
+                link: `/demands/${demandId}`,
+                entity_type: 'demand',
+                entity_id: demandId,
+            }));
+            // Executar todas as notificações em paralelo (não esperar ou falhar a criação)
+            Promise.all(notificationPromises).catch((err) => {
+                console.error('Error sending new demand notifications:', err);
+                // Não lançar erro para não quebrar o fluxo principal
+            });
+        }
+    }
+    catch (error) {
+        console.error('Error in notifyProfessionalsByCategory:', error);
+        // Não lançar erro para não quebrar a criação da demanda
+    }
+};
+exports.notifyProfessionalsByCategory = notifyProfessionalsByCategory;

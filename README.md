@@ -1,8 +1,12 @@
-# 🐾 PetiVet
+# 🐾 PetMi Vet
 
-PetiVet connects veterinary clinics and professionals. This workspace provides:
+**Ecossistema & arquitetura multi-produto:** visão de plataforma, fronteiras Hub / Vet-Match / Marketplace / PetMi ID, permissões e épicos do Hub estão em [`docs/architecture/README.md`](docs/architecture/README.md).
+
+PetMi Vet connects veterinary clinics and professionals. This workspace provides:
 - **Backend** (Express + TypeScript) in `backend/`
 - **Universal Frontend** (Expo/React Native) in `frontend/` which runs on web, iOS, and Android
+- **PetMi Hub web** (Vite + React) in [`apps/hub-web`](apps/hub-web) — operação clínica (tutores, pets, tipos de serviço); corre em servidor de desenvolvimento separado (`npm run dev:hub-web` na raiz, porta **3002**)
+- **Pacotes partilhados** em [`packages/web-core`](packages/web-core) e [`packages/hub-ui`](packages/hub-ui)
 
 > 🚀 **Quer começar rapidamente?** Veja o [SETUP_LOCAL.md](SETUP_LOCAL.md) para um guia passo a passo conciso.
 > 
@@ -50,7 +54,7 @@ PetiVet connects veterinary clinics and professionals. This workspace provides:
 
 ```bash
 git clone <repository-url>
-cd PetiVet
+cd PetiMiUniverse
 ```
 
 ### 2. Install Dependencies
@@ -102,6 +106,9 @@ REACT_APP_SUPABASE_ANON_KEY=your_supabase_anon_key
 # Backend API URL
 REACT_APP_API_URL=http://localhost:3000
 
+# Google Places API (for address autocomplete)
+REACT_APP_GOOGLE_PLACES_API_KEY=your_google_places_api_key
+
 # Alternative for Expo (if using Expo build)
 EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -120,7 +127,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 ### 4. Set up Supabase Database
 
-The database migrations are located in `backend/database_migrations/`. 
+The database migrations are located in `backend/database_migrations/` (`petimi_vet/` for PetMi Vet, `petimi_hub/` for PetMi Hub). 
 
 **Option 1: Run migrations manually**
    
@@ -348,7 +355,7 @@ NODE_ENV=production npm start
 ## 📁 Project Structure
 
 ```
-PetiVet/
+PetiMiUniverse/
 ├── backend/           # Express API (TypeScript)
 │   ├── src/
 │   │   ├── config/         # Supabase configuration
@@ -357,7 +364,7 @@ PetiVet/
 │   │   ├── middleware/     # Auth and other middleware
 │   │   ├── utils/          # Utility functions
 │   │   └── index.ts        # Server entry point
-│   ├── database_migrations/  # SQL migration files
+│   ├── database_migrations/  # SQL: petimi_vet/, petimi_hub/ + READMEs
 │   ├── dist/               # Compiled JavaScript (generated)
 │   └── package.json
 │
@@ -491,7 +498,7 @@ This is a project for connecting veterinary clinics with professionals. Feel fre
 
 ## 👥 Team
 
-PetiVet Development Team
+PetMi Vet Development Team
 
 ---
 

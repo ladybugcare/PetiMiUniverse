@@ -195,7 +195,7 @@ port = 1025
 user = "env(MAILPIT_SMTP_USER)"
 pass = "env(MAILPIT_SMTP_PASS)"
 admin_email = "no-reply@petivet.local"
-sender_name = "PetiVet"
+sender_name = "PetMi Vet"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]

@@ -31,7 +31,7 @@ export const clinicsApi = {
     user?: any; 
     session?: any;
   }> => {
-    return apiRequest('/clinics/register', {
+    return apiRequest('/clinics', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -74,7 +74,8 @@ export const clinicsApi = {
   registerWithUnit: async (payload: {
     clinic: { name: string; cnpj?: string; description?: string } | null;
     unit: {
-      clinic_id: string;
+      /** Opcional: o backend resolve `clinic_id` pelo fluxo de `clinic_users` / clínica criada. */
+      clinic_id?: string;
       name: string;
       nickname: string;
       cnpj?: string;

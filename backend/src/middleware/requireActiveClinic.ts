@@ -1,9 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 
 /**
- * Middleware to ensure clinic is active before allowing certain operations
- * Blocks clinics with status 'pending_unit', 'pending_approval', 'suspended', or 'rejected'
+ * Garante que a clínica pode operar antes de criar demanda / marketplace / etc.
+ * Usa service role para ler `clinics` (evita falsos 404 com RLS no client anon).
+ * `pending_approval`: permitido se existir pelo menos uma unidade `approved` ou `active`.
+ * Bloqueia: `pending_unit`, `pending_approval` sem unidade aprovada, `suspended`, `rejected`.
  */
 export const requireActiveClinic = async (
   req: Request, 
@@ -18,7 +20,7 @@ export const requireActiveClinic = async (
       return res.status(400).json({ error: 'clinic_id é obrigatório' });
     }
     
-    const { data: clinic, error } = await supabase
+    const { data: clinic, error } = await supabaseAdmin
       .from('clinics')
       .select('status')
       .eq('id', clinic_id)
@@ -37,10 +39,20 @@ export const requireActiveClinic = async (
     }
     
     if (clinic.status === 'pending_approval') {
-      return res.status(403).json({ 
+      const { count, error: unitsCountError } = await supabaseAdmin
+        .from('units')
+        .select('*', { count: 'exact', head: true })
+        .eq('clinic_id', clinic_id as string)
+        .in('status', ['approved', 'active']);
+
+      if (!unitsCountError && (count ?? 0) > 0) {
+        return next();
+      }
+
+      return res.status(403).json({
         error: 'Aguarde a aprovação da sua unidade pelo ADMIN.',
         status: 'pending_approval',
-        action_required: 'wait_approval'
+        action_required: 'wait_approval',
       });
     }
     

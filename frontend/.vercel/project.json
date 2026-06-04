@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_BjBjAXWMkBEeIvLmRkK4L9H4SRAH",
+  "orgId": "team_t3M1Qx4lpuRcmYLzKCC9eEbt",
+  "projectName": "peti-vet",
+  "settings": {
+    "createdAt": 1761804709470,
+    "framework": "create-react-app",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": "npm run build:web",
+    "outputDirectory": "build",
+    "rootDirectory": "frontend",
+    "directoryListing": false,
+    "nodeVersion": "22.x"
+  }
+}

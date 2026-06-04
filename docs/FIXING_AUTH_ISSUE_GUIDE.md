@@ -167,11 +167,11 @@ Execute o script de triggers para que **futuros usuários** sejam sincronizados 
 
 ```bash
 # No terminal
-psql -U seu_usuario -d seu_banco -f backend/database_migrations/create_auth_triggers.sql
+psql -U seu_usuario -d seu_banco -f backend/database_migrations/petimi_vet/create_auth_triggers.sql
 ```
 
 Ou no Supabase Dashboard (SQL Editor), copie e cole o conteúdo de:
-`backend/database_migrations/create_auth_triggers.sql`
+`backend/database_migrations/petimi_vet/create_auth_triggers.sql`
 
 ---
 
@@ -380,5 +380,5 @@ Se ainda tiver problemas:
 
 **Versão:** 1.0.0  
 **Data:** 29 de Outubro, 2025  
-**Autor:** PetiVet Development Team
+**Autor:** PetMi Vet Development Team
 

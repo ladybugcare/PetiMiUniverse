@@ -146,7 +146,7 @@ Durante este processo, foram criados:
 | `docs/VERCEL_SETUP_GUIDE.md` | Guia passo a passo Vercel |
 | `docs/RENDER_SETUP_GUIDE.md` | Guia passo a passo Render |
 | `docs/STAGING_CREDENTIALS.md` | Credenciais centralizadas (não commitado) |
-| `backend/database_migrations/STAGING_CONSOLIDATED_MIGRATIONS.sql` | Todas as migrations em 1 arquivo |
+| `backend/database_migrations/petimi_vet/STAGING_CONSOLIDATED_MIGRATIONS.sql` | Todas as migrations em 1 arquivo |
 | `backend/database_migrations/README_STAGING.md` | Como executar migrations |
 | `frontend/vercel.json` | Configuração Vercel |
 | `.gitignore` | Proteção de credenciais |
@@ -267,7 +267,7 @@ Se precisar de ajuda:
 
 ## 🎉 Conclusão
 
-**Ambiente de Staging do PetiVet está 100% operacional!**
+**Ambiente de Staging do PetMi Vet está 100% operacional!**
 
 Você pode agora:
 - ✅ Desenvolver novas features com segurança

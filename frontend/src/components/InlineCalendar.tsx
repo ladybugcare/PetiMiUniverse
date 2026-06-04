@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { colors } from '../styles/colors';
 
 interface InlineCalendarProps {
   selectedDate: string; // Format: YYYY-MM-DD
@@ -132,7 +133,7 @@ const InlineCalendar: React.FC<InlineCalendarProps> = ({
               onMouseEnter={(e) => {
                 if (!disabled && !selected) {
                   e.currentTarget.style.backgroundColor = '#ede9fe';
-                  e.currentTarget.style.color = '#7c3aed';
+                  e.currentTarget.style.color = colors.brand.primary[500];
                 }
               }}
               onMouseLeave={(e) => {
@@ -233,10 +234,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     opacity: 0.5,
   },
   daySelected: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     fontWeight: '700',
-    boxShadow: '0 1px 3px rgba(124, 58, 237, 0.3)',
+    boxShadow: '0 1px 3px rgba(196, 108, 106, 0.3)',
   },
 };
 

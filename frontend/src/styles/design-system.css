@@ -1,63 +1,70 @@
-/* Design System PetiVet - Tons Pastéis para Pets */
+/* Design System PetiMi - Paleta Oficial */
 
 /* Importar fontes */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800&display=swap');
 
 /* Variáveis CSS para o design system */
 :root {
-  /* Cores Primárias - Lavanda/Roxo Pastel */
-  --color-primary-50: #f8f4ff;
-  --color-primary-100: #f0e6ff;
-  --color-primary-200: #e0ccff;
-  --color-primary-300: #c7a3ff;
-  --color-primary-400: #a366ff;
-  --color-primary-500: #8b5cf6;
-  --color-primary-600: #7c3aed;
-  --color-primary-700: #6d28d9;
-  --color-primary-800: #5b21b6;
-  --color-primary-900: #4c1d95;
+  /* Cores Primárias - Rosa Queimado (cor oficial) */
+  --color-primary-50: #FFF7F6;
+  --color-primary-100: #FCEAEA;
+  --color-primary-200: #F5D1D0;
+  --color-primary-300: #E9B0AF;
+  --color-primary-400: #D98C8B;
+  --color-primary-500: #C46C6A;
+  --color-primary-600: #A75251;
+  --color-primary-700: #8B3F3F;
+  --color-primary-800: #6F2F30;
 
-  /* Cores Secundárias - Terracota/Laranja Pastel */
-  --color-secondary-50: #fff7ed;
-  --color-secondary-100: #ffedd5;
-  --color-secondary-200: #fed7aa;
-  --color-secondary-300: #fdba74;
-  --color-secondary-400: #fb923c;
-  --color-secondary-500: #f97316;
-  --color-secondary-600: #ea580c;
-  --color-secondary-700: #c2410c;
-  --color-secondary-800: #9a3412;
-  --color-secondary-900: #7c2d12;
+  /* Cores Secundárias - Nude/Bege Rosado Quente */
+  --color-secondary-100: #FAF3EF;
+  --color-secondary-200: #F1E1D9;
+  --color-secondary-300: #E5CBBF;
+  --color-secondary-400: #D3B2A5;
+  --color-secondary-500: #C09A8D;
 
-  /* Cores Accent - Verde Menta Pastel */
-  --color-accent-50: #f0fdf4;
-  --color-accent-100: #dcfce7;
-  --color-accent-200: #bbf7d0;
-  --color-accent-300: #86efac;
-  --color-accent-400: #4ade80;
-  --color-accent-500: #22c55e;
-  --color-accent-600: #16a34a;
-  --color-accent-700: #15803d;
-  --color-accent-800: #166534;
-  --color-accent-900: #14532d;
+  /* Cores Accent - Verde Sálvia Suave */
+  --color-accent-100: #F3F6F3;
+  --color-accent-200: #E3EDE5;
+  --color-accent-300: #C7D8CB;
+  --color-accent-400: #A7C2B0;
+  --color-accent-500: #7FA895;
 
-  /* Cores Neutras */
-  --color-neutral-50: #fafafa;
-  --color-neutral-100: #f5f5f5;
-  --color-neutral-200: #e5e5e5;
-  --color-neutral-300: #d4d4d4;
-  --color-neutral-400: #a3a3a3;
-  --color-neutral-500: #737373;
-  --color-neutral-600: #525252;
-  --color-neutral-700: #404040;
-  --color-neutral-800: #262626;
-  --color-neutral-900: #171717;
+  /* Cores Info - Azul Neblina */
+  --color-info-100: #F2F6F9;
+  --color-info-200: #DFE9F0;
+  --color-info-300: #C4D7E2;
+  --color-info-400: #A5C1D1;
+  --color-info-500: #7EA4BA;
+
+  /* Cores Neutras Quentes (Warm Neutrals) */
+  --color-neutral-50: #FFFCFB;
+  --color-neutral-100: #F7F3F2;
+  --color-neutral-200: #E9E3E1;
+  --color-neutral-300: #D6CECC;
+  --color-neutral-400: #BFB7B4;
+  --color-neutral-500: #A29B98;
+  --color-neutral-600: #7F7A77;
+  --color-neutral-700: #5D5957;
+  --color-neutral-800: #3E3B3A;
+  --color-neutral-900: #2A2726;
 
   /* Cores de Status */
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-  --color-info: #3b82f6;
+  --color-success-100: #E7F4EF;
+  --color-success-500: #4E9B7A;
+  --color-success-700: #2F6B52;
+  --color-warning-100: #FFF7EA;
+  --color-warning-500: #D68A28;
+  --color-warning-700: #915D18;
+  --color-error-100: #FBEDEC;
+  --color-error-500: #C7514A;
+  --color-error-700: #8A2F2A;
+  
+  /* Aliases para compatibilidade */
+  --color-success: var(--color-success-500);
+  --color-warning: var(--color-warning-500);
+  --color-error: var(--color-error-500);
+  --color-info: var(--color-info-500);
 
   /* Tipografia */
   --font-family-sans: 'Inter', system-ui, sans-serif;
@@ -122,11 +129,30 @@
 body {
   margin: 0;
   font-family: var(--font-family-sans);
-  background-color: var(--color-primary-50);
-  color: var(--color-neutral-800);
+  background-color: var(--color-neutral-50);
+  color: var(--color-neutral-900);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Garantir que todos os ícones SVG tenham fundo transparente */
+svg {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* Específico para ícones do Lucide */
+svg[data-lucide] {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* Garantir que containers de ícones não tenham fundo branco */
+.icon-wrapper,
+.icon-container {
+  background-color: transparent !important;
+  background: transparent !important;
 }
 
 /* Classes utilitárias para cores */
@@ -135,22 +161,21 @@ body {
 .bg-primary-500 { background-color: var(--color-primary-500); }
 .bg-primary-600 { background-color: var(--color-primary-600); }
 
-.bg-secondary-50 { background-color: var(--color-secondary-50); }
 .bg-secondary-100 { background-color: var(--color-secondary-100); }
 .bg-secondary-500 { background-color: var(--color-secondary-500); }
-.bg-secondary-600 { background-color: var(--color-secondary-600); }
+.bg-secondary-400 { background-color: var(--color-secondary-400); }
 
-.bg-accent-50 { background-color: var(--color-accent-50); }
 .bg-accent-100 { background-color: var(--color-accent-100); }
 .bg-accent-500 { background-color: var(--color-accent-500); }
-.bg-accent-600 { background-color: var(--color-accent-600); }
+.bg-accent-400 { background-color: var(--color-accent-400); }
 
 .text-primary-600 { color: var(--color-primary-600); }
 .text-primary-700 { color: var(--color-primary-700); }
-.text-secondary-600 { color: var(--color-secondary-600); }
-.text-accent-600 { color: var(--color-accent-600); }
+.text-secondary-500 { color: var(--color-secondary-500); }
+.text-accent-500 { color: var(--color-accent-500); }
 .text-neutral-600 { color: var(--color-neutral-600); }
 .text-neutral-800 { color: var(--color-neutral-800); }
+.text-neutral-900 { color: var(--color-neutral-900); }
 
 /* Componentes específicos */
 .pet-card {
@@ -194,7 +219,7 @@ body {
 }
 
 .pet-button-secondary:hover {
-  background-color: var(--color-secondary-600);
+  background-color: var(--color-secondary-400);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
@@ -205,7 +230,7 @@ body {
 }
 
 .pet-button-accent:hover {
-  background-color: var(--color-accent-600);
+  background-color: var(--color-accent-400);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
@@ -222,7 +247,7 @@ body {
 .pet-input:focus {
   outline: none;
   border-color: var(--color-primary-400);
-  box-shadow: 0 0 0 3px rgba(163, 102, 255, 0.1);
+  box-shadow: 0 0 0 3px rgba(217, 140, 139, 0.1);
 }
 
 /* Responsividade */

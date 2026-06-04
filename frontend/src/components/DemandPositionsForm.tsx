@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MultiSelect from './MultiSelect';
 import { specialtiesApi, Specialty } from '../services/specialtiesApi';
+import { colors } from '../styles/colors';
 
 interface Position {
   id: string;
@@ -14,22 +15,62 @@ interface DemandPositionsFormProps {
   positions: Position[];
   onChange: (positions: Position[]) => void;
   category: 'vet' | 'freelancer' | 'clinic' | 'other';
+  /** Quando true, não mostra o título geral (o cartão pai define o cabeçalho). */
+  embedded?: boolean;
 }
 
-const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, onChange, category }) => {
+const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({
+  positions,
+  onChange,
+  category,
+  embedded = false,
+}) => {
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [loadingSpecialties, setLoadingSpecialties] = useState(true);
 
-  // Load specialties filtered by category
+  // Load specialties filtered by category (com retry leve em 429)
   useEffect(() => {
+    let cancelled = false;
+
     const loadSpecialties = async () => {
       try {
-        const result = await specialtiesApi.getByCategory(category);
-        setSpecialties(result.specialties);
-      } catch (error) {
-        console.error('Error loading specialties:', error);
+        setLoadingSpecialties(true);
+        const fetchList = async () => {
+          const result = await specialtiesApi.getByCategory(category);
+          return result.specialties || [];
+        };
+
+        let list: Specialty[];
+        try {
+          list = await fetchList();
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if ((msg.includes('429') || msg.includes('Too Many')) && !cancelled) {
+            await new Promise((r) => setTimeout(r, 2500));
+            list = await fetchList();
+          } else {
+            throw e;
+          }
+        }
+
+        if (!cancelled) {
+          setSpecialties(list);
+        }
+      } catch {
+        if (!cancelled) {
+          setSpecialties([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingSpecialties(false);
+        }
       }
     };
-    loadSpecialties();
+
+    void loadSpecialties();
+    return () => {
+      cancelled = true;
+    };
   }, [category]);
 
   const addPosition = () => {
@@ -59,21 +100,25 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
 
   return (
     <div style={styles.container}>
-      <h3 style={styles.title}>Profissionais Necessários</h3>
-      <p style={styles.subtitle}>
-        Adicione as posições profissionais necessárias para esta demanda
-      </p>
+      {!embedded && (
+        <>
+          <h3 style={styles.title}>Profissionais Necessários</h3>
+          <p style={styles.subtitle}>
+            Adicione as posições profissionais necessárias para esta demanda
+          </p>
+        </>
+      )}
 
       {positions.map((position, index) => (
         <div key={position.id} style={styles.positionCard}>
           <div style={styles.positionHeader}>
-            <h4 style={styles.positionTitle}>Profissional {index + 1}</h4>
+            <h4 style={styles.positionTitle}>Vaga {index + 1}</h4>
             {positions.length > 1 && (
               <button
                 type="button"
                 onClick={() => removePosition(position.id)}
                 style={styles.removeButton}
-                title="Remover profissional"
+                title="Remover vaga"
               >
                 🗑️ Remover
               </button>
@@ -89,11 +134,19 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
                 options={specialties.map(s => ({ value: s.name, label: s.name }))}
                 selectedValues={position.specialties}
                 onChange={(values) => updatePosition(position.id, 'specialties', values)}
-                placeholder="Selecione uma ou mais especialidades..."
+                placeholder={loadingSpecialties ? "Carregando especialidades..." : "Selecione uma ou mais especialidades..."}
+                disabled={loadingSpecialties}
               />
-              <small style={styles.hint}>
-                Selecione todas as especialidades necessárias para este profissional
-              </small>
+              {(!position.specialties || position.specialties.length === 0) && (
+                <small style={styles.errorText}>
+                  É necessário selecionar pelo menos uma especialidade
+                </small>
+              )}
+              {position.specialties && position.specialties.length > 0 && (
+                <small style={styles.hint}>
+                  Selecione todas as especialidades necessárias para esta vaga
+                </small>
+              )}
             </div>
           </div>
 
@@ -107,13 +160,26 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
                 type="number"
                 min="1"
                 value={position.slots}
-                onChange={(e) =>
-                  updatePosition(position.id, 'slots', parseInt(e.target.value) || 1)
-                }
-                style={styles.input}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 1;
+                  if (value >= 1) {
+                    updatePosition(position.id, 'slots', value);
+                  }
+                }}
+                style={{
+                  ...styles.input,
+                  ...(position.slots < 1 ? styles.inputError : {}),
+                }}
                 required
               />
-              <small style={styles.hint}>Quantos profissionais precisa?</small>
+              {position.slots < 1 && (
+                <small style={styles.errorText}>
+                  O número de vagas deve ser maior que zero
+                </small>
+              )}
+              {position.slots >= 1 && (
+                <small style={styles.hint}>Quantos profissionais precisa?</small>
+              )}
             </div>
 
             <div style={styles.field}>
@@ -131,7 +197,7 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
                 style={styles.input}
                 required
               />
-              <small style={styles.hint}>Valor por profissional</small>
+              <small style={styles.hint}>Valor por vaga</small>
             </div>
           </div>
 
@@ -141,7 +207,7 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
               value={position.description || ''}
               onChange={(e) => updatePosition(position.id, 'description', e.target.value)}
               style={styles.textarea}
-              placeholder="Ex: Experiência mínima de 2 anos, disponibilidade para plantão..."
+              placeholder="Ex: Experiência mínima de 2 anos, disponibilidade para cobrir demandas..."
               rows={3}
             />
           </div>
@@ -149,7 +215,7 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
       ))}
 
       <button type="button" onClick={addPosition} style={styles.addButton}>
-        ➕ Adicionar Outro Profissional
+        + Adicionar mais uma vaga
       </button>
 
       {/* Summary */}
@@ -162,12 +228,12 @@ const DemandPositionsForm: React.FC<DemandPositionsFormProps> = ({ positions, on
           </div>
           <div style={styles.summaryRow}>
             <span style={styles.summaryLabel}>Total de Vagas:</span>
-            <span style={styles.summaryValue}>{totalSlots}</span>
+            <span style={styles.summaryValueHighlight}>{totalSlots}</span>
           </div>
           <div style={styles.summaryRow}>
             <span style={styles.summaryLabel}>Investimento Total:</span>
             <span style={styles.summaryValueHighlight}>
-              R$ {totalPayment.toFixed(2)}
+              R$ {totalPayment.toFixed(2).replace('.', ',')}
             </span>
           </div>
         </div>
@@ -273,8 +339,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '100%',
     padding: '12px',
     backgroundColor: '#ffffff',
-    color: '#7c3aed',
-    border: '2px dashed #7c3aed',
+    color: colors.brand.primary[500],
+    border: `2px dashed ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: '500',
@@ -284,8 +350,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   summary: {
     marginTop: '24px',
-    backgroundColor: '#ffffff',
-    border: '2px solid #7c3aed',
+    backgroundColor: colors.brand.primary[50],
+    border: `1px solid ${colors.brand.primary[200]}`,
     borderRadius: '12px',
     padding: '20px',
   },
@@ -321,7 +387,17 @@ const styles: { [key: string]: React.CSSProperties } = {
   summaryValueHighlight: {
     fontSize: '18px',
     fontWeight: '700',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
+  },
+  inputError: {
+    borderColor: '#dc2626',
+    backgroundColor: '#fef2f2',
+  },
+  errorText: {
+    fontSize: '12px',
+    color: '#dc2626',
+    marginTop: '4px',
+    fontWeight: '500',
   },
 };
 

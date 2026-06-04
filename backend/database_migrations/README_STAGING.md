@@ -2,7 +2,7 @@
 
 ## 📋 Arquivo Consolidado
 
-Use o arquivo: **`STAGING_CONSOLIDATED_MIGRATIONS.sql`**
+Use o arquivo: **`petimi_vet/STAGING_CONSOLIDATED_MIGRATIONS.sql`**
 
 Este arquivo contém TODAS as migrations necessárias em ordem de execução.
 
@@ -24,7 +24,7 @@ Este arquivo contém TODAS as migrations necessárias em ordem de execução.
 
 1. No projeto criado, vá em **SQL Editor** (ícone de código no menu lateral)
 2. Clique em **"New query"**
-3. Abra o arquivo `STAGING_CONSOLIDATED_MIGRATIONS.sql`
+3. Abra o arquivo `petimi_vet/STAGING_CONSOLIDATED_MIGRATIONS.sql`
 4. **Copie TODO o conteúdo** (Ctrl+A, Ctrl+C)
 5. **Cole** no SQL Editor do Supabase
 6. Clique em **"Run"** (ou pressione Ctrl+Enter)

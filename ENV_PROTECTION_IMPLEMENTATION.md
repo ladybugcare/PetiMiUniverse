@@ -162,3 +162,10 @@ Antes de fazer deploy para staging/produção:
 
 **Última atualização:** 2025-10-31
 
+
+
+
+
+
+
+

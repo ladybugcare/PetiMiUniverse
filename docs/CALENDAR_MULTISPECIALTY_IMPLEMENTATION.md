@@ -11,7 +11,7 @@ This implementation enhances the `/create-demand` form with:
 ## Files Modified
 
 ### Backend
-1. **`backend/database_migrations/add_position_specialties_junction_table.sql`** (NEW)
+1. **`backend/database_migrations/petimi_vet/add_position_specialties_junction_table.sql`** (NEW)
    - Creates `position_specialties` junction table
    - Migrates existing data
    - Updates `positions_with_availability` view to include specialties array
@@ -58,7 +58,7 @@ Open Supabase Dashboard → SQL Editor and execute:
 
 ```sql
 -- Copy and paste the entire contents of:
-backend/database_migrations/add_position_specialties_junction_table.sql
+backend/database_migrations/petimi_vet/add_position_specialties_junction_table.sql
 ```
 
 This will:

@@ -2,6 +2,15 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import colors from '../styles/colors';
 import { Lock, Lightbulb } from 'lucide-react';
+import IconWrapper from './IconWrapper';
+
+// Helper function to convert hex to rgba
+const hexToRgba = (hex: string, alpha: number): string => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
 const DashboardBlockedOverlay: React.FC = () => {
   const navigate = useNavigate();
@@ -11,20 +20,20 @@ const DashboardBlockedOverlay: React.FC = () => {
       <div style={styles.card}>
         <div style={styles.iconContainer}>
           <span style={styles.icon}>
-            <Lock size={48} color={colors.primary} />
+            <IconWrapper icon={Lock} size={48} color={colors.brand.primary[500]} />
           </span>
         </div>
         
         <h2 style={styles.title}>Finalize seu cadastro</h2>
         
         <p style={styles.description}>
-          Para acessar o dashboard e todas as funcionalidades da PetiVet, 
+          Para acessar o dashboard e todas as funcionalidades da PetMi Vet, 
           você precisa cadastrar a primeira unidade da sua clínica.
         </p>
 
         <div style={styles.infoBox}>
           <span style={styles.infoIcon}>
-            <Lightbulb size={20} color={colors.primary} />
+            <IconWrapper icon={Lightbulb} size={20} color={colors.brand.primary[500]} />
           </span>
           <p style={styles.infoText}>
             Não se preocupe! O processo é rápido e nossa equipe irá revisar 
@@ -36,14 +45,14 @@ const DashboardBlockedOverlay: React.FC = () => {
           onClick={() => navigate('/units/create-first')}
           style={styles.button}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = colors.primaryDark;
+            e.currentTarget.style.backgroundColor = colors.brand.primary[600];
             e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = `0 8px 20px ${colors.primary}40`;
+            e.currentTarget.style.boxShadow = `0 8px 20px ${hexToRgba(colors.brand.primary[500], 0.4)}`;
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = colors.primary;
+            e.currentTarget.style.backgroundColor = colors.brand.primary[500];
             e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = `0 4px 12px ${colors.primary}30`;
+            e.currentTarget.style.boxShadow = `0 4px 12px ${hexToRgba(colors.brand.primary[500], 0.3)}`;
           }}
         >
           Cadastrar Primeira Unidade
@@ -98,8 +107,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: '24px',
   },
   infoBox: {
-    backgroundColor: colors.primaryBg,
-    borderLeft: `4px solid ${colors.primary}`,
+    backgroundColor: colors.brand.primary[50],
+    borderLeft: `4px solid ${colors.brand.primary[500]}`,
     padding: '16px',
     borderRadius: '8px',
     marginBottom: '32px',
@@ -121,7 +130,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   button: {
     width: '100%',
     padding: '16px 32px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: colors.surface,
     border: 'none',
     borderRadius: '8px',
@@ -129,7 +138,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
-    boxShadow: `0 4px 12px ${colors.primary}30`,
+    boxShadow: `0 4px 12px ${hexToRgba(colors.brand.primary[500], 0.3)}`,
   },
 };
 

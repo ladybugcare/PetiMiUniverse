@@ -30,7 +30,7 @@
 1. Criar novo projeto em https://app.supabase.com
 2. Nome: `petivet-staging`
 3. Região: South America (mesma do projeto principal)
-4. Executar migrations em ordem (ver `/backend/database_migrations/`)
+4. Executar migrations em ordem (ver `backend/database_migrations/petimi_vet/` e `petimi_hub/`, e `README.md` na pasta de migrations)
 
 ### 2. Vercel (Frontend)
 

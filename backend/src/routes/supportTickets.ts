@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   createTicket,
+  createPublicTicket,
   getUserTickets,
   getAllTickets,
   replyToTicket,
@@ -15,6 +16,13 @@ import {
 } from '../controllers/supportTicketsController';
 
 const router = express.Router();
+
+// ========================================
+// ROTA PÚBLICA (SEM AUTENTICAÇÃO)
+// ========================================
+
+// Criar ticket público (para usuários não autenticados durante cadastro)
+router.post('/tickets/public', createPublicTicket);
 
 // ========================================
 // ROTAS DE USUÁRIOS (CLINIC, VET)

@@ -5,6 +5,37 @@ export const BRAZILIAN_STATES = [
   'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
 ];
 
+// Mapeamento de siglas para nomes completos dos estados
+export const STATE_NAMES: Record<string, string> = {
+  'AC': 'Acre',
+  'AL': 'Alagoas',
+  'AP': 'Amapá',
+  'AM': 'Amazonas',
+  'BA': 'Bahia',
+  'CE': 'Ceará',
+  'DF': 'Distrito Federal',
+  'ES': 'Espírito Santo',
+  'GO': 'Goiás',
+  'MA': 'Maranhão',
+  'MT': 'Mato Grosso',
+  'MS': 'Mato Grosso do Sul',
+  'MG': 'Minas Gerais',
+  'PA': 'Pará',
+  'PB': 'Paraíba',
+  'PR': 'Paraná',
+  'PE': 'Pernambuco',
+  'PI': 'Piauí',
+  'RJ': 'Rio de Janeiro',
+  'RN': 'Rio Grande do Norte',
+  'RS': 'Rio Grande do Sul',
+  'RO': 'Rondônia',
+  'RR': 'Roraima',
+  'SC': 'Santa Catarina',
+  'SP': 'São Paulo',
+  'SE': 'Sergipe',
+  'TO': 'Tocantins',
+};
+
 // Simplified city data - in production, use a complete database or API
 const CITIES_BY_STATE: Record<string, string[]> = {
   'SP': ['São Paulo', 'Campinas', 'Santos', 'São José dos Campos', 'Ribeirão Preto', 'Sorocaba', 'Osasco', 'Guarulhos'],

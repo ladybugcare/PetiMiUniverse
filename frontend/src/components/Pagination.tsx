@@ -1,4 +1,5 @@
 import React from 'react';
+import { colors } from '../styles/colors';
 
 interface PaginationProps {
   currentPage: number;
@@ -100,7 +101,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   button: {
     padding: '8px 16px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -132,9 +133,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s',
   },
   pageButtonActive: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
-    borderColor: '#7c3aed',
+    borderColor: colors.brand.primary[500],
   },
   ellipsis: {
     color: '#737373',

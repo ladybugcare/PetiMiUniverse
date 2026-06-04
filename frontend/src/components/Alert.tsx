@@ -1,5 +1,7 @@
 import React from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info } from 'lucide-react';
+import IconWrapper from './IconWrapper';
+import { colors } from '../styles/colors';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info';
 
@@ -31,14 +33,14 @@ const Alert: React.FC<AlertProps> = ({
   const getIconAndColor = () => {
     switch (type) {
       case 'success':
-        return { icon: <CheckCircle size={32} />, color: '#10b981', bgColor: '#d1fae5' };
+        return { icon: <IconWrapper icon={CheckCircle} size={32} />, color: '#10b981', bgColor: '#d1fae5' };
       case 'error':
-        return { icon: <XCircle size={32} />, color: '#ef4444', bgColor: '#fee2e2' };
+        return { icon: <IconWrapper icon={XCircle} size={32} />, color: '#ef4444', bgColor: '#fee2e2' };
       case 'warning':
-        return { icon: <AlertTriangle size={32} />, color: '#f59e0b', bgColor: '#fef3c7' };
+        return { icon: <IconWrapper icon={AlertTriangle} size={32} />, color: '#f59e0b', bgColor: '#fef3c7' };
       case 'info':
       default:
-        return { icon: <Info size={32} />, color: '#7c3aed', bgColor: '#ede9fe' };
+        return { icon: <IconWrapper icon={Info} size={32} />, color: colors.brand.primary[500], bgColor: '#ede9fe' };
     }
   };
 
@@ -51,15 +53,20 @@ const Alert: React.FC<AlertProps> = ({
     onClose();
   };
 
+  // Prevenir fechamento ao clicar no backdrop - só fecha com botão OK
   const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
+    // Não fazer nada - não permitir fechar ao clicar no backdrop
+    e.stopPropagation();
+  };
+
+  const handleModalClick = (e: React.MouseEvent) => {
+    // Prevenir que cliques no modal fechem o alerta
+    e.stopPropagation();
   };
 
   return (
     <div style={styles.overlay} onClick={handleBackdropClick}>
-      <div style={styles.modal}>
+      <div style={styles.modal} onClick={handleModalClick}>
         {/* Icon */}
         <div
           style={{
@@ -176,7 +183,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   confirmButton: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
   },
   cancelButton: {

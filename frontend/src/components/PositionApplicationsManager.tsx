@@ -1,6 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { demandPositionsApi } from '../services/demandPositionsApi';
+import { messagesApi } from '../services/messagesApi';
 import { useAlert } from '../hooks/useAlert';
+import { useAuth } from '../AuthContext';
+import { MessageCircle, CheckCircle, XCircle, User, Clock, Info, AlertTriangle, Ban, Users } from 'lucide-react';
+import colors from '../styles/colors';
+import { specialtiesApi, Specialty } from '../services/specialtiesApi';
 
 interface PositionApplicationsManagerProps {
   positionId: string;
@@ -17,13 +23,45 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
   positionDetails,
   onApplicationAccepted,
 }) => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
   const [loading, setLoading] = useState(true);
   const [applications, setApplications] = useState<any[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [specialtiesMap, setSpecialtiesMap] = useState<Map<string, string>>(new Map());
+
+  // Função para verificar se uma string é um UUID
+  const isUUID = (str: string): boolean => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
+  };
+
+  // Carregar nomes das especialidades
+  const loadSpecialtiesNames = useCallback(async () => {
+    try {
+      const { specialties } = await specialtiesApi.getAll();
+      const map = new Map<string, string>();
+      specialties.forEach((spec: Specialty) => {
+        map.set(spec.id, spec.name);
+      });
+      setSpecialtiesMap(map);
+    } catch (error: any) {
+      console.error('Erro ao carregar nomes das especialidades:', error);
+    }
+  }, []);
+
+  // Função para obter o nome da especialidade
+  const getSpecialtyName = (spec: string): string => {
+    if (isUUID(spec)) {
+      return specialtiesMap.get(spec) || spec;
+    }
+    return spec;
+  };
 
   useEffect(() => {
     loadApplications();
+    loadSpecialtiesNames();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positionId]);
 
@@ -75,40 +113,84 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
     });
   };
 
+  const handleSendMessage = async (vetId: string) => {
+    if (!vetId || !user?.id) {
+      showError('Erro ao identificar usuário ou veterinário');
+      return;
+    }
+
+    try {
+      // Criar ou buscar conversa existente
+      const result = await messagesApi.createConversation({
+        participant1_id: user.id,
+        participant1_type: 'clinic',
+        participant2_id: vetId,
+        participant2_type: 'vet',
+      });
+
+      // Navegar para página de mensagens com a conversa selecionada
+      navigate(`/messages?conversation=${result.conversation.id}`);
+    } catch (error: any) {
+      showError('Erro ao criar conversa: ' + (error.message || 'Erro desconhecido'));
+    }
+  };
+
   const getStatusBadge = (status: string) => {
-    const statusMap: { [key: string]: { label: string; style: React.CSSProperties } } = {
-      pending: {
-        label: '⏳ Pendente',
-        style: { backgroundColor: '#fef3c7', color: '#92400e' },
-      },
-      accepted: {
-        label: '✅ Aceito',
-        style: { backgroundColor: '#d1fae5', color: '#065f46' },
-      },
-      rejected: {
-        label: '❌ Rejeitado',
-        style: { backgroundColor: '#fee2e2', color: '#991b1b' },
-      },
-      inactive_accepted_other_position: {
-        label: 'ℹ️ Aceito em outra posição',
-        style: { backgroundColor: '#f3f4f6', color: '#6b7280' },
-      },
-      inactive_time_conflict: {
-        label: '⚠️ Conflito de horário',
-        style: { backgroundColor: '#fef3c7', color: '#92400e' },
-      },
-      cancelled_by_vet: {
-        label: '🚫 Cancelada pelo vet',
-        style: { backgroundColor: '#ede9fe', color: '#5b21b6' },
-      },
+    const base: React.CSSProperties = {
+      ...styles.badge,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
     };
 
-    const statusInfo = statusMap[status] || {
-      label: status,
-      style: { backgroundColor: '#f3f4f6', color: '#6b7280' },
-    };
-
-    return <span style={{ ...styles.badge, ...statusInfo.style }}>{statusInfo.label}</span>;
+    switch (status) {
+      case 'pending':
+        return (
+          <span style={{ ...base, backgroundColor: '#fef3c7', color: '#92400e' }}>
+            <Clock size={14} aria-hidden />
+            Pendente
+          </span>
+        );
+      case 'accepted':
+        return (
+          <span style={{ ...base, backgroundColor: '#d1fae5', color: '#065f46' }}>
+            <CheckCircle size={14} aria-hidden />
+            Aceito
+          </span>
+        );
+      case 'rejected':
+        return (
+          <span style={{ ...base, backgroundColor: '#fee2e2', color: '#991b1b' }}>
+            <XCircle size={14} aria-hidden />
+            Rejeitado
+          </span>
+        );
+      case 'inactive_accepted_other_position':
+        return (
+          <span style={{ ...base, backgroundColor: colors.neutral[100], color: colors.neutral[600] }}>
+            <Info size={14} aria-hidden />
+            Aceito em outra posição
+          </span>
+        );
+      case 'inactive_time_conflict':
+        return (
+          <span style={{ ...base, backgroundColor: '#fef3c7', color: '#92400e' }}>
+            <AlertTriangle size={14} aria-hidden />
+            Conflito de horário
+          </span>
+        );
+      case 'cancelled_by_vet':
+        return (
+          <span style={{ ...base, backgroundColor: colors.brand.primary[50], color: colors.brand.primary[800] }}>
+            <Ban size={14} aria-hidden />
+            Cancelada pelo vet
+          </span>
+        );
+      default:
+        return (
+          <span style={{ ...base, backgroundColor: '#f3f4f6', color: '#6b7280' }}>{status}</span>
+        );
+    }
   };
 
   const pendingApplications = applications.filter((app) => app.status === 'pending');
@@ -142,7 +224,9 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
 
       {applications.length === 0 && (
         <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}>👥</div>
+          <div style={styles.emptyIcon} aria-hidden>
+            <Users size={40} color="#9ca3af" strokeWidth={1.5} />
+          </div>
           <p style={styles.emptyText}>Nenhuma candidatura recebida ainda</p>
         </div>
       )}
@@ -164,9 +248,18 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                 <p style={styles.vetDetail}>
                   <strong>Email:</strong> {app.vets?.email}
                 </p>
-                <p style={styles.vetDetail}>
-                  <strong>Especialidades:</strong> {app.vets?.specialties?.join(', ')}
-                </p>
+                {app.vets?.specialties && app.vets.specialties.length > 0 && (
+                  <div style={styles.specialtiesContainer}>
+                    <strong style={styles.vetDetailLabel}>Especialidades:</strong>
+                    <div style={styles.specialtiesList}>
+                      {app.vets.specialties.map((spec: string, idx: number) => (
+                        <span key={idx} style={styles.specialtyBadge}>
+                          {getSpecialtyName(spec)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {app.vets?.experience && (
                   <p style={styles.vetDetail}>
                     <strong>Experiência:</strong> {app.vets.experience}
@@ -180,19 +273,41 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                 )}
               </div>
               <div style={styles.actions}>
+                {app.vets?.id && (
+                  <>
+                    <button
+                      onClick={() => navigate(`/vet-profile/${app.vets.id}`)}
+                      style={styles.viewProfileButton}
+                      title="Ver perfil do veterinário"
+                    >
+                      <User size={16} color={colors.brand.primary[500]} />
+                      Ver Perfil
+                    </button>
+                    <button
+                      onClick={() => handleSendMessage(app.vets.id)}
+                      style={styles.messageButton}
+                      title="Enviar mensagem"
+                    >
+                      <MessageCircle size={16} color={colors.brand.primary[500]} />
+                      Mensagem
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => handleAccept(app.id)}
                   style={styles.acceptButton}
                   disabled={!!processingId}
                 >
-                  {processingId === app.id ? 'Processando...' : '✅ Aceitar'}
+                  <CheckCircle size={16} color="#ffffff" />
+                  {processingId === app.id ? 'Processando...' : 'Aceitar'}
                 </button>
                 <button
                   onClick={() => handleReject(app.id)}
                   style={styles.rejectButton}
                   disabled={!!processingId}
                 >
-                  ❌ Rejeitar
+                  <XCircle size={16} color="#dc2626" />
+                  {processingId === app.id ? 'Processando...' : 'Rejeitar'}
                 </button>
               </div>
             </div>
@@ -224,6 +339,26 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                   </p>
                 )}
               </div>
+              {app.vets?.id && (
+                <div style={styles.actions}>
+                  <button
+                    onClick={() => navigate(`/vet-profile/${app.vets.id}`)}
+                    style={styles.viewProfileButton}
+                    title="Ver perfil do veterinário"
+                  >
+                    <User size={16} color={colors.brand.primary[500]} />
+                    Ver Perfil
+                  </button>
+                  <button
+                    onClick={() => handleSendMessage(app.vets.id)}
+                    style={styles.messageButton}
+                    title="Enviar mensagem"
+                  >
+                    <MessageCircle size={16} color={colors.brand.primary[500]} />
+                    Mensagem
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -249,6 +384,26 @@ const PositionApplicationsManager: React.FC<PositionApplicationsManagerProps> = 
                   </p>
                 )}
               </div>
+              {app.vets?.id && (
+                <div style={styles.actions}>
+                  <button
+                    onClick={() => navigate(`/vet-profile/${app.vets.id}`)}
+                    style={styles.viewProfileButton}
+                    title="Ver perfil do veterinário"
+                  >
+                    <User size={16} color={colors.brand.primary[500]} />
+                    Ver Perfil
+                  </button>
+                  <button
+                    onClick={() => handleSendMessage(app.vets.id)}
+                    style={styles.messageButton}
+                    title="Enviar mensagem"
+                  >
+                    <MessageCircle size={16} color={colors.brand.primary[500]} />
+                    Mensagem
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -278,7 +433,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   positionBadge: {
     padding: '4px 12px',
     backgroundColor: '#faf5ff',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     borderRadius: '12px',
     fontSize: '13px',
     fontWeight: '600',
@@ -348,9 +503,28 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     gap: '12px',
   },
+  viewProfileButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 16px',
+    backgroundColor: '#ffffff',
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
+  },
   acceptButton: {
-    flex: 1,
-    padding: '10px 20px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 16px',
     backgroundColor: '#10b981',
     color: '#ffffff',
     border: 'none',
@@ -359,10 +533,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
   },
   rejectButton: {
-    flex: 1,
-    padding: '10px 20px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 16px',
     backgroundColor: '#ffffff',
     color: '#dc2626',
     border: '1px solid #dc2626',
@@ -371,6 +549,23 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
+  },
+  messageButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 16px',
+    backgroundColor: '#ffffff',
+    color: colors.brand.primary[500],
+    border: `1px solid ${colors.brand.primary[500]}`,
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
   },
   loading: {
     display: 'flex',
@@ -384,7 +579,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '32px',
     height: '32px',
     border: '3px solid #f3f4f6',
-    borderTop: '3px solid #7c3aed',
+    borderTop: `3px solid ${colors.brand.primary[500]}`,
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },
@@ -393,12 +588,38 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '40px 20px',
   },
   emptyIcon: {
-    fontSize: '48px',
+    display: 'flex',
+    justifyContent: 'center',
     marginBottom: '12px',
   },
   emptyText: {
     fontSize: '16px',
     color: '#737373',
+  },
+  specialtiesContainer: {
+    marginTop: '8px',
+    marginBottom: '8px',
+  },
+  vetDetailLabel: {
+    fontSize: '14px',
+    color: '#525252',
+    marginBottom: '6px',
+    display: 'block',
+  },
+  specialtiesList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    marginTop: '4px',
+  },
+  specialtyBadge: {
+    padding: '4px 10px',
+    backgroundColor: '#f3f4f6',
+    color: '#525252',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontFamily: 'Inter, sans-serif',
+    fontWeight: '500',
   },
 };
 

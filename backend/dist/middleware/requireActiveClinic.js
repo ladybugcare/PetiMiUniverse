@@ -3,8 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireActiveClinic = void 0;
 const supabase_1 = require("../config/supabase");
 /**
- * Middleware to ensure clinic is active before allowing certain operations
- * Blocks clinics with status 'pending_unit', 'pending_approval', 'suspended', or 'rejected'
+ * Garante que a clínica pode operar antes de criar demanda / marketplace / etc.
+ * Usa service role para ler `clinics` (evita falsos 404 com RLS no client anon).
+ * `pending_approval`: permitido se existir pelo menos uma unidade `approved` ou `active`.
+ * Bloqueia: `pending_unit`, `pending_approval` sem unidade aprovada, `suspended`, `rejected`.
  */
 const requireActiveClinic = async (req, res, next) => {
     try {
@@ -13,7 +15,7 @@ const requireActiveClinic = async (req, res, next) => {
         if (!clinic_id) {
             return res.status(400).json({ error: 'clinic_id é obrigatório' });
         }
-        const { data: clinic, error } = await supabase_1.supabase
+        const { data: clinic, error } = await supabase_1.supabaseAdmin
             .from('clinics')
             .select('status')
             .eq('id', clinic_id)
@@ -29,10 +31,18 @@ const requireActiveClinic = async (req, res, next) => {
             });
         }
         if (clinic.status === 'pending_approval') {
+            const { count, error: unitsCountError } = await supabase_1.supabaseAdmin
+                .from('units')
+                .select('*', { count: 'exact', head: true })
+                .eq('clinic_id', clinic_id)
+                .in('status', ['approved', 'active']);
+            if (!unitsCountError && (count ?? 0) > 0) {
+                return next();
+            }
             return res.status(403).json({
                 error: 'Aguarde a aprovação da sua unidade pelo ADMIN.',
                 status: 'pending_approval',
-                action_required: 'wait_approval'
+                action_required: 'wait_approval',
             });
         }
         if (clinic.status === 'suspended') {

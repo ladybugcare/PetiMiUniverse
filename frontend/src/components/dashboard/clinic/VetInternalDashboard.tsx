@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { statisticsApi } from '../../../services/statisticsApi';
 import { demandsApi } from '../../../services/demandsApi';
 import { applicationsApi } from '../../../services/applicationsApi';
-import { ClipboardList, CheckCircle, MessageSquare, FileText, Star } from 'lucide-react';
+import { ClipboardList, CheckCircle, MessageSquare, FileText, Star, Clock } from 'lucide-react';
 import colors from '../../../styles/colors';
 
 interface VetInternalDashboardProps {
@@ -40,7 +40,7 @@ const ResumoSection: React.FC = () => {
     const loadData = async () => {
       try {
         setLoading(true);
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const user = JSON.parse(localStorage.getItem('user') || '');
         const vetId = user.id;
 
         // Fetch vet statistics
@@ -67,10 +67,10 @@ const ResumoSection: React.FC = () => {
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          style={{ ...styles.statCard, borderLeftColor: colors.brand.primary[500] }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(196, 108, 106, 0.15)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0)';
@@ -78,7 +78,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <ClipboardList size={24} color={colors.primary} />
+            <ClipboardList size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.availableOpportunities}</h3>
@@ -98,7 +98,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <FileText size={24} color={colors.primary} />
+            <FileText size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalApplications}</h3>
@@ -118,7 +118,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <CheckCircle size={24} color={colors.primary} />
+            <CheckCircle size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.completedJobs}</h3>
@@ -138,7 +138,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <Star size={24} color={colors.primary} />
+            <Star size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.averageRating.toFixed(1)}</h3>
@@ -203,7 +203,8 @@ const MensagensSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Mensagens</h2>
       <div style={styles.placeholder}>
         <p style={styles.placeholderText}>
-          <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+          {}
+          <MessageSquare size={24} color={colors.brand.primary[500]} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
           Suas mensagens aparecerão aqui
         </p>
       </div>
@@ -276,7 +277,10 @@ const ScheduleItem: React.FC<{
           >
             {type}
           </span>
-          <span style={styles.scheduleDuration}>⏱️ {duration}</span>
+          <span style={{ ...styles.scheduleDuration, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <Clock size={14} aria-hidden />
+            {duration}
+          </span>
         </div>
       </div>
     </div>
@@ -324,8 +328,9 @@ const ReviewCard: React.FC<{
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
-    padding: '32px',
+    padding: '12px 0 40px',
     fontFamily: 'Inter, sans-serif',
+    maxWidth: '100%',
   },
   section: {
     marginBottom: '32px',
@@ -398,7 +403,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   scheduleTime: {
     fontSize: '14px',
     fontWeight: '600',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     minWidth: '120px',
   },
   scheduleContent: {
@@ -462,7 +467,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   applyButton: {
     width: '100%',
     padding: '10px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

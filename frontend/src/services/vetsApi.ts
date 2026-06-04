@@ -1,86 +1,84 @@
 import { apiRequest } from './api';
 
-// Tipos
 export interface Vet {
   id: string;
   name: string;
-  crmv: string;
-  specialties: string[];
-  certificates: string[];
-  experience: string;
   email: string;
-  clinic_id?: string;
-  photo_url?: string;
-  status?: string;
-  deleted_at?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateVetData {
-  name: string;
-  crmv: string;
-  specialties: string[];
+  crmv: string; // obrigatório pra simplificar compatibilidade
+  document_type?: 'CPF' | 'CNPJ';
+  document_number?: string;
+  address?: string;
+  phone?: string;
+  bio?: string;
+  specialties?: string[];
   certificates?: string[];
-  experience: string;
-  email: string;
-  password: string;
-  clinic_id?: string;
+  experience?: string;
+  photo_url?: string;
+  /** Conta ativa/inativa (operacional). */
+  status?: 'active' | 'inactive' | 'pending' | string;
+  /** Fluxo de cadastro / moderação admin (fonte de verdade para “pendente” vs “aprovado”). */
+  approval_status?:
+    | 'pending'
+    | 'pending_approval'
+    | 'approved'
+    | 'rejected'
+    | 'pending_review'
+    | string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-// Services
+export interface CompletedDemand {
+  id: string;
+  clinicName: string;
+  title: string;
+  specialty?: string;
+  completedAt: string;
+}
+
 export const vetsApi = {
-  // Criar veterinário
-  create: async (data: CreateVetData): Promise<{ vet: Vet }> => {
-    return apiRequest('/vets/register', {
+  getAll: async (): Promise<{ vets: Vet[] }> => apiRequest('/vets'),
+
+  getById: async (id: string): Promise<{ vet: Vet }> =>
+    apiRequest(`/vets/${id}`),
+
+  create: async (data: any): Promise<{ vet: Vet }> =>
+    apiRequest('/vets', {
       method: 'POST',
       body: JSON.stringify(data),
-    });
-  },
+    }),
 
-  // Listar veterinários
-  getAll: async (): Promise<{ vets: Vet[] }> => {
-    return apiRequest('/vets');
-  },
-
-  // Buscar veterinário por ID
-  getById: async (id: string): Promise<{ vet: Vet }> => {
-    return apiRequest(`/vets/${id}`);
-  },
-
-  // Buscar veterinários por clínica
-  getByClinic: async (clinicId: string): Promise<{ vets: Vet[] }> => {
-    return apiRequest(`/vets/clinic/${clinicId}`);
-  },
-
-  // Atualizar veterinário
-  update: async (id: string, data: Partial<Vet>): Promise<{ vet: Vet }> => {
-    return apiRequest(`/vets/${id}`, {
+  update: async (id: string, data: any): Promise<{ vet: Vet }> =>
+    apiRequest(`/vets/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    });
-  },
+    }),
 
-  // Atualizar foto de perfil
-  uploadPhoto: async (id: string, photo_url: string): Promise<{ vet: Vet }> => {
-    return apiRequest(`/vets/${id}/photo`, {
+  delete: async (id: string): Promise<{ success: boolean }> =>
+    apiRequest(`/vets/${id}`, { method: 'DELETE' }),
+
+  uploadPhoto: async (id: string, photo_url: string): Promise<{ vet: Vet }> =>
+    apiRequest(`/vets/${id}/photo`, {
       method: 'PATCH',
       body: JSON.stringify({ photo_url }),
-    });
+    }),
+
+  getCompletedDemands: async (id: string, clinicId?: string): Promise<{ completedDemands: CompletedDemand[] }> => {
+    let url = `/vets/${id}/completed-demands`;
+    if (clinicId) {
+      url += `?clinic_id=${clinicId}`;
+    }
+    return apiRequest(url);
   },
 
-  // Atualizar status do veterinário
-  updateStatus: async (id: string, status: string): Promise<{ vet: Vet }> => {
-    return apiRequest(`/vets/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-  },
+  approve: async (id: string): Promise<{ success: boolean; message: string }> =>
+    apiRequest(`/vets/${id}/approve`, {
+      method: 'POST',
+    }),
 
-  // Deletar veterinário
-  delete: async (id: string): Promise<{ message: string; vet: Vet }> => {
-    return apiRequest(`/vets/${id}`, {
-      method: 'DELETE',
-    });
-  },
+  reject: async (id: string, reason: string): Promise<{ success: boolean; message: string }> =>
+    apiRequest(`/vets/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ rejection_reason: reason }),
+    }),
 };

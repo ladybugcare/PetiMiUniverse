@@ -11,8 +11,10 @@ export interface Demand {
   demand_date: string;
   start_time: string;
   duration_hours: number;
-  status: 'open' | 'in_progress' | 'closed' | 'cancelled';
+  status: 'open' | 'with_applicants' | 'partially_filled' | 'filled' | 'in_progress' | 'awaiting_report' | 'completed' | 'canceled_by_clinic' | 'canceled_by_system' | 'expired' | 'cancelled' | 'closed';
   payment?: number;
+  vacancies?: number;
+  filled_positions?: number;
   created_at: string;
   updated_at: string;
 }
@@ -30,11 +32,40 @@ export interface CreateDemandData {
   payment?: number;
 }
 
+export interface CreateDemandV2Data {
+  clinic_id: string;
+  unit_id?: string;
+  category: 'vet' | 'freelancer' | 'clinic' | 'other';
+  title: string;
+  description: string;
+  demand_date: string;
+  start_time: string;
+  end_time: string;
+  is_overnight: boolean;
+  payment: number; // Payment geral (fallback)
+  positions: Array<{
+    slots: number;
+    specialties: string[];
+    payment?: number; // Payment específico da posição (opcional)
+  }>;
+}
+
 // Services
 export const demandsApi = {
+  /**
+   * @deprecated Use createV2 instead
+   */
   // Criar demanda
   create: async (data: CreateDemandData): Promise<{ demand: Demand }> => {
     return apiRequest('/demands/create', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Criar demanda V2
+  createV2: async (data: CreateDemandV2Data): Promise<{ demand: Demand; positions: any[] }> => {
+    return apiRequest('/demands', {
       method: 'POST',
       body: JSON.stringify(data),
     });

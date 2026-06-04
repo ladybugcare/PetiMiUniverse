@@ -3,7 +3,7 @@
 ## Pré-requisitos
 
 - [ ] Conta no Vercel (https://vercel.com)
-- [ ] Repositório GitHub do PetiVet
+- [ ] Repositório GitHub do PetMi Vet
 - [ ] Branch `staging` criada e com push feito
 - [ ] Credenciais do Supabase Staging em mãos
 
@@ -13,7 +13,7 @@
 
 1. Acesse: https://vercel.com/new
 2. Clique em **"Import Git Repository"**
-3. Escolha o repositório **PetiVet**
+3. Escolha o repositório **PetMi Vet**
 4. Clique em **"Import"**
 
 ---

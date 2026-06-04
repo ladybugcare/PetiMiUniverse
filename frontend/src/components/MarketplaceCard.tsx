@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { MapPin, Search, ShoppingBag } from 'lucide-react';
 import { MarketplaceItem } from '../services/marketplaceApi';
 
 interface MarketplaceCardProps {
@@ -66,9 +67,22 @@ const MarketplaceCard: React.FC<MarketplaceCardProps> = ({ item }) => {
             ...styles.badge,
             ...styles.typeBadge,
             backgroundColor: item.listing_type === 'sale' ? '#10b981' : '#3b82f6',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
           }}
         >
-          {item.listing_type === 'sale' ? '🛍️ Venda' : '🔍 Procura'}
+          {item.listing_type === 'sale' ? (
+            <>
+              <ShoppingBag size={14} color="#fff" aria-hidden />
+              Venda
+            </>
+          ) : (
+            <>
+              <Search size={14} color="#fff" aria-hidden />
+              Procura
+            </>
+          )}
         </div>
 
         {/* Condition Badge (only for sales) */}
@@ -109,8 +123,9 @@ const MarketplaceCard: React.FC<MarketplaceCardProps> = ({ item }) => {
 
         {/* Location */}
         {(item.city || item.state) && (
-          <div style={styles.location}>
-            📍 {[item.city, item.state].filter(Boolean).join(', ')}
+          <div style={{ ...styles.location, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <MapPin size={16} color="#6b7280" aria-hidden />
+            {[item.city, item.state].filter(Boolean).join(', ')}
           </div>
         )}
 

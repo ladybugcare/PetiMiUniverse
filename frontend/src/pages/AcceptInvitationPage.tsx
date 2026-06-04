@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAlert } from '../hooks/useAlert';
 import { clinicUsersApi } from '../services/clinicUsersApi';
+import { CLINIC_STORAGE_UPDATED_EVENT } from '../constants/appEvents';
 import HomeHeader from '../components/HomeHeader';
+import { colors } from '../styles/colors';
 
 const AcceptInvitationPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -30,7 +32,7 @@ const AcceptInvitationPage: React.FC = () => {
       setAccepting(true);
       
       // Check if user is logged in
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       if (!user.id) {
         // Redirect to login with token in URL
         navigate(`/login?invitation=${token}`);
@@ -42,6 +44,7 @@ const AcceptInvitationPage: React.FC = () => {
       
       // Save clinic_user to localStorage
       localStorage.setItem('clinic_user', JSON.stringify(result.clinic_user));
+      window.dispatchEvent(new Event(CLINIC_STORAGE_UPDATED_EVENT));
       
       showSuccess('Convite aceito com sucesso! Bem-vindo à equipe!');
       
@@ -72,7 +75,7 @@ const AcceptInvitationPage: React.FC = () => {
               height="48"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="#7c3aed"
+              stroke={colors.brand.primary[500]}
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -86,7 +89,7 @@ const AcceptInvitationPage: React.FC = () => {
           
           <h1 style={styles.title}>Convite para Equipe</h1>
           <p style={styles.description}>
-            Você foi convidado para se juntar a uma equipe no PetiVet!
+            Você foi convidado para se juntar a uma equipe no PetMi Vet!
           </p>
           <p style={styles.subdescription}>
             Ao aceitar este convite, você terá acesso à clínica e poderá colaborar
@@ -141,7 +144,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '80px',
     height: '80px',
     borderRadius: '50%',
-    backgroundColor: '#f5f3ff',
+    backgroundColor: 'transparent',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -169,7 +172,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   button: {
     width: '100%',
     padding: '14px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -184,8 +187,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '100%',
     padding: '14px 24px',
     backgroundColor: 'transparent',
-    color: '#7c3aed',
-    border: '2px solid #7c3aed',
+    color: colors.brand.primary[500],
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '8px',
     fontSize: '16px',
     fontWeight: '600',

@@ -6,8 +6,9 @@ export interface FABOption {
   id: string;
   label: string;
   icon: React.ReactNode;
-  path: string;
+  path?: string;
   color: string;
+  disabled?: boolean;
 }
 
 interface FloatingActionButtonProps {
@@ -19,8 +20,9 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
   const navigate = useNavigate();
   const fabRef = useRef<HTMLDivElement>(null);
 
-  const handleOptionClick = (path: string) => {
-    navigate(path);
+  const handleOptionClick = (option: FABOption) => {
+    if (option.disabled || !option.path) return;
+    navigate(option.path);
     setIsOpen(false);
   };
 
@@ -99,20 +101,30 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
               >
                 <span style={styles.optionLabel}>{option.label}</span>
                 <button
-                  onClick={() => handleOptionClick(option.path)}
+                  onClick={() => handleOptionClick(option)}
+                  disabled={option.disabled || !option.path}
                   style={{
                     ...styles.optionButton,
-                    backgroundColor: option.color,
+                    backgroundColor: 'transparent',
+                    ...(option.disabled || !option.path ? styles.optionButtonDisabled : {}),
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.1)';
+                    if (!option.disabled && option.path) {
+                      e.currentTarget.style.transform = 'scale(1.1)';
+                    }
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.transform = 'scale(1)';
                   }}
                   aria-label={option.label}
+                  title={option.disabled ? 'Ação desabilitada' : option.label}
                 >
-                  <div style={styles.optionIcon}>{option.icon}</div>
+                  <div style={{
+                    ...styles.optionIcon,
+                    backgroundColor: option.color,
+                  }}>
+                    {option.icon}
+                  </div>
                 </button>
               </div>
             ))}
@@ -129,11 +141,13 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ options }) 
           onMouseEnter={(e) => {
             if (!isOpen) {
               e.currentTarget.style.transform = 'scale(1.1) rotate(0deg)';
+              e.currentTarget.style.boxShadow = '0 6px 16px rgba(196, 108, 106, 0.5)';
             }
           }}
           onMouseLeave={(e) => {
             if (!isOpen) {
               e.currentTarget.style.transform = 'scale(1) rotate(0deg)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.4)';
             }
           }}
           aria-label={isOpen ? 'Fechar menu' : 'Abrir menu de ações'}
@@ -171,14 +185,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '64px',
     height: '64px',
     borderRadius: '50%',
-    background: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)',
+    background: 'linear-gradient(135deg, colors.brand.primary[500] 0%, colors.brand.primary[500] 100%)',
     border: 'none',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2)',
-    transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+    boxShadow: '0 4px 12px rgba(196, 108, 106, 0.4)',
+    transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease',
   },
   mainIcon: {
     fontSize: '32px',
@@ -220,14 +234,23 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    boxShadow: 'none',
     transition: 'transform 0.2s ease',
+    padding: 0,
   },
   optionIcon: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
     color: '#ffffff',
+    flexShrink: 0,
+  },
+  optionButtonDisabled: {
+    opacity: 0.5,
+    cursor: 'not-allowed',
   },
 };
 

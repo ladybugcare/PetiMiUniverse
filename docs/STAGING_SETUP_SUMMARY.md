@@ -16,7 +16,7 @@
 ### 🔄 Próximos Passos
 
 1. **Executar Migrations no Supabase** (5 min)
-   - Copiar `backend/database_migrations/STAGING_CONSOLIDATED_MIGRATIONS.sql`
+   - Copiar `backend/database_migrations/petimi_vet/STAGING_CONSOLIDATED_MIGRATIONS.sql`
    - Colar no Supabase SQL Editor
    - Executar
 
@@ -96,7 +96,7 @@
 open https://app.supabase.com/project/gyprceshzmecvldgahbf/sql
 
 # 2. Copiar arquivo
-cat backend/database_migrations/STAGING_CONSOLIDATED_MIGRATIONS.sql | pbcopy
+cat backend/database_migrations/petimi_vet/STAGING_CONSOLIDATED_MIGRATIONS.sql | pbcopy
 
 # 3. Colar no SQL Editor e executar
 ```

@@ -9,7 +9,7 @@ Data de conclusão: **29 de Outubro de 2025**
 ## 📋 O QUE FOI IMPLEMENTADO
 
 ### 1. **Banco de Dados** ✅
-- ✅ Migration completa em `backend/database_migrations/create_demand_positions_system.sql`
+- ✅ Migration completa em `backend/database_migrations/petimi_vet/create_demand_positions_system.sql`
 - ✅ Tabelas `demand_positions` e `position_applications` criadas
 - ✅ View `positions_with_availability` para consultas otimizadas
 - ✅ Triggers automáticos para gerenciar conflitos de horário
@@ -56,7 +56,7 @@ Data de conclusão: **29 de Outubro de 2025**
    - Menu lateral → SQL Editor
 
 3. **Copie e execute a migration**
-   - Abra o arquivo: `backend/database_migrations/create_demand_positions_system.sql`
+   - Abra o arquivo: `backend/database_migrations/petimi_vet/create_demand_positions_system.sql`
    - Copie TODO o conteúdo
    - Cole no SQL Editor
    - Clique em "Run"

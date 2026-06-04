@@ -5,53 +5,155 @@ import { API_BASE_URL } from '../services/api';
 import ProgressBar from '../components/ProgressBar';
 import PasswordInput from '../components/PasswordInput';
 import HomeHeader from '../components/HomeHeader';
-import { validateEmail, validatePassword } from '../utils/validators';
+import { validateEmail, validatePassword, validateCRMV, validateCPF, validateCNPJ, formatCPF, formatCNPJ, formatCRMV } from '../utils/validators';
 import colors from '../styles/colors';
-import { Info, CheckCircle, Heart, Mail } from 'lucide-react';
+import { Info, HelpCircle } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
+import { supabase } from '../services/supabase';
+import SignUpSuccessModal from '../components/SignUpSuccessModal';
+import SignUpErrorModal from '../components/SignUpErrorModal';
+import PublicSupportModal from '../components/PublicSupportModal';
+import { classifySignUpError, SignUpErrorType } from '../utils/signUpErrorHandler';
+import AddressAutocomplete from '../components/AddressAutocomplete';
+
+// Componente customizado de ícone Info sem fundo preto
+const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, color = colors.brand.primary[500]}) => {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ backgroundColor: 'transparent' }}
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+      />
+      <path
+        d="M12 16v-4M12 8h.01"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </svg>
+  );
+};
 
 const VetSignUpPage: React.FC = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [signupComplete, setSignupComplete] = useState(false);
-  
+  const [emailResent, setEmailResent] = useState(false);
+  const [errorModal, setErrorModal] = useState<{ isOpen: boolean; type: SignUpErrorType | null }>({
+    isOpen: false,
+    type: null,
+  });
+  const [showSupportModal, setShowSupportModal] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     crmv: '',
-    specialties: '',
-    experience: '',
+    document_type: '' as 'CPF' | 'CNPJ' | '',
+    document_number: '',
+    address: '',
     email: '',
-    password: ''
+    password: '',
   });
-  
+
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Validar step atual
   const isStepValid = (): boolean => {
-    switch(step) {
-      case 1: return formData.name.trim().length >= 3;
-      case 2: return formData.crmv.trim().length >= 5;
-      case 3: return formData.specialties.trim().length >= 3;
-      case 4: return formData.experience.trim().length > 0;
-      case 5: return validateEmail(formData.email) && !errors.email;
-      case 6: return validatePassword(formData.password).valid;
-      default: return false;
+    switch (step) {
+      case 1:
+        return formData.name.trim().length >= 3;
+      case 2:
+        return validateCRMV(formData.crmv) && !errors?.crmv;
+      case 3:
+        // Validar tipo de documento e número se tipo estiver selecionado
+        if (!formData.document_type) return false;
+        if (formData.document_type === 'CPF') {
+          return validateCPF(formData.document_number) && !errors?.document_number;
+        } else if (formData.document_type === 'CNPJ') {
+          return validateCNPJ(formData.document_number) && !errors?.document_number;
+        }
+        return false;
+      case 4:
+        return formData.address.trim().length > 0;
+      case 5:
+        return validateEmail(formData.email) && !errors?.email;
+      case 6:
+        return validatePassword(formData.password).valid;
+      default:
+        return false;
     }
   };
 
   // Handle campo change
   const handleFieldChange = (field: keyof typeof formData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    
-    // Limpar erro quando usuário digita
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+    // Se mudar o tipo de documento, limpa o número do documento
+    if (field === 'document_type') {
+      setFormData((prev) => ({ ...prev, document_type: value as 'CPF' | 'CNPJ', document_number: '' }));
+      setErrors((prev) => ({ ...prev, document_number: '' }));
+      return;
     }
-    
-    // Validação em tempo real para email
+
+    // Aplicar máscara para número do documento
+    if (field === 'document_number') {
+      let formattedValue = value;
+      if (formData.document_type === 'CPF') {
+        formattedValue = formatCPF(value);
+      } else if (formData.document_type === 'CNPJ') {
+        formattedValue = formatCNPJ(value);
+      }
+      setFormData((prev) => ({ ...prev, [field]: formattedValue }));
+    } else if (field === 'crmv') {
+      // Aplicar formatação automática para CRMV
+      const formattedValue = formatCRMV(value);
+      setFormData((prev) => ({ ...prev, [field]: formattedValue }));
+    } else {
+      setFormData((prev) => ({ ...prev, [field]: value }));
+    }
+
+    // Limpa erro ao digitar novamente
+    if (errors?.[field]) {
+      setErrors((prev) => ({ ...prev, [field]: '' }));
+    }
+
+    // Validação dinâmica para CRMV
+    if (field === 'crmv' && value.length > 0) {
+      // Usar valor formatado para validação
+      const formattedValue = formatCRMV(value);
+      if (!validateCRMV(formattedValue)) {
+        setErrors((prev) => ({ ...prev, crmv: 'CRMV inválido. Use o formato 00000-UF (ex: 12345-SP).' }));
+      }
+    }
+
+    // Validação dinâmica para documento
+    if (field === 'document_number' && value.length > 0) {
+      if (formData.document_type === 'CPF') {
+        if (!validateCPF(value)) {
+          setErrors((prev) => ({ ...prev, document_number: 'CPF inválido' }));
+        }
+      } else if (formData.document_type === 'CNPJ') {
+        if (!validateCNPJ(value)) {
+          setErrors((prev) => ({ ...prev, document_number: 'CNPJ inválido' }));
+        }
+      }
+    }
+
+    // Validação dinâmica para email
     if (field === 'email' && value.length > 0) {
       if (!validateEmail(value)) {
-        setErrors(prev => ({ ...prev, email: 'Email inválido' }));
+        setErrors((prev) => ({ ...prev, email: 'Email inválido' }));
       }
     }
   };
@@ -59,24 +161,74 @@ const VetSignUpPage: React.FC = () => {
   // Avançar para próximo step ou submit
   const handleNext = async () => {
     if (!isStepValid()) return;
-    
-    // Step 5: Verificar se email já existe
+
+    // Step 3 → Verificar documento duplicado
+    if (step === 3) {
+      try {
+        setLoading(true);
+        // Normalizar documento (remover formatação)
+        const normalizedDocument = formData.document_number.replace(/[^\d]/g, '');
+        
+        const response = await fetch(`${API_BASE_URL}/vets/check-document/${normalizedDocument}`);
+        
+        if (!response.ok) {
+          throw new Error('Erro ao verificar documento');
+        }
+
+        const text = await response.text();
+        if (!text) {
+          // Resposta vazia, assumir que documento não existe
+          setStep(step + 1);
+          return;
+        }
+
+        const data = JSON.parse(text);
+
+        if (data.exists) {
+          setErrors({ document_number: 'Este documento já está cadastrado na plataforma' });
+          return;
+        }
+      } catch (error) {
+        console.error('Erro ao verificar documento:', error);
+        setErrors({ document_number: 'Erro ao verificar documento. Tente novamente.' });
+        return;
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // Step 5 → Verificar email duplicado
     if (step === 5) {
       try {
+        setLoading(true);
         const response = await fetch(`${API_BASE_URL}/vets/check-email/${encodeURIComponent(formData.email)}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.exists) {
-            setErrors({ email: 'Email já cadastrado na plataforma' });
-            return;
-          }
+        
+        if (!response.ok) {
+          throw new Error('Erro ao verificar email');
+        }
+
+        const text = await response.text();
+        if (!text) {
+          // Resposta vazia, assumir que email não existe (avançar como no passo 3)
+          setStep(step + 1);
+          return;
+        }
+
+        const data = JSON.parse(text);
+
+        if (data.exists) {
+          setErrors({ email: 'Email já cadastrado na plataforma' });
+          return;
         }
       } catch (error) {
         console.error('Erro ao verificar email:', error);
+        setErrors({ email: 'Erro ao verificar email. Tente novamente.' });
+      } finally {
+        setLoading(false);
       }
     }
-    
-    // Step 6: Submit final
+
+    // Step 6 → Criar conta
     if (step === 6) {
       await handleSignUp();
     } else {
@@ -86,8 +238,27 @@ const VetSignUpPage: React.FC = () => {
 
   // Voltar step
   const handleBack = () => {
-    if (step > 1) {
-      setStep(step - 1);
+    if (step > 1) setStep(step - 1);
+  };
+
+  // Handler para teclado Enter
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Se Enter foi pressionado e botão está habilitado
+    if (e.key === 'Enter' && isStepValid() && !loading) {
+      // Para textarea (step 4 - endereço), Shift+Enter permite quebra de linha
+      if (step === 4 && (e.currentTarget as HTMLElement).tagName === 'TEXTAREA') {
+        if (e.shiftKey) {
+          // Shift+Enter: permite quebra de linha (comportamento padrão)
+          return;
+        }
+        // Enter sem Shift: aciona botão
+        e.preventDefault();
+        handleNext();
+      } else {
+        // Para inputs normais, Enter sempre aciona botão
+        e.preventDefault();
+        handleNext();
+      }
     }
   };
 
@@ -97,18 +268,51 @@ const VetSignUpPage: React.FC = () => {
       setLoading(true);
 
       await vetsApi.create({
-        name: formData.name,
-        crmv: formData.crmv,
-        specialties: formData.specialties.split(',').map(s => s.trim()),
-        experience: formData.experience,
-        email: formData.email,
+        name: formData.name.trim(),
+        crmv: formData.crmv.trim(),
+        document_type: formData.document_type as 'CPF' | 'CNPJ',
+        document_number: formData.document_number,
+        address: formData.address.trim(),
+        email: formData.email.trim(),
         password: formData.password,
+        role: 'VET',
       });
 
       // Marcar cadastro como completo - mostrar modal ao invés de alert
       setSignupComplete(true);
     } catch (err: any) {
-      alert('Erro ao cadastrar: ' + (err.message || 'Tente novamente.'));
+      console.error('Erro ao cadastrar:', err);
+      const classified = classifySignUpError(err);
+      setErrorModal({ isOpen: true, type: classified.type });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRetry = () => {
+    handleSignUp();
+  };
+
+  const handleGoToLogin = () => {
+    navigate('/login');
+  };
+
+  const handleOpenSupport = () => {
+    setShowSupportModal(true);
+  };
+
+  const handleResendEmail = async () => {
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: formData.email,
+      });
+      if (!error) {
+        setEmailResent(true);
+      }
+    } catch (err: any) {
+      console.error('Erro ao reenviar e-mail:', err);
     } finally {
       setLoading(false);
     }
@@ -131,12 +335,13 @@ const VetSignUpPage: React.FC = () => {
               placeholder="Ex: Dr. João Silva"
               value={formData.name}
               onChange={(e) => handleFieldChange('name', e.target.value)}
+              onKeyDown={handleKeyDown}
               className="input"
               autoFocus
             />
           </div>
         );
-      
+
       case 2:
         return (
           <div className="step-content">
@@ -151,60 +356,185 @@ const VetSignUpPage: React.FC = () => {
               placeholder="Ex: 12345-SP"
               value={formData.crmv}
               onChange={(e) => handleFieldChange('crmv', e.target.value)}
-              className="input"
+              onKeyDown={handleKeyDown}
+              className={`input ${
+                errors?.crmv
+                  ? 'border-red-500'
+                  : validateCRMV(formData.crmv)
+                  ? 'border-green-500'
+                  : ''
+              }`}
               autoFocus
             />
-            <p className="text-sm text-neutral-500 mt-2" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Info size={16} color={colors.primary} />
+            {errors?.crmv && (
+              <p className="text-red-500 text-sm mt-2">{errors.crmv}</p>
+            )}
+
+            <p
+              className="text-sm text-neutral-500 mt-2"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
+                <InfoIconNoBg size={16} color={colors.brand.primary[500]} />
+              </span>
               Formato: número-UF (exemplo: 12345-SP)
             </p>
           </div>
         );
-      
+
       case 3:
         return (
           <div className="step-content">
             <h2 className="text-display text-2xl font-bold mb-2 text-neutral-800">
-              Quais são suas especialidades?
+              Qual o tipo do seu documento?
             </h2>
             <p className="text-neutral-600 mb-6">
-              Liste suas áreas de atuação separadas por vírgula
+              Selecione se você possui CPF ou CNPJ
             </p>
-            <textarea
-              placeholder="Ex: Cirurgia, Clínica Geral, Cardiologia"
-              value={formData.specialties}
-              onChange={(e) => handleFieldChange('specialties', e.target.value)}
-              className="input"
-              rows={3}
-              autoFocus
-            />
-            <p className="text-sm text-neutral-500 mt-2" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Info size={16} color={colors.primary} />
-              Separe múltiplas especialidades com vírgula
+            
+            {/* Botões de seleção (Combobox) */}
+            <div style={{ display: 'flex', gap: '12px', marginBottom: formData.document_type ? '24px' : '0' }}>
+              <button
+                type="button"
+                onClick={() => handleFieldChange('document_type', 'CPF')}
+                style={{
+                  flex: 1,
+                  padding: '16px 24px',
+                  borderRadius: '8px',
+                  border: `2px solid ${formData.document_type === 'CPF' ? colors.brand.primary[500]: colors.border}`,
+                  backgroundColor: formData.document_type === 'CPF' ? colors.brand.primary[500]: colors.surface,
+                  color: formData.document_type === 'CPF' ? colors.surface : colors.textSecondary,
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  if (formData.document_type !== 'CPF') {
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
+                    e.currentTarget.style.backgroundColor = colors.neutral[50];
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (formData.document_type !== 'CPF') {
+                    e.currentTarget.style.borderColor = colors.border;
+                    e.currentTarget.style.backgroundColor = colors.surface;
+                  }
+                }}
+              >
+                CPF
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFieldChange('document_type', 'CNPJ')}
+                style={{
+                  flex: 1,
+                  padding: '16px 24px',
+                  borderRadius: '8px',
+                  border: `2px solid ${formData.document_type === 'CNPJ' ? colors.brand.primary[500]: colors.border}`,
+                  backgroundColor: formData.document_type === 'CNPJ' ? colors.brand.primary[500]: colors.surface,
+                  color: formData.document_type === 'CNPJ' ? colors.surface : colors.textSecondary,
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  if (formData.document_type !== 'CNPJ') {
+                    e.currentTarget.style.borderColor = colors.brand.primary[500];
+                    e.currentTarget.style.backgroundColor = colors.neutral[50];
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (formData.document_type !== 'CNPJ') {
+                    e.currentTarget.style.borderColor = colors.border;
+                    e.currentTarget.style.backgroundColor = colors.surface;
+                  }
+                }}
+              >
+                CNPJ
+              </button>
+            </div>
+
+            {/* Campo de número do documento aparece quando tipo é selecionado */}
+            {formData.document_type && (
+              <div style={{ marginTop: '24px' }}>
+                <h3 className="text-display text-lg font-semibold mb-2 text-neutral-800">
+                  Qual o número do seu {formData.document_type}?
+                </h3>
+                <p className="text-neutral-600 mb-4">
+                  Digite o número do seu {formData.document_type}
+                </p>
+                <input
+                  type="text"
+                  placeholder={formData.document_type === 'CPF' ? '000.000.000-00' : '00.000.000/0000-00'}
+                  value={formData.document_number}
+                  onChange={(e) => handleFieldChange('document_number', e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className={`input ${
+                    errors?.document_number
+                      ? 'border-red-500'
+                      : (formData.document_type === 'CPF' && validateCPF(formData.document_number)) ||
+                        (formData.document_type === 'CNPJ' && validateCNPJ(formData.document_number))
+                      ? 'border-green-500'
+                      : ''
+                  }`}
+                  maxLength={formData.document_type === 'CPF' ? 14 : 18}
+                  autoFocus
+                />
+                {errors?.document_number && (
+                  <p className="text-red-500 text-sm mt-2">{errors.document_number}</p>
+                )}
+            <p
+              className="text-sm text-neutral-500 mt-2"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
+                    <IconWrapper 
+                      icon={Info} 
+                      size={16} 
+                      color={colors.brand.primary[500]}
+                      style={{ backgroundColor: 'transparent' }}
+                    />
+              </span>
+                  {formData.document_type === 'CPF' 
+                    ? 'Formato: 000.000.000-00'
+                    : 'Formato: 00.000.000/0000-00'}
             </p>
+              </div>
+            )}
           </div>
         );
-      
+
       case 4:
         return (
           <div className="step-content">
             <h2 className="text-display text-2xl font-bold mb-2 text-neutral-800">
-              Quantos anos de experiência você tem?
+              Qual o seu endereço?
             </h2>
             <p className="text-neutral-600 mb-6">
-              Conte-nos sobre sua trajetória profissional
+              Digite o endereço e selecione uma sugestão do Google
             </p>
-            <input
-              type="text"
-              placeholder="Ex: 5 anos"
-              value={formData.experience}
-              onChange={(e) => handleFieldChange('experience', e.target.value)}
+            <AddressAutocomplete
+              value={formData.address}
+              onChange={(address) => handleFieldChange('address', address)}
+              onKeyDown={handleKeyDown}
               className="input"
+              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
               autoFocus
             />
+            <p
+              className="text-sm text-neutral-500 mt-2"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
+                <InfoIconNoBg size={16} color={colors.brand.primary[500]} />
+              </span>
+              Digite o endereço e selecione uma sugestão do Google para preenchimento automático
+            </p>
           </div>
         );
-      
+
       case 5:
         return (
           <div className="step-content">
@@ -220,21 +550,23 @@ const VetSignUpPage: React.FC = () => {
                 placeholder="dr.joao@email.com"
                 value={formData.email}
                 onChange={(e) => handleFieldChange('email', e.target.value)}
-                className={`input ${errors.email ? 'border-red-500' : validateEmail(formData.email) ? 'border-green-500' : ''}`}
+                onKeyDown={handleKeyDown}
+                className={`input ${
+                  errors?.email
+                    ? 'border-red-500'
+                    : validateEmail(formData.email)
+                    ? 'border-green-500'
+                    : ''
+                }`}
                 autoFocus
               />
-              {validateEmail(formData.email) && !errors.email && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
-                  <CheckCircle size={20} />
-                </span>
-              )}
             </div>
-            {errors.email && (
+            {errors?.email && (
               <p className="text-red-500 text-sm mt-2">{errors.email}</p>
             )}
           </div>
         );
-      
+
       case 6:
         return (
           <div className="step-content">
@@ -246,13 +578,16 @@ const VetSignUpPage: React.FC = () => {
             </p>
             <PasswordInput
               value={formData.password}
-              onChange={(value) => handleFieldChange('password', value)}
+              onChange={(value) =>
+                handleFieldChange('password', value)
+              }
+              onKeyDown={handleKeyDown}
               placeholder="Digite sua senha"
               showStrength={true}
             />
           </div>
         );
-      
+
       default:
         return null;
     }
@@ -264,277 +599,264 @@ const VetSignUpPage: React.FC = () => {
       <div className="clinic-signup-container">
         <div className="clinic-signup-content">
           {/* Coluna Esquerda - Formulário */}
-        <div className="signup-form-section">
-          <ProgressBar currentStep={step} totalSteps={6} />
-          
-          <p className="text-sm text-neutral-500 mb-6">
-            Passo {step} de 6
-          </p>
-          
-          <div className="mb-8">
-            {renderStepContent()}
-          </div>
-          
-          <div style={{ marginTop: '24px' }}>
-            {/* Botões principais */}
-            <div style={{ display: 'flex', gap: '12px' }}>
-              {step > 1 && (
+          <div className="signup-form-section">
+            <ProgressBar currentStep={step} totalSteps={6} />
+
+            <p className="text-sm text-neutral-500 mb-6">
+              Passo {step} de 6
+            </p>
+
+            <div className="mb-8">{renderStepContent()}</div>
+
+            <div style={{ marginTop: '24px' }}>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                {step > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    disabled={loading}
+                    style={{
+                      flex: 1,
+                      padding: '12px 24px',
+                      backgroundColor: colors.surface,
+                      color: colors.textSecondary,
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s',
+                      opacity: loading ? 0.5 : 1,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!loading)
+                        e.currentTarget.style.backgroundColor =
+                          colors.neutral[50];
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!loading)
+                        e.currentTarget.style.backgroundColor =
+                          colors.surface;
+                    }}
+                  >
+                    ← Voltar
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={handleBack}
-                  disabled={loading}
+                  onClick={handleNext}
+                  disabled={!isStepValid() || loading}
                   style={{
                     flex: 1,
                     padding: '12px 24px',
-                    backgroundColor: colors.surface,
-                    color: colors.textSecondary,
-                    border: `1px solid ${colors.border}`,
+                    backgroundColor:
+                      !isStepValid() || loading
+                        ? colors.brand.primary[100]
+                        : colors.brand.primary[500],
+                    color: colors.surface,
+                    border: 'none',
                     borderRadius: '8px',
                     fontSize: '14px',
                     fontWeight: '600',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.2s',
-                    opacity: loading ? 0.5 : 1,
+                    cursor:
+                      !isStepValid() || loading
+                        ? 'not-allowed'
+                        : 'pointer',
+                    transition: 'background-color 0.2s',
+                    opacity: !isStepValid() || loading ? 0.5 : 1,
                   }}
                   onMouseEnter={(e) => {
-                    if (!loading) e.currentTarget.style.backgroundColor = colors.neutral[50];
+                    if (isStepValid() && !loading) {
+                      e.currentTarget.style.backgroundColor =
+                        colors.brand.primary[600];
+                    }
                   }}
                   onMouseLeave={(e) => {
-                    if (!loading) e.currentTarget.style.backgroundColor = colors.surface;
+                    if (isStepValid() && !loading) {
+                      e.currentTarget.style.backgroundColor =
+                        colors.brand.primary[500];
+                    }
                   }}
                 >
-                  ← Voltar
+                  {loading
+                    ? 'Cadastrando...'
+                    : step === 6
+                    ? 'Criar Conta'
+                    : 'Próximo →'}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={!isStepValid() || loading}
-                style={{
-                  flex: 1,
-                  padding: '12px 24px',
-                  backgroundColor: (!isStepValid() || loading) ? colors.primaryLight : colors.primary,
-                  color: colors.surface,
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: (!isStepValid() || loading) ? 'not-allowed' : 'pointer',
-                  transition: 'background-color 0.2s',
-                  opacity: (!isStepValid() || loading) ? 0.5 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (isStepValid() && !loading) e.currentTarget.style.backgroundColor = colors.primaryDark;
-                }}
-                onMouseLeave={(e) => {
-                  if (isStepValid() && !loading) e.currentTarget.style.backgroundColor = colors.primary;
-                }}
-              >
-                {loading ? 'Cadastrando...' : step === 6 ? 'Criar Conta' : 'Próximo →'}
-              </button>
+              </div>
             </div>
           </div>
-        </div>
-        
-        {/* Coluna Direita - Imagens e Texto */}
-        <div className="signup-images-section">
-          <h2 className="text-display">
-            Conectando quem cuida, quem ama e quem precisa.
-          </h2>
-          <p>
-            Junte-se ao PetiVet e encontre as melhores oportunidades de trabalho 
-            em clínicas veterinárias. Candidate-se às demandas que mais combinam 
-            com seu perfil e construa uma carreira de sucesso.
-          </p>
-          
-          {/* Colagem de imagens circulares */}
-          <div className="hero-images-right">
-            <div style={{position: 'relative', width: '100%', maxWidth: '320px', height: '320px'}}>
-              {/* Imagem 1 */}
-              <div 
-                className="hero-image-circle animate-float" 
-                style={{
-                  position: 'absolute',
-                  top: '10px',
-                  left: '10px',
-                  width: '120px',
-                  height: '120px',
-                  zIndex: 3
-                }}
-              >
-                <img 
-                  src="/img1.png" 
-                  alt="Veterinário cuidando de pet" 
-                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                />
-              </div>
 
-              {/* Imagem 2 */}
-              <div 
-                className="hero-image-circle" 
-                style={{
-                  position: 'absolute',
-                  top: '40px',
-                  right: '30px',
-                  width: '110px',
-                  height: '110px',
-                  zIndex: 4,
-                  animationDelay: '0.3s'
-                }}
-              >
-                <img 
-                  src="/img2.jpg" 
-                  alt="Pet feliz" 
-                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                />
-              </div>
+          {/* Coluna Direita - Imagens e Texto */}
+          <div className="signup-images-section">
+            <h2 className="text-display hero-headline">
+              Conectando quem cuida, quem ama e{' '}
+              <span className="hero-headline__accent">quem precisa.</span>
+            </h2>
+            <p>
+              Junte-se ao PetMi Vet e encontre as melhores oportunidades de
+              trabalho em clínicas veterinárias. Candidate-se às demandas que
+              mais combinam com seu perfil e construa uma carreira de sucesso.
+            </p>
 
-              {/* Imagem 3 */}
-              <div 
-                className="hero-image-circle animate-float" 
+            {/* Colagem de imagens circulares */}
+            <div className="hero-images-right">
+              <div
                 style={{
-                  position: 'absolute',
-                  bottom: '60px',
-                  right: '40px',
-                  width: '140px',
-                  height: '140px',
-                  zIndex: 5,
-                  animationDelay: '0.15s'
+                  position: 'relative',
+                  width: '100%',
+                  maxWidth: '320px',
+                  height: '320px',
                 }}
               >
-                <img 
-                  src="/im3.jpg" 
-                  alt="Clínica veterinária" 
-                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                />
-              </div>
+                {/* Imagem 1 */}
+                <div
+                  className="hero-image-circle animate-float"
+                  style={{
+                    position: 'absolute',
+                    top: '10px',
+                    left: '10px',
+                    width: '120px',
+                    height: '120px',
+                    zIndex: 3,
+                  }}
+                >
+                  <img
+                    src="/pets/pet-showcase-1.png"
+                    alt="Pet"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                </div>
 
-              {/* Imagem 4 */}
-              <div 
-                className="hero-image-circle" 
-                style={{
-                  position: 'absolute',
-                  bottom: '30px',
-                  left: '0',
-                  width: '95px',
-                  height: '95px',
-                  zIndex: 2,
-                  animationDelay: '0.5s'
-                }}
-              >
-                <img 
-                  src="/img4.jpg" 
-                  alt="Profissional veterinário" 
-                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                />
-              </div>
+                {/* Imagem 2 */}
+                <div
+                  className="hero-image-circle"
+                  style={{
+                    position: 'absolute',
+                    top: '40px',
+                    right: '30px',
+                    width: '110px',
+                    height: '110px',
+                    zIndex: 4,
+                    animationDelay: '0.3s',
+                  }}
+                >
+                  <img
+                    src="/pets/pet-showcase-2.png"
+                    alt="Pet feliz"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                </div>
 
-              {/* Imagem 5 */}
-              <div 
-                className="hero-image-circle animate-float" 
-                style={{
-                  position: 'absolute',
-                  bottom: '0',
-                  right: '15px',
-                  width: '85px',
-                  height: '85px',
-                  zIndex: 1,
-                  animationDelay: '0.7s'
-                }}
-              >
-                <img 
-                  src="/img5.jpg" 
-                  alt="Cuidado animal" 
-                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                />
+                {/* Imagem 3 */}
+                <div
+                  className="hero-image-circle animate-float"
+                  style={{
+                    position: 'absolute',
+                    bottom: '60px',
+                    right: '40px',
+                    width: '140px',
+                    height: '140px',
+                    zIndex: 5,
+                    animationDelay: '0.15s',
+                  }}
+                >
+                  <img
+                    src="/pets/pet-showcase-3.png"
+                    alt="Pet"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                </div>
+
+                {/* Imagem 4 */}
+                <div
+                  className="hero-image-circle"
+                  style={{
+                    position: 'absolute',
+                    bottom: '30px',
+                    left: '0',
+                    width: '95px',
+                    height: '95px',
+                    zIndex: 2,
+                    animationDelay: '0.5s',
+                  }}
+                >
+                  <img
+                    src="/pets/pet-showcase-4.png"
+                    alt="Pet"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                </div>
+
+                {/* Imagem 5 */}
+                <div
+                  className="hero-image-circle animate-float"
+                  style={{
+                    position: 'absolute',
+                    bottom: '0',
+                    right: '15px',
+                    width: '85px',
+                    height: '85px',
+                    zIndex: 1,
+                    animationDelay: '0.7s',
+                  }}
+                >
+                  <img
+                    src="/pets/pet-showcase-5.png"
+                    alt="Cuidado animal"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    {/* Mensagem de sucesso após cadastro */}
-    {signupComplete && (
-      <div style={styles.successOverlay}>
-        <div style={styles.successCard}>
-          <h2 style={styles.successTitle}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-              <Heart size={32} color={colors.primary} fill={colors.primary} />
-              <span>Tudo pronto!</span>
-            </div>
-          </h2>
-          <p style={styles.successMessage}>
-            Enviamos um e-mail de confirmação para o endereço que você cadastrou.
-          </p>
-          <p style={styles.successMessage}>
-            É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetiVet.
-          </p>
-          <p style={styles.successMessage}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              Você pode fechar esta aba — o restante do processo é feito por e-mail.
-              <Mail size={18} color={colors.primary} />
-            </span>
-          </p>
-          <button 
-            onClick={() => navigate('/login')} 
-            style={styles.closeButton}
-          >
-            Fechar
-          </button>
-        </div>
-      </div>
-    )}
+      {/* Mensagem de sucesso */}
+      {signupComplete && (
+        <SignUpSuccessModal
+          email={formData.email}
+          loading={loading}
+          emailResent={emailResent}
+          onResendEmail={handleResendEmail}
+        />
+      )}
+      <SignUpErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ isOpen: false, type: null })}
+        errorType={errorModal.type || 'unexpected_error'}
+        onRetry={handleRetry}
+        onGoToLogin={handleGoToLogin}
+        onOpenSupport={handleOpenSupport}
+      />
+      <PublicSupportModal
+        isOpen={showSupportModal}
+        onClose={() => setShowSupportModal(false)}
+      />
     </>
   );
-};
-
-const styles = {
-  successOverlay: {
-    position: 'fixed' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-  },
-  successCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: '16px',
-    padding: '40px',
-    maxWidth: '500px',
-    width: '90%',
-    textAlign: 'center' as const,
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
-  },
-  successTitle: {
-    fontSize: '28px',
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: '20px',
-  },
-  successMessage: {
-    fontSize: '16px',
-    color: '#6b7280',
-    lineHeight: '1.6',
-    marginBottom: '16px',
-  },
-  closeButton: {
-    marginTop: '24px',
-    padding: '12px 32px',
-    backgroundColor: '#7c3aed',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '16px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s ease-in-out',
-  },
 };
 
 export default VetSignUpPage;

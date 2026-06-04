@@ -4,12 +4,16 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { marketplaceApi, MarketplaceItem } from '../services/marketplaceApi';
 import { marketplaceMessagesApi } from '../services/marketplaceMessagesApi';
-import { ShoppingCart, PlusCircle, Package } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
+import { MapPin, MessageCircle, Search, ShoppingBag } from 'lucide-react';
 
 const MarketplaceItemDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [item, setItem] = useState<MarketplaceItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -17,29 +21,9 @@ const MarketplaceItemDetailPage: React.FC = () => {
   const [message, setMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'marketplace',
-      label: 'Voltar ao Marketplace',
-      icon: <ShoppingCart size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace',
-    },
-    {
-      id: 'criar-anuncio',
-      label: 'Criar Anúncio',
-      icon: <PlusCircle size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/create',
-    },
-    {
-      id: 'meus-anuncios',
-      label: 'Meus Anúncios',
-      icon: <Package size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/my-listings',
-    },
-  ];
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
     if (id) {
@@ -66,7 +50,7 @@ const MarketplaceItemDetailPage: React.FC = () => {
 
     try {
       setSendingMessage(true);
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       
       await marketplaceMessagesApi.send({
         item_id: item.id,
@@ -119,8 +103,7 @@ const MarketplaceItemDetailPage: React.FC = () => {
     ? item.images
     : ['https://via.placeholder.com/800x600?text=Sem+Imagem'];
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const isOwner = user.id === item.seller_id;
+  const isOwner = user?.id === item.seller_id;
 
   return (
     <DashboardLayout pageName={item.title} menuItems={menuItems}>
@@ -152,7 +135,7 @@ const MarketplaceItemDetailPage: React.FC = () => {
                     alt={`Thumbnail ${index + 1}`}
                     style={{
                       ...styles.thumbnail,
-                      border: selectedImageIndex === index ? '3px solid #7c3aed' : '2px solid #e5e5e5',
+                      border: selectedImageIndex === index ? '3px solid colors.brand.primary[500]' : '2px solid #e5e5e5',
                     }}
                     onClick={() => setSelectedImageIndex(index)}
                   />
@@ -169,9 +152,22 @@ const MarketplaceItemDetailPage: React.FC = () => {
                   style={{
                     ...styles.badge,
                     backgroundColor: item.listing_type === 'sale' ? '#10b981' : '#3b82f6',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
                   }}
                 >
-                  {item.listing_type === 'sale' ? '🛍️ Venda' : '🔍 Procura'}
+                  {item.listing_type === 'sale' ? (
+                    <>
+                      <ShoppingBag size={14} color="#fff" aria-hidden />
+                      Venda
+                    </>
+                  ) : (
+                    <>
+                      <Search size={14} color="#fff" aria-hidden />
+                      Procura
+                    </>
+                  )}
                 </span>
                 {item.listing_type === 'sale' && (
                   <span style={{...styles.badge, backgroundColor: '#f59e0b'}}>
@@ -222,7 +218,10 @@ const MarketplaceItemDetailPage: React.FC = () => {
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>Localização:</span>
                     <span style={styles.detailValue}>
-                      📍 {[item.city, item.state].filter(Boolean).join(', ')}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <MapPin size={16} color="#6b7280" aria-hidden />
+                        {[item.city, item.state].filter(Boolean).join(', ')}
+                      </span>
                     </span>
                   </div>
                 )}
@@ -240,9 +239,10 @@ const MarketplaceItemDetailPage: React.FC = () => {
               {!isOwner && item.status === 'active' && (
                 <button
                   onClick={() => setShowMessageModal(true)}
-                  style={styles.contactButton}
+                  style={{ ...styles.contactButton, display: 'inline-flex', alignItems: 'center', gap: '8px' }}
                 >
-                  💬 Contatar Vendedor
+                  <MessageCircle size={18} aria-hidden />
+                  Contatar Vendedor
                 </button>
               )}
               
@@ -412,7 +412,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '500',
     fontFamily: 'Inter, sans-serif',
   },
-  description: {},
+  description: {
+    fontSize: '14px',
+    color: '#666',
+    lineHeight: '1.6',
+  },
   sectionTitle: {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '20px',
@@ -456,7 +460,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   contactButton: {
     flex: 1,
     padding: '16px 32px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '12px',
@@ -534,7 +538,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   sendButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

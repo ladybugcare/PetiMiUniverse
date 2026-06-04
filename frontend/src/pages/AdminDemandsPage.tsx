@@ -8,8 +8,11 @@ import LoadingOverlay from '../components/LoadingOverlay';
 import { demandsApi, clinicsApi } from '../services';
 import { Demand } from '../services/demandsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, Edit, Trash2 } from 'lucide-react';
+import { Eye, Edit, Trash2, ClipboardList } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 interface Application {
   id: string;
@@ -28,7 +31,12 @@ interface Application {
 
 const AdminDemandsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
   const [demands, setDemands] = useState<Demand[]>([]);
   const [filteredDemands, setFilteredDemands] = useState<Demand[]>([]);
   const [clinics, setClinics] = useState<any[]>([]);
@@ -40,13 +48,13 @@ const AdminDemandsPage: React.FC = () => {
   const [selectedDemand, setSelectedDemand] = useState<Demand | null>(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editFormData, setEditFormData] = useState<Partial<Demand>>({});
+  const [editFormData, setEditFormData] = useState<Partial<Demand>>();
 
   const itemsPerPage = 20;
 
   // Check authentication
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user = JSON.parse(localStorage.getItem('user') || '');
     const userRole = user?.user_metadata?.role || user?.role;
     
     if (!user || !user.id || userRole !== 'admin') {
@@ -107,15 +115,6 @@ const AdminDemandsPage: React.FC = () => {
   const endIndex = startIndex + itemsPerPage;
   const currentDemands = filteredDemands.slice(startIndex, endIndex);
 
-  const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-    { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-  ];
 
   const handleView = async (demand: Demand) => {
     setSelectedDemand(demand);
@@ -151,7 +150,7 @@ const AdminDemandsPage: React.FC = () => {
   };
 
   const handleSaveEdit = async () => {
-    if (!selectedDemand) return;
+    if (!selectedDemand || !editFormData) return;
 
     try {
       await demandsApi.update(selectedDemand.id, editFormData);
@@ -197,7 +196,7 @@ const AdminDemandsPage: React.FC = () => {
         <div style={styles.header}>
           <h2 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <ClipboardList size={28} color={colors.primary} />
+              <ClipboardList size={28} color={colors.brand.primary[500]} />
               <span>Demandas</span>
             </div>
           </h2>
@@ -387,6 +386,8 @@ const AdminDemandsPage: React.FC = () => {
                 </button>
               </div>
               <div style={styles.modalBody}>
+                {editFormData && (
+                  <>
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Título:</label>
                   <input
@@ -430,6 +431,8 @@ const AdminDemandsPage: React.FC = () => {
                     style={styles.input}
                   />
                 </div>
+                  </>
+                )}
                 <div style={styles.formActions}>
                   <button onClick={() => setShowEditModal(false)} style={styles.cancelButton}>
                     Cancelar
@@ -702,7 +705,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   saveButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

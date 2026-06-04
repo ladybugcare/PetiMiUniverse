@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "PetiVet",
+    "name": "PetMi Vet",
     "slug": "petivet",
     "scheme": "petivet",
     "version": "1.0.0",
@@ -32,6 +32,13 @@
     }
   }
 }
+
+
+
+
+
+
+
 
 
 

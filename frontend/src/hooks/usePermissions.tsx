@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PERMISSIONS, hasPermission as checkPermission } from '../utils/permissions';
 import { Role } from '../types/units';
 
@@ -10,8 +10,18 @@ export const usePermissions = () => {
   useEffect(() => {
     const loadPermissions = () => {
       try {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
+        const userStr = localStorage.getItem('user');
+        const clinicUserStr = localStorage.getItem('clinic_user');
+        
+        if (!userStr || !clinicUserStr) {
+          setPermissions([]);
+          setRole(null);
+          setLoading(false);
+          return;
+        }
+
+        const user = JSON.parse(userStr);
+        const clinicUser = JSON.parse(clinicUserStr);
 
         const userRole = clinicUser.role || null;
         setRole(userRole);
@@ -41,9 +51,12 @@ export const usePermissions = () => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  const hasPermission = (permission: string): boolean => {
-    return checkPermission(role, permission);
-  };
+  const hasPermission = useCallback(
+    (permission: string): boolean => {
+      return checkPermission(role, permission);
+    },
+    [role]
+  );
 
   // Convenience methods for common permissions
   const canCreateUnit = hasPermission('unit.create');

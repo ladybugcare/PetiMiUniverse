@@ -172,7 +172,7 @@ const handleDelete = () => {
 ```typescript
 useEffect(() => {
   if (isFirstLogin) {
-    showInfo('Bem-vindo ao PetiVet! Complete seu perfil para começar.');
+    showInfo('Bem-vindo ao PetMi Vet! Complete seu perfil para começar.');
   }
 }, [isFirstLogin]);
 ```

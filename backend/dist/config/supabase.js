@@ -7,9 +7,13 @@ require("./loadEnv");
 exports.supabase = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY);
 // Admin client (service role key) - usado apenas no backend para operações administrativas
 // IMPORTANTE: Nunca exponha esta chave no frontend!
-exports.supabaseAdmin = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY, {
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('🚨 Faltando SUPABASE_SERVICE_ROLE_KEY no .env — operações admin irão falhar.');
+}
+exports.supabaseAdmin = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, // 👈 só aceita a chave service
+{
     auth: {
         autoRefreshToken: false,
-        persistSession: false
-    }
+        persistSession: false,
+    },
 });

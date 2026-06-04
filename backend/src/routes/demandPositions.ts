@@ -13,6 +13,9 @@ import {
 
 const router = express.Router();
 
+/**
+ * @deprecated Use POST /api/demands instead (createDemandV2)
+ */
 // Criar demanda composta com posições
 router.post('/composite', createCompositeDemand);
 

@@ -97,7 +97,7 @@ const LoginScreen = () => {
       <View style={styles.formCard}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Bem-vindo de volta</Text>
-          <Text style={styles.headerSubtitle}>Faça login na sua conta PetiVet</Text>
+          <Text style={styles.headerSubtitle}>Faça login na sua conta PetMi Vet</Text>
         </View>
 
         <View style={styles.formField}>

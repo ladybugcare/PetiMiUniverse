@@ -1,0 +1,1190 @@
+/* Hub /hub/servicos — layout próximo ao mock PetMi Hub (cards, toolbar, tabela rica) */
+.hub-servicos-page {
+  --hc-brand: #f0642f;
+  --hc-brand-hover: #d85526;
+  --svc-surface: #faf8f7;
+  --svc-shadow: 0 1px 3px rgba(74, 59, 58, 0.08);
+}
+
+.hub-servicos-page .hub-clientes__main {
+  padding-right: 20px;
+}
+
+.hub-servicos-page .hub-clientes__panel {
+  width: 420px;
+  box-shadow: var(--svc-shadow);
+}
+
+/* —— Métricas —— */
+.hub-servicos-page .hub-servicos__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  .hub-servicos-page .hub-servicos__metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-servicos-page .hub-servicos__metric-card {
+  background: var(--hc-card, #fff);
+  border: 1px solid var(--hc-border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: var(--svc-shadow);
+}
+
+.hub-servicos-page .hub-servicos__metric-card__text {
+  min-width: 0;
+}
+
+.hub-servicos-page .hub-servicos__metric-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hc-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.hub-servicos-page .hub-servicos__metric-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--hc-text);
+  line-height: 1.15;
+}
+
+.hub-servicos-page .hub-servicos__metric-sub {
+  font-size: 12px;
+  color: var(--hc-text-muted);
+  margin-top: 4px;
+}
+
+.hub-servicos-page .hub-servicos__metric-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--hc-brand) 12%, white);
+  color: var(--hc-brand);
+}
+
+.hub-servicos-page .hub-servicos__metric-icon--muted {
+  background: #eceff1;
+  color: #546e7a;
+}
+
+/* —— Toolbar (pesquisa + filtros + CTA) —— */
+.hub-servicos-page .hub-servicos__toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.hub-servicos-page .hub-servicos__toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.hub-servicos-page .hub-servicos__search-wrap {
+  flex: 1;
+  min-width: 200px;
+}
+
+.hub-servicos-page .hub-servicos__search-input {
+  width: 100%;
+  padding: 10px 14px 10px 38px;
+  border: 1px solid var(--hc-border);
+  border-radius: 10px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--hc-text);
+  box-sizing: border-box;
+}
+
+.hub-servicos-page .hub-servicos__search-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--hc-brand) 55%, var(--hc-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hc-brand) 18%, transparent);
+}
+
+.hub-servicos-page .hub-servicos__search-field {
+  position: relative;
+}
+
+.hub-servicos-page .hub-servicos__search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--hc-text-muted);
+  pointer-events: none;
+}
+
+.hub-servicos-page .hub-servicos__filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+}
+
+.hub-servicos-page .hub-servicos__btn-primary-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--hc-brand);
+  color: #fff;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.hub-servicos-page .hub-servicos__btn-primary-icon:hover:not(:disabled) {
+  background: var(--hc-brand-hover);
+}
+
+.hub-servicos-page .hub-servicos__btn-primary-icon:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-servicos-page a.hub-servicos__btn-primary-icon {
+  text-decoration: none;
+  color: #fff;
+  box-sizing: border-box;
+}
+
+.hub-servicos-page .hub-servicos__btn-ghost-sm {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--hc-border);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-text);
+  cursor: pointer;
+}
+
+.hub-servicos-page .hub-servicos__btn-ghost-sm:hover {
+  background: var(--hc-row-selected, #fdf6f2);
+}
+
+/* —— Tabela serviço —— */
+.hub-servicos-page .hub-servicos__table-wrap {
+  border: 1px solid var(--hc-border);
+  border-radius: 12px;
+  overflow-x: auto;
+  background: #fff;
+  box-shadow: var(--svc-shadow);
+}
+
+.hub-servicos-page .hub-servicos__table-wrap .hub-clientes__table {
+  margin: 0;
+}
+
+.hub-servicos-page .hub-servicos__table-wrap .hub-clientes__table thead th {
+  background: var(--svc-surface);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--hc-text-muted);
+  font-weight: 700;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hc-border);
+}
+
+.hub-servicos-page .hub-servicos__table-wrap .hub-clientes__table tbody td {
+  padding: 12px 14px;
+  vertical-align: middle;
+}
+
+.hub-servicos-page .hub-servicos__table-wrap .hub-clientes__table tbody tr {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.hub-servicos-page .hub-servicos__table-wrap .hub-clientes__table tbody tr:hover {
+  background: #fffbf8;
+}
+
+.hub-servicos-page .hub-servicos__svc-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.hub-servicos-page .hub-servicos__svc-icon-ring {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.hub-servicos-page .hub-servicos__svc-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--hc-text);
+  line-height: 1.25;
+}
+
+.hub-servicos-page .hub-servicos__svc-desc {
+  font-size: 12px;
+  color: var(--hc-text-muted);
+  margin-top: 2px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hub-servicos-page .hub-servicos__group-label {
+  font-weight: 600;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hub-servicos-page .hub-servicos__group-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hub-servicos-page .hub-servicos__code-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 12px;
+  color: var(--hc-text-muted);
+}
+
+.hub-servicos-page .hub-servicos__sched-ic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hub-servicos-page .hub-servicos__row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.hub-servicos-page .hub-servicos__icon-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hc-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.hub-servicos-page a.hub-servicos__icon-btn {
+  text-decoration: none;
+  color: var(--hc-text-muted);
+  box-sizing: border-box;
+}
+
+.hub-servicos-page a.hub-servicos__icon-btn:hover {
+  color: var(--hc-text);
+}
+
+.hub-servicos-page .hub-servicos__icon-btn:hover {
+  background: #f0ebe8;
+  color: var(--hc-text);
+}
+
+.hub-servicos-page .hub-servicos__icon-btn--danger:hover {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.hub-servicos-page .hub-clientes__table td.hub-servicos__td-money {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+/* —— Form painel —— */
+.hub-servicos-page .hub-servicos__form-section {
+  margin-top: 20px;
+  padding-top: 4px;
+}
+
+.hub-servicos-page .hub-servicos__form-section:first-of-type {
+  margin-top: 0;
+}
+
+.hub-servicos-page .hub-servicos__form-section-title {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--hc-text-muted);
+}
+
+.hub-servicos-page .hub-servicos__code-box {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f5f1ef;
+  border: 1px solid var(--hc-border);
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  color: var(--hc-text);
+}
+
+.hub-servicos-page .hub-servicos__code-box-muted {
+  font-size: 11px;
+  color: var(--hc-text-muted);
+  margin-top: 4px;
+}
+
+.hub-servicos-page .hub-servicos__seg {
+  display: inline-flex;
+  border-radius: 10px;
+  border: 1px solid var(--hc-border);
+  overflow: hidden;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.hub-servicos-page .hub-servicos__seg button {
+  padding: 8px 18px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-text-muted);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.hub-servicos-page .hub-servicos__seg button + button {
+  border-left: 1px solid var(--hc-border);
+}
+
+.hub-servicos-page .hub-servicos__seg button:hover:not(.hub-servicos__seg--active) {
+  background: #fff7f2;
+  color: var(--hc-text);
+}
+
+.hub-servicos-page .hub-servicos__seg button.hub-servicos__seg--active {
+  background: var(--hc-brand);
+  color: #fff;
+  font-weight: 800;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--hc-brand-hover) 35%, transparent),
+    0 1px 2px rgba(74, 59, 58, 0.14);
+  z-index: 1;
+}
+
+.hub-servicos-page .hub-servicos__seg button.hub-servicos__seg--active + button {
+  border-left-color: transparent;
+}
+
+.hub-servicos-page .hub-servicos__seg button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--hc-brand) 55%, #fff);
+  outline-offset: -2px;
+}
+
+.hub-servicos-page .hub-servicos__seg--wrap {
+  flex-wrap: wrap;
+  border-left: 1px solid var(--hc-border);
+}
+
+.hub-servicos-page .hub-servicos__seg--wrap button {
+  border-left: none;
+  border-right: 1px solid var(--hc-border);
+  border-bottom: 1px solid var(--hc-border);
+}
+
+.hub-service-type-form-page .pet-wizard__step {
+  border: 0;
+  background: transparent;
+  color: var(--hc-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hub-service-type-form-page .pet-wizard__step-index {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--hc-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+}
+
+.hub-service-type-form-page .pet-wizard__step--active {
+  color: var(--hc-brand);
+}
+
+.hub-service-type-form-page .pet-wizard__step--active .pet-wizard__step-index {
+  background: var(--hc-brand);
+  border-color: var(--hc-brand);
+  color: #fff;
+}
+
+.hub-service-type-form-page .hub-servicos__review-card {
+  border: 1px solid var(--hc-border);
+  border-radius: 16px;
+  padding: 22px;
+  background: #fffaf7;
+}
+
+.hub-service-type-form-page .hub-servicos__review-card h3 {
+  margin: 10px 0 8px;
+}
+
+.hub-service-type-form-page .hub-servicos__review-card p {
+  margin: 6px 0;
+  color: var(--hc-text-muted);
+}
+
+.hub-service-type-form-page .hub-servicos__check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--hc-text);
+  font-weight: 600;
+}
+
+/* Mais respiro entre «Cor do grupo» e o título «Resumo» */
+.hub-service-type-form-page .pet-wizard__summary .pet-wizard__summary-title {
+  margin-top: 22px;
+  margin-bottom: 14px;
+}
+
+.hub-service-type-form-page__duration-block {
+  margin-top: 4px;
+}
+
+.hub-service-type-form-page__duration-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.hub-service-type-form-page__duration-head .hub-servicos__seg {
+  flex-shrink: 0;
+}
+
+.hub-service-type-form-page .hub-service-type-form-page__summary-list li {
+  align-items: flex-start;
+}
+
+.hub-service-type-form-page .hub-service-type-form-page__summary-list .pet-wizard__summary-v {
+  text-align: right;
+  max-width: 58%;
+}
+
+.hub-service-type-form-page__summary-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.hub-service-type-form-page__summary-pill--yes {
+  background: color-mix(in srgb, #2e7d32 14%, #fff);
+  color: #1b5e20;
+  border: 1px solid color-mix(in srgb, #2e7d32 28%, transparent);
+}
+
+.hub-service-type-form-page__summary-pill--no {
+  background: color-mix(in srgb, #c62828 12%, #fff);
+  color: #b71c1c;
+  border: 1px solid color-mix(in srgb, #c62828 26%, transparent);
+}
+
+.hub-service-type-form-page__review-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.hub-service-type-form-page__review-section {
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--hc-border) 80%, transparent);
+}
+
+.hub-service-type-form-page__review-section h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--hc-text-muted);
+}
+
+.hub-service-type-form-page__review-dl {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.hub-service-type-form-page__review-dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.hub-service-type-form-page__review-dl dt {
+  margin: 0;
+  color: var(--hc-text-muted);
+  font-weight: 600;
+}
+
+.hub-service-type-form-page__review-dl dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+  color: var(--hc-text);
+}
+
+.hub-service-type-form-page__review-addon-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hub-service-type-form-page__review-addon-list li {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hc-brand) 10%, #fff);
+  border: 1px solid color-mix(in srgb, var(--hc-brand) 22%, transparent);
+  color: var(--hc-text);
+}
+
+/* Passo Adicionais (serviço) */
+.hub-service-addons-step__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.hub-service-addons-step__lead {
+  margin: 0;
+  flex: 1;
+  min-width: 200px;
+  font-size: 14px;
+  color: var(--hc-text-muted);
+  line-height: 1.5;
+}
+
+.hub-service-addons-step__badge {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hc-brand) 12%, #fff);
+  color: var(--hc-brand);
+  border: 1px solid color-mix(in srgb, var(--hc-brand) 24%, transparent);
+}
+
+.hub-service-addons-step__bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.hub-service-addons-step__bulk-btn {
+  border: 1px solid var(--hc-border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-text);
+  cursor: pointer;
+}
+
+.hub-service-addons-step__bulk-btn:hover {
+  border-color: color-mix(in srgb, var(--hc-brand) 40%, var(--hc-border));
+  color: var(--hc-brand);
+}
+
+.hub-service-addons-step__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hub-service-addons-step__card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--hc-border);
+  border-radius: 12px;
+  background: #fff;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hub-service-addons-step__card--on {
+  border-color: color-mix(in srgb, var(--hc-brand) 35%, var(--hc-border));
+  background: color-mix(in srgb, var(--hc-brand) 4%, #fff);
+  box-shadow: 0 1px 2px rgba(240, 100, 47, 0.08);
+}
+
+.hub-service-addons-step__card-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.hub-service-addons-step__card-name {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--hc-text);
+  margin-bottom: 4px;
+}
+
+.hub-service-addons-step__card-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--hc-text-muted);
+}
+
+.hub-service-addons-step__card-meta-sep {
+  opacity: 0.5;
+}
+
+.hub-service-addons-step__toggle {
+  flex-shrink: 0;
+}
+
+.hub-service-addons-step__toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hub-service-addons-step__actions {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hc-border);
+}
+
+.hub-service-addons-step__empty {
+  border: 1px dashed var(--hc-border);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--svc-surface, #faf8f7);
+}
+
+.hub-service-addons-step__empty--pending {
+  background: color-mix(in srgb, var(--hc-brand) 5%, #fff);
+  border-color: color-mix(in srgb, var(--hc-brand) 25%, var(--hc-border));
+}
+
+.hub-service-addons-step__empty-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--hc-text);
+}
+
+.hub-service-addons-step__loading {
+  padding: 12px 0;
+}
+
+.hub-service-addons-step__draft-hint {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--hc-brand) 6%, #fff);
+  border: 1px solid color-mix(in srgb, var(--hc-brand) 18%, var(--hc-border));
+}
+
+.hub-servicos-page .hub-servicos__char-count {
+  text-align: right;
+  font-size: 11px;
+  color: var(--hc-text-muted);
+  margin-top: 4px;
+}
+
+.hub-servicos-page .hub-servicos__swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.hub-servicos-page .hub-servicos__swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.hub-servicos-page .hub-servicos__swatch:hover {
+  transform: scale(1.06);
+}
+
+.hub-servicos-page .hub-servicos__swatch--selected {
+  border-color: var(--hc-text);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px color-mix(in srgb, var(--hc-brand) 35%, transparent);
+}
+
+.hub-servicos-page .hub-servicos__swatch-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: #fff;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.5));
+}
+
+.hub-servicos-page .hub-servicos__color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.hub-servicos-page .hub-servicos__color-row input[type='color'] {
+  width: 44px;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid var(--hc-border);
+  border-radius: 8px;
+  cursor: pointer;
+  background: #fff;
+}
+
+.hub-servicos-page .hub-servicos__price-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 520px) {
+  .hub-servicos-page .hub-servicos__price-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-servicos-page .hub-servicos__money-field {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--hc-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.hub-servicos-page .hub-servicos__money-prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-text-muted);
+  background: #faf8f7;
+  border-right: 1px solid var(--hc-border);
+}
+
+.hub-servicos-page .hub-servicos__money-field .hub-clientes__input {
+  border: none;
+  border-radius: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-servicos-page .hub-servicos__money-field .hub-clientes__input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.hub-servicos-page .hub-servicos__margin-info {
+  font-size: 13px;
+  color: var(--hc-text-muted);
+  margin-top: 6px;
+  line-height: 1.45;
+}
+
+.hub-servicos-page .hub-servicos__code-preview {
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  color: var(--hc-text-muted);
+  margin-top: 4px;
+}
+
+.hub-servicos-page .hub-clientes__footer-btns .hub-clientes__btn-row {
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.hub-servicos-page .hub-servicos__matrix-wrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.hub-servicos-page .hub-servicos__matrix-table {
+  font-size: 13px;
+  min-width: 100%;
+}
+
+.hub-servicos-page .hub-servicos__matrix-table .hub-clientes__input {
+  font-size: 13px;
+}
+
+/* Matriz de preços — layout unificado (Hotel, Banho & Tosa, Creche, Clínica, Leva e Traz) */
+.hub-servicos-page .hub-servicos__matrix-table--unified {
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--hc-border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: var(--svc-shadow, 0 1px 3px rgba(74, 59, 58, 0.08));
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified thead th {
+  background: linear-gradient(180deg, #faf6f2 0%, #f0e6df 100%);
+  color: #7a5c52;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hc-border);
+  border-right: 1px solid color-mix(in srgb, var(--hc-border) 65%, transparent);
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified thead th:last-child {
+  border-right: none;
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified tbody td {
+  padding: 12px 14px;
+  vertical-align: middle;
+  border-bottom: 1px solid color-mix(in srgb, var(--hc-border) 75%, transparent);
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified tbody tr:hover td {
+  background: color-mix(in srgb, var(--hc-brand) 5%, #fff);
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified .hub-servicos__td-money {
+  text-align: right;
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified .hub-servicos__td-money .hub-clientes__input {
+  width: 100%;
+  max-width: 168px;
+  margin-left: auto;
+  display: block;
+  border-radius: 10px;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified td:not(.hub-servicos__td-money):not(.hub-clientes__td-actions) .hub-clientes__input {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 10px;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified .hub-servicos__matrix-dim-label {
+  font-weight: 600;
+  color: var(--hc-text);
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified .hub-clientes__td-actions {
+  width: 52px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* Matriz Banho & Tosa: ícones, agrupamento porte + pelagem, remover */
+.hub-servicos-page .hub-servicos__matrix-coat-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-servicos-page .hub-servicos__matrix-coat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--hc-brand) 12%, #fff);
+  color: var(--hc-brand);
+  flex-shrink: 0;
+}
+
+.hub-servicos-page .hub-servicos__matrix-porte-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.hub-servicos-page .hub-servicos__matrix-porte-label-icon {
+  color: var(--hc-brand);
+  flex-shrink: 0;
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified.hub-servicos__matrix-table--porte-pelagem .hub-servicos__matrix-porte-cell {
+  vertical-align: middle;
+  background: linear-gradient(180deg, #fffbf8 0%, #faf5f0 100%);
+  border-right: 1px solid var(--hc-border);
+  width: 118px;
+  max-width: 140px;
+}
+
+.hub-servicos-page .hub-servicos__matrix-table--unified.hub-servicos__matrix-table--porte-pelagem .hub-servicos__matrix-porte-cell-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 8px;
+  text-align: center;
+}
+
+.hub-servicos-page .hub-servicos__matrix-porte-title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--hc-text);
+}
+
+/* —— Shell + subnav (rotas /hub/servicos/*) —— */
+.hub-servicos-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  min-height: calc(100vh - 120px);
+}
+
+/* Abas: tokens de .hub-clientes (#c86a4d); conteúdo interno pode usar .hub-servicos-page */
+.hub-servicos-shell--tabs > .hub-clientes__tabs {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  padding: 0 24px;
+  box-sizing: border-box;
+}
+
+/* Evita que o subnav herde layout de .hub-clientes (flex row + min-height) */
+.hub-servicos-shell--tabs > .hub-clientes__tabs a.hub-clientes__tab--active {
+  border-bottom-color: var(--hc-brand);
+}
+
+.hub-servicos-config__back-link {
+  color: var(--hc-brand);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.hub-servicos-config__back-link:hover {
+  text-decoration: underline;
+}
+
+.hub-servicos__group-color-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #faf8f7;
+  border: 1px solid var(--hc-border);
+}
+
+.hub-servicos__group-color-preview-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.hub-servicos__group-color-preview-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* —— Página Configurações / grupos —— */
+.hub-servicos-config .hub-clientes__main {
+  padding-right: 20px;
+}
+
+.hub-servicos-config__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.hub-servicos-config__title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--hc-text);
+}
+
+.hub-servicos-config__lead {
+  margin: 0;
+  max-width: 560px;
+}
+
+.hub-servicos-config__section {
+  margin-top: 8px;
+}
+
+.hub-servicos-config__inline-form {
+  border: 1px solid var(--hc-border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(74, 59, 58, 0.08);
+}
+
+.hub-servicos-config__inline-title {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.hub-servicos-config__inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.hub-servicos-config__field-full {
+  grid-column: 1 / -1;
+}
+
+.hub-servicos-config__job-fn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px 12px;
+}
+
+.hub-servicos__filter-field--check .hub-servicos__filter-checkbox {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.hub-servicos-config__addons-block {
+  margin-top: 8px;
+}
+
+.hub-servicos-config__addon-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hub-servicos-config__addon-deployments-list .hub-servicos-config__addon-deployment-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hub-servicos-config__addon-deployment-meta {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.hub-servicos-config__addon-deployment-partial {
+  margin: 0 0 0 30px;
+  font-size: 12px;
+  color: var(--hub-muted, #64748b);
+}

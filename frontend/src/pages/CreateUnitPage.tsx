@@ -4,9 +4,16 @@ import { BRAZILIAN_STATES } from '../utils/locationData';
 import { API_BASE_URL } from '../services/api';
 import colors from '../styles/colors';
 import { AlertTriangle, Lightbulb, Info, Building2 } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
+import DashboardLayout from '../components/DashboardLayout';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 const CreateUnitPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -20,11 +27,17 @@ const CreateUnitPage: React.FC = () => {
     technical_manager: '',
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
-  const session = JSON.parse(localStorage.getItem('session') || '{}');
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
+
+  const clinicUserStr = localStorage.getItem('clinic_user');
+  const sessionStr = localStorage.getItem('session');
+  
+  const clinicUser = clinicUserStr ? JSON.parse(clinicUserStr) : null;
+  const session = sessionStr ? JSON.parse(sessionStr) : null;
   const accessToken: string | undefined = session?.access_token;
-  const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
+  const clinicId = clinicUser?.clinic_id || user?.user_metadata?.clinic_id || user?.id;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
@@ -95,12 +108,13 @@ const CreateUnitPage: React.FC = () => {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
+    <DashboardLayout pageName="Nova Unidade" menuItems={menuItems}>
+      <div style={styles.container}>
+        <div style={styles.card}>
         <div style={styles.header}>
           <h1 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Building2 size={32} color={colors.primary} />
+              <Building2 size={32} color={colors.brand.primary[500]} />
               <span>Nova Unidade</span>
             </div>
           </h1>
@@ -114,7 +128,7 @@ const CreateUnitPage: React.FC = () => {
         {error && (
           <div style={styles.errorBanner}>
             <span style={styles.errorIcon}>
-              <AlertTriangle size={20} />
+              <IconWrapper icon={AlertTriangle} size={20} />
             </span>
             {error}
           </div>
@@ -152,7 +166,7 @@ const CreateUnitPage: React.FC = () => {
             />
             <div style={styles.tooltip}>
               <span style={styles.tooltipIcon}>
-                <Lightbulb size={18} color={colors.primary} />
+                <IconWrapper icon={Lightbulb} size={18} color={colors.brand.primary[500]} />
               </span>
               <span style={styles.tooltipText}>
                 Use o bairro ou ponto de referência para diferenciar se tiver mais de uma unidade na mesma cidade
@@ -176,14 +190,11 @@ const CreateUnitPage: React.FC = () => {
             <label style={styles.label}>
               Endereço <span style={styles.required}>*</span>
             </label>
-            <input
-              type="text"
-              name="address"
+            <AddressAutocomplete
               value={formData.address}
-              onChange={handleChange}
-              placeholder="Rua, número, bairro"
-              style={styles.input}
-              required
+              onChange={(address) => setFormData({ ...formData, address })}
+              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
+              className="input"
             />
           </div>
 
@@ -249,7 +260,7 @@ const CreateUnitPage: React.FC = () => {
 
           <div style={styles.infoBox}>
             <span style={styles.infoIcon}>
-              <Info size={20} color={colors.primary} />
+              <IconWrapper icon={Info} size={20} color={colors.brand.primary[500]} />
             </span>
             <div>
               <strong>Sobre a nova unidade</strong>
@@ -281,13 +292,12 @@ const CreateUnitPage: React.FC = () => {
         </form>
       </div>
     </div>
+    </DashboardLayout>
   );
 };
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
-    minHeight: '100vh',
-    backgroundColor: '#f3f4f6',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

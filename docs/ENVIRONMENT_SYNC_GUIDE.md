@@ -342,3 +342,10 @@ Compare com os logs do backend. Todos devem apontar para o mesmo projeto Supabas
 
 **Última atualização:** 2025-10-31
 
+
+
+
+
+
+
+

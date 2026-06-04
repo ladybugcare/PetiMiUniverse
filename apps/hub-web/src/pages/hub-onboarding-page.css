@@ -1,0 +1,172 @@
+/* Signup / onboarding — import clientes.css + pet-wizard.css nos TSX */
+
+.hub-onboarding-page-root,
+.hub-onboarding-wide-card {
+  --pw-brand: #e65100;
+  --pw-brand-soft: #f0642f;
+  --pw-brand-hover: #c74700;
+  --pw-text: #2d2a28;
+  --pw-muted: #6b6560;
+  --pw-border: #e8e4e0;
+}
+
+.hub-onboarding-wide-card {
+  width: 100%;
+  max-width: 720px;
+}
+
+.hub-onboarding-page-root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px 48px;
+  background: linear-gradient(165deg, #faf7f4 0%, #f0e3d8 45%, #e8d4c8 100%);
+  box-sizing: border-box;
+}
+
+.hub-onboarding-page-inner {
+  width: 100%;
+  max-width: 720px;
+}
+
+/* Stepper fora de .pet-wizard — definir tokens que pet-wizard.css espera no ancestral */
+.hub-onboarding-stepper-wrap {
+  --pw-brand: #e65100;
+  --pw-brand-soft: #f0642f;
+  --pw-text: #2d2a28;
+  --pw-muted: #6b6560;
+  --pw-border: #e8e4e0;
+  margin: 20px 0 24px;
+}
+
+.hub-onboarding-stepper-wrap .pet-wizard__step-node-num {
+  background: #eceae7;
+  color: #6b6560;
+  border: 2px solid #e8e4e0;
+}
+
+.hub-onboarding-stepper-wrap .pet-wizard__step-node--active .pet-wizard__step-node-num {
+  background: #f0642f;
+  border-color: #f0642f;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(230, 81, 0, 0.28);
+}
+
+.hub-onboarding-stepper-wrap .pet-wizard__step-node--done .pet-wizard__step-node-num {
+  background: rgba(240, 100, 47, 0.15);
+  border-color: #f0642f;
+  color: #e65100;
+}
+
+.hub-onboarding-stepper-wrap .pet-wizard__step-node--active .pet-wizard__step-node-label {
+  color: #2d2a28;
+}
+
+.hub-onboarding-stepper-wrap .pet-wizard__stepper-line--active {
+  background: #f0642f;
+}
+
+.hub-onboarding-section-card {
+  background: #fff;
+  border: 1px solid #e5dcd6;
+  border-radius: 12px;
+  padding: 22px 24px;
+  margin-bottom: 20px;
+}
+
+.hub-onboarding-section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.hub-onboarding-section-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #fdf6f2;
+  color: #c86a4d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hub-onboarding-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+}
+
+.hub-onboarding-form-grid .hub-onboarding-field--full {
+  grid-column: 1 / -1;
+}
+
+.hub-onboarding-field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a3b3a;
+  margin-bottom: 6px;
+}
+
+.hub-onboarding-field .hub-combobox {
+  width: 100%;
+}
+
+.hub-onboarding-field input,
+.hub-onboarding-field textarea,
+.hub-onboarding-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e5dcd6;
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.hub-onboarding-field textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.hub-onboarding-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 2px;
+  font-size: 14px;
+  color: #4a3b3a;
+  cursor: pointer;
+}
+
+.hub-onboarding-form-grid .hub-onboarding-toggle-row.hub-onboarding-field--full {
+  margin-bottom: 0;
+}
+
+.hub-onboarding__footer {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top-color: #e5dcd6;
+}
+
+.hub-onboarding__footer-spacer {
+  display: block;
+  min-width: 1px;
+}
+
+.hub-onboarding-success-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  color: #059669;
+}
+
+@media (max-width: 640px) {
+  .hub-onboarding-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

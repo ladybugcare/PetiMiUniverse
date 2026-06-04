@@ -1,5 +1,6 @@
 import React from 'react';
 import { Microscope, Pill, Syringe, Package } from 'lucide-react';
+import { colors } from '../styles/colors';
 
 type CategoryType = 'equipment' | 'medicine' | 'vaccine' | 'supplies';
 
@@ -22,7 +23,7 @@ const categories: CategoryCardData[] = [
     icon: <Microscope size={40} />,
     title: 'Equipamentos',
     description: 'Equipamentos cirúrgicos, diagnósticos, mobiliário clínico e laboratório',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
   },
   {
     id: 'medicine',

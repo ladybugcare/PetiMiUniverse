@@ -14,103 +14,29 @@ import {
   AlertCircle, 
   Briefcase,
   Trash2,
-  Check,
-  BarChart2,
-  LogOut
+  Check
 } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
 import { notificationsApi, Notification } from '../services/notificationsApi';
-
-const colors = {
-  primary: '#7c3aed',
-};
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
+import { colors } from '../styles/colors';
 
 const NotificationsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread' | 'read'>('all');
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
   const userId = user?.id;
-  const userRole = user?.user_metadata?.role || user?.role;
 
-  // Menu items based on user role
-  const getMenuItems = (): MenuItem[] => {
-    if (userRole === 'admin') {
-      return [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: <BarChart2 size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/admin-dashboard',
-        },
-        {
-          id: 'notifications',
-          label: 'Notificações',
-          icon: <Bell size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/notifications',
-        },
-        {
-          id: 'logout',
-          label: 'Sair',
-          icon: <LogOut size={20} color="#ef4444" />,
-          action: 'logout',
-        },
-      ];
-    } else if (userRole === 'clinic') {
-      return [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: <BarChart2 size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/clinic-dashboard',
-        },
-        {
-          id: 'notifications',
-          label: 'Notificações',
-          icon: <Bell size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/notifications',
-        },
-        {
-          id: 'logout',
-          label: 'Sair',
-          icon: <LogOut size={20} color="#ef4444" />,
-          action: 'logout',
-        },
-      ];
-    } else {
-      return [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: <BarChart2 size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/vet-dashboard',
-        },
-        {
-          id: 'notifications',
-          label: 'Notificações',
-          icon: <Bell size={20} color={colors.primary} />,
-          action: 'navigate',
-          path: '/notifications',
-        },
-        {
-          id: 'logout',
-          label: 'Sair',
-          icon: <LogOut size={20} color="#ef4444" />,
-          action: 'logout',
-        },
-      ];
-    }
-  };
-
-  const menuItems = getMenuItems();
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
 
   // Load notifications
   const loadNotifications = async (currentPage: number = 1) => {
@@ -196,23 +122,23 @@ const NotificationsPage: React.FC = () => {
     const iconProps = { size: 24 };
     switch (type) {
       case 'application_received':
-        return <UserPlus {...iconProps} color="#7c3aed" />;
+        return <IconWrapper icon={UserPlus} {...iconProps} color={colors.brand.primary[500]} />;
       case 'application_accepted':
-        return <CheckCircle {...iconProps} color="#22c55e" />;
+        return <IconWrapper icon={CheckCircle} {...iconProps} color={colors.success[500]} />;
       case 'application_rejected':
-        return <XCircle {...iconProps} color="#ef4444" />;
+        return <IconWrapper icon={XCircle} {...iconProps} color={colors.error[500]} />;
       case 'support_reply':
-        return <MessageCircle {...iconProps} color="#0ea5e9" />;
+        return <IconWrapper icon={MessageCircle} {...iconProps} color={colors.info[500]} />;
       case 'unit_invitation':
-        return <Mail {...iconProps} color="#f59e0b" />;
+        return <IconWrapper icon={Mail} {...iconProps} color={colors.warning[500]} />;
       case 'marketplace_message':
-        return <MessageSquare {...iconProps} color="#ec4899" />;
+        return <IconWrapper icon={MessageSquare} {...iconProps} color={colors.brand.secondary[500]} />;
       case 'demand_status_changed':
-        return <AlertCircle {...iconProps} color="#f97316" />;
+        return <IconWrapper icon={AlertCircle} {...iconProps} color={colors.warning[500]} />;
       case 'new_demand_created':
-        return <Briefcase {...iconProps} color="#8b5cf6" />;
+        return <IconWrapper icon={Briefcase} {...iconProps} color={colors.brand.primary[500]} />;
       default:
-        return <Bell {...iconProps} color="#6b7280" />;
+        return <IconWrapper icon={Bell} {...iconProps} color={colors.neutral[600]} />;
     }
   };
 
@@ -248,7 +174,7 @@ const NotificationsPage: React.FC = () => {
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>
-              <Bell size={28} style={{ marginRight: '12px' }} />
+              <IconWrapper icon={Bell} size={28} style={{ marginRight: '12px' }} />
               Notificações
             </h1>
             <p style={styles.subtitle}>
@@ -261,7 +187,7 @@ const NotificationsPage: React.FC = () => {
           <div style={styles.headerActions}>
             {unreadCount > 0 && (
               <button onClick={handleMarkAllAsRead} style={styles.actionButton}>
-                <Check size={18} />
+                <IconWrapper icon={Check} size={18} />
                 Marcar todas como lidas
               </button>
             )}
@@ -306,7 +232,7 @@ const NotificationsPage: React.FC = () => {
         {/* Notifications List */}
         {notifications.length === 0 ? (
           <div style={styles.empty}>
-            <Bell size={64} color="#d1d5db" />
+            <IconWrapper icon={Bell} size={64} color="#d1d5db" />
             <h3 style={styles.emptyTitle}>Nenhuma notificação</h3>
             <p style={styles.emptyText}>
               {filter === 'unread'
@@ -435,7 +361,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     fontWeight: '500',
     color: '#ffffff',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
@@ -474,8 +400,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   filterButtonActive: {
-    color: '#7c3aed',
-    borderBottomColor: '#7c3aed',
+    color: colors.brand.primary[500],
+    borderBottomColor: colors.brand.primary[500],
   },
   loading: {
     padding: '60px 20px',
@@ -559,8 +485,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '4px 8px',
     fontSize: '11px',
     fontWeight: '600',
-    color: '#7c3aed',
-    backgroundColor: '#f3e8ff',
+    color: colors.brand.primary[500],
+    backgroundColor: colors.brand.primary[50],
     borderRadius: '6px',
   },
   notificationMessage: {

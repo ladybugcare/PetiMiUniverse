@@ -27,6 +27,7 @@
 
 # misc
 .DS_Store
+/tmp
 
 npm-debug.log*
 yarn-debug.log*
@@ -83,4 +84,7 @@ release/
 *.bin
 *.properties
 *.probe
+
+# Backup files
+*.bak
 

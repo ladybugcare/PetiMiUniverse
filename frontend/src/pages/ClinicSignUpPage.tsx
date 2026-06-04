@@ -6,9 +6,50 @@ import { supabase } from '../services/supabase';
 import ProgressBar from '../components/ProgressBar';
 import PasswordInput from '../components/PasswordInput';
 import HomeHeader from '../components/HomeHeader';
-import { validateCNPJ, formatCNPJ, validateEmail, validatePassword } from '../utils/validators';
+import AddressAutocomplete from '../components/AddressAutocomplete';
+import {
+  validateCNPJ,
+  formatCNPJ,
+  validateEmail,
+  validatePassword,
+} from '../utils/validators';
 import colors from '../styles/colors';
-import { Info, CheckCircle, Heart, Mail } from 'lucide-react';
+import { Info, HelpCircle } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
+import SignUpSuccessModal from '../components/SignUpSuccessModal';
+import SignUpErrorModal from '../components/SignUpErrorModal';
+import PublicSupportModal from '../components/PublicSupportModal';
+import { classifySignUpError, SignUpErrorType } from '../utils/signUpErrorHandler';
+
+// Componente customizado de ícone Info sem fundo preto
+const InfoIconNoBg: React.FC<{ size?: number; color?: string }> = ({ size = 16, color = colors.brand.primary[500]}) => {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ backgroundColor: 'transparent' }}
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+      />
+      <path
+        d="M12 16v-4M12 8h.01"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </svg>
+  );
+};
 
 const ClinicSignUpPage: React.FC = () => {
   const navigate = useNavigate();
@@ -16,93 +57,104 @@ const ClinicSignUpPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [signupComplete, setSignupComplete] = useState(false);
   const [emailResent, setEmailResent] = useState(false);
-  
+  const [errorModal, setErrorModal] = useState<{ isOpen: boolean; type: SignUpErrorType | null }>({
+    isOpen: false,
+    type: null,
+  });
+  const [showSupportModal, setShowSupportModal] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     cnpj: '',
     address: '',
     email: '',
-    password: ''
+    password: '',
   });
-  
+
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Validar step atual
+  // Validação do step atual
   const isStepValid = (): boolean => {
-    switch(step) {
-      case 1: return formData.name.trim().length >= 3;
-      case 2: return validateCNPJ(formData.cnpj) && !errors.cnpj;
-      case 3: return formData.address.trim().length > 10;
-      case 4: return validateEmail(formData.email) && !errors.email;
-      case 5: return validatePassword(formData.password).valid;
-      default: return false;
+    switch (step) {
+      case 1:
+        return formData.name.trim().length >= 3;
+      case 2:
+        return validateCNPJ(formData.cnpj) && !errors?.cnpj;
+      case 3:
+        return formData.address.trim().length > 10;
+      case 4:
+        return validateEmail(formData.email) && !errors?.email;
+      case 5:
+        return validatePassword(formData.password).valid;
+      default:
+        return false;
     }
   };
 
-  // Handle campo change
+  // Atualiza campo e faz validações dinâmicas
   const handleFieldChange = (field: keyof typeof formData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    
-    // Limpar erro quando usuário digita
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-    
-    // Validação em tempo real para CNPJ
+    setFormData((prev) => ({ ...prev, [field]: value }));
+
+    if (errors?.[field]) setErrors((prev) => ({ ...prev, [field]: '' }));
+
     if (field === 'cnpj') {
       const formatted = formatCNPJ(value);
-      setFormData(prev => ({ ...prev, cnpj: formatted }));
-      
+      setFormData((prev) => ({ ...prev, cnpj: formatted }));
+
       if (formatted.length === 18 && !validateCNPJ(formatted)) {
-        setErrors(prev => ({ ...prev, cnpj: 'CNPJ inválido' }));
+        setErrors((prev) => ({ ...prev, cnpj: 'CNPJ inválido' }));
       }
     }
-    
-    // Validação em tempo real para email
+
     if (field === 'email' && value.length > 0) {
       if (!validateEmail(value)) {
-        setErrors(prev => ({ ...prev, email: 'Email inválido' }));
+        setErrors((prev) => ({ ...prev, email: 'Email inválido' }));
       }
     }
   };
 
-  // Avançar para próximo step ou submit
+  // Avança de etapa ou envia cadastro
   const handleNext = async () => {
     if (!isStepValid()) return;
-    
-    // Step 2: Verificar se CNPJ já existe
-    if (step === 2) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/clinics/check-cnpj/${encodeURIComponent(formData.cnpj)}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.exists) {
-            setErrors({ cnpj: 'CNPJ já cadastrado na plataforma' });
-            return;
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao verificar CNPJ:', error);
-      }
+
+    // Step 2 → verifica CNPJ duplicado
+if (step === 2) {
+  try {
+    // 🧼 Remove tudo que não for número (., /, -)
+    const cleanCnpj = formData.cnpj.replace(/\D/g, '');
+
+    const response = await fetch(
+      `${API_BASE_URL}/clinics/check-cnpj/${cleanCnpj}`
+    );
+
+    const data = await response.json();
+
+    if (data.exists) {
+      setErrors({ cnpj: 'CNPJ já cadastrado na plataforma' });
+      return;
     }
-    
-    // Step 4: Verificar se email já existe
+  } catch (error) {
+    console.error('Erro ao verificar CNPJ:', error);
+  }
+}
+
+    // Step 4 → verifica email duplicado
     if (step === 4) {
       try {
-        const response = await fetch(`${API_BASE_URL}/clinics/check-email/${encodeURIComponent(formData.email)}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.exists) {
-            setErrors({ email: 'Email já cadastrado na plataforma' });
-            return;
-          }
+        const response = await fetch(
+          `${API_BASE_URL}/clinics/check-email/${encodeURIComponent(formData.email)}`
+        );
+        const data = await response.json();
+        if (data.exists) {
+          setErrors({ email: 'Email já cadastrado na plataforma' });
+          return;
         }
       } catch (error) {
         console.error('Erro ao verificar email:', error);
       }
     }
-    
-    // Step 5: Submit final
+
+    // Step 5 → cria conta
     if (step === 5) {
       await handleSignUp();
     } else {
@@ -110,52 +162,76 @@ const ClinicSignUpPage: React.FC = () => {
     }
   };
 
-  // Voltar step
   const handleBack = () => {
-    if (step > 1) {
-      setStep(step - 1);
+    if (step > 1) setStep(step - 1);
+  };
+
+  // Handler para teclado Enter
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Se Enter foi pressionado e botão está habilitado
+    if (e.key === 'Enter' && isStepValid() && !loading) {
+      // Para textarea (step 3 - endereço), Shift+Enter permite quebra de linha
+      if (step === 3 && (e.currentTarget as HTMLElement).tagName === 'TEXTAREA') {
+        if (e.shiftKey) {
+          // Shift+Enter: permite quebra de linha (comportamento padrão)
+          return;
+        }
+        // Enter sem Shift: aciona botão
+        e.preventDefault();
+        handleNext();
+      } else {
+        // Para inputs normais, Enter sempre aciona botão
+        e.preventDefault();
+        handleNext();
+      }
     }
   };
 
-  // Enviar cadastro
+  // Submete cadastro da clínica
   const handleSignUp = async () => {
     try {
       setLoading(true);
 
-      const response: any = await clinicsApi.create({
-        name: formData.name,
-        cnpj: formData.cnpj,
-        address: formData.address,
-        email: formData.email,
+      await clinicsApi.create({
+        name: formData.name.trim(),
+        cnpj: formData.cnpj.trim(),
+        address: formData.address.trim(),
+        email: formData.email.trim(),
         password: formData.password,
+        //role: 'CADMIN',
       });
 
-      // NÃO salvar flag isFirstAccess nem token ainda
-      // Usuário só acessa após confirmar email
-      
-      // Marcar cadastro como completo
       setSignupComplete(true);
     } catch (err: any) {
-      alert('Erro ao cadastrar: ' + (err.message || 'Tente novamente.'));
+      console.error('Erro ao cadastrar clínica:', err);
+      const classified = classifySignUpError(err);
+      setErrorModal({ isOpen: true, type: classified.type });
     } finally {
       setLoading(false);
     }
   };
 
-  // Reenviar email de confirmação
+  const handleRetry = () => {
+    handleSignUp();
+  };
+
+  const handleGoToLogin = () => {
+    navigate('/login');
+  };
+
+  const handleOpenSupport = () => {
+    setShowSupportModal(true);
+  };
+
+  // Reenvia e-mail de confirmação
   const handleResendEmail = async () => {
     try {
       setLoading(true);
-      
-      // Usar API do Supabase para reenviar email de confirmação
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email: formData.email,
       });
-      
-      if (!error) {
-        setEmailResent(true);
-      }
+      if (!error) setEmailResent(true);
     } catch (err: any) {
       console.error('Erro ao reenviar e-mail:', err);
     } finally {
@@ -163,7 +239,7 @@ const ClinicSignUpPage: React.FC = () => {
     }
   };
 
-  // Renderizar conteúdo do step atual
+  // Conteúdo dinâmico de cada etapa
   const renderStepContent = () => {
     switch (step) {
       case 1:
@@ -180,12 +256,13 @@ const ClinicSignUpPage: React.FC = () => {
               placeholder="Ex: Clínica Veterinária PetCare"
               value={formData.name}
               onChange={(e) => handleFieldChange('name', e.target.value)}
+              onKeyDown={handleKeyDown}
               className="input"
               autoFocus
             />
           </div>
         );
-      
+
       case 2:
         return (
           <div className="step-content">
@@ -201,22 +278,24 @@ const ClinicSignUpPage: React.FC = () => {
                 placeholder="00.000.000/0000-00"
                 value={formData.cnpj}
                 onChange={(e) => handleFieldChange('cnpj', e.target.value)}
-                className={`input ${errors.cnpj ? 'border-red-500' : validateCNPJ(formData.cnpj) ? 'border-green-500' : ''}`}
+                onKeyDown={handleKeyDown}
+                className={`input ${
+                  errors?.cnpj
+                    ? 'border-red-500'
+                    : validateCNPJ(formData.cnpj)
+                    ? 'border-green-500'
+                    : ''
+                }`}
                 maxLength={18}
                 autoFocus
               />
-              {validateCNPJ(formData.cnpj) && !errors.cnpj && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
-                  <CheckCircle size={20} />
-                </span>
-              )}
             </div>
-            {errors.cnpj && (
+            {errors?.cnpj && (
               <p className="text-red-500 text-sm mt-2">{errors.cnpj}</p>
             )}
           </div>
         );
-      
+
       case 3:
         return (
           <div className="step-content">
@@ -224,23 +303,28 @@ const ClinicSignUpPage: React.FC = () => {
               Onde sua clínica está localizada?
             </h2>
             <p className="text-neutral-600 mb-6">
-              Endereço completo com rua, número, bairro e cidade
+              Digite o endereço e selecione uma sugestão do Google
             </p>
-            <textarea
-              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP - CEP 01234-567"
+            <AddressAutocomplete
               value={formData.address}
-              onChange={(e) => handleFieldChange('address', e.target.value)}
+              onChange={(address) => handleFieldChange('address', address)}
+              onKeyDown={handleKeyDown}
               className="input"
-              rows={3}
+              placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
               autoFocus
             />
-            <p className="text-sm text-neutral-500 mt-2" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Info size={16} color={colors.primary} />
-              Dica: Inclua CEP para facilitar que veterinários encontrem sua clínica
+            <p
+              className="text-sm text-neutral-500 mt-2"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', backgroundColor: 'transparent' }}>
+                <InfoIconNoBg size={16} color={colors.brand.primary[500]} />
+              </span>
+              Digite o endereço e selecione uma sugestão do Google para preenchimento automático
             </p>
           </div>
         );
-      
+
       case 4:
         return (
           <div className="step-content">
@@ -256,21 +340,23 @@ const ClinicSignUpPage: React.FC = () => {
                 placeholder="contato@clinica.com"
                 value={formData.email}
                 onChange={(e) => handleFieldChange('email', e.target.value)}
-                className={`input ${errors.email ? 'border-red-500' : validateEmail(formData.email) ? 'border-green-500' : ''}`}
+                onKeyDown={handleKeyDown}
+                className={`input ${
+                  errors?.email
+                    ? 'border-red-500'
+                    : validateEmail(formData.email)
+                    ? 'border-green-500'
+                    : ''
+                }`}
                 autoFocus
               />
-              {validateEmail(formData.email) && !errors.email && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
-                  <CheckCircle size={20} />
-                </span>
-              )}
             </div>
-            {errors.email && (
+            {errors?.email && (
               <p className="text-red-500 text-sm mt-2">{errors.email}</p>
             )}
           </div>
         );
-      
+
       case 5:
         return (
           <div className="step-content">
@@ -283,12 +369,13 @@ const ClinicSignUpPage: React.FC = () => {
             <PasswordInput
               value={formData.password}
               onChange={(value) => handleFieldChange('password', value)}
+              onKeyDown={handleKeyDown}
               placeholder="Digite sua senha"
               showStrength={true}
             />
           </div>
         );
-      
+
       default:
         return null;
     }
@@ -299,314 +386,231 @@ const ClinicSignUpPage: React.FC = () => {
       <HomeHeader />
       <div className="clinic-signup-container">
         <div className="clinic-signup-content">
-        {/* Coluna Esquerda - Formulário */}
-        <div className="signup-form-section">
-          <ProgressBar currentStep={step} totalSteps={5} />
-          
-          <p className="text-sm text-neutral-500 mb-6">
-            Passo {step} de 5
-          </p>
-          
-                    <div className="mb-8">
-            {renderStepContent()}
-          </div>
-          
-          <div style={{ marginTop: '24px' }}>
-            {/* Botões principais */}
-            <div style={{ display: 'flex', gap: '12px' }}>
-              {step > 1 && (
+          {/* Coluna Esquerda - Formulário */}
+          <div className="signup-form-section">
+            <ProgressBar currentStep={step} totalSteps={5} />
+
+            <p className="text-sm text-neutral-500 mb-6">
+              Passo {step} de 5
+            </p>
+
+            <div className="mb-8">{renderStepContent()}</div>
+
+            <div style={{ marginTop: '24px' }}>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                {step > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    disabled={loading}
+                    style={{
+                      flex: 1,
+                      padding: '12px 24px',
+                      backgroundColor: colors.surface,
+                      color: colors.textSecondary,
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      opacity: loading ? 0.5 : 1,
+                    }}
+                  >
+                    ← Voltar
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={handleBack}
-                  disabled={loading}
+                  onClick={handleNext}
+                  disabled={!isStepValid() || loading}
                   style={{
                     flex: 1,
                     padding: '12px 24px',
-                    backgroundColor: colors.surface,
-                    color: colors.textSecondary,
-                    border: `1px solid ${colors.border}`,
+                    backgroundColor:
+                      !isStepValid() || loading
+                        ? colors.brand.primary[100]
+                        : colors.brand.primary[500],
+                    color: colors.surface,
+                    border: 'none',
                     borderRadius: '8px',
                     fontSize: '14px',
                     fontWeight: '600',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.2s',
-                    opacity: loading ? 0.5 : 1,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!loading) e.currentTarget.style.backgroundColor = colors.neutral[50];
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!loading) e.currentTarget.style.backgroundColor = colors.surface;
+                    cursor:
+                      !isStepValid() || loading
+                        ? 'not-allowed'
+                        : 'pointer',
+                    transition: 'background-color 0.2s',
+                    opacity: !isStepValid() || loading ? 0.5 : 1,
                   }}
                 >
-                  ← Voltar
+                  {loading
+                    ? 'Cadastrando...'
+                    : step === 5
+                    ? 'Criar Conta'
+                    : 'Próximo →'}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={!isStepValid() || loading}
-                style={{
-                  flex: 1,
-                  padding: '12px 24px',
-                  backgroundColor: (!isStepValid() || loading) ? colors.primaryLight : colors.primary,
-                  color: colors.surface,
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: (!isStepValid() || loading) ? 'not-allowed' : 'pointer',
-                  transition: 'background-color 0.2s',
-                  opacity: (!isStepValid() || loading) ? 0.5 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (isStepValid() && !loading) e.currentTarget.style.backgroundColor = colors.primaryDark;
-                }}
-                onMouseLeave={(e) => {
-                  if (isStepValid() && !loading) e.currentTarget.style.backgroundColor = colors.primary;
-                }}
-              >
-                {loading ? 'Cadastrando...' : step === 5 ? 'Criar Conta' : 'Próximo →'}
-              </button>
+              </div>
             </div>
           </div>
-        </div>
-        
-        {/* Coluna Direita - Imagens e Texto */}
-        <div className="signup-images-section">
-          <h2 className="text-display">
-            Conectando quem cuida, quem ama e quem precisa.
-          </h2>
-          <p>
-            Junte-se ao PetiVet e faça parte da maior rede de clínicas e profissionais 
-            veterinários do Brasil. Publique oportunidades e encontre os melhores 
-            veterinários para sua equipe.
-          </p>
-          
-          {/* Colagem de imagens circulares - reutilizando do Hero */}
-          <div className="hero-images-right">
-            <div style={{position: 'relative', width: '100%', maxWidth: '320px', height: '320px'}}>
-              {/* Imagem 1 */}
-              <div 
-                className="hero-image-circle animate-float" 
-                style={{
-                  position: 'absolute',
-                  top: '10px',
-                  left: '10px',
-                  width: '120px',
-                  height: '120px',
-                  zIndex: 3
-                }}
-              >
-                <img 
-                  src="/img1.png" 
-                  alt="Veterinário cuidando de pet" 
-                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                />
-              </div>
 
-              {/* Imagem 2 */}
-              <div 
-                className="hero-image-circle" 
-                style={{
-                  position: 'absolute',
-                  top: '40px',
-                  right: '30px',
-                  width: '110px',
-                  height: '110px',
-                  zIndex: 4,
-                  animationDelay: '0.3s'
-                }}
-              >
-                <img 
-                  src="/img2.jpg" 
-                  alt="Pet feliz" 
-                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                />
-              </div>
+          {/* Coluna Direita - Imagens */}
+          <div className="signup-images-section">
+            <h2 className="text-display hero-headline">
+              Conectando quem cuida, quem ama e{' '}
+              <span className="hero-headline__accent">quem precisa.</span>
+            </h2>
+            <p>
+              Junte-se ao PetMi Vet e faça parte da maior rede de clínicas e
+              profissionais veterinários do Brasil. Publique oportunidades e
+              encontre os melhores veterinários para sua equipe.
+            </p>
 
-              {/* Imagem 3 */}
-              <div 
-                className="hero-image-circle animate-float" 
+            <div className="hero-images-right">
+              <div
                 style={{
-                  position: 'absolute',
-                  bottom: '60px',
-                  right: '40px',
-                  width: '140px',
-                  height: '140px',
-                  zIndex: 5,
-                  animationDelay: '0.15s'
+                  position: 'relative',
+                  width: '100%',
+                  maxWidth: '320px',
+                  height: '320px',
                 }}
               >
-                <img 
-                  src="/im3.jpg" 
-                  alt="Clínica veterinária" 
-                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                />
-              </div>
+                <div
+                  className="hero-image-circle animate-float"
+                  style={{
+                    position: 'absolute',
+                    top: '10px',
+                    left: '10px',
+                    width: '120px',
+                    height: '120px',
+                    zIndex: 3,
+                  }}
+                >
+                  <img
+                    src="/pets/pet-showcase-1.png"
+                    alt="Pet"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                </div>
 
-              {/* Imagem 4 */}
-              <div 
-                className="hero-image-circle" 
-                style={{
-                  position: 'absolute',
-                  bottom: '30px',
-                  left: '0',
-                  width: '95px',
-                  height: '95px',
-                  zIndex: 2,
-                  animationDelay: '0.5s'
-                }}
-              >
-                <img 
-                  src="/img4.jpg" 
-                  alt="Profissional veterinário" 
-                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                />
-              </div>
+                <div
+                  className="hero-image-circle"
+                  style={{
+                    position: 'absolute',
+                    top: '40px',
+                    right: '30px',
+                    width: '110px',
+                    height: '110px',
+                    zIndex: 4,
+                  }}
+                >
+                  <img
+                    src="/pets/pet-showcase-2.png"
+                    alt="Pet feliz"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                </div>
 
-              {/* Imagem 5 */}
-              <div 
-                className="hero-image-circle animate-float" 
-                style={{
-                  position: 'absolute',
-                  bottom: '0',
-                  right: '15px',
-                  width: '85px',
-                  height: '85px',
-                  zIndex: 1,
-                  animationDelay: '0.7s'
-                }}
-              >
-                <img 
-                  src="/img5.jpg" 
-                  alt="Cuidado animal" 
-                  style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                />
+                <div
+                  className="hero-image-circle animate-float"
+                  style={{
+                    position: 'absolute',
+                    bottom: '60px',
+                    right: '40px',
+                    width: '140px',
+                    height: '140px',
+                    zIndex: 5,
+                  }}
+                >
+                  <img
+                    src="/pets/pet-showcase-3.png"
+                    alt="Pet"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                </div>
+
+                <div
+                  className="hero-image-circle"
+                  style={{
+                    position: 'absolute',
+                    bottom: '30px',
+                    left: '0',
+                    width: '95px',
+                    height: '95px',
+                    zIndex: 2,
+                  }}
+                >
+                  <img
+                    src="/pets/pet-showcase-4.png"
+                    alt="Pet"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                </div>
+
+                <div
+                  className="hero-image-circle animate-float"
+                  style={{
+                    position: 'absolute',
+                    bottom: '0',
+                    right: '15px',
+                    width: '85px',
+                    height: '85px',
+                    zIndex: 1,
+                  }}
+                >
+                  <img
+                    src="/pets/pet-showcase-5.png"
+                    alt="Cuidado animal"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    {/* Mensagem de sucesso após cadastro */}
-    {signupComplete && (
-      <div style={styles.successOverlay}>
-        <div style={styles.successCard}>
-          {!emailResent ? (
-            <>
-              <h2 style={styles.successTitle}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                  <Heart size={32} color={colors.primary} fill={colors.primary} />
-                  <span>Tudo pronto!</span>
-                </div>
-              </h2>
-              <p style={styles.successMessage}>
-                Enviamos um e-mail de confirmação para o endereço que você cadastrou.
-              </p>
-              <p style={styles.successMessage}>
-              É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetiVet.
-              </p>
-              <p style={styles.successMessage}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  Você pode fechar esta aba — o restante do processo é feito por e-mail.
-                  <Mail size={18} color={colors.primary} />
-                </span>
-                           </p>
-              
-              <div style={styles.resendSection}>
-                <p style={styles.resendText}>Não recebeu o e-mail?</p>
-                <button 
-                  onClick={handleResendEmail} 
-                  style={styles.resendButton}
-                  disabled={loading}
-                >
-                  {loading ? 'Enviando...' : 'Reenviar e-mail'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <h2 style={styles.successTitle}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                  <Mail size={32} color={colors.primary} />
-                  <span>!</span>
-                </div>
-              </h2>
-              <p style={styles.successMessage}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  Enviamos novamente o e-mail de confirmação
-                  <Heart size={18} color={colors.primary} fill={colors.primary} />
-                </span>
-              </p>
-              <p style={styles.successMessage}>
-                Verifique sua caixa de entrada (ou spam) e confirme seu cadastro para continuar.
-              </p>
-            </>
-          )}
-        </div>
-      </div>
-    )}
+      {signupComplete && (
+        <SignUpSuccessModal
+          email={formData.email}
+          loading={loading}
+          emailResent={emailResent}
+          onResendEmail={handleResendEmail}
+        />
+      )}
+      <SignUpErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ isOpen: false, type: null })}
+        errorType={errorModal.type || 'unexpected_error'}
+        onRetry={handleRetry}
+        onGoToLogin={handleGoToLogin}
+        onOpenSupport={handleOpenSupport}
+      />
+      <PublicSupportModal
+        isOpen={showSupportModal}
+        onClose={() => setShowSupportModal(false)}
+      />
     </>
   );
-};
-
-const styles = {
-  successOverlay: {
-    position: 'fixed' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-  },
-  successCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: '16px',
-    padding: '40px',
-    maxWidth: '500px',
-    width: '90%',
-    textAlign: 'center' as const,
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
-  },
-  successTitle: {
-    fontSize: '28px',
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: '20px',
-  },
-  successMessage: {
-    fontSize: '16px',
-    color: '#6b7280',
-    lineHeight: '1.6',
-    marginBottom: '16px',
-  },
-  resendSection: {
-    marginTop: '24px',
-    paddingTop: '20px',
-    borderTop: '1px solid #e5e7eb',
-  },
-  resendText: {
-    fontSize: '14px',
-    color: '#9ca3af',
-    marginBottom: '12px',
-  },
-  resendButton: {
-    padding: '10px 24px',
-    backgroundColor: '#7c3aed',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s ease-in-out',
-  },
 };
 
 export default ClinicSignUpPage;

@@ -6,8 +6,12 @@ import {
   markAsRead,
   getUnreadCount,
 } from '../controllers/marketplaceMessagesController';
+import { authenticateUser } from '../middleware/authMiddleware';
 
 const router = express.Router();
+
+// Todas as rotas exigem usuário autenticado
+router.use(authenticateUser);
 
 // Send a message
 router.post('/', sendMessage);

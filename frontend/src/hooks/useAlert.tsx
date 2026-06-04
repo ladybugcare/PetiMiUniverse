@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useRef, useEffect } from 'react';
 import Alert, { AlertType } from '../components/Alert';
+import { CheckCircle, XCircle, AlertCircle, Info } from 'lucide-react';
 
 interface AlertOptions {
   title?: string;
@@ -28,12 +29,26 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     message: '',
     type: 'info',
   });
+  
+  // Usar ref para garantir que o alerta não seja fechado acidentalmente por re-renderizações
+  const alertIdRef = useRef(0);
+  const isClosingRef = useRef(false);
 
   const showAlert = useCallback((options: AlertOptions) => {
+    // Incrementar ID para garantir que cada alerta seja único
+    alertIdRef.current += 1;
+    const currentAlertId = alertIdRef.current;
+    isClosingRef.current = false;
+    
     setAlertState({
       ...options,
       isOpen: true,
     });
+    
+    // Log para debug (pode ser removido em produção)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[AlertProvider] Mostrando alerta:', { ...options, alertId: currentAlertId });
+    }
   }, []);
 
   const showSuccess = useCallback((message: string, title?: string) => {
@@ -80,8 +95,41 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [showAlert]);
 
   const closeAlert = useCallback(() => {
-    setAlertState((prev) => ({ ...prev, isOpen: false }));
+    if (isClosingRef.current) {
+      // Já está fechando, ignorar
+      return;
+    }
+    
+    isClosingRef.current = true;
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[AlertProvider] Fechando alerta');
+    }
+    
+    setAlertState((prev) => {
+      // Só fechar se realmente estiver aberto (evita fechamentos acidentais)
+      if (prev.isOpen) {
+        return { ...prev, isOpen: false };
+      }
+      return prev;
+    });
+    
+    // Resetar flag após um pequeno delay
+    setTimeout(() => {
+      isClosingRef.current = false;
+    }, 100);
   }, []);
+
+  // Proteção: garantir que o alerta não seja fechado acidentalmente por mudanças de estado
+  useEffect(() => {
+    if (alertState.isOpen && process.env.NODE_ENV === 'development') {
+      console.log('[AlertProvider] Alerta está aberto:', {
+        message: alertState.message,
+        title: alertState.title,
+        type: alertState.type,
+      });
+    }
+  }, [alertState.isOpen, alertState.message, alertState.title, alertState.type]);
 
   return (
     <AlertContext.Provider

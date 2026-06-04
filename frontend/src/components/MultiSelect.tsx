@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { colors } from '../styles/colors';
 
 interface Option {
   value: string;
@@ -135,7 +136,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'border-color 0.2s ease',
   },
   triggerOpen: {
-    borderColor: '#7c3aed',
+    borderColor: colors.brand.primary[500],
   },
   triggerDisabled: {
     backgroundColor: '#f5f5f5',
@@ -159,7 +160,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     padding: '4px 8px',
     backgroundColor: '#ede9fe',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     borderRadius: '6px',
     fontSize: '13px',
     fontWeight: '500',
@@ -168,7 +169,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginLeft: '6px',
     border: 'none',
     background: 'none',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     cursor: 'pointer',
     fontSize: '16px',
     fontWeight: 'bold',

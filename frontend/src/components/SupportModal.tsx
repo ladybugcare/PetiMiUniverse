@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { MessageCircle, X, Send } from 'lucide-react';
+import { MessageCircle, X, Send, Upload, Paperclip } from 'lucide-react';
 import { supportTicketsApi } from '../services/supportTicketsApi';
+import PriorityBadge from './PriorityBadge';
 import colors from '../styles/colors';
 
 interface SupportModalProps {
@@ -8,8 +9,14 @@ interface SupportModalProps {
   onClose: () => void;
 }
 
+type CategoryType = 'técnico' | 'financeiro' | 'conta_perfil' | 'demanda' | 'marketplace' | 'outro';
+type PriorityType = 'baixa' | 'normal' | 'alta' | 'urgente';
+
 const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
   const [message, setMessage] = useState('');
+  const [category, setCategory] = useState<CategoryType>('outro');
+  const [priority, setPriority] = useState<PriorityType>('normal');
+  const [attachments, setAttachments] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -26,19 +33,25 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
       setLoading(true);
       setError('');
 
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       const userId = user?.id;
-      const userRole = user?.user_metadata?.role || user?.role;
+      let userRole = user?.user_metadata?.role || user?.role;
 
       if (!userId || !userRole) {
         setError('Erro ao identificar usuário. Por favor, faça login novamente.');
         return;
       }
 
+      // Normalizar role para lowercase (admin, clinic, vet, freelancer)
+      userRole = String(userRole).toLowerCase();
+
       await supportTicketsApi.create({
         user_id: userId,
-        user_role: userRole,
+        user_role: userRole as 'clinic' | 'vet' | 'freelancer' | 'admin',
         message: message.trim(),
+        category,
+        priority,
+        attachments,
       });
 
       setSuccess(true);
@@ -60,6 +73,9 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
   const handleClose = () => {
     if (!loading) {
       setMessage('');
+      setCategory('outro');
+      setPriority('normal');
+      setAttachments([]);
       setError('');
       setSuccess(false);
       onClose();
@@ -74,7 +90,8 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
         {/* Header */}
         <div style={styles.header}>
           <div style={styles.headerLeft}>
-            <MessageCircle size={24} color={colors.primary} />
+            {}
+            <MessageCircle size={24} color={colors.brand.primary[500]} />
             <h2 style={styles.title}>Suporte</h2>
           </div>
           <button
@@ -82,6 +99,7 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
             style={styles.closeButton}
             disabled={loading}
           >
+            {}
             <X size={20} />
           </button>
         </div>
@@ -101,6 +119,43 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
               Descreva sua dúvida ou problema. Nossa equipe responderá o mais breve possível.
             </p>
 
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Categoria *</label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as CategoryType)}
+                  style={styles.select}
+                  disabled={loading}
+                >
+                  <option value="técnico">Técnico</option>
+                  <option value="financeiro">Financeiro</option>
+                  <option value="conta_perfil">Conta/Perfil</option>
+                  <option value="demanda">Demanda</option>
+                  <option value="marketplace">Marketplace</option>
+                  <option value="outro">Outro</option>
+                </select>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Prioridade *</label>
+                <select
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value as PriorityType)}
+                  style={styles.select}
+                  disabled={loading}
+                >
+                  <option value="baixa">Baixa</option>
+                  <option value="normal">Normal</option>
+                  <option value="alta">Alta</option>
+                  <option value="urgente">Urgente</option>
+                </select>
+                <div style={styles.priorityBadgeContainer}>
+                  <PriorityBadge priority={priority} />
+                </div>
+              </div>
+            </div>
+
             <div style={styles.formGroup}>
               <label style={styles.label}>Mensagem *</label>
               <textarea
@@ -115,6 +170,38 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
               <div style={styles.charCount}>
                 {message.length} / min. 10 caracteres
               </div>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Anexos (opcional)</label>
+              <div style={styles.uploadArea}>
+                <input
+                  type="file"
+                  accept="image/*,.pdf,.doc,.docx"
+                  multiple
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    // Por enquanto, apenas armazenar nomes dos arquivos
+                    // Em produção, fazer upload para Supabase Storage
+                    setAttachments(files.map(f => f.name));
+                  }}
+                  style={styles.fileInput}
+                  disabled={loading}
+                />
+                <div style={styles.uploadHint}>
+                  <Paperclip size={16} />
+                  <span>Clique para anexar imagens ou documentos</span>
+                </div>
+              </div>
+              {attachments.length > 0 && (
+                <div style={styles.attachmentsList}>
+                  {attachments.map((att, idx) => (
+                    <span key={idx} style={styles.attachmentTag}>
+                      {att}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {error && (
@@ -141,6 +228,7 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
                   'Enviando...'
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {}
                     <Send size={18} />
                     <span>Enviar</span>
                   </div>
@@ -248,6 +336,61 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: colors.textSecondary,
     marginTop: '4px',
   },
+  formRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '16px',
+    marginBottom: '24px',
+  },
+  select: {
+    width: '100%',
+    padding: '12px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    color: colors.text,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '8px',
+    outline: 'none',
+    backgroundColor: '#ffffff',
+    cursor: 'pointer',
+  },
+  priorityBadgeContainer: {
+    marginTop: '8px',
+  },
+  uploadArea: {
+    border: `2px dashed ${colors.border}`,
+    borderRadius: '8px',
+    padding: '24px',
+    textAlign: 'center',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  fileInput: {
+    display: 'none',
+  },
+  uploadHint: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    fontSize: '14px',
+    color: colors.textSecondary,
+    fontFamily: 'Inter, sans-serif',
+  },
+  attachmentsList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginTop: '12px',
+  },
+  attachmentTag: {
+    padding: '6px 12px',
+    backgroundColor: colors.brand.primary[500],
+    color: colors.brand.primary[500],
+    borderRadius: '16px',
+    fontSize: '12px',
+    fontFamily: 'Inter, sans-serif',
+  },
   errorMessage: {
     padding: '12px',
     backgroundColor: '#fee2e2',
@@ -279,7 +422,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     fontWeight: '600',
     color: '#ffffff',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',

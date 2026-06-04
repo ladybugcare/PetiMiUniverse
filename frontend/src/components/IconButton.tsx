@@ -1,4 +1,5 @@
 import React from 'react';
+import IconWrapper from './IconWrapper';
 import { LucideIcon } from 'lucide-react';
 import colors from '../styles/colors';
 
@@ -53,10 +54,10 @@ const IconButton: React.FC<IconButtonProps> = ({
 
   const variantStyles = {
     primary: {
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brand.primary[500],
       color: colors.surface,
       border: 'none',
-      hover: colors.primaryDark,
+      hover: colors.brand.primary[600],
     },
     secondary: {
       backgroundColor: colors.neutral[100],
@@ -66,7 +67,7 @@ const IconButton: React.FC<IconButtonProps> = ({
     },
     outline: {
       backgroundColor: 'transparent',
-      color: colors.primary,
+      color: colors.brand.primary[500],
       border: `1px solid ${colors.border}`,
       hover: colors.neutral[50],
     },
@@ -107,7 +108,7 @@ const IconButton: React.FC<IconButtonProps> = ({
         outline: 'none',
       }}
     >
-      <Icon size={currentSize.iconSize} />
+      <IconWrapper icon={Icon} size={currentSize.iconSize} />
       {label && <span>{label}</span>}
     </button>
   );

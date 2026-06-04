@@ -4,6 +4,7 @@ import { applicationsApi } from '../../../services/applicationsApi';
 import { useUnit } from '../../../contexts/UnitContext';
 import { ClipboardList, CheckCircle, MessageSquare, Calendar, Users, FileText, Eye } from 'lucide-react';
 import colors from '../../../styles/colors';
+import IconWrapper from '../../IconWrapper';
 
 interface AssistantDashboardProps {
   activeSection: string;
@@ -38,8 +39,13 @@ const ResumoSection: React.FC = () => {
     const loadData = async () => {
       try {
         setLoading(true);
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const clinicUser = JSON.parse(localStorage.getItem('clinic_user') || '{}');
+        const userStr = localStorage.getItem('user');
+        const clinicUserStr = localStorage.getItem('clinic_user');
+        
+        if (!userStr || !clinicUserStr) return;
+        
+        const user = JSON.parse(userStr);
+        const clinicUser = JSON.parse(clinicUserStr);
         const clinicId = clinicUser.clinic_id || user.user_metadata?.clinic_id || user.id;
 
         console.log('Loading assistant data for clinic:', { clinicId, userId: user.id });
@@ -81,10 +87,10 @@ const ResumoSection: React.FC = () => {
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
         <div 
-          style={{ ...styles.statCard, borderLeftColor: '#7c3aed' }}
+          style={{ ...styles.statCard, borderLeftColor: colors.brand.primary[500] }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 10px 25px rgba(124, 58, 237, 0.15)';
+            e.currentTarget.style.boxShadow = '0 10px 25px rgba(196, 108, 106, 0.15)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0)';
@@ -92,7 +98,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <ClipboardList size={24} color={colors.primary} />
+            <IconWrapper icon={ClipboardList} size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalDemands}</h3>
@@ -112,7 +118,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <CheckCircle size={24} color={colors.primary} />
+            <IconWrapper icon={CheckCircle} size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.totalApplications}</h3>
@@ -132,7 +138,7 @@ const ResumoSection: React.FC = () => {
           }}
         >
           <div style={styles.statIcon}>
-            <Calendar size={24} color={colors.primary} />
+            <IconWrapper icon={Calendar} size={24} color={colors.brand.primary[500]} />
           </div>
           <div style={styles.statContent}>
             <h3 style={styles.statValue}>{stats.todayDemands}</h3>
@@ -150,20 +156,20 @@ const ResumoSection: React.FC = () => {
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
             }}
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
             }}
           >
             <div className="action-icon-circle" style={styles.actionIconCircle}>
-              <ClipboardList size={28} strokeWidth={1.5} color="white" />
+              <IconWrapper icon={ClipboardList} size={28} strokeWidth={1.5} color="white" />
             </div>
             <span style={styles.actionLabel}>Nova Demanda</span>
           </button>
@@ -172,20 +178,20 @@ const ResumoSection: React.FC = () => {
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
             }}
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
             }}
           >
             <div className="action-icon-circle" style={styles.actionIconCircle}>
-              <Eye size={28} strokeWidth={1.5} color="white" />
+              <IconWrapper icon={Eye} size={28} strokeWidth={1.5} color="white" />
             </div>
             <span style={styles.actionLabel}>Ver Candidaturas</span>
           </button>
@@ -194,20 +200,20 @@ const ResumoSection: React.FC = () => {
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
             }}
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
             }}
           >
             <div className="action-icon-circle" style={styles.actionIconCircle}>
-              <Calendar size={28} strokeWidth={1.5} color="white" />
+              <IconWrapper icon={Calendar} size={28} strokeWidth={1.5} color="white" />
             </div>
             <span style={styles.actionLabel}>Agenda</span>
           </button>
@@ -216,20 +222,20 @@ const ResumoSection: React.FC = () => {
             onMouseEnter={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 12px 24px rgba(124, 58, 237, 0.18)';
-              e.currentTarget.style.borderColor = '#a855f7';
+              e.currentTarget.style.boxShadow = '0 12px 24px rgba(196, 108, 106, 0.18)';
+              e.currentTarget.style.borderColor = colors.brand.primary[500];
               if (icon) icon.style.transform = 'scale(1.1) rotate(5deg)';
             }}
             onMouseLeave={(e) => {
               const icon = e.currentTarget.querySelector('.action-icon-circle') as HTMLElement;
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.08)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(196, 108, 106, 0.08)';
               e.currentTarget.style.borderColor = '#d7c7ff';
               if (icon) icon.style.transform = 'scale(1) rotate(0deg)';
             }}
           >
             <div className="action-icon-circle" style={styles.actionIconCircle}>
-              <MessageSquare size={28} strokeWidth={1.5} color="white" />
+              <IconWrapper icon={MessageSquare} size={28} strokeWidth={1.5} color="white" />
             </div>
             <span style={styles.actionLabel}>Mensagens</span>
           </button>
@@ -267,7 +273,9 @@ const MensagensSection: React.FC = () => {
       <h2 style={styles.sectionTitle}>Mensagens</h2>
       <div style={styles.placeholder}>
         <p style={styles.placeholderText}>
-          <MessageSquare size={24} color={colors.primary} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+          <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: '8px' }}>
+            <IconWrapper icon={MessageSquare} size={24} color={colors.brand.primary[500]} />
+          </span>
           Suas mensagens aparecerão aqui
         </p>
       </div>
@@ -293,11 +301,11 @@ const DemandCard: React.FC<{
       </div>
       <div style={styles.demandInfo}>
         <span style={styles.demandDate}>
-          <Calendar size={16} style={{ marginRight: '4px', display: 'inline-block', verticalAlign: 'middle' }} />
+          <IconWrapper icon={Calendar} size={16} style={{ marginRight: '4px', display: 'inline-block', verticalAlign: 'middle' }} />
           {date}
         </span>
         <span style={styles.demandCandidates}>
-          <Users size={16} style={{ marginRight: '4px', display: 'inline-block', verticalAlign: 'middle' }} />
+          <IconWrapper icon={Users} size={16} style={{ marginRight: '4px', display: 'inline-block', verticalAlign: 'middle' }} />
           {candidates} candidatos
         </span>
       </div>
@@ -307,8 +315,9 @@ const DemandCard: React.FC<{
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
-    padding: '32px',
+    padding: '12px 0 40px',
     fontFamily: 'Inter, sans-serif',
+    maxWidth: '100%',
   },
   section: {
     marginBottom: '32px',
@@ -381,14 +390,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '12px',
     cursor: 'pointer',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.08)',
+    boxShadow: '0 4px 12px rgba(196, 108, 106, 0.08)',
     position: 'relative',
     overflow: 'hidden',
   },
   actionIconCircle: {
     width: '56px',
     height: '56px',
-    background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
+    background: 'transparent',
     borderRadius: '14px',
     display: 'flex',
     alignItems: 'center',

@@ -1,4 +1,6 @@
 import React, { useState, useRef, ChangeEvent } from 'react';
+import { AlertTriangle, ImagePlus, X } from 'lucide-react';
+import { colors } from '../styles/colors';
 
 interface ImageUploaderProps {
   maxImages?: number;
@@ -112,7 +114,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
           style={styles.hiddenInput}
         />
         
-        <div style={styles.uploadIcon}>📸</div>
+        <div style={styles.uploadIcon} aria-hidden>
+          <ImagePlus size={40} color={colors.brand.primary[400]} strokeWidth={1.5} />
+        </div>
         <p style={styles.uploadText}>
           Arraste suas fotos aqui ou <span style={styles.browseText}>clique para escolher</span>
         </p>
@@ -123,8 +127,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
 
       {/* Error Message */}
       {error && (
-        <div style={styles.errorMessage}>
-          ⚠️ {error}
+        <div style={{ ...styles.errorMessage, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <AlertTriangle size={18} color="#b45309" aria-hidden />
+          <span>{error}</span>
         </div>
       )}
 
@@ -141,8 +146,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
                   handleRemoveImage(index);
                 }}
                 style={styles.removeButton}
+                aria-label="Remover imagem"
               >
-                ✕
+                <X size={16} aria-hidden />
               </button>
               {index === 0 && (
                 <div style={styles.mainBadge}>Principal</div>
@@ -179,7 +185,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'none',
   },
   uploadIcon: {
-    fontSize: '48px',
+    display: 'flex',
+    justifyContent: 'center',
     marginBottom: '16px',
   },
   uploadText: {
@@ -189,7 +196,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: '8px',
   },
   browseText: {
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     fontWeight: '500',
     textDecoration: 'underline',
   },
@@ -247,7 +254,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     position: 'absolute',
     bottom: '4px',
     left: '4px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     padding: '2px 8px',
     borderRadius: '4px',

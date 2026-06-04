@@ -1,0 +1,452 @@
+/* Hub /hub/pets — layout alinhado ao mock (laranja #F0642F, cartões com sombra, toolbar em duas linhas) */
+
+.hub-pets-page {
+  --hc-brand: #f0642f;
+  --hc-brand-hover: #d85526;
+}
+
+.hub-pets-page .hub-clientes__metric-card {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.hub-pets-metric-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.hub-pets-metric-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hub-pets-metric-card__icon--brand {
+  background: rgba(240, 100, 47, 0.12);
+  color: var(--hc-brand);
+}
+
+.hub-pets-metric-card__icon--green {
+  background: rgba(46, 160, 100, 0.12);
+  color: #2e9a64;
+}
+
+.hub-pets-metric-trend {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2e9a64;
+  margin-top: 8px;
+}
+
+.hub-pets-toolbar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.hub-pets-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.hub-pets-toolbar-row .hub-clientes__search {
+  flex: 1;
+  min-width: 220px;
+}
+
+.hub-pets-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 4px 4px;
+  font-size: 13px;
+  color: var(--hc-text-muted);
+}
+
+.hub-pets-pagination__pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.hub-pets-pagination__page {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--hc-border);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--hc-text);
+  cursor: pointer;
+}
+
+.hub-pets-pagination__page:hover {
+  border-color: var(--hc-brand);
+  color: var(--hc-brand);
+}
+
+.hub-pets-pagination__page--active {
+  border-color: var(--hc-brand);
+  color: var(--hc-brand);
+  box-shadow: 0 0 0 1px var(--hc-brand);
+}
+
+.hub-pets-pagination__page:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hub-pets-pagination__per-page {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-pets-pagination__per-page select {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--hc-border);
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--hc-text);
+}
+
+/* Foto opcional — cadastro rápido */
+.hub-pets-photo-field {
+  margin-bottom: 20px;
+}
+
+.hub-pets-photo-field__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.hub-pets-photo-field__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-text);
+}
+
+.hub-pets-photo-field__optional {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--hc-text-muted);
+}
+
+.hub-pets-photo-field__row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.hub-pets-photo-field__circle {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2px dashed var(--hc-border);
+  background: #faf7f4;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hc-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.hub-pets-photo-field__circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hub-pets-photo-field__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  position: relative;
+}
+
+.hub-pets-photo-field__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--hc-text-muted);
+  line-height: 1.45;
+  max-width: 260px;
+}
+
+.hub-pets-name-with-star {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hub-pets-name-with-star .hub-pets-star {
+  color: var(--hc-brand);
+  flex-shrink: 0;
+}
+
+.hub-pets-page .hub-pets-table-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
+}
+
+.hub-pets-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Painel de detalhe do pet (preview ao selecionar) — alinhado ao tutor + mockup */
+.hub-pets-detail__hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+  text-align: left;
+}
+
+.hub-pets-detail__hero-avatar {
+  margin-bottom: 0 !important;
+  flex-shrink: 0;
+}
+
+.hub-pets-detail__hero-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-pets-detail__hero-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-pets-detail__hero-name {
+  margin: 0;
+  text-align: left;
+}
+
+.hub-pets-detail__hero-muted {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hc-text-muted);
+}
+
+.hub-pets-detail__hero-tutor {
+  margin-top: 8px;
+}
+
+.hub-pets-detail__hero-tutor-name {
+  color: var(--hc-brand);
+  font-weight: 600;
+}
+
+.hub-pets-detail__quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 12px;
+  margin-bottom: 18px;
+}
+
+.hub-pets-detail__quick-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 52px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+}
+
+.hub-pets-detail__quick-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.hub-pets-detail__quick-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.hub-pets-detail__quick-link:hover .hub-clientes__icon-btn {
+  border-color: var(--hc-brand);
+  color: var(--hc-brand);
+}
+
+.hub-pets-detail__quick-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--hc-text-muted);
+  text-align: center;
+  line-height: 1.2;
+  max-width: 72px;
+}
+
+.hub-pets-detail__quick-icon--disabled {
+  opacity: 0.55;
+}
+
+.hub-pets-detail__quick-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+}
+
+.hub-pets-detail__dropdown-wrap {
+  position: relative;
+}
+
+.hub-pets-detail__tabs {
+  flex-wrap: wrap;
+  gap: 2px 4px;
+}
+
+.hub-pets-detail__info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+}
+
+@media (max-width: 380px) {
+  .hub-pets-detail__info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-pets-detail__info-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hub-pets-detail__info-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--hc-text-muted);
+}
+
+.hub-pets-detail__info-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--hc-text);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.hub-pets-detail__empty-inline {
+  padding: 14px 16px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.hub-pets-detail__footer-full {
+  width: 100%;
+  justify-content: center;
+}
+
+/* SRD toggle — cadastro rápido (alinhado visualmente ao wizard) */
+.hub-pets-srd-field {
+  margin-top: -4px;
+}
+
+.hub-pets-srd-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-pets-srd-label-inline {
+  margin: 0;
+  font-weight: 600;
+}
+
+.hub-pets-srd-hint {
+  display: inline-flex;
+  color: var(--hc-text-muted, #64748b);
+  cursor: help;
+}
+
+.hub-pets-srd-switch {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: none;
+  background: #e2e8f0;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.hub-pets-srd-switch--on {
+  background: var(--hc-brand, #f0642f);
+}
+
+.hub-pets-srd-switch::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.15s ease;
+}
+
+.hub-pets-srd-switch--on::after {
+  transform: translateX(20px);
+}

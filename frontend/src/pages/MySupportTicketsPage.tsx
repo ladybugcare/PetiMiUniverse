@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   Star
 } from 'lucide-react';
+import PriorityBadge from '../components/PriorityBadge';
 import { 
   supportTicketsApi, 
   SupportTicket, 
@@ -27,6 +28,9 @@ import {
 } from '../services/supportTicketsApi';
 import { EvaluationModal } from '../components/EvaluationModal';
 import { SuccessModal } from '../components/SuccessModal';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 import colors from '../styles/colors';
 
 const MySupportTicketsPage: React.FC = () => {
@@ -37,8 +41,8 @@ const MySupportTicketsPage: React.FC = () => {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [user, setUser] = useState<any>(null);
-  const [userRole, setUserRole] = useState<'clinic' | 'vet'>('clinic');
+  const { user } = useAuth();
+  const userRole = user ? getUserRole(user) : 'UNKNOWN';
   const [showEvaluationModal, setShowEvaluationModal] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -47,10 +51,10 @@ const MySupportTicketsPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Get menu items using hook
+  const { menuItems } = useSidebarMenu(userRole);
+
   useEffect(() => {
-    const userData = JSON.parse(localStorage.getItem('user') || '{}');
-    setUser(userData);
-    setUserRole(userData?.user_metadata?.role || userData?.role);
     loadTickets();
   }, []);
 
@@ -71,7 +75,7 @@ const MySupportTicketsPage: React.FC = () => {
   const loadTickets = async () => {
     try {
       setLoading(true);
-      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      const userData = JSON.parse(localStorage.getItem('user') || '');
       const userId = userData?.id;
       
       if (userId) {
@@ -174,31 +178,6 @@ const MySupportTicketsPage: React.FC = () => {
     setNewMessage('');
   };
 
-  // Menu items baseado no papel do usuário
-  const getMenuItems = (): MenuItem[] => {
-    if (userRole === 'clinic') {
-      return [
-        { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
-        { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-        { id: 'units', label: 'Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
-        { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
-        { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
-        { id: 'perfil', label: 'Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-profile' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-      ];
-    } else {
-      return [
-        { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/vet-dashboard' },
-        { id: 'demandas', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-        { id: 'candidaturas', label: 'Minhas Candidaturas', icon: <FileText size={20} color={colors.primary} />, action: 'navigate', path: '/my-applications' },
-        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-        { id: 'support', label: 'Meus Tickets', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/my-support-tickets' },
-        { id: 'perfil', label: 'Meu Perfil', icon: <User size={20} color={colors.primary} />, action: 'navigate', path: '/vet-profile' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-      ];
-    }
-  };
 
   const getStatusBadge = (status: SupportTicket['status']) => {
     const statusConfig: { [key: string]: { label: string; icon: React.ReactNode; color: string; bgColor: string } } = {
@@ -233,8 +212,8 @@ const MySupportTicketsPage: React.FC = () => {
           <Star
             key={star}
             size={18}
-            fill={star <= rating ? colors.primary : 'transparent'}
-            color={star <= rating ? colors.primary : colors.textSecondary}
+            fill={star <= rating ? colors.brand.primary[500]: 'transparent'}
+            color={star <= rating ? colors.brand.primary[500]: colors.textSecondary}
           />
         ))}
       </div>
@@ -249,7 +228,7 @@ const MySupportTicketsPage: React.FC = () => {
     return (
       <DashboardLayout
         pageName="Meus Tickets de Suporte"
-        menuItems={getMenuItems()}
+        menuItems={menuItems}
       >
         <div style={styles.container}>
           <div style={styles.header}>
@@ -283,6 +262,12 @@ const MySupportTicketsPage: React.FC = () => {
                   <div style={styles.ticketHeader}>
                     <div style={styles.ticketMeta}>
                       {getStatusBadge(ticket.status)}
+                      {ticket.priority && (
+                        <PriorityBadge priority={ticket.priority} />
+                      )}
+                      {ticket.category && (
+                        <span style={styles.categoryBadge}>{ticket.category}</span>
+                      )}
                       {ticket.unread_count && ticket.unread_count > 0 && (
                         <span style={styles.unreadBadge}>
                           {ticket.unread_count} nova{ticket.unread_count > 1 ? 's' : ''}
@@ -333,7 +318,7 @@ const MySupportTicketsPage: React.FC = () => {
   return (
     <DashboardLayout
       pageName="Ticket de Suporte"
-      menuItems={getMenuItems()}
+      menuItems={menuItems}
     >
       <div style={styles.container}>
         {/* Header da conversação */}
@@ -353,7 +338,7 @@ const MySupportTicketsPage: React.FC = () => {
           <div style={styles.evaluationBanner}>
             <div style={styles.evaluationContent}>
               <div style={styles.evaluationHeader}>
-                <CheckCircle size={20} color={colors.primary} />
+                <CheckCircle size={20} color={colors.brand.primary[500]} />
                 <span style={styles.evaluationTitle}>Ticket Avaliado e Resolvido</span>
               </div>
               {renderStars(selectedTicket.evaluation.rating)}
@@ -384,7 +369,7 @@ const MySupportTicketsPage: React.FC = () => {
                 >
                   <div style={styles.messageHeader}>
                     <span style={styles.messageSender}>
-                      {isUser ? 'Você' : 'Equipe PetiVet'}
+                      {isUser ? 'Você' : 'Equipe PetMi Vet'}
                     </span>
                   </div>
                   <p style={styles.messageText}>{message.message}</p>
@@ -440,7 +425,7 @@ const MySupportTicketsPage: React.FC = () => {
           </>
         ) : (
           <div style={styles.closedMessage}>
-            <CheckCircle size={24} color={colors.primary} />
+            <CheckCircle size={24} color={colors.brand.primary[500]} />
             <div>
               <p style={styles.closedTitle}>Ticket resolvido e avaliado</p>
               <p style={styles.closedSubtitle}>
@@ -560,6 +545,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'inline-flex',
     alignItems: 'center',
   },
+  categoryBadge: {
+    padding: '4px 10px',
+    fontSize: '12px',
+    fontWeight: '500',
+    borderRadius: '12px',
+    backgroundColor: colors.brand.primary[500],
+    color: colors.brand.primary[500],
+    fontFamily: 'Inter, sans-serif',
+  },
   unreadBadge: {
     padding: '4px 10px',
     fontSize: '12px',
@@ -637,7 +631,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   evaluationBanner: {
     backgroundColor: '#f0fdf4',
-    border: `2px solid ${colors.primary}`,
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '12px',
     padding: '20px',
     marginBottom: '24px',
@@ -688,7 +682,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '4px',
   },
   userMessage: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
     alignSelf: 'flex-end',
   },
@@ -728,7 +722,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
     border: 'none',
     borderRadius: '8px',
@@ -754,7 +748,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
     border: 'none',
     borderRadius: '8px',
@@ -769,7 +763,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '16px',
     padding: '20px',
     backgroundColor: '#f0fdf4',
-    border: `2px solid ${colors.primary}`,
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '12px',
   },
   closedTitle: {

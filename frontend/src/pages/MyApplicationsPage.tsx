@@ -3,12 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import LoadingOverlay from '../components/LoadingOverlay';
-import { applicationsApi, Application } from '../services/applicationsApi';
+import { applicationsApi, Application, DemandApplication } from '../services/applicationsApi';
+import { demandInvitesApi } from '../services/demandInvitesApi';
+import { workProofApi, WorkProof } from '../services/workProofApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, ClipboardList, FileText, User, LogOut, Clock, FilePen } from 'lucide-react';
+import { Clock, Edit, CheckCircle, XCircle } from 'lucide-react';
+import IconWrapper from '../components/IconWrapper';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
+import ApplicationStatusBadge from '../components/ApplicationStatusBadge';
+import WorkProofForm from '../components/WorkProofForm';
 
-interface ApplicationWithDemand extends Application {
+interface ApplicationWithDemand extends DemandApplication {
   demand?: {
     title: string;
     description: string;
@@ -16,50 +24,21 @@ interface ApplicationWithDemand extends Application {
       name: string;
     };
   };
+  workProof?: WorkProof | null;
 }
 
 const MyApplicationsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { showError } = useAlert();
+  const { user } = useAuth();
+  const { showError, showSuccess } = useAlert();
   const [applications, setApplications] = useState<ApplicationWithDemand[]>([]);
   const [loading, setLoading] = useState(true);
+  const [workProofs, setWorkProofs] = useState<Record<string, WorkProof | null>>({});
+  const [loadingWorkProofs, setLoadingWorkProofs] = useState<Record<string, boolean>>({});
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/vet-dashboard',
-    },
-    {
-      id: 'demandas',
-      label: 'Demandas Disponíveis',
-      icon: <ClipboardList size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/demands',
-    },
-    {
-      id: 'candidaturas',
-      label: 'Minhas Candidaturas',
-      icon: <FileText size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/my-applications',
-    },
-    {
-      id: 'perfil',
-      label: 'Meu Perfil',
-      icon: <User size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/vet-profile',
-    },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout',
-    },
-  ];
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
     loadApplications();
@@ -68,11 +47,20 @@ const MyApplicationsPage: React.FC = () => {
   const loadApplications = async () => {
     try {
       setLoading(true);
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       const vetId = user.id;
 
       const response = await applicationsApi.getByVet(vetId);
-      setApplications(response.applications || []);
+      const apps = response.applications || [];
+      setApplications(apps);
+
+      // Carregar work proofs para aplicações que precisam
+      const appsNeedingWorkProof = apps.filter(
+        (app) => ['check_in', 'check_out', 'report_sent', 'report_approved'].includes(app.status)
+      );
+      for (const app of appsNeedingWorkProof) {
+        loadWorkProof(app.id);
+      }
     } catch (error) {
       console.error('Error loading applications:', error);
       showError('Erro ao carregar candidaturas');
@@ -81,25 +69,39 @@ const MyApplicationsPage: React.FC = () => {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const badges: Record<string, { color: string; text: string }> = {
-      pending: { color: '#f59e0b', text: 'Pendente' },
-      accepted: { color: '#22c55e', text: 'Aceita' },
-      rejected: { color: '#ef4444', text: 'Rejeitada' },
+  const loadWorkProof = async (applicationId: string) => {
+    try {
+      setLoadingWorkProofs((prev) => ({ ...prev, [applicationId]: true }));
+      const response = await workProofApi.getWorkProof(applicationId);
+      setWorkProofs((prev) => ({ ...prev, [applicationId]: response.workProof }));
+    } catch (error: any) {
+      console.error('Error loading work proof:', error);
+    } finally {
+      setLoadingWorkProofs((prev) => ({ ...prev, [applicationId]: false }));
+    }
+  };
+
+  const handleAcceptInvite = async (applicationId: string) => {
+    try {
+      await demandInvitesApi.acceptInvite(applicationId);
+      showSuccess('Convite aceito com sucesso!');
+      loadApplications();
+    } catch (error: any) {
+      showError('Erro ao aceitar convite: ' + error.message);
+    }
     };
 
-    const badge = badges[status] || badges.pending;
-    return (
-      <span
-        style={{
-          ...styles.statusBadge,
-          backgroundColor: badge.color,
-        }}
-      >
-        {badge.text}
-      </span>
-    );
+  const handleRejectInvite = async (applicationId: string) => {
+    try {
+      await demandInvitesApi.rejectInvite(applicationId);
+      showSuccess('Convite recusado');
+      loadApplications();
+    } catch (error: any) {
+      showError('Erro ao recusar convite: ' + error.message);
+    }
   };
+
+  // Removido getStatusBadge - usando ApplicationStatusBadge agora
 
   return (
     <>
@@ -118,7 +120,7 @@ const MyApplicationsPage: React.FC = () => {
         {applications.length === 0 ? (
           <div style={styles.emptyState}>
             <div style={styles.emptyIcon}>
-              <FilePen size={64} color="#a3a3a3" />
+              <IconWrapper icon={Edit} size={64} color="#a3a3a3" />
             </div>
             <h3 style={styles.emptyTitle}>Nenhuma candidatura ainda</h3>
             <p style={styles.emptyText}>
@@ -144,7 +146,7 @@ const MyApplicationsPage: React.FC = () => {
                       {application.demand?.clinic?.name || 'Clínica'}
                     </p>
                   </div>
-                  {getStatusBadge(application.status)}
+                  <ApplicationStatusBadge status={application.status} />
                 </div>
 
                 {application.message && (
@@ -154,10 +156,72 @@ const MyApplicationsPage: React.FC = () => {
                   </div>
                 )}
 
+                {/* Botões de ação para convites */}
+                {application.status === 'invited' && (
+                  <div style={{ display: 'flex', gap: '12px', marginTop: '16px', marginBottom: '16px' }}>
+                    <button
+                      onClick={() => handleAcceptInvite(application.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 16px',
+                        backgroundColor: colors.success[500],
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        fontWeight: 500,
+                      }}
+                    >
+                      <CheckCircle size={16} />
+                      Aceitar Convite
+                    </button>
+                    <button
+                      onClick={() => handleRejectInvite(application.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 16px',
+                        backgroundColor: colors.error[500],
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        fontWeight: 500,
+                      }}
+                    >
+                      <XCircle size={16} />
+                      Recusar Convite
+                    </button>
+                  </div>
+                )}
+
+                {/* WorkProofForm para aplicações aprovadas ou em progresso */}
+                {['approved', 'check_in', 'check_out', 'report_sent', 'report_approved'].includes(application.status) && (
+                  <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                    <WorkProofForm
+                      applicationId={application.id}
+                      currentStatus={application.status}
+                      workProof={workProofs[application.id] || null}
+                      onUpdate={() => {
+                        loadApplications();
+                        loadWorkProof(application.id);
+                      }}
+                    />
+                  </div>
+                )}
+
                 <div style={styles.cardFooter}>
                   <span style={styles.dateText}>
-                    Candidatura enviada em{' '}
-                    {new Date(application.created_at).toLocaleDateString('pt-BR')}
+                    {application.status === 'invited' && application.invited_at
+                      ? `Convite recebido em ${new Date(application.invited_at).toLocaleDateString('pt-BR')}`
+                      : application.applied_at
+                      ? `Candidatura enviada em ${new Date(application.applied_at).toLocaleDateString('pt-BR')}`
+                      : `Criado em ${new Date(application.created_at || Date.now()).toLocaleDateString('pt-BR')}`}
                   </span>
                 </div>
               </div>
@@ -233,7 +297,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   emptyButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

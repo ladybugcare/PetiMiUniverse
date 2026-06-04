@@ -102,7 +102,7 @@ import colors from '../styles/colors';
 
 ### ✅ Consistência Visual
 - Todos os ícones seguem o mesmo estilo
-- Cor roxa PetiVet (`#7c3aed`) aplicada consistentemente
+- Cor roxa PetMi Vet (`#7c3aed`) aplicada consistentemente
 - Tamanho uniforme (`size={20}`)
 
 ### ✅ Flexibilidade
@@ -147,5 +147,5 @@ import colors from '../styles/colors';
 
 **Status**: ✅ Migração Completa  
 **Data**: 30 de Outubro de 2025  
-**Desenvolvido para**: PetiVet 🐶 → 💜
+**Desenvolvido para**: PetMi Vet 🐶 → 💜
 

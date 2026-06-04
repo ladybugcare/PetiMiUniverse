@@ -6,13 +6,22 @@ import FloatingActionButton from '../components/FloatingActionButton';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { marketplaceApi, MarketplaceItem, MarketplaceFilters } from '../services/marketplaceApi';
 import { BRAZILIAN_STATES } from '../utils/locationData';
-import { BarChart2, ShoppingCart, PlusCircle, Package, MessageSquare, User, LogOut, Search } from 'lucide-react';
+import { Search, PlusCircle, Package } from 'lucide-react';
 import colors from '../styles/colors';
+import IconWrapper from '../components/IconWrapper';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const MarketplacePage: React.FC = () => {
+  const { user } = useAuth();
   const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
   
   const [filters, setFilters] = useState<MarketplaceFilters>({
     listing_type: '',
@@ -25,57 +34,6 @@ const MarketplacePage: React.FC = () => {
     search: '',
     sort_by: 'recent',
   });
-
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: <BarChart2 size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-dashboard',
-    },
-    {
-      id: 'marketplace',
-      label: 'Ver Marketplace',
-      icon: <ShoppingCart size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace',
-    },
-    {
-      id: 'criar-anuncio',
-      label: 'Criar Anúncio',
-      icon: <PlusCircle size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/create',
-    },
-    {
-      id: 'meus-anuncios',
-      label: 'Meus Anúncios',
-      icon: <Package size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/my-listings',
-    },
-    {
-      id: 'mensagens',
-      label: 'Mensagens',
-      icon: <MessageSquare size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/messages',
-    },
-    {
-      id: 'perfil',
-      label: 'Perfil',
-      icon: <User size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/clinic-profile',
-    },
-    {
-      id: 'logout',
-      label: 'Sair',
-      icon: <LogOut size={20} color={colors.primary} />,
-      action: 'logout',
-    },
-  ];
 
   useEffect(() => {
     loadItems();
@@ -136,7 +94,7 @@ const MarketplacePage: React.FC = () => {
         {/* Header */}
         <div style={styles.header}>
           <div>
-            <h1 style={styles.title}>Marketplace PetiVet</h1>
+            <h1 style={styles.title}>Marketplace PetMi Vet</h1>
             <p style={styles.subtitle}>
               Encontre equipamentos, medicamentos e suprimentos veterinários
             </p>
@@ -146,7 +104,7 @@ const MarketplacePage: React.FC = () => {
             style={styles.filterToggleButton}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Search size={18} />
+              <IconWrapper icon={Search} size={18} />
               <span>{showFilters ? 'Ocultar' : 'Mostrar'} Filtros</span>
             </div>
           </button>
@@ -299,9 +257,9 @@ const MarketplacePage: React.FC = () => {
         {/* Items Grid */}
         {items.length === 0 ? (
           <div style={styles.emptyState}>
-            <p style={styles.emptyIcon}>
-              <Package size={64} color="#a3a3a3" />
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+              <IconWrapper icon={Package} size={64} color="#a3a3a3" />
+            </div>
             <p style={styles.emptyText}>Nenhum item encontrado</p>
             <p style={styles.emptyHint}>Tente ajustar os filtros ou criar um novo anúncio</p>
           </div>
@@ -349,7 +307,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   filterToggleButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

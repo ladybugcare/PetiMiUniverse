@@ -2,6 +2,9 @@ import type { Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { createNotification } from './notificationsController';
 
+/**
+ * @deprecated Use POST /api/demands (createDemandV2) instead
+ */
 // Criar demanda composta com posições
 export const createCompositeDemand = async (req: Request, res: Response) => {
   const {
@@ -13,14 +16,19 @@ export const createCompositeDemand = async (req: Request, res: Response) => {
     start_time,
     end_time,
     category,
+    is_overnight,
     positions, // [{specialties: ["Anestesista", "Cirurgião"], slots: 2, payment: 500, description: ""}, ...]
   } = req.body;
 
   try {
     // Validar horários
-    if (end_time <= start_time) {
-      return res.status(400).json({ error: 'Horário final deve ser após horário inicial' });
+    if (!is_overnight) {
+      // Se não for demanda noturna, validar que end_time > start_time
+      if (end_time <= start_time) {
+        return res.status(400).json({ error: 'Horário final deve ser após horário inicial' });
+      }
     }
+    // Se for demanda noturna, permite end_time < start_time (cruza meia-noite)
 
     // Validar que há pelo menos uma posição
     if (!positions || positions.length === 0) {

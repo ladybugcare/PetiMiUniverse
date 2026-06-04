@@ -1,3 +1,48 @@
+// Validação de CPF
+export const validateCPF = (cpf: string): boolean => {
+  // Remove caracteres não numéricos
+  const cleanCPF = cpf.replace(/[^\d]/g, '');
+  
+  // Verifica se tem 11 dígitos
+  if (cleanCPF.length !== 11) return false;
+  
+  // Verifica CPFs inválidos conhecidos (todos os dígitos iguais)
+  if (/^(\d)\1+$/.test(cleanCPF)) return false;
+  
+  // Validação dos dígitos verificadores
+  let sum = 0;
+  let remainder;
+  
+  // Valida primeiro dígito verificador
+  for (let i = 1; i <= 9; i++) {
+    sum += parseInt(cleanCPF.substring(i - 1, i)) * (11 - i);
+  }
+  remainder = (sum * 10) % 11;
+  if (remainder === 10 || remainder === 11) remainder = 0;
+  if (remainder !== parseInt(cleanCPF.substring(9, 10))) return false;
+  
+  // Valida segundo dígito verificador
+  sum = 0;
+  for (let i = 1; i <= 10; i++) {
+    sum += parseInt(cleanCPF.substring(i - 1, i)) * (12 - i);
+  }
+  remainder = (sum * 10) % 11;
+  if (remainder === 10 || remainder === 11) remainder = 0;
+  if (remainder !== parseInt(cleanCPF.substring(10, 11))) return false;
+  
+  return true;
+};
+
+// Formatar CPF com máscara
+export const formatCPF = (value: string): string => {
+  const cleanValue = value.replace(/[^\d]/g, '');
+  
+  if (cleanValue.length <= 3) return cleanValue;
+  if (cleanValue.length <= 6) return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3)}`;
+  if (cleanValue.length <= 9) return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3, 6)}.${cleanValue.slice(6)}`;
+  return `${cleanValue.slice(0, 3)}.${cleanValue.slice(3, 6)}.${cleanValue.slice(6, 9)}-${cleanValue.slice(9, 11)}`;
+};
+
 // Validação de CNPJ
 export const validateCNPJ = (cnpj: string): boolean => {
   // Remove caracteres não numéricos
@@ -56,6 +101,40 @@ export const validateEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 };
+// Formatar CRMV com máscara automática
+export const formatCRMV = (value: string): string => {
+  if (!value) return "";
+
+  // Remove espaços e caracteres inválidos, converte para maiúsculas
+  let formatted = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  // Se o valor tiver 2 letras no final, separa com hífen
+  const letters = formatted.match(/[A-Z]{2}$/);
+  const numbers = formatted.replace(/[A-Z]/g, "");
+
+  if (letters && numbers) {
+    // letters é um array, então usamos letters[0] que contém a string completa
+    formatted = `${numbers}-${letters[0]}`;
+  }
+
+  return formatted;
+};
+
+// Validar CRMV de Vet
+export const validateCRMV = (value: string): boolean => {
+  if (!value) return false;
+
+  const formatted = value.trim().toUpperCase();
+
+  const validUFs = [
+    "AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG",
+    "MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR",
+    "RS","SC","SE","SP","TO"
+  ];
+
+  const regex = new RegExp(`^\\d{3,6}-(${validUFs.join("|")})$`);
+  return regex.test(formatted);
+};
 
 // Validar força da senha
 export const validatePassword = (password: string): { valid: boolean; errors: string[]; strength: 'weak' | 'medium' | 'strong' } => {
@@ -72,6 +151,7 @@ export const validatePassword = (password: string): { valid: boolean; errors: st
   if (!/[0-9]/.test(password)) {
     errors.push('Pelo menos 1 número');
   }
+  
   
   // Calcular força
   let strength: 'weak' | 'medium' | 'strong' = 'weak';

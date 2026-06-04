@@ -1,323 +1,209 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { login, API_BASE_URL } from '../services/api';
-import HomeHeader from '../components/HomeHeader';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Mail, Lock, ArrowRight } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
-import { useAlert } from '../hooks/useAlert';
-import colors from '../styles/colors';
-import { Mail, Lock } from 'lucide-react';
+import { login } from '../services/api';
+import { useAuth } from '../AuthContext';
+import { getDashboardPathForRole, getUserRole } from '../utils/authHelpers';
+
+const REMEMBER_KEY = 'petimi_login_remember';
+const REMEMBER_EMAIL_KEY = 'petimi_login_email';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [passwordResetNotice, setPasswordResetNotice] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const navigate = useNavigate();
-  const { showSuccess, showError, showWarning } = useAlert();
+  const location = useLocation();
+  const { setAuthFromLogin } = useAuth();
+
+  useEffect(() => {
+    try {
+      const remembered = localStorage.getItem(REMEMBER_KEY) === '1';
+      const savedEmail = localStorage.getItem(REMEMBER_EMAIL_KEY);
+      if (remembered && savedEmail) {
+        setRememberMe(true);
+        setEmail(savedEmail);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    const st = (location.state as { passwordReset?: boolean } | null)?.passwordReset;
+    if (st) {
+      setPasswordResetNotice(true);
+    }
+  }, [location.state]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!email || !password) {
-      showWarning('Por favor, preencha todos os campos.');
-      return;
-    }
+    setLoading(true);
+    setError(null);
+    setPasswordResetNotice(false);
 
     try {
-      setLoading(true);
-      const result = await login({ email, password });
-      
-      // Store the session/user data
-      localStorage.setItem('user', JSON.stringify(result.user));
-      localStorage.setItem('session', JSON.stringify(result.session));
+      const data = await login({
+        email: email.trim(),
+        password,
+      });
 
-      const onboardingInfo = result.onboarding;
-      const clinicUserInfo = result.clinicUser;
+      await setAuthFromLogin(data);
 
-      if (onboardingInfo) {
-        localStorage.setItem('clinicOnboarding', JSON.stringify(onboardingInfo));
-        if (onboardingInfo.isFirstLogin) {
-          localStorage.setItem('isFirstAccess', 'true');
+      try {
+        if (rememberMe) {
+          localStorage.setItem(REMEMBER_KEY, '1');
+          localStorage.setItem(REMEMBER_EMAIL_KEY, email.trim());
         } else {
-          localStorage.removeItem('isFirstAccess');
+          localStorage.removeItem(REMEMBER_KEY);
+          localStorage.removeItem(REMEMBER_EMAIL_KEY);
         }
-      } else {
-        localStorage.removeItem('clinicOnboarding');
-        localStorage.removeItem('isFirstAccess');
+      } catch {
+        /* ignore */
       }
 
-      if (clinicUserInfo) {
-        localStorage.setItem('clinic_user', JSON.stringify(clinicUserInfo));
-      } else {
-        localStorage.removeItem('clinic_user');
-      }
-      
-      console.log('Login result:', result);
-      
-      // Navigate to role-specific dashboard after successful login
-      const userRole = result.user?.user_metadata?.role || result.user?.role;
-      if (userRole === 'admin') {
-        navigate('/admin-dashboard');
-      } else if (userRole === 'clinic') {
-        // Check clinic status to redirect appropriately
-        if (onboardingInfo?.shouldCompleteFirstUnit) {
-          navigate('/units/create-first');
-          return;
-        }
-
-        try {
-          const response = await fetch(`${API_BASE_URL}/clinics/${result.user.id}`, {
-            headers: {
-              'Authorization': `Bearer ${result.session.access_token}`,
-            },
-          });
-          
-          if (response.ok) {
-            const { clinic } = await response.json();
-            
-            if (clinic.status === 'pending_unit') {
-              // Clinic needs to create first unit
-              navigate('/units/create-first');
-            } else {
-              // Clinic can access dashboard (pending_approval or active)
-              navigate('/clinic-dashboard');
-            }
-          } else {
-            // Default to dashboard if can't fetch status
-            navigate('/clinic-dashboard');
-          }
-        } catch (error) {
-          console.error('Error checking clinic status:', error);
-          navigate('/clinic-dashboard');
-        }
-      } else if (userRole === 'vet') {
-        navigate('/vet-dashboard');
-      } else {
-        // For clinic staff roles, force onboarding only when required
-        if (onboardingInfo?.shouldCompleteFirstUnit) {
-          navigate('/units/create-first');
-        } else {
-          navigate('/demands'); // fallback
-        }
-      }
-      
-    } catch (error: any) {
-      // Show the actual error message from the backend
-      console.error('Login error:', error);
-      showError('Erro no login: ' + (error.message || 'Tente novamente.'));
+      const nextUser = data?.user;
+      const dest = nextUser ? getDashboardPathForRole(getUserRole(nextUser)) : '/';
+      navigate(dest, { replace: true });
+    } catch (err: any) {
+      const msg =
+        typeof err?.message === 'string' ? err.message : 'Erro inesperado ao fazer login';
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <>
-      <HomeHeader />
-      <div className="clinic-signup-container">
-        <div className="clinic-signup-content">
-          {/* Coluna Esquerda - Formulário */}
-          <div className="signup-form-section">
-            <h1 className="text-display text-3xl font-bold mb-2 text-neutral-800">
-              Bem-vindo de volta
-            </h1>
-            <p className="text-neutral-600 mb-8">
-              Acesse sua conta PetiVet
-            </p>
-            
-            <form onSubmit={handleLogin} className="space-y-6">
-              {/* Email field */}
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Mail size={18} color={colors.primary} />
-                    <span>Email</span>
-                  </div>
-                </label>
-                <input
-                  type="email"
-                  placeholder="seu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="input"
-                  required
-                />
-              </div>
-              
-              {/* Password field usando PasswordInput */}
-              <div style={{ marginTop: '32px' }}>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Lock size={18} color={colors.primary} />
-                    <span>Senha</span>
-                  </div>
-                </label>
-                <PasswordInput 
+    <div className="login-page-root">
+      <Link to="/" className="login-page-back">
+        ← Início
+      </Link>
+
+      <div className="login-page-card">
+        <div className="login-page-logo-row">
+          {/* Mesmo arquivo que `frontend/assets/favicon.png` — servido em `public/favicon.png` */}
+          <img
+            src={`${process.env.PUBLIC_URL || ''}/favicon.png`}
+            alt="PetMi"
+            className="login-page-logo-img"
+          />
+          <div className="login-page-brand-block">
+            <span className="login-page-brand-name">PetMi Vet</span>
+            <span className="login-page-tagline">CUIDADO QUE CONECTA</span>
+          </div>
+        </div>
+
+        <h1 className="login-page-welcome">Bem-vindo de volta! 👋</h1>
+        <p className="login-page-subwelcome">
+          Faça login para acessar sua conta PetMi Vet
+        </p>
+
+        <form onSubmit={handleLogin}>
+          <div style={{ marginBottom: '18px' }}>
+            <label htmlFor="login-email" className="login-page-label">
+              Email
+            </label>
+            <div className="login-page-field-row">
+              <span className="login-page-field-icon" aria-hidden>
+                <Mail size={20} color="#c46c6a" strokeWidth={2} />
+              </span>
+              <input
+                id="login-email"
+                type="email"
+                className="input login-page-text-input"
+                placeholder="seu.email@exemplo.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '4px' }}>
+            <label htmlFor="login-password" className="login-page-label">
+              Senha
+            </label>
+            <div className="login-page-field-row">
+              <span className="login-page-field-icon" aria-hidden>
+                <Lock size={20} color="#c46c6a" strokeWidth={2} />
+              </span>
+              <div className="login-page-password-slot">
+                <PasswordInput
+                  id="login-password"
                   value={password}
-                  onChange={setPassword}
+                  onChange={(value) => setPassword(value)}
                   placeholder="Digite sua senha"
+                  required
+                  autoComplete="current-password"
                   showStrength={false}
                   showRequirements={false}
                 />
               </div>
-              
-              {/* Botão Entrar */}
-              <div style={{ marginTop: '32px' }}>
-                <button 
-                  type="submit" 
-                  disabled={loading}
-                  style={{
-                    width: '100%',
-                    padding: '12px 24px',
-                    backgroundColor: loading ? colors.primaryLight : colors.primary,
-                    color: colors.surface,
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    transition: 'background-color 0.2s',
-                    opacity: loading ? 0.5 : 1,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!loading) e.currentTarget.style.backgroundColor = colors.primaryDark;
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!loading) e.currentTarget.style.backgroundColor = colors.primary;
-                  }}
-                >
-                  {loading ? 'Entrando...' : 'Entrar'}
-                </button>
-              </div>
-            </form>
-            
-            {/* Link Esqueci Minha Senha */}
-            <div className="text-center" style={{ marginTop: '24px' }}>
-              <Link 
-                to="/forgot-password" 
-                className="text-primary-600 hover:text-primary-700 text-sm transition-colors"
-              >
-                Esqueci minha senha
-              </Link>
             </div>
           </div>
-          
-          {/* Coluna Direita - Imagens e Texto */}
-          <div className="signup-images-section">
-            <h2 className="text-display">
-              Conectando quem cuida, quem ama e quem precisa.
-            </h2>
-            <p>
-              Acesse sua conta PetiVet para gerenciar suas demandas, visualizar candidaturas e 
-              encontrar as melhores oportunidades na área veterinária. Conecte-se com profissionais 
-              qualificados e clínicas de confiança.
-            </p>
-            
-            {/* Colagem de imagens */}
-            <div className="hero-images-right">
-              <div style={{position: 'relative', width: '100%', maxWidth: '320px', height: '320px'}}>
-                {/* Imagem 1 - Top Left Large (Golden Retriever) */}
-                <div 
-                  className="hero-image-circle animate-float" 
-                  style={{
-                    position: 'absolute',
-                    top: '10px',
-                    left: '10px',
-                    width: '120px',
-                    height: '120px',
-                    zIndex: 3
-                  }}
-                >
-                  <img 
-                    src="/img1.png" 
-                    alt="Veterinário cuidando de pet" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
-                </div>
 
-                {/* Imagem 2 - Top Right Medium (White puppy) */}
-                <div 
-                  className="hero-image-circle" 
-                  style={{
-                    position: 'absolute',
-                    top: '40px',
-                    right: '30px',
-                    width: '110px',
-                    height: '110px',
-                    zIndex: 4,
-                    animationDelay: '0.3s'
-                  }}
-                >
-                  <img 
-                    src="/img2.jpg" 
-                    alt="Pet feliz" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
-                </div>
-
-                {/* Imagem 3 - Center/Bottom Large (Dog close-up) */}
-                <div 
-                  className="hero-image-circle animate-float" 
-                  style={{
-                    position: 'absolute',
-                    bottom: '60px',
-                    right: '40px',
-                    width: '140px',
-                    height: '140px',
-                    zIndex: 5,
-                    animationDelay: '0.15s'
-                  }}
-                >
-                  <img 
-                    src="/im3.jpg" 
-                    alt="Clínica veterinária" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
-                </div>
-
-                {/* Imagem 4 - Bottom Left Medium (Vet with dog) */}
-                <div 
-                  className="hero-image-circle" 
-                  style={{
-                    position: 'absolute',
-                    bottom: '30px',
-                    left: '0',
-                    width: '95px',
-                    height: '95px',
-                    zIndex: 2,
-                    animationDelay: '0.5s'
-                  }}
-                >
-                  <img 
-                    src="/img4.jpg" 
-                    alt="Profissional veterinário" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
-                </div>
-
-                {/* Imagem 5 - Bottom Right Small (Fluffy dog) */}
-                <div 
-                  className="hero-image-circle animate-float" 
-                  style={{
-                    position: 'absolute',
-                    bottom: '0',
-                    right: '15px',
-                    width: '85px',
-                    height: '85px',
-                    zIndex: 1,
-                    animationDelay: '0.7s'
-                  }}
-                >
-                  <img 
-                    src="/img5.jpg" 
-                    alt="Cuidado animal" 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
-                </div>
-              </div>
-            </div>
+          <div className="login-page-options">
+            <label className="login-page-remember">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+              />
+              Lembrar de mim
+            </label>
+            <Link to="/forgot-password" className="login-page-forgot">
+              Esqueci minha senha
+            </Link>
           </div>
-        </div>
+
+          {passwordResetNotice && (
+            <div
+              className="success-message"
+              style={{
+                marginTop: '14px',
+                textAlign: 'center',
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: '#ecfdf5',
+                color: '#065f46',
+                fontSize: '14px',
+              }}
+            >
+              Senha atualizada. Faça login com a nova senha.
+            </div>
+          )}
+
+          {error && (
+            <div
+              className="error-message"
+              style={{ marginTop: '14px', textAlign: 'center' }}
+            >
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="login-page-submit"
+            disabled={loading}
+          >
+            {loading ? 'Entrando...' : 'Entrar'}
+            {!loading && <ArrowRight size={20} aria-hidden />}
+          </button>
+        </form>
+
+        <p className="login-page-footer">
+          Ainda não tem uma conta?{' '}
+          <Link to="/clinic-signup">Criar conta →</Link>
+        </p>
       </div>
-    </>
+    </div>
   );
 };
 

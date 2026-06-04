@@ -97,5 +97,5 @@ const { showSuccess, showError, showWarning, showInfo, showConfirm } = useAlert(
 
 📅 **Última Atualização:** 28/10/2025
 👤 **Desenvolvedor:** Sistema Automatizado
-🎨 **Design System:** PetiVet v1.0
+🎨 **Design System:** PetMi Vet v1.0
 

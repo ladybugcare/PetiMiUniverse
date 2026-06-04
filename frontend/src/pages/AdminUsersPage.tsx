@@ -4,27 +4,25 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
-import { clinicsApi, vetsApi } from '../services';
+import { clinicsApi } from '../services';
+import { vetsApi, Vet } from '../services/vetsApi';
+import { freelancersApi, Freelancer } from '../services/freelancersApi';
 import { adminApi, CreateUserData } from '../services/adminApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, EyeOff, Edit, Trash2, UserCog, Truck, UserPlus, Plus, Shield } from 'lucide-react';
+import { formatCRMV } from '../utils/validators';
+import { Eye, EyeOff, Edit, Trash2, UserCog, Truck, UserPlus, Plus, Shield, Users, Building2, Stethoscope, MessageCircle } from 'lucide-react';
 import colors from '../styles/colors';
+import { messagesApi } from '../services/messagesApi';
+import { useAuth } from '../AuthContext';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 interface Clinic {
   id: string;
   name: string;
   email: string;
   cnpj?: string;
-  status?: string;
-  deleted_at?: string | null;
-  created_at: string;
-}
-
-interface Vet {
-  id: string;
-  name: string;
-  email: string;
-  crmv: string;
   status?: string;
   deleted_at?: string | null;
   created_at: string;
@@ -42,25 +40,32 @@ interface Admin {
 const AdminUsersPage: React.FC = () => {
   const navigate = useNavigate();
   const { showSuccess, showError, showConfirm } = useAlert();
-  const [activeTab, setActiveTab] = useState<'clinics' | 'vets' | 'admins'>('clinics');
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'clinics' | 'vets' | 'freelancers' | 'admins'>('clinics');
   const [clinics, setClinics] = useState<Clinic[]>([]);
   const [vets, setVets] = useState<Vet[]>([]);
+  const [freelancers, setFreelancers] = useState<Freelancer[]>([]);
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [filteredClinics, setFilteredClinics] = useState<Clinic[]>([]);
   const [filteredVets, setFilteredVets] = useState<Vet[]>([]);
+  const [filteredFreelancers, setFilteredFreelancers] = useState<Freelancer[]>([]);
   const [filteredAdmins, setFilteredAdmins] = useState<Admin[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedClinic, setSelectedClinic] = useState<Clinic | null>(null);
   const [selectedVet, setSelectedVet] = useState<Vet | null>(null);
+  const [selectedFreelancer, setSelectedFreelancer] = useState<Freelancer | null>(null);
   const [showViewClinicModal, setShowViewClinicModal] = useState(false);
   const [showViewVetModal, setShowViewVetModal] = useState(false);
+  const [showViewFreelancerModal, setShowViewFreelancerModal] = useState(false);
   const [showEditClinicModal, setShowEditClinicModal] = useState(false);
   const [showEditVetModal, setShowEditVetModal] = useState(false);
-  const [editClinicFormData, setEditClinicFormData] = useState<Partial<Clinic>>({});
-  const [editVetFormData, setEditVetFormData] = useState<Partial<Vet>>({});
-  
+  const [showEditFreelancerModal, setShowEditFreelancerModal] = useState(false);
+  const [editClinicFormData, setEditClinicFormData] = useState<Partial<Clinic>>();
+  const [editVetFormData, setEditVetFormData] = useState<Partial<Vet>>();
+  const [editFreelancerFormData, setEditFreelancerFormData] = useState<Partial<Freelancer>>();
+
   // Create user form states
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [createUserStep, setCreateUserStep] = useState<1 | 2>(1);
@@ -102,14 +107,14 @@ const AdminUsersPage: React.FC = () => {
 
   // Check authentication
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user = JSON.parse(localStorage.getItem('user') || '');
     const userRole = user?.user_metadata?.role || user?.role;
-    
+
     if (!user || !user.id || userRole !== 'admin') {
       navigate('/login');
       return;
     }
-    
+
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
@@ -117,28 +122,52 @@ const AdminUsersPage: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [clinicsResult, vetsResult, adminsResult] = await Promise.all([
+      console.log('[AdminUsersPage] Carregando dados...');
+      
+      const [clinicsResult, vetsResult, freelancersResult, adminsResult] = await Promise.all([
         clinicsApi.getAll(),
         vetsApi.getAll(),
+        freelancersApi.getAll(),
         adminApi.getAdmins(),
       ]);
-      const adminIds = new Set((adminsResult.admins || []).map((admin) => admin.id));
+      
+      console.log('[AdminUsersPage] Resultados recebidos:', {
+        clinics: clinicsResult?.clinics?.length || 0,
+        vets: vetsResult?.vets?.length || 0,
+        freelancers: freelancersResult?.freelancers?.length || 0,
+        admins: adminsResult?.admins?.length || 0,
+      });
 
-      const clinicsWithoutAdmins = (clinicsResult.clinics || []).filter(
+      const adminIds = new Set((adminsResult?.admins || []).map((admin) => admin.id));
+
+      const clinicsWithoutAdmins = (clinicsResult?.clinics || []).filter(
         (clinic) => !adminIds.has(clinic.id)
       );
-      const vetsWithoutAdmins = (vetsResult.vets || []).filter(
+      const vetsWithoutAdmins = (vetsResult?.vets || []).filter(
         (vet) => !adminIds.has(vet.id)
       );
+      const freelancersWithoutAdmins = (freelancersResult?.freelancers || []).filter(
+        (freelancer) => !adminIds.has(freelancer.id)
+      );
+
+      console.log('[AdminUsersPage] Após filtragem:', {
+        clinics: clinicsWithoutAdmins.length,
+        vets: vetsWithoutAdmins.length,
+        freelancers: freelancersWithoutAdmins.length,
+        admins: adminsResult?.admins?.length || 0,
+      });
 
       setClinics(clinicsWithoutAdmins);
       setVets(vetsWithoutAdmins);
-      setAdmins(adminsResult.admins || []);
+      setFreelancers(freelancersWithoutAdmins);
+      setAdmins(adminsResult?.admins || []);
       setFilteredClinics(clinicsWithoutAdmins);
       setFilteredVets(vetsWithoutAdmins);
-      setFilteredAdmins(adminsResult.admins || []);
+      setFilteredFreelancers(freelancersWithoutAdmins);
+      setFilteredAdmins(adminsResult?.admins || []);
     } catch (error: any) {
-      showError('Erro ao carregar usuários: ' + error.message);
+      console.error('[AdminUsersPage] Erro ao carregar usuários:', error);
+      showError('Erro ao carregar usuários: ' + (error.message || 'Erro desconhecido'));
     } finally {
       setLoading(false);
     }
@@ -168,6 +197,18 @@ const AdminUsersPage: React.FC = () => {
     }
   }, [searchQuery, vets, activeTab]);
 
+  // Search for freelancers
+  useEffect(() => {
+    if (activeTab === 'freelancers') {
+      const filtered = freelancers.filter((freelancer) =>
+        freelancer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        freelancer.email.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredFreelancers(filtered);
+      setCurrentPage(1);
+    }
+  }, [searchQuery, freelancers, activeTab]);
+
   // Search for admins
   useEffect(() => {
     if (activeTab === 'admins') {
@@ -186,15 +227,9 @@ const AdminUsersPage: React.FC = () => {
     setCurrentPage(1);
   }, [activeTab]);
 
-  const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-    { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-  ];
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
   // Clinic handlers
   const handleViewClinic = (clinic: Clinic) => {
@@ -225,7 +260,7 @@ const AdminUsersPage: React.FC = () => {
   };
 
   const handleSaveEditClinic = async () => {
-    if (!selectedClinic) return;
+    if (!selectedClinic || !editClinicFormData) return;
 
     try {
       await clinicsApi.update(selectedClinic.id, editClinicFormData);
@@ -278,8 +313,73 @@ const AdminUsersPage: React.FC = () => {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
+  // Freelancer handlers
+  const handleViewFreelancer = (freelancer: Freelancer) => {
+    setSelectedFreelancer(freelancer);
+    setShowViewFreelancerModal(true);
+  };
+
+  const handleEditFreelancer = (freelancer: Freelancer) => {
+    setSelectedFreelancer(freelancer);
+    setEditFreelancerFormData(freelancer);
+    setShowEditFreelancerModal(true);
+  };
+
+  const handleDeleteFreelancer = (freelancer: Freelancer) => {
+    showConfirm(
+      `Tem certeza que deseja excluir o freelancer "${freelancer.name}"? Esta ação não pode ser desfeita.`,
+      async () => {
+        try {
+          await freelancersApi.delete(freelancer.id);
+          showSuccess('Freelancer excluído com sucesso!');
+          loadData();
+        } catch (error: any) {
+          showError('Erro ao excluir freelancer: ' + error.message);
+        }
+      },
+      'Confirmar Exclusão'
+    );
+  };
+
+  const handleSaveEditFreelancer = async () => {
+    if (!selectedFreelancer || !editFreelancerFormData) return;
+
+    try {
+      await freelancersApi.update(selectedFreelancer.id, editFreelancerFormData);
+      showSuccess('Freelancer atualizado com sucesso!');
+      setShowEditFreelancerModal(false);
+      loadData();
+    } catch (error: any) {
+      showError('Erro ao atualizar freelancer: ' + error.message);
+    }
+  };
+
+  const formatDate = (dateString?: string) => {
+  if (!dateString) return '—';
+  return new Date(dateString).toLocaleDateString('pt-BR');
+};
+
+  // Handler para criar conversa com usuário
+  const handleSendMessage = async (userId: string, userType: 'clinic' | 'vet' | 'freelancer') => {
+    if (!user?.id) {
+      showError('Usuário não autenticado');
+      return;
+    }
+
+    try {
+      // Criar ou buscar conversa existente
+      const result = await messagesApi.createConversation({
+        participant1_id: user.id,
+        participant1_type: 'admin',
+        participant2_id: userId,
+        participant2_type: userType,
+      });
+
+      // Navegar para página de mensagens com a conversa selecionada
+      navigate(`/messages?conversation=${result.conversation.id}`);
+    } catch (error: any) {
+      showError('Erro ao criar conversa: ' + (error.message || 'Erro desconhecido'));
+    }
   };
 
   // Handle next step in create user form
@@ -312,7 +412,7 @@ const AdminUsersPage: React.FC = () => {
   const handleCreateUser = async () => {
     // Limpar erros anteriores
     setEmailError('');
-    
+
     if (!createUserFormData.name || !createUserFormData.email || !createUserFormData.user_type || !createUserFormData.status) {
       showError('Por favor, preencha todos os campos obrigatórios');
       return;
@@ -334,7 +434,7 @@ const AdminUsersPage: React.FC = () => {
     } catch (error: any) {
       // Extrair mensagem de erro
       let errorMessage = error.message || 'Erro desconhecido';
-      
+
       // Tentar parsear JSON se o erro vier como string JSON
       try {
         const errorJson = JSON.parse(errorMessage);
@@ -344,7 +444,7 @@ const AdminUsersPage: React.FC = () => {
       } catch (e) {
         // Não é JSON, usar mensagem original
       }
-      
+
       // Se o erro contém informações sobre email duplicado
       if (errorMessage.includes('já está cadastrado') || errorMessage.includes('já existe') || errorMessage.includes('already registered') || errorMessage.includes('cadastrado')) {
         setEmailError('Este e-mail já está cadastrado');
@@ -360,11 +460,13 @@ const AdminUsersPage: React.FC = () => {
   };
 
   // Pagination
-  const currentData = activeTab === 'clinics' 
-    ? filteredClinics 
-    : activeTab === 'vets' 
-    ? filteredVets 
-    : filteredAdmins;
+  const currentData = activeTab === 'clinics'
+    ? filteredClinics
+    : activeTab === 'vets'
+      ? filteredVets
+      : activeTab === 'freelancers'
+        ? filteredFreelancers
+        : filteredAdmins;
   const totalPages = Math.ceil(currentData.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
@@ -376,8 +478,8 @@ const AdminUsersPage: React.FC = () => {
         {/* Header */}
         <div style={styles.header}>
           <h2 style={styles.title}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Users size={28} color={colors.primary} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Users size={28} color={colors.brand.primary[500]} />
               <span>Usuários Totais</span>
             </div>
           </h2>
@@ -417,6 +519,18 @@ const AdminUsersPage: React.FC = () => {
             </div>
           </button>
           <button
+            onClick={() => setActiveTab('freelancers')}
+            style={{
+              ...styles.tab,
+              ...(activeTab === 'freelancers' ? styles.activeTab : {}),
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Truck size={18} />
+              <span>Freelancers ({freelancers.length})</span>
+            </div>
+          </button>
+          <button
             onClick={() => setActiveTab('admins')}
             style={{
               ...styles.tab,
@@ -437,8 +551,10 @@ const AdminUsersPage: React.FC = () => {
               activeTab === 'clinics'
                 ? 'Buscar clínicas...'
                 : activeTab === 'vets'
-                ? 'Buscar veterinários...'
-                : 'Buscar administradores...'
+                  ? 'Buscar veterinários...'
+                  : activeTab === 'freelancers'
+                    ? 'Buscar freelancers...'
+                    : 'Buscar administradores...'
             }
             value={searchQuery}
             onChange={setSearchQuery}
@@ -483,7 +599,7 @@ const AdminUsersPage: React.FC = () => {
                           <td style={styles.tableCell}>{clinic.name}</td>
                           <td style={styles.tableCell}>{clinic.email}</td>
                           <td style={styles.tableCell}>
-                            <span style={{ ...styles.typeBadge, backgroundColor: '#7c3aed' }}>
+                            <span style={{ ...styles.typeBadge, backgroundColor: '#86efac' }}>
                               Clínica
                             </span>
                           </td>
@@ -501,25 +617,32 @@ const AdminUsersPage: React.FC = () => {
                           <td style={styles.tableCell}>
                             <div style={styles.actions}>
                               <button
+                                onClick={() => handleSendMessage(clinic.id, 'clinic')}
+                                style={{ ...styles.actionButton, ...styles.messageButton }}
+                                title="Enviar mensagem"
+                              >
+                                <MessageCircle size={16} color={colors.brand.primary[500]} />
+                              </button>
+                              <button
                                 onClick={() => handleViewClinic(clinic)}
                                 style={{ ...styles.actionButton, ...styles.viewButton }}
                                 title="Ver detalhes"
                               >
-                                <Eye size={16} />
+                                <Eye size={16} color="#3b82f6" />
                               </button>
                               <button
                                 onClick={() => handleEditClinic(clinic)}
                                 style={{ ...styles.actionButton, ...styles.editButton }}
                                 title="Editar"
                               >
-                                <Edit size={16} />
+                                <Edit size={16} color="#f59e0b" />
                               </button>
                               <button
                                 onClick={() => handleDeactivateClinic(clinic)}
                                 style={{ ...styles.actionButton, ...styles.deleteButton }}
                                 title="Inativar"
                               >
-                                <Trash2 size={16} />
+                                <Trash2 size={16} color="#ef4444" />
                               </button>
                             </div>
                           </td>
@@ -550,7 +673,7 @@ const AdminUsersPage: React.FC = () => {
                           <td style={styles.tableCell}>{vet.name}</td>
                           <td style={styles.tableCell}>{vet.email}</td>
                           <td style={styles.tableCell}>
-                            <span style={{ ...styles.typeBadge, backgroundColor: '#3b82f6' }}>
+                            <span style={{ ...styles.typeBadge, backgroundColor: '#a78bfa' }}>
                               Veterinário
                             </span>
                           </td>
@@ -568,25 +691,106 @@ const AdminUsersPage: React.FC = () => {
                           <td style={styles.tableCell}>
                             <div style={styles.actions}>
                               <button
+                                onClick={() => handleSendMessage(vet.id, 'vet')}
+                                style={{ ...styles.actionButton, ...styles.messageButton }}
+                                title="Enviar mensagem"
+                              >
+                                <MessageCircle size={16} color={colors.brand.primary[500]} />
+                              </button>
+                              <button
                                 onClick={() => handleViewVet(vet)}
                                 style={{ ...styles.actionButton, ...styles.viewButton }}
                                 title="Ver detalhes"
                               >
-                                <Eye size={16} />
+                                <Eye size={16} color="#3b82f6" />
                               </button>
                               <button
                                 onClick={() => handleEditVet(vet)}
                                 style={{ ...styles.actionButton, ...styles.editButton }}
                                 title="Editar"
                               >
-                                <Edit size={16} />
+                                <Edit size={16} color="#f59e0b" />
                               </button>
                               <button
                                 onClick={() => handleDeleteVet(vet)}
                                 style={{ ...styles.actionButton, ...styles.deleteButton }}
                                 title="Excluir"
                               >
-                                <Trash2 size={16} />
+                                <Trash2 size={16} color="#ef4444" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : activeTab === 'freelancers' ? (
+              <div style={styles.tableContainer}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.tableHeaderRow}>
+                      <th style={styles.tableHeader}>Nome</th>
+                      <th style={styles.tableHeader}>E-mail</th>
+                      <th style={styles.tableHeader}>Tipo</th>
+                      <th style={styles.tableHeader}>Status</th>
+                      <th style={styles.tableHeader}>Data Cadastro</th>
+                      <th style={styles.tableHeader}>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(currentItems as Freelancer[]).map((freelancer) => {
+                      const statusMeta = getStatusMeta(freelancer.status);
+                      return (
+                        <tr key={freelancer.id} style={styles.tableRow}>
+                          <td style={styles.tableCell}>{freelancer.name}</td>
+                          <td style={styles.tableCell}>{freelancer.email}</td>
+                          <td style={styles.tableCell}>
+                            <span style={{ ...styles.typeBadge, backgroundColor: '#93c5fd' }}>
+                              Freelancer
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span
+                              style={{
+                                ...styles.statusBadge,
+                                backgroundColor: statusMeta.color,
+                              }}
+                            >
+                              {statusMeta.label}
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>{formatDate(freelancer.created_at)}</td>
+                          <td style={styles.tableCell}>
+                            <div style={styles.actions}>
+                              <button
+                                onClick={() => handleSendMessage(freelancer.id, 'freelancer')}
+                                style={{ ...styles.actionButton, ...styles.messageButton }}
+                                title="Enviar mensagem"
+                              >
+                                <MessageCircle size={16} color={colors.brand.primary[500]} />
+                              </button>
+                              <button
+                                onClick={() => handleViewFreelancer(freelancer)}
+                                style={{ ...styles.actionButton, ...styles.viewButton }}
+                                title="Ver detalhes"
+                              >
+                                <Eye size={16} color="#3b82f6" />
+                              </button>
+                              <button
+                                onClick={() => handleEditFreelancer(freelancer)}
+                                style={{ ...styles.actionButton, ...styles.editButton }}
+                                title="Editar"
+                              >
+                                <Edit size={16} color="#f59e0b" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteFreelancer(freelancer)}
+                                style={{ ...styles.actionButton, ...styles.deleteButton }}
+                                title="Excluir"
+                              >
+                                <Trash2 size={16} color="#ef4444" />
                               </button>
                             </div>
                           </td>
@@ -687,28 +891,32 @@ const AdminUsersPage: React.FC = () => {
                 </button>
               </div>
               <div style={styles.modalBody}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Nome:</label>
-                  <input
-                    type="text"
-                    value={editClinicFormData.name || ''}
-                    onChange={(e) =>
-                      setEditClinicFormData({ ...editClinicFormData, name: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>E-mail:</label>
-                  <input
-                    type="email"
-                    value={editClinicFormData.email || ''}
-                    onChange={(e) =>
-                      setEditClinicFormData({ ...editClinicFormData, email: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
+                {editClinicFormData && (
+                  <>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Nome:</label>
+                      <input
+                        type="text"
+                        value={editClinicFormData.name || ''}
+                        onChange={(e) =>
+                          setEditClinicFormData({ ...editClinicFormData, name: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>E-mail:</label>
+                      <input
+                        type="email"
+                        value={editClinicFormData.email || ''}
+                        onChange={(e) =>
+                          setEditClinicFormData({ ...editClinicFormData, email: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                  </>
+                )}
                 <div style={styles.formActions}>
                   <button onClick={() => setShowEditClinicModal(false)} style={styles.cancelButton}>
                     Cancelar
@@ -750,6 +958,87 @@ const AdminUsersPage: React.FC = () => {
           </div>
         )}
 
+        {/* Freelancer View Modal */}
+        {showViewFreelancerModal && selectedFreelancer && (
+          <div style={styles.modalOverlay} onClick={() => setShowViewFreelancerModal(false)}>
+            <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <h3 style={styles.modalTitle}>Detalhes do Freelancer</h3>
+                <button onClick={() => setShowViewFreelancerModal(false)} style={styles.closeButton}>
+                  ✕
+                </button>
+              </div>
+              <div style={styles.modalBody}>
+                <div style={styles.detailRow}>
+                  <strong>Nome:</strong> {selectedFreelancer.name}
+                </div>
+                <div style={styles.detailRow}>
+                  <strong>E-mail:</strong> {selectedFreelancer.email}
+                </div>
+                <div style={styles.detailRow}>
+                  <strong>Documento:</strong> {selectedFreelancer.document_number || 'N/A'}
+                </div>
+                <div style={styles.detailRow}>
+                  <strong>Telefone:</strong> {selectedFreelancer.phone || 'N/A'}
+                </div>
+                <div style={styles.detailRow}>
+                  <strong>Data de Cadastro:</strong> {formatDate(selectedFreelancer.created_at)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Freelancer Edit Modal */}
+        {showEditFreelancerModal && selectedFreelancer && (
+          <div style={styles.modalOverlay} onClick={() => setShowEditFreelancerModal(false)}>
+            <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <h3 style={styles.modalTitle}>Editar Freelancer</h3>
+                <button onClick={() => setShowEditFreelancerModal(false)} style={styles.closeButton}>
+                  ✕
+                </button>
+              </div>
+              <div style={styles.modalBody}>
+                {editFreelancerFormData && (
+                  <>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Nome:</label>
+                      <input
+                        type="text"
+                        value={editFreelancerFormData.name || ''}
+                        onChange={(e) =>
+                          setEditFreelancerFormData({ ...editFreelancerFormData, name: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>E-mail:</label>
+                      <input
+                        type="email"
+                        value={editFreelancerFormData.email || ''}
+                        onChange={(e) =>
+                          setEditFreelancerFormData({ ...editFreelancerFormData, email: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                  </>
+                )}
+                <div style={styles.formActions}>
+                  <button onClick={() => setShowEditFreelancerModal(false)} style={styles.cancelButton}>
+                    Cancelar
+                  </button>
+                  <button onClick={handleSaveEditFreelancer} style={styles.saveButton}>
+                    Salvar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Vet Edit Modal */}
         {showEditVetModal && selectedVet && (
           <div style={styles.modalOverlay} onClick={() => setShowEditVetModal(false)}>
@@ -761,39 +1050,44 @@ const AdminUsersPage: React.FC = () => {
                 </button>
               </div>
               <div style={styles.modalBody}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Nome:</label>
-                  <input
-                    type="text"
-                    value={editVetFormData.name || ''}
-                    onChange={(e) =>
-                      setEditVetFormData({ ...editVetFormData, name: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>E-mail:</label>
-                  <input
-                    type="email"
-                    value={editVetFormData.email || ''}
-                    onChange={(e) =>
-                      setEditVetFormData({ ...editVetFormData, email: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>CRMV:</label>
-                  <input
-                    type="text"
-                    value={editVetFormData.crmv || ''}
-                    onChange={(e) =>
-                      setEditVetFormData({ ...editVetFormData, crmv: e.target.value })
-                    }
-                    style={styles.input}
-                  />
-                </div>
+                {editVetFormData && (
+                  <>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Nome:</label>
+                      <input
+                        type="text"
+                        value={editVetFormData.name || ''}
+                        onChange={(e) =>
+                          setEditVetFormData({ ...editVetFormData, name: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>E-mail:</label>
+                      <input
+                        type="email"
+                        value={editVetFormData.email || ''}
+                        onChange={(e) =>
+                          setEditVetFormData({ ...editVetFormData, email: e.target.value })
+                        }
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>CRMV:</label>
+                      <input
+                        type="text"
+                        value={editVetFormData.crmv || ''}
+                        onChange={(e) => {
+                          const formatted = formatCRMV(e.target.value);
+                          setEditVetFormData({ ...editVetFormData, crmv: formatted });
+                        }}
+                        style={styles.input}
+                      />
+                    </div>
+                  </>
+                )}
                 <div style={styles.formActions}>
                   <button onClick={() => setShowEditVetModal(false)} style={styles.cancelButton}>
                     Cancelar
@@ -813,7 +1107,7 @@ const AdminUsersPage: React.FC = () => {
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <UserPlus size={24} color={colors.primary} />
+                  <UserPlus size={24} color={colors.brand.primary[500]} />
                   <h3 style={styles.modalTitle}>Novo Usuário</h3>
                 </div>
                 <button onClick={handleCloseCreateModal} style={styles.closeButton}>
@@ -851,9 +1145,9 @@ const AdminUsersPage: React.FC = () => {
                     <div style={styles.formGroup}>
                       <div style={styles.userTypeButtons}>
                         {[
-                          { id: 'admin', label: 'Administrador', icon: UserCog, color: '#7c3aed' },
-                          { id: 'clinic', label: 'Clínica', icon: Building2, color: '#3b82f6' },
-                          { id: 'vet', label: 'Veterinário', icon: Stethoscope, color: '#10b981' },
+                          { id: 'admin', label: 'Administrador', icon: UserCog, color: '#f59e0b' },
+                          { id: 'clinic', label: 'Clínica', icon: Building2, color: '#86efac' },
+                          { id: 'vet', label: 'Veterinário', icon: Stethoscope, color: '#a78bfa' },
                           { id: 'supplier', label: 'Fornecedor', icon: Truck, color: '#f59e0b' },
                           { id: 'tutor', label: 'Tutor', icon: UserPlus, color: '#ef4444' },
                         ].map((type) => {
@@ -981,23 +1275,21 @@ const AdminUsersPage: React.FC = () => {
                                 placeholder="00.000.000/0000-00"
                               />
                             </div>
-                            <div style={styles.formGroup}>
-                              <label style={styles.label}>Role da Clínica</label>
-                              <select
-                                value={createUserFormData.clinic_role || 'standard'}
-                                onChange={(e) =>
-                                  setCreateUserFormData({
-                                    ...createUserFormData,
-                                    clinic_role: e.target.value as 'standard' | 'premium' | 'partner',
-                                  })
-                                }
-                                style={styles.input}
-                              >
-                                <option value="standard">Standard</option>
-                                <option value="premium">Premium</option>
-                                <option value="partner">Partner</option>
-                              </select>
-                            </div>
+                            <select
+                              value={createUserFormData.clinic_role || 'admin'}
+                              onChange={(e) =>
+                                setCreateUserFormData({
+                                  ...createUserFormData,
+                                  clinic_role: e.target.value as 'admin' | 'manager' | 'staff',
+                                })
+                              }
+                              style={styles.input}
+                            >
+                              <option value="admin">Administrador</option>
+                              <option value="manager">Gerente</option>
+                              <option value="staff">Equipe</option>
+                            </select>
+
                           </>
                         )}
 
@@ -1007,9 +1299,10 @@ const AdminUsersPage: React.FC = () => {
                             <input
                               type="text"
                               value={createUserFormData.crmv || ''}
-                              onChange={(e) =>
-                                setCreateUserFormData({ ...createUserFormData, crmv: e.target.value })
-                              }
+                              onChange={(e) => {
+                                const formatted = formatCRMV(e.target.value);
+                                setCreateUserFormData({ ...createUserFormData, crmv: formatted });
+                              }}
                               style={styles.input}
                               placeholder="CRMV"
                             />
@@ -1032,14 +1325,13 @@ const AdminUsersPage: React.FC = () => {
                             </div>
                             <div style={styles.formGroup}>
                               <label style={styles.label}>Endereço</label>
-                              <input
-                                type="text"
+                              <AddressAutocomplete
                                 value={createUserFormData.address || ''}
-                                onChange={(e) =>
-                                  setCreateUserFormData({ ...createUserFormData, address: e.target.value })
+                                onChange={(address) =>
+                                  setCreateUserFormData({ ...createUserFormData, address })
                                 }
-                                style={styles.input}
-                                placeholder="Endereço completo"
+                                placeholder="Ex: Rua das Flores, 123 - Centro - São Paulo/SP"
+                                className="input"
                               />
                             </div>
                             <div style={{ display: 'flex', gap: '12px' }}>
@@ -1175,7 +1467,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1209,8 +1501,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s',
   },
   activeTab: {
-    color: '#7c3aed',
-    borderBottomColor: '#7c3aed',
+    color: colors.brand.primary[500],
+    borderBottomColor: colors.brand.primary[500],
   },
   searchContainer: {
     marginBottom: '24px',
@@ -1302,20 +1594,27 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   actionButton: {
     padding: '6px 10px',
-    border: 'none',
+    border: '2px solid',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '16px',
     transition: 'all 0.2s',
+    backgroundColor: 'transparent',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   viewButton: {
-    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
   },
   editButton: {
-    backgroundColor: '#f59e0b',
+    borderColor: '#f59e0b',
   },
   deleteButton: {
-    backgroundColor: '#ef4444',
+    borderColor: '#ef4444',
+  },
+  messageButton: {
+    borderColor: colors.brand.primary[500],
   },
   modalOverlay: {
     position: 'fixed',
@@ -1401,7 +1700,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   saveButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -1444,7 +1743,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexShrink: 0,
   },
   stepCircleActive: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
   },
   stepLine: {
@@ -1485,7 +1784,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   userTypeButtonSelected: {
     borderWidth: '2px',
-    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.2)',
+    boxShadow: '0 8px 16px rgba(196, 108, 106, 0.2)',
   },
   userTypeIconCircle: {
     width: '56px',

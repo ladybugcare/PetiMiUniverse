@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import { useAlert } from '../hooks/useAlert';
@@ -8,11 +8,15 @@ import { useUnit } from '../contexts/UnitContext';
 import { clinicUsersApi } from '../services/clinicUsersApi';
 import { ClinicUser, UserInvitation, Role } from '../types/units';
 import { getRoleDisplayName, getRoleColor } from '../utils/permissions';
-import { Home, ClipboardList, ShoppingCart, Building2, Users, LogOut } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const UsersManagementPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const { showSuccess, showError, showConfirm } = useAlert();
   const { canInviteUser, canEditUser, canDeleteUser } = usePermissions();
   const { units, selectedUnit } = useUnit();
@@ -22,6 +26,9 @@ const UsersManagementPage: React.FC = () => {
   const [invitations, setInvitations] = useState<UserInvitation[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'users' | 'invitations'>('users');
+  
+  // Get status filter from query params
+  const statusFilter = searchParams.get('status');
 
   const [inviteForm, setInviteForm] = useState({
     email: '',
@@ -29,26 +36,11 @@ const UsersManagementPage: React.FC = () => {
     role: 'CASSISTANT' as Role,
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const userRole = user?.user_metadata?.role || user?.role;
-  const clinicId = user.id;
+  const clinicId = user?.id || '';
 
-  const getMenuItems = (): MenuItem[] => {
-    const baseItems: MenuItem[] = [];
-
-    if (userRole === 'clinic') {
-      baseItems.push(
-        { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
-        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-        { id: 'units', label: 'Gerenciar Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
-        { id: 'users', label: 'Gerenciar Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' }
-      );
-    }
-
-    return baseItems;
-  };
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
   const loadData = async () => {
     try {
@@ -156,7 +148,7 @@ const UsersManagementPage: React.FC = () => {
   };
 
   return (
-    <DashboardLayout pageName="Gerenciar Usuários" menuItems={getMenuItems()}>
+    <DashboardLayout pageName="Gerenciar Usuários" menuItems={menuItems}>
       <div style={styles.container}>
         <div style={styles.header}>
           <div>
@@ -195,20 +187,28 @@ const UsersManagementPage: React.FC = () => {
         {/* Users Tab */}
         {activeTab === 'users' && (
           <>
-            {users.length === 0 ? (
-              <div style={styles.emptyState}>
-                <p style={styles.emptyText}>Nenhum usuário cadastrado</p>
-              </div>
-            ) : (
-              <div style={styles.table}>
-                <div style={styles.tableHeader}>
-                  <div style={styles.tableCell}>Email</div>
-                  <div style={styles.tableCell}>Unidade</div>
-                  <div style={styles.tableCell}>Role</div>
-                  <div style={styles.tableCell}>Status</div>
-                  <div style={styles.tableCell}>Ações</div>
+            {(() => {
+              // Filter users by status if statusFilter is provided
+              const filteredUsers = statusFilter === 'active' 
+                ? users.filter(user => user.status === 'active')
+                : users;
+              
+              return filteredUsers.length === 0 ? (
+                <div style={styles.emptyState}>
+                  <p style={styles.emptyText}>
+                    {statusFilter === 'active' ? 'Nenhum usuário ativo' : 'Nenhum usuário cadastrado'}
+                  </p>
                 </div>
-                {users.map((clinicUser) => (
+              ) : (
+                <div style={styles.table}>
+                  <div style={styles.tableHeader}>
+                    <div style={styles.tableCell}>Email</div>
+                    <div style={styles.tableCell}>Unidade</div>
+                    <div style={styles.tableCell}>Role</div>
+                    <div style={styles.tableCell}>Status</div>
+                    <div style={styles.tableCell}>Ações</div>
+                  </div>
+                  {filteredUsers.map((clinicUser) => (
                   <div key={clinicUser.id} style={styles.tableRow}>
                     <div style={styles.tableCell}>{clinicUser.user?.email || 'N/A'}</div>
                     <div style={styles.tableCell}>{getUnitName(clinicUser.unit_id)}</div>
@@ -244,9 +244,10 @@ const UsersManagementPage: React.FC = () => {
                       )}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              );
+            })()}
           </>
         )}
 
@@ -392,7 +393,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   createButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -419,8 +420,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s ease',
   },
   activeTab: {
-    borderBottomColor: '#7c3aed',
-    color: '#7c3aed',
+    borderBottomColor: colors.brand.primary[500],
+    color: colors.brand.primary[500],
   },
   emptyState: {
     textAlign: 'center',
@@ -551,7 +552,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   submitButton: {
     flex: '1',
     padding: '12px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

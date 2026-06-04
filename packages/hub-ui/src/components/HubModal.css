@@ -1,0 +1,119 @@
+/* ── HubModal — overlay centralizado ─────────────────────────────────────── */
+
+.hub-modal__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: 16px;
+}
+
+.hub-modal__card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  width: 100%;
+}
+
+.hub-modal__card--lg {
+  max-width: 680px;
+}
+
+.hub-modal__card--xl {
+  max-width: 940px;
+}
+
+/* Header */
+.hub-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #e8e4e0;
+  flex-shrink: 0;
+}
+
+.hub-modal__header-text {
+  min-width: 0;
+}
+
+.hub-modal__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1a1714;
+  line-height: 1.3;
+}
+
+.hub-modal__subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #6b6560;
+}
+
+.hub-modal__close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  color: #6b6560;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.hub-modal__close:hover {
+  background: #f5f0eb;
+  color: #1a1714;
+}
+
+/* Body */
+.hub-modal__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hub-modal__main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.hub-modal__main--with-aside {
+  padding-right: 16px;
+}
+
+.hub-modal__aside {
+  width: 240px;
+  flex-shrink: 0;
+  border-left: 1px solid #e8e4e0;
+  padding: 20px 16px;
+  overflow-y: auto;
+  background: #faf8f6;
+}
+
+/* Footer */
+.hub-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 24px;
+  border-top: 1px solid #e8e4e0;
+  flex-shrink: 0;
+  background: #faf8f6;
+}

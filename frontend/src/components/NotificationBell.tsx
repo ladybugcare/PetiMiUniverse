@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Bell, 
@@ -13,32 +13,95 @@ import {
   X
 } from 'lucide-react';
 import { notificationsApi, Notification } from '../services/notificationsApi';
+import { useAuth } from '../AuthContext';
+import IconWrapper from './IconWrapper';
+import { colors } from '../styles/colors';
 
 const NotificationBell: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const isLoadingRef = useRef(false);
+  const lastRequestTimeRef = useRef(0);
+  const errorCountRef = useRef(0);
+  const pollingPausedRef = useRef(false);
 
-  // Get user ID from localStorage
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const userId = user?.id;
+  // Memoizar userId para evitar re-renders desnecessários
+  const userId = useMemo(() => user?.id, [user?.id]);
 
-  // Load unread count
-  const loadUnreadCount = async () => {
+  // Detectar se está em desenvolvimento
+  const isDevelopment = process.env.NODE_ENV === 'development' || 
+                        process.env.REACT_APP_ENV === 'development' ||
+                        window.location.hostname === 'localhost';
+
+  // Load unread count com throttling e tratamento de erro
+  const loadUnreadCount = useCallback(async () => {
     if (!userId) return;
+    
+    // Se polling está pausado devido a muitos erros 429, não fazer requisição
+    if (pollingPausedRef.current) {
+      return;
+    }
+    
+    // Throttle: não fazer requisição se a última foi há menos de 3 segundos
+    const now = Date.now();
+    const throttleMs = isDevelopment ? 3000 : 2000;
+    if (now - lastRequestTimeRef.current < throttleMs) {
+      return;
+    }
+    
+    // Se já está carregando, não fazer nova requisição
+    if (isLoadingRef.current) {
+      return;
+    }
+    
+    // Se houve muitos erros (429), aumentar o throttle significativamente
+    if (errorCountRef.current > 2) {
+      const backoffMs = errorCountRef.current > 5 ? 60000 : 30000; // 60s se muitos erros, 30s se alguns
+      if (now - lastRequestTimeRef.current < backoffMs) {
+        return;
+      }
+    }
+    
+    isLoadingRef.current = true;
+    lastRequestTimeRef.current = now;
+    
     try {
       const count = await notificationsApi.getUnreadCount(userId);
       setUnreadCount(count);
-    } catch (error) {
+      errorCountRef.current = 0; // Reset error count em caso de sucesso
+      pollingPausedRef.current = false; // Retomar polling se estava pausado
+    } catch (error: any) {
       console.error('Error loading unread count:', error);
+      
+      // Se for erro 429, incrementar contador de erros e pausar polling
+      if (error?.message?.includes('429') || error?.status === 429 || error?.message?.includes('Muitas requisições')) {
+        errorCountRef.current += 1;
+        
+        // Se muitos erros 429, pausar polling temporariamente (5 minutos)
+        if (errorCountRef.current > 3) {
+          pollingPausedRef.current = true;
+          console.warn('[NotificationBell] Muitos erros 429, pausando polling por 5 minutos');
+          
+          // Retomar após 5 minutos
+          setTimeout(() => {
+            pollingPausedRef.current = false;
+            errorCountRef.current = 0;
+            console.log('[NotificationBell] Polling retomado após pausa');
+          }, 5 * 60 * 1000);
+        }
+      }
+    } finally {
+      isLoadingRef.current = false;
     }
-  };
+  }, [userId, isDevelopment]);
 
   // Load notifications list
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     try {
@@ -49,14 +112,38 @@ const NotificationBell: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Polling: Update unread count every 30 seconds
-  useEffect(() => {
-    loadUnreadCount();
-    const interval = setInterval(loadUnreadCount, 30000);
-    return () => clearInterval(interval);
   }, [userId]);
+
+  // Polling: Update unread count (intervalo aumentado para reduzir carga)
+  useEffect(() => {
+    if (!userId) return;
+    
+    // Carregar imediatamente apenas uma vez
+    loadUnreadCount();
+    
+    // Intervalo aumentado para 60s em todos os ambientes para reduzir carga
+    const pollingInterval = 60000;
+    
+    const interval = setInterval(() => {
+      // Só fazer polling se a página estiver visível
+      if (document.visibilityState === 'visible') {
+        loadUnreadCount();
+      }
+    }, pollingInterval);
+    
+    // Recarregar quando a página voltar a ficar visível
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadUnreadCount();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [userId, loadUnreadCount]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -132,23 +219,23 @@ const NotificationBell: React.FC = () => {
     const iconProps = { size: 20 };
     switch (type) {
       case 'application_received':
-        return <UserPlus {...iconProps} color="#7c3aed" />;
+        return <IconWrapper icon={UserPlus} {...iconProps} color={colors.brand.primary[500]} />;
       case 'application_accepted':
-        return <CheckCircle {...iconProps} color="#22c55e" />;
+        return <IconWrapper icon={CheckCircle} {...iconProps} color={colors.success[500]} />;
       case 'application_rejected':
-        return <XCircle {...iconProps} color="#ef4444" />;
+        return <IconWrapper icon={XCircle} {...iconProps} color={colors.error[500]} />;
       case 'support_reply':
-        return <MessageCircle {...iconProps} color="#0ea5e9" />;
+        return <IconWrapper icon={MessageCircle} {...iconProps} color={colors.info[500]} />;
       case 'unit_invitation':
-        return <Mail {...iconProps} color="#f59e0b" />;
+        return <IconWrapper icon={Mail} {...iconProps} color={colors.warning[500]} />;
       case 'marketplace_message':
-        return <MessageSquare {...iconProps} color="#ec4899" />;
+        return <IconWrapper icon={MessageSquare} {...iconProps} color={colors.brand.secondary[500]} />;
       case 'demand_status_changed':
-        return <AlertCircle {...iconProps} color="#f97316" />;
+        return <IconWrapper icon={AlertCircle} {...iconProps} color={colors.warning[500]} />;
       case 'new_demand_created':
-        return <Briefcase {...iconProps} color="#8b5cf6" />;
+        return <IconWrapper icon={Briefcase} {...iconProps} color={colors.brand.primary[500]} />;
       default:
-        return <Bell {...iconProps} color="#6b7280" />;
+        return <IconWrapper icon={Bell} {...iconProps} color={colors.neutral[600]} />;
     }
   };
 
@@ -176,7 +263,7 @@ const NotificationBell: React.FC = () => {
         style={styles.bellButton}
         aria-label="Notificações"
       >
-        <Bell size={20} />
+        <IconWrapper icon={Bell} size={20} />
         {unreadCount > 0 && (
           <span style={styles.badge}>
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -206,7 +293,7 @@ const NotificationBell: React.FC = () => {
               <div style={styles.loading}>Carregando...</div>
             ) : notifications.length === 0 ? (
               <div style={styles.empty}>
-                <Bell size={32} color="#d1d5db" />
+                <IconWrapper icon={Bell} size={32} color="#d1d5db" />
                 <p style={styles.emptyText}>Nenhuma notificação</p>
               </div>
             ) : (
@@ -241,7 +328,7 @@ const NotificationBell: React.FC = () => {
                     style={styles.deleteButton}
                     aria-label="Remover notificação"
                   >
-                    <X size={16} />
+                    <IconWrapper icon={X} size={16} />
                   </button>
                 </div>
               ))
@@ -332,7 +419,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   markAllButton: {
     fontSize: '12px',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     background: 'none',
     border: 'none',
     cursor: 'pointer',
@@ -380,7 +467,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '36px',
     height: '36px',
     borderRadius: '50%',
-    backgroundColor: '#f9fafb',
+    backgroundColor: 'transparent',
   },
   notificationContent: {
     flex: 1,
@@ -402,7 +489,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '8px',
     height: '8px',
     borderRadius: '50%',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     flexShrink: 0,
   },
   notificationMessage: {
@@ -442,7 +529,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '10px',
     fontSize: '14px',
     fontWeight: '500',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     backgroundColor: 'transparent',
     border: '1px solid #e9d5ff',
     borderRadius: '8px',

@@ -2,19 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
-import { Home, ClipboardList, ShoppingCart, Building2, Users, LogOut } from 'lucide-react';
 import colors from '../styles/colors';
 import { useAlert } from '../hooks/useAlert';
 import { usePermissions } from '../hooks/usePermissions';
 import { useUnit } from '../contexts/UnitContext';
 import { unitsApi } from '../services/unitsApi';
 import { Unit, CreateUnitData } from '../types/units';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const UnitsManagementPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
   const { canCreateUnit, canEditUnit, canDeleteUnit } = usePermissions();
-  const { units, loadUnits } = useUnit();
+  const { units, loadUnits, loading: unitsLoading } = useUnit();
 
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -30,36 +33,21 @@ const UnitsManagementPage: React.FC = () => {
     technical_manager: '',
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const userRole = user?.user_metadata?.role || user?.role;
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'CADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
-  // Redirect to CreateFirstUnitPage if no units exist
+  // Redirect to CreateFirstUnitPage if no units exist (após carregar do contexto)
   useEffect(() => {
-    if (!loading && units.length === 0) {
+    if (unitsLoading) return;
+    if (units.length === 0) {
       navigate('/units/create-first');
     }
-  }, [units, loading, navigate]);
-
-  const getMenuItems = (): MenuItem[] => {
-    const baseItems: MenuItem[] = [];
-
-    if (userRole === 'clinic') {
-      baseItems.push(
-        { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} color={colors.primary} />, action: 'navigate', path: '/clinic-dashboard' },
-        { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/demands' },
-        { id: 'marketplace', label: 'Marketplace', icon: <ShoppingCart size={20} color={colors.primary} />, action: 'navigate', path: '/marketplace' },
-        { id: 'units', label: 'Gerenciar Unidades', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/units' },
-        { id: 'users', label: 'Gerenciar Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/users' },
-        { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' }
-      );
-    }
-
-    return baseItems;
-  };
+  }, [units, unitsLoading, navigate]);
 
   const handleOpenModal = (unit?: Unit) => {
     // If trying to create a new unit but no units exist, redirect to first unit flow
-    if (!unit && units.length === 0) {
+    if (!unit && !unitsLoading && units.length === 0) {
       navigate('/units/create-first');
       return;
     }
@@ -166,7 +154,7 @@ const UnitsManagementPage: React.FC = () => {
 
   return (
     <>
-      <DashboardLayout pageName="Gerenciar Unidades" menuItems={getMenuItems()}>
+      <DashboardLayout pageName="Gerenciar Unidades" menuItems={menuItems}>
         <div style={styles.container}>
         <div style={styles.header}>
           <div>
@@ -207,8 +195,8 @@ const UnitsManagementPage: React.FC = () => {
                 </div>
                 <div style={styles.actions}>
                   {canEditUnit && (
-                    <button onClick={() => handleOpenModal(unit)} style={styles.editButton}>
-                      Editar
+                    <button onClick={() => navigate(`/units/${unit.id}`)} style={styles.editButton}>
+                      Visualizar
                     </button>
                   )}
                   {canDeleteUnit && !unit.is_main && (
@@ -381,7 +369,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   createButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -548,7 +536,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   submitButton: {
     flex: '1',
     padding: '12px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -563,13 +551,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '64px',
     height: '64px',
     borderRadius: '50%',
-    background: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)',
+    background: 'linear-gradient(135deg, colors.brand.primary[500] 0%, colors.brand.primary[800] 100%)',
     border: 'none',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 8px 16px rgba(124, 58, 237, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2)',
+    boxShadow: '0 8px 16px rgba(196, 108, 106, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2)',
     transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
     zIndex: 999,
   },

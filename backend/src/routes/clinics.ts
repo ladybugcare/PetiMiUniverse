@@ -1,16 +1,66 @@
-import express from 'express'
-import { createClinic, getClinics, getClinicById, updateClinic, updateClinicPhoto, deleteClinic, checkCNPJ, checkEmail, registerClinicWithUnit } from '../controllers/clinicsController'
-import { authenticateUser } from '../middleware/authMiddleware'
-const router = express.Router()
+// backend/src/routes/clinics.ts
+import express from 'express';
+import { authenticateUser } from '../middleware/authMiddleware';
+import { supabase } from '../config/supabase';
+import type { Request, Response } from 'express';
+import { logger } from '../utils/logger.js';
 
-router.post('/register', createClinic)
-router.post('/register-with-unit', authenticateUser, registerClinicWithUnit)
-router.get('/', getClinics)
-router.get('/check-cnpj/:cnpj', checkCNPJ)
-router.get('/check-email/:email', checkEmail)
-router.get('/:id', getClinicById)
-router.patch('/:id', updateClinic)
-router.patch('/:id/photo', updateClinicPhoto)
-router.delete('/:id', authenticateUser, deleteClinic)
+// 🏥 Controladores novos (organizados)
+import { createClinicPublic } from '../controllers/clinics/createClinicPublic';
+import { checkClinicCnpj } from '../controllers/clinics/checkClinicCnpj';
+import { getClinics } from '../controllers/clinics/getClinics';
+import { getClinicById } from '../controllers/clinics/getClinicById';
 
-export default router
+// 🧩 Controladores antigos ainda úteis
+import {
+  updateClinic,
+  updateClinicPhoto,
+  deleteClinic,
+  checkEmail,
+  registerClinicWithUnit,
+} from '../controllers/clinicsController';
+
+const router = express.Router();
+
+/**
+ * ===========================================================
+ * 🏥 FLUXO DE CADASTRO PÚBLICO
+ * ===========================================================
+ */
+router.post('/', createClinicPublic);
+
+/**
+ * ===========================================================
+ * 🔍 CONSULTAS E VALIDAÇÕES
+ * ===========================================================
+ */
+router.get('/check-cnpj/:cnpj', checkClinicCnpj);
+
+
+router.get('/check-email/:email', checkEmail);
+router.get('/', getClinics);
+router.get('/:id', getClinicById);
+
+/**
+ * ===========================================================
+ * 🏢 FLUXO INTERNO (clínicas autenticadas)
+ * ===========================================================
+ */
+router.post('/register-with-unit', authenticateUser, registerClinicWithUnit);
+
+/**
+ * ===========================================================
+ * ✏️ ATUALIZAÇÃO DE DADOS
+ * ===========================================================
+ */
+router.put('/:id', authenticateUser, updateClinic);
+
+/**
+ * ===========================================================
+ * 🖼️ FOTO E EXCLUSÃO
+ * ===========================================================
+ */
+router.patch('/:id/photo', authenticateUser, updateClinicPhoto);
+router.delete('/:id', authenticateUser, deleteClinic);
+
+export default router;

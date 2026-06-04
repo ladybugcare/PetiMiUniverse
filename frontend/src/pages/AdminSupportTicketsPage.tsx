@@ -2,32 +2,31 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
-import { 
-  BarChart2, 
-  Building2, 
-  Stethoscope, 
-  ClipboardList, 
-  Users, 
-  LogOut,
-  MessageCircle,
+import {
   Clock,
   CheckCircle,
   XCircle,
   User,
   Send,
   ArrowLeft,
-  Star
+  Star,
+  MessageCircle
 } from 'lucide-react';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 import { 
   supportTicketsApi, 
   SupportTicket, 
   TicketMessage 
 } from '../services/supportTicketsApi';
 import { SuccessModal } from '../components/SuccessModal';
+import IconWrapper from '../components/IconWrapper';
 import colors from '../styles/colors';
 
 const AdminSupportTicketsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
@@ -35,25 +34,15 @@ const AdminSupportTicketsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [user, setUser] = useState<any>(null);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Menu items
-  const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-    { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-  ];
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
-    const userData = JSON.parse(localStorage.getItem('user') || '{}');
-    setUser(userData);
     loadTickets();
   }, [statusFilter]);
 
@@ -174,16 +163,46 @@ const AdminSupportTicketsPage: React.FC = () => {
     );
   };
 
-  const getRoleBadge = (role: 'clinic' | 'vet') => {
+  const getRoleBadge = (role: 'clinic' | 'vet' | 'freelancer' | 'admin' | 'guest') => {
+    const roleConfig = {
+      clinic: {
+        label: 'Clínica',
+        color: colors.brand.primary[500],
+        backgroundColor: colors.brand.primary[100],
+      },
+      vet: {
+        label: 'Veterinário',
+        color: '#0ea5e9',
+        backgroundColor: '#e0f2fe',
+      },
+      freelancer: {
+        label: 'Freelancer',
+        color: '#10b981',
+        backgroundColor: '#d1fae5',
+      },
+      admin: {
+        label: 'Administrador',
+        color: colors.brand.primary[500],
+        backgroundColor: '#ede9fe',
+      },
+      guest: {
+        label: 'Visitante',
+        color: '#6b7280',
+        backgroundColor: '#f3f4f6',
+      },
+    };
+
+    const config = roleConfig[role] || roleConfig.clinic;
+
     return (
       <span
         style={{
           ...styles.roleBadge,
-          color: role === 'clinic' ? colors.primary : '#0ea5e9',
-          backgroundColor: role === 'clinic' ? colors.primaryLight : '#e0f2fe',
+          color: config.color,
+          backgroundColor: config.backgroundColor,
         }}
       >
-        {role === 'clinic' ? 'Clínica' : 'Veterinário'}
+        {config.label}
       </span>
     );
   };
@@ -195,8 +214,8 @@ const AdminSupportTicketsPage: React.FC = () => {
           <Star
             key={star}
             size={16}
-            fill={star <= rating ? colors.primary : 'transparent'}
-            color={star <= rating ? colors.primary : colors.textSecondary}
+            fill={star <= rating ? colors.brand.primary[500]: 'transparent'}
+            color={star <= rating ? colors.brand.primary[500]: colors.textSecondary}
           />
         ))}
       </div>
@@ -262,20 +281,24 @@ const AdminSupportTicketsPage: React.FC = () => {
                 >
                   <div style={styles.ticketHeader}>
                     <div style={styles.ticketMeta}>
-                      <User size={16} color={colors.primary} />
-                      <span style={styles.ticketUserId}>
-                        {ticket.user_id.substring(0, 8)}...
-                      </span>
+                      <User size={16} color={colors.brand.primary[500]} />
+                      <div style={styles.userInfo}>
+                        <span style={styles.ticketUserId}>
+                          {ticket.user_name || (ticket.user_id ? ticket.user_id.substring(0, 8) + '...' : 'N/A')}
+                        </span>
+                        <span style={styles.ticketDate}>
+                          {new Date(ticket.created_at).toLocaleDateString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={styles.badgesContainer}>
                       {getRoleBadge(ticket.user_role)}
                       {getStatusBadge(ticket.status)}
                     </div>
-                    <span style={styles.ticketDate}>
-                      {new Date(ticket.created_at).toLocaleDateString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                      })}
-                    </span>
                   </div>
 
                   {ticket.evaluation && (
@@ -323,6 +346,10 @@ const AdminSupportTicketsPage: React.FC = () => {
             <span>Voltar</span>
           </button>
           <div style={styles.conversationInfo}>
+            <User size={16} color={colors.brand.primary[500]} />
+            <span style={styles.userName}>
+              {selectedTicket.user_name || (selectedTicket.user_id ? selectedTicket.user_id.substring(0, 8) + '...' : 'N/A')}
+            </span>
             {getRoleBadge(selectedTicket.user_role)}
             {getStatusBadge(selectedTicket.status)}
             <span style={styles.ticketId}>#{selectedTicket.id.substring(0, 8)}</span>
@@ -367,7 +394,7 @@ const AdminSupportTicketsPage: React.FC = () => {
           <div style={styles.evaluationBanner}>
             <div style={styles.evaluationContent}>
               <div style={styles.evaluationHeader}>
-                <CheckCircle size={20} color={colors.primary} />
+                <IconWrapper icon={CheckCircle} size={20} color={colors.brand.primary[500]} />
                 <span style={styles.evaluationTitle}>Ticket Avaliado pelo Usuário</span>
               </div>
               {renderStars(selectedTicket.evaluation.rating)}
@@ -440,7 +467,7 @@ const AdminSupportTicketsPage: React.FC = () => {
           </form>
         ) : (
           <div style={styles.closedMessage}>
-            <CheckCircle size={24} color={colors.primary} />
+            <CheckCircle size={24} color={colors.brand.primary[500]} />
             <div>
               <p style={styles.closedTitle}>Ticket avaliado e encerrado pelo usuário</p>
               <p style={styles.closedSubtitle}>
@@ -553,20 +580,27 @@ const styles: { [key: string]: React.CSSProperties } = {
   ticketHeader: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: '12px',
     flexWrap: 'wrap',
     gap: '8px',
   },
   ticketMeta: {
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: '8px',
+    flex: 1,
+  },
+  userInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
   },
   ticketUserId: {
-    fontFamily: 'monospace',
-    fontSize: '13px',
-    color: colors.textSecondary,
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '500',
+    color: colors.text,
   },
   statusBadge: {
     padding: '6px 12px',
@@ -584,8 +618,14 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   ticketDate: {
     fontFamily: 'Inter, sans-serif',
-    fontSize: '13px',
+    fontSize: '12px',
     color: colors.textSecondary,
+  },
+  badgesContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
   },
   ticketEvaluation: {
     display: 'flex',
@@ -646,6 +686,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '12px',
     flex: 1,
   },
+  userName: {
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    fontWeight: '500',
+    color: colors.text,
+  },
   ticketId: {
     fontSize: '13px',
     color: colors.textSecondary,
@@ -683,7 +729,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   evaluationBanner: {
     backgroundColor: '#f0fdf4',
-    border: `2px solid ${colors.primary}`,
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '12px',
     padding: '20px',
     marginBottom: '24px',
@@ -734,7 +780,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '4px',
   },
   adminMessage: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
     alignSelf: 'flex-end',
   },
@@ -781,7 +827,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 24px',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
     border: 'none',
     borderRadius: '8px',
@@ -796,7 +842,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '16px',
     padding: '20px',
     backgroundColor: '#f0fdf4',
-    border: `2px solid ${colors.primary}`,
+    border: `2px solid ${colors.brand.primary[500]}`,
     borderRadius: '12px',
   },
   closedTitle: {

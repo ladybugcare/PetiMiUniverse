@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createEvaluation = exports.markMessagesAsRead = exports.getTicketMessages = exports.addMessage = exports.getUnreadCount = exports.markTicketAsRead = exports.getTicketsCount = exports.updateTicketStatus = exports.replyToTicket = exports.getAllTickets = exports.getUserTickets = exports.createTicket = void 0;
+exports.createEvaluation = exports.markMessagesAsRead = exports.getTicketMessages = exports.addMessage = exports.getUnreadCount = exports.markTicketAsRead = exports.getTicketsCount = exports.updateTicketStatus = exports.replyToTicket = exports.getAllTickets = exports.getUserTickets = exports.createPublicTicket = exports.createTicket = void 0;
 const supabase_1 = require("../config/supabase");
 const notificationsController_1 = require("./notificationsController");
 // ========================================
@@ -16,8 +16,8 @@ const createTicket = async (req, res) => {
         if (message.trim().length < 10) {
             return res.status(400).json({ error: 'A mensagem deve ter pelo menos 10 caracteres' });
         }
-        if (!['clinic', 'vet'].includes(user_role)) {
-            return res.status(400).json({ error: 'user_role deve ser clinic ou vet' });
+        if (!['clinic', 'vet', 'freelancer', 'admin'].includes(user_role)) {
+            return res.status(400).json({ error: 'user_role deve ser clinic, vet, freelancer ou admin' });
         }
         const now = new Date().toISOString();
         // Criar ticket
@@ -31,6 +31,9 @@ const createTicket = async (req, res) => {
                 status: 'open',
                 last_message_at: now,
                 last_message_by: 'user',
+                category: req.body.category || 'outro',
+                priority: req.body.priority || 'normal',
+                attachments: req.body.attachments || [],
             },
         ])
             .select()
@@ -63,6 +66,74 @@ const createTicket = async (req, res) => {
     }
 };
 exports.createTicket = createTicket;
+const createPublicTicket = async (req, res) => {
+    try {
+        const { name, email, message } = req.body;
+        // Validações
+        if (!name || typeof name !== 'string' || name.trim().length < 3) {
+            return res.status(400).json({ error: 'Nome é obrigatório e deve ter pelo menos 3 caracteres' });
+        }
+        if (!email || typeof email !== 'string') {
+            return res.status(400).json({ error: 'Email é obrigatório' });
+        }
+        // Validação básica de email
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email.trim())) {
+            return res.status(400).json({ error: 'Email inválido' });
+        }
+        if (!message || typeof message !== 'string' || message.trim().length < 10) {
+            return res.status(400).json({ error: 'Mensagem é obrigatória e deve ter pelo menos 10 caracteres' });
+        }
+        const now = new Date().toISOString();
+        // Criar mensagem formatada incluindo informações do guest
+        const formattedMessage = `[TICKET PÚBLICO]\nNome: ${name.trim()}\nEmail: ${email.trim()}\n\nMensagem:\n${message.trim()}`;
+        // Criar ticket com user_id null e user_role 'guest'
+        const { data: ticket, error: ticketError } = await supabase_1.supabaseAdmin
+            .from('support_tickets')
+            .insert([
+            {
+                user_id: null,
+                user_role: 'guest',
+                message: formattedMessage,
+                status: 'open',
+                last_message_at: now,
+                last_message_by: 'user',
+                category: 'conta_perfil',
+                priority: 'normal',
+                attachments: [],
+            },
+        ])
+            .select()
+            .single();
+        if (ticketError) {
+            console.error('Error creating public support ticket:', ticketError);
+            return res.status(400).json({ error: ticketError.message });
+        }
+        // Criar primeira mensagem na tabela de mensagens
+        // Para tickets públicos, sender_id pode ser null ou usar um ID especial
+        const { error: messageError } = await supabase_1.supabaseAdmin
+            .from('ticket_messages')
+            .insert([
+            {
+                ticket_id: ticket.id,
+                sender_id: null, // null para tickets públicos
+                sender_role: 'user',
+                message: formattedMessage,
+                read_by_receiver: false,
+            },
+        ]);
+        if (messageError) {
+            console.error('Error creating first message for public ticket:', messageError);
+            // Não falhamos o ticket se a mensagem falhar, mas logamos o erro
+        }
+        res.status(201).json({ ticket });
+    }
+    catch (error) {
+        console.error('Error in createPublicTicket:', error);
+        res.status(500).json({ error: 'Erro ao criar ticket de suporte' });
+    }
+};
+exports.createPublicTicket = createPublicTicket;
 // ========================================
 // OBTER TICKETS DO USUÁRIO
 // ========================================
@@ -125,21 +196,78 @@ exports.getUserTickets = getUserTickets;
 // ========================================
 const getAllTickets = async (req, res) => {
     try {
-        const { status } = req.query;
+        const { status, category, priority } = req.query;
         let query = supabase_1.supabase
             .from('support_tickets')
-            .select('*')
-            .order('created_at', { ascending: false });
+            .select('*');
         // Filtrar por status se fornecido
         if (status && status !== 'all') {
             query = query.eq('status', status);
         }
+        // Filtrar por categoria se fornecido
+        if (category && category !== 'all') {
+            query = query.eq('category', category);
+        }
+        // Filtrar por prioridade se fornecido
+        if (priority && priority !== 'all') {
+            query = query.eq('priority', priority);
+        }
+        // Ordenar por prioridade (urgente > alta > normal > baixa) e depois por data
+        query = query.order('priority', { ascending: false })
+            .order('created_at', { ascending: false });
         const { data, error } = await query;
         if (error) {
             console.error('Error fetching all tickets:', error);
             return res.status(400).json({ error: error.message });
         }
-        res.json({ tickets: data });
+        // Buscar nome do usuário para cada ticket
+        const ticketsWithNames = await Promise.all((data || []).map(async (ticket) => {
+            let userName = 'Usuário';
+            try {
+                if (ticket.user_role === 'clinic') {
+                    // Buscar nome na tabela clinics
+                    const { data: clinic } = await supabase_1.supabase
+                        .from('clinics')
+                        .select('name')
+                        .eq('id', ticket.user_id)
+                        .single();
+                    userName = clinic?.name || 'Clínica';
+                }
+                else if (ticket.user_role === 'vet') {
+                    // Buscar nome na tabela vets
+                    const { data: vet } = await supabase_1.supabase
+                        .from('vets')
+                        .select('name')
+                        .eq('id', ticket.user_id)
+                        .single();
+                    userName = vet?.name || 'Veterinário';
+                }
+                else if (ticket.user_role === 'freelancer') {
+                    // Buscar nome na tabela freelancers
+                    const { data: freelancer } = await supabase_1.supabase
+                        .from('freelancers')
+                        .select('name')
+                        .eq('id', ticket.user_id)
+                        .single();
+                    userName = freelancer?.name || 'Freelancer';
+                }
+                else if (ticket.user_role === 'admin') {
+                    // Buscar nome no auth.users
+                    const { data: authUser } = await supabase_1.supabaseAdmin.auth.admin.getUserById(ticket.user_id);
+                    userName = authUser?.user?.user_metadata?.name ||
+                        authUser?.user?.email?.split('@')[0] ||
+                        'Administrador';
+                }
+            }
+            catch (err) {
+                console.warn(`Error fetching name for user ${ticket.user_id}:`, err);
+            }
+            return {
+                ...ticket,
+                user_name: userName,
+            };
+        }));
+        res.json({ tickets: ticketsWithNames });
     }
     catch (error) {
         console.error('Error in getAllTickets:', error);

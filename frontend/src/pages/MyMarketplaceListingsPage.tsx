@@ -5,45 +5,21 @@ import { MenuItem } from '../components/DashboardSidebar';
 import MarketplaceCard from '../components/MarketplaceCard';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { marketplaceApi, MarketplaceItem } from '../services/marketplaceApi';
-import { ShoppingCart, PlusCircle, Package, MessageSquare } from 'lucide-react';
 import colors from '../styles/colors';
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const MyMarketplaceListingsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'active' | 'sold' | 'inactive'>('all');
 
-  const menuItems: MenuItem[] = [
-    {
-      id: 'marketplace',
-      label: 'Ver Marketplace',
-      icon: <ShoppingCart size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace',
-    },
-    {
-      id: 'criar-anuncio',
-      label: 'Criar Anúncio',
-      icon: <PlusCircle size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/create',
-    },
-    {
-      id: 'meus-anuncios',
-      label: 'Meus Anúncios',
-      icon: <Package size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/my-listings',
-    },
-    {
-      id: 'mensagens',
-      label: 'Mensagens',
-      icon: <MessageSquare size={20} color={colors.primary} />,
-      action: 'navigate',
-      path: '/marketplace/messages',
-    },
-  ];
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'VET';
+  const { menuItems } = useSidebarMenu(userRole);
 
   useEffect(() => {
     loadMyListings();
@@ -52,7 +28,7 @@ const MyMarketplaceListingsPage: React.FC = () => {
   const loadMyListings = async () => {
     try {
       setLoading(true);
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const user = JSON.parse(localStorage.getItem('user') || '');
       const result = await marketplaceApi.getMyListings(user.id);
       setItems(result.items);
     } catch (error: any) {
@@ -108,7 +84,7 @@ const MyMarketplaceListingsPage: React.FC = () => {
             onClick={() => setFilter('all')}
             style={{
               ...styles.statCard,
-              borderColor: filter === 'all' ? '#7c3aed' : '#e5e5e5',
+              borderColor: filter === 'all' ? colors.brand.primary[500] : '#e5e5e5',
             }}
           >
             <div style={styles.statNumber}>{stats.total}</div>
@@ -205,7 +181,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   createButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -233,7 +209,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: 'Poppins, sans-serif',
     fontSize: '36px',
     fontWeight: '700',
-    color: '#7c3aed',
+    color: colors.brand.primary[500],
     marginBottom: '8px',
   },
   statLabel: {
@@ -270,7 +246,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   emptyButton: {
     padding: '12px 24px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

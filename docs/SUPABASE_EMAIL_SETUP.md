@@ -7,7 +7,7 @@ Este documento descreve como configurar o Supabase para redirecionar corretament
 ### 1. Acessar o Painel do Supabase
 
 1. Acesse [https://app.supabase.com](https://app.supabase.com)
-2. Selecione seu projeto PetiVet
+2. Selecione seu projeto PetMi Vet
 3. Vá em **Authentication** → **URL Configuration**
 
 ### 2. Configurar URL de Redirecionamento
@@ -26,7 +26,7 @@ Para personalizar o e-mail de confirmação:
 
 1. Vá em **Authentication** → **Email Templates**
 2. Selecione **Confirm signup**
-3. Modifique o template para incluir informações da PetiVet
+3. Modifique o template para incluir informações da PetMi Vet
 4. O link de confirmação padrão já deve redirecionar para `/email-confirmed`
 
 ### 4. Testar o Fluxo

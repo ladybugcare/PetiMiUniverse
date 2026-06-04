@@ -180,3 +180,10 @@ echo "  3. Verifique se a sessão é limpa automaticamente"
 echo "  4. Teste com token inválido (401) e veja se limpa"
 echo ""
 
+
+
+
+
+
+
+

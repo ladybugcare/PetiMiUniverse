@@ -1,4 +1,5 @@
 import { Role } from '../types/units';
+import { colors } from '../styles/colors';
 
 // Permission system for role-based access control (RBAC)
 export const PERMISSIONS: Record<Role, string[]> = {
@@ -22,6 +23,23 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'marketplace.edit',
     'marketplace.delete',
     'audit.view',
+    'hub.guardians.read',
+    'hub.guardians.write',
+    'hub.pets.read',
+    'hub.pets.write',
+    'hub.service_types.read',
+    'hub.service_types.write',
+    'hub.inventory.read',
+    'hub.inventory.write',
+    'hub.staff.read',
+    'hub.staff.write',
+    'hub.staff.invite',
+    'hub.appointments.read',
+    'hub.appointments.write',
+    'hub.prospects.read',
+    'hub.prospects.write',
+    'hub.quotes.read',
+    'hub.quotes.write',
   ],
   CMANAGER: [
     'unit.edit',
@@ -37,6 +55,23 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'application.view',
     'marketplace.create',
     'marketplace.edit',
+    'hub.guardians.read',
+    'hub.guardians.write',
+    'hub.pets.read',
+    'hub.pets.write',
+    'hub.service_types.read',
+    'hub.service_types.write',
+    'hub.inventory.read',
+    'hub.inventory.write',
+    'hub.staff.read',
+    'hub.staff.write',
+    'hub.staff.invite',
+    'hub.appointments.read',
+    'hub.appointments.write',
+    'hub.prospects.read',
+    'hub.prospects.write',
+    'hub.quotes.read',
+    'hub.quotes.write',
   ],
   CASSISTANT: [
     'unit.view',
@@ -45,12 +80,24 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'demand.view',
     'application.view',
     'marketplace.view',
+    'hub.guardians.read',
+    'hub.pets.read',
+    'hub.service_types.read',
+    'hub.inventory.read',
+    'hub.staff.read',
+    'hub.appointments.read',
+    'hub.appointments.write',
+    'hub.prospects.read',
+    'hub.quotes.read',
   ],
   CVET_INTERNAL: [
     'unit.view',
     'demand.view',
     'application.create.internal',
     'application.view.own',
+    'hub.inventory.read',
+    'hub.staff.read',
+    'hub.appointments.read',
   ],
 };
 
@@ -71,12 +118,12 @@ export const getRoleDisplayName = (role: Role): string => {
 };
 
 export const getRoleColor = (role: Role): string => {
-  const colors: Record<Role, string> = {
-    CADMIN: '#7c3aed',
-    CMANAGER: '#3b82f6',
-    CASSISTANT: '#10b981',
-    CVET_INTERNAL: '#f59e0b',
+  const roleColors: Record<Role, string> = {
+    CADMIN: colors.brand.primary[500],
+    CMANAGER: colors.info[500],
+    CASSISTANT: colors.success[500],
+    CVET_INTERNAL: colors.warning[500],
   };
-  return colors[role] || '#6b7280';
+  return roleColors[role] || colors.neutral[600];
 };
 

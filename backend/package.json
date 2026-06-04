@@ -1,28 +1,45 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "dev": "nodemon --exec ts-node src/index.ts",
-    "dev:clean": "lsof -ti tcp:3000 | xargs -r kill && npm run dev",
+    "dev": "tsx watch src/server.ts",
+    "dev:clean": "sh -c 'for p in $(lsof -ti tcp:3000 2>/dev/null); do kill -9 \"$p\" 2>/dev/null; done; true' && npm run dev",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "start:staging": "NODE_ENV=staging node dist/index.js"
+    "start": "node dist/server.js",
+    "start:staging": "NODE_ENV=staging node dist/server.js",
+    "test": "echo 'Testes não configurados ainda. Execute: npm install --save-dev jest @types/jest ts-jest supertest @types/supertest'",
+    "test:watch": "npm test -- --watch"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.76.1",
+    "@types/pdfkit": "^0.17.6",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "multer": "^2.0.2",
+    "pdfkit": "^0.18.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
+    "winston": "^3.18.3",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/cors": "^2.8.13",
     "@types/dotenv": "^6.1.1",
     "@types/express": "^4.17.17",
+    "@types/helmet": "^0.0.48",
+    "@types/multer": "^1.4.11",
     "@types/node": "^20.5.1",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.7.0",
     "typescript": "^5.9.3"
   }
 }

@@ -79,12 +79,12 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
                   size={40}
                   fill={
                     star <= (hoveredRating || rating)
-                      ? colors.primary
+                      ? colors.brand.primary[500]
                       : 'transparent'
                   }
                   color={
                     star <= (hoveredRating || rating)
-                      ? colors.primary
+                      ? colors.brand.primary[500]
                       : colors.textSecondary
                   }
                 />
@@ -111,7 +111,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
 
           {/* Warning */}
           <div style={styles.warning}>
-            <AlertTriangle size={18} color={colors.warning} />
+            <AlertTriangle size={18} color={colors.warning[500]} />
             <span style={styles.warningText}>
               Após avaliar, não será possível enviar mais mensagens neste ticket.
             </span>
@@ -280,7 +280,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: colors.text,
   },
   submitButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand.primary[500],
     color: 'white',
   },
 };

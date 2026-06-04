@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
-import { supabase } from '../config/supabase';
-import { PERMISSIONS, Role } from '../utils/permissions';
+import { supabase, supabaseAdmin } from '../config/supabase';
+import { PERMISSIONS, Role, isClinicAdminRole } from '../utils/permissions';
 
 // Extend Express Request to include user info
 declare global {
@@ -97,7 +97,9 @@ export const checkPermission = async (
 ): Promise<boolean> => {
   try {
     // Buscar role do usuário na clínica
-    const { data: clinicUser, error } = await supabase
+    // Usar service role: estas verificações rodam após JWT válido; o client anon não tem
+    // sessão RLS do usuário e devolve vazio → falsos negativos e 403 em /units/clinic/:id.
+    const { data: clinicUser, error } = await supabaseAdmin
       .from('clinic_users')
       .select('role')
       .eq('user_id', user_id)
@@ -107,6 +109,10 @@ export const checkPermission = async (
 
     if (error || !clinicUser) {
       return false;
+    }
+
+    if (isClinicAdminRole(clinicUser.role)) {
+      return true;
     }
 
     // Verificar se role tem a permissão
@@ -124,13 +130,28 @@ export const checkClinicAccess = async (
   clinic_id: string
 ): Promise<boolean> => {
   try {
-    const { data, error } = await supabase
+    // First check if user is the clinic owner (clinic.id === user_id)
+    if (user_id === clinic_id) {
+      // Verify clinic exists
+      const { data: clinic, error: clinicError } = await supabaseAdmin
+        .from('clinics')
+        .select('id')
+        .eq('id', clinic_id)
+        .single();
+
+      if (!clinicError && clinic) {
+        return true;
+      }
+    }
+
+    // Also check if user has a clinic_users entry
+    const { data, error } = await supabaseAdmin
       .from('clinic_users')
       .select('id')
       .eq('user_id', user_id)
       .eq('clinic_id', clinic_id)
       .eq('status', 'active')
-      .single();
+      .maybeSingle();
 
     return !error && !!data;
   } catch (error) {
@@ -204,3 +225,26 @@ export const requireClinicAccess = async (
   }
 };
 
+
+// ✅ Middleware para garantir que o usuário logado é um admin
+export const verifyAdmin = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const user = req.user;
+
+  if (!user) {
+    return res.status(401).json({ error: 'Usuário não autenticado' });
+  }
+
+  const userRole = user.role?.toLowerCase();
+
+  if (userRole !== 'admin') {
+    return res
+      .status(403)
+      .json({ error: 'Acesso negado. Somente administradores podem executar esta ação.' });
+  }
+
+  next();
+};

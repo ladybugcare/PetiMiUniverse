@@ -1,0 +1,142 @@
+/* Equipe — grupos de serviço (mesmos slugs / ícones que o catálogo Hub) */
+/* Espaço antes de secções que seguem blocos densos (ex.: cartões de grupo de serviço) */
+.hub-equipe-page .hub-servicos__form-section-title.hub-equipe__form-section-title-spaced {
+  margin-top: 28px;
+  margin-bottom: 12px;
+}
+
+.hub-equipe-page .hub-equipe__service-group-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--hc-text-muted, #8e6e67);
+  line-height: 1.45;
+}
+
+.hub-equipe-page .hub-equipe__service-group-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 360px) {
+  .hub-equipe-page .hub-equipe__service-group-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-equipe-page .hub-equipe__group-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: var(--hc-radius, 10px);
+  background: var(--hc-card, #fff);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--hc-text, #4a3b3a);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.hub-equipe-page .hub-equipe__group-card:hover:not(:disabled) {
+  border-color: var(--hc-brand, #c86a4d);
+}
+
+.hub-equipe-page .hub-equipe__group-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.hub-equipe-page .hub-equipe__group-card--selected {
+  border-color: var(--hc-brand, #c86a4d);
+  background: var(--hc-row-selected, #fdf6f2);
+  box-shadow: 0 0 0 1px rgba(200, 106, 77, 0.12);
+}
+
+.hub-equipe-page .hub-equipe__group-card--partial {
+  border-style: dashed;
+  border-color: var(--hc-brand, #c86a4d);
+  background: rgba(253, 246, 242, 0.65);
+}
+
+.hub-equipe-page .hub-equipe__group-card__icon-wrap {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.hub-equipe-page .hub-equipe__group-card--selected .hub-equipe__group-card__icon-wrap {
+  background: rgba(200, 106, 77, 0.12);
+}
+
+.hub-equipe-page .hub-equipe__group-card__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.hub-equipe-page .hub-equipe__group-card__check {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--hc-brand, #c86a4d);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hub-equipe-page .hub-equipe__days-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hub-equipe-page .hub-equipe__days-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+/* Foto do profissional — reutiliza `hub-pets-photo-field*`; círgulo com overlay ao enviar */
+.hub-equipe-page .hub-pets-photo-field__circle {
+  position: relative;
+}
+
+.hub-equipe-page .hub-pets-photo-field__circle[role='button'] {
+  cursor: pointer;
+}
+
+.hub-equipe-page .hub-pets-photo-field .hub-pets-photo-field__optional {
+  color: var(--hc-brand, #c86a4d);
+}
+
+.hub-equipe-page .hub-equipe-staff-photo__uploading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.88);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--hc-text, #4a3b3a);
+  text-align: center;
+  padding: 4px;
+  line-height: 1.2;
+}

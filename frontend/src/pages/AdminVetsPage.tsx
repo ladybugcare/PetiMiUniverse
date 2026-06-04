@@ -4,26 +4,22 @@ import DashboardLayout from '../components/DashboardLayout';
 import { MenuItem } from '../components/DashboardSidebar';
 import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
-import { vetsApi } from '../services/vetsApi';
+import { vetsApi, Vet } from '../services/vetsApi';
 import { useAlert } from '../hooks/useAlert';
-import { BarChart2, Building2, Stethoscope, ClipboardList, Users, LogOut, MessageCircle, Eye, Edit, Trash2 } from 'lucide-react';
+import { Eye, Edit, Trash2, Stethoscope } from 'lucide-react';
 import colors from '../styles/colors';
-
-interface Vet {
-  id: string;
-  name: string;
-  email: string;
-  crmv: string;
-  specialties: string[];
-  certificates: string[];
-  experience: string;
-  status?: string;
-  created_at: string;
-}
+import { useSidebarMenu } from '../hooks/useSidebarMenu';
+import { getUserRole } from '../utils/authHelpers';
+import { useAuth } from '../AuthContext';
 
 const AdminVetsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
+  
+  // Get menu items using hook
+  const userRole = user ? getUserRole(user) : 'ADMIN';
+  const { menuItems } = useSidebarMenu(userRole);
   const [vets, setVets] = useState<Vet[]>([]);
   const [filteredVets, setFilteredVets] = useState<Vet[]>([]);
   const [loading, setLoading] = useState(false);
@@ -33,13 +29,13 @@ const AdminVetsPage: React.FC = () => {
   const [selectedVet, setSelectedVet] = useState<Vet | null>(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editFormData, setEditFormData] = useState<Partial<Vet>>({});
+  const [editFormData, setEditFormData] = useState<Partial<Vet>>();
 
   const itemsPerPage = 20;
 
   // Check authentication
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const user = JSON.parse(localStorage.getItem('user') || '');
     const userRole = user?.user_metadata?.role || user?.role;
     
     if (!user || !user.id || userRole !== 'admin') {
@@ -86,15 +82,6 @@ const AdminVetsPage: React.FC = () => {
   const endIndex = startIndex + itemsPerPage;
   const currentVets = filteredVets.slice(startIndex, endIndex);
 
-  const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin-dashboard' },
-    { id: 'clinics', label: 'Clínicas', icon: <Building2 size={20} color={colors.primary} />, action: 'navigate', path: '/admin/clinics' },
-    { id: 'vets', label: 'Veterinários', icon: <Stethoscope size={20} color={colors.primary} />, action: 'navigate', path: '/admin/vets' },
-    { id: 'demands', label: 'Demandas', icon: <ClipboardList size={20} color={colors.primary} />, action: 'navigate', path: '/admin/demands' },
-    { id: 'support', label: 'Tickets de Suporte', icon: <MessageCircle size={20} color={colors.primary} />, action: 'navigate', path: '/admin/support-tickets' },
-    { id: 'users', label: 'Usuários', icon: <Users size={20} color={colors.primary} />, action: 'navigate', path: '/admin/users' },
-    { id: 'logout', label: 'Sair', icon: <LogOut size={20} color={colors.primary} />, action: 'logout' },
-  ];
 
   const handleView = (vet: Vet) => {
     setSelectedVet(vet);
@@ -157,9 +144,11 @@ const AdminVetsPage: React.FC = () => {
     );
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
-  };
+  const formatDate = (dateString?: string) => {
+  if (!dateString) return '—';
+  return new Date(dateString).toLocaleDateString('pt-BR');
+};
+
 
   return (
     <DashboardLayout pageName="Veterinários Cadastrados" menuItems={menuItems}>
@@ -168,7 +157,7 @@ const AdminVetsPage: React.FC = () => {
         <div style={styles.header}>
           <h2 style={styles.title}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Stethoscope size={28} color={colors.primary} />
+              <Stethoscope size={28} color={colors.brand.primary[500]} />
               <span>Veterinários Cadastrados</span>
             </div>
           </h2>
@@ -242,21 +231,21 @@ const AdminVetsPage: React.FC = () => {
                             style={{ ...styles.actionButton, ...styles.viewButton }}
                             title="Ver detalhes"
                           >
-                            <Eye size={16} />
+                            <Eye size={16} color="#3b82f6" />
                           </button>
                           <button
                             onClick={() => handleEdit(vet)}
                             style={{ ...styles.actionButton, ...styles.editButton }}
                             title="Editar"
                           >
-                            <Edit size={16} />
+                            <Edit size={16} color="#f59e0b" />
                           </button>
                           <button
                             onClick={() => handleDelete(vet)}
                             style={{ ...styles.actionButton, ...styles.deleteButton }}
                             title="Excluir"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={16} color="#ef4444" />
                           </button>
                         </div>
                       </td>
@@ -329,6 +318,8 @@ const AdminVetsPage: React.FC = () => {
                 </button>
               </div>
               <div style={styles.modalBody}>
+                {editFormData && (
+                  <>
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Nome:</label>
                   <input
@@ -378,6 +369,8 @@ const AdminVetsPage: React.FC = () => {
                     style={{ ...styles.input, minHeight: '80px' }}
                   />
                 </div>
+                  </>
+                )}
                 <div style={styles.formActions}>
                   <button onClick={() => setShowEditModal(false)} style={styles.cancelButton}>
                     Cancelar
@@ -504,20 +497,24 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   actionButton: {
     padding: '6px 10px',
-    border: 'none',
+    border: '2px solid',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '16px',
     transition: 'all 0.2s',
+    backgroundColor: 'transparent',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   viewButton: {
-    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
   },
   editButton: {
-    backgroundColor: '#f59e0b',
+    borderColor: '#f59e0b',
   },
   deleteButton: {
-    backgroundColor: '#ef4444',
+    borderColor: '#ef4444',
   },
   modalOverlay: {
     position: 'fixed',
@@ -603,7 +600,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   saveButton: {
     padding: '10px 20px',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.brand.primary[500],
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',

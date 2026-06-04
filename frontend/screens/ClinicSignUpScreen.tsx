@@ -62,7 +62,7 @@ const ClinicSignUpScreen = () => {
         title: 'Verifique seu e‑mail',
         message:
           'Enviamos um e-mail de confirmação para o endereço que você cadastrou.\n\n' +
-          'É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetiVet.\n\n' +
+          'É só abrir sua caixa de entrada e seguir as instruções para ativar sua conta PetMi Vet.\n\n' +
           'Você pode fechar esta aba — o restante do processo é feito por e-mail.',
       });
       setForm(initialFormValues);

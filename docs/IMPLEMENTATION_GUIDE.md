@@ -20,7 +20,7 @@ This guide explains how to implement the new category and specialties features f
 
 1. Go to your Supabase Dashboard
 2. Navigate to **SQL Editor**
-3. Open the file `backend/database_migrations/add_category_and_specialties.sql`
+3. Open the file `backend/database_migrations/petimi_vet/add_category_and_specialties.sql`
 4. Copy and paste the entire SQL content into the Supabase SQL Editor
 5. Click **Run** to execute the migration
 

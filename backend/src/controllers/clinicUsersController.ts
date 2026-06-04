@@ -226,13 +226,7 @@ export const getClinicUsers = async (req: Request, res: Response) => {
 
     let query = supabase
       .from('clinic_users')
-      .select(`
-        *,
-        user:auth.users!clinic_users_user_id_fkey (
-          id,
-          email
-        )
-      `)
+      .select('*')
       .eq('clinic_id', clinic_id)
       .eq('status', 'active');
 
@@ -243,7 +237,37 @@ export const getClinicUsers = async (req: Request, res: Response) => {
     const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ clinic_users: data });
+
+    // Fetch user emails in batch using Supabase Admin API
+    const userIds = (data || []).map(cu => cu.user_id);
+    const userEmailMap = new Map<string, string>();
+    
+    if (userIds.length > 0) {
+      try {
+        // Fetch all users in one call
+        const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers();
+        if (!usersError && usersData?.users) {
+          usersData.users.forEach(user => {
+            if (userIds.includes(user.id)) {
+              userEmailMap.set(user.id, user.email || '');
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching users in batch:', err);
+      }
+    }
+
+    // Map clinic users with emails
+    const clinicUsersWithEmail = (data || []).map(clinicUser => ({
+      ...clinicUser,
+      user: userEmailMap.has(clinicUser.user_id) ? {
+        id: clinicUser.user_id,
+        email: userEmailMap.get(clinicUser.user_id) || '',
+      } : null,
+    }));
+
+    res.json({ clinic_users: clinicUsersWithEmail });
   } catch (error: any) {
     console.error('Error fetching clinic users:', error);
     res.status(500).json({ error: 'Erro ao buscar usuários' });

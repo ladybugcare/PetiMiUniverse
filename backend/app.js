@@ -1,59 +1,30 @@
-var createError = require('http-errors');
-var express = require('express');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
-
-var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
-
-var app = express();
-
-import cors from 'cors';
-
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'https://peti-vet-git-staging-petivet.vercel.app',
-];
-
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-    return cb(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization'],
-}));
-app.options('*', cors());
-
-// view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'jade');
-
-app.use(logger('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.use('/', indexRouter);
-app.use('/users', usersRouter);
-
-// catch 404 and forward to error handler
-app.use(function(req, res, next) {
-  next(createError(404));
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+// backend/app.ts
+const express_1 = __importDefault(require("express"));
+const cors_1 = __importDefault(require("cors"));
+const dotenv_1 = __importDefault(require("dotenv"));
+const clinics_1 = __importDefault(require("./routes/clinics"));
+const adminRoutes_1 = __importDefault(require("./routes/adminRoutes"));
+const vets_1 = __importDefault(require("./routes/vets"));
+dotenv_1.default.config();
+const app = (0, express_1.default)();
+// 🔓 Configurações básicas
+app.use((0, cors_1.default)({ origin: 'http://localhost:3002', credentials: true }));
+app.use(express_1.default.json());
+// 🚀 Rotas principais
+app.use('/clinics', clinics_1.default);
+app.use('/admin', adminRoutes_1.default);
+app.use('/vets', vets_1.default);
+// 🩵 Healthcheck
+app.get('/', (_req, res) => {
+    res.send('PetMi Vet API is running 🐾');
 });
-
-// error handler
-app.use(function(err, req, res, next) {
-  // set locals, only providing error in development
-  res.locals.message = err.message;
-  res.locals.error = req.app.get('env') === 'development' ? err : {};
-
-  // render the error page
-  res.status(err.status || 500);
-  res.render('error');
+// ❌ Fallback para rotas inexistentes
+app.use((_req, res) => {
+    res.status(404).json({ error: 'Endpoint não encontrado' });
 });
-
-module.exports = app;
+exports.default = app;

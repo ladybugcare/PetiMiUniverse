@@ -306,5 +306,5 @@ A migração foi **100% bem-sucedida**! Todos os emojis foram substituídos por 
 
 ---
 
-**✨ Projeto PetiVet - Interface Modernizada com Lucide Icons ✨**
+**✨ Projeto PetMi Vet - Interface Modernizada com Lucide Icons ✨**
 
