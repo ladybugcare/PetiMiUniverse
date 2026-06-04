@@ -28,7 +28,7 @@ import supportTicketsRoutes from './routes/supportTickets.js';
 import notificationsRoutes from './routes/notifications.js';
 import messagesRoutes from './routes/messages.js';
 import messageReportsRoutes from './routes/messageReports.js';
-import healthRoutes from './routes/health.js';
+import healthRoutes, { liveHealthHandler } from './routes/health.js';
 import demandInvitesRoutes from './routes/demandInvites.js';
 import workProofRoutes from './routes/workProof.js';
 import hubRoutes from './modules/hub/routes/index.js';
@@ -64,6 +64,9 @@ app.use(
     crossOriginResourcePolicy: { policy: 'cross-origin' }, // Necessário para Supabase Storage
   })
 );
+
+// Liveness antes do CORS: probes (Railway, k8s, curl) não enviam Origin; o CORS global bloqueava com 500.
+app.get('/health/live', liveHealthHandler);
 
 // 🔹 Configuração de CORS (com suporte a múltiplos domínios via variáveis de ambiente)
 // Lê origens permitidas de variáveis de ambiente
