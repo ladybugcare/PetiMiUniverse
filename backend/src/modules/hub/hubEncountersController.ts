@@ -1,6 +1,37 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { resolveOrCreateClinicalCase } from './hubClinicalCasesController';
+import { recordTimelineEvent } from './hubClinicalTimelineController';
+
+/** Grava um snapshot versionado do documento clínico em hub_clinical_document_versions. */
+async function saveEncounterSnapshot(opts: {
+  clinic_id: string;
+  encounter_id: string;
+  document: Record<string, unknown>;
+  changed_by?: string | null;
+  change_reason?: string | null;
+}): Promise<void> {
+  const { data: latest } = await supabaseAdmin
+    .from('hub_clinical_document_versions')
+    .select('version_no')
+    .eq('entity_id', opts.encounter_id)
+    .order('version_no', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextVersion = latest ? (latest.version_no as number) + 1 : 1;
+
+  await supabaseAdmin.from('hub_clinical_document_versions').insert({
+    clinic_id: opts.clinic_id,
+    entity_type: 'encounter',
+    entity_id: opts.encounter_id,
+    version_no: nextVersion,
+    document: opts.document,
+    changed_by: opts.changed_by ?? null,
+    change_reason: opts.change_reason ?? null,
+  });
+}
 
 const uuidStr = z.string().uuid();
 const encounterStatusSchema = z.enum(['waiting', 'in_progress', 'completed', 'cancelled']);
@@ -54,6 +85,8 @@ const dayBoardQuerySchema = z
   })
   .refine((d) => (d.from && d.to) || d.date, { message: 'Informe date ou from e to' });
 
+const encounterTypeSchema = z.enum(['consultation', 'return', 'emergency', 'procedure']);
+
 const createEncounterSchema = z
   .object({
     clinic_id: uuidStr,
@@ -64,6 +97,11 @@ const createEncounterSchema = z
     hub_staff_member_id: uuidStr.optional().nullable(),
     chief_complaint: z.string().trim().max(4000).optional().nullable(),
     summary_notes: z.string().trim().max(8000).optional().nullable(),
+    // Caso clínico: enviar hub_case_id para associar a caso existente,
+    // create_new_case=true para forçar caso novo, ou omitir para auto-caso.
+    hub_case_id: uuidStr.optional().nullable(),
+    create_new_case: z.boolean().optional(),
+    encounter_type: encounterTypeSchema.optional().default('consultation'),
   })
   .strict();
 
@@ -80,8 +118,23 @@ const patchEncounterSchema = z
   })
   .strict();
 
+const amendEncounterSchema = z
+  .object({
+    clinic_id: uuidStr,
+    change_reason: z.string().trim().min(1).max(1000),
+    changed_by: uuidStr.optional().nullable(),
+    chief_complaint: z.string().trim().max(4000).optional().nullable(),
+    summary_notes: z.string().trim().max(8000).optional().nullable(),
+    anamnesis: anamnesisSchema,
+    physical_exam: physicalExamSchema,
+    diagnosis: diagnosisSchema,
+    hub_staff_member_id: uuidStr.optional().nullable(),
+  })
+  .strict();
+
 const ENCOUNTER_SELECT = `
   id, clinic_id, unit_id, pet_id, guardian_id, hub_appointment_id, hub_staff_member_id,
+  hub_case_id, encounter_type,
   status, chief_complaint, summary_notes, anamnesis, physical_exam, diagnosis,
   started_at, completed_at, created_at, updated_at
 `;
@@ -134,8 +187,9 @@ async function enrichEncounter(row: Record<string, unknown>) {
   const guId = row.guardian_id as string | null;
   const staffId = row.hub_staff_member_id as string | null;
   const apptId = row.hub_appointment_id as string | null;
+  const caseId = row.hub_case_id as string | null;
 
-  const [petRes, guRes, staffRes, apptRes] = await Promise.all([
+  const [petRes, guRes, staffRes, apptRes, caseRes] = await Promise.all([
     supabaseAdmin
       .from('hub_pets')
       .select('id, name, species, breed, size_tier, birth_date, coat_type')
@@ -152,6 +206,13 @@ async function enrichEncounter(row: Record<string, unknown>) {
           .from('hub_appointments')
           .select('id, starts_at, ends_at, status, hub_service_type_id, title')
           .eq('id', apptId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    caseId
+      ? supabaseAdmin
+          .from('hub_clinical_cases')
+          .select('id, title, status, opened_at, closed_at')
+          .eq('id', caseId)
           .maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
@@ -174,6 +235,7 @@ async function enrichEncounter(row: Record<string, unknown>) {
     staff_member: staffRes.data,
     appointment: appt,
     service_type: serviceType,
+    case: caseRes.data,
   };
 }
 
@@ -470,6 +532,25 @@ export const createHubEncounter = async (req: Request, res: Response) => {
     }
 
     const now = new Date().toISOString();
+
+    // Resolve ou cria o caso clínico antes de inserir o atendimento
+    let caseId: string;
+    try {
+      caseId = await resolveOrCreateClinicalCase({
+        clinic_id: b.clinic_id,
+        unit_id: b.unit_id,
+        pet_id: b.pet_id,
+        guardian_id: b.guardian_id,
+        primary_veterinarian_id: b.hub_staff_member_id,
+        chief_complaint: b.chief_complaint,
+        started_at: now,
+        hub_case_id: b.hub_case_id,
+        create_new_case: b.create_new_case,
+      });
+    } catch (caseErr: unknown) {
+      return res.status(400).json({ error: (caseErr as Error)?.message || 'Erro ao resolver caso clínico' });
+    }
+
     const insert = {
       clinic_id: b.clinic_id,
       unit_id: b.unit_id ?? null,
@@ -477,6 +558,8 @@ export const createHubEncounter = async (req: Request, res: Response) => {
       guardian_id: b.guardian_id ?? null,
       hub_appointment_id: b.hub_appointment_id ?? null,
       hub_staff_member_id: b.hub_staff_member_id ?? null,
+      hub_case_id: caseId,
+      encounter_type: b.encounter_type ?? 'consultation',
       status: 'in_progress' as const,
       chief_complaint: b.chief_complaint ?? null,
       summary_notes: b.summary_notes ?? null,
@@ -494,7 +577,20 @@ export const createHubEncounter = async (req: Request, res: Response) => {
         .eq('clinic_id', b.clinic_id);
     }
 
-    const encounter = await enrichEncounter(data as Record<string, unknown>);
+    const enc = data as Record<string, unknown>;
+    void recordTimelineEvent({
+      clinic_id: b.clinic_id,
+      pet_id: b.pet_id,
+      hub_case_id: caseId,
+      hub_encounter_id: enc.id as string,
+      event_type: 'encounter_created',
+      ref_type: 'encounter',
+      ref_id: enc.id as string,
+      title: 'Atendimento iniciado',
+      body: b.chief_complaint ?? null,
+    });
+
+    const encounter = await enrichEncounter(enc);
     return res.status(201).json({ encounter });
   } catch (e: unknown) {
     console.error('createHubEncounter', e);
@@ -537,6 +633,22 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
     if (!appt.pet_id) return res.status(400).json({ error: 'Agendamento sem pet associado' });
 
     const now = new Date().toISOString();
+
+    let caseId: string;
+    try {
+      caseId = await resolveOrCreateClinicalCase({
+        clinic_id,
+        unit_id: appt.unit_id,
+        pet_id: appt.pet_id,
+        guardian_id: appt.guardian_id,
+        primary_veterinarian_id: appt.hub_staff_member_id,
+        chief_complaint: appt.notes,
+        started_at: now,
+      });
+    } catch (caseErr: unknown) {
+      return res.status(400).json({ error: (caseErr as Error)?.message || 'Erro ao resolver caso clínico' });
+    }
+
     const { data, error } = await supabaseAdmin
       .from('hub_encounters')
       .insert({
@@ -546,6 +658,8 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
         guardian_id: appt.guardian_id,
         hub_appointment_id,
         hub_staff_member_id: appt.hub_staff_member_id,
+        hub_case_id: caseId,
+        encounter_type: 'consultation',
         status: 'in_progress',
         chief_complaint: appt.notes,
         started_at: now,
@@ -640,10 +754,154 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
       event_at: now,
     });
 
+    void recordTimelineEvent({
+      clinic_id: clinic_id.data,
+      pet_id: enc.pet_id as string,
+      hub_case_id: enc.hub_case_id as string | null,
+      hub_encounter_id: id.data,
+      event_type: 'encounter_completed',
+      ref_type: 'encounter',
+      ref_id: id.data,
+      title: 'Atendimento finalizado',
+      body: enc.chief_complaint as string | null,
+      event_at: now,
+    });
+
+    const changedBy = (req.body?.changed_by as string | undefined) ?? null;
+    void saveEncounterSnapshot({
+      clinic_id: clinic_id.data,
+      encounter_id: id.data,
+      document: enc,
+      changed_by: changedBy,
+      change_reason: 'Finalização do atendimento',
+    });
+
     const encounter = await enrichEncounter(enc);
     return res.json({ encounter });
   } catch (e: unknown) {
     console.error('completeHubEncounter', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro ao finalizar atendimento' });
+  }
+};
+
+/** PATCH /encounters/:id/amend — edição pós-finalização com motivo obrigatório e snapshot. */
+export const amendHubEncounter = async (req: Request, res: Response) => {
+  try {
+    const id = uuidStr.safeParse(req.params.id);
+    if (!id.success) return res.status(400).json({ error: 'id inválido' });
+
+    const parsed = amendEncounterSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const b = parsed.data;
+
+    const { data: current } = await supabaseAdmin
+      .from('hub_encounters')
+      .select(ENCOUNTER_SELECT)
+      .eq('id', id.data)
+      .eq('clinic_id', b.clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (!current) return res.status(404).json({ error: 'Atendimento não encontrado' });
+    if ((current as Record<string, unknown>).status !== 'completed') {
+      return res.status(400).json({ error: 'Emenda só é permitida em atendimentos finalizados' });
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (b.chief_complaint !== undefined) patch.chief_complaint = b.chief_complaint;
+    if (b.summary_notes !== undefined) patch.summary_notes = b.summary_notes;
+    if (b.hub_staff_member_id !== undefined) patch.hub_staff_member_id = b.hub_staff_member_id;
+    if (b.anamnesis !== undefined) patch.anamnesis = b.anamnesis;
+    if (b.physical_exam !== undefined) patch.physical_exam = b.physical_exam;
+    if (b.diagnosis !== undefined) patch.diagnosis = b.diagnosis;
+
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: 'Nenhum campo para atualizar' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('hub_encounters')
+      .update(patch)
+      .eq('id', id.data)
+      .eq('clinic_id', b.clinic_id)
+      .is('deleted_at', null)
+      .select(ENCOUNTER_SELECT)
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: 'Atendimento não encontrado' });
+
+    const enc = data as Record<string, unknown>;
+
+    void saveEncounterSnapshot({
+      clinic_id: b.clinic_id,
+      encounter_id: id.data,
+      document: enc,
+      changed_by: b.changed_by ?? null,
+      change_reason: b.change_reason,
+    });
+
+    void recordTimelineEvent({
+      clinic_id: b.clinic_id,
+      pet_id: enc.pet_id as string,
+      hub_case_id: enc.hub_case_id as string | null,
+      hub_encounter_id: id.data,
+      event_type: 'encounter_amended',
+      ref_type: 'encounter',
+      ref_id: id.data,
+      title: 'Atendimento editado após finalização',
+      body: b.change_reason,
+      created_by: b.changed_by ?? null,
+    });
+
+    const encounter = await enrichEncounter(enc);
+    return res.json({ encounter });
+  } catch (e: unknown) {
+    console.error('amendHubEncounter', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao emendar atendimento' });
+  }
+};
+
+/** GET /encounters/:id/versions — histórico de versões do audit trail. */
+export const getHubEncounterVersions = async (req: Request, res: Response) => {
+  try {
+    const id = uuidStr.safeParse(req.params.id);
+    const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+    if (!id.success || !clinic_id.success) {
+      return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('hub_clinical_document_versions')
+      .select('id, version_no, changed_by, change_reason, created_at, document')
+      .eq('entity_id', id.data)
+      .eq('clinic_id', clinic_id.data)
+      .order('version_no', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const rows = (data ?? []) as Record<string, unknown>[];
+    const staffIds = [...new Set(rows.map((r) => r.changed_by as string).filter(Boolean))];
+    const staffMap = new Map<string, { id: string; full_name: string }>();
+    if (staffIds.length) {
+      const { data: staffRows } = await supabaseAdmin
+        .from('hub_staff_members')
+        .select('id, full_name')
+        .in('id', staffIds);
+      for (const s of staffRows ?? []) {
+        staffMap.set((s as { id: string }).id, s as { id: string; full_name: string });
+      }
+    }
+
+    const enriched = rows.map((r) => ({
+      ...r,
+      document: undefined,
+      changed_by_member: staffMap.get(r.changed_by as string) ?? null,
+    }));
+
+    return res.json({ versions: enriched });
+  } catch (e: unknown) {
+    console.error('getHubEncounterVersions', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao carregar versões' });
   }
 };

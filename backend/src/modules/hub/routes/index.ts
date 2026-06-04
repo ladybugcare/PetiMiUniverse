@@ -78,6 +78,8 @@ import {
   openHubEncounterFromAppointment,
   patchHubEncounter,
   completeHubEncounter,
+  amendHubEncounter,
+  getHubEncounterVersions,
 } from '../hubEncountersController';
 import {
   getHubGroomingDayBoard,
@@ -94,12 +96,32 @@ import {
   patchHubGroomingAppointmentServiceLine,
 } from '../hubGroomingDrawerController';
 import {
+  listHubClinicalCases,
+  getHubClinicalCase,
+  createHubClinicalCase,
+  patchHubClinicalCase,
+  deleteHubClinicalCase,
+} from '../hubClinicalCasesController';
+import {
+  listHubClinicalTimeline,
+  createHubClinicalTimelineNote,
+} from '../hubClinicalTimelineController';
+import {
+  listHubClinicalExams,
+  getHubClinicalExam,
+  createHubClinicalExam,
+  patchHubClinicalExam,
+  deleteHubClinicalExam,
+} from '../hubClinicalExamsController';
+import {
   listHubPetClinicalFlags,
   upsertHubPetClinicalFlag,
   listHubEncounterEvents,
   createHubEncounterEvent,
   listHubPrescriptions,
   createHubPrescription,
+  issuePrescriptionDocument,
+  listPrescriptionDocuments,
   getHubPrescriptionPdf,
   listHubVaccinations,
   createHubVaccination,
@@ -112,6 +134,8 @@ import {
   createHubHospitalization,
   patchHubHospitalization,
   addHubHospitalizationDailyNote,
+  listHubHospitalizationEvents,
+  createHubHospitalizationEvent,
   listHubSurgeries,
   createHubSurgery,
   patchHubSurgery,
@@ -483,6 +507,8 @@ router.post(
   openHubEncounterFromAppointment
 );
 router.patch('/encounters/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubEncounter);
+router.patch('/encounters/:id/amend', authenticateUser, requirePermission('hub.clinic.write'), amendHubEncounter);
+router.get('/encounters/:id/versions', authenticateUser, requirePermission('hub.clinic.read'), getHubEncounterVersions);
 router.post(
   '/encounters/:id/complete',
   authenticateUser,
@@ -552,6 +578,23 @@ router.patch(
   patchHubGroomingAppointmentServiceLine
 );
 
+/* --- Casos clínicos --- */
+router.get('/clinical/timeline', authenticateUser, requirePermission('hub.clinic.read'), listHubClinicalTimeline);
+router.post('/clinical/timeline/notes', authenticateUser, requirePermission('hub.clinic.write'), createHubClinicalTimelineNote);
+
+/* --- Exames clínicos --- */
+router.get('/clinical/exams', authenticateUser, requirePermission('hub.clinic.read'), listHubClinicalExams);
+router.get('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubClinicalExam);
+router.post('/clinical/exams', authenticateUser, requirePermission('hub.clinic.write'), createHubClinicalExam);
+router.patch('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubClinicalExam);
+router.delete('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.write'), deleteHubClinicalExam);
+
+router.get('/clinical/cases', authenticateUser, requirePermission('hub.clinic.read'), listHubClinicalCases);
+router.get('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubClinicalCase);
+router.post('/clinical/cases', authenticateUser, requirePermission('hub.clinic.write'), createHubClinicalCase);
+router.patch('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubClinicalCase);
+router.delete('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.write'), deleteHubClinicalCase);
+
 router.get(
   '/clinical/pet-flags',
   authenticateUser,
@@ -594,6 +637,18 @@ router.get(
   authenticateUser,
   requirePermission('hub.clinic.read'),
   getHubPrescriptionPdf
+);
+router.get(
+  '/clinical/prescriptions/:id/documents',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listPrescriptionDocuments
+);
+router.post(
+  '/clinical/prescriptions/:id/documents',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  issuePrescriptionDocument
 );
 router.post(
   '/clinical/prescriptions',
@@ -667,6 +722,18 @@ router.post(
   authenticateUser,
   requirePermission('hub.clinic.write'),
   addHubHospitalizationDailyNote
+);
+router.get(
+  '/clinical/hospitalizations/:id/events',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubHospitalizationEvents
+);
+router.post(
+  '/clinical/hospitalizations/:id/events',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubHospitalizationEvent
 );
 
 router.get('/clinical/surgeries', authenticateUser, requirePermission('hub.clinic.read'), listHubSurgeries);

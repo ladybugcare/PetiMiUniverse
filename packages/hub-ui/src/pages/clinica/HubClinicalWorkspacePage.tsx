@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
-import { HubTabs } from '../../components/HubTabs';
 import '../clientes/clientes.css';
 import {
   hubClinicalApi,
@@ -20,18 +19,7 @@ import { formatEventAt, formatEventBody, formatEventTitle, formatPrescriptionLin
 import { petAgeDetailedLabel } from '../pets/petAge';
 import './clinica-page.css';
 
-type TabId = 'resumo' | 'anamnese' | 'exame' | 'diagnostico' | 'evolucao' | 'prescricao' | 'vacinas' | 'exames';
-
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'resumo', label: 'Resumo' },
-  { id: 'anamnese', label: 'Anamnese' },
-  { id: 'exame', label: 'Exame físico' },
-  { id: 'diagnostico', label: 'Diagnóstico' },
-  { id: 'evolucao', label: 'Evolução' },
-  { id: 'prescricao', label: 'Prescrição' },
-  { id: 'vacinas', label: 'Vacinas' },
-  { id: 'exames', label: 'Exames' },
-];
+// ── Debounced auto-save ──────────────────────────────────────────────────────
 
 function useDebouncedSave(
   encounterId: string | undefined,
@@ -72,6 +60,36 @@ function useDebouncedSave(
   return { queue, flush };
 }
 
+// ── Seção colapsável ─────────────────────────────────────────────────────────
+
+function Section({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="hub-clinic-section">
+      <button
+        type="button"
+        className="hub-clinic-section__header"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <span className="hub-clinic-section__title">{title}</span>
+        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      </button>
+      {open && <div className="hub-clinic-section__body">{children}</div>}
+    </div>
+  );
+}
+
+// ── Workspace principal ───────────────────────────────────────────────────────
+
 const HubClinicalWorkspacePage: React.FC = () => {
   const { encounterId } = useParams<{ encounterId: string }>();
   const navigate = useNavigate();
@@ -86,13 +104,24 @@ const HubClinicalWorkspacePage: React.FC = () => {
   const [events, setEvents] = useState<HubEncounterEvent[]>([]);
   const [evTitle, setEvTitle] = useState('');
   const [evBody, setEvBody] = useState('');
-  const [tab, setTab] = useState<TabId>('resumo');
   const [saveHint, setSaveHint] = useState('');
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [templates, setTemplates] = useState<Array<Record<string, unknown>>>([]);
   const [templateId, setTemplateId] = useState('');
+
+  // Amend (edição pós-finalização)
+  const [amendOpen, setAmendOpen] = useState(false);
+  const [amendReason, setAmendReason] = useState('');
+  const [amending, setAmending] = useState(false);
+  const [versions, setVersions] = useState<Array<{
+    id: string;
+    version_no: number;
+    change_reason: string | null;
+    created_at: string;
+    changed_by_member: { id: string; full_name: string } | null;
+  }>>([]);
 
   const onSaved = useCallback(() => {
     setSaveHint('Salvo');
@@ -115,6 +144,10 @@ const HubClinicalWorkspacePage: React.FC = () => {
       setEvents(ev.events ?? []);
       const tpl = await hubClinicalApi.listTemplates(clinicId);
       setTemplates(tpl.templates ?? []);
+      if (enc.status === 'completed') {
+        const vRes = await hubEncountersApi.getVersions(encounterId, clinicId);
+        setVersions(vRes.versions ?? []);
+      }
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar atendimento');
     } finally {
@@ -166,6 +199,32 @@ const HubClinicalWorkspacePage: React.FC = () => {
     }
   };
 
+  const handleAmend = async () => {
+    if (!clinicId || !encounterId || !canWrite || !amendReason.trim()) return;
+    setAmending(true);
+    try {
+      const { encounter: enc } = await hubEncountersApi.amend(encounterId, {
+        clinic_id: clinicId,
+        change_reason: amendReason.trim(),
+        chief_complaint: encounter?.chief_complaint,
+        summary_notes: encounter?.summary_notes,
+        anamnesis: encounter?.anamnesis,
+        physical_exam: encounter?.physical_exam,
+        diagnosis: encounter?.diagnosis,
+        hub_staff_member_id: encounter?.hub_staff_member_id,
+      });
+      setEncounter(enc);
+      setAmendOpen(false);
+      setAmendReason('');
+      showSuccess('Atendimento atualizado com registro de alteração');
+      await load();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao salvar alteração');
+    } finally {
+      setAmending(false);
+    }
+  };
+
   if (loading || !encounter) {
     return <p style={{ padding: 24 }}>{loading ? 'Carregando atendimento…' : 'Atendimento não encontrado.'}</p>;
   }
@@ -180,66 +239,89 @@ const HubClinicalWorkspacePage: React.FC = () => {
 
   return (
     <>
-    <div className="hub-clientes hub-clinic-workspace">
-      <Link
-        to="/hub/clinica/atendimentos"
-        className="hub-clientes__btn hub-clientes__btn--ghost hub-clinic-workspace__back"
-      >
-        <ArrowLeft size={16} /> Voltar à fila
-      </Link>
+      <div className="hub-clientes hub-clinic-workspace">
+        <Link
+          to="/hub/clinica/atendimentos"
+          className="hub-clientes__btn hub-clientes__btn--ghost hub-clinic-workspace__back"
+        >
+          <ArrowLeft size={16} /> Voltar à fila
+        </Link>
 
-      <header className="hub-clinic-pet-header">
-        <h2 className="hub-clinic-pet-header__name">{pet?.name || 'Pet'}</h2>
-        <div className="hub-clinic-pet-header__grid">
-          <span>Espécie: {pet?.species || '—'}</span>
-          <span>Raça: {pet?.breed || '—'}</span>
-          <span>Porte: {pet?.size_tier || '—'}</span>
-          <span>Idade: {petAgeDetailedLabel(pet?.birth_date ?? null)}</span>
-          <span>Peso (exame): {weight}</span>
-          <span>Tutor: {encounter.guardian?.full_name || '—'}</span>
-          <span>Profissional: {encounter.staff_member?.full_name || '—'}</span>
-        </div>
-        {flags.length > 0 && (
-          <div className="hub-clinic-pet-header__alerts">
-            {flags.map((f) => (
-              <span key={f.flag_key} className="hub-clinic-alert-chip">
-                {f.label}
+        {/* Cabeçalho do pet */}
+        <header className="hub-clinic-pet-header">
+          <h2 className="hub-clinic-pet-header__name">{pet?.name || 'Pet'}</h2>
+          {encounter.case && (
+            <p className="hub-clinic-pet-header__case">
+              Caso clínico:{' '}
+              <Link to={`/hub/clinica/casos/${encounter.hub_case_id}`} className="hub-clientes__link">
+                {encounter.case.title}
+              </Link>
+              <span className={`hub-clinic-cases__badge hub-clinic-cases__badge--${encounter.case.status}`} style={{ marginLeft: 8 }}>
+                {encounter.case.status === 'active' && 'Ativo'}
+                {encounter.case.status === 'monitoring' && 'Monitoramento'}
+                {encounter.case.status === 'resolved' && 'Resolvido'}
+                {encounter.case.status === 'cancelled' && 'Cancelado'}
               </span>
-            ))}
+            </p>
+          )}
+          <div className="hub-clinic-pet-header__grid">
+            <span>Espécie: {pet?.species || '—'}</span>
+            <span>Raça: {pet?.breed || '—'}</span>
+            <span>Porte: {pet?.size_tier || '—'}</span>
+            <span>Idade: {petAgeDetailedLabel(pet?.birth_date ?? null)}</span>
+            <span>Peso (exame): {weight}</span>
+            <span>Tutor: {encounter.guardian?.full_name || '—'}</span>
+            <span>Profissional: {encounter.staff_member?.full_name || '—'}</span>
           </div>
-        )}
-        {canWrite && encounter.status !== 'completed' && templates.length > 0 && (
-          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} style={{ padding: 8, minWidth: 180 }}>
-              <option value="">Aplicar template…</option>
-              {templates.map((t) => (
-                <option key={String(t.id)} value={String(t.id)}>
-                  {String(t.name)}
-                </option>
+          {flags.length > 0 && (
+            <div className="hub-clinic-pet-header__alerts">
+              {flags.map((f) => (
+                <span key={f.flag_key} className="hub-clinic-alert-chip">
+                  {f.label}
+                </span>
               ))}
-            </select>
-            <button
-              type="button"
-              className="hub-clinic-btn hub-clinic-btn--ghost"
-              disabled={!templateId}
-              onClick={() => void applyTemplate()}
-            >
-              Aplicar
-            </button>
-          </div>
-        )}
-      </header>
+            </div>
+          )}
+          {canWrite && encounter.status !== 'completed' && templates.length > 0 && (
+            <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} style={{ padding: 8, minWidth: 180 }}>
+                <option value="">Aplicar template…</option>
+                {templates.map((t) => (
+                  <option key={String(t.id)} value={String(t.id)}>
+                    {String(t.name)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="hub-clinic-btn hub-clinic-btn--ghost"
+                disabled={!templateId}
+                onClick={() => void applyTemplate()}
+              >
+                Aplicar
+              </button>
+            </div>
+          )}
 
-      <HubTabs
-        ariaLabel="Secções do atendimento"
-        activeId={tab}
-        onTabChange={(id) => setTab(id as TabId)}
-        items={TABS.map((t) => ({ id: t.id, label: t.label }))}
-      />
+          {encounter.status === 'completed' && (
+            <div className="hub-clinic-workspace__completed-banner">
+              <span>Atendimento finalizado em {encounter.completed_at ? new Date(encounter.completed_at).toLocaleDateString('pt-BR') : '—'}</span>
+              {canWrite && (
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                  onClick={() => setAmendOpen(true)}
+                >
+                  Editar com motivo
+                </button>
+              )}
+            </div>
+          )}
+        </header>
 
-      <div className="hub-clinic-panel">
-        {tab === 'resumo' && (
-          <>
+        {/* Seções colapsáveis */}
+        <div className="hub-clinic-sections">
+          <Section title="Queixa principal e resumo" defaultOpen>
             <div className="hub-clinic-field">
               <label htmlFor="chief_complaint">Queixa principal</label>
               <textarea
@@ -258,23 +340,17 @@ const HubClinicalWorkspacePage: React.FC = () => {
                 onChange={(e) => patchField('summary_notes', e.target.value || null)}
               />
             </div>
-          </>
-        )}
+          </Section>
 
-        {tab === 'anamnese' && (
-          <>
+          <Section title="Anamnese">
             {(['history', 'diet', 'behavior', 'medications', 'chief_complaint_detail'] as const).map((field) => (
               <div key={field} className="hub-clinic-field">
                 <label htmlFor={`an_${field}`}>
-                  {field === 'history'
-                    ? 'Histórico'
-                    : field === 'diet'
-                      ? 'Alimentação'
-                      : field === 'behavior'
-                        ? 'Comportamento'
-                        : field === 'medications'
-                          ? 'Medicamentos em uso'
-                          : 'Detalhe da queixa'}
+                  {field === 'history' ? 'Histórico'
+                    : field === 'diet' ? 'Alimentação'
+                    : field === 'behavior' ? 'Comportamento'
+                    : field === 'medications' ? 'Medicamentos em uso'
+                    : 'Detalhe da queixa'}
                 </label>
                 <textarea
                   id={`an_${field}`}
@@ -284,11 +360,9 @@ const HubClinicalWorkspacePage: React.FC = () => {
                 />
               </div>
             ))}
-          </>
-        )}
+          </Section>
 
-        {tab === 'exame' && (
-          <>
+          <Section title="Exame físico">
             {(
               [
                 ['weight_kg', 'Peso (kg)'],
@@ -303,7 +377,7 @@ const HubClinicalWorkspacePage: React.FC = () => {
                 <label htmlFor={`pe_${field}`}>{label}</label>
                 <input
                   id={`pe_${field}`}
-                  type={field.includes('rate') || field === 'weight_kg' || field === 'temperature_c' ? 'text' : 'text'}
+                  type="text"
                   value={String(pe[field] ?? '')}
                   disabled={readOnly}
                   onChange={(e) => patchNested('physical_exam', field, e.target.value)}
@@ -319,11 +393,9 @@ const HubClinicalWorkspacePage: React.FC = () => {
                 onChange={(e) => patchNested('physical_exam', 'notes', e.target.value)}
               />
             </div>
-          </>
-        )}
+          </Section>
 
-        {tab === 'diagnostico' && (
-          <>
+          <Section title="Diagnóstico">
             <div className="hub-clinic-field">
               <label htmlFor="dx_suspicions">Hipóteses / suspeitas</label>
               <textarea
@@ -342,11 +414,9 @@ const HubClinicalWorkspacePage: React.FC = () => {
                 onChange={(e) => patchNested('diagnosis', 'conclusion', e.target.value)}
               />
             </div>
-          </>
-        )}
+          </Section>
 
-        {tab === 'evolucao' && (
-          <>
+          <Section title="Evolução clínica">
             {!readOnly && (
               <div className="hub-clientes__form-stack" style={{ marginBottom: 16 }}>
                 <label className="hub-clientes__label" htmlFor="ev_title">
@@ -403,83 +473,141 @@ const HubClinicalWorkspacePage: React.FC = () => {
                 events.map((ev) => (
                   <div key={ev.id} className="hub-clinic-timeline__item">
                     <strong>{formatEventTitle(ev)}</strong>
-                    {formatEventBody(ev) ? (
-                      <p className="hub-clinic-timeline__body">{formatEventBody(ev)}</p>
-                    ) : null}
+                    {formatEventBody(ev) ? <p className="hub-clinic-timeline__body">{formatEventBody(ev)}</p> : null}
                     <small className="hub-clientes__muted">{formatEventAt(ev)}</small>
                   </div>
                 ))
               )}
             </div>
-          </>
-        )}
+          </Section>
 
-        {tab === 'prescricao' && (
-          <HubWorkspacePrescriptions encounter={encounter} clinicId={clinicId!} readOnly={readOnly} />
-        )}
+          <Section title="Prescrições">
+            <HubWorkspacePrescriptions encounter={encounter} clinicId={clinicId!} readOnly={readOnly} />
+          </Section>
 
-        {tab === 'vacinas' && (
-          <HubWorkspaceVaccinations encounter={encounter} clinicId={clinicId!} readOnly={readOnly} />
-        )}
+          <Section title="Vacinas aplicadas">
+            <HubWorkspaceVaccinations encounter={encounter} clinicId={clinicId!} readOnly={readOnly} />
+          </Section>
 
-        {tab === 'exames' && (
-          <HubWorkspaceAttachments encounter={encounter} clinicId={clinicId!} readOnly={readOnly} />
-        )}
+          <Section title="Exames e anexos">
+            <HubWorkspaceAttachments encounter={encounter} clinicId={clinicId!} readOnly={readOnly} />
+          </Section>
+
+          {versions.length > 0 && (
+            <Section title={`Histórico de alterações (${versions.length})`}>
+              <ul className="hub-clinic-records__list">
+                {versions.map((v) => (
+                  <li key={v.id}>
+                    <strong>v{v.version_no}</strong>
+                    {' — '}
+                    {v.change_reason || '(sem motivo informado)'}
+                    {v.changed_by_member ? ` · ${v.changed_by_member.full_name}` : ''}
+                    <small className="hub-clientes__muted" style={{ marginLeft: 8 }}>
+                      {new Date(v.created_at).toLocaleString('pt-BR')}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+        </div>
+
+        <footer className="hub-clinic-workspace__footer">
+          <span className="hub-clinic-save-hint">{saveHint}</span>
+          {canCreateReceivable ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost"
+              disabled={!clinicalCheckoutUnitId}
+              title={
+                clinicalCheckoutUnitId
+                  ? 'Conferir itens e registrar pagamento ou pendência'
+                  : 'Selecione uma unidade no cabeçalho para usar dinheiro no caixa.'
+              }
+              onClick={() => {
+                if (!clinicalCheckoutUnitId) {
+                  showError('Selecione uma unidade no cabeçalho para abrir o checkout.');
+                  return;
+                }
+                setCheckoutOpen(true);
+              }}
+            >
+              Abrir checkout
+            </button>
+          ) : null}
+          {canWrite && encounter.status !== 'completed' && (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              disabled={completing}
+              onClick={() => void finish()}
+            >
+              {completing ? 'Finalizando…' : 'Finalizar atendimento'}
+            </button>
+          )}
+        </footer>
       </div>
 
-      <footer className="hub-clinic-workspace__footer">
-        <span className="hub-clinic-save-hint">{saveHint}</span>
-        {canCreateReceivable ? (
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost"
-            disabled={!clinicalCheckoutUnitId}
-            title={
-              clinicalCheckoutUnitId
-                ? 'Conferir itens e registrar pagamento ou pendência'
-                : 'Selecione uma unidade no cabeçalho para usar dinheiro no caixa.'
-            }
-            onClick={() => {
-              if (!clinicalCheckoutUnitId) {
-                showError('Selecione uma unidade no cabeçalho para abrir o checkout.');
-                return;
-              }
-              setCheckoutOpen(true);
-            }}
-          >
-            Abrir checkout
-          </button>
-        ) : null}
-        {canWrite && encounter.status !== 'completed' && (
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary"
-            disabled={completing}
-            onClick={() => void finish()}
-          >
-            {completing ? 'Finalizando…' : 'Finalizar atendimento'}
-          </button>
-        )}
-      </footer>
-    </div>
-    {clinicId && checkoutOpen && clinicalCheckoutUnitId ? (
-      <ComandaCheckoutDrawer
-        open={checkoutOpen}
-        onClose={() => setCheckoutOpen(false)}
-        clinicId={clinicId}
-        unitId={clinicalCheckoutUnitId}
-        originType="encounter"
-        originId={encounter.id}
-        onSuccess={() => {
-          showSuccess('Checkout concluído.');
-          setCheckoutOpen(false);
-          void load();
-        }}
-      />
-    ) : null}
+      {/* Modal de emenda (edição pós-finalização) */}
+      {amendOpen && (
+        <div className="hub-clinic-amend-overlay">
+          <div className="hub-clinic-amend-modal">
+            <h3>Editar atendimento finalizado</h3>
+            <p className="hub-clientes__muted">
+              Este atendimento foi finalizado. Informe o motivo da alteração para continuar.
+            </p>
+            <label className="hub-clientes__label" htmlFor="amend_reason">
+              Motivo da alteração <span style={{ color: 'var(--color-error)' }}>*</span>
+            </label>
+            <textarea
+              id="amend_reason"
+              className="hub-clientes__textarea"
+              rows={3}
+              value={amendReason}
+              onChange={(e) => setAmendReason(e.target.value)}
+              placeholder="Ex.: Correção de diagnóstico após resultado de exame"
+            />
+            <div className="hub-clinic-amend-modal__footer">
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost"
+                onClick={() => { setAmendOpen(false); setAmendReason(''); }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                disabled={amending || !amendReason.trim()}
+                onClick={() => void handleAmend()}
+              >
+                {amending ? 'Salvando…' : 'Salvar com motivo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clinicId && checkoutOpen && clinicalCheckoutUnitId ? (
+        <ComandaCheckoutDrawer
+          open={checkoutOpen}
+          onClose={() => setCheckoutOpen(false)}
+          clinicId={clinicId}
+          unitId={clinicalCheckoutUnitId}
+          originType="encounter"
+          originId={encounter.id}
+          onSuccess={() => {
+            showSuccess('Checkout concluído.');
+            setCheckoutOpen(false);
+            void load();
+          }}
+        />
+      ) : null}
     </>
   );
 };
+
+// ── Sub-componentes ───────────────────────────────────────────────────────────
 
 function HubWorkspacePrescriptions({
   encounter,
@@ -542,41 +670,15 @@ function HubWorkspacePrescriptions({
     <>
       {!readOnly && (
         <div className="hub-clientes__form-stack" style={{ marginBottom: 16 }}>
-          <input
-            className="hub-clientes__input"
-            placeholder="Medicamento"
-            value={med}
-            onChange={(e) => setMed(e.target.value)}
-          />
-          <input
-            className="hub-clientes__input"
-            placeholder="Dosagem"
-            value={dosage}
-            onChange={(e) => setDosage(e.target.value)}
-          />
-          <input
-            className="hub-clientes__input"
-            placeholder="Frequência"
-            value={frequency}
-            onChange={(e) => setFrequency(e.target.value)}
-          />
-          <input
-            className="hub-clientes__input"
-            placeholder="Duração"
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-          />
+          <input className="hub-clientes__input" placeholder="Medicamento" value={med} onChange={(e) => setMed(e.target.value)} />
+          <input className="hub-clientes__input" placeholder="Dosagem" value={dosage} onChange={(e) => setDosage(e.target.value)} />
+          <input className="hub-clientes__input" placeholder="Frequência" value={frequency} onChange={(e) => setFrequency(e.target.value)} />
+          <input className="hub-clientes__input" placeholder="Duração" value={duration} onChange={(e) => setDuration(e.target.value)} />
           {medicationItems.length > 0 ? (
-            <select
-              className="hub-clientes__input"
-              value={inventoryId}
-              onChange={(e) => setInventoryId(e.target.value)}
-            >
+            <select className="hub-clientes__input" value={inventoryId} onChange={(e) => setInventoryId(e.target.value)}>
               <option value="">Item de estoque (opcional)</option>
               {medicationItems.map((it) => (
-                <option key={it.id} value={it.id}>
-                  {it.name}
-                </option>
+                <option key={it.id} value={it.id}>{it.name}</option>
               ))}
             </select>
           ) : null}
@@ -675,6 +777,7 @@ function HubWorkspaceAttachments({
 
   useEffect(() => {
     void reload();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicId, encounter.id]);
 
   const onFile = async (file: File | null) => {

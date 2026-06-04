@@ -124,7 +124,13 @@ const HubClinicEncountersPage: React.FC = () => {
     });
   };
 
-  const createWalkIn = async (payload: { petId: string; staffId: string; complaint: string }) => {
+  const createWalkIn = async (payload: {
+    petId: string;
+    staffId: string;
+    complaint: string;
+    hubCaseId?: string | null;
+    createNewCase?: boolean;
+  }) => {
     if (!clinicId) return;
     setCreatingWalkIn(true);
     try {
@@ -133,6 +139,8 @@ const HubClinicEncountersPage: React.FC = () => {
         pet_id: payload.petId,
         hub_staff_member_id: payload.staffId,
         chief_complaint: payload.complaint.trim() || null,
+        hub_case_id: payload.hubCaseId ?? null,
+        create_new_case: payload.createNewCase ?? false,
       });
       setWalkInOpen(false);
       navigate(`/hub/clinica/atendimentos/${encounter.id}`);

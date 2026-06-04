@@ -8,6 +8,7 @@ import {
   isMissingPostgrestRelation,
 } from '../../utils/supabaseSchemaErrors.js';
 import { streamPrescriptionPdf } from './hubPrescriptionPdf';
+import { recordTimelineEvent } from './hubClinicalTimelineController';
 
 const uuidStr = z.string().uuid();
 
@@ -178,6 +179,7 @@ export const createHubPrescription = async (req: Request, res: Response) => {
       clinic_id: uuidStr,
       pet_id: uuidStr,
       hub_encounter_id: uuidStr.optional().nullable(),
+      hub_case_id: uuidStr.optional().nullable(),
       hub_staff_member_id: uuidStr.optional().nullable(),
       notes: z.string().trim().max(4000).optional().nullable(),
       items: z
@@ -189,6 +191,7 @@ export const createHubPrescription = async (req: Request, res: Response) => {
             duration: z.string().trim().max(200).optional().nullable(),
             instructions: z.string().trim().max(2000).optional().nullable(),
             hub_inventory_item_id: uuidStr.optional().nullable(),
+            administration: z.enum(['home_use', 'administered_in_clinic']).optional().default('home_use'),
           }),
         )
         .min(1),
@@ -202,6 +205,7 @@ export const createHubPrescription = async (req: Request, res: Response) => {
       clinic_id: b.clinic_id,
       pet_id: b.pet_id,
       hub_encounter_id: b.hub_encounter_id ?? null,
+      hub_case_id: b.hub_case_id ?? null,
       hub_staff_member_id: b.hub_staff_member_id ?? null,
       notes: b.notes ?? null,
       status: 'active',
@@ -211,12 +215,105 @@ export const createHubPrescription = async (req: Request, res: Response) => {
   if (rxErr) return res.status(500).json({ error: rxErr.message });
   const insertItems = b.items.map((it, i) => ({
     prescription_id: (rx as { id: string }).id,
-    ...it,
+    medication_name: it.medication_name,
+    dosage: it.dosage ?? null,
+    frequency: it.frequency ?? null,
+    duration: it.duration ?? null,
+    instructions: it.instructions ?? null,
+    hub_inventory_item_id: it.hub_inventory_item_id ?? null,
+    administration: it.administration ?? 'home_use',
     order_index: i,
   }));
   const { error: itemsErr } = await supabaseAdmin.from('hub_prescription_items').insert(insertItems);
   if (itemsErr) return res.status(500).json({ error: itemsErr.message });
-  return res.status(201).json({ prescription: { ...rx, items: insertItems } });
+
+  void recordTimelineEvent({
+    clinic_id: b.clinic_id,
+    pet_id: b.pet_id,
+    hub_case_id: b.hub_case_id ?? null,
+    hub_encounter_id: b.hub_encounter_id ?? null,
+    event_type: 'prescription_issued',
+    ref_type: 'prescription',
+    ref_id: (rx as { id: string }).id,
+    title: `Prescrição emitida (${b.items.length} item${b.items.length > 1 ? 's' : ''})`,
+    body: b.items.map((it) => it.medication_name).join(', '),
+    created_by: b.hub_staff_member_id ?? null,
+  });
+
+  return res.status(201).json({ prescription: { ...(rx as Record<string, unknown>), items: insertItems } });
+};
+
+export const issuePrescriptionDocument = async (req: Request, res: Response) => {
+  const id = uuidStr.safeParse(req.params.id);
+  const parsed = z
+    .object({
+      clinic_id: uuidStr,
+      issued_by: uuidStr.optional().nullable(),
+    })
+    .safeParse(req.body);
+  if (!id.success || !parsed.success) return res.status(400).json({ error: 'Parâmetros inválidos' });
+  const { clinic_id, issued_by } = parsed.data;
+
+  const { data: latest } = await supabaseAdmin
+    .from('hub_prescription_documents')
+    .select('version_no')
+    .eq('prescription_id', id.data)
+    .order('version_no', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextVersion = latest ? (latest.version_no as number) + 1 : 1;
+
+  const { data, error } = await supabaseAdmin
+    .from('hub_prescription_documents')
+    .insert({
+      clinic_id,
+      prescription_id: id.data,
+      version_no: nextVersion,
+      issued_by: issued_by ?? null,
+      issued_at: new Date().toISOString(),
+      signature_status: 'none',
+    })
+    .select('*')
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(201).json({ document: data });
+};
+
+export const listPrescriptionDocuments = async (req: Request, res: Response) => {
+  const id = uuidStr.safeParse(req.params.id);
+  const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+  if (!id.success || !clinic_id.success) return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+
+  const { data, error } = await supabaseAdmin
+    .from('hub_prescription_documents')
+    .select('id, prescription_id, version_no, pdf_path, issued_by, issued_at, signature_status, created_at')
+    .eq('prescription_id', id.data)
+    .eq('clinic_id', clinic_id.data)
+    .order('version_no', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const staffIds = [...new Set(rows.map((r) => r.issued_by as string).filter(Boolean))];
+  const staffMap = new Map<string, { id: string; full_name: string }>();
+  if (staffIds.length) {
+    const { data: staffRows } = await supabaseAdmin
+      .from('hub_staff_members')
+      .select('id, full_name')
+      .in('id', staffIds);
+    for (const s of staffRows ?? []) {
+      staffMap.set((s as { id: string }).id, s as { id: string; full_name: string });
+    }
+  }
+
+  const enriched = rows.map((r) => ({
+    ...r,
+    issued_by_member: staffMap.get(r.issued_by as string) ?? null,
+  }));
+
+  return res.json({ documents: enriched });
 };
 
 export const getHubPrescriptionPdf = async (req: Request, res: Response) => {
@@ -284,17 +381,86 @@ export const createHubVaccination = async (req: Request, res: Response) => {
       clinic_id: uuidStr,
       pet_id: uuidStr,
       hub_encounter_id: uuidStr.optional().nullable(),
+      hub_case_id: uuidStr.optional().nullable(),
       vaccine_name: z.string().trim().min(1).max(200),
       batch_number: z.string().trim().max(120).optional().nullable(),
       administered_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       next_dose_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
       hub_staff_member_id: uuidStr.optional().nullable(),
       notes: z.string().trim().max(2000).optional().nullable(),
+      // Fase 6
+      source: z.enum(['in_clinic', 'external']).optional().default('in_clinic'),
+      manufacturer: z.string().trim().max(200).optional().nullable(),
+      hub_inventory_item_id: uuidStr.optional().nullable(),
+      hub_inventory_lot_id: uuidStr.optional().nullable(),
+      expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
     })
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { data, error } = await supabaseAdmin.from('hub_vaccination_records').insert(parsed.data).select('*').single();
+  const b = parsed.data;
+
+  let stockMovementId: string | null = null;
+
+  // Baixa de estoque: vacina aplicada na clínica com item de estoque vinculado
+  if (b.source === 'in_clinic' && b.hub_inventory_item_id) {
+    const { data: mvmt, error: mvmtErr } = await supabaseAdmin
+      .from('hub_stock_movements')
+      .insert({
+        clinic_id: b.clinic_id,
+        hub_inventory_item_id: b.hub_inventory_item_id,
+        hub_inventory_lot_id: b.hub_inventory_lot_id ?? null,
+        movement_type: 'encounter_out',
+        quantity: 1,
+        unit: 'dose',
+        notes: `Vacina aplicada: ${b.vaccine_name}`,
+        hub_encounter_id: b.hub_encounter_id ?? null,
+      })
+      .select('id')
+      .single();
+    if (!mvmtErr && mvmt) {
+      stockMovementId = (mvmt as { id: string }).id;
+    } else if (mvmtErr) {
+      console.error('createHubVaccination: erro ao baixar estoque', mvmtErr.message);
+    }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('hub_vaccination_records')
+    .insert({
+      clinic_id: b.clinic_id,
+      pet_id: b.pet_id,
+      hub_encounter_id: b.hub_encounter_id ?? null,
+      hub_case_id: b.hub_case_id ?? null,
+      vaccine_name: b.vaccine_name,
+      batch_number: b.batch_number ?? null,
+      administered_at: b.administered_at,
+      next_dose_at: b.next_dose_at ?? null,
+      hub_staff_member_id: b.hub_staff_member_id ?? null,
+      notes: b.notes ?? null,
+      source: b.source,
+      manufacturer: b.manufacturer ?? null,
+      hub_inventory_item_id: b.hub_inventory_item_id ?? null,
+      hub_inventory_lot_id: b.hub_inventory_lot_id ?? null,
+      expiry_date: b.expiry_date ?? null,
+      stock_movement_id: stockMovementId,
+    })
+    .select('*')
+    .single();
   if (error) return res.status(500).json({ error: error.message });
+
+  void recordTimelineEvent({
+    clinic_id: b.clinic_id,
+    pet_id: b.pet_id,
+    hub_case_id: b.hub_case_id ?? null,
+    hub_encounter_id: b.hub_encounter_id ?? null,
+    event_type: 'vaccination_applied',
+    ref_type: 'vaccination',
+    ref_id: (data as { id: string }).id,
+    title: `Vacina aplicada: ${b.vaccine_name}`,
+    body: b.next_dose_at ? `Próxima dose: ${b.next_dose_at}` : null,
+    created_by: b.hub_staff_member_id ?? null,
+  });
+
   return res.status(201).json({ vaccination: data });
 };
 
@@ -475,18 +641,38 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
       pet_id: uuidStr,
       guardian_id: uuidStr.optional().nullable(),
       hub_encounter_id: uuidStr.optional().nullable(),
+      hub_case_id: uuidStr.optional().nullable(),
       hub_hospital_bed_id: uuidStr.optional().nullable(),
       hub_staff_member_id: uuidStr.optional().nullable(),
       admission_notes: z.string().trim().max(4000).optional().nullable(),
+      reason: z.string().trim().max(1000).optional().nullable(),
     })
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
-  const { data, error } = await supabaseAdmin.from('hub_hospitalizations').insert({ ...b, status: 'active' }).select('*').single();
+  const { data, error } = await supabaseAdmin
+    .from('hub_hospitalizations')
+    .insert({ ...b, status: 'active' })
+    .select('*')
+    .single();
   if (error) return res.status(500).json({ error: error.message });
   if (b.hub_hospital_bed_id) {
     await supabaseAdmin.from('hub_hospital_beds').update({ status: 'occupied' }).eq('id', b.hub_hospital_bed_id);
   }
+
+  void recordTimelineEvent({
+    clinic_id: b.clinic_id,
+    pet_id: b.pet_id,
+    hub_case_id: b.hub_case_id ?? null,
+    hub_encounter_id: b.hub_encounter_id ?? null,
+    event_type: 'hospitalization_started',
+    ref_type: 'hospitalization',
+    ref_id: (data as { id: string }).id,
+    title: 'Internação iniciada',
+    body: b.reason ?? b.admission_notes ?? null,
+    created_by: b.hub_staff_member_id ?? null,
+  });
+
   return res.status(201).json({ hospitalization: data });
 };
 
@@ -495,8 +681,10 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
   const parsed = z
     .object({
       clinic_id: uuidStr,
-      status: z.enum(['active', 'discharged', 'cancelled']).optional(),
+      status: z.enum(['active', 'discharged', 'death', 'transferred', 'cancelled']).optional(),
       discharge_notes: z.string().trim().max(4000).optional().nullable(),
+      reason: z.string().trim().max(1000).optional().nullable(),
+      hub_case_id: uuidStr.optional().nullable(),
     })
     .safeParse(req.body);
   if (!id.success || !parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
@@ -524,11 +712,27 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
     .maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
 
-  if (patch.status === 'discharged' && existing.hub_hospital_bed_id) {
+  const discharged = patch.status === 'discharged' || patch.status === 'death' || patch.status === 'transferred';
+  if (discharged && existing.hub_hospital_bed_id) {
     await supabaseAdmin
       .from('hub_hospital_beds')
       .update({ status: 'available' })
       .eq('id', existing.hub_hospital_bed_id);
+  }
+
+  const hospData = data as Record<string, unknown> | null;
+  if (patch.status === 'discharged' && hospData) {
+    void recordTimelineEvent({
+      clinic_id,
+      pet_id: hospData.pet_id as string,
+      hub_case_id: hospData.hub_case_id as string | null,
+      hub_encounter_id: hospData.hub_encounter_id as string | null,
+      event_type: 'hospitalization_discharged',
+      ref_type: 'hospitalization',
+      ref_id: id.data,
+      title: 'Alta da internação',
+      body: patch.discharge_notes ?? null,
+    });
   }
 
   return res.json({ hospitalization: data });
@@ -553,6 +757,58 @@ export const addHubHospitalizationDailyNote = async (req: Request, res: Response
   return res.json({ note: data });
 };
 
+// ── Hospitalization events ────────────────────────────────────────────────────
+
+const hospitalizationEventKindSchema = z.enum(['vital', 'medication', 'feeding', 'fluid', 'nursing', 'note']);
+
+export const listHubHospitalizationEvents = async (req: Request, res: Response) => {
+  const hospitalization_id = uuidStr.safeParse(req.query.hospitalization_id);
+  if (!hospitalization_id.success) return res.status(400).json({ error: 'hospitalization_id obrigatório' });
+
+  let q = supabaseAdmin
+    .from('hub_hospitalization_events')
+    .select('id, hospitalization_id, kind, recorded_at, payload, hub_staff_member_id, created_at')
+    .eq('hospitalization_id', hospitalization_id.data)
+    .order('recorded_at', { ascending: false })
+    .limit(500);
+
+  if (req.query.kind) {
+    const k = hospitalizationEventKindSchema.safeParse(req.query.kind);
+    if (k.success) q = q.eq('kind', k.data);
+  }
+
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ events: data ?? [] });
+};
+
+export const createHubHospitalizationEvent = async (req: Request, res: Response) => {
+  const id = uuidStr.safeParse(req.params.id);
+  const parsed = z
+    .object({
+      kind: hospitalizationEventKindSchema,
+      recorded_at: z.string().datetime({ offset: true }).optional(),
+      payload: z.record(z.string(), z.unknown()).optional().default({}),
+      hub_staff_member_id: uuidStr.optional().nullable(),
+    })
+    .safeParse(req.body);
+  if (!id.success || !parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
+  const b = parsed.data;
+  const { data, error } = await supabaseAdmin
+    .from('hub_hospitalization_events')
+    .insert({
+      hospitalization_id: id.data,
+      kind: b.kind,
+      recorded_at: b.recorded_at ?? new Date().toISOString(),
+      payload: b.payload,
+      hub_staff_member_id: b.hub_staff_member_id ?? null,
+    })
+    .select('*')
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(201).json({ event: data });
+};
+
 // ── Surgeries ─────────────────────────────────────────────────────────────────
 
 export const listHubSurgeries = async (req: Request, res: Response) => {
@@ -571,6 +827,8 @@ export const listHubSurgeries = async (req: Request, res: Response) => {
   return res.json({ surgeries: data ?? [] });
 };
 
+const jsonbField = z.record(z.string(), z.unknown()).optional().nullable();
+
 export const createHubSurgery = async (req: Request, res: Response) => {
   const parsed = z
     .object({
@@ -579,9 +837,17 @@ export const createHubSurgery = async (req: Request, res: Response) => {
       pet_id: uuidStr,
       guardian_id: uuidStr.optional().nullable(),
       hub_encounter_id: uuidStr.optional().nullable(),
+      hub_case_id: uuidStr.optional().nullable(),
       hub_staff_member_id: uuidStr.optional().nullable(),
       title: z.string().trim().min(1).max(200),
       scheduled_at: z.string().datetime({ offset: true }).optional().nullable(),
+      anesthetic_risk: z.enum(['I', 'II', 'III', 'IV', 'V', 'VI', 'E']).optional().nullable(),
+      pre_op: jsonbField,
+      procedure: jsonbField,
+      team: z.array(z.record(z.string(), z.unknown())).optional().nullable(),
+      materials: z.array(z.record(z.string(), z.unknown())).optional().nullable(),
+      post_op: jsonbField,
+      // Legacy fields (backward compat)
       anesthesia_notes: z.string().optional().nullable(),
       team_notes: z.string().optional().nullable(),
       materials_notes: z.string().optional().nullable(),
@@ -589,12 +855,47 @@ export const createHubSurgery = async (req: Request, res: Response) => {
     })
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const b = parsed.data;
   const { data, error } = await supabaseAdmin
     .from('hub_surgeries')
-    .insert({ ...parsed.data, status: 'scheduled' })
+    .insert({
+      clinic_id: b.clinic_id,
+      unit_id: b.unit_id,
+      pet_id: b.pet_id,
+      guardian_id: b.guardian_id,
+      hub_encounter_id: b.hub_encounter_id,
+      hub_case_id: b.hub_case_id,
+      hub_staff_member_id: b.hub_staff_member_id,
+      title: b.title,
+      scheduled_at: b.scheduled_at,
+      anesthetic_risk: b.anesthetic_risk,
+      pre_op: b.pre_op ?? {},
+      procedure: b.procedure ?? {},
+      team: b.team ?? [],
+      materials: b.materials ?? [],
+      post_op: b.post_op ?? {},
+      anesthesia_notes: b.anesthesia_notes,
+      team_notes: b.team_notes,
+      materials_notes: b.materials_notes,
+      post_op_notes: b.post_op_notes,
+      status: 'scheduled',
+    })
     .select('*')
     .single();
   if (error) return res.status(500).json({ error: error.message });
+
+  void recordTimelineEvent({
+    clinic_id: b.clinic_id,
+    pet_id: b.pet_id,
+    hub_case_id: b.hub_case_id ?? null,
+    hub_encounter_id: b.hub_encounter_id ?? null,
+    event_type: 'surgery_performed',
+    ref_type: 'surgery',
+    ref_id: (data as { id: string }).id,
+    title: `Cirurgia agendada: ${b.title}`,
+    created_by: b.hub_staff_member_id ?? null,
+  });
+
   return res.status(201).json({ surgery: data });
 };
 
@@ -606,6 +907,13 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
       status: z.enum(['scheduled', 'in_progress', 'completed', 'cancelled']).optional(),
       started_at: z.string().datetime({ offset: true }).optional().nullable(),
       completed_at: z.string().datetime({ offset: true }).optional().nullable(),
+      discharge_at: z.string().datetime({ offset: true }).optional().nullable(),
+      anesthetic_risk: z.enum(['I', 'II', 'III', 'IV', 'V', 'VI', 'E']).optional().nullable(),
+      pre_op: jsonbField,
+      procedure: jsonbField,
+      team: z.array(z.record(z.string(), z.unknown())).optional().nullable(),
+      materials: z.array(z.record(z.string(), z.unknown())).optional().nullable(),
+      post_op: jsonbField,
       anesthesia_notes: z.string().optional().nullable(),
       team_notes: z.string().optional().nullable(),
       materials_notes: z.string().optional().nullable(),
@@ -614,6 +922,14 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
     .safeParse(req.body);
   if (!id.success || !parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
   const { clinic_id, ...patch } = parsed.data;
+
+  const { data: existing } = await supabaseAdmin
+    .from('hub_surgeries')
+    .select('pet_id, hub_case_id, hub_encounter_id, hub_staff_member_id, title')
+    .eq('id', id.data)
+    .eq('clinic_id', clinic_id)
+    .maybeSingle();
+
   const { data, error } = await supabaseAdmin
     .from('hub_surgeries')
     .update(patch)
@@ -623,6 +939,22 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
     .maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
   if (!data) return res.status(404).json({ error: 'Cirurgia não encontrada' });
+
+  if (patch.status === 'completed' && existing) {
+    const ex = existing as Record<string, unknown>;
+    void recordTimelineEvent({
+      clinic_id,
+      pet_id: ex.pet_id as string,
+      hub_case_id: ex.hub_case_id as string | null,
+      hub_encounter_id: ex.hub_encounter_id as string | null,
+      event_type: 'surgery_performed',
+      ref_type: 'surgery',
+      ref_id: id.data,
+      title: `Cirurgia realizada: ${ex.title as string}`,
+      created_by: ex.hub_staff_member_id as string | null,
+    });
+  }
+
   return res.json({ surgery: data });
 };
 

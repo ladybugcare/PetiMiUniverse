@@ -5,19 +5,22 @@ import { useAlert } from '../../components/AlertProvider';
 import { HubTabs } from '../../components/HubTabs';
 import {
   hubClinicalApi,
+  hubClinicalCasesApi,
+  hubClinicalTimelineApi,
   hubEncountersApi,
+  type HubClinicalCase,
+  type HubClinicalTimelineEvent,
   type HubEncounter,
-  type HubEncounterEvent,
   type HubPetClinicalFlag,
   type HubPrescription,
   type HubVaccination,
   type HubClinicalAttachment,
 } from '../../api/hubClinicalApi';
 import { hubPetsApi, type HubPet } from '../../api/hubPetsApi';
-import { formatEventAt, formatEventBody, formatEventTitle, formatPrescriptionLine } from './clinicalDisplay';
+import { formatPrescriptionLine } from './clinicalDisplay';
 import { petAgeDetailedLabel } from '../pets/petAge';
 
-type TabId = 'timeline' | 'prescricoes' | 'vacinas' | 'exames' | 'flags';
+type TabId = 'casos' | 'timeline' | 'prescricoes' | 'vacinas' | 'exames' | 'flags';
 
 const FLAG_OPTIONS: { key: string; label: string }[] = [
   { key: 'allergy', label: 'Alergia' },
@@ -38,14 +41,15 @@ const HubClinicRecordsPage: React.FC = () => {
   const canWrite = hasPermission('hub.clinic.write');
 
   const initialPetId = searchParams.get('petId') || '';
-  const initialTab = (searchParams.get('tab') as TabId) || 'timeline';
+  const initialTab = (searchParams.get('tab') as TabId) || 'casos';
 
   const [pets, setPets] = useState<HubPet[]>([]);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(initialPetId);
   const [tab, setTab] = useState<TabId>(initialTab);
   const [encounters, setEncounters] = useState<HubEncounter[]>([]);
-  const [events, setEvents] = useState<HubEncounterEvent[]>([]);
+  const [cases, setCases] = useState<HubClinicalCase[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<HubClinicalTimelineEvent[]>([]);
   const [flags, setFlags] = useState<HubPetClinicalFlag[]>([]);
   const [prescriptions, setPrescriptions] = useState<HubPrescription[]>([]);
   const [vaccinations, setVaccinations] = useState<HubVaccination[]>([]);
@@ -76,7 +80,8 @@ const HubClinicRecordsPage: React.FC = () => {
     setLoading(true);
     const results = await Promise.allSettled([
       hubEncountersApi.listByPet(clinicId, selectedId),
-      hubClinicalApi.listEvents(clinicId, selectedId),
+      hubClinicalCasesApi.list(clinicId, { petId: selectedId }),
+      hubClinicalTimelineApi.list(clinicId, { petId: selectedId }),
       hubClinicalApi.listPetFlags(clinicId, selectedId),
       hubClinicalApi.listPrescriptions(clinicId, selectedId),
       hubClinicalApi.listVaccinations(clinicId, selectedId),
@@ -87,11 +92,12 @@ const HubClinicRecordsPage: React.FC = () => {
       return r?.status === 'fulfilled' ? (r.value as T) : fallback;
     };
     setEncounters(pick(0, { encounters: [] }).encounters ?? []);
-    setEvents(pick(1, { events: [] }).events ?? []);
-    setFlags(pick(2, { flags: [] }).flags ?? []);
-    setPrescriptions(pick(3, { prescriptions: [] }).prescriptions ?? []);
-    setVaccinations(pick(4, { vaccinations: [] }).vaccinations ?? []);
-    setAttachments(pick(5, { attachments: [] }).attachments ?? []);
+    setCases(pick(1, { cases: [] }).cases ?? []);
+    setTimelineEvents(pick(2, { events: [] }).events ?? []);
+    setFlags(pick(3, { flags: [] }).flags ?? []);
+    setPrescriptions(pick(4, { prescriptions: [] }).prescriptions ?? []);
+    setVaccinations(pick(5, { vaccinations: [] }).vaccinations ?? []);
+    setAttachments(pick(6, { attachments: [] }).attachments ?? []);
 
     const failed = results
       .map((r, i) => (r.status === 'rejected' ? i : -1))
@@ -225,6 +231,7 @@ const HubClinicRecordsPage: React.FC = () => {
                 activeId={tab}
                 onTabChange={(id) => setTab(id as TabId)}
                 items={[
+                  { id: 'casos', label: 'Casos clínicos' },
                   { id: 'timeline', label: 'Linha do tempo' },
                   { id: 'prescricoes', label: 'Prescrições' },
                   { id: 'vacinas', label: 'Vacinas' },
@@ -233,31 +240,65 @@ const HubClinicRecordsPage: React.FC = () => {
                 ]}
               />
 
+              {tab === 'casos' && (
+                <div className="hub-clinic-cases">
+                  {cases.length === 0 ? (
+                    <p className="hub-clientes__muted">Nenhum caso clínico registrado.</p>
+                  ) : (
+                    cases.map((c) => (
+                      <div key={c.id} className="hub-clinic-cases__item">
+                        <div className="hub-clinic-cases__item-header">
+                          <strong className="hub-clinic-cases__title">{c.title}</strong>
+                          <span className={`hub-clinic-cases__badge hub-clinic-cases__badge--${c.status}`}>
+                            {c.status === 'active' && 'Ativo'}
+                            {c.status === 'monitoring' && 'Monitoramento'}
+                            {c.status === 'resolved' && 'Resolvido'}
+                            {c.status === 'cancelled' && 'Cancelado'}
+                          </span>
+                        </div>
+                        {c.summary ? <p className="hub-clinic-cases__summary">{c.summary}</p> : null}
+                        <div className="hub-clinic-cases__meta">
+                          <small className="hub-clientes__muted">
+                            Aberto em {new Date(c.opened_at).toLocaleDateString('pt-BR')}
+                            {c.closed_at
+                              ? ` · Fechado em ${new Date(c.closed_at).toLocaleDateString('pt-BR')}`
+                              : ''}
+                          </small>
+                        </div>
+                        <Link to={`/hub/clinica/casos/${c.id}`} className="hub-clientes__link">
+                          Ver caso →
+                        </Link>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
               {tab === 'timeline' && (
                 <div className="hub-clinic-timeline">
-                  {events.length === 0 && encounters.length === 0 ? (
+                  {timelineEvents.length === 0 && encounters.length === 0 ? (
                     <p className="hub-clientes__muted">Sem histórico clínico.</p>
+                  ) : timelineEvents.length > 0 ? (
+                    timelineEvents.map((ev) => (
+                      <div key={ev.id} className="hub-clinic-timeline__item">
+                        <strong>{ev.title}</strong>
+                        {ev.body ? <p className="hub-clinic-timeline__body">{ev.body}</p> : null}
+                        <small className="hub-clientes__muted">
+                          {new Date(ev.event_at).toLocaleString('pt-BR')}
+                          {ev.created_by_member ? ` · ${ev.created_by_member.full_name}` : ''}
+                        </small>
+                      </div>
+                    ))
                   ) : (
-                    <>
-                      {events.map((ev) => (
-                        <div key={ev.id} className="hub-clinic-timeline__item">
-                          <strong>{formatEventTitle(ev)}</strong>
-                          {formatEventBody(ev) ? (
-                            <p className="hub-clinic-timeline__body">{formatEventBody(ev)}</p>
-                          ) : null}
-                          <small className="hub-clientes__muted">{formatEventAt(ev)}</small>
-                        </div>
-                      ))}
-                      {encounters.map((e) => (
-                        <div key={e.id} className="hub-clinic-timeline__item">
-                          <strong>Atendimento — {e.status}</strong>
-                          <p className="hub-clinic-timeline__body">{e.chief_complaint || e.summary_notes || '—'}</p>
-                          <Link to={`/hub/clinica/atendimentos/${e.id}`} className="hub-clientes__link">
-                            Abrir atendimento
-                          </Link>
-                        </div>
-                      ))}
-                    </>
+                    encounters.map((e) => (
+                      <div key={e.id} className="hub-clinic-timeline__item">
+                        <strong>Atendimento — {e.status}</strong>
+                        <p className="hub-clinic-timeline__body">{e.chief_complaint || e.summary_notes || '—'}</p>
+                        <Link to={`/hub/clinica/atendimentos/${e.id}`} className="hub-clientes__link">
+                          Abrir atendimento
+                        </Link>
+                      </div>
+                    ))
                   )}
                 </div>
               )}

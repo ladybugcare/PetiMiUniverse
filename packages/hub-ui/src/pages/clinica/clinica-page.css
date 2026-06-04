@@ -325,6 +325,51 @@
   padding: 24px 0;
 }
 
+/* Hospitalization events */
+.hub-clinic-hosp-event {
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.hub-clinic-hosp-event__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.hub-clinic-hosp-event__kind {
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--color-surface-2, #f3f4f6);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.hub-clinic-hosp-event__time {
+  font-size: 11px;
+  color: var(--color-muted, #6b7280);
+}
+
+.hub-clinic-hosp-event__note {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--color-text, #111827);
+}
+
+.hub-clinic-hosp-event__payload {
+  margin: 6px 0 0;
+  font-size: 11px;
+  background: var(--color-surface-2, #f9fafb);
+  border-radius: 4px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  color: var(--color-muted, #4b5563);
+}
+
 .hub-clinic-atendimentos__toolbar {
   margin-bottom: 16px;
 }
@@ -520,6 +565,280 @@
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--hc-border, #e5dcd6);
+}
+
+/* ── Seções colapsáveis do workspace ────────────────────────────────────────── */
+
+.hub-clinic-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 16px;
+}
+
+.hub-clinic-section {
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.hub-clinic-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--hc-bg-subtle, #faf7f5);
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hc-text, #4a3b3a);
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.hub-clinic-section__header:hover {
+  background: var(--hc-bg-hover, #f3ede9);
+}
+
+.hub-clinic-section__title {
+  flex: 1;
+}
+
+.hub-clinic-section__body {
+  padding: 16px;
+  border-top: 1px solid var(--hc-border, #e5dcd6);
+}
+
+/* ── Banner atendimento finalizado ──────────────────────────────────────────── */
+
+.hub-clinic-workspace__completed-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--hc-bg-info, #f0f7ff);
+  border: 1px solid var(--hc-border-info, #b8d8f8);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--hc-text-secondary, #6b5a58);
+}
+
+/* ── Modal de emenda ─────────────────────────────────────────────────────────── */
+
+.hub-clinic-amend-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+}
+
+.hub-clinic-amend-modal {
+  background: #fff;
+  border-radius: 10px;
+  padding: 28px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hub-clinic-amend-modal h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clinic-amend-modal__footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+/* ── Casos clínicos na lista do prontuário ───────────────────────────────────── */
+
+.hub-clinic-cases {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.hub-clinic-cases__item {
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hub-clinic-cases__item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hub-clinic-cases__title {
+  font-size: 14px;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clinic-cases__summary {
+  font-size: 13px;
+  color: var(--hc-text-secondary, #6b5a58);
+  margin: 0;
+}
+
+.hub-clinic-cases__meta {
+  font-size: 12px;
+}
+
+.hub-clinic-cases__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hub-clinic-cases__badge--active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.hub-clinic-cases__badge--monitoring {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.hub-clinic-cases__badge--resolved {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.hub-clinic-cases__badge--cancelled {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* ── Walk-in panel — seleção de caso ─────────────────────────────────────────── */
+
+.hub-clinic-walkin__case-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.hub-clinic-walkin__case-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hub-clinic-walkin__case-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* ── Página de caso clínico ──────────────────────────────────────────────────── */
+
+.hub-clinic-case-page {
+  padding: 20px;
+  max-width: 900px;
+}
+
+.hub-clinic-case-page__header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hc-border, #e5dcd6);
+}
+
+.hub-clinic-case-page__title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hub-clinic-case-page__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--hc-text, #4a3b3a);
+  flex: 1;
+}
+
+.hub-clinic-case-page__status-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hub-clinic-case-page__status-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-clinic-case-page__summary {
+  font-size: 14px;
+  color: var(--hc-text-secondary, #6b5a58);
+  margin: 0;
+}
+
+.hub-clinic-case-page__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--hc-text-secondary, #6b5a58);
+}
+
+.hub-clinic-case-page__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hub-clinic-case-page__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.hub-clinic-case-page__tabs {
+  margin-bottom: 16px;
+}
+
+/* ── Link do caso no cabeçalho do workspace ──────────────────────────────────── */
+
+.hub-clinic-pet-header__case {
+  font-size: 13px;
+  color: var(--hc-text-secondary, #6b5a58);
+  margin: 2px 0 4px;
 }
 
 @media (max-width: 1100px) {

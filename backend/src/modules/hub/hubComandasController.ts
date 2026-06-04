@@ -427,7 +427,7 @@ async function buildComandaItemsFromEncounter(
 }> {
   const { data: enc, error } = await supabaseAdmin
     .from('hub_encounters')
-    .select('id, clinic_id, unit_id, guardian_id, pet_id, status, billing_waived_at, hub_appointment_id')
+    .select('id, clinic_id, unit_id, guardian_id, pet_id, status, billing_waived_at, hub_appointment_id, hub_case_id')
     .eq('id', encounterId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -441,11 +441,117 @@ async function buildComandaItemsFromEncounter(
 
   const allItems: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[] = [];
   let subtotal = 0;
+
+  // 1. Appointment service items (existing behaviour)
   if (apptId) {
     const ap = await sumAppointmentServicesSaleForComanda(apptId, petId);
     allItems.push(...ap.items);
     subtotal += ap.subtotal;
   }
+
+  // 2. Vaccinations applied in-clinic during this encounter
+  const { data: vaxRows } = await supabaseAdmin
+    .from('hub_vaccination_records')
+    .select('id, vaccine_name, hub_inventory_item_id, price')
+    .eq('hub_encounter_id', encounterId)
+    .eq('source', 'in_clinic')
+    .is('deleted_at', null);
+  for (const vax of vaxRows ?? []) {
+    const vaxRow = vax as Record<string, unknown>;
+    const amount = typeof vaxRow.price === 'number' ? vaxRow.price : 0;
+    allItems.push({
+      pet_id: petId,
+      item_kind: 'service',
+      hub_service_type_id: null,
+      hub_inventory_item_id: vaxRow.hub_inventory_item_id as string | null,
+      hub_inventory_lot_id: null,
+      description: `Vacina: ${String(vaxRow.vaccine_name || 'Vacina')}`,
+      quantity: 1,
+      unit_amount: amount,
+      discount_amount: 0,
+      line_total: amount,
+      service_date: null,
+      origin_type: 'vaccination',
+      origin_id: vaxRow.id as string,
+      sort_order: allItems.length,
+    });
+    subtotal += amount;
+  }
+
+  // 3. Prescription items administered in clinic (NOT home_use)
+  // These are items where the patient received medication at the clinic.
+  const { data: rxRows } = await supabaseAdmin
+    .from('hub_prescriptions')
+    .select('id, hub_prescription_items(id, product_name, quantity, unit, hub_inventory_item_id, administration, price)')
+    .eq('hub_encounter_id', encounterId)
+    .is('deleted_at', null);
+  for (const rx of rxRows ?? []) {
+    const rxRow = rx as Record<string, unknown>;
+    const rxItems = (rxRow.hub_prescription_items as Record<string, unknown>[] | null) ?? [];
+    for (const item of rxItems) {
+      // Only include items that are NOT for home use (clinic_administration or undefined administration)
+      const administration = item.administration as string | null;
+      if (administration === 'home_use') continue;
+      const amount = typeof item.price === 'number' ? item.price : 0;
+      const qty = typeof item.quantity === 'number' ? item.quantity : 1;
+      allItems.push({
+        pet_id: petId,
+        item_kind: 'product',
+        hub_service_type_id: null,
+        hub_inventory_item_id: item.hub_inventory_item_id as string | null,
+        hub_inventory_lot_id: null,
+        description: `Medicamento (clinic): ${String(item.product_name || 'Medicamento')} ${qty} ${String(item.unit || 'un')}`,
+        quantity: qty,
+        unit_amount: amount,
+        discount_amount: 0,
+        line_total: round2(amount * qty),
+        service_date: null,
+        origin_type: 'prescription_item',
+        origin_id: item.id as string,
+        sort_order: allItems.length,
+      });
+      subtotal += round2(amount * qty);
+    }
+  }
+
+  // 4. Clinical exams requested in this encounter
+  const { data: examRows } = await supabaseAdmin
+    .from('hub_clinical_exams')
+    .select('id, exam_type, lab_kind, lab_name, external_lab_name, price')
+    .eq('hub_encounter_id', encounterId)
+    .neq('status', 'cancelled')
+    .is('deleted_at', null);
+  for (const exam of examRows ?? []) {
+    const examRow = exam as Record<string, unknown>;
+    const amount = typeof examRow.price === 'number' ? examRow.price : 0;
+    const labLabel =
+      examRow.lab_kind === 'external'
+        ? examRow.external_lab_name
+          ? ` — ${String(examRow.external_lab_name)}`
+          : ' (externo)'
+        : examRow.lab_name
+          ? ` — ${String(examRow.lab_name)}`
+          : '';
+    allItems.push({
+      pet_id: petId,
+      item_kind: 'service',
+      hub_service_type_id: null,
+      hub_inventory_item_id: null,
+      hub_inventory_lot_id: null,
+      description: `Exame: ${String(examRow.exam_type || 'Exame')}${labLabel}`,
+      quantity: 1,
+      unit_amount: amount,
+      discount_amount: 0,
+      line_total: amount,
+      service_date: null,
+      origin_type: 'clinical_exam',
+      origin_id: examRow.id as string,
+      sort_order: allItems.length,
+    });
+    subtotal += amount;
+  }
+
+  // Fallback: generic consultation fee if nothing was found
   if (allItems.length === 0) {
     allItems.push({
       pet_id: petId,
@@ -464,6 +570,7 @@ async function buildComandaItemsFromEncounter(
       sort_order: 0,
     });
   }
+
   return {
     items: allItems,
     subtotal: round2(subtotal),
@@ -480,13 +587,13 @@ function mapItemToReceivableLineKind(originType: string | null): 'appointment_se
   return 'manual';
 }
 
-const openComandaBodySchema = z
-  .object({
-    clinic_id: uuidStr,
-    origin_type: comandaOriginSchema,
-    origin_id: uuidStr,
-  })
-  .strict();
+const openComandaBodySchema = z.object({
+  clinic_id: uuidStr,
+  origin_type: comandaOriginSchema,
+  origin_id: uuidStr,
+  hub_case_id: uuidStr.optional().nullable(),
+  hub_encounter_id: uuidStr.optional().nullable(),
+});
 
 export const postHubComandaOpen = async (req: Request, res: Response) => {
   try {
@@ -494,7 +601,7 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
     if (!parsed.success) {
       return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
     }
-    const { clinic_id, origin_type, origin_id } = parsed.data;
+    const { clinic_id, origin_type, origin_id, hub_case_id, hub_encounter_id } = parsed.data;
 
     const keys = await fetchActiveReceivableKeys(clinic_id);
     if (keys.has(`${origin_type}:${origin_id}`)) {
@@ -545,6 +652,20 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
     const discount = 0;
     const total = round2(Math.max(0, built.subtotal - discount));
 
+    // Derive hub_encounter_id from encounter origin when not explicitly provided
+    const resolvedEncounterId =
+      hub_encounter_id ?? (origin_type === 'encounter' ? origin_id : null);
+    // Derive hub_case_id from encounter when not explicitly provided
+    let resolvedCaseId = hub_case_id ?? null;
+    if (!resolvedCaseId && resolvedEncounterId) {
+      const { data: encCase } = await supabaseAdmin
+        .from('hub_encounters')
+        .select('hub_case_id')
+        .eq('id', resolvedEncounterId)
+        .maybeSingle();
+      resolvedCaseId = (encCase?.hub_case_id as string | null) ?? null;
+    }
+
     const { data: comanda, error: cErr } = await supabaseAdmin
       .from('hub_comandas')
       .insert({
@@ -553,6 +674,8 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
         guardian_id: built.guardian_id,
         origin_type,
         origin_id,
+        hub_case_id: resolvedCaseId,
+        hub_encounter_id: resolvedEncounterId,
         status: 'aberta',
         subtotal_amount: built.subtotal,
         discount_amount: discount,
