@@ -11,6 +11,7 @@ import {
   type AgendaStatus,
 } from './agendaModel';
 import { isOperationalClinicalGroup } from '../../utils/serviceTypeSlug';
+import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
 
 export type AppointmentDetailPanelProps = {
   appointment: AgendaAppointment;
@@ -23,6 +24,8 @@ export type AppointmentDetailPanelProps = {
   onOpenCheckout?: (appointmentId: string) => void | Promise<void>;
   /** Abre atendimento clínico (serviços do grupo clínica). */
   onOpenInClinic?: (appointmentId: string) => void | Promise<void>;
+  /** Link «Ver no Caixa» no badge de ajuste financeiro. */
+  canViewFinancial?: boolean;
 };
 
 function formatPanelDate(d: Date): string {
@@ -37,6 +40,9 @@ function appointmentKindLabel(kind: string | undefined): string {
   if (kind === 'hotel_stay') return 'Hotel / hospedagem';
   if (kind === 'daycare_block') return 'Creche';
   if (kind === 'pickup_route') return 'Leva e traz';
+  if (kind === 'clinical_walk_in') return 'Encaixe clínico (atendimento imediato)';
+  if (kind === 'clinical_emergency') return 'Emergência na agenda';
+  if (kind === 'standard') return 'Agendamento';
   return 'Atendimento';
 }
 
@@ -66,9 +72,11 @@ function buildPanelActions(
     onCheckIn: () => void;
     onComplete: () => void;
     onOpenCheckout: () => void;
+    onOpenInClinic: () => void;
     onDuplicate: () => void;
     onCancel: () => void;
   },
+  onOpenInClinic?: (id: string) => void,
 ): { primary: PanelAction | null; secondary: PanelAction | null; menu: PanelAction[] } {
   const dup: PanelAction = {
     key: 'duplicate',
@@ -104,9 +112,21 @@ function buildPanelActions(
         secondary: canWrite ? dup : null,
         menu: [cancel],
       };
+    case 'checked_in':
+      return {
+        primary: canWrite && onOpenInClinic
+          ? { key: 'open-clinic', label: 'Iniciar atendimento', variant: 'primary', onClick: handlers.onOpenInClinic }
+          : canWrite
+          ? { key: 'complete', label: 'Concluir', variant: 'primary', onClick: handlers.onComplete }
+          : null,
+        secondary: null,
+        menu: [cancel],
+      };
     case 'in_progress':
       return {
-        primary: canWrite
+        primary: canWrite && onOpenInClinic
+          ? { key: 'open-clinic', label: 'Continuar atendimento', variant: 'primary', onClick: handlers.onOpenInClinic }
+          : canWrite
           ? { key: 'complete', label: 'Concluir', variant: 'primary', onClick: handlers.onComplete }
           : null,
         secondary: null,
@@ -146,6 +166,7 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
   onCancel,
   onOpenCheckout,
   onOpenInClinic,
+  canViewFinancial = false,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -170,22 +191,23 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
   const handlers = useMemo(
     () => ({
       onConfirm: () => void onStatusChange('confirmed'),
-      onCheckIn: () => void onStatusChange('in_progress'),
+      onCheckIn: () => void onStatusChange('checked_in'),
       onComplete: () => void onStatusChange('done'),
       onOpenCheckout: () => void onOpenCheckout?.(appt.id),
+      onOpenInClinic: () => void onOpenInClinic?.(appt.id),
       onDuplicate,
       onCancel,
     }),
-    [onStatusChange, onOpenCheckout, appt.id, onDuplicate, onCancel],
+    [onStatusChange, onOpenCheckout, onOpenInClinic, appt.id, onDuplicate, onCancel],
   );
 
   const { primary, secondary, menu } = useMemo(() => {
-    const base = buildPanelActions(appt.status, canWrite, handlers);
+    const base = buildPanelActions(appt.status, canWrite, handlers, onOpenInClinic);
     if (appt.status === 'done' && !onOpenCheckout) {
       return { ...base, primary: null };
     }
     return base;
-  }, [appt.status, canWrite, handlers, onOpenCheckout]);
+  }, [appt.status, canWrite, handlers, onOpenCheckout, onOpenInClinic]);
 
   const secondaryAsButton =
     secondary && secondary.key === 'duplicate'
@@ -206,6 +228,11 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
             <X size={20} />
           </button>
         </div>
+
+        <FinancialAdjustmentPendingBadge
+          pending={Boolean(appt.financial_adjustment_pending)}
+          showCaixaLink={canViewFinancial}
+        />
 
         <div className="hub-agenda__panel-status-row">
           <label className="hub-agenda__panel-status-label" htmlFor="hub-appt-status">

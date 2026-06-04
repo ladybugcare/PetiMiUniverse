@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { resolveOrCreateClinicalCase } from './hubClinicalCasesController';
 import { recordTimelineEvent } from './hubClinicalTimelineController';
+import {
+  syncOpenComandasAfterEncounterCompleted,
+  maybeFlagComandaCancellationPending,
+  financialAdjustmentFlagsForEncounters,
+  financialAdjustmentFlagsForAppointments,
+} from './hubComandasController';
 
 /** Grava um snapshot versionado do documento clínico em hub_clinical_document_versions. */
 async function saveEncounterSnapshot(opts: {
@@ -73,6 +79,43 @@ const diagnosisSchema = z
 
 const OPERATIONAL_CLINICAL_SERVICE_GROUPS = ['clinica', 'internacao', 'cirurgia'] as const;
 
+async function fetchPrimaryGuardianIdForPet(petId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_pet_guardians')
+    .select('guardian_id')
+    .eq('pet_id', petId)
+    .eq('role', 'primary')
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { guardian_id: string }).guardian_id ?? null;
+}
+
+async function guardianInClinic(clinicId: string, guardianId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_guardians')
+    .select('id')
+    .eq('id', guardianId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error || !data) return false;
+  return true;
+}
+
+/** Tutor vinculado ao pet (papel primário ou secundário). */
+async function guardianLinkedToPet(petId: string, guardianId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_pet_guardians')
+    .select('id')
+    .eq('pet_id', petId)
+    .eq('guardian_id', guardianId)
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return false;
+  return true;
+}
+
 const dayBoardQuerySchema = z
   .object({
     clinic_id: uuidStr,
@@ -91,10 +134,23 @@ const createEncounterSchema = z
   .object({
     clinic_id: uuidStr,
     unit_id: uuidStr.optional().nullable(),
-    pet_id: uuidStr,
+    // Para emergência, pet_id é opcional (pode ser identificado depois).
+    // Para demais tipos permanece obrigatório (validado pelo refine abaixo).
+    pet_id: uuidStr.optional().nullable(),
     guardian_id: uuidStr.optional().nullable(),
     hub_appointment_id: uuidStr.optional().nullable(),
     hub_staff_member_id: uuidStr.optional().nullable(),
+    /** Walk-in: serviço nas áreas Clínica / Internação / Cirurgia (opcional na API; recomendado na UI). */
+    hub_service_type_id: uuidStr.optional().nullable(),
+    /**
+     * @deprecated Use o fluxo `POST /appointments` (status `checked_in`) seguido de
+     * `POST /encounters/open-from-appointment`. O campo ainda é aceito por compatibilidade
+     * mas não deve ser usado por novos clientes.
+     *
+     * Quando true, cria um slot em `hub_appointments` (categoria `clinical_walk_in` ou `clinical_emergency`)
+     * no horário atual e vincula ao atendimento. Exige `hub_service_type_id`; não combinar com `hub_appointment_id`.
+     */
+    link_agenda_slot: z.boolean().optional(),
     chief_complaint: z.string().trim().max(4000).optional().nullable(),
     summary_notes: z.string().trim().max(8000).optional().nullable(),
     // Caso clínico: enviar hub_case_id para associar a caso existente,
@@ -103,7 +159,11 @@ const createEncounterSchema = z
     create_new_case: z.boolean().optional(),
     encounter_type: encounterTypeSchema.optional().default('consultation'),
   })
-  .strict();
+  .strict()
+  .refine((d) => d.encounter_type === 'emergency' || !!d.pet_id, {
+    message: 'pet_id é obrigatório para atendimentos não-emergência',
+    path: ['pet_id'],
+  });
 
 const patchEncounterSchema = z
   .object({
@@ -115,6 +175,10 @@ const patchEncounterSchema = z
     physical_exam: physicalExamSchema,
     diagnosis: diagnosisSchema,
     hub_staff_member_id: uuidStr.optional().nullable(),
+    guardian_id: uuidStr.optional().nullable(),
+    // Campos de identificação posterior (urgência sem pet/tutor).
+    pet_id: uuidStr.optional().nullable(),
+    hub_case_id: uuidStr.optional().nullable(),
   })
   .strict();
 
@@ -150,6 +214,97 @@ async function getOperationalClinicalServiceTypeIds(clinicId: string): Promise<s
   return (data ?? []).map((r: { id: string }) => r.id);
 }
 
+/** Serviço da clínica, na mesma matriz operacional do painel de atendimentos. */
+async function assertOperationalClinicalServiceType(clinicId: string, serviceTypeId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('hub_service_types')
+    .select('id, service_group')
+    .eq('id', serviceTypeId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (!data) return false;
+  const g = String((data as { service_group: string }).service_group || '');
+  return (OPERATIONAL_CLINICAL_SERVICE_GROUPS as readonly string[]).includes(g);
+}
+
+type ClinicalAgendaKind = 'clinical_walk_in' | 'clinical_emergency';
+
+/** Cria agendamento «encaixe» na agenda principal e retorna o id (com linha em hub_appointment_services). */
+async function createLinkedClinicalAgendaAppointment(params: {
+  clinic_id: string;
+  unit_id: string | null;
+  pet_id: string | null;
+  guardian_id: string | null;
+  hub_staff_member_id: string | null;
+  hub_service_type_id: string;
+  chief_complaint: string | null;
+  appointment_kind: ClinicalAgendaKind;
+}): Promise<string> {
+  const { data: st, error: stErr } = await supabaseAdmin
+    .from('hub_service_types')
+    .select('id, name, default_duration_minutes')
+    .eq('id', params.hub_service_type_id)
+    .eq('clinic_id', params.clinic_id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (stErr || !st) {
+    throw new Error('Tipo de serviço não encontrado para o encaixe na agenda.');
+  }
+  const rawDur = (st as { default_duration_minutes?: number | null }).default_duration_minutes;
+  const durMin = Math.min(480, Math.max(15, typeof rawDur === 'number' && rawDur > 0 ? rawDur : 30));
+  const start = new Date();
+  const end = new Date(start.getTime() + durMin * 60_000);
+  const cc = params.chief_complaint?.trim() ?? '';
+  const title =
+    cc.length > 0 ? cc.slice(0, 240) : String((st as { name?: string }).name || 'Atendimento clínico');
+
+  const insertAppt: Record<string, unknown> = {
+    clinic_id: params.clinic_id,
+    unit_id: params.unit_id,
+    hub_service_type_id: params.hub_service_type_id,
+    hub_staff_member_id: params.hub_staff_member_id,
+    pet_id: params.pet_id,
+    guardian_id: params.guardian_id,
+    starts_at: start.toISOString(),
+    ends_at: end.toISOString(),
+    status: 'in_progress',
+    resource_label: null,
+    notes: cc.length > 0 ? cc : null,
+    appointment_kind: params.appointment_kind,
+    title,
+    description: null,
+    financial_notes: null,
+    series_id: null,
+    series_occurrence_date: null,
+    pricing_porte_tier: null,
+    pricing_coat_type: null,
+  };
+
+  const { data: apptRow, error: apptErr } = await supabaseAdmin
+    .from('hub_appointments')
+    .insert(insertAppt)
+    .select('id')
+    .single();
+  if (apptErr || !apptRow) {
+    throw new Error(apptErr?.message || 'Não foi possível criar o registro na agenda.');
+  }
+  const apptId = (apptRow as { id: string }).id;
+
+  const { error: svcErr } = await supabaseAdmin.from('hub_appointment_services').insert({
+    appointment_id: apptId,
+    hub_service_type_id: params.hub_service_type_id,
+    duration_minutes: durMin,
+    order_index: 0,
+  });
+  if (svcErr) {
+    await supabaseAdmin.from('hub_appointments').delete().eq('id', apptId);
+    throw new Error(svcErr.message);
+  }
+
+  return apptId;
+}
+
 /** Fallback quando o cliente envia só `date` (YYYY-MM-DD) — dia civil em America/Sao_Paulo. */
 function dayBoundsFromYmdSaoPaulo(dateYmd: string): { from: string; to: string } {
   const from = new Date(`${dateYmd}T00:00:00-03:00`);
@@ -183,18 +338,20 @@ function appointmentMatchesClinicalTypes(
 }
 
 async function enrichEncounter(row: Record<string, unknown>) {
-  const petId = row.pet_id as string;
+  const petId = (row.pet_id as string | null | undefined) ?? null;
   const guId = row.guardian_id as string | null;
   const staffId = row.hub_staff_member_id as string | null;
   const apptId = row.hub_appointment_id as string | null;
   const caseId = row.hub_case_id as string | null;
 
   const [petRes, guRes, staffRes, apptRes, caseRes] = await Promise.all([
-    supabaseAdmin
-      .from('hub_pets')
-      .select('id, name, species, breed, size_tier, birth_date, coat_type')
-      .eq('id', petId)
-      .maybeSingle(),
+    petId
+      ? supabaseAdmin
+          .from('hub_pets')
+          .select('id, name, species, breed, size_tier, birth_date, coat_type')
+          .eq('id', petId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
     guId
       ? supabaseAdmin.from('hub_guardians').select('id, full_name').eq('id', guId).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -204,7 +361,7 @@ async function enrichEncounter(row: Record<string, unknown>) {
     apptId
       ? supabaseAdmin
           .from('hub_appointments')
-          .select('id, starts_at, ends_at, status, hub_service_type_id, title')
+          .select('id, starts_at, ends_at, status, hub_service_type_id, title, appointment_kind')
           .eq('id', apptId)
           .maybeSingle()
       : Promise.resolve({ data: null }),
@@ -219,14 +376,21 @@ async function enrichEncounter(row: Record<string, unknown>) {
 
   let serviceType = null;
   const appt = apptRes.data as Record<string, unknown> | null;
-  if (appt?.hub_service_type_id) {
+  const serviceTypeIdToLoad = (appt?.hub_service_type_id as string | null | undefined) || null;
+  if (serviceTypeIdToLoad) {
     const { data: st } = await supabaseAdmin
       .from('hub_service_types')
       .select('id, name, service_group')
-      .eq('id', appt.hub_service_type_id as string)
+      .eq('id', serviceTypeIdToLoad)
       .maybeSingle();
     serviceType = st;
   }
+
+  const clinicId = row.clinic_id as string;
+  const encId = row.id as string;
+  const adj = clinicId
+    ? (await financialAdjustmentFlagsForEncounters(clinicId, [encId])).get(encId)
+    : undefined;
 
   return {
     ...row,
@@ -236,6 +400,8 @@ async function enrichEncounter(row: Record<string, unknown>) {
     appointment: appt,
     service_type: serviceType,
     case: caseRes.data,
+    financial_adjustment_pending: adj?.financial_adjustment_pending ?? false,
+    comanda_id: adj?.comanda_id ?? null,
   };
 }
 
@@ -252,6 +418,45 @@ async function assertPetInClinic(clinicId: string, petId: string): Promise<boole
     .is('deleted_at', null)
     .maybeSingle();
   return !!data;
+}
+
+/**
+ * Resolve a identidade faturável do atendimento: (guardian_id + pet_id) diretos no encounter
+ * OU derivados do caso clínico vinculado (pet_id do caso + tutor principal ou snapshot).
+ * Retorna null quando a identidade não puder ser resolvida.
+ */
+async function resolveBillingIdentity(enc: {
+  pet_id: string | null;
+  guardian_id: string | null;
+  hub_case_id: string | null;
+  clinic_id: string;
+}): Promise<{ pet_id: string; guardian_id: string } | null> {
+  if (enc.guardian_id && enc.pet_id) {
+    return { guardian_id: enc.guardian_id, pet_id: enc.pet_id };
+  }
+  if (!enc.hub_case_id) return null;
+
+  const { data: caseRow } = await supabaseAdmin
+    .from('hub_clinical_cases')
+    .select('id, pet_id, guardian_id_snapshot')
+    .eq('id', enc.hub_case_id)
+    .eq('clinic_id', enc.clinic_id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (!caseRow) return null;
+
+  const casePetId = (caseRow as { pet_id: string | null }).pet_id;
+  if (!casePetId) return null;
+
+  const effectivePetId = enc.pet_id ?? casePetId;
+  let effectiveGuardianId = enc.guardian_id ?? (caseRow as { guardian_id_snapshot: string | null }).guardian_id_snapshot;
+
+  if (!effectiveGuardianId) {
+    effectiveGuardianId = await fetchPrimaryGuardianIdForPet(effectivePetId);
+  }
+  if (!effectiveGuardianId) return null;
+
+  return { pet_id: effectivePetId, guardian_id: effectiveGuardianId };
 }
 
 /** GET /encounters/day-board — fila do dia (agenda clínica + atendimentos avulsos). */
@@ -278,7 +483,7 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
     let apptQ = supabaseAdmin
       .from('hub_appointments')
       .select(
-        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, starts_at, ends_at, status, title, hub_service_type_id',
+        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, starts_at, ends_at, status, title, notes, appointment_kind, hub_service_type_id',
       )
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
@@ -373,7 +578,7 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
       if (a.hub_staff_member_id) staffIds.add(a.hub_staff_member_id as string);
     }
     for (const e of (encounters ?? []) as Record<string, unknown>[]) {
-      petIds.add(e.pet_id as string);
+      if (e.pet_id) petIds.add(e.pet_id as string);
       if (e.guardian_id) guIds.add(e.guardian_id as string);
       if (e.hub_staff_member_id) staffIds.add(e.hub_staff_member_id as string);
     }
@@ -419,7 +624,9 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
           starts_at: a.starts_at,
           ends_at: a.ends_at,
           appointment_status: a.status,
+          appointment_kind: a.appointment_kind,
           title: a.title,
+          notes: a.notes,
           service_type: stMap.get(a.hub_service_type_id as string) ?? null,
           pet: a.pet_id ? petMap.get(a.pet_id as string) : null,
           guardian: a.guardian_id ? guMap.get(a.guardian_id as string) : null,
@@ -446,6 +653,20 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
       ).getTime();
       return ta - tb;
     });
+
+    const apptIdsForAdj = [
+      ...new Set(items.map((it) => it.appointment_id as string | null | undefined).filter(Boolean) as string[]),
+    ];
+    const adjByAppt = await financialAdjustmentFlagsForAppointments(clinic_id, apptIdsForAdj);
+    for (const item of items) {
+      const aid = item.appointment_id as string | null | undefined;
+      if (!aid) continue;
+      const f = adjByAppt.get(aid);
+      if (f?.financial_adjustment_pending) {
+        item.financial_adjustment_pending = true;
+        item.comanda_id = f.comanda_id;
+      }
+    }
 
     return res.json({
       items,
@@ -515,8 +736,23 @@ export const createHubEncounter = async (req: Request, res: Response) => {
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
 
-    if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
-      return res.status(400).json({ error: 'Pet inválido' });
+    const encounterType = b.encounter_type ?? 'consultation';
+    const isEmergency = encounterType === 'emergency';
+    const hasPet = !!b.pet_id;
+
+    if (b.hub_service_type_id) {
+      if (!(await assertOperationalClinicalServiceType(b.clinic_id, b.hub_service_type_id))) {
+        return res.status(400).json({
+          error: 'O tipo de serviço deve ser da área Clínica, Internação ou Cirurgia.',
+        });
+      }
+    }
+
+    if (b.link_agenda_slot && b.hub_appointment_id) {
+      return res.status(400).json({ error: 'Não combine link_agenda_slot com hub_appointment_id.' });
+    }
+    if (b.link_agenda_slot && !b.hub_service_type_id) {
+      return res.status(400).json({ error: 'Para criar o encaixe na agenda principal, informe hub_service_type_id.' });
     }
 
     if (b.hub_appointment_id) {
@@ -533,33 +769,83 @@ export const createHubEncounter = async (req: Request, res: Response) => {
 
     const now = new Date().toISOString();
 
-    // Resolve ou cria o caso clínico antes de inserir o atendimento
-    let caseId: string;
-    try {
-      caseId = await resolveOrCreateClinicalCase({
-        clinic_id: b.clinic_id,
-        unit_id: b.unit_id,
-        pet_id: b.pet_id,
-        guardian_id: b.guardian_id,
-        primary_veterinarian_id: b.hub_staff_member_id,
-        chief_complaint: b.chief_complaint,
-        started_at: now,
-        hub_case_id: b.hub_case_id,
-        create_new_case: b.create_new_case,
-      });
-    } catch (caseErr: unknown) {
-      return res.status(400).json({ error: (caseErr as Error)?.message || 'Erro ao resolver caso clínico' });
+    // Ramo emergência sem pet: pula validações de pet/tutor e não cria caso.
+    let resolvedGuardianId: string | null = null;
+    let caseId: string | null = null;
+
+    if (hasPet) {
+      if (!(await assertPetInClinic(b.clinic_id, b.pet_id!))) {
+        return res.status(400).json({ error: 'Pet inválido' });
+      }
+      resolvedGuardianId = b.guardian_id ?? null;
+      if (!resolvedGuardianId) {
+        resolvedGuardianId = await fetchPrimaryGuardianIdForPet(b.pet_id!);
+      }
+      if (!resolvedGuardianId) {
+        if (!isEmergency) {
+          return res.status(400).json({
+            error:
+              'É obrigatório ter um tutor responsável cadastrado e selecionado. Vincule o tutor ao pet na ficha do cliente ou escolha o tutor antes de iniciar o atendimento.',
+          });
+        }
+        // Emergência com pet mas sem tutor: segue sem tutor (será identificado depois).
+      } else {
+        if (!(await guardianInClinic(b.clinic_id, resolvedGuardianId))) {
+          return res.status(400).json({ error: 'Tutor inválido para esta clínica' });
+        }
+        if (!(await guardianLinkedToPet(b.pet_id!, resolvedGuardianId))) {
+          return res.status(400).json({ error: 'O tutor informado não está vinculado a este pet' });
+        }
+      }
+
+      // Resolve ou cria o caso clínico apenas quando há pet.
+      try {
+        caseId = await resolveOrCreateClinicalCase({
+          clinic_id: b.clinic_id,
+          unit_id: b.unit_id,
+          pet_id: b.pet_id!,
+          guardian_id: resolvedGuardianId,
+          primary_veterinarian_id: b.hub_staff_member_id,
+          chief_complaint: b.chief_complaint,
+          started_at: now,
+          hub_case_id: b.hub_case_id,
+          create_new_case: b.create_new_case,
+        });
+      } catch (caseErr: unknown) {
+        return res.status(400).json({ error: (caseErr as Error)?.message || 'Erro ao resolver caso clínico' });
+      }
+    } else {
+      // Emergência sem pet: guarda hub_case_id se o cliente enviar um explicitamente (não criamos, só vinculamos).
+      caseId = b.hub_case_id ?? null;
+    }
+
+    let effectiveApptId: string | null = b.hub_appointment_id ?? null;
+    if (b.link_agenda_slot && b.hub_service_type_id) {
+      try {
+        effectiveApptId = await createLinkedClinicalAgendaAppointment({
+          clinic_id: b.clinic_id,
+          unit_id: b.unit_id ?? null,
+          pet_id: b.pet_id ?? null,
+          guardian_id: resolvedGuardianId,
+          hub_staff_member_id: b.hub_staff_member_id ?? null,
+          hub_service_type_id: b.hub_service_type_id,
+          chief_complaint: b.chief_complaint ?? null,
+          appointment_kind: encounterType === 'emergency' ? 'clinical_emergency' : 'clinical_walk_in',
+        });
+      } catch (slotErr: unknown) {
+        return res.status(400).json({ error: (slotErr as Error).message || 'Erro ao criar encaixe na agenda' });
+      }
     }
 
     const insert = {
       clinic_id: b.clinic_id,
       unit_id: b.unit_id ?? null,
-      pet_id: b.pet_id,
-      guardian_id: b.guardian_id ?? null,
-      hub_appointment_id: b.hub_appointment_id ?? null,
+      pet_id: b.pet_id ?? null,
+      guardian_id: resolvedGuardianId,
+      hub_appointment_id: effectiveApptId,
       hub_staff_member_id: b.hub_staff_member_id ?? null,
       hub_case_id: caseId,
-      encounter_type: b.encounter_type ?? 'consultation',
+      encounter_type: encounterType,
       status: 'in_progress' as const,
       chief_complaint: b.chief_complaint ?? null,
       summary_notes: b.summary_notes ?? null,
@@ -569,26 +855,29 @@ export const createHubEncounter = async (req: Request, res: Response) => {
     const { data, error } = await supabaseAdmin.from('hub_encounters').insert(insert).select(ENCOUNTER_SELECT).single();
     if (error) return res.status(500).json({ error: error.message });
 
-    if (b.hub_appointment_id) {
+    if (effectiveApptId) {
       await supabaseAdmin
         .from('hub_appointments')
         .update({ status: 'in_progress' })
-        .eq('id', b.hub_appointment_id)
+        .eq('id', effectiveApptId)
         .eq('clinic_id', b.clinic_id);
     }
 
     const enc = data as Record<string, unknown>;
-    void recordTimelineEvent({
-      clinic_id: b.clinic_id,
-      pet_id: b.pet_id,
-      hub_case_id: caseId,
-      hub_encounter_id: enc.id as string,
-      event_type: 'encounter_created',
-      ref_type: 'encounter',
-      ref_id: enc.id as string,
-      title: 'Atendimento iniciado',
-      body: b.chief_complaint ?? null,
-    });
+    // Só registra no timeline quando o pet já foi identificado.
+    if (hasPet && caseId) {
+      void recordTimelineEvent({
+        clinic_id: b.clinic_id,
+        pet_id: b.pet_id!,
+        hub_case_id: caseId,
+        hub_encounter_id: enc.id as string,
+        event_type: 'encounter_created',
+        ref_type: 'encounter',
+        ref_id: enc.id as string,
+        title: 'Atendimento iniciado',
+        body: b.chief_complaint ?? null,
+      });
+    }
 
     const encounter = await enrichEncounter(enc);
     return res.status(201).json({ encounter });
@@ -598,16 +887,28 @@ export const createHubEncounter = async (req: Request, res: Response) => {
   }
 };
 
-/** POST /encounters/open-from-appointment */
+/** POST /encounters/open-from-appointment
+ *
+ * Único ponto de criação de encounter a partir de um slot na agenda clínica.
+ * Aceita overrides opcionais de caso clínico que têm precedência sobre os
+ * campos intake_* do agendamento (usados pelo modal "Iniciar atendimento").
+ * Para appointment_kind === 'clinical_emergency', permite ausência de pet_id.
+ */
 export const openHubEncounterFromAppointment = async (req: Request, res: Response) => {
   try {
     const body = z
-      .object({ clinic_id: uuidStr, hub_appointment_id: uuidStr })
-      .strict()
+      .object({
+        clinic_id: uuidStr,
+        hub_appointment_id: uuidStr,
+        hub_case_id: uuidStr.optional().nullable(),
+        create_new_case: z.boolean().optional(),
+        new_case_title: z.string().max(200).optional().nullable(),
+      })
       .safeParse(req.body);
     if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
     const { clinic_id, hub_appointment_id } = body.data;
+
     const { data: existing } = await supabaseAdmin
       .from('hub_encounters')
       .select(ENCOUNTER_SELECT)
@@ -623,45 +924,89 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
 
     const { data: appt, error: apptErr } = await supabaseAdmin
       .from('hub_appointments')
-      .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes')
+      .select(
+        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, appointment_kind, intake_hub_case_id, intake_create_new_case, intake_new_case_title',
+      )
       .eq('id', hub_appointment_id)
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
       .maybeSingle();
     if (apptErr) return res.status(500).json({ error: apptErr.message });
     if (!appt) return res.status(404).json({ error: 'Agendamento não encontrado' });
-    if (!appt.pet_id) return res.status(400).json({ error: 'Agendamento sem pet associado' });
 
+    const apptRow = appt as Record<string, unknown>;
+    const apptKind = (apptRow.appointment_kind as string | null | undefined) ?? 'standard';
+    const isEmergency = apptKind === 'clinical_emergency';
+
+    const petId = (apptRow.pet_id as string | null | undefined) ?? null;
+
+    if (!petId && !isEmergency) {
+      return res.status(400).json({
+        error: 'Agendamento sem pet associado. Informe o pet antes de iniciar o atendimento.',
+      });
+    }
+
+    const encounterType: string = isEmergency ? 'emergency' : 'consultation';
     const now = new Date().toISOString();
 
-    let caseId: string;
-    try {
-      caseId = await resolveOrCreateClinicalCase({
-        clinic_id,
-        unit_id: appt.unit_id,
-        pet_id: appt.pet_id,
-        guardian_id: appt.guardian_id,
-        primary_veterinarian_id: appt.hub_staff_member_id,
-        chief_complaint: appt.notes,
-        started_at: now,
-      });
-    } catch (caseErr: unknown) {
-      return res.status(400).json({ error: (caseErr as Error)?.message || 'Erro ao resolver caso clínico' });
+    // Overrides do body têm precedência sobre os campos intake_* do agendamento
+    const intakeCaseId = body.data.hub_case_id !== undefined
+      ? body.data.hub_case_id
+      : ((apptRow.intake_hub_case_id as string | null | undefined) ?? null);
+    const intakeCreateNew = body.data.create_new_case !== undefined
+      ? body.data.create_new_case
+      : apptRow.intake_create_new_case === true;
+    const intakeNewTitle = body.data.new_case_title !== undefined
+      ? body.data.new_case_title
+      : ((apptRow.intake_new_case_title as string | null | undefined) ?? null);
+
+    let caseId: string | null = null;
+    let resolvedGuardianId: string | null = null;
+
+    if (petId) {
+      let apptGuardianId = (apptRow.guardian_id as string | null | undefined) ?? null;
+      if (!apptGuardianId) {
+        apptGuardianId = await fetchPrimaryGuardianIdForPet(petId);
+      }
+      if (!apptGuardianId) {
+        return res.status(400).json({
+          error:
+            'Agendamento sem tutor e o pet não possui tutor principal. Informe o tutor no agendamento ou vincule-o ao pet antes de abrir o atendimento.',
+        });
+      }
+      resolvedGuardianId = apptGuardianId;
+
+      try {
+        caseId = await resolveOrCreateClinicalCase({
+          clinic_id,
+          unit_id: apptRow.unit_id as string | null,
+          pet_id: petId,
+          guardian_id: apptGuardianId,
+          primary_veterinarian_id: apptRow.hub_staff_member_id as string | null,
+          chief_complaint: apptRow.notes as string | null,
+          started_at: now,
+          hub_case_id: intakeCaseId,
+          create_new_case: intakeCreateNew,
+          new_case_title: intakeNewTitle,
+        });
+      } catch (caseErr: unknown) {
+        return res.status(400).json({ error: (caseErr as Error)?.message || 'Erro ao resolver caso clínico' });
+      }
     }
 
     const { data, error } = await supabaseAdmin
       .from('hub_encounters')
       .insert({
         clinic_id,
-        unit_id: appt.unit_id,
-        pet_id: appt.pet_id,
-        guardian_id: appt.guardian_id,
+        unit_id: apptRow.unit_id,
+        pet_id: petId,
+        guardian_id: resolvedGuardianId,
         hub_appointment_id,
-        hub_staff_member_id: appt.hub_staff_member_id,
+        hub_staff_member_id: apptRow.hub_staff_member_id,
         hub_case_id: caseId,
-        encounter_type: 'consultation',
+        encounter_type: encounterType,
         status: 'in_progress',
-        chief_complaint: appt.notes,
+        chief_complaint: apptRow.notes,
         started_at: now,
       })
       .select(ENCOUNTER_SELECT)
@@ -670,8 +1015,27 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
 
     await supabaseAdmin
       .from('hub_appointments')
-      .update({ status: 'in_progress' })
-      .eq('id', hub_appointment_id);
+      .update({
+        status: 'in_progress',
+        intake_hub_case_id: null,
+        intake_create_new_case: null,
+        intake_new_case_title: null,
+      })
+      .eq('id', hub_appointment_id)
+      .eq('clinic_id', clinic_id);
+
+    if (petId) {
+      await recordTimelineEvent({
+        clinic_id,
+        pet_id: petId,
+        hub_case_id: caseId ?? null,
+        hub_encounter_id: (data as Record<string, unknown>).id as string,
+        event_type: 'encounter_created',
+        title: 'Atendimento iniciado',
+        ref_type: 'encounter',
+        ref_id: (data as Record<string, unknown>).id as string,
+      });
+    }
 
     const encounter = await enrichEncounter(data as Record<string, unknown>);
     return res.status(201).json({ encounter, created: true });
@@ -689,6 +1053,88 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
 
+    const { data: existingRow, error: exErr } = await supabaseAdmin
+      .from('hub_encounters')
+      .select('id, pet_id, guardian_id, clinic_id, status, hub_case_id')
+      .eq('id', id.data)
+      .eq('clinic_id', b.clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (exErr) return res.status(500).json({ error: exErr.message });
+    if (!existingRow) return res.status(404).json({ error: 'Atendimento não encontrado' });
+
+    const existing = existingRow as { id: string; pet_id: string | null; guardian_id: string | null; clinic_id: string; status: string; hub_case_id: string | null };
+
+    if (existing.status === 'completed') {
+      return res.status(400).json({ error: 'Use o endpoint de emenda para editar atendimentos já finalizados.' });
+    }
+
+    // Validação de guardian_id: não remover, mas permitir primeira atribuição a partir de null.
+    if (b.guardian_id !== undefined) {
+      const gid = b.guardian_id;
+      if (gid === null) {
+        return res.status(400).json({
+          error: 'Não é permitido remover o tutor pelo PATCH. Use outro tutor vinculado ao pet.',
+        });
+      }
+      if (!(await guardianInClinic(b.clinic_id, gid))) {
+        return res.status(400).json({ error: 'Tutor inválido para esta clínica' });
+      }
+      // Só valida vínculo pet-tutor se o atendimento já tiver um pet identificado.
+      if (existing.pet_id) {
+        if (!(await guardianLinkedToPet(existing.pet_id, gid))) {
+          return res.status(400).json({
+            error: 'Este tutor não está vinculado a este pet. Vincule na ficha do cliente ou do pet antes de associar.',
+          });
+        }
+      }
+    }
+
+    // Validação e cópia de identidade ao setar pet_id.
+    if (b.pet_id !== undefined && b.pet_id !== null) {
+      if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Pet inválido para esta clínica' });
+      }
+    }
+
+    // Ao setar hub_case_id: validar caso e copiar pet_id/guardian_id quando ainda ausentes no encounter.
+    if (b.hub_case_id !== undefined && b.hub_case_id !== null) {
+      const { data: caseRow } = await supabaseAdmin
+        .from('hub_clinical_cases')
+        .select('id, pet_id, guardian_id_snapshot')
+        .eq('id', b.hub_case_id)
+        .eq('clinic_id', b.clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (!caseRow) {
+        return res.status(400).json({ error: 'Caso clínico inválido para esta clínica' });
+      }
+      const cRow = caseRow as { id: string; pet_id: string | null; guardian_id_snapshot: string | null };
+      // Copiar pet_id do caso para o encounter se ainda não tiver.
+      if (!existing.pet_id && cRow.pet_id) {
+        if (b.pet_id === undefined) {
+          (b as Record<string, unknown>).pet_id = cRow.pet_id;
+        }
+      }
+      // Copiar guardian quando o encounter ainda não tiver.
+      if (!existing.guardian_id && cRow.guardian_id_snapshot) {
+        if (b.guardian_id === undefined) {
+          // Aplica somente se o guardian ainda pertence à clínica.
+          if (await guardianInClinic(b.clinic_id, cRow.guardian_id_snapshot)) {
+            (b as Record<string, unknown>).guardian_id = cRow.guardian_id_snapshot;
+          }
+        }
+      }
+      // Se o caso tem pet mas o guardian não veio do snapshot, tenta o tutor principal do pet.
+      if (!existing.guardian_id && !b.guardian_id && (b.pet_id ?? existing.pet_id)) {
+        const derivedPetId = (b.pet_id ?? existing.pet_id) as string;
+        const primaryGu = await fetchPrimaryGuardianIdForPet(derivedPetId);
+        if (primaryGu && (await guardianInClinic(b.clinic_id, primaryGu))) {
+          (b as Record<string, unknown>).guardian_id = primaryGu;
+        }
+      }
+    }
+
     const patch: Record<string, unknown> = {};
     if (b.status !== undefined) patch.status = b.status;
     if (b.chief_complaint !== undefined) patch.chief_complaint = b.chief_complaint;
@@ -697,6 +1143,9 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
     if (b.anamnesis !== undefined) patch.anamnesis = b.anamnesis;
     if (b.physical_exam !== undefined) patch.physical_exam = b.physical_exam;
     if (b.diagnosis !== undefined) patch.diagnosis = b.diagnosis;
+    if (b.guardian_id !== undefined) patch.guardian_id = b.guardian_id;
+    if (b.pet_id !== undefined) patch.pet_id = b.pet_id;
+    if (b.hub_case_id !== undefined) patch.hub_case_id = b.hub_case_id;
 
     const { data, error } = await supabaseAdmin
       .from('hub_encounters')
@@ -708,6 +1157,9 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
     if (!data) return res.status(404).json({ error: 'Atendimento não encontrado' });
+    if (patch.status === 'cancelled') {
+      void maybeFlagComandaCancellationPending(b.clinic_id, 'encounter', id.data);
+    }
     const encounter = await enrichEncounter(data as Record<string, unknown>);
     return res.json({ encounter });
   } catch (e: unknown) {
@@ -724,7 +1176,46 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
     }
 
+    const { data: beforeComplete, error: bfErr } = await supabaseAdmin
+      .from('hub_encounters')
+      .select('guardian_id, pet_id, hub_appointment_id, hub_case_id, chief_complaint, status')
+      .eq('id', id.data)
+      .eq('clinic_id', clinic_id.data)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (bfErr) return res.status(500).json({ error: bfErr.message });
+    if (!beforeComplete) return res.status(404).json({ error: 'Atendimento não encontrado' });
+
+    const bf = beforeComplete as { guardian_id: string | null; pet_id: string | null; hub_appointment_id: string | null; hub_case_id: string | null; chief_complaint: string | null; status: string };
+
+    const billingId = await resolveBillingIdentity({
+      pet_id: bf.pet_id,
+      guardian_id: bf.guardian_id,
+      hub_case_id: bf.hub_case_id,
+      clinic_id: clinic_id.data,
+    });
+
+    if (!billingId) {
+      return res.status(409).json({
+        error:
+          'Para finalizar, associe tutor e pet ao atendimento — ou vincule um caso clínico que possua pet/tutor cadastrado. Em urgência, a identificação é obrigatória para encerramento.',
+      });
+    }
+
     const now = new Date().toISOString();
+
+    // Denormaliza identidade faturável no encounter antes de concluir (quando resolvida via caso).
+    const identityPatch: Record<string, unknown> = {};
+    if (!bf.pet_id && billingId.pet_id) identityPatch.pet_id = billingId.pet_id;
+    if (!bf.guardian_id && billingId.guardian_id) identityPatch.guardian_id = billingId.guardian_id;
+    if (Object.keys(identityPatch).length > 0) {
+      await supabaseAdmin
+        .from('hub_encounters')
+        .update(identityPatch)
+        .eq('id', id.data)
+        .eq('clinic_id', clinic_id.data);
+    }
+
     const { data, error } = await supabaseAdmin
       .from('hub_encounters')
       .update({ status: 'completed', completed_at: now })
@@ -737,6 +1228,8 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
     if (!data) return res.status(404).json({ error: 'Atendimento não encontrado' });
 
     const enc = data as Record<string, unknown>;
+    const resolvedPetId = (enc.pet_id as string | null) ?? billingId.pet_id;
+
     if (enc.hub_appointment_id) {
       await supabaseAdmin
         .from('hub_appointments')
@@ -744,28 +1237,34 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
         .eq('id', enc.hub_appointment_id as string);
     }
 
-    await supabaseAdmin.from('hub_encounter_events').insert({
-      clinic_id: clinic_id.data,
-      pet_id: enc.pet_id,
-      hub_encounter_id: id.data,
-      event_type: 'consultation',
-      title: 'Consulta finalizada',
-      body: enc.chief_complaint ?? null,
-      event_at: now,
-    });
+    if (resolvedPetId) {
+      await supabaseAdmin.from('hub_encounter_events').insert({
+        clinic_id: clinic_id.data,
+        pet_id: resolvedPetId,
+        hub_encounter_id: id.data,
+        event_type: 'consultation',
+        title: 'Consulta finalizada',
+        body: bf.chief_complaint ?? null,
+        event_at: now,
+      });
+    }
 
-    void recordTimelineEvent({
-      clinic_id: clinic_id.data,
-      pet_id: enc.pet_id as string,
-      hub_case_id: enc.hub_case_id as string | null,
-      hub_encounter_id: id.data,
-      event_type: 'encounter_completed',
-      ref_type: 'encounter',
-      ref_id: id.data,
-      title: 'Atendimento finalizado',
-      body: enc.chief_complaint as string | null,
-      event_at: now,
-    });
+    if (resolvedPetId) {
+      void recordTimelineEvent({
+        clinic_id: clinic_id.data,
+        pet_id: resolvedPetId,
+        hub_case_id: enc.hub_case_id as string | null,
+        hub_encounter_id: id.data,
+        event_type: 'encounter_completed',
+        ref_type: 'encounter',
+        ref_id: id.data,
+        title: 'Atendimento finalizado',
+        body: bf.chief_complaint ?? null,
+        event_at: now,
+      });
+    }
+
+    void syncOpenComandasAfterEncounterCompleted(clinic_id.data, id.data);
 
     const changedBy = (req.body?.changed_by as string | undefined) ?? null;
     void saveEncounterSnapshot({
@@ -841,18 +1340,21 @@ export const amendHubEncounter = async (req: Request, res: Response) => {
       change_reason: b.change_reason,
     });
 
-    void recordTimelineEvent({
-      clinic_id: b.clinic_id,
-      pet_id: enc.pet_id as string,
-      hub_case_id: enc.hub_case_id as string | null,
-      hub_encounter_id: id.data,
-      event_type: 'encounter_amended',
-      ref_type: 'encounter',
-      ref_id: id.data,
-      title: 'Atendimento editado após finalização',
-      body: b.change_reason,
-      created_by: b.changed_by ?? null,
-    });
+    const amendPetId = enc.pet_id as string | null;
+    if (amendPetId) {
+      void recordTimelineEvent({
+        clinic_id: b.clinic_id,
+        pet_id: amendPetId,
+        hub_case_id: enc.hub_case_id as string | null,
+        hub_encounter_id: id.data,
+        event_type: 'encounter_amended',
+        ref_type: 'encounter',
+        ref_id: id.data,
+        title: 'Atendimento editado após finalização',
+        body: b.change_reason,
+        created_by: b.changed_by ?? null,
+      });
+    }
 
     const encounter = await enrichEncounter(enc);
     return res.json({ encounter });

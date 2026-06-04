@@ -19,7 +19,6 @@ const ROUTES: { path: string; title: string }[] = [
   { path: '/hub/clinica/exames', title: 'Clínica — Exames' },
   { path: '/hub/clinica/internacoes', title: 'Clínica — Internações' },
   { path: '/hub/clinica/cirurgias', title: 'Clínica — Cirurgias' },
-  { path: '/hub/clinica/templates', title: 'Clínica — Templates' },
   { path: '/hub/onboarding/clinica', title: 'Configurar clínica' },
   { path: '/signup', title: 'Criar conta' },
   { path: '/email-confirmed', title: 'Confirmar e-mail' },

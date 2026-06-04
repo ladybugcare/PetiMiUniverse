@@ -70,6 +70,7 @@ export function appointmentStatusForGroomingStage(stage: GroomingStage): string 
 
 export function boardStageFromAppointmentStatus(status: string): GroomingStage {
   if (status === 'pending_confirm' || status === 'confirmed') return 'scheduled';
+  if (status === 'checked_in') return 'checked_in';
   if (status === 'in_progress') return 'checked_in';
   if (status === 'done') return 'ready';
   if (status === 'paid') return 'closed';

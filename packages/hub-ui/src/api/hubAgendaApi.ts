@@ -5,12 +5,19 @@ const basePath = '/api/hub/appointments';
 export type HubAppointmentStatus =
   | 'pending_confirm'
   | 'confirmed'
+  | 'checked_in'
   | 'in_progress'
   | 'done'
   | 'cancelled'
   | 'paid';
 
-export type HubAppointmentKind = 'standard' | 'hotel_stay' | 'daycare_block' | 'pickup_route';
+export type HubAppointmentKind =
+  | 'standard'
+  | 'hotel_stay'
+  | 'daycare_block'
+  | 'pickup_route'
+  | 'clinical_walk_in'
+  | 'clinical_emergency';
 
 export type HubAppointmentServiceTypeRef = {
   name: string;
@@ -79,6 +86,8 @@ export type HubAppointment = {
   services: HubAppointmentServiceLine[];
   hub_encounter_id?: string | null;
   hub_encounter_status?: string | null;
+  financial_adjustment_pending?: boolean;
+  comanda_id?: string | null;
 };
 
 export type HubAgendaCalendarBlock = {
@@ -177,6 +186,9 @@ export type CreateHubAppointmentPayload = {
   pickup_route_pricing?: HubAppointmentPickupRoutePricing | null;
   extra_blocks?: CreateExtraBlock[];
   recurrence?: HubAppointmentRecurrenceRule | null;
+  intake_hub_case_id?: string | null;
+  intake_create_new_case?: boolean;
+  intake_new_case_title?: string | null;
 };
 
 export type PatchHubAppointmentPayload = {
@@ -204,6 +216,9 @@ export type PatchHubAppointmentPayload = {
   }>;
   pricing_porte_tier?: string | null;
   pricing_coat_type?: string | null;
+  intake_hub_case_id?: string | null;
+  intake_create_new_case?: boolean;
+  intake_new_case_title?: string | null;
 };
 
 function listAppointmentsUrl(p: ListHubAppointmentsParams): string {

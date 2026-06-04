@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
@@ -51,8 +51,9 @@ import {
   computeOverlapConflictIds,
 } from './agendaModel';
 import { mapHubAppointmentToAgenda } from './mapHubAgenda';
-import { hubEncountersApi } from '../../api/hubClinicalApi';
+import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
+import StartEncounterModal from '../clinica/StartEncounterModal';
 import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import {
   AGENDA_FILTERS_STORAGE_KEY,
@@ -110,6 +111,7 @@ function quoteLineServiceName(line: HubQuoteLine): string | null {
 
 const HubAgendaPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { showAlert, showInfo, showError, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
@@ -120,6 +122,7 @@ const HubAgendaPage: React.FC = () => {
   const canWrite = hasPermission('hub.appointments.write');
   const canClinicWrite = hasPermission('hub.clinic.write');
   const canCreateReceivable = hasPermission('hub.receivables.create');
+  const canViewFinancial = hasPermission('hub.financial.read');
 
   const persisted = useMemo(() => loadPersistedFilters(), []);
 
@@ -153,9 +156,12 @@ const HubAgendaPage: React.FC = () => {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createInitial, setCreateInitial] = useState<NewAppointmentInitial | null>(null);
+  const [createModalLayout, setCreateModalLayout] = useState<'default' | 'clinical_routine'>('default');
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutAppointmentId, setCheckoutAppointmentId] = useState<string | null>(null);
+  const [agendaStartModalItem, setAgendaStartModalItem] = useState<DayBoardItem | null>(null);
+  const [agendaStarting, setAgendaStarting] = useState(false);
   const consumedQuoteRef = useRef<string | null>(null);
 
   const allAppointments = rawList;
@@ -192,12 +198,46 @@ const HubAgendaPage: React.FC = () => {
   const bumpReload = useCallback(() => setReloadToken((t) => t + 1), []);
 
   const openCreateModal = useCallback(
-    (initial?: NewAppointmentInitial | null) => {
+    (initial?: NewAppointmentInitial | null, layout: 'default' | 'clinical_routine' = 'default') => {
       setCreateInitial(initial ?? null);
+      setCreateModalLayout(layout);
       setCreateOpen(true);
     },
     [],
   );
+
+  /** Fluxo Clínica → «Agendar na agenda»: abre o modal de novo agendamento com dados pré-preenchidos. */
+  useEffect(() => {
+    const st = location.state as {
+      openClinicalCreate?: boolean;
+      clinicalIntakeInitial?: NewAppointmentInitial;
+    } | null;
+    if (!st?.openClinicalCreate || !st.clinicalIntakeInitial || !clinicId) return;
+
+    const initial = st.clinicalIntakeInitial;
+    const dedupeKey = `hub:agenda:clinical_prefill:${clinicId}:${initial.date ?? ''}:${initial.pet_id ?? ''}:${initial.guardian_id ?? ''}:${(initial.services ?? []).map((s) => s.hub_service_type_id).join(',')}`;
+
+    let skipOpen = false;
+    try {
+      if (sessionStorage.getItem(dedupeKey) === '1') skipOpen = true;
+      else sessionStorage.setItem(dedupeKey, '1');
+    } catch {
+      /* ignore */
+    }
+
+    if (initial.date) {
+      const d = parseYmd(initial.date);
+      if (d) {
+        setCursorDate(startOfDay(d));
+        setView('day');
+      }
+    }
+    if (!skipOpen) {
+      openCreateModal(initial, 'clinical_routine');
+    }
+
+    navigate(`${location.pathname}${location.search ? location.search : ''}`, { replace: true, state: null });
+  }, [location.state, location.pathname, location.search, clinicId, openCreateModal, navigate]);
 
   const focusAppointmentOnAgenda = useCallback(
     (appointmentId: string, startsAtIso: string) => {
@@ -804,17 +844,51 @@ const HubAgendaPage: React.FC = () => {
   );
 
   const handleOpenInClinic = useCallback(
-    async (appointmentId: string) => {
+    (appointmentId: string) => {
       if (!clinicId || !canClinicWrite) return;
-      try {
-        const { encounter } = await hubEncountersApi.openFromAppointment(clinicId, appointmentId);
-        navigate(`/hub/clinica/atendimentos/${encounter.id}`);
-      } catch (e: unknown) {
-        showError((e as Error)?.message || 'Erro ao abrir na Clínica');
-      }
+      const appt =
+        filtered.find((x) => x.id === appointmentId) ?? allAppointments.find((x) => x.id === appointmentId) ?? null;
+      if (!appt) return;
+      const item: DayBoardItem = {
+        kind: 'appointment_slot',
+        appointment_id: appt.id,
+        appointment_status: appt.status,
+        appointment_kind: appt.appointment_kind ?? null,
+        starts_at: appt.start.toISOString(),
+        ends_at: appt.end.toISOString(),
+        pet_id: appt.petId ?? null,
+        guardian_id: appt.guardianId ?? null,
+        hub_staff_member_id: appt.professionalId ?? null,
+        pet: appt.petId ? { id: appt.petId, name: appt.petName } : null,
+        guardian: appt.guardianId ? { id: appt.guardianId, full_name: appt.guardianName } : null,
+        staff_member: appt.professionalId ? { id: appt.professionalId, full_name: appt.professionalName } : null,
+        service_type: appt.hub_service_type_id
+          ? { id: appt.hub_service_type_id, name: appt.serviceName }
+          : null,
+        title: appt.title ?? null,
+        notes: appt.notes ?? null,
+      };
+      setAgendaStartModalItem(item);
     },
-    [clinicId, canClinicWrite, navigate, showError],
+    [clinicId, canClinicWrite, filtered, allAppointments],
   );
+
+  const handleAgendaStartEncounter = async (
+    item: DayBoardItem,
+    opts: { hub_case_id?: string | null; create_new_case?: boolean; new_case_title?: string | null },
+  ) => {
+    if (!clinicId || !item.appointment_id) return;
+    setAgendaStarting(true);
+    try {
+      const { encounter } = await hubEncountersApi.openFromAppointment(clinicId, item.appointment_id, opts);
+      setAgendaStartModalItem(null);
+      navigate(`/hub/clinica/atendimentos/${encounter.id}`);
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao abrir na Clínica');
+    } finally {
+      setAgendaStarting(false);
+    }
+  };
 
   const handleOpenCheckout = useCallback(
     (appointmentId: string) => {
@@ -1555,15 +1629,20 @@ const HubAgendaPage: React.FC = () => {
             onCancel={requestCancelSelected}
             onOpenCheckout={canCreateReceivable ? handleOpenCheckout : undefined}
             onOpenInClinic={canClinicWrite ? handleOpenInClinic : undefined}
+            canViewFinancial={canViewFinancial}
           />
         ) : null}
       </div>
 
       <NewAppointmentModal
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => {
+          setCreateOpen(false);
+          setCreateModalLayout('default');
+        }}
         onCreated={handleAppointmentCreated}
         initial={createInitial}
+        layoutVariant={createModalLayout}
         staffOptions={fullStaff}
         serviceTypes={fullSvcTypes}
       />
@@ -1585,6 +1664,15 @@ const HubAgendaPage: React.FC = () => {
           }}
         />
       ) : null}
+
+      <StartEncounterModal
+        open={agendaStartModalItem !== null}
+        clinicId={clinicId ?? ''}
+        item={agendaStartModalItem}
+        onClose={() => setAgendaStartModalItem(null)}
+        onStart={handleAgendaStartEncounter}
+        starting={agendaStarting}
+      />
     </div>
   );
 };

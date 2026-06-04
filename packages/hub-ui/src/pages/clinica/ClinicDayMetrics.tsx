@@ -16,13 +16,18 @@ const ClinicDayMetrics: React.FC<Props> = ({ items }) => {
   const waiting = countByStatus(items, ['waiting', 'confirmed', 'pending_confirm']);
   const inProgress = countByStatus(items, ['in_progress']);
   const done = countByStatus(items, ['completed', 'done']);
-  const walkIns = items.filter((i) => i.kind === 'encounter' && !i.appointment_id).length;
+  const encaixesNaAgenda = items.filter((i) => {
+    if (i.kind !== 'encounter') return false;
+    const k = (i as { appointment?: { appointment_kind?: string } }).appointment?.appointment_kind;
+    if (k === 'clinical_walk_in' || k === 'clinical_emergency') return true;
+    return !i.appointment_id;
+  }).length;
 
   const cards = [
     { label: 'Aguardando', value: waiting },
     { label: 'Em atendimento', value: inProgress },
     { label: 'Finalizados', value: done },
-    { label: 'Walk-in', value: walkIns },
+    { label: 'Encaixe na agenda', value: encaixesNaAgenda },
   ];
 
   return (

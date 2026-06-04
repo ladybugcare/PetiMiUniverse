@@ -1,4 +1,4 @@
-import type { HubEncounterEvent, HubPrescription, HubPrescriptionItem } from '../../api/hubClinicalApi';
+import type { HubClinicalExamStatus, HubEncounterEvent, HubPrescription } from '../../api/hubClinicalApi';
 
 export function formatPrescriptionLine(rx: HubPrescription): string {
   const items = rx.items ?? [];
@@ -44,4 +44,24 @@ export function todayYmd(): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+const EXAM_STATUS_LABELS: Record<HubClinicalExamStatus, string> = {
+  requested: 'Solicitado',
+  collected: 'Coletado',
+  sent: 'Enviado ao laboratório',
+  result_received: 'Resultado recebido',
+  completed: 'Concluído',
+  cancelled: 'Cancelado',
+};
+
+export function formatHubClinicalExamStatus(status: HubClinicalExamStatus): string {
+  return EXAM_STATUS_LABELS[status] ?? status;
+}
+
+export function formatHubComandaStatus(status: string): string {
+  if (status === 'aberta') return 'Aberta';
+  if (status === 'fechada') return 'Fechada';
+  if (status === 'cancelada') return 'Cancelada';
+  return status;
 }

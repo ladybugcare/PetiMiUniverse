@@ -43,12 +43,15 @@ export type HubEncounter = {
   id: string;
   clinic_id: string;
   unit_id: string | null;
-  pet_id: string;
+  /** Nullable para urgências abertas sem pet identificado. */
+  pet_id: string | null;
   guardian_id: string | null;
   hub_appointment_id: string | null;
   hub_staff_member_id: string | null;
   hub_case_id: string | null;
   encounter_type: HubEncounterType;
+  /** Walk-in: tipo de serviço principal (Clínica / Internação / Cirurgia). */
+  hub_service_type_id?: string | null;
   status: HubEncounterStatus;
   chief_complaint: string | null;
   summary_notes: string | null;
@@ -63,6 +66,8 @@ export type HubEncounter = {
   appointment?: Record<string, unknown> | null;
   service_type?: { id: string; name: string; service_group?: string } | null;
   case?: { id: string; title: string; status: HubClinicalCaseStatus; opened_at: string; closed_at: string | null } | null;
+  financial_adjustment_pending?: boolean;
+  comanda_id?: string | null;
 };
 
 export type DayBoardItem = {
@@ -72,7 +77,9 @@ export type DayBoardItem = {
   starts_at?: string;
   ends_at?: string;
   appointment_status?: string;
+  appointment_kind?: string | null;
   title?: string | null;
+  notes?: string | null;
   status?: HubEncounterStatus;
   pet?: HubEncounterPet | null;
   guardian?: { id: string; full_name: string } | null;
@@ -102,6 +109,8 @@ export type HubEncounterEvent = {
   created_at?: string;
 };
 
+export type HubPrescriptionAdministration = 'home_use' | 'administered_in_clinic';
+
 export type HubPrescriptionItem = {
   id?: string;
   medication_name: string;
@@ -110,6 +119,19 @@ export type HubPrescriptionItem = {
   duration?: string | null;
   instructions?: string | null;
   hub_inventory_item_id?: string | null;
+  administration?: HubPrescriptionAdministration | string | null;
+};
+
+export type HubPrescriptionDocumentRow = {
+  id: string;
+  prescription_id: string;
+  version_no: number;
+  pdf_path?: string | null;
+  issued_by?: string | null;
+  issued_at?: string | null;
+  signature_status?: string | null;
+  created_at?: string | null;
+  issued_by_member?: { id: string; full_name: string } | null;
 };
 
 export type HubPrescription = {
@@ -117,6 +139,7 @@ export type HubPrescription = {
   clinic_id: string;
   pet_id: string;
   hub_encounter_id?: string | null;
+  hub_case_id?: string | null;
   notes?: string | null;
   status?: string;
   prescribed_at?: string;
@@ -130,6 +153,7 @@ export type HubVaccination = {
   administered_at: string;
   next_dose_at?: string | null;
   hub_encounter_id?: string | null;
+  hub_case_id?: string | null;
 };
 
 export type HubClinicalAttachment = {
@@ -139,6 +163,8 @@ export type HubClinicalAttachment = {
   title?: string | null;
   mime_type?: string | null;
   uploaded_at?: string;
+  hub_encounter_id?: string | null;
+  hub_exam_id?: string | null;
 };
 
 export type HubClinicalAlert = {
@@ -162,6 +188,8 @@ export type HubHospitalization = {
   admitted_at?: string;
   discharged_at?: string | null;
   hub_hospital_bed_id?: string | null;
+  hub_case_id?: string | null;
+  hub_encounter_id?: string | null;
   hub_pets?: { name: string } | null;
   hub_hospital_beds?: { code: string; label?: string | null } | null;
 };
@@ -252,13 +280,38 @@ export const hubEncountersApi = {
       encounter: HubEncounter;
     }>;
   },
-  openFromAppointment(clinicId: string, hubAppointmentId: string) {
+  openFromAppointment(
+    clinicId: string,
+    hubAppointmentId: string,
+    opts?: {
+      hub_case_id?: string | null;
+      create_new_case?: boolean;
+      new_case_title?: string | null;
+    },
+  ) {
     return apiRequest(`${encBase}/open-from-appointment`, {
       method: 'POST',
-      body: JSON.stringify({ clinic_id: clinicId, hub_appointment_id: hubAppointmentId }),
+      body: JSON.stringify({ clinic_id: clinicId, hub_appointment_id: hubAppointmentId, ...opts }),
     }) as Promise<{ encounter: HubEncounter; created: boolean }>;
   },
-  patch(id: string, payload: Record<string, unknown>) {
+  patch(
+    id: string,
+    payload: {
+      clinic_id: string;
+      status?: string;
+      chief_complaint?: string | null;
+      summary_notes?: string | null;
+      anamnesis?: Record<string, unknown>;
+      physical_exam?: Record<string, unknown>;
+      diagnosis?: Record<string, unknown>;
+      hub_staff_member_id?: string | null;
+      guardian_id?: string | null;
+      /** Identificação posterior: pet do atendimento de urgência. */
+      pet_id?: string | null;
+      /** Identificação posterior: vincular caso clínico (copia pet/tutor quando ausentes). */
+      hub_case_id?: string | null;
+    },
+  ) {
     return apiRequest(`${encBase}/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }) as Promise<{
       encounter: HubEncounter;
     }>;
@@ -350,15 +403,18 @@ export const hubClinicalApi = {
       alerts: HubClinicalAlert[];
     }>;
   },
-  listPrescriptions(clinicId: string, petId?: string) {
+  listPrescriptions(clinicId: string, petId?: string, hubCaseId?: string, hubEncounterId?: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (petId) q.set('pet_id', petId);
+    if (hubCaseId) q.set('hub_case_id', hubCaseId);
+    if (hubEncounterId) q.set('hub_encounter_id', hubEncounterId);
     return apiRequest(`${clinicalBase}/prescriptions?${q}`) as Promise<{ prescriptions: HubPrescription[] }>;
   },
   createPrescription(payload: {
     clinic_id: string;
     pet_id: string;
     hub_encounter_id?: string | null;
+    hub_case_id?: string | null;
     hub_staff_member_id?: string | null;
     notes?: string | null;
     items: Array<{
@@ -368,23 +424,66 @@ export const hubClinicalApi = {
       duration?: string | null;
       instructions?: string | null;
       hub_inventory_item_id?: string | null;
+      administration?: HubPrescriptionAdministration;
     }>;
   }) {
-    return apiRequest(`${clinicalBase}/prescriptions`, { method: 'POST', body: JSON.stringify(payload) });
+    return apiRequest(`${clinicalBase}/prescriptions`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<{
+      prescription: HubPrescription;
+      merged_into_existing?: boolean;
+    }>;
+  },
+  patchPrescription(
+    prescriptionId: string,
+    payload: {
+      clinic_id: string;
+      notes?: string | null;
+      hub_staff_member_id?: string | null;
+      items?: Array<{
+        medication_name: string;
+        dosage?: string | null;
+        frequency?: string | null;
+        duration?: string | null;
+        instructions?: string | null;
+        hub_inventory_item_id?: string | null;
+        administration?: HubPrescriptionAdministration;
+      }>;
+    },
+  ) {
+    return apiRequest(`${clinicalBase}/prescriptions/${encodeURIComponent(prescriptionId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ prescription: HubPrescription }>;
+  },
+  listPrescriptionDocuments(prescriptionId: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(
+      `${clinicalBase}/prescriptions/${encodeURIComponent(prescriptionId)}/documents?${q}`,
+    ) as Promise<{ documents: HubPrescriptionDocumentRow[] }>;
+  },
+  issuePrescriptionDocument(
+    prescriptionId: string,
+    payload: { clinic_id: string; issued_by?: string | null },
+  ) {
+    return apiRequest(`${clinicalBase}/prescriptions/${encodeURIComponent(prescriptionId)}/documents`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ document: HubPrescriptionDocumentRow }>;
   },
   openPrescriptionPdf(prescriptionId: string, clinicId: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     window.open(`${clinicalBase}/prescriptions/${encodeURIComponent(prescriptionId)}/pdf?${q}`, '_blank', 'noopener,noreferrer');
   },
-  listVaccinations(clinicId: string, petId?: string) {
+  listVaccinations(clinicId: string, petId?: string, hubCaseId?: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (petId) q.set('pet_id', petId);
+    if (hubCaseId) q.set('hub_case_id', hubCaseId);
     return apiRequest(`${clinicalBase}/vaccinations?${q}`) as Promise<{ vaccinations: HubVaccination[] }>;
   },
   createVaccination(payload: {
     clinic_id: string;
     pet_id: string;
     hub_encounter_id?: string | null;
+    hub_case_id?: string | null;
     vaccine_name: string;
     batch_number?: string | null;
     administered_at: string;
@@ -416,6 +515,7 @@ export const hubClinicalApi = {
     clinicId: string;
     petId: string;
     encounterId?: string | null;
+    examId?: string | null;
     file: File;
     title?: string;
   }) {
@@ -425,6 +525,7 @@ export const hubClinicalApi = {
     fd.append('pet_id', params.petId);
     if (params.encounterId) fd.append('hub_encounter_id', params.encounterId);
     if (params.title) fd.append('title', params.title);
+    if (params.examId) fd.append('hub_exam_id', params.examId);
     return apiRequest(`${clinicalBase}/attachments/upload`, { method: 'POST', body: fd }) as Promise<{
       attachment: HubClinicalAttachment;
     }>;
@@ -438,9 +539,10 @@ export const hubClinicalApi = {
   createBed(payload: { clinic_id: string; code: string; label?: string | null; unit_id?: string | null }) {
     return apiRequest(`${clinicalBase}/hospital-beds`, { method: 'POST', body: JSON.stringify(payload) });
   },
-  listHospitalizations(clinicId: string, status?: string) {
+  listHospitalizations(clinicId: string, status?: string, hubCaseId?: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (status) q.set('status', status);
+    if (hubCaseId) q.set('hub_case_id', hubCaseId);
     return apiRequest(`${clinicalBase}/hospitalizations?${q}`) as Promise<{
       hospitalizations: HubHospitalization[];
     }>;
@@ -473,9 +575,10 @@ export const hubClinicalApi = {
       body: JSON.stringify(payload),
     }) as Promise<{ event: HubHospitalizationEvent }>;
   },
-  listSurgeries(clinicId: string, status?: string) {
+  listSurgeries(clinicId: string, status?: string, hubCaseId?: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (status) q.set('status', status);
+    if (hubCaseId) q.set('hub_case_id', hubCaseId);
     return apiRequest(`${clinicalBase}/surgeries?${q}`) as Promise<{ surgeries: HubSurgery[] }>;
   },
   createSurgery(payload: Record<string, unknown>) {
@@ -483,20 +586,6 @@ export const hubClinicalApi = {
   },
   patchSurgery(id: string, payload: Record<string, unknown>) {
     return apiRequest(`${clinicalBase}/surgeries/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
-  },
-  listTemplates(clinicId: string) {
-    return apiRequest(`${clinicalBase}/templates?clinic_id=${encodeURIComponent(clinicId)}`) as Promise<{
-      templates: Array<{ id: string; name: string }>;
-    }>;
-  },
-  createTemplate(payload: Record<string, unknown>) {
-    return apiRequest(`${clinicalBase}/templates`, { method: 'POST', body: JSON.stringify(payload) });
-  },
-  applyTemplate(encounterId: string, clinicId: string, templateId: string) {
-    return apiRequest(`${clinicalBase}/templates/${encounterId}/apply`, {
-      method: 'POST',
-      body: JSON.stringify({ clinic_id: clinicId, template_id: templateId }),
-    });
   },
 };
 
@@ -572,6 +661,7 @@ export const hubClinicalExamsApi = {
       external_result_url?: string | null;
       notes?: string | null;
       exam_type?: string;
+      metadata?: Record<string, unknown>;
     },
   ) {
     return apiRequest(`${clinicalBase}/exams/${id}`, {

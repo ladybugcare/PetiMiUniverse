@@ -3,13 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getHubClinicalAlerts = exports.applyHubClinicalTemplate = exports.createHubClinicalTemplate = exports.listHubClinicalTemplates = exports.patchHubSurgery = exports.createHubSurgery = exports.listHubSurgeries = exports.addHubHospitalizationDailyNote = exports.patchHubHospitalization = exports.createHubHospitalization = exports.listHubHospitalizations = exports.createHubHospitalBed = exports.listHubHospitalBeds = exports.uploadHubClinicalAttachment = exports.createHubClinicalAttachment = exports.listHubClinicalAttachments = exports.createHubVaccination = exports.listHubVaccinations = exports.getHubPrescriptionPdf = exports.createHubPrescription = exports.listHubPrescriptions = exports.createHubEncounterEvent = exports.listHubEncounterEvents = exports.upsertHubPetClinicalFlag = exports.listHubPetClinicalFlags = void 0;
+exports.getHubClinicalAlerts = exports.patchHubSurgery = exports.createHubSurgery = exports.listHubSurgeries = exports.createHubHospitalizationEvent = exports.listHubHospitalizationEvents = exports.addHubHospitalizationDailyNote = exports.patchHubHospitalization = exports.createHubHospitalization = exports.listHubHospitalizations = exports.createHubHospitalBed = exports.listHubHospitalBeds = exports.uploadHubClinicalAttachment = exports.createHubClinicalAttachment = exports.listHubClinicalAttachments = exports.createHubVaccination = exports.listHubVaccinations = exports.getHubPrescriptionPdf = exports.listPrescriptionDocuments = exports.issuePrescriptionDocument = exports.patchHubPrescription = exports.createHubPrescription = exports.listHubPrescriptions = exports.createHubEncounterEvent = exports.listHubEncounterEvents = exports.upsertHubPetClinicalFlag = exports.listHubPetClinicalFlags = void 0;
 const multer_1 = __importDefault(require("multer"));
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubClinicalFileUpload_js_1 = require("../../utils/hubClinicalFileUpload.js");
 const supabaseSchemaErrors_js_1 = require("../../utils/supabaseSchemaErrors.js");
 const hubPrescriptionPdf_1 = require("./hubPrescriptionPdf");
+const hubClinicalTimelineController_1 = require("./hubClinicalTimelineController");
 const uuidStr = zod_1.z.string().uuid();
 // ── Pet clinical flags ───────────────────────────────────────────────────────
 const flagKeySchema = zod_1.z.enum(['allergy', 'cardiac', 'aggressive', 'diabetic', 'epileptic', 'other']);
@@ -136,6 +137,33 @@ const createHubEncounterEvent = async (req, res) => {
 };
 exports.createHubEncounterEvent = createHubEncounterEvent;
 // ── Prescriptions ───────────────────────────────────────────────────────────
+const prescriptionItemInputSchema = zod_1.z.object({
+    medication_name: zod_1.z.string().trim().min(1).max(200),
+    dosage: zod_1.z.string().trim().max(200).optional().nullable(),
+    frequency: zod_1.z.string().trim().max(200).optional().nullable(),
+    duration: zod_1.z.string().trim().max(200).optional().nullable(),
+    instructions: zod_1.z.string().trim().max(2000).optional().nullable(),
+    hub_inventory_item_id: uuidStr.optional().nullable(),
+    administration: zod_1.z.enum(['home_use', 'administered_in_clinic']).optional().default('home_use'),
+});
+async function fetchHubPrescriptionWithItems(prescriptionId) {
+    const { data: rx, error: rxErr } = await supabase_1.supabaseAdmin
+        .from('hub_prescriptions')
+        .select('*')
+        .eq('id', prescriptionId)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (rxErr || !rx)
+        return null;
+    const { data: its, error: itErr } = await supabase_1.supabaseAdmin
+        .from('hub_prescription_items')
+        .select('*')
+        .eq('prescription_id', prescriptionId)
+        .order('order_index');
+    if (itErr)
+        return null;
+    return { prescription: rx, items: its ?? [] };
+}
 const listHubPrescriptions = async (req, res) => {
     const clinic_id = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic_id.success)
@@ -150,6 +178,12 @@ const listHubPrescriptions = async (req, res) => {
     const pet_id = req.query.pet_id ? uuidStr.safeParse(req.query.pet_id) : null;
     if (pet_id?.success)
         q = q.eq('pet_id', pet_id.data);
+    const rx_case_id = req.query.hub_case_id ? uuidStr.safeParse(req.query.hub_case_id) : null;
+    if (rx_case_id?.success)
+        q = q.eq('hub_case_id', rx_case_id.data);
+    const rx_encounter_id = req.query.hub_encounter_id ? uuidStr.safeParse(req.query.hub_encounter_id) : null;
+    if (rx_encounter_id?.success)
+        q = q.eq('hub_encounter_id', rx_encounter_id.data);
     const { data, error } = await q;
     if (error)
         return res.status(500).json({ error: error.message });
@@ -184,29 +218,85 @@ const createHubPrescription = async (req, res) => {
         clinic_id: uuidStr,
         pet_id: uuidStr,
         hub_encounter_id: uuidStr.optional().nullable(),
+        hub_case_id: uuidStr.optional().nullable(),
         hub_staff_member_id: uuidStr.optional().nullable(),
         notes: zod_1.z.string().trim().max(4000).optional().nullable(),
-        items: zod_1.z
-            .array(zod_1.z.object({
-            medication_name: zod_1.z.string().trim().min(1).max(200),
-            dosage: zod_1.z.string().trim().max(200).optional().nullable(),
-            frequency: zod_1.z.string().trim().max(200).optional().nullable(),
-            duration: zod_1.z.string().trim().max(200).optional().nullable(),
-            instructions: zod_1.z.string().trim().max(2000).optional().nullable(),
-            hub_inventory_item_id: uuidStr.optional().nullable(),
-        }))
-            .min(1),
+        items: zod_1.z.array(prescriptionItemInputSchema).min(1),
     })
         .safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+    /** Uma prescrição ativa/rascunho por atendimento: novos itens são anexados à existente. */
+    if (b.hub_encounter_id) {
+        const { data: existingList } = await supabase_1.supabaseAdmin
+            .from('hub_prescriptions')
+            .select('id')
+            .eq('hub_encounter_id', b.hub_encounter_id)
+            .eq('clinic_id', b.clinic_id)
+            .eq('pet_id', b.pet_id)
+            .in('status', ['draft', 'active'])
+            .is('deleted_at', null)
+            .order('prescribed_at', { ascending: false })
+            .limit(1);
+        const existingId = existingList?.[0]?.id;
+        if (existingId) {
+            const { data: maxRow } = await supabase_1.supabaseAdmin
+                .from('hub_prescription_items')
+                .select('order_index')
+                .eq('prescription_id', existingId)
+                .order('order_index', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            const baseOrder = typeof maxRow?.order_index === 'number' ? maxRow.order_index + 1 : 0;
+            const insertItems = b.items.map((it, i) => ({
+                prescription_id: existingId,
+                medication_name: it.medication_name,
+                dosage: it.dosage ?? null,
+                frequency: it.frequency ?? null,
+                duration: it.duration ?? null,
+                instructions: it.instructions ?? null,
+                hub_inventory_item_id: it.hub_inventory_item_id ?? null,
+                administration: it.administration ?? 'home_use',
+                order_index: baseOrder + i,
+            }));
+            const { error: itemsErr } = await supabase_1.supabaseAdmin.from('hub_prescription_items').insert(insertItems);
+            if (itemsErr)
+                return res.status(500).json({ error: itemsErr.message });
+            if (b.hub_staff_member_id) {
+                await supabase_1.supabaseAdmin
+                    .from('hub_prescriptions')
+                    .update({ hub_staff_member_id: b.hub_staff_member_id })
+                    .eq('id', existingId);
+            }
+            void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
+                clinic_id: b.clinic_id,
+                pet_id: b.pet_id,
+                hub_case_id: b.hub_case_id ?? null,
+                hub_encounter_id: b.hub_encounter_id,
+                event_type: 'note',
+                ref_type: 'prescription',
+                ref_id: existingId,
+                title: `Itens adicionados à prescrição (${b.items.length})`,
+                body: b.items.map((it) => it.medication_name).join(', '),
+                created_by: b.hub_staff_member_id ?? null,
+            });
+            const full = await fetchHubPrescriptionWithItems(existingId);
+            if (!full)
+                return res.status(500).json({ error: 'Erro ao recarregar prescrição' });
+            return res.status(200).json({
+                prescription: { ...full.prescription, items: full.items },
+                merged_into_existing: true,
+            });
+        }
+    }
     const { data: rx, error: rxErr } = await supabase_1.supabaseAdmin
         .from('hub_prescriptions')
         .insert({
         clinic_id: b.clinic_id,
         pet_id: b.pet_id,
         hub_encounter_id: b.hub_encounter_id ?? null,
+        hub_case_id: b.hub_case_id ?? null,
         hub_staff_member_id: b.hub_staff_member_id ?? null,
         notes: b.notes ?? null,
         status: 'active',
@@ -217,15 +307,187 @@ const createHubPrescription = async (req, res) => {
         return res.status(500).json({ error: rxErr.message });
     const insertItems = b.items.map((it, i) => ({
         prescription_id: rx.id,
-        ...it,
+        medication_name: it.medication_name,
+        dosage: it.dosage ?? null,
+        frequency: it.frequency ?? null,
+        duration: it.duration ?? null,
+        instructions: it.instructions ?? null,
+        hub_inventory_item_id: it.hub_inventory_item_id ?? null,
+        administration: it.administration ?? 'home_use',
         order_index: i,
     }));
     const { error: itemsErr } = await supabase_1.supabaseAdmin.from('hub_prescription_items').insert(insertItems);
     if (itemsErr)
         return res.status(500).json({ error: itemsErr.message });
-    return res.status(201).json({ prescription: { ...rx, items: insertItems } });
+    void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
+        clinic_id: b.clinic_id,
+        pet_id: b.pet_id,
+        hub_case_id: b.hub_case_id ?? null,
+        hub_encounter_id: b.hub_encounter_id ?? null,
+        event_type: 'prescription_issued',
+        ref_type: 'prescription',
+        ref_id: rx.id,
+        title: `Prescrição emitida (${b.items.length} item${b.items.length > 1 ? 's' : ''})`,
+        body: b.items.map((it) => it.medication_name).join(', '),
+        created_by: b.hub_staff_member_id ?? null,
+    });
+    const full = await fetchHubPrescriptionWithItems(rx.id);
+    if (!full)
+        return res.status(500).json({ error: 'Erro ao recarregar prescrição' });
+    return res.status(201).json({ prescription: { ...full.prescription, items: full.items } });
 };
 exports.createHubPrescription = createHubPrescription;
+const patchHubPrescription = async (req, res) => {
+    const id = uuidStr.safeParse(req.params.id);
+    const parsed = zod_1.z
+        .object({
+        clinic_id: uuidStr,
+        notes: zod_1.z.string().trim().max(4000).optional().nullable(),
+        hub_staff_member_id: uuidStr.optional().nullable(),
+        items: zod_1.z.array(prescriptionItemInputSchema).min(1).optional(),
+    })
+        .safeParse(req.body);
+    if (!id.success)
+        return res.status(400).json({ error: id.error.flatten() });
+    if (!parsed.success)
+        return res.status(400).json({ error: parsed.error.flatten() });
+    const b = parsed.data;
+    if (b.notes === undefined && !b.items) {
+        return res.status(400).json({ error: 'Informe items e/ou notes para atualizar' });
+    }
+    const { data: rx, error: rxErr } = await supabase_1.supabaseAdmin
+        .from('hub_prescriptions')
+        .select('id, status, clinic_id')
+        .eq('id', id.data)
+        .eq('clinic_id', b.clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (rxErr)
+        return res.status(500).json({ error: rxErr.message });
+    if (!rx)
+        return res.status(404).json({ error: 'Prescrição não encontrada' });
+    if (rx.status === 'cancelled')
+        return res.status(409).json({ error: 'Prescrição cancelada não pode ser editada' });
+    const rowUpdates = {};
+    if (b.notes !== undefined)
+        rowUpdates.notes = b.notes;
+    if (b.hub_staff_member_id !== undefined)
+        rowUpdates.hub_staff_member_id = b.hub_staff_member_id;
+    if (b.items) {
+        const { error: delErr } = await supabase_1.supabaseAdmin.from('hub_prescription_items').delete().eq('prescription_id', id.data);
+        if (delErr)
+            return res.status(500).json({ error: delErr.message });
+        const insertRows = b.items.map((it, i) => ({
+            prescription_id: id.data,
+            medication_name: it.medication_name,
+            dosage: it.dosage ?? null,
+            frequency: it.frequency ?? null,
+            duration: it.duration ?? null,
+            instructions: it.instructions ?? null,
+            hub_inventory_item_id: it.hub_inventory_item_id ?? null,
+            administration: it.administration ?? 'home_use',
+            order_index: i,
+        }));
+        const { error: insErr } = await supabase_1.supabaseAdmin.from('hub_prescription_items').insert(insertRows);
+        if (insErr)
+            return res.status(500).json({ error: insErr.message });
+    }
+    if (Object.keys(rowUpdates).length > 0) {
+        const { error: upErr } = await supabase_1.supabaseAdmin.from('hub_prescriptions').update(rowUpdates).eq('id', id.data);
+        if (upErr)
+            return res.status(500).json({ error: upErr.message });
+    }
+    else if (b.items) {
+        const { error: touchErr } = await supabase_1.supabaseAdmin
+            .from('hub_prescriptions')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', id.data);
+        if (touchErr)
+            return res.status(500).json({ error: touchErr.message });
+    }
+    const full = await fetchHubPrescriptionWithItems(id.data);
+    if (!full)
+        return res.status(500).json({ error: 'Erro ao recarregar prescrição' });
+    return res.json({ prescription: { ...full.prescription, items: full.items } });
+};
+exports.patchHubPrescription = patchHubPrescription;
+const issuePrescriptionDocument = async (req, res) => {
+    const id = uuidStr.safeParse(req.params.id);
+    const parsed = zod_1.z
+        .object({
+        clinic_id: uuidStr,
+        issued_by: uuidStr.optional().nullable(),
+    })
+        .safeParse(req.body);
+    if (!id.success || !parsed.success)
+        return res.status(400).json({ error: 'Parâmetros inválidos' });
+    const { clinic_id, issued_by } = parsed.data;
+    const { data: rxRow } = await supabase_1.supabaseAdmin
+        .from('hub_prescriptions')
+        .select('id')
+        .eq('id', id.data)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (!rxRow)
+        return res.status(404).json({ error: 'Prescrição não encontrada' });
+    const { data: latest } = await supabase_1.supabaseAdmin
+        .from('hub_prescription_documents')
+        .select('version_no')
+        .eq('prescription_id', id.data)
+        .order('version_no', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    const nextVersion = latest ? latest.version_no + 1 : 1;
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_prescription_documents')
+        .insert({
+        clinic_id,
+        prescription_id: id.data,
+        version_no: nextVersion,
+        issued_by: issued_by ?? null,
+        issued_at: new Date().toISOString(),
+        signature_status: 'none',
+    })
+        .select('*')
+        .single();
+    if (error)
+        return res.status(500).json({ error: error.message });
+    return res.status(201).json({ document: data });
+};
+exports.issuePrescriptionDocument = issuePrescriptionDocument;
+const listPrescriptionDocuments = async (req, res) => {
+    const id = uuidStr.safeParse(req.params.id);
+    const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+    if (!id.success || !clinic_id.success)
+        return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_prescription_documents')
+        .select('id, prescription_id, version_no, pdf_path, issued_by, issued_at, signature_status, created_at')
+        .eq('prescription_id', id.data)
+        .eq('clinic_id', clinic_id.data)
+        .order('version_no', { ascending: false });
+    if (error)
+        return res.status(500).json({ error: error.message });
+    const rows = (data ?? []);
+    const staffIds = [...new Set(rows.map((r) => r.issued_by).filter(Boolean))];
+    const staffMap = new Map();
+    if (staffIds.length) {
+        const { data: staffRows } = await supabase_1.supabaseAdmin
+            .from('hub_staff_members')
+            .select('id, full_name')
+            .in('id', staffIds);
+        for (const s of staffRows ?? []) {
+            staffMap.set(s.id, s);
+        }
+    }
+    const enriched = rows.map((r) => ({
+        ...r,
+        issued_by_member: staffMap.get(r.issued_by) ?? null,
+    }));
+    return res.json({ documents: enriched });
+};
+exports.listPrescriptionDocuments = listPrescriptionDocuments;
 const getHubPrescriptionPdf = async (req, res) => {
     const id = uuidStr.safeParse(req.params.id);
     const clinic_id = uuidStr.safeParse(req.query.clinic_id);
@@ -280,6 +542,9 @@ const listHubVaccinations = async (req, res) => {
     const pet_id = req.query.pet_id ? uuidStr.safeParse(req.query.pet_id) : null;
     if (pet_id?.success)
         q = q.eq('pet_id', pet_id.data);
+    const hub_case_id = req.query.hub_case_id ? uuidStr.safeParse(req.query.hub_case_id) : null;
+    if (hub_case_id?.success)
+        q = q.eq('hub_case_id', hub_case_id.data);
     const { data, error } = await q;
     if (error)
         return res.status(500).json({ error: error.message });
@@ -292,19 +557,84 @@ const createHubVaccination = async (req, res) => {
         clinic_id: uuidStr,
         pet_id: uuidStr,
         hub_encounter_id: uuidStr.optional().nullable(),
+        hub_case_id: uuidStr.optional().nullable(),
         vaccine_name: zod_1.z.string().trim().min(1).max(200),
         batch_number: zod_1.z.string().trim().max(120).optional().nullable(),
         administered_at: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         next_dose_at: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
         hub_staff_member_id: uuidStr.optional().nullable(),
         notes: zod_1.z.string().trim().max(2000).optional().nullable(),
+        // Fase 6
+        source: zod_1.z.enum(['in_clinic', 'external']).optional().default('in_clinic'),
+        manufacturer: zod_1.z.string().trim().max(200).optional().nullable(),
+        hub_inventory_item_id: uuidStr.optional().nullable(),
+        hub_inventory_lot_id: uuidStr.optional().nullable(),
+        expiry_date: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
     })
         .safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
-    const { data, error } = await supabase_1.supabaseAdmin.from('hub_vaccination_records').insert(parsed.data).select('*').single();
+    const b = parsed.data;
+    let stockMovementId = null;
+    // Baixa de estoque: vacina aplicada na clínica com item de estoque vinculado
+    if (b.source === 'in_clinic' && b.hub_inventory_item_id) {
+        const { data: mvmt, error: mvmtErr } = await supabase_1.supabaseAdmin
+            .from('hub_stock_movements')
+            .insert({
+            clinic_id: b.clinic_id,
+            hub_inventory_item_id: b.hub_inventory_item_id,
+            hub_inventory_lot_id: b.hub_inventory_lot_id ?? null,
+            movement_type: 'encounter_out',
+            quantity: 1,
+            unit: 'dose',
+            notes: `Vacina aplicada: ${b.vaccine_name}`,
+            hub_encounter_id: b.hub_encounter_id ?? null,
+        })
+            .select('id')
+            .single();
+        if (!mvmtErr && mvmt) {
+            stockMovementId = mvmt.id;
+        }
+        else if (mvmtErr) {
+            console.error('createHubVaccination: erro ao baixar estoque', mvmtErr.message);
+        }
+    }
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_vaccination_records')
+        .insert({
+        clinic_id: b.clinic_id,
+        pet_id: b.pet_id,
+        hub_encounter_id: b.hub_encounter_id ?? null,
+        hub_case_id: b.hub_case_id ?? null,
+        vaccine_name: b.vaccine_name,
+        batch_number: b.batch_number ?? null,
+        administered_at: b.administered_at,
+        next_dose_at: b.next_dose_at ?? null,
+        hub_staff_member_id: b.hub_staff_member_id ?? null,
+        notes: b.notes ?? null,
+        source: b.source,
+        manufacturer: b.manufacturer ?? null,
+        hub_inventory_item_id: b.hub_inventory_item_id ?? null,
+        hub_inventory_lot_id: b.hub_inventory_lot_id ?? null,
+        expiry_date: b.expiry_date ?? null,
+        stock_movement_id: stockMovementId,
+    })
+        .select('*')
+        .single();
     if (error)
         return res.status(500).json({ error: error.message });
+    void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
+        clinic_id: b.clinic_id,
+        pet_id: b.pet_id,
+        hub_case_id: b.hub_case_id ?? null,
+        hub_encounter_id: b.hub_encounter_id ?? null,
+        event_type: 'vaccination_applied',
+        ref_type: 'vaccination',
+        ref_id: data.id,
+        title: `Vacina aplicada: ${b.vaccine_name}`,
+        body: b.next_dose_at ? `Próxima dose: ${b.next_dose_at}` : null,
+        created_by: b.hub_staff_member_id ?? null,
+    });
     return res.status(201).json({ vaccination: data });
 };
 exports.createHubVaccination = createHubVaccination;
@@ -341,6 +671,7 @@ const createHubClinicalAttachment = async (req, res) => {
         clinic_id: uuidStr,
         pet_id: uuidStr,
         hub_encounter_id: uuidStr.optional().nullable(),
+        hub_exam_id: uuidStr.optional().nullable(),
         file_name: zod_1.z.string().trim().min(1).max(255),
         storage_path: zod_1.z.string().trim().min(1).max(500),
         mime_type: zod_1.z.string().trim().max(120).optional().nullable(),
@@ -387,6 +718,7 @@ const uploadHubClinicalAttachment = (req, res) => {
             clinic_id: uuidStr,
             pet_id: uuidStr,
             hub_encounter_id: uuidStr.optional().nullable(),
+            hub_exam_id: uuidStr.optional().nullable(),
             title: zod_1.z.string().trim().max(200).optional().nullable(),
             notes: zod_1.z.string().trim().max(2000).optional().nullable(),
         })
@@ -406,6 +738,7 @@ const uploadHubClinicalAttachment = (req, res) => {
                 clinic_id: b.clinic_id,
                 pet_id: b.pet_id,
                 hub_encounter_id: b.hub_encounter_id ?? null,
+                hub_exam_id: b.hub_exam_id ?? null,
                 file_name: req.file.originalname,
                 storage_path: url,
                 mime_type: req.file.mimetype,
@@ -480,6 +813,9 @@ const listHubHospitalizations = async (req, res) => {
     const status = req.query.status ? zod_1.z.string().safeParse(req.query.status) : null;
     if (status?.success)
         q = q.eq('status', status.data);
+    const hosp_case_id = req.query.hub_case_id ? uuidStr.safeParse(req.query.hub_case_id) : null;
+    if (hosp_case_id?.success)
+        q = q.eq('hub_case_id', hosp_case_id.data);
     const { data, error } = await q;
     if (error)
         return res.status(500).json({ error: error.message });
@@ -494,20 +830,38 @@ const createHubHospitalization = async (req, res) => {
         pet_id: uuidStr,
         guardian_id: uuidStr.optional().nullable(),
         hub_encounter_id: uuidStr.optional().nullable(),
+        hub_case_id: uuidStr.optional().nullable(),
         hub_hospital_bed_id: uuidStr.optional().nullable(),
         hub_staff_member_id: uuidStr.optional().nullable(),
         admission_notes: zod_1.z.string().trim().max(4000).optional().nullable(),
+        reason: zod_1.z.string().trim().max(1000).optional().nullable(),
     })
         .safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
-    const { data, error } = await supabase_1.supabaseAdmin.from('hub_hospitalizations').insert({ ...b, status: 'active' }).select('*').single();
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_hospitalizations')
+        .insert({ ...b, status: 'active' })
+        .select('*')
+        .single();
     if (error)
         return res.status(500).json({ error: error.message });
     if (b.hub_hospital_bed_id) {
         await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'occupied' }).eq('id', b.hub_hospital_bed_id);
     }
+    void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
+        clinic_id: b.clinic_id,
+        pet_id: b.pet_id,
+        hub_case_id: b.hub_case_id ?? null,
+        hub_encounter_id: b.hub_encounter_id ?? null,
+        event_type: 'hospitalization_started',
+        ref_type: 'hospitalization',
+        ref_id: data.id,
+        title: 'Internação iniciada',
+        body: b.reason ?? b.admission_notes ?? null,
+        created_by: b.hub_staff_member_id ?? null,
+    });
     return res.status(201).json({ hospitalization: data });
 };
 exports.createHubHospitalization = createHubHospitalization;
@@ -516,8 +870,10 @@ const patchHubHospitalization = async (req, res) => {
     const parsed = zod_1.z
         .object({
         clinic_id: uuidStr,
-        status: zod_1.z.enum(['active', 'discharged', 'cancelled']).optional(),
+        status: zod_1.z.enum(['active', 'discharged', 'death', 'transferred', 'cancelled']).optional(),
         discharge_notes: zod_1.z.string().trim().max(4000).optional().nullable(),
+        reason: zod_1.z.string().trim().max(1000).optional().nullable(),
+        hub_case_id: uuidStr.optional().nullable(),
     })
         .safeParse(req.body);
     if (!id.success || !parsed.success)
@@ -546,11 +902,26 @@ const patchHubHospitalization = async (req, res) => {
         .maybeSingle();
     if (error)
         return res.status(500).json({ error: error.message });
-    if (patch.status === 'discharged' && existing.hub_hospital_bed_id) {
+    const discharged = patch.status === 'discharged' || patch.status === 'death' || patch.status === 'transferred';
+    if (discharged && existing.hub_hospital_bed_id) {
         await supabase_1.supabaseAdmin
             .from('hub_hospital_beds')
             .update({ status: 'available' })
             .eq('id', existing.hub_hospital_bed_id);
+    }
+    const hospData = data;
+    if (patch.status === 'discharged' && hospData) {
+        void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
+            clinic_id,
+            pet_id: hospData.pet_id,
+            hub_case_id: hospData.hub_case_id,
+            hub_encounter_id: hospData.hub_encounter_id,
+            event_type: 'hospitalization_discharged',
+            ref_type: 'hospitalization',
+            ref_id: id.data,
+            title: 'Alta da internação',
+            body: patch.discharge_notes ?? null,
+        });
     }
     return res.json({ hospitalization: data });
 };
@@ -576,6 +947,58 @@ const addHubHospitalizationDailyNote = async (req, res) => {
     return res.json({ note: data });
 };
 exports.addHubHospitalizationDailyNote = addHubHospitalizationDailyNote;
+// ── Hospitalization events ────────────────────────────────────────────────────
+const hospitalizationEventKindSchema = zod_1.z.enum(['vital', 'medication', 'feeding', 'fluid', 'nursing', 'note']);
+const listHubHospitalizationEvents = async (req, res) => {
+    const hospitalization_id = uuidStr.safeParse(req.query.hospitalization_id);
+    if (!hospitalization_id.success)
+        return res.status(400).json({ error: 'hospitalization_id obrigatório' });
+    let q = supabase_1.supabaseAdmin
+        .from('hub_hospitalization_events')
+        .select('id, hospitalization_id, kind, recorded_at, payload, hub_staff_member_id, created_at')
+        .eq('hospitalization_id', hospitalization_id.data)
+        .order('recorded_at', { ascending: false })
+        .limit(500);
+    if (req.query.kind) {
+        const k = hospitalizationEventKindSchema.safeParse(req.query.kind);
+        if (k.success)
+            q = q.eq('kind', k.data);
+    }
+    const { data, error } = await q;
+    if (error)
+        return res.status(500).json({ error: error.message });
+    return res.json({ events: data ?? [] });
+};
+exports.listHubHospitalizationEvents = listHubHospitalizationEvents;
+const createHubHospitalizationEvent = async (req, res) => {
+    const id = uuidStr.safeParse(req.params.id);
+    const parsed = zod_1.z
+        .object({
+        kind: hospitalizationEventKindSchema,
+        recorded_at: zod_1.z.string().datetime({ offset: true }).optional(),
+        payload: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional().default({}),
+        hub_staff_member_id: uuidStr.optional().nullable(),
+    })
+        .safeParse(req.body);
+    if (!id.success || !parsed.success)
+        return res.status(400).json({ error: 'Dados inválidos' });
+    const b = parsed.data;
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_hospitalization_events')
+        .insert({
+        hospitalization_id: id.data,
+        kind: b.kind,
+        recorded_at: b.recorded_at ?? new Date().toISOString(),
+        payload: b.payload,
+        hub_staff_member_id: b.hub_staff_member_id ?? null,
+    })
+        .select('*')
+        .single();
+    if (error)
+        return res.status(500).json({ error: error.message });
+    return res.status(201).json({ event: data });
+};
+exports.createHubHospitalizationEvent = createHubHospitalizationEvent;
 // ── Surgeries ─────────────────────────────────────────────────────────────────
 const listHubSurgeries = async (req, res) => {
     const clinic_id = uuidStr.safeParse(req.query.clinic_id);
@@ -590,12 +1013,16 @@ const listHubSurgeries = async (req, res) => {
     const status = req.query.status ? zod_1.z.string().safeParse(req.query.status) : null;
     if (status?.success)
         q = q.eq('status', status.data);
+    const surg_case_id = req.query.hub_case_id ? uuidStr.safeParse(req.query.hub_case_id) : null;
+    if (surg_case_id?.success)
+        q = q.eq('hub_case_id', surg_case_id.data);
     const { data, error } = await q;
     if (error)
         return res.status(500).json({ error: error.message });
     return res.json({ surgeries: data ?? [] });
 };
 exports.listHubSurgeries = listHubSurgeries;
+const jsonbField = zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional().nullable();
 const createHubSurgery = async (req, res) => {
     const parsed = zod_1.z
         .object({
@@ -604,9 +1031,17 @@ const createHubSurgery = async (req, res) => {
         pet_id: uuidStr,
         guardian_id: uuidStr.optional().nullable(),
         hub_encounter_id: uuidStr.optional().nullable(),
+        hub_case_id: uuidStr.optional().nullable(),
         hub_staff_member_id: uuidStr.optional().nullable(),
         title: zod_1.z.string().trim().min(1).max(200),
         scheduled_at: zod_1.z.string().datetime({ offset: true }).optional().nullable(),
+        anesthetic_risk: zod_1.z.enum(['I', 'II', 'III', 'IV', 'V', 'VI', 'E']).optional().nullable(),
+        pre_op: jsonbField,
+        procedure: jsonbField,
+        team: zod_1.z.array(zod_1.z.record(zod_1.z.string(), zod_1.z.unknown())).optional().nullable(),
+        materials: zod_1.z.array(zod_1.z.record(zod_1.z.string(), zod_1.z.unknown())).optional().nullable(),
+        post_op: jsonbField,
+        // Legacy fields (backward compat)
         anesthesia_notes: zod_1.z.string().optional().nullable(),
         team_notes: zod_1.z.string().optional().nullable(),
         materials_notes: zod_1.z.string().optional().nullable(),
@@ -615,13 +1050,46 @@ const createHubSurgery = async (req, res) => {
         .safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
+    const b = parsed.data;
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_surgeries')
-        .insert({ ...parsed.data, status: 'scheduled' })
+        .insert({
+        clinic_id: b.clinic_id,
+        unit_id: b.unit_id,
+        pet_id: b.pet_id,
+        guardian_id: b.guardian_id,
+        hub_encounter_id: b.hub_encounter_id,
+        hub_case_id: b.hub_case_id,
+        hub_staff_member_id: b.hub_staff_member_id,
+        title: b.title,
+        scheduled_at: b.scheduled_at,
+        anesthetic_risk: b.anesthetic_risk,
+        pre_op: b.pre_op ?? {},
+        procedure: b.procedure ?? {},
+        team: b.team ?? [],
+        materials: b.materials ?? [],
+        post_op: b.post_op ?? {},
+        anesthesia_notes: b.anesthesia_notes,
+        team_notes: b.team_notes,
+        materials_notes: b.materials_notes,
+        post_op_notes: b.post_op_notes,
+        status: 'scheduled',
+    })
         .select('*')
         .single();
     if (error)
         return res.status(500).json({ error: error.message });
+    void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
+        clinic_id: b.clinic_id,
+        pet_id: b.pet_id,
+        hub_case_id: b.hub_case_id ?? null,
+        hub_encounter_id: b.hub_encounter_id ?? null,
+        event_type: 'surgery_performed',
+        ref_type: 'surgery',
+        ref_id: data.id,
+        title: `Cirurgia agendada: ${b.title}`,
+        created_by: b.hub_staff_member_id ?? null,
+    });
     return res.status(201).json({ surgery: data });
 };
 exports.createHubSurgery = createHubSurgery;
@@ -633,6 +1101,13 @@ const patchHubSurgery = async (req, res) => {
         status: zod_1.z.enum(['scheduled', 'in_progress', 'completed', 'cancelled']).optional(),
         started_at: zod_1.z.string().datetime({ offset: true }).optional().nullable(),
         completed_at: zod_1.z.string().datetime({ offset: true }).optional().nullable(),
+        discharge_at: zod_1.z.string().datetime({ offset: true }).optional().nullable(),
+        anesthetic_risk: zod_1.z.enum(['I', 'II', 'III', 'IV', 'V', 'VI', 'E']).optional().nullable(),
+        pre_op: jsonbField,
+        procedure: jsonbField,
+        team: zod_1.z.array(zod_1.z.record(zod_1.z.string(), zod_1.z.unknown())).optional().nullable(),
+        materials: zod_1.z.array(zod_1.z.record(zod_1.z.string(), zod_1.z.unknown())).optional().nullable(),
+        post_op: jsonbField,
         anesthesia_notes: zod_1.z.string().optional().nullable(),
         team_notes: zod_1.z.string().optional().nullable(),
         materials_notes: zod_1.z.string().optional().nullable(),
@@ -642,6 +1117,12 @@ const patchHubSurgery = async (req, res) => {
     if (!id.success || !parsed.success)
         return res.status(400).json({ error: 'Dados inválidos' });
     const { clinic_id, ...patch } = parsed.data;
+    const { data: existing } = await supabase_1.supabaseAdmin
+        .from('hub_surgeries')
+        .select('pet_id, hub_case_id, hub_encounter_id, hub_staff_member_id, title')
+        .eq('id', id.data)
+        .eq('clinic_id', clinic_id)
+        .maybeSingle();
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_surgeries')
         .update(patch)
@@ -653,74 +1134,23 @@ const patchHubSurgery = async (req, res) => {
         return res.status(500).json({ error: error.message });
     if (!data)
         return res.status(404).json({ error: 'Cirurgia não encontrada' });
+    if (patch.status === 'completed' && existing) {
+        const ex = existing;
+        void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
+            clinic_id,
+            pet_id: ex.pet_id,
+            hub_case_id: ex.hub_case_id,
+            hub_encounter_id: ex.hub_encounter_id,
+            event_type: 'surgery_performed',
+            ref_type: 'surgery',
+            ref_id: id.data,
+            title: `Cirurgia realizada: ${ex.title}`,
+            created_by: ex.hub_staff_member_id,
+        });
+    }
     return res.json({ surgery: data });
 };
 exports.patchHubSurgery = patchHubSurgery;
-// ── Clinical templates ───────────────────────────────────────────────────────
-const listHubClinicalTemplates = async (req, res) => {
-    const clinic_id = uuidStr.safeParse(req.query.clinic_id);
-    if (!clinic_id.success)
-        return res.status(400).json({ error: 'clinic_id obrigatório' });
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('hub_clinical_templates')
-        .select('*')
-        .eq('clinic_id', clinic_id.data)
-        .eq('active', true)
-        .is('deleted_at', null)
-        .order('name');
-    if (error)
-        return res.status(500).json({ error: error.message });
-    return res.json({ templates: data ?? [] });
-};
-exports.listHubClinicalTemplates = listHubClinicalTemplates;
-const createHubClinicalTemplate = async (req, res) => {
-    const parsed = zod_1.z
-        .object({
-        clinic_id: uuidStr,
-        name: zod_1.z.string().trim().min(1).max(200),
-        template_kind: zod_1.z.enum(['consultation', 'dermatology', 'vaccination', 'return_visit', 'other']).optional(),
-        anamnesis: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional(),
-        physical_exam: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional(),
-        diagnosis: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional(),
-    })
-        .safeParse(req.body);
-    if (!parsed.success)
-        return res.status(400).json({ error: parsed.error.flatten() });
-    const { data, error } = await supabase_1.supabaseAdmin.from('hub_clinical_templates').insert(parsed.data).select('*').single();
-    if (error)
-        return res.status(500).json({ error: error.message });
-    return res.status(201).json({ template: data });
-};
-exports.createHubClinicalTemplate = createHubClinicalTemplate;
-const applyHubClinicalTemplate = async (req, res) => {
-    const encounter_id = uuidStr.safeParse(req.params.encounterId);
-    const parsed = zod_1.z.object({ clinic_id: uuidStr, template_id: uuidStr }).safeParse(req.body);
-    if (!encounter_id.success || !parsed.success)
-        return res.status(400).json({ error: 'Dados inválidos' });
-    const { data: tpl, error: tplErr } = await supabase_1.supabaseAdmin
-        .from('hub_clinical_templates')
-        .select('anamnesis, physical_exam, diagnosis')
-        .eq('id', parsed.data.template_id)
-        .eq('clinic_id', parsed.data.clinic_id)
-        .maybeSingle();
-    if (tplErr || !tpl)
-        return res.status(404).json({ error: 'Template não encontrado' });
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('hub_encounters')
-        .update({
-        anamnesis: tpl.anamnesis,
-        physical_exam: tpl.physical_exam,
-        diagnosis: tpl.diagnosis,
-    })
-        .eq('id', encounter_id.data)
-        .eq('clinic_id', parsed.data.clinic_id)
-        .select('id, anamnesis, physical_exam, diagnosis')
-        .maybeSingle();
-    if (error)
-        return res.status(500).json({ error: error.message });
-    return res.json({ encounter: data });
-};
-exports.applyHubClinicalTemplate = applyHubClinicalTemplate;
 /** Alertas simples: vacinas com próxima dose nos próximos 30 dias. */
 const getHubClinicalAlerts = async (req, res) => {
     const clinic_id = uuidStr.safeParse(req.query.clinic_id);

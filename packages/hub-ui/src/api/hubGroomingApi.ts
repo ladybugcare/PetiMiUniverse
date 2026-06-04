@@ -58,6 +58,8 @@ export type GroomingDayBoardItem = {
   guardian_id?: string | null;
   hub_staff_member_id?: string | null;
   clinical_tags?: GroomingClinicalTag[];
+  financial_adjustment_pending?: boolean;
+  comanda_id?: string | null;
 };
 
 export type GroomingDayBoardResponse = {

@@ -2,7 +2,16 @@ import { apiRequest } from '@petimi/web-core';
 
 const base = '/api/hub/comandas';
 
-export type HubComandaOriginType = 'appointment' | 'grooming_session' | 'quote' | 'encounter';
+export type HubComandaOriginType = 'appointment' | 'grooming_session' | 'quote' | 'encounter' | 'manual';
+
+export type CancellationResolution = 'refund' | 'customer_credit' | 'keep_billing';
+
+export type HubComandaManualLine = {
+  description: string;
+  quantity?: number;
+  unit_amount: number;
+  pet_id?: string | null;
+};
 
 export type HubComandaItem = {
   id: string;
@@ -27,14 +36,25 @@ export type HubComandaDetailResponse = {
   items: HubComandaItem[];
   open_item_ids: string[];
   invoiced_item_ids: string[];
+  paid_total?: number;
+  balance_due?: number;
+  operational_complete?: boolean;
+};
+
+export type HubComandaOpenBody = {
+  clinic_id: string;
+  origin_type: HubComandaOriginType;
+  /** Obrigatório exceto para `origin_type: 'manual'`. */
+  origin_id?: string;
+  guardian_id?: string;
+  unit_id?: string | null;
+  manual_lines?: HubComandaManualLine[];
+  hub_case_id?: string | null;
+  hub_encounter_id?: string | null;
 };
 
 export const hubComandaApi = {
-  async openComanda(body: {
-    clinic_id: string;
-    origin_type: HubComandaOriginType;
-    origin_id: string;
-  }): Promise<HubComandaDetailResponse> {
+  async openComanda(body: HubComandaOpenBody): Promise<HubComandaDetailResponse> {
     return apiRequest(`${base}/open`, { method: 'POST', body: JSON.stringify(body) }) as Promise<HubComandaDetailResponse>;
   },
 
@@ -52,6 +72,13 @@ export const hubComandaApi = {
     return apiRequest(`${base}/${encodeURIComponent(comandaId)}?${q}`) as Promise<HubComandaDetailResponse>;
   },
 
+  async syncComandaFromOrigin(comandaId: string, clinicId: string): Promise<HubComandaDetailResponse> {
+    return apiRequest(`${base}/${encodeURIComponent(comandaId)}/sync-from-origin`, {
+      method: 'POST',
+      body: JSON.stringify({ clinic_id: clinicId }),
+    }) as Promise<HubComandaDetailResponse>;
+  },
+
   async checkout(
     comandaId: string,
     body: {
@@ -61,6 +88,7 @@ export const hubComandaApi = {
       tutor_items_group_index?: number | null;
       action: 'receive_now' | 'leave_pending' | 'cancel';
       due_date?: string | null;
+      payment_timing?: 'on_checkout' | 'advance';
       payments?: Array<{
         group_index: number;
         amount: number;
@@ -88,10 +116,42 @@ export const hubComandaApi = {
     clinic_id: string;
     unit_id?: string;
     status?: 'aberta' | 'fechada' | 'cancelada';
+    hub_case_id?: string;
+    cancellation_pending?: boolean;
   }): Promise<{ comandas: Array<Record<string, unknown>> }> {
     const q = new URLSearchParams({ clinic_id: params.clinic_id });
     if (params.unit_id) q.set('unit_id', params.unit_id);
     if (params.status) q.set('status', params.status);
+    if (params.hub_case_id) q.set('hub_case_id', params.hub_case_id);
+    if (params.cancellation_pending) q.set('cancellation_pending', 'true');
     return apiRequest(`${base}?${q}`) as Promise<{ comandas: Array<Record<string, unknown>> }>;
+  },
+
+  async getCancellationPendingCount(clinicId: string, unitId?: string): Promise<{ count: number }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (unitId) q.set('unit_id', unitId);
+    return apiRequest(`${base}/cancellation-pending-count?${q}`) as Promise<{ count: number }>;
+  },
+
+  async listCancellationPending(params: {
+    clinic_id: string;
+    unit_id?: string;
+  }): Promise<{ comandas: Array<Record<string, unknown>> }> {
+    return hubComandaApi.listComandas({ ...params, cancellation_pending: true });
+  },
+
+  async resolveCancellation(
+    comandaId: string,
+    body: {
+      clinic_id: string;
+      resolution: CancellationResolution;
+      reason: string;
+      cash_session_id?: string | null;
+    }
+  ): Promise<{ comanda: unknown; detail: HubComandaDetailResponse }> {
+    return apiRequest(`${base}/${encodeURIComponent(comandaId)}/resolve-cancellation`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ comanda: unknown; detail: HubComandaDetailResponse }>;
   },
 };

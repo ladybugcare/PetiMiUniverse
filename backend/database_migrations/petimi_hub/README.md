@@ -29,6 +29,8 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 
 12. **`create_hub_appointments.sql`** — `hub_appointments` (agenda: horários, staff opcional, tipo de serviço, pet/tutor, `appointment_kind` para hotel/L&T) + `hub_agenda_calendar_blocks` (feriados/fechamentos na vista mês). Executar depois de `create_hub_staff.sql`, `create_hub_pets_and_pet_guardians.sql` e `create_hub_service_types.sql`.
 
+    - **`alter_hub_appointments_clinical_kinds.sql`** — amplia `appointment_kind` com `clinical_walk_in` (encaixe clínico imediato) e `clinical_emergency` (urgência registrada na agenda no momento da abertura). Executar depois de `create_hub_appointments.sql` (e antes ou depois de `alter_hub_encounters_hub_service_type.sql`, conforme a ordem no projeto).
+
 13. **`alter_hub_appointments_multi_service_and_recurrence.sql`** — Suporte a múltiplos serviços por agendamento e recorrência: cria `hub_appointment_series` (regras de recorrência) e `hub_appointment_services` (N:M serviço↔agendamento); adiciona colunas `title`, `description`, `series_id`, `series_occurrence_date` em `hub_appointments`. Executar depois de `create_hub_appointments.sql`.
 
     **Erro «Could not find the 'description' column of 'hub_appointments'»:** a API espera estas colunas. Executar o ficheiro **13** completo *ou*, só para séries + `title`/`description`/`series_id`, o atalho idempotente **`alter_hub_appointments_ensure_series_title_description.sql`** (não cria `hub_appointment_services`; para multi-serviço continua a ser necessário o **13** completo). Depois do SQL, se o PostgREST ainda acusar coluna em falta, aguardar o reload do schema ou usar `NOTIFY pgrst, 'reload schema';` conforme o projecto.
@@ -58,7 +60,10 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 24. **`alter_hub_appointments_financial_notes.sql`** — Coluna `financial_notes` em `hub_appointments` (já incluída no catch-up do item 19 acima se usar esse atalho).
 
 25. **Módulo Clínica** (executar nesta ordem, depois de pets, staff e appointments):
+    - **`alter_hub_appointments_intake_case.sql`** — colunas opcionais `intake_hub_case_id`, `intake_create_new_case`, `intake_new_case_title` em `hub_appointments` (fluxo «Agendar consulta de rotina» na agenda; consumidas ao abrir o atendimento pelo slot). Requer `hub_appointments` e `hub_clinical_cases`.
     - **`create_hub_encounters.sql`** — atendimentos clínicos (`hub_encounters`)
+    - **`alter_hub_encounters_nullable_pet_emergency.sql`** — torna `pet_id` e `hub_case_id` nullable em `hub_encounters` para suportar urgências abertas sem identificação. **Obrigatório** se o ambiente já aplicou `alter_hub_encounters_case_not_null.sql`. Executar depois de `create_hub_encounters.sql`.
+    - **`alter_hub_encounters_hub_service_type.sql`** — coluna opcional `hub_service_type_id` em `hub_encounters` (denormalização; a API usa o serviço em `hub_appointments` quando o atendimento está vinculado à agenda). Executar depois de `create_hub_encounters.sql` e `create_hub_service_types.sql` apenas se quiser essa coluna no banco.
     - **`create_hub_pet_clinical_flags.sql`** — alertas por pet (alergias, cardiopata, etc.)
     - **`create_hub_encounter_events.sql`** — timeline de evolução
     - **`create_hub_prescriptions_vaccinations.sql`** — prescrições e vacinas
@@ -67,7 +72,7 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
     **Erro «Could not find the table 'public.hub_clinical_attachments'»:** executar **`create_hub_clinical_attachments.sql`** no SQL Editor (requer `hub_encounters` e `hub_pets` já criados). O ficheiro termina com `NOTIFY pgrst, 'reload schema';` — se o erro persistir, aguardar ~1 min ou repetir o `NOTIFY` manualmente.
     - **`create_hub_hospitalizations.sql`** — leitos e internações
     - **`create_hub_surgeries.sql`** — cirurgias
-    - **`create_hub_clinical_templates.sql`** — templates clínicos
+    - **`create_hub_clinical_templates.sql`** — tabela `hub_clinical_templates` (legado; a API/UI de templates clínicos não está exposta no produto por ora — pode ignorar se a base ainda não tiver esta tabela)
 
 26. **`create_hub_service_group_job_functions.sql`** — `hub_service_group_job_functions` (liga `service_group_slug` a `job_title` da equipe para sugestão na agenda) + coluna opcional `description` em `hub_service_groups`. Executar depois do item 17. O backend preenche mapeamentos padrão (Banho & Tosa → groomer, Clínica → vet/auxiliar/enfermeiro, etc.) de forma idempotente.
 
@@ -119,3 +124,9 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 46. **`alter_hub_appointments_billing_waive.sql`** — Waive de cobrança em agendamentos (se aplicável à base).
 
 47. **`alter_hub_roles_groomer_finance.sql`** — Papéis/permissões (ex.: groomer, financeiro) no Hub.
+
+48. **`alter_hub_appointments_checked_in_status.sql`** — Adiciona status `checked_in` (paciente chegou à recepção e aguarda na fila) ao CHECK de `hub_appointments.status`. Executar depois de `create_hub_appointments.sql`. Habilita a máquina de estados do fluxo de agenda operacional: `confirmed → checked_in → in_progress (encounter criado) → done`.
+
+49. **`alter_hub_comandas_prepaid.sql`** — `payment_timing` em `hub_payments` (`on_checkout` | `advance`) e `financial_status` em `hub_comandas` (`open` | `awaiting_balance` | `balanced`). Executar depois dos itens 35, 39 e 44 (pagamentos/comandas/crédito).
+
+50. **`alter_hub_comandas_cancellation_resolution.sql`** — Pendência e resolução financeira após cancelamento operacional com pagamento antecipado (`cancellation_*` em `hub_comandas`, fila no Caixa). Executar depois do item 49.

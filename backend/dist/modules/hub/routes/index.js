@@ -21,6 +21,9 @@ const hubProspectsController_1 = require("../hubProspectsController");
 const hubEncountersController_1 = require("../hubEncountersController");
 const hubGroomingController_1 = require("../hubGroomingController");
 const hubGroomingDrawerController_1 = require("../hubGroomingDrawerController");
+const hubClinicalCasesController_1 = require("../hubClinicalCasesController");
+const hubClinicalTimelineController_1 = require("../hubClinicalTimelineController");
+const hubClinicalExamsController_1 = require("../hubClinicalExamsController");
 const hubClinicalModulesController_1 = require("../hubClinicalModulesController");
 const hubQuotesController_1 = require("../hubQuotesController");
 const hubFinancialController_1 = require("../hubFinancialController");
@@ -133,6 +136,8 @@ router.get('/encounters/:id', authMiddleware_1.authenticateUser, (0, authMiddlew
 router.post('/encounters', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubEncountersController_1.createHubEncounter);
 router.post('/encounters/open-from-appointment', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubEncountersController_1.openHubEncounterFromAppointment);
 router.patch('/encounters/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubEncountersController_1.patchHubEncounter);
+router.patch('/encounters/:id/amend', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubEncountersController_1.amendHubEncounter);
+router.get('/encounters/:id/versions', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubEncountersController_1.getHubEncounterVersions);
 router.post('/encounters/:id/complete', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubEncountersController_1.completeHubEncounter);
 /* --- Banho & Tosa (fila operacional) --- */
 router.get('/grooming/day-board', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('grooming.queue.read'), hubGroomingController_1.getHubGroomingDayBoard);
@@ -145,6 +150,20 @@ router.post('/grooming/sessions/:id/events', authMiddleware_1.authenticateUser, 
 router.get('/grooming/sessions/:id/drawer', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('grooming.queue.read'), hubGroomingDrawerController_1.getHubGroomingSessionDrawer);
 router.post('/grooming/sessions/:id/extras', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('grooming.queue.manage'), hubGroomingDrawerController_1.postHubGroomingSessionExtra);
 router.patch('/grooming/appointment-service-lines/:lineId', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('grooming.queue.manage'), hubGroomingDrawerController_1.patchHubGroomingAppointmentServiceLine);
+/* --- Casos clínicos --- */
+router.get('/clinical/timeline', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalTimelineController_1.listHubClinicalTimeline);
+router.post('/clinical/timeline/notes', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalTimelineController_1.createHubClinicalTimelineNote);
+/* --- Exames clínicos --- */
+router.get('/clinical/exams', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalExamsController_1.listHubClinicalExams);
+router.get('/clinical/exams/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalExamsController_1.getHubClinicalExam);
+router.post('/clinical/exams', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalExamsController_1.createHubClinicalExam);
+router.patch('/clinical/exams/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalExamsController_1.patchHubClinicalExam);
+router.delete('/clinical/exams/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalExamsController_1.deleteHubClinicalExam);
+router.get('/clinical/cases', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalCasesController_1.listHubClinicalCases);
+router.get('/clinical/cases/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalCasesController_1.getHubClinicalCase);
+router.post('/clinical/cases', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalCasesController_1.createHubClinicalCase);
+router.patch('/clinical/cases/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalCasesController_1.patchHubClinicalCase);
+router.delete('/clinical/cases/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalCasesController_1.deleteHubClinicalCase);
 router.get('/clinical/pet-flags', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubPetClinicalFlags);
 router.post('/clinical/pet-flags', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.upsertHubPetClinicalFlag);
 router.get('/clinical/encounter-events', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubEncounterEvents);
@@ -152,7 +171,10 @@ router.post('/clinical/encounter-events', authMiddleware_1.authenticateUser, (0,
 router.get('/clinical/alerts', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.getHubClinicalAlerts);
 router.get('/clinical/prescriptions', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubPrescriptions);
 router.get('/clinical/prescriptions/:id/pdf', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.getHubPrescriptionPdf);
+router.get('/clinical/prescriptions/:id/documents', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listPrescriptionDocuments);
+router.post('/clinical/prescriptions/:id/documents', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.issuePrescriptionDocument);
 router.post('/clinical/prescriptions', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubPrescription);
+router.patch('/clinical/prescriptions/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.patchHubPrescription);
 router.get('/clinical/vaccinations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubVaccinations);
 router.post('/clinical/vaccinations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubVaccination);
 router.get('/clinical/attachments', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubClinicalAttachments);
@@ -164,17 +186,17 @@ router.get('/clinical/hospitalizations', authMiddleware_1.authenticateUser, (0, 
 router.post('/clinical/hospitalizations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubHospitalization);
 router.patch('/clinical/hospitalizations/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.patchHubHospitalization);
 router.post('/clinical/hospitalizations/:id/daily-notes', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.addHubHospitalizationDailyNote);
+router.get('/clinical/hospitalizations/:id/events', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubHospitalizationEvents);
+router.post('/clinical/hospitalizations/:id/events', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubHospitalizationEvent);
 router.get('/clinical/surgeries', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubSurgeries);
 router.post('/clinical/surgeries', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubSurgery);
 router.patch('/clinical/surgeries/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.patchHubSurgery);
-router.get('/clinical/templates', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubClinicalTemplates);
-router.post('/clinical/templates', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubClinicalTemplate);
-router.post('/clinical/templates/:encounterId/apply', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.applyHubClinicalTemplate);
 /** Comandas / checkout operacional */
 router.get('/comandas', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.listHubComandas);
 router.get('/comandas/by-origin', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaByOrigin);
 router.post('/comandas/open', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaOpen);
 router.get('/comandas/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaDetail);
+router.post('/comandas/:id/sync-from-origin', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaSyncFromOrigin);
 router.post('/comandas/:id/checkout', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaCheckout);
 /** Financeiro — Fase 1 (recebíveis, sem cobrança, caixa básico) */
 router.get('/finance/preview', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinancePreview);

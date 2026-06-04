@@ -337,6 +337,11 @@ Eliminar **`NO_GUARDIAN`** na comanda e alinhar-se às regras de [clinical-busin
 - Adicionar 3 itens → emitir → PDF com 3 itens.  
 - Reemitir após ajuste de dose → versão 2 no histórico.
 
+## 11. Estado da implementação (hub)
+
+- **Backend:** `POST /clinical/prescriptions` anexa itens à prescrição existente (`draft`/`active`) do mesmo `hub_encounter_id` + `clinic_id` + `pet_id`; `PATCH /clinical/prescriptions/:id` altera notas e/ou substitui a lista de itens; `POST .../prescriptions/:id/documents` confere se a prescrição pertence ao `clinic_id`; `GET .../prescriptions` aceita filtro opcional `hub_encounter_id`.
+- **hub-ui:** API cliente com `patchPrescription`, `listPrescriptionDocuments`, `issuePrescriptionDocument`; no workspace clínico, bloco único da prescrição do atendimento (vários itens, observações, remover item, emitir/reemitir, histórico de versões, abrir PDF).
+
 ---
 
 # Onda E — Estoque + comanda

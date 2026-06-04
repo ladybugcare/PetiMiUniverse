@@ -8,17 +8,38 @@ import {
   hubClinicalTimelineApi,
   hubEncountersApi,
   hubClinicalApi,
+  hubClinicalExamsApi,
   type HubClinicalCase,
   type HubClinicalCaseStatus,
   type HubClinicalTimelineEvent,
   type HubEncounter,
   type HubPrescription,
   type HubVaccination,
+  type HubHospitalization,
+  type HubSurgery,
+  type HubClinicalAttachment,
+  type HubClinicalExam,
 } from '../../api/hubClinicalApi';
+import { hubComandaApi } from '../../api/hubComandaApi';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
-import { formatPrescriptionLine } from './clinicalDisplay';
+import {
+  attachmentPublicUrl,
+  formatHubClinicalExamStatus,
+  formatHubComandaStatus,
+  formatPrescriptionLine,
+} from './clinicalDisplay';
 
-type TabId = 'timeline' | 'atendimentos' | 'prescricoes' | 'vacinas';
+type TabId =
+  | 'resumo'
+  | 'timeline'
+  | 'atendimentos'
+  | 'prescricoes'
+  | 'vacinas'
+  | 'internacoes'
+  | 'cirurgias'
+  | 'exames'
+  | 'anexos'
+  | 'financeiro';
 
 const STATUS_LABELS: Record<HubClinicalCaseStatus, string> = {
   active: 'Ativo',
@@ -34,6 +55,21 @@ const STATUS_OPTIONS: { value: HubClinicalCaseStatus; label: string }[] = [
   { value: 'cancelled', label: 'Cancelado' },
 ];
 
+const SURGERY_STATUS_LABELS: Record<string, string> = {
+  scheduled: 'Agendada',
+  in_progress: 'Em andamento',
+  completed: 'Concluída',
+  cancelled: 'Cancelada',
+};
+
+const HOSP_STATUS_LABELS: Record<string, string> = {
+  active: 'Ativa',
+  discharged: 'Alta',
+  death: 'Óbito',
+  transferred: 'Transferida',
+  cancelled: 'Cancelada',
+};
+
 const HubClinicCasePage: React.FC = () => {
   const { caseId } = useParams<{ caseId: string }>();
   const clinicId = getStoredClinicId();
@@ -42,13 +78,19 @@ const HubClinicCasePage: React.FC = () => {
   const { hasPermission } = usePermissions();
   const canRead = hasPermission('hub.clinic.read');
   const canWrite = hasPermission('hub.clinic.write');
+  const canFinancial = hasPermission('hub.financial.read');
 
   const [clinicalCase, setClinicalCase] = useState<HubClinicalCase | null>(null);
-  const [tab, setTab] = useState<TabId>('timeline');
+  const [tab, setTab] = useState<TabId>('resumo');
   const [timelineEvents, setTimelineEvents] = useState<HubClinicalTimelineEvent[]>([]);
   const [encounters, setEncounters] = useState<HubEncounter[]>([]);
   const [prescriptions, setPrescriptions] = useState<HubPrescription[]>([]);
   const [vaccinations, setVaccinations] = useState<HubVaccination[]>([]);
+  const [hospitalizations, setHospitalizations] = useState<HubHospitalization[]>([]);
+  const [surgeries, setSurgeries] = useState<HubSurgery[]>([]);
+  const [exams, setExams] = useState<HubClinicalExam[]>([]);
+  const [attachments, setAttachments] = useState<HubClinicalAttachment[]>([]);
+  const [comandas, setComandas] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
   const [editingStatus, setEditingStatus] = useState(false);
   const [newStatus, setNewStatus] = useState<HubClinicalCaseStatus>('active');
@@ -72,29 +114,65 @@ const HubClinicCasePage: React.FC = () => {
       setTimelineEvents(tlRes.status === 'fulfilled' ? tlRes.value.events : []);
 
       if (theCase?.pet_id && clinicId) {
-        const [encFull, rxFull, vaxFull] = await Promise.allSettled([
-          hubEncountersApi.listByPet(clinicId, theCase.pet_id),
-          hubClinicalApi.listPrescriptions(clinicId, theCase.pet_id),
-          hubClinicalApi.listVaccinations(clinicId, theCase.pet_id),
+        const encP = hubEncountersApi.listByPet(clinicId, theCase.pet_id);
+        const rxP = hubClinicalApi.listPrescriptions(clinicId, theCase.pet_id, caseId);
+        const vaxP = hubClinicalApi.listVaccinations(clinicId, theCase.pet_id, caseId);
+        const hospP = hubClinicalApi.listHospitalizations(clinicId, undefined, caseId);
+        const surgP = hubClinicalApi.listSurgeries(clinicId, undefined, caseId);
+        const examP = hubClinicalExamsApi.list(clinicId, { caseId, petId: theCase.pet_id });
+        const attP = hubClinicalApi.listAttachments(clinicId, { petId: theCase.pet_id });
+        const comP = canFinancial
+          ? hubComandaApi.listComandas({ clinic_id: clinicId, hub_case_id: caseId }).catch(() => ({ comandas: [] }))
+          : Promise.resolve({ comandas: [] });
+
+        const [encFull, rxFull, vaxFull, hospFull, surgFull, examFull, attFull, comFull] = await Promise.allSettled([
+          encP,
+          rxP,
+          vaxP,
+          hospP,
+          surgP,
+          examP,
+          attP,
+          comP,
         ]);
+
         const allEnc = encFull.status === 'fulfilled' ? encFull.value.encounters : [];
-        setEncounters(allEnc.filter((e) => e.hub_case_id === caseId));
+        const encForCase = allEnc.filter((e) => e.hub_case_id === caseId);
+        setEncounters(encForCase);
+
+        const examList = examFull.status === 'fulfilled' ? examFull.value.exams : [];
+        setExams(examList);
+
         setPrescriptions(rxFull.status === 'fulfilled' ? rxFull.value.prescriptions : []);
         setVaccinations(vaxFull.status === 'fulfilled' ? vaxFull.value.vaccinations : []);
+        setHospitalizations(hospFull.status === 'fulfilled' ? hospFull.value.hospitalizations : []);
+        setSurgeries(surgFull.status === 'fulfilled' ? surgFull.value.surgeries : []);
+
+        const examIds = new Set(examList.map((x) => x.id));
+        const encIds = new Set(encForCase.map((e) => e.id));
+        const allAtt = attFull.status === 'fulfilled' ? attFull.value.attachments : [];
+        setAttachments(
+          allAtt.filter((a) => {
+            if (a.hub_exam_id && examIds.has(a.hub_exam_id)) return true;
+            if (a.hub_encounter_id && encIds.has(a.hub_encounter_id)) return true;
+            return false;
+          }),
+        );
+
+        setComandas(comFull.status === 'fulfilled' ? comFull.value.comandas ?? [] : []);
       }
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar caso clínico');
     } finally {
       setLoading(false);
     }
-  }, [clinicId, caseId, showError]);
+  }, [clinicId, caseId, showError, canFinancial]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const openComandaForCase = () => {
-    // Find the most recent completed encounter for this case to bill
     const completedEnc = [...encounters]
       .filter((e) => e.status === 'completed')
       .sort((a, b) => new Date(b.started_at ?? 0).getTime() - new Date(a.started_at ?? 0).getTime())[0];
@@ -124,6 +202,18 @@ const HubClinicCasePage: React.FC = () => {
     }
   };
 
+  const cancelExam = async (exam: HubClinicalExam) => {
+    if (!clinicId || !canWrite) return;
+    if (!window.confirm(`Cancelar o pedido de exame «${exam.exam_type}»?`)) return;
+    try {
+      await hubClinicalExamsApi.patch(exam.id, { clinic_id: clinicId, status: 'cancelled' });
+      showSuccess('Exame cancelado');
+      void load();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao cancelar exame');
+    }
+  };
+
   if (!canRead) {
     return <p className="hub-clientes__muted hub-clinic-page__pad">Sem permissão para casos clínicos.</p>;
   }
@@ -132,7 +222,7 @@ const HubClinicCasePage: React.FC = () => {
     return <p className="hub-clientes__muted hub-clinic-page__pad">Carregando caso clínico…</p>;
   }
 
-  if (!clinicalCase) {
+  if (!clinicalCase || !caseId || !clinicId) {
     return (
       <div className="hub-clinic-page__pad">
         <p className="hub-clientes__muted">Caso clínico não encontrado.</p>
@@ -218,45 +308,12 @@ const HubClinicCasePage: React.FC = () => {
           </div>
         </div>
 
-        {clinicalCase.summary && (
-          <p className="hub-clinic-case-page__summary">{clinicalCase.summary}</p>
-        )}
-
-        <div className="hub-clinic-case-page__meta">
-          {clinicalCase.pet && (
-            <span>
-              Pet:{' '}
-              <Link to={`/hub/clinica/prontuarios?petId=${clinicalCase.pet_id}`} className="hub-clientes__link">
-                {clinicalCase.pet.name}
-              </Link>
-            </span>
-          )}
-          <span>Aberto em {new Date(clinicalCase.opened_at).toLocaleDateString('pt-BR')}</span>
-          {clinicalCase.closed_at && (
-            <span>Fechado em {new Date(clinicalCase.closed_at).toLocaleDateString('pt-BR')}</span>
-          )}
-          {clinicalCase.primary_veterinarian && (
-            <span>Veterinário: {clinicalCase.primary_veterinarian.full_name}</span>
-          )}
-        </div>
-
-        {clinicalCase.tags.length > 0 && (
-          <div className="hub-clinic-case-page__tags">
-            {clinicalCase.tags.map((tag) => (
-              <span key={tag} className="hub-clinic-alert-chip">
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
-
         {canWrite && (
           <div className="hub-clinic-case-page__actions">
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
               onClick={() => {
-                if (!clinicId || !clinicalCase) return;
                 void hubEncountersApi
                   .create({
                     clinic_id: clinicId,
@@ -280,12 +337,66 @@ const HubClinicCasePage: React.FC = () => {
         activeId={tab}
         onTabChange={(id) => setTab(id as TabId)}
         items={[
+          { id: 'resumo', label: 'Resumo' },
           { id: 'timeline', label: 'Linha do tempo' },
           { id: 'atendimentos', label: `Atendimentos (${encounters.length})` },
-          { id: 'prescricoes', label: 'Prescrições' },
-          { id: 'vacinas', label: 'Vacinas' },
+          { id: 'prescricoes', label: `Prescrições (${prescriptions.length})` },
+          { id: 'vacinas', label: `Vacinas (${vaccinations.length})` },
+          { id: 'internacoes', label: `Internações (${hospitalizations.length})` },
+          { id: 'cirurgias', label: `Cirurgias (${surgeries.length})` },
+          { id: 'exames', label: `Exames (${exams.length})` },
+          { id: 'anexos', label: `Anexos (${attachments.length})` },
+          { id: 'financeiro', label: `Financeiro (${comandas.length})` },
         ]}
       />
+
+      {tab === 'resumo' && (
+        <div className="hub-clinic-records__list hub-clinic-case-page__resumo">
+          {clinicalCase.summary ? (
+            <section>
+              <h2 className="hub-clinic-page__title" style={{ fontSize: '1.1rem' }}>
+                Resumo clínico
+              </h2>
+              <p>{clinicalCase.summary}</p>
+            </section>
+          ) : (
+            <p className="hub-clientes__muted">Nenhum resumo textual cadastrado para este caso.</p>
+          )}
+          <section style={{ marginTop: 16 }}>
+            <p>
+              <strong>Pet:</strong>{' '}
+              <Link to={`/hub/clinica/prontuarios?petId=${clinicalCase.pet_id}`} className="hub-clientes__link">
+                {clinicalCase.pet?.name ?? clinicalCase.pet_id}
+              </Link>
+            </p>
+            <p>
+              <strong>Aberto em:</strong> {new Date(clinicalCase.opened_at).toLocaleDateString('pt-BR')}
+            </p>
+            {clinicalCase.closed_at ? (
+              <p>
+                <strong>Fechado em:</strong> {new Date(clinicalCase.closed_at).toLocaleDateString('pt-BR')}
+              </p>
+            ) : null}
+            {clinicalCase.primary_veterinarian ? (
+              <p>
+                <strong>Veterinário:</strong> {clinicalCase.primary_veterinarian.full_name}
+              </p>
+            ) : null}
+          </section>
+          {clinicalCase.tags.length > 0 ? (
+            <section style={{ marginTop: 16 }}>
+              <strong>Tags</strong>
+              <div className="hub-clinic-case-page__tags" style={{ marginTop: 8 }}>
+                {clinicalCase.tags.map((tag) => (
+                  <span key={tag} className="hub-clinic-alert-chip">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      )}
 
       {tab === 'timeline' && (
         <div className="hub-clinic-timeline">
@@ -327,9 +438,11 @@ const HubClinicCasePage: React.FC = () => {
                     {new Date(e.started_at).toLocaleDateString('pt-BR')}
                   </small>
                 )}
-                <Link to={`/hub/clinica/atendimentos/${e.id}`} className="hub-clientes__link">
-                  Abrir atendimento →
-                </Link>
+                <div>
+                  <Link to={`/hub/clinica/atendimentos/${e.id}`} className="hub-clientes__link">
+                    Abrir atendimento →
+                  </Link>
+                </div>
               </div>
             ))
           )}
@@ -339,7 +452,7 @@ const HubClinicCasePage: React.FC = () => {
       {tab === 'prescricoes' && (
         <ul className="hub-clinic-records__list">
           {prescriptions.length === 0 ? (
-            <li className="hub-clientes__muted">Nenhuma prescrição.</li>
+            <li className="hub-clientes__muted">Nenhuma prescrição vinculada a este caso.</li>
           ) : (
             prescriptions.map((p) => <li key={p.id}>{formatPrescriptionLine(p)}</li>)
           )}
@@ -349,7 +462,7 @@ const HubClinicCasePage: React.FC = () => {
       {tab === 'vacinas' && (
         <ul className="hub-clinic-records__list">
           {vaccinations.length === 0 ? (
-            <li className="hub-clientes__muted">Nenhuma vacina registrada.</li>
+            <li className="hub-clientes__muted">Nenhuma vacina vinculada a este caso.</li>
           ) : (
             vaccinations.map((v) => (
               <li key={v.id}>
@@ -361,7 +474,146 @@ const HubClinicCasePage: React.FC = () => {
         </ul>
       )}
 
-      {clinicId && checkoutOpen && checkoutEncounterId && (
+      {tab === 'internacoes' && (
+        <ul className="hub-clinic-records__list">
+          {hospitalizations.length === 0 ? (
+            <li className="hub-clientes__muted">Nenhuma internação vinculada a este caso.</li>
+          ) : (
+            hospitalizations.map((h) => (
+              <li key={h.id}>
+                {HOSP_STATUS_LABELS[h.status] ?? h.status}
+                {h.hub_hospital_beds ? ` · Leito ${h.hub_hospital_beds.code}` : ''}
+                {h.admitted_at ? ` · Entrada ${String(h.admitted_at).slice(0, 10)}` : ''}
+                {h.discharged_at ? ` · Alta ${String(h.discharged_at).slice(0, 10)}` : ''}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+
+      {tab === 'cirurgias' && (
+        <ul className="hub-clinic-records__list">
+          {surgeries.length === 0 ? (
+            <li className="hub-clientes__muted">Nenhuma cirurgia vinculada a este caso.</li>
+          ) : (
+            surgeries.map((s) => (
+              <li key={s.id}>
+                {s.title} — {SURGERY_STATUS_LABELS[s.status] ?? s.status}
+                {s.scheduled_at ? ` · ${new Date(s.scheduled_at).toLocaleString('pt-BR')}` : ''}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+
+      {tab === 'exames' && (
+        <div className="hub-clinic-records__list">
+          {exams.length === 0 ? (
+            <p className="hub-clientes__muted">Nenhum exame estruturado neste caso. Solicite no atendimento.</p>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              {exams.map((ex) => (
+                <li key={ex.id} className="hub-clinic-timeline__item" style={{ marginBottom: 12 }}>
+                  <strong>{ex.exam_type}</strong>
+                  <span className="hub-clientes__muted" style={{ marginLeft: 8 }}>
+                    {formatHubClinicalExamStatus(ex.status)}
+                  </span>
+                  <div className="hub-clientes__muted" style={{ fontSize: '0.85rem' }}>
+                    Solicitado em {new Date(ex.requested_at).toLocaleString('pt-BR')}
+                    {ex.hub_encounter_id ? (
+                      <>
+                        {' · '}
+                        <Link to={`/hub/clinica/atendimentos/${ex.hub_encounter_id}`} className="hub-clientes__link">
+                          Ver atendimento
+                        </Link>
+                      </>
+                    ) : null}
+                  </div>
+                  {ex.result_text ? <p>{ex.result_text}</p> : null}
+                  {ex.external_result_url ? (
+                    <p>
+                      <a href={ex.external_result_url} target="_blank" rel="noreferrer" className="hub-clientes__link">
+                        Abrir resultado (link)
+                      </a>
+                    </p>
+                  ) : null}
+                  {canWrite && ex.status !== 'cancelled' && ex.status !== 'completed' ? (
+                    <button
+                      type="button"
+                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                      onClick={() => void cancelExam(ex)}
+                    >
+                      Cancelar pedido
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {tab === 'anexos' && (
+        <ul className="hub-clinic-records__list">
+          {attachments.length === 0 ? (
+            <li className="hub-clientes__muted">Nenhum anexo dos atendimentos deste caso.</li>
+          ) : (
+            attachments.map((a) => (
+              <li key={a.id}>
+                <a href={attachmentPublicUrl(a.storage_path)} target="_blank" rel="noreferrer" className="hub-clientes__link">
+                  {a.title || a.file_name}
+                </a>
+                {a.uploaded_at ? (
+                  <span className="hub-clientes__muted" style={{ marginLeft: 8 }}>
+                    {String(a.uploaded_at).slice(0, 10)}
+                  </span>
+                ) : null}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+
+      {tab === 'financeiro' && (
+        <div className="hub-clinic-records__list">
+          {!canFinancial ? (
+            <p className="hub-clientes__muted">Sem permissão para visualizar comandas deste caso.</p>
+          ) : comandas.length === 0 ? (
+            <p className="hub-clientes__muted">Nenhuma comanda registrada para este caso.</p>
+          ) : (
+            <table className="hub-clinic-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Valor</th>
+                  <th>Aberta em</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {comandas.map((c) => (
+                  <tr key={String(c.id)}>
+                    <td>{formatHubComandaStatus(String(c.status ?? ''))}</td>
+                    <td>
+                      {typeof c.total_amount === 'number'
+                        ? c.total_amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                        : '—'}
+                    </td>
+                    <td>{c.opened_at ? new Date(String(c.opened_at)).toLocaleString('pt-BR') : '—'}</td>
+                    <td>
+                      <Link to="/hub/caixa" className="hub-clientes__link">
+                        Caixa
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {checkoutOpen && checkoutEncounterId && (
         <ComandaCheckoutDrawer
           open={checkoutOpen}
           onClose={() => setCheckoutOpen(false)}
@@ -372,6 +624,7 @@ const HubClinicCasePage: React.FC = () => {
           onSuccess={() => {
             showSuccess('Comanda aberta com sucesso.');
             setCheckoutOpen(false);
+            void load();
           }}
         />
       )}

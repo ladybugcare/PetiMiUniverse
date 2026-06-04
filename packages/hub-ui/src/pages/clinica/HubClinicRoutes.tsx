@@ -7,7 +7,6 @@ import HubClinicRecordsPage from './HubClinicRecordsPage';
 import HubClinicCasePage from './HubClinicCasePage';
 import HubClinicHospitalPage from './HubClinicHospitalPage';
 import HubClinicSurgeriesPage from './HubClinicSurgeriesPage';
-import HubClinicTemplatesPage from './HubClinicTemplatesPage';
 
 /** Rotas legadas → prontuário com aba */
 function LegacyProntuarioRedirect({ tab }: { tab: string }) {
@@ -29,7 +28,6 @@ const HubClinicRoutes: React.FC = () => {
         <Route path="exames" element={<LegacyProntuarioRedirect tab="exames" />} />
         <Route path="internacoes" element={<HubClinicHospitalPage />} />
         <Route path="cirurgias" element={<HubClinicSurgeriesPage />} />
-        <Route path="templates" element={<HubClinicTemplatesPage />} />
       </Route>
     </Routes>
   );

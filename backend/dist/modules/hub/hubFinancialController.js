@@ -103,7 +103,7 @@ async function enrichReceivableLines(lines) {
             ? supabase_1.supabaseAdmin.from('hub_service_types').select('id, name, code, service_group').in('id', serviceIds)
             : Promise.resolve({ data: [], error: null }),
         itemIds.length
-            ? supabase_1.supabaseAdmin.from('hub_inventory_items').select('id, name, sku, sale_amount').in('id', itemIds)
+            ? supabase_1.supabaseAdmin.from('hub_inventory_items').select('id, name, store_sku, sale_amount').in('id', itemIds)
             : Promise.resolve({ data: [], error: null }),
         lotIds.length
             ? supabase_1.supabaseAdmin.from('hub_inventory_lots').select('id, lot_code, expires_at').in('id', lotIds)
@@ -1631,7 +1631,7 @@ async function collectUnbilledItems(clinicId, unitId, keys) {
     let gq = supabase_1.supabaseAdmin
         .from('hub_grooming_sessions')
         .select(`
-      id, unit_id, closed_at, guardian_id, hub_staff_member_id, grooming_stage, billing_waived_at,
+      id, unit_id, closed_at, guardian_id, hub_staff_member_id, grooming_stage, billing_waived_at, hub_appointment_id,
       pet:hub_pets(id, name),
       guardian:hub_guardians(id, full_name)
     `)
@@ -1650,6 +1650,9 @@ async function collectUnbilledItems(clinicId, unitId, keys) {
         if (keys.has(`grooming_session:${row.id}`))
             continue;
         if (comandaOpenKeys.has(`grooming_session:${row.id}`))
+            continue;
+        const apptId = row.hub_appointment_id;
+        if (apptId && comandaOpenKeys.has(`appointment:${apptId}`))
             continue;
         const pv = await buildPreviewForGroomingSession(clinicId, row.id);
         const pet = row.pet;
@@ -1670,7 +1673,7 @@ async function collectUnbilledItems(clinicId, unitId, keys) {
     let eq = supabase_1.supabaseAdmin
         .from('hub_encounters')
         .select(`
-      id, unit_id, completed_at, guardian_id, hub_staff_member_id, status, billing_waived_at,
+      id, unit_id, completed_at, guardian_id, hub_staff_member_id, status, billing_waived_at, hub_appointment_id,
       pet:hub_pets(id, name),
       guardian:hub_guardians(id, full_name)
     `)
@@ -1689,6 +1692,9 @@ async function collectUnbilledItems(clinicId, unitId, keys) {
         if (keys.has(`encounter:${row.id}`))
             continue;
         if (comandaOpenKeys.has(`encounter:${row.id}`))
+            continue;
+        const apptIdEnc = row.hub_appointment_id;
+        if (apptIdEnc && comandaOpenKeys.has(`appointment:${apptIdEnc}`))
             continue;
         const pv = await buildPreviewForEncounter(clinicId, row.id);
         const pet = row.pet;

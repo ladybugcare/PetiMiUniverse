@@ -6,6 +6,7 @@ import { useAlert } from '../../components/AlertProvider';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
+import { hubAgendaApi } from '../../api/hubAgendaApi';
 import { hubStaffApi, type HubStaffMember } from '../../api/hubStaffApi';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import {
@@ -18,6 +19,9 @@ import ClinicDayMetrics from './ClinicDayMetrics';
 import ClinicQueueBoard from './ClinicQueueBoard';
 import ClinicWalkInPanel from './ClinicWalkInPanel';
 import ClinicAlertsBanner from './ClinicAlertsBanner';
+import StartEncounterModal from './StartEncounterModal';
+import type { NewAppointmentInitial } from '../agenda/NewAppointmentModal';
+import '../agenda/new-appointment-modal.css';
 
 const HubClinicEncountersPage: React.FC = () => {
   const navigate = useNavigate();
@@ -39,6 +43,8 @@ const HubClinicEncountersPage: React.FC = () => {
   const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
   const [searchQ, setSearchQ] = useState('');
   const [clinicalTypesConfigured, setClinicalTypesConfigured] = useState(true);
+  const [startModalItem, setStartModalItem] = useState<DayBoardItem | null>(null);
+  const [startingEncounter, setStartingEncounter] = useState(false);
 
   const dayRange = useMemo(() => dayRangeIsoLocal(cursor), [cursor]);
 
@@ -116,6 +122,19 @@ const HubClinicEncountersPage: React.FC = () => {
     [staff],
   );
 
+  const openAgendaForScheduling = useCallback(
+    (initial: NewAppointmentInitial) => {
+      setWalkInOpen(false);
+      navigate('/hub/agenda', {
+        state: {
+          openClinicalCreate: true,
+          clinicalIntakeInitial: initial,
+        },
+      });
+    },
+    [navigate],
+  );
+
   const shiftDay = (delta: number) => {
     setCursor((d) => {
       const n = new Date(d);
@@ -125,45 +144,67 @@ const HubClinicEncountersPage: React.FC = () => {
   };
 
   const createWalkIn = async (payload: {
-    petId: string;
-    staffId: string;
+    petId?: string | null;
+    guardianId?: string | null;
+    staffId?: string | null;
     complaint: string;
-    hubCaseId?: string | null;
-    createNewCase?: boolean;
+    hubServiceTypeId: string;
+    entryKind: 'routine' | 'emergency';
+    durationMinutes: number;
   }) => {
     if (!clinicId) return;
     setCreatingWalkIn(true);
     try {
-      const { encounter } = await hubEncountersApi.create({
+      const now = new Date();
+      const endsAt = new Date(now.getTime() + payload.durationMinutes * 60_000);
+      await hubAgendaApi.create({
         clinic_id: clinicId,
-        pet_id: payload.petId,
-        hub_staff_member_id: payload.staffId,
-        chief_complaint: payload.complaint.trim() || null,
-        hub_case_id: payload.hubCaseId ?? null,
-        create_new_case: payload.createNewCase ?? false,
+        hub_service_type_id: payload.hubServiceTypeId,
+        hub_staff_member_id: payload.staffId ?? null,
+        pet_id: payload.petId ?? null,
+        guardian_id: payload.guardianId ?? null,
+        starts_at: now.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: 'checked_in',
+        notes: payload.complaint.trim() || null,
+        title: payload.complaint.trim() ? payload.complaint.trim().slice(0, 200) : 'Atendimento clínico',
+        appointment_kind: payload.entryKind === 'emergency' ? 'clinical_emergency' : 'clinical_walk_in',
       });
       setWalkInOpen(false);
-      navigate(`/hub/clinica/atendimentos/${encounter.id}`);
+      await load();
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao criar atendimento');
+      showError((e as Error)?.message || 'Erro ao registrar entrada na fila');
+      throw e;
     } finally {
       setCreatingWalkIn(false);
     }
   };
 
-  const openItem = async (item: DayBoardItem) => {
+  const openItem = (item: DayBoardItem) => {
     if (!clinicId || !canWrite) return;
+    if (item.kind === 'encounter' && item.encounter_id) {
+      navigate(`/hub/clinica/atendimentos/${item.encounter_id}`);
+      return;
+    }
+    if (item.kind === 'appointment_slot') {
+      setStartModalItem(item);
+    }
+  };
+
+  const handleStartEncounter = async (
+    item: DayBoardItem,
+    opts: { hub_case_id?: string | null; create_new_case?: boolean; new_case_title?: string | null },
+  ) => {
+    if (!clinicId || !item.appointment_id) return;
+    setStartingEncounter(true);
     try {
-      if (item.kind === 'encounter' && item.encounter_id) {
-        navigate(`/hub/clinica/atendimentos/${item.encounter_id}`);
-        return;
-      }
-      if (item.kind === 'appointment_slot' && item.appointment_id) {
-        const { encounter } = await hubEncountersApi.openFromAppointment(clinicId, item.appointment_id);
-        navigate(`/hub/clinica/atendimentos/${encounter.id}`);
-      }
+      const { encounter } = await hubEncountersApi.openFromAppointment(clinicId, item.appointment_id, opts);
+      setStartModalItem(null);
+      navigate(`/hub/clinica/atendimentos/${encounter.id}`);
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao abrir atendimento');
+      showError((e as Error)?.message || 'Erro ao iniciar atendimento');
+    } finally {
+      setStartingEncounter(false);
     }
   };
 
@@ -249,12 +290,8 @@ const HubClinicEncountersPage: React.FC = () => {
           />
         </div>
         {canWrite ? (
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary"
-            onClick={() => setWalkInOpen(true)}
-          >
-            Novo atendimento
+          <button type="button" className="hub-btn hub-btn--primary" onClick={() => setWalkInOpen(true)}>
+            Nova entrada na fila
           </button>
         ) : null}
       </div>
@@ -274,7 +311,17 @@ const HubClinicEncountersPage: React.FC = () => {
         clinicId={clinicId!}
         onClose={() => setWalkInOpen(false)}
         onSubmit={createWalkIn}
+        onScheduleAgenda={openAgendaForScheduling}
         submitting={creatingWalkIn}
+      />
+
+      <StartEncounterModal
+        open={startModalItem !== null}
+        clinicId={clinicId!}
+        item={startModalItem}
+        onClose={() => setStartModalItem(null)}
+        onStart={handleStartEncounter}
+        starting={startingEncounter}
       />
     </div>
   );

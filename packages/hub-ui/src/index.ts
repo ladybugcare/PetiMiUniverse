@@ -86,7 +86,7 @@ export type {
   HubQuoteLine,
 } from './api/hubQuotesApi';
 export { hubComandaApi } from './api/hubComandaApi';
-export type { HubComandaOriginType, HubComandaItem, HubComandaDetailResponse } from './api/hubComandaApi';
+export type { HubComandaOriginType, HubComandaItem, HubComandaDetailResponse, HubComandaOpenBody, HubComandaManualLine } from './api/hubComandaApi';
 export { ComandaCheckoutDrawer } from './pages/finance/ComandaCheckoutDrawer';
 export type { ComandaCheckoutDrawerProps } from './pages/finance/ComandaCheckoutDrawer';
 export { hubFinancialApi } from './api/hubFinancialApi';

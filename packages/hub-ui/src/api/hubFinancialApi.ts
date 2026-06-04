@@ -46,7 +46,7 @@ export type HubFinanceReceivable = {
     pet_id?: string | null;
     pet?: { name: string } | null;
     service_type?: { id: string; name: string; code?: string; service_group?: string } | null;
-    inventory_item?: { id: string; name: string; sku?: string | null } | null;
+    inventory_item?: { id: string; name: string; store_sku?: string | null } | null;
     inventory_lot?: { id: string; lot_code?: string | null; expires_at?: string | null } | null;
   }>;
 };

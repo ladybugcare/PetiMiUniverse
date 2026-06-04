@@ -275,6 +275,8 @@ export async function resolveOrCreateClinicalCase(opts: {
   started_at?: string;
   hub_case_id?: string | null;
   create_new_case?: boolean;
+  /** Título do novo caso quando `create_new_case` (sobrepõe queixa como título). */
+  new_case_title?: string | null;
 }): Promise<string> {
   const {
     clinic_id,
@@ -286,6 +288,7 @@ export async function resolveOrCreateClinicalCase(opts: {
     started_at,
     hub_case_id,
     create_new_case,
+    new_case_title,
   } = opts;
 
   // Caso fornecido explicitamente: validar
@@ -310,7 +313,16 @@ export async function resolveOrCreateClinicalCase(opts: {
 
   // Criar novo caso explicitamente
   if (create_new_case) {
-    return createAutoCase({ clinic_id, unit_id, pet_id, guardian_id, primary_veterinarian_id, chief_complaint, started_at });
+    return createAutoCase({
+      clinic_id,
+      unit_id,
+      pet_id,
+      guardian_id,
+      primary_veterinarian_id,
+      chief_complaint,
+      started_at,
+      case_title: new_case_title ?? null,
+    });
   }
 
   // Sem indicação explícita: buscar caso ativo/monitoring mais recente
@@ -340,8 +352,11 @@ async function createAutoCase(opts: {
   primary_veterinarian_id?: string | null;
   chief_complaint?: string | null;
   started_at?: string;
+  /** Se informado, usa como título do caso em vez da queixa principal. */
+  case_title?: string | null;
 }): Promise<string> {
-  const title = opts.chief_complaint?.trim() || 'Atendimento avulso';
+  const title =
+    opts.case_title?.trim() || opts.chief_complaint?.trim() || 'Atendimento avulso';
   const { data, error } = await supabaseAdmin
     .from('hub_clinical_cases')
     .insert({

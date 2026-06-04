@@ -14,6 +14,10 @@ import {
   type PetPricingFields,
   type ServiceTypePricingRow,
 } from './hubPricingResolve';
+import {
+  maybeFlagComandaCancellationPending,
+  financialAdjustmentFlagsForAppointments,
+} from './hubComandasController';
 
 /** Reparte um total comercial (ex.: ida+volta L&T) em duas linhas contábeis com soma exacta. */
 function splitMoneyTotalAcrossTwoLegs(total: number): [number, number] {
@@ -47,13 +51,21 @@ const optionalTrim = (max: number) =>
 const appointmentStatusSchema = z.enum([
   'pending_confirm',
   'confirmed',
+  'checked_in',
   'in_progress',
   'done',
   'cancelled',
   'paid',
 ]);
 
-const appointmentKindSchema = z.enum(['standard', 'hotel_stay', 'daycare_block', 'pickup_route']);
+const appointmentKindSchema = z.enum([
+  'standard',
+  'hotel_stay',
+  'daycare_block',
+  'pickup_route',
+  'clinical_walk_in',
+  'clinical_emergency',
+]);
 
 type OverlapRow = {
   id: string;
@@ -626,6 +638,10 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
     svcByAppt.set(apptId, arr);
   }
 
+  const adjustmentFlags = clinicId
+    ? await financialAdjustmentFlagsForAppointments(clinicId, apptIds)
+    : new Map<string, { financial_adjustment_pending: boolean; comanda_id: string | null }>();
+
   return rows.map((r) => {
     const st = stMap.get(r.hub_service_type_id as string);
     const sm = r.hub_staff_member_id ? staffMap.get(r.hub_staff_member_id as string) : null;
@@ -652,6 +668,7 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       service_type: stMap.get(l.hub_service_type_id as string) ?? null,
     }));
     const linked = encByAppt.get(r.id as string);
+    const adj = adjustmentFlags.get(r.id as string);
     return {
       ...r,
       service_type: st ?? null,
@@ -662,6 +679,8 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       services,
       hub_encounter_id: linked?.id ?? null,
       hub_encounter_status: linked?.status ?? null,
+      financial_adjustment_pending: adj?.financial_adjustment_pending ?? false,
+      comanda_id: adj?.comanda_id ?? null,
     };
   });
 }
@@ -773,6 +792,10 @@ const createAppointmentSchema = z
     pickup_route_pricing: pickupRoutePricingSchema.optional().nullable(),
     extra_blocks: z.array(extraBlockSchema).optional(),
     recurrence: recurrenceSchema.optional().nullable(),
+    /** Preferência de caso ao abrir atendimento (fluxo agenda consulta de rotina). */
+    intake_hub_case_id: uuidStr.optional().nullable(),
+    intake_create_new_case: z.boolean().optional(),
+    intake_new_case_title: optionalTrim(500).optional().nullable(),
   })
   .strict();
 
@@ -796,6 +819,9 @@ const patchAppointmentSchema = z
     services: z.array(serviceLineSchema).optional(),
     pricing_porte_tier: optionalPricingPorte.optional(),
     pricing_coat_type: optionalPricingCoat.optional(),
+    intake_hub_case_id: uuidStr.optional().nullable(),
+    intake_create_new_case: z.boolean().optional(),
+    intake_new_case_title: optionalTrim(200).optional().nullable(),
   })
   .strict();
 
@@ -949,6 +975,26 @@ export const createHubAppointment = async (req: Request, res: Response) => {
     }
     if (!(await assertGuardianInClinic(b.clinic_id, b.guardian_id ?? null))) {
       return res.status(400).json({ error: 'Tutor inválido ou não pertence à clínica' });
+    }
+    if (b.intake_hub_case_id && b.intake_create_new_case === true) {
+      return res.status(400).json({ error: 'Não combine intake_hub_case_id com intake_create_new_case.' });
+    }
+    if (b.intake_hub_case_id) {
+      const petId = b.pet_id ?? null;
+      if (!petId) {
+        return res.status(400).json({ error: 'Para vincular um caso clínico, informe o pet no agendamento.' });
+      }
+      const { data: cRow } = await supabaseAdmin
+        .from('hub_clinical_cases')
+        .select('id')
+        .eq('id', b.intake_hub_case_id)
+        .eq('clinic_id', b.clinic_id)
+        .eq('pet_id', petId)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (!cRow) {
+        return res.status(400).json({ error: 'Caso clínico inválido ou não pertence a este pet.' });
+      }
     }
     if (!(await assertUnitInClinic(b.clinic_id, b.unit_id ?? null))) {
       return res.status(400).json({ error: 'Unidade inválida ou não pertence à clínica' });
@@ -1199,6 +1245,9 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         series_occurrence_date: seriesId ? occDate : null,
         pricing_porte_tier: apptOverride,
         pricing_coat_type: apptCoatOverride,
+        intake_hub_case_id: b.intake_hub_case_id ?? null,
+        intake_create_new_case: b.intake_create_new_case === true ? true : null,
+        intake_new_case_title: b.intake_new_case_title ?? null,
       };
 
       const { data: apptRow, error: apptErr } = await supabaseAdmin
@@ -1522,6 +1571,9 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     if (b.description !== undefined) patch.description = b.description;
     if (b.pricing_porte_tier !== undefined) patch.pricing_porte_tier = b.pricing_porte_tier;
     if (b.pricing_coat_type !== undefined) patch.pricing_coat_type = b.pricing_coat_type;
+    if (b.intake_hub_case_id !== undefined) patch.intake_hub_case_id = b.intake_hub_case_id;
+    if (b.intake_create_new_case !== undefined) patch.intake_create_new_case = b.intake_create_new_case;
+    if (b.intake_new_case_title !== undefined) patch.intake_new_case_title = b.intake_new_case_title;
 
     if (b.services && b.services.length > 0) {
       patch.hub_service_type_id = b.services[0]!.hub_service_type_id;
@@ -1707,6 +1759,12 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
             ar.pricing_coat_type ?? null,
           );
         }
+      }
+    }
+
+    if (patch.status === 'cancelled') {
+      for (const tid of targetIds) {
+        void maybeFlagComandaCancellationPending(b.clinic_id, 'appointment', tid);
       }
     }
 

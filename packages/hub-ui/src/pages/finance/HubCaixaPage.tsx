@@ -11,6 +11,7 @@ import {
   type HubCashSessionSummary,
 } from '../../api/hubFinancialApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
+import { ComandaCancellationResolveDrawer } from './ComandaCancellationResolveDrawer';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
@@ -31,7 +32,9 @@ const HubCaixaPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [cashOpen, setCashOpen] = useState<HubCashSession | null>(null);
   const [cashSummary, setCashSummary] = useState<HubCashSessionSummary | null>(null);
-  const [tab, setTab] = useState<'session' | 'pending' | 'reversal' | 'historico' | 'comandas'>('session');
+  const [tab, setTab] = useState<'session' | 'pending' | 'reversal' | 'historico' | 'comandas' | 'cancellation'>(
+    'session',
+  );
   const [openBal, setOpenBal] = useState('0');
   const [closeBal, setCloseBal] = useState('');
   const [movType, setMovType] = useState<'withdrawal' | 'deposit'>('withdrawal');
@@ -40,7 +43,12 @@ const HubCaixaPage: React.FC = () => {
   const [reversePaymentId, setReversePaymentId] = useState('');
   const [selectedCashItem, setSelectedCashItem] = useState<Record<string, unknown> | null>(null);
   const [openComandas, setOpenComandas] = useState<Array<Record<string, unknown>>>([]);
+  const [cancellationPendingCount, setCancellationPendingCount] = useState(0);
+  const [cancellationQueue, setCancellationQueue] = useState<Array<Record<string, unknown>>>([]);
+  const [resolveComanda, setResolveComanda] = useState<Record<string, unknown> | null>(null);
   const [closedSessions, setClosedSessions] = useState<HubCashSession[]>([]);
+
+  const canFinancialWrite = hasPermission('hub.financial.write');
 
   const load = useCallback(async () => {
     if (!clinicId || !unitId) {
@@ -49,16 +57,20 @@ const HubCaixaPage: React.FC = () => {
     }
     setLoading(true);
     try {
-      const [c, list, cash, comandasRes, closedRes] = await Promise.all([
+      const [c, list, cash, comandasRes, cancelCountRes, cancelQueueRes, closedRes] = await Promise.all([
         hubFinancialApi.getPendingBillingCount(clinicId, unitId),
         hubFinancialApi.listUnbilledCompleted(clinicId, unitId),
         hubFinancialApi.getCashSessionOpen(clinicId, unitId),
         hubComandaApi.listComandas({ clinic_id: clinicId, unit_id: unitId, status: 'aberta' }).catch(() => ({ comandas: [] })),
+        hubComandaApi.getCancellationPendingCount(clinicId, unitId).catch(() => ({ count: 0 })),
+        hubComandaApi.listCancellationPending({ clinic_id: clinicId, unit_id: unitId }).catch(() => ({ comandas: [] })),
         hubFinancialApi.listClosedCashSessions(clinicId, unitId, 25).catch(() => ({ sessions: [] })),
       ]);
       setPending(c);
       setItems(list);
       setOpenComandas(comandasRes.comandas ?? []);
+      setCancellationPendingCount(cancelCountRes.count ?? 0);
+      setCancellationQueue(cancelQueueRes.comandas ?? []);
       setClosedSessions(closedRes.sessions ?? []);
       const open = cash.cash_session ?? null;
       setCashOpen(open);
@@ -281,13 +293,14 @@ const HubCaixaPage: React.FC = () => {
         items={[
           { id: 'session', label: 'Sessão do caixa' },
           { id: 'comandas', label: 'Comandas abertas' },
+          { id: 'cancellation', label: 'Ajustes por cancelamento' },
           { id: 'pending', label: 'Pendentes de cobrança' },
           { id: 'historico', label: 'Sessões fechadas' },
           { id: 'reversal', label: 'Estornos' },
         ]}
         activeId={tab}
         onTabChange={(id) => {
-          setTab(id as 'session' | 'pending' | 'reversal' | 'historico' | 'comandas');
+          setTab(id as 'session' | 'pending' | 'reversal' | 'historico' | 'comandas' | 'cancellation');
           setSelectedCashItem(null);
         }}
       />
@@ -331,6 +344,16 @@ const HubCaixaPage: React.FC = () => {
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <ClipboardList size={22} strokeWidth={1.75} />
+          </div>
+        </div>
+        <div className="hub-servicos__metric-card">
+          <div className="hub-servicos__metric-card__text">
+            <div className="hub-servicos__metric-label">Ajustes por cancelamento</div>
+            <div className="hub-servicos__metric-value">{loading ? '—' : String(cancellationPendingCount)}</div>
+            <div className="hub-servicos__metric-sub">Pagamento antecipado com operação cancelada</div>
+          </div>
+          <div className="hub-servicos__metric-icon" aria-hidden>
+            <AlertCircle size={22} strokeWidth={1.75} />
           </div>
         </div>
       </div>
@@ -470,6 +493,70 @@ const HubCaixaPage: React.FC = () => {
         ) : null}
       </section> : null}
 
+      {tab === 'cancellation' ? (
+        <section className="hub-finance-page__section">
+          <h2 className="hub-clientes__form-title">Ajustes por cancelamento</h2>
+          <p className="hub-clientes__muted" style={{ marginTop: 0 }}>
+            Operação cancelada na agenda ou no atendimento, com pagamento já registrado na comanda. Resolva aqui
+            (reembolso, crédito ou manter cobrança).
+          </p>
+          {loading ? (
+            <p className="hub-clientes__muted">Carregando…</p>
+          ) : cancellationQueue.length === 0 ? (
+            <p className="hub-clientes__muted">Nenhuma pendência de cancelamento nesta unidade.</p>
+          ) : (
+            <div className="hub-clientes__table-wrap">
+              <table className="hub-clientes__table hub-finance-page__table">
+                <thead>
+                  <tr>
+                    <th>Tutor / Pet</th>
+                    <th>Origem</th>
+                    <th className="hub-finance-page__th-num">Pago</th>
+                    <th>Cancelamento</th>
+                    <th className="hub-clientes__th-actions">Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cancellationQueue.map((c) => {
+                    const gu = c.guardian as { full_name?: string } | null | undefined;
+                    const pet = c.pet as { name?: string } | null | undefined;
+                    const cancelledAt = c.cancellation_operational_at
+                      ? new Date(String(c.cancellation_operational_at)).toLocaleString('pt-BR')
+                      : '—';
+                    return (
+                      <tr key={String(c.id)}>
+                        <td>
+                          {gu?.full_name ?? '—'}
+                          {pet?.name ? ` · ${pet.name}` : ''}
+                        </td>
+                        <td>
+                          <span className="hub-clientes__muted">{String(c.cancellation_operational_type ?? c.origin_type ?? '—')}</span>
+                        </td>
+                        <td className="hub-finance-page__td-num">{formatBrl(Number(c.paid_total ?? 0))}</td>
+                        <td>{cancelledAt}</td>
+                        <td className="hub-clientes__td-actions">
+                          {canFinancialWrite ? (
+                            <button
+                              type="button"
+                              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                              onClick={() => setResolveComanda(c)}
+                            >
+                              Resolver
+                            </button>
+                          ) : (
+                            <span className="hub-clientes__muted">Sem permissão</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
+
       {tab === 'comandas' ? (
         <section className="hub-finance-page__section">
           <h2 className="hub-clientes__form-title">Comandas abertas nesta unidade</h2>
@@ -483,6 +570,7 @@ const HubCaixaPage: React.FC = () => {
                 <thead>
                   <tr>
                     <th>Origem</th>
+                    <th>Financeiro</th>
                     <th>Valor</th>
                     <th>Aberta em</th>
                   </tr>
@@ -494,6 +582,7 @@ const HubCaixaPage: React.FC = () => {
                         <span className="hub-clientes__muted">{String(c.origin_type ?? '—')}</span> · #
                         {String(c.origin_id ?? '').slice(0, 8)}…
                       </td>
+                      <td>{String(c.financial_status ?? '—')}</td>
                       <td className="hub-finance-page__td-num">{formatBrl(Number(c.total_amount ?? 0))}</td>
                       <td>{c.opened_at ? new Date(String(c.opened_at)).toLocaleString('pt-BR') : '—'}</td>
                     </tr>
@@ -605,6 +694,15 @@ const HubCaixaPage: React.FC = () => {
           </button>
         </div>
       </section> : null}
+
+      <ComandaCancellationResolveDrawer
+        open={!!resolveComanda}
+        onClose={() => setResolveComanda(null)}
+        clinicId={clinicId}
+        unitId={unitId}
+        comanda={resolveComanda}
+        onResolved={() => void load()}
+      />
 
       {tab === 'pending' ? <section className="hub-finance-page__section">
         <h2 className="hub-clientes__form-title">Pendentes de cobrança</h2>

@@ -6,7 +6,6 @@ const links = [
   { to: 'prontuarios', label: 'Pacientes', end: true },
   { to: 'internacoes', label: 'Internações', end: true },
   { to: 'cirurgias', label: 'Cirurgias', end: true },
-  { to: 'templates', label: 'Templates', end: true },
 ];
 
 const HubClinicSubnav: React.FC = () => {

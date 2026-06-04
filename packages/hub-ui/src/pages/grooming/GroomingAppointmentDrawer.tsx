@@ -17,6 +17,7 @@ import {
   type GroomingStage,
 } from './groomingStages';
 import type { GroomingQuickAction } from './GroomingQueueBoard';
+import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
 
 const ADVANCE_LABEL: Partial<Record<GroomingStage, string>> = {
   scheduled: 'Check-in',
@@ -45,6 +46,7 @@ export type GroomingAppointmentDrawerProps = {
   onOpenCheckout?: () => void;
   /** Exibir botão de checkout (ex.: permissão + unidade resolvida). */
   checkoutEnabled?: boolean;
+  canViewFinancial?: boolean;
 };
 
 function formatHm(iso: string): string {
@@ -105,6 +107,7 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
   onSessionUpdated,
   onOpenCheckout,
   checkoutEnabled = false,
+  canViewFinancial = false,
   busy,
 }) => {
   const clinicId = getStoredClinicId();
@@ -339,6 +342,11 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
           ) : null}
           {item.is_late ? <span className="hub-grooming-queue__late-tag"> · Em atraso</span> : null}
         </p>
+
+        <FinancialAdjustmentPendingBadge
+          pending={Boolean(item.financial_adjustment_pending)}
+          showCaixaLink={canViewFinancial}
+        />
 
         {tags.length > 0 ? (
           <div className="hub-grooming-tags" aria-label="Alertas e preferências">

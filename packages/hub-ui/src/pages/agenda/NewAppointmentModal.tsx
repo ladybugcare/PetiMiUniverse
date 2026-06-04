@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, GripVertical, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, ChevronUp, User, Dog, Loader2 } from 'lucide-react';
+import { Plus, Trash2, GripVertical, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, ChevronUp, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
@@ -14,6 +14,7 @@ import {
   type HubAppointmentRecurrenceRule,
 } from '../../api/hubAgendaApi';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
+import { hubClinicalCasesApi, type HubClinicalCase } from '../../api/hubClinicalApi';
 import { hubClinicSettingsApi } from '../../api/hubClinicSettingsApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
 import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
@@ -21,7 +22,6 @@ import { hubServiceAddonsApi } from '../../api/hubServiceAddonsApi';
 import AppointmentAddonsSection from './AppointmentAddonsSection';
 import { validateSelectedAddonVariants } from './appointmentAddonsUtils';
 import { isStaffCompatibleWithServiceType, type GroupJobMappings } from '../../utils/staffServiceCompatibility';
-import { normalizeServiceGroupSlug } from '../../utils/serviceTypeSlug';
 import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import {
@@ -48,7 +48,7 @@ import {
   validateAppointmentCoatOverride,
   validateAppointmentPorteOverride,
 } from './agendaPortePricingPreview';
-import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
+import { isOperationalClinicalGroup, normalizeServiceGroupSlug, serviceGroupLabel } from '../../utils/serviceTypeSlug';
 import { STATUS_META, type AgendaStatus } from './agendaModel';
 import './new-appointment-modal.css';
 
@@ -83,6 +83,8 @@ export type NewAppointmentModalProps = {
   initial?: NewAppointmentInitial | null;
   staffOptions: HubStaffMember[];
   serviceTypes: HubServiceType[];
+  /** Fluxo Clínica → «Agendar na agenda»: formulário focado como nos prints de consulta de rotina. */
+  layoutVariant?: 'default' | 'clinical_routine';
 };
 
 type ServiceChip = {
@@ -205,8 +207,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   initial,
   staffOptions,
   serviceTypes,
+  layoutVariant = 'default',
 }) => {
   const clinicId = getStoredClinicId() ?? '';
+  const isClinicalRoutine = layoutVariant === 'clinical_routine';
   const [jobMappings, setJobMappings] = useState<GroupJobMappings>({});
 
   useEffect(() => {
@@ -244,6 +248,12 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [guardianPets, setGuardianPets] = useState<GuardianPetOption[]>([]);
   const [guardianOptions, setGuardianOptions] = useState<HubComboboxOption[]>([]);
   const [guardiansLoading, setGuardiansLoading] = useState(false);
+
+  const [intakeActiveCases, setIntakeActiveCases] = useState<HubClinicalCase[]>([]);
+  const [intakeCasesLoading, setIntakeCasesLoading] = useState(false);
+  const [intakeCaseMode, setIntakeCaseMode] = useState<'existing' | 'new'>('new');
+  const [intakeSelectedCaseId, setIntakeSelectedCaseId] = useState('');
+  const [intakeNewCaseTitle, setIntakeNewCaseTitle] = useState('');
 
   const [puppyMaxMonths, setPuppyMaxMonths] = useState(8);
   /** Vazio = automático (null no API). */
@@ -516,6 +526,42 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     }).catch(() => setGuardianPets([]));
   }, [guardianId, clinicId]);
 
+  useEffect(() => {
+    if (!open || !isClinicalRoutine || !clinicId || !petId) {
+      setIntakeActiveCases([]);
+      setIntakeCasesLoading(false);
+      if (!open) {
+        setIntakeCaseMode('new');
+        setIntakeSelectedCaseId('');
+        setIntakeNewCaseTitle('');
+      }
+      return;
+    }
+    setIntakeCasesLoading(true);
+    void hubClinicalCasesApi
+      .list(clinicId, { petId })
+      .then((r) => {
+        const rows = r.cases ?? [];
+        const combined = rows.filter((c) => c.status === 'active' || c.status === 'monitoring');
+        setIntakeActiveCases(combined);
+        setIntakeCaseMode(combined.length > 0 ? 'existing' : 'new');
+        setIntakeSelectedCaseId(combined.length === 1 ? combined[0]!.id : '');
+      })
+      .catch(() => setIntakeActiveCases([]))
+      .finally(() => setIntakeCasesLoading(false));
+  }, [open, isClinicalRoutine, clinicId, petId]);
+
+  useEffect(() => {
+    if (!open || !isClinicalRoutine || intakeCaseMode !== 'new') return;
+    const parts = dateYmd.split('-');
+    const y = parts[0];
+    const m = parts[1];
+    const d = parts[2];
+    if (!y || !m || !d) return;
+    const suggested = `Consulta de rotina - ${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+    setIntakeNewCaseTitle((t) => (t.trim() ? t : suggested));
+  }, [open, isClinicalRoutine, intakeCaseMode, dateYmd]);
+
   // ── Service groups for filter ─────────────────────────────────────────────
   const groups = useMemo(() => {
     const seen = new Set<string>();
@@ -544,6 +590,26 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const serviceComboOptions = useMemo<HubComboboxOption[]>(
     () => filteredServiceTypes.map((st) => ({ value: st.id, label: `${st.name}${st.default_duration_minutes ? ` (${st.default_duration_minutes}min)` : ''}` })),
     [filteredServiceTypes],
+  );
+
+  const clinicalRoutineServiceOptions = useMemo<HubComboboxOption[]>(() => {
+    const rows = serviceTypes.filter((st) => {
+      if (st.active === false) return false;
+      if (st.deleted_at) return false;
+      if (st.is_addon) return false;
+      if (st.allow_scheduling === false) return false;
+      const g = normalizeServiceGroupSlug(st.service_group);
+      return isOperationalClinicalGroup(g);
+    });
+    return rows.map((st) => {
+      const g = normalizeServiceGroupSlug(st.service_group);
+      return { value: st.id, label: `${st.name} (${serviceGroupLabel(g)})` };
+    });
+  }, [serviceTypes]);
+
+  const intakeCaseComboOptions = useMemo<HubComboboxOption[]>(
+    () => intakeActiveCases.map((c) => ({ value: c.id, label: c.title })),
+    [intakeActiveCases],
   );
 
   const selectedServiceTypes = useMemo(() => {
@@ -595,6 +661,25 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     }
     return rows;
   }, [staffOptions, suggestedStaffIds, selectedServiceTypes.length]);
+
+  const setClinicalRoutinePrimaryService = useCallback(
+    (id: string) => {
+      const st = serviceTypes.find((t) => t.id === id);
+      if (!st) return;
+      const rawDur = st.default_duration_minutes;
+      const durMin =
+        typeof rawDur === 'number' && rawDur > 0 ? Math.min(480, Math.max(15, rawDur)) : 60;
+      setServices([
+        {
+          hub_service_type_id: id,
+          name: st.name,
+          duration_minutes: durMin,
+          pricing_variant: null,
+        },
+      ]);
+    },
+    [serviceTypes],
+  );
 
   const levaTrazServiceTypes = useMemo(
     () =>
@@ -949,6 +1034,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       setSaveError('Informe a data do agendamento.');
       return;
     }
+    if (isClinicalRoutine) {
+      if (mainBlockNotes.length > 1000) {
+        setSaveError('Queixa principal: no máximo 1000 caracteres.');
+        return;
+      }
+      if (intakeCaseMode === 'existing' && intakeActiveCases.length > 0 && !intakeSelectedCaseId) {
+        setSaveError('Selecione o caso clínico.');
+        return;
+      }
+    }
 
     const tierErr = validateAppointmentPorteOverride(
       pricingApptPorteTier.trim() || null,
@@ -973,11 +1068,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       return;
     }
     const addonVariantErr = validateSelectedAddonVariants(selectedAddons, availableAddons, serviceTypes);
-    if (addonVariantErr) {
+    if (!isClinicalRoutine && addonVariantErr) {
       setSaveError(addonVariantErr);
       return;
     }
-    if (withPickup) {
+    if (!isClinicalRoutine && withPickup) {
       if (!pickupLtServiceTypeId.trim()) {
         setSaveError('Leva e Traz: selecione o tipo de serviço de transporte.');
         return;
@@ -1018,6 +1113,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           pricing_variant: s.pricing_variant ?? undefined,
         })),
       };
+
+      if (isClinicalRoutine) {
+        if (intakeCaseMode === 'existing' && intakeSelectedCaseId) {
+          payload.intake_hub_case_id = intakeSelectedCaseId;
+        } else if (intakeCaseMode === 'new') {
+          payload.intake_create_new_case = true;
+          const nt = intakeNewCaseTitle.trim();
+          if (nt) payload.intake_new_case_title = nt;
+        }
+      }
 
       if (withPickup) {
         payload.with_pickup_route_before = {
@@ -1129,6 +1234,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setSelectedAddons([]);
     setAvailableAddons([]);
     setAddonsLoading(false);
+    setIntakeActiveCases([]);
+    setIntakeCasesLoading(false);
+    setIntakeCaseMode('new');
+    setIntakeSelectedCaseId('');
+    setIntakeNewCaseTitle('');
   };
 
   const handleClose = () => {
@@ -1302,6 +1412,314 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       </button>
     </>
   );
+
+  const clinicalRoutinePrimaryId = services[0]?.hub_service_type_id ?? '';
+  const canSaveClinicalRoutine =
+    Boolean(clinicId) &&
+    services.length > 0 &&
+    Boolean(guardianId) &&
+    Boolean(petId) &&
+    Boolean(staffId) &&
+    Boolean(dateYmd) &&
+    !intakeCasesLoading &&
+    !(intakeCaseMode === 'existing' && intakeActiveCases.length > 0 && !intakeSelectedCaseId);
+
+  if (isClinicalRoutine) {
+    return (
+      <HubSidePanel
+        open={open}
+        onClose={handleClose}
+        title="Agendar consulta de rotina"
+        titleIcon={<Stethoscope size={22} strokeWidth={2} aria-hidden />}
+        subtitle="Consulta planejada e não urgente."
+        footer={
+          <>
+            {saveError ? (
+              <span className="nam-footer-error">
+                <AlertCircle size={14} /> {saveError}
+              </span>
+            ) : null}
+            <HubCancelButton onClick={handleClose} disabled={saving} />
+            <button
+              className="hub-btn hub-btn--primary nam-intake-footer-primary"
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !canSaveClinicalRoutine}
+            >
+              {saving ? (
+                'Salvando…'
+              ) : (
+                <>
+                  <CalendarPlus size={18} strokeWidth={2} aria-hidden />
+                  Agendar consulta
+                </>
+              )}
+            </button>
+          </>
+        }
+      >
+        <div className="nam-form">
+          <div className="nam-section nam-section--quick">
+            <div className="nam-quick-card">
+              <div className="nam-row nam-row--cols2">
+                <div className="nam-field">
+                  <label className="nam-label" htmlFor="nam-cr-guardian">
+                    Tutor
+                  </label>
+                  {guardiansLoading ? (
+                    <div className="nam-field-shell nam-field-shell--waiting" aria-busy="true">
+                      <span className="nam-field-shell__icon">
+                        <Loader2 size={18} strokeWidth={2} className="nam-field-shell__spin" aria-hidden />
+                      </span>
+                      <span className="nam-field-shell__text">Carregando tutores…</span>
+                    </div>
+                  ) : (
+                    <HubSearchableCombobox
+                      id="nam-cr-guardian"
+                      options={guardianOptions}
+                      value={guardianId}
+                      onChange={(v) => {
+                        setGuardianId(v);
+                        setGuardianName(guardianOptions.find((o) => o.value === v)?.label ?? '');
+                      }}
+                      placeholder="Buscar tutor…"
+                      triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
+                      ariaLabel="Selecionar tutor"
+                    />
+                  )}
+                </div>
+                <div className="nam-field">
+                  <label className="nam-label" htmlFor={guardianId ? 'nam-cr-pet' : undefined}>
+                    Pet
+                  </label>
+                  {guardianId ? (
+                    petComboOptions.length > 0 ? (
+                      <HubSearchableCombobox
+                        id="nam-cr-pet"
+                        options={petComboOptions}
+                        value={petId}
+                        onChange={(v) => {
+                          setPetId(v);
+                          const p = guardianPets.find((x) => x.id === v);
+                          setPetName(p?.name ?? '');
+                        }}
+                        placeholder="Selecionar pet…"
+                        triggerIcon={<Dog size={18} strokeWidth={2} aria-hidden />}
+                        ariaLabel="Selecionar pet"
+                      />
+                    ) : (
+                      <div className="nam-field-shell nam-field-shell--empty" role="status">
+                        <span className="nam-field-shell__icon" aria-hidden>
+                          <Dog size={18} strokeWidth={2} />
+                        </span>
+                        <span className="nam-field-shell__text">Nenhum pet cadastrado</span>
+                      </div>
+                    )
+                  ) : (
+                    <div className="nam-field-shell nam-field-shell--blocked" role="status">
+                      <span className="nam-field-shell__icon" aria-hidden>
+                        <Dog size={18} strokeWidth={2} />
+                      </span>
+                      <span className="nam-field-shell__text">Selecione um tutor primeiro</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="nam-row nam-row--cols2">
+                <div className="nam-field">
+                  <HubDateField
+                    id="nam-cr-date"
+                    label="Data da consulta"
+                    valueIso={dateYmd}
+                    onChangeIso={setDateYmd}
+                    showTodayButton
+                  />
+                </div>
+                <div className="nam-field">
+                  <label className="nam-label" htmlFor="nam-cr-time">
+                    Horário
+                  </label>
+                  <div className="nam-intake-time-row">
+                    <span className="nam-intake-time-row__icon" aria-hidden>
+                      <Clock size={18} strokeWidth={2} />
+                    </span>
+                    <input
+                      id="nam-cr-time"
+                      className="nam-input nam-intake-time-row__input"
+                      type="time"
+                      value={startsHm}
+                      onChange={(e) => setStartsHm(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="nam-row nam-row--cols2">
+                <div className="nam-field">
+                  <label className="nam-label" htmlFor="nam-cr-svc">
+                    Serviço (Clínica, Internação ou Cirurgia)
+                  </label>
+                  {clinicalRoutineServiceOptions.length === 0 ? (
+                    <p className="nam-muted">
+                      Nenhum tipo de serviço ativo nessas áreas. Configure em Serviços (grupos Clínica, Internação ou
+                      Cirurgia).
+                    </p>
+                  ) : (
+                    <HubSearchableCombobox
+                      id="nam-cr-svc"
+                      className="hub-combobox--clientes"
+                      options={clinicalRoutineServiceOptions}
+                      value={clinicalRoutinePrimaryId}
+                      onChange={(v) => setClinicalRoutinePrimaryService(v)}
+                      placeholder="Selecionar serviço…"
+                      triggerIcon={<Stethoscope size={18} strokeWidth={2} aria-hidden />}
+                      ariaLabel="Selecionar serviço clínico"
+                      clearable={false}
+                    />
+                  )}
+                </div>
+                <div className="nam-field">
+                  <label className="nam-label" htmlFor="nam-cr-staff">
+                    Profissional
+                  </label>
+                  <HubSearchableCombobox
+                    id="nam-cr-staff"
+                    className="hub-combobox--clientes"
+                    options={staffComboOptions.filter((o) => o.value !== '')}
+                    value={staffId}
+                    onChange={setStaffId}
+                    placeholder="Selecionar…"
+                    triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
+                    ariaLabel="Selecionar profissional"
+                    clearable={false}
+                  />
+                </div>
+              </div>
+
+              <div className="nam-field">
+                <label className="nam-label" htmlFor="nam-cr-complaint">
+                  Queixa principal
+                </label>
+                <textarea
+                  id="nam-cr-complaint"
+                  className="nam-textarea"
+                  rows={4}
+                  maxLength={1000}
+                  value={mainBlockNotes}
+                  onChange={(e) => {
+                    setMainBlockNotes(e.target.value);
+                    setMainBlockNotesUserEdited(true);
+                  }}
+                  placeholder="Descreva brevemente o motivo da consulta…"
+                />
+                <p className="nam-char-count">{mainBlockNotes.length}/1000</p>
+                <p className="nam-muted" style={{ marginTop: 6 }}>
+                  Descreva brevemente o motivo da consulta.
+                </p>
+              </div>
+
+              {petId ? (
+                <div className="nam-intake-case-box">
+                  <div className="nam-intake-callout nam-intake-callout--info">
+                    <Info size={18} strokeWidth={2} className="nam-intake-callout__icon" aria-hidden />
+                    <p>
+                      Para consultas de rotina, você pode criar um novo caso ou vincular a um caso já existente.
+                    </p>
+                  </div>
+                  <p className="nam-label nam-intake-case-box__heading">Caso clínico</p>
+                  {intakeCasesLoading ? (
+                    <p className="nam-muted">Verificando casos ativos…</p>
+                  ) : (
+                    <>
+                      <div className="nam-intake-choice-grid">
+                        <button
+                          type="button"
+                          className={`nam-intake-choice-card${intakeCaseMode === 'new' ? ' nam-intake-choice-card--selected' : ''}`}
+                          onClick={() => setIntakeCaseMode('new')}
+                        >
+                          <span className="nam-intake-choice-card__radio" aria-hidden />
+                          <FolderPlus size={22} strokeWidth={2} className="nam-intake-choice-card__glyph" aria-hidden />
+                          <span className="nam-intake-choice-card__text">
+                            <span className="nam-intake-choice-card__title">Criar novo caso</span>
+                            <span className="nam-intake-choice-card__desc">
+                              Iniciar um novo episódio de cuidado para esta consulta de rotina.
+                            </span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`nam-intake-choice-card${intakeCaseMode === 'existing' ? ' nam-intake-choice-card--selected' : ''}`}
+                          onClick={() => setIntakeCaseMode('existing')}
+                          disabled={intakeActiveCases.length === 0}
+                        >
+                          <span className="nam-intake-choice-card__radio" aria-hidden />
+                          <Folder size={22} strokeWidth={2} className="nam-intake-choice-card__glyph" aria-hidden />
+                          <span className="nam-intake-choice-card__text">
+                            <span className="nam-intake-choice-card__title">Associar a caso existente</span>
+                            <span className="nam-intake-choice-card__desc">
+                              Vincular esta consulta a um caso clínico já aberto.
+                            </span>
+                          </span>
+                        </button>
+                      </div>
+
+                      {intakeCaseMode === 'new' ? (
+                        <div className="nam-intake-new-case-panel">
+                          <div className="nam-intake-new-case-badge">
+                            <CheckCircle2 size={16} strokeWidth={2} aria-hidden />
+                            Novo caso será criado
+                          </div>
+                          <div className="nam-field" style={{ marginTop: 12 }}>
+                            <label className="nam-label" htmlFor="nam-cr-case-title">
+                              Título do caso
+                            </label>
+                            <input
+                              id="nam-cr-case-title"
+                              className="nam-input"
+                              type="text"
+                              value={intakeNewCaseTitle}
+                              onChange={(e) => setIntakeNewCaseTitle(e.target.value)}
+                              maxLength={240}
+                              placeholder="Ex.: Consulta de rotina — pet"
+                            />
+                            <p className="nam-muted" style={{ marginTop: 6 }}>
+                              Sugestão baseada na data e tipo de atendimento. Você poderá editar depois.
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {intakeCaseMode === 'existing' && intakeActiveCases.length > 0 ? (
+                        <div className="nam-field" style={{ marginTop: 12 }}>
+                          <label className="nam-label" htmlFor="nam-cr-case-pick">
+                            Selecione o caso
+                          </label>
+                          <HubSearchableCombobox
+                            id="nam-cr-case-pick"
+                            className="hub-combobox--clientes"
+                            options={intakeCaseComboOptions}
+                            value={intakeSelectedCaseId}
+                            onChange={setIntakeSelectedCaseId}
+                            placeholder="Selecionar caso…"
+                            ariaLabel="Selecionar caso clínico"
+                            clearable={false}
+                          />
+                          <p className="nam-muted" style={{ marginTop: 6 }}>
+                            Caso selecionado em status <strong>ativo</strong>.
+                          </p>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </HubSidePanel>
+    );
+  }
 
   return (
     <HubSidePanel

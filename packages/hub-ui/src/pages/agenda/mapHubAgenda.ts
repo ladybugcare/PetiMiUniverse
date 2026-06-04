@@ -64,5 +64,8 @@ export function mapHubAppointmentToAgenda(row: HubAppointment): AgendaAppointmen
     services,
     hubEncounterId: (row as { hub_encounter_id?: string | null }).hub_encounter_id ?? null,
     hubEncounterStatus: (row as { hub_encounter_status?: string | null }).hub_encounter_status ?? null,
+    financial_adjustment_pending:
+      (row as { financial_adjustment_pending?: boolean }).financial_adjustment_pending ?? false,
+    comanda_id: (row as { comanda_id?: string | null }).comanda_id ?? null,
   };
 }

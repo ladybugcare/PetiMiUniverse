@@ -36,6 +36,8 @@ export function ComandaCheckoutDrawer({
   const [paymentMethod, setPaymentMethod] = useState<HubPaymentMethod>('pix');
   const [cashSessionId, setCashSessionId] = useState<string | null>(null);
   const [waiveReason, setWaiveReason] = useState('');
+  /** advance = antecipado (comanda pode permanecer aberta até concluir o serviço). */
+  const [paymentTiming, setPaymentTiming] = useState<'on_checkout' | 'advance'>('on_checkout');
 
   const loadComanda = useCallback(async () => {
     setLoading(true);
@@ -61,6 +63,21 @@ export function ComandaCheckoutDrawer({
       setLoading(false);
     }
   }, [clinicId, originType, originId]);
+
+  const syncFromOrigin = useCallback(async () => {
+    const cid = detail?.comanda?.id as string | undefined;
+    if (!cid) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const d = await hubComandaApi.syncComandaFromOrigin(cid, clinicId);
+      setDetail(d);
+    } catch (e: unknown) {
+      setError((e as Error)?.message || 'Erro ao sincronizar');
+    } finally {
+      setLoading(false);
+    }
+  }, [clinicId, detail?.comanda?.id]);
 
   useEffect(() => {
     if (!open) {
@@ -152,6 +169,7 @@ export function ComandaCheckoutDrawer({
           grouping: 'all',
           action: 'cancel',
           waive_reason: waiveReason.trim(),
+          payment_timing: 'on_checkout',
         });
         onSuccess?.({ receivableIds: [], comandaId });
         onClose();
@@ -165,6 +183,7 @@ export function ComandaCheckoutDrawer({
           tutor_items_group_index: grouping === 'by_pet' ? tutorGroupIdx : undefined,
           action: 'leave_pending',
           due_date: dueDate,
+          payment_timing: paymentTiming,
         });
         onSuccess?.({ receivableIds: [], comandaId });
         onClose();
@@ -180,7 +199,13 @@ export function ComandaCheckoutDrawer({
           cash_session_id: paymentMethod === 'cash' ? cashSessionId : null,
         }));
 
-      if (paymentMethod === 'cash' && !cashSessionId) {
+      if (openItems.length > 0 && payments.length === 0) {
+        setError('Não há valor por grupo para receber. Verifique os itens em aberto.');
+        setLoading(false);
+        return;
+      }
+
+      if (paymentMethod === 'cash' && payments.length > 0 && !cashSessionId) {
         setError('Abra o caixa nesta unidade para receber em dinheiro.');
         setLoading(false);
         return;
@@ -191,7 +216,8 @@ export function ComandaCheckoutDrawer({
         grouping,
         tutor_items_group_index: grouping === 'by_pet' ? tutorGroupIdx : undefined,
         action: 'receive_now',
-        payments,
+        payments: payments.length ? payments : undefined,
+        payment_timing: paymentTiming,
       });
       onSuccess?.({ receivableIds: res.receivable_ids, comandaId });
       onClose();
@@ -229,6 +255,29 @@ export function ComandaCheckoutDrawer({
           <p className="hub-servicos__metric-sub" style={{ marginBottom: 12 }}>
             Conferir itens e escolher como cobrar. Origem: {originType} · {openItems.length} item(ns) em aberto
           </p>
+          {typeof detail.paid_total === 'number' ? (
+            <div style={{ marginBottom: 12, fontSize: 14 }}>
+              <strong>Já pago:</strong> {formatBrl(detail.paid_total)}
+              {typeof detail.balance_due === 'number' ? (
+                <>
+                  {' '}
+                  · <strong>Saldo a cobrar:</strong> {formatBrl(detail.balance_due)}
+                </>
+              ) : null}
+              {detail.operational_complete === false ? (
+                <span style={{ color: 'var(--hub-muted)', display: 'block', marginTop: 4 }}>
+                  Serviço ainda não concluído na operação — a comanda pode permanecer aberta após pagamento antecipado.
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {originType !== 'manual' ? (
+            <div style={{ marginBottom: 12 }}>
+              <button type="button" className="hub-btn hub-btn--ghost" disabled={loading} onClick={() => void syncFromOrigin()}>
+                Sincronizar itens com o serviço
+              </button>
+            </div>
+          ) : null}
           <div style={{ marginBottom: 16 }}>
             <strong>Itens</strong>
             <ul style={{ margin: '8px 0', paddingLeft: 18 }}>
@@ -284,6 +333,24 @@ export function ComandaCheckoutDrawer({
             <label style={{ display: 'block', marginBottom: 12 }}>
               Vencimento <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </label>
+          )}
+          {action === 'receive_now' && (
+            <div style={{ marginBottom: 12 }}>
+              <strong>Momento do pagamento</strong>
+              <label style={{ display: 'block', marginTop: 8 }}>
+                <input
+                  type="radio"
+                  name="pt"
+                  checked={paymentTiming === 'on_checkout'}
+                  onChange={() => setPaymentTiming('on_checkout')}
+                />{' '}
+                No fecho (após o serviço)
+              </label>
+              <label style={{ display: 'block' }}>
+                <input type="radio" name="pt" checked={paymentTiming === 'advance'} onChange={() => setPaymentTiming('advance')} />{' '}
+                Antecipado (antes de concluir o serviço)
+              </label>
+            </div>
           )}
           {action === 'receive_now' && (
             <div style={{ marginBottom: 12 }}>

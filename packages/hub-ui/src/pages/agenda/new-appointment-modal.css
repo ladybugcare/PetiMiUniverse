@@ -820,3 +820,232 @@
   outline: none;
   border-color: #c86a4d;
 }
+
+/* ── Intake clínico / consulta de rotina (cards + faixas, alinhado aos prints NAM) ── */
+
+.nam-intake-choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 560px) {
+  .nam-intake-choice-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.nam-intake-choice-card {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 14px 16px;
+  border: 1px solid #e8e4e0;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.nam-intake-choice-card__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+
+.nam-intake-choice-card__radio {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #c4b4ad;
+  flex-shrink: 0;
+  position: relative;
+  margin-top: 2px;
+}
+
+.nam-intake-choice-card--selected .nam-intake-choice-card__radio {
+  border-color: #2563eb;
+  background: radial-gradient(circle at center, #2563eb 0 42%, #fff 44% 100%);
+}
+
+.nam-intake-choice-card__glyph {
+  flex-shrink: 0;
+  color: #8a756d;
+  margin-top: 1px;
+}
+
+.nam-intake-choice-card--selected .nam-intake-choice-card__glyph {
+  color: #f0642f;
+}
+
+.nam-intake-choice-card__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1714;
+}
+
+.nam-intake-choice-card__desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #6b5a58;
+}
+
+.nam-intake-choice-card:hover:not(:disabled) {
+  border-color: #d4c4bc;
+}
+
+.nam-intake-choice-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.nam-intake-choice-card--selected {
+  border-color: #f0642f;
+  box-shadow: 0 0 0 1px rgba(240, 100, 47, 0.25);
+}
+
+/* Walk-in clínico: «Tipo de entrada» e «Rotina — próximo passo» um pouco mais compactos */
+.nam-intake-walkin-entry-compact .nam-intake-choice-grid {
+  gap: 8px;
+}
+
+.nam-intake-walkin-entry-compact .nam-intake-choice-card {
+  padding: 8px 10px 10px;
+  gap: 8px;
+  border-radius: 8px;
+}
+
+.nam-intake-walkin-entry-compact .nam-intake-choice-card__radio {
+  width: 14px;
+  height: 14px;
+}
+
+.nam-intake-walkin-entry-compact .nam-intake-choice-card__glyph {
+  width: 18px;
+  height: 18px;
+  margin-top: 0;
+}
+
+.nam-intake-walkin-entry-compact .nam-intake-choice-card__title {
+  font-size: 13px;
+}
+
+.nam-intake-walkin-entry-compact .nam-intake-choice-card__desc {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.nam-intake-callout--walkin-tight {
+  margin-top: 8px;
+  margin-bottom: 0;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: 8px;
+}
+
+.nam-intake-callout--walkin-tight .nam-intake-callout__icon {
+  margin-top: 0;
+}
+
+.nam-intake-callout {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.nam-intake-callout p {
+  margin: 0;
+}
+
+.nam-intake-callout__icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.nam-intake-callout--info {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a5f;
+}
+
+.nam-intake-callout--info .nam-intake-callout__icon {
+  color: #2563eb;
+}
+
+.nam-intake-callout--emergency {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a5f;
+}
+
+.nam-intake-callout--emergency .nam-intake-callout__icon {
+  color: #2563eb;
+}
+
+.nam-intake-case-box {
+  margin-top: 8px;
+  padding: 16px;
+  border: 1px solid #e8e4e0;
+  border-radius: 10px;
+  background: #faf8f6;
+}
+
+.nam-intake-case-box__heading {
+  margin: 0 0 12px;
+}
+
+.nam-intake-new-case-panel {
+  margin-top: 4px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #f3f0ed;
+  border: 1px solid #e8e4e0;
+}
+
+.nam-intake-new-case-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.nam-intake-time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nam-intake-time-row__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8a756d;
+}
+
+.nam-intake-time-row__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.nam-intake-footer-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

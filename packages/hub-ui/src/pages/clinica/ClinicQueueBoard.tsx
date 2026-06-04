@@ -5,6 +5,7 @@ import { petAgeDetailedLabel } from '../pets/petAge';
 
 const STATUS_LABEL: Record<string, string> = {
   waiting: 'Aguardando',
+  checked_in: 'Aguardando',
   in_progress: 'Em atendimento',
   completed: 'Finalizado',
   cancelled: 'Cancelado',
@@ -29,7 +30,7 @@ function pillClass(status?: string): string {
 type Column = { id: string; title: string; statuses: string[] };
 
 const COLUMNS: Column[] = [
-  { id: 'waiting', title: 'Aguardando', statuses: ['waiting', 'confirmed', 'pending_confirm'] },
+  { id: 'waiting', title: 'Aguardando', statuses: ['waiting', 'checked_in', 'confirmed', 'pending_confirm'] },
   { id: 'progress', title: 'Em atendimento', statuses: ['in_progress'] },
   { id: 'done', title: 'Finalizados', statuses: ['completed', 'done'] },
 ];
@@ -68,14 +69,20 @@ const ClinicQueueBoard: React.FC<Props> = ({ items, canWrite, onOpen, searchQ })
                 <p className="hub-clientes__muted hub-clinic-queue__empty">Nenhum nesta coluna.</p>
               ) : (
                 colItems.map((item) => {
-                  const petName = item.pet?.name || 'Sem pet';
-                  const tutor = item.guardian?.full_name || '—';
+                  const isUnidentified = item.kind === 'appointment_slot' && !item.pet_id;
+                  const petName = item.pet?.name || (isUnidentified ? 'A identificar' : 'Sem pet');
+                  const tutor = item.guardian?.full_name || (isUnidentified ? 'A identificar' : '—');
                   const prof = item.staff_member?.full_name || 'Sem profissional';
                   const svc = item.service_type?.name || item.title || 'Consulta';
                   const st = (item.status as string) || item.appointment_status || 'waiting';
                   const time = formatTime(
                     item.starts_at || item.started_at || (item.appointment as { starts_at?: string })?.starts_at,
                   );
+                  // Para appointment_slot o kind vem no campo direto; para encounter vem aninhado em appointment
+                  const apptKind =
+                    item.appointment_kind ??
+                    (item as { appointment?: { appointment_kind?: string } }).appointment?.appointment_kind;
+                  const isClinicalEncaixe = apptKind === 'clinical_walk_in' || apptKind === 'clinical_emergency';
                   const key = item.encounter_id || item.appointment_id || `${petName}-${time}`;
                   const apptId = item.appointment_id;
 
@@ -85,7 +92,22 @@ const ClinicQueueBoard: React.FC<Props> = ({ items, canWrite, onOpen, searchQ })
                         <p className="hub-clinic-queue__pet">{petName}</p>
                         <span className={pillClass(st)}>{STATUS_LABEL[st] || st}</span>
                       </div>
+                      {isClinicalEncaixe ? (
+                        <p className="hub-clientes__pill hub-clinic-queue__pill--encaixe" style={{ marginTop: 6, marginBottom: 0 }}>
+                          {apptKind === 'clinical_emergency' ? 'Urgência' : 'Encaixe clínico'}
+                        </p>
+                      ) : null}
+                      {isUnidentified && !isClinicalEncaixe ? (
+                        <p className="hub-clientes__pill hub-clinic-queue__pill--encaixe" style={{ marginTop: 6, marginBottom: 0 }}>
+                          Urgência
+                        </p>
+                      ) : null}
                       <p className="hub-clientes__muted hub-clinic-queue__meta">{svc}</p>
+                      {item.notes || item.chief_complaint ? (
+                        <p className="hub-clientes__muted hub-clinic-queue__meta" style={{ fontStyle: 'italic' }}>
+                          {item.notes || item.chief_complaint}
+                        </p>
+                      ) : null}
                       <p className="hub-clientes__muted hub-clinic-queue__meta">
                         {time} · {tutor}
                       </p>

@@ -9,6 +9,7 @@ export type AgendaGroupMode = 'professional' | 'category' | 'resource';
 export type AgendaStatus =
   | 'pending_confirm'
   | 'confirmed'
+  | 'checked_in'
   | 'in_progress'
   | 'done'
   | 'cancelled'
@@ -17,6 +18,7 @@ export type AgendaStatus =
 export const STATUS_OPTIONS: { value: AgendaStatus; label: string; short: string }[] = [
   { value: 'pending_confirm', label: 'A confirmar', short: '?' },
   { value: 'confirmed', label: 'Confirmado', short: 'OK' },
+  { value: 'checked_in', label: 'Aguardando', short: '⏳' },
   { value: 'in_progress', label: 'Em atendimento', short: '…' },
   { value: 'done', label: 'Finalizado', short: '✓' },
   { value: 'cancelled', label: 'Cancelado', short: '×' },
@@ -29,6 +31,7 @@ export const STATUS_META: Record<
 > = {
   pending_confirm: { label: 'A confirmar', short: '?', pillClass: 'hub-agenda__pill--st-pending' },
   confirmed: { label: 'Confirmado', short: 'OK', pillClass: 'hub-agenda__pill--st-confirmed' },
+  checked_in: { label: 'Aguardando', short: '⏳', pillClass: 'hub-agenda__pill--st-confirmed' },
   in_progress: { label: 'Em atendimento', short: '…', pillClass: 'hub-agenda__pill--st-progress' },
   done: { label: 'Finalizado', short: '✓', pillClass: 'hub-agenda__pill--st-done' },
   cancelled: { label: 'Cancelado', short: '×', pillClass: 'hub-agenda__pill--st-cancelled' },
@@ -53,7 +56,7 @@ export type AgendaAppointment = {
   status: AgendaStatus;
   notes?: string;
   conflict?: boolean;
-  /** standard | hotel_stay | daycare_block | pickup_route (API). */
+  /** standard | hotel_stay | pickup_route | clinical_walk_in | clinical_emergency (API). */
   appointment_kind?: string;
   /** UUID do tipo de serviço principal na API Hub. */
   hub_service_type_id?: string;
@@ -77,6 +80,8 @@ export type AgendaAppointment = {
   guardianId?: string | null;
   hubEncounterId?: string | null;
   hubEncounterStatus?: string | null;
+  financial_adjustment_pending?: boolean;
+  comanda_id?: string | null;
 };
 
 export function startOfDay(d: Date): Date {

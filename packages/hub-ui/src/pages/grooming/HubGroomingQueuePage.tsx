@@ -46,6 +46,7 @@ const HubGroomingQueuePage: React.FC = () => {
   const showWriteGateHint =
     accessAllowed && !canWrite && hasPermission('grooming.queue.manage');
   const canCreateReceivable = hasPermission('hub.receivables.create');
+  const canViewFinancial = hasPermission('hub.financial.read');
   const canDragQueue = hasPermission('grooming.queue.manage');
   const canPauseQueue = hasPermission('grooming.queue.manage');
 
@@ -473,6 +474,7 @@ const HubGroomingQueuePage: React.FC = () => {
           }
           setGroomCheckout({ sessionId: selected.session_id, unitId: groomingCashUnitId });
         }}
+        canViewFinancial={canViewFinancial}
       />
 
       {clinicId && groomCheckout ? (

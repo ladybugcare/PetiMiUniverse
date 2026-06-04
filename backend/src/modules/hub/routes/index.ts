@@ -120,6 +120,7 @@ import {
   createHubEncounterEvent,
   listHubPrescriptions,
   createHubPrescription,
+  patchHubPrescription,
   issuePrescriptionDocument,
   listPrescriptionDocuments,
   getHubPrescriptionPdf,
@@ -139,9 +140,6 @@ import {
   listHubSurgeries,
   createHubSurgery,
   patchHubSurgery,
-  listHubClinicalTemplates,
-  createHubClinicalTemplate,
-  applyHubClinicalTemplate,
   getHubClinicalAlerts,
 } from '../hubClinicalModulesController';
 import {
@@ -196,7 +194,10 @@ import {
   getHubComandaDetail,
   getHubComandaByOrigin,
   postHubComandaCheckout,
+  postHubComandaSyncFromOrigin,
   listHubComandas,
+  getHubComandaCancellationPendingCount,
+  postHubComandaResolveCancellation,
 } from '../hubComandasController';
 import { postHubCustomerCreditMovement, getHubCustomerCreditBalance } from '../hubCustomerCreditController';
 import { listHubPackages, postHubPackage } from '../hubPackagesController';
@@ -656,6 +657,12 @@ router.post(
   requirePermission('hub.clinic.write'),
   createHubPrescription
 );
+router.patch(
+  '/clinical/prescriptions/:id',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  patchHubPrescription
+);
 router.get(
   '/clinical/vaccinations',
   authenticateUser,
@@ -740,31 +747,18 @@ router.get('/clinical/surgeries', authenticateUser, requirePermission('hub.clini
 router.post('/clinical/surgeries', authenticateUser, requirePermission('hub.clinic.write'), createHubSurgery);
 router.patch('/clinical/surgeries/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubSurgery);
 
-router.get(
-  '/clinical/templates',
-  authenticateUser,
-  requirePermission('hub.clinic.read'),
-  listHubClinicalTemplates
-);
-router.post(
-  '/clinical/templates',
-  authenticateUser,
-  requirePermission('hub.clinic.write'),
-  createHubClinicalTemplate
-);
-router.post(
-  '/clinical/templates/:encounterId/apply',
-  authenticateUser,
-  requirePermission('hub.clinic.write'),
-  applyHubClinicalTemplate
-);
-
 /** Comandas / checkout operacional */
 router.get(
   '/comandas',
   authenticateUser,
   requirePermission('hub.financial.read'),
   listHubComandas
+);
+router.get(
+  '/comandas/cancellation-pending-count',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubComandaCancellationPendingCount
 );
 router.get(
   '/comandas/by-origin',
@@ -785,10 +779,22 @@ router.get(
   getHubComandaDetail
 );
 router.post(
+  '/comandas/:id/sync-from-origin',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  postHubComandaSyncFromOrigin
+);
+router.post(
   '/comandas/:id/checkout',
   authenticateUser,
   requirePermission('hub.receivables.create'),
   postHubComandaCheckout
+);
+router.post(
+  '/comandas/:id/resolve-cancellation',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubComandaResolveCancellation
 );
 
 /** Financeiro — Fase 1 (recebíveis, sem cobrança, caixa básico) */

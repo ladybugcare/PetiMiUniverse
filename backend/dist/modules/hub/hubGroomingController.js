@@ -5,6 +5,7 @@ const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const groomingStages_1 = require("./groomingStages");
 const groomingPetTags_1 = require("./groomingPetTags");
+const hubComandasController_1 = require("./hubComandasController");
 const uuidStr = zod_1.z.string().uuid();
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
 const groomingStageSchema = zod_1.z.enum(groomingStages_1.GROOMING_STAGES);
@@ -379,7 +380,7 @@ const getHubGroomingDayBoard = async (req, res) => {
                 ? session.grooming_stage
                 : (0, groomingStages_1.boardStageFromAppointmentStatus)(appointment_status);
             const is_late = ['scheduled', 'checked_in', 'queued'].includes(grooming_stage) &&
-                ['pending_confirm', 'confirmed', 'in_progress'].includes(appointment_status) &&
+                ['pending_confirm', 'confirmed', 'checked_in', 'in_progress'].includes(appointment_status) &&
                 new Date(startsAt).getTime() < nowMs;
             const staffId = session?.hub_staff_member_id ?? a.hub_staff_member_id;
             const petId = session?.pet_id ?? a.pet_id;
@@ -743,6 +744,9 @@ const patchHubGroomingSession = async (req, res) => {
                 payload: { from: current.grooming_stage, to: b.grooming_stage },
             });
             await syncAppointmentStatusForStage(b.clinic_id, current.hub_appointment_id, b.grooming_stage);
+            if (b.grooming_stage === 'closed') {
+                void (0, hubComandasController_1.syncOpenComandasAfterGroomingClosed)(b.clinic_id, id.data);
+            }
         }
         if (shouldLogPause) {
             await logGroomingEvent({ clinic_id: b.clinic_id, session_id: id.data, event_type: 'pause' });

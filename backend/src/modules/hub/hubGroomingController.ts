@@ -12,6 +12,10 @@ import {
   type GroomingStage,
 } from './groomingStages';
 import { buildGroomingDisplayTags } from './groomingPetTags';
+import {
+  syncOpenComandasAfterGroomingClosed,
+  financialAdjustmentFlagsForAppointments,
+} from './hubComandasController';
 
 const uuidStr = z.string().uuid();
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
@@ -456,7 +460,7 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
         : boardStageFromAppointmentStatus(appointment_status);
       const is_late =
         ['scheduled', 'checked_in', 'queued'].includes(grooming_stage) &&
-        ['pending_confirm', 'confirmed', 'in_progress'].includes(appointment_status) &&
+        ['pending_confirm', 'confirmed', 'checked_in', 'in_progress'].includes(appointment_status) &&
         new Date(startsAt).getTime() < nowMs;
 
       const staffId = (session?.hub_staff_member_id as string) ?? (a.hub_staff_member_id as string | null);
@@ -567,6 +571,22 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
       const tb = new Date((b.starts_at as string) || 0).getTime();
       return ta - tb;
     });
+
+    const apptIdsForAdj = [
+      ...new Set(items.map((it) => it.appointment_id as string | null | undefined).filter(Boolean) as string[]),
+    ];
+    const adjByAppt = await financialAdjustmentFlagsForAppointments(clinic_id, apptIdsForAdj);
+    for (const item of items) {
+      const aid = item.appointment_id as string | null | undefined;
+      if (!aid) {
+        item.financial_adjustment_pending = false;
+        item.comanda_id = null;
+        continue;
+      }
+      const f = adjByAppt.get(aid);
+      item.financial_adjustment_pending = f?.financial_adjustment_pending ?? false;
+      item.comanda_id = f?.comanda_id ?? null;
+    }
 
     return res.json({
       items,
@@ -832,6 +852,9 @@ export const patchHubGroomingSession = async (req: Request, res: Response) => {
         current.hub_appointment_id as string | null,
         b.grooming_stage,
       );
+      if (b.grooming_stage === 'closed') {
+        void syncOpenComandasAfterGroomingClosed(b.clinic_id, id.data);
+      }
     }
 
     if (shouldLogPause) {
