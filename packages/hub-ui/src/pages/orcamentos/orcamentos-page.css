@@ -48,6 +48,14 @@
   --hub-card-bg: #ffffff;
   --hub-shell-bg: #faf7f4;
 
+  /* Reutiliza tiles/cabeçalho do detalhe («Converter orçamento») na sidebar */
+  --qd-card: var(--hub-card-bg);
+  --qd-border: var(--hub-border);
+  --qd-text: var(--hub-text);
+  --qd-muted: var(--hub-text-muted);
+  --qd-brand: var(--hub-brand);
+  --qd-brand-h: var(--hub-brand-hover);
+
   padding: 24px;
   background: var(--hub-shell-bg);
   min-height: calc(100vh - 64px);
@@ -576,16 +584,10 @@
   color: var(--hub-text-muted);
 }
 
-/* === Ações rápidas (sidebar) === */
+/* === Ações rápidas (sidebar) — grelha tipo «Converter orçamento» === */
 
-.hub-orcamento-novo__actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.hub-orcamento-novo__actions .hub-orcamento-novo__btn {
-  justify-content: center;
+.hub-orcamento-novo__card .hub-quote-detail__convert-grid {
+  margin-top: 0;
 }
 
 /* === Responsivo === */
@@ -1065,6 +1067,80 @@
 }
 
 .hub-orcamentos-quote-list .hub-clientes__th-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Lista de contatos (orçamentos) — mesmo ritmo visual da lista de orçamentos */
+.hub-orcamentos-contatos.hub-servicos-page .hub-servicos__metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .hub-orcamentos-contatos.hub-servicos-page .hub-servicos__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .hub-orcamentos-contatos.hub-servicos-page .hub-servicos__metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-orcamentos-contatos__form-panel {
+  background: var(--hub-card-bg, #fff);
+  border: 1px solid var(--hub-border, #e5dcd6);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(74, 59, 58, 0.06);
+}
+
+.hub-orcamentos-contatos__form-title {
+  margin: 0 0 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--hub-text, #4a3b3a);
+}
+
+.hub-orcamentos-contatos__form-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.hub-orcamentos-contatos__submit {
+  margin-top: 16px;
+  border: none;
+  cursor: pointer;
+}
+
+.hub-orcamentos-contatos__submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-orcamentos-contatos__row-link {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hc-brand, #c86a4d);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.hub-orcamentos-contatos__row-link:hover {
+  color: var(--hc-brand-hover, #a85a40);
+  border-bottom-color: currentColor;
+}
+
+/* Linhas da tabela de contatos: só o link é acionável (evita cursor de “linha clicável” da lista de orçamentos) */
+.hub-orcamentos-contatos .hub-servicos__table-wrap .hub-clientes__table tbody tr {
+  cursor: default;
+}
+
+.hub-orcamentos-contatos .hub-clientes__th-actions {
   width: 1%;
   white-space: nowrap;
   text-align: right;

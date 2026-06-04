@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Trash2 } from 'lucide-react';
+import { Copy, Eye, Save, Search, Send, Trash2, Zap } from 'lucide-react';
 import {
   hubQuotesApi,
   type HubQuote,
@@ -712,7 +712,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       sort_order: idx,
     }));
 
-  const persistDraft = async (): Promise<HubQuote | null> => {
+  const persistDraft = async (opts?: { silentSuccess?: boolean }): Promise<HubQuote | null> => {
     const errMsg = validateWorkspaceDraft({
       createContext,
       persistedQuoteId,
@@ -747,7 +747,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       if (persistedQuoteId) {
         const { quote: q } = await hubQuotesApi.patch(persistedQuoteId, base);
         onQuoteUpdated(q);
-        showSuccess('Rascunho salvo');
+        if (!opts?.silentSuccess) showSuccess('Rascunho salvo');
         return q;
       }
       if (!createContext) {
@@ -761,7 +761,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         });
         onPersistedQuoteId(q.id);
         onQuoteUpdated(q);
-        showSuccess('Rascunho criado');
+        if (!opts?.silentSuccess) showSuccess('Rascunho criado');
         return q;
       }
       const { quote: q } = await hubQuotesApi.create({
@@ -770,7 +770,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       });
       onPersistedQuoteId(q.id);
       onQuoteUpdated(q);
-      showSuccess('Rascunho criado');
+      if (!opts?.silentSuccess) showSuccess('Rascunho criado');
       return q;
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao salvar');
@@ -790,11 +790,12 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
   const handleSend = async () => {
     setSaving(true);
     try {
-      const q = await persistDraft();
+      const q = await persistDraft({ silentSuccess: true });
       const id = q?.id ?? persistedQuoteId;
       if (!id) return;
       await hubQuotesApi.send(id, clinicId);
-      navigate(`/hub/orcamentos/${id}/pronto-para-envio`);
+      showSuccess('Orçamento salvo.');
+      navigate(`/hub/orcamentos/${id}/pronto-para-envio`, { replace: true });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao enviar');
     } finally {
@@ -1221,19 +1222,29 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         </div>
 
         <div className="hub-orcamento-novo__card">
-          <h3 className="hub-orcamento-novo__card-title">Ações rápidas</h3>
-          <div className="hub-orcamento-novo__actions">
+          <div className="hub-quote-detail__card-head">
+            <Zap size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
+            <div>
+              <h3 className="hub-quote-detail__card-title">Ações rápidas</h3>
+              <p className="hub-quote-detail__card-sub">
+                Salve o rascunho, abra a vista do orçamento ou envie ao cliente quando estiver pronto.
+              </p>
+            </div>
+          </div>
+          <div className="hub-quote-detail__convert-grid">
             <button
               type="button"
-              className="hub-orcamento-novo__btn"
+              className="hub-quote-detail__convert-tile"
               disabled={!activeId}
               onClick={() => activeId && navigate(`/hub/orcamentos/${activeId}`)}
             >
-              Visualizar orçamento
+              <Eye size={22} strokeWidth={1.75} aria-hidden />
+              <span className="hub-quote-detail__convert-tile-title">Visualizar orçamento</span>
+              <span className="hub-quote-detail__convert-tile-sub">Abrir vista completa</span>
             </button>
             <button
               type="button"
-              className="hub-orcamento-novo__btn"
+              className="hub-quote-detail__convert-tile"
               disabled={!activeId}
               onClick={() => {
                 if (!activeId) return;
@@ -1241,27 +1252,38 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
                 void navigator.clipboard.writeText(url).then(() => showSuccess('Link copiado'));
               }}
             >
-              Copiar link interno
+              <Copy size={22} strokeWidth={1.75} aria-hidden />
+              <span className="hub-quote-detail__convert-tile-title">Copiar link interno</span>
+              <span className="hub-quote-detail__convert-tile-sub">URL da equipa</span>
             </button>
             <button
               type="button"
-              className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary"
+              className="hub-quote-detail__convert-tile"
               disabled={saving}
               onClick={() => void handleSaveClick()}
             >
-              Salvar rascunho
+              <Save size={22} strokeWidth={1.75} aria-hidden />
+              <span className="hub-quote-detail__convert-tile-title">Salvar rascunho</span>
+              <span className="hub-quote-detail__convert-tile-sub">Gravar alterações</span>
             </button>
             {!hideGenerateAndSend ? (
               <button
                 type="button"
-                className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary"
+                className="hub-quote-detail__convert-tile"
                 disabled={saving}
                 onClick={() => void handleSend()}
               >
-                Gerar e enviar
+                <Send size={22} strokeWidth={1.75} aria-hidden />
+                <span className="hub-quote-detail__convert-tile-title">Gerar e enviar</span>
+                <span className="hub-quote-detail__convert-tile-sub">Enviar ao cliente</span>
               </button>
             ) : null}
           </div>
+          {!activeId ? (
+            <p className="hub-quote-detail__muted hub-quote-detail__convert-hint">
+              Guarde o rascunho ao menos uma vez para habilitar visualizar e copiar o link interno.
+            </p>
+          ) : null}
         </div>
       </aside>
     </div>

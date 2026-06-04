@@ -11,8 +11,10 @@ import { useAlert } from '../../components/AlertProvider';
 import { hubProspectsApi, type HubProspect } from '../../api/hubProspectsApi';
 import { maskTaxIdForList } from '../../utils/maskTaxId';
 import '../clientes/clientes.css';
+import '../pets/pets-page.css';
+import '../servicos/servicos-page.css';
 import './orcamentos-page.css';
-import { Plus, Search } from 'lucide-react';
+import { CalendarDays, LayoutGrid, Mail, Plus, Search, UserMinus } from 'lucide-react';
 
 const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
 
@@ -93,57 +95,119 @@ const HubProspectsPage: React.FC = () => {
     }
   };
 
-  const title = useMemo(() => 'Contatos (orçamentos)', []);
+  const metrics = useMemo(() => {
+    const total = rows.length;
+    const withEmail = rows.filter((p) => Boolean(p.email?.trim())).length;
+    const withoutEmail = Math.max(0, total - withEmail);
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - weekMs;
+    const recent = rows.filter((p) => new Date(p.created_at).getTime() > cutoff).length;
+    return { total, withEmail, withoutEmail, recent };
+  }, [rows]);
 
   if (!user) return <Navigate to="/login" replace />;
   if (!permLoading && !clinicId) {
     return (
-      <div style={{ padding: 24 }}>
+      <div className="hub-servicos-page" style={{ padding: 24 }}>
         <p className="hub-clientes__muted">Selecione uma clínica.</p>
       </div>
     );
   }
   if (permLoading || !accessAllowed) {
     return (
-      <div style={{ padding: 24 }}>
+      <div className="hub-servicos-page" style={{ padding: 24 }}>
         Carregando…
       </div>
     );
   }
 
   return (
-    <div>
-      <h1 className="hub-clientes__title" style={{ marginBottom: 8 }}>
-        {title}
-      </h1>
-      <p className="hub-clientes__muted" style={{ marginBottom: 20 }}>
-        Arquivo mínimo para emitir orçamentos sem cadastrar como cliente. CPF mascarado nas listagens.
-      </p>
-
-      <div className="hub-servicos__toolbar" style={{ marginBottom: 16 }}>
-        <div className="hub-servicos__search-wrap">
-          <div className="hub-servicos__search-field">
-            <span className="hub-servicos__search-icon">
-              <Search size={18} strokeWidth={2} />
-            </span>
-            <input
-              type="search"
-              className="hub-servicos__search-input"
-              placeholder="Nome, telefone ou CPF…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              aria-label="Buscar contato"
-            />
+    <div className="hub-servicos-page hub-orcamentos-contatos">
+      <div className="hub-servicos__metrics" aria-live="polite">
+        <div className="hub-servicos__metric-card">
+          <div className="hub-servicos__metric-card__text">
+            <div className="hub-servicos__metric-label">Total de contatos</div>
+            <div className="hub-servicos__metric-value">{loading ? '—' : metrics.total.toLocaleString('pt-BR')}</div>
+            <div className="hub-servicos__metric-sub">Nesta clínica (lista atual)</div>
+          </div>
+          <div className="hub-servicos__metric-icon" aria-hidden>
+            <LayoutGrid size={22} strokeWidth={1.75} />
+          </div>
+        </div>
+        <div className="hub-servicos__metric-card">
+          <div className="hub-servicos__metric-card__text">
+            <div className="hub-servicos__metric-label">Com e-mail</div>
+            <div className="hub-servicos__metric-value">{loading ? '—' : metrics.withEmail.toLocaleString('pt-BR')}</div>
+            <div className="hub-servicos__metric-sub">Para envio de orçamento</div>
+          </div>
+          <div className="hub-servicos__metric-icon" aria-hidden>
+            <Mail size={22} strokeWidth={1.75} />
+          </div>
+        </div>
+        <div className="hub-servicos__metric-card">
+          <div className="hub-servicos__metric-card__text">
+            <div className="hub-servicos__metric-label">Sem e-mail</div>
+            <div className="hub-servicos__metric-value">{loading ? '—' : metrics.withoutEmail.toLocaleString('pt-BR')}</div>
+            <div className="hub-servicos__metric-sub">Só telefone / presencial</div>
+          </div>
+          <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
+            <UserMinus size={22} strokeWidth={1.75} />
+          </div>
+        </div>
+        <div className="hub-servicos__metric-card">
+          <div className="hub-servicos__metric-card__text">
+            <div className="hub-servicos__metric-label">Novos (7 dias)</div>
+            <div className="hub-servicos__metric-value">{loading ? '—' : metrics.recent.toLocaleString('pt-BR')}</div>
+            <div className="hub-servicos__metric-sub">Criados na última semana</div>
+          </div>
+          <div className="hub-servicos__metric-icon" aria-hidden>
+            <CalendarDays size={22} strokeWidth={1.75} />
           </div>
         </div>
       </div>
 
+      <div className="hub-clientes__title-block" style={{ marginTop: 8, marginBottom: 12 }}>
+        <h1 className="hub-clientes__title">Contatos (orçamentos)</h1>
+        <p className="hub-clientes__subtitle">
+          Arquivo mínimo para emitir orçamentos sem cadastrar como cliente. CPF mascarado nas listagens.
+        </p>
+      </div>
+
+      <div className="hub-servicos__toolbar">
+        <div className="hub-servicos__toolbar-row">
+          <div className="hub-servicos__search-wrap">
+            <div className="hub-servicos__search-field">
+              <span className="hub-servicos__search-icon">
+                <Search size={18} strokeWidth={2} />
+              </span>
+              <input
+                type="search"
+                className="hub-servicos__search-input"
+                placeholder="Nome, telefone ou CPF…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                aria-label="Buscar contato"
+              />
+            </div>
+          </div>
+          {canWrite ? (
+            <Link to="/hub/orcamentos/novo" className="hub-servicos__btn-primary-icon">
+              <Plus size={20} strokeWidth={2.25} aria-hidden />
+              Novo orçamento
+            </Link>
+          ) : null}
+        </div>
+      </div>
+
+      <p className="hub-clientes__muted" style={{ marginTop: 0, marginBottom: 16 }}>
+        A listagem reflete a pesquisa acima. Os totais nas métricas consideram os contatos carregados nesta vista.
+        {canWrite ? ' Para criar um orçamento a partir de um contato, use a coluna Ações.' : ''}
+      </p>
+
       {canWrite ? (
-        <form className="hub-clientes__card" style={{ padding: 16, marginBottom: 24 }} onSubmit={handleCreate}>
-          <h2 className="hub-clientes__subtitle" style={{ marginTop: 0 }}>
-            Novo contato
-          </h2>
-          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
+        <form className="hub-orcamentos-contatos__form-panel" onSubmit={handleCreate}>
+          <h2 className="hub-orcamentos-contatos__form-title">Novo contato</h2>
+          <div className="hub-orcamentos-contatos__form-grid">
             <div className="hub-clientes__field">
               <label className="hub-clientes__label">Nome *</label>
               <input
@@ -177,8 +241,8 @@ const HubProspectsPage: React.FC = () => {
               />
             </div>
           </div>
-          <button type="submit" className="hub-clientes__btn hub-clientes__btn--primary" disabled={creating} style={{ marginTop: 12 }}>
-            <Plus size={18} strokeWidth={2} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />
+          <button type="submit" className="hub-servicos__btn-primary-icon hub-orcamentos-contatos__submit" disabled={creating}>
+            <Plus size={20} strokeWidth={2.25} aria-hidden />
             {creating ? 'Salvando…' : 'Adicionar contato'}
           </button>
         </form>
@@ -207,11 +271,18 @@ const HubProspectsPage: React.FC = () => {
               ) : (
                 rows.map((p) => (
                   <tr key={p.id}>
-                    <td>{p.full_name}</td>
+                    <td>
+                      <div className="hub-servicos__metric-card__text">
+                        <div className="hub-servicos__svc-title">{p.full_name}</div>
+                      </div>
+                    </td>
                     <td className="hub-servicos__code-mono">{maskTaxIdForList(p.tax_id)}</td>
                     <td>{p.phone}</td>
                     <td className="hub-clientes__td-actions">
-                      <Link to={`/hub/orcamentos/novo?prospect_id=${encodeURIComponent(p.id)}`} className="hub-clientes__link-btn">
+                      <Link
+                        to={`/hub/orcamentos/novo?prospect_id=${encodeURIComponent(p.id)}`}
+                        className="hub-orcamentos-contatos__row-link"
+                      >
                         Novo orçamento
                       </Link>
                     </td>
