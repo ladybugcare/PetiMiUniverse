@@ -92,22 +92,15 @@ const HubLoginPage: React.FC = () => {
     }
   };
 
-  const vetHome = vetBase ? `${vetBase}/` : null;
   const vetForgot = vetBase ? `${vetBase}/forgot-password` : null;
   const vetSignup = vetBase ? `${vetBase}/clinic-signup` : null;
   const vetLogin = vetBase ? `${vetBase}/login` : null;
 
   return (
     <div className="hub-login-page-root">
-      {vetHome ? (
-        <a href={vetHome} className="hub-login-page-back">
-          ← Início
-        </a>
-      ) : (
-        <span className="hub-login-page-back" style={{ cursor: 'default' }}>
-          PetMi Hub
-        </span>
-      )}
+      <Link to="/" className="hub-login-page-back">
+        ← Início
+      </Link>
 
       <div className="hub-login-page-card">
         <div className="hub-login-page-logo-row">

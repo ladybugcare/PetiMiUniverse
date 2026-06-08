@@ -32,6 +32,7 @@ import HubMeuPerfilPage from './pages/HubMeuPerfilPage';
 import HubClinicaPerfilPage from './pages/HubClinicaPerfilPage';
 import HubDesignSystemPage from './pages/HubDesignSystemPage';
 import PublicQuotePage from './pages/PublicQuotePage';
+import HubHomePage from './pages/HubHomePage';
 
 const App: React.FC = () => {
   return (
@@ -96,8 +97,8 @@ const App: React.FC = () => {
             <Route path="design-system" element={<HubDesignSystemPage />} />
             <Route path="configuracoes-sistema/*" element={<HubSystemSettingsRoutes />} />
           </Route>
-          <Route path="/" element={<Navigate to="/hub/clientes" replace />} />
-          <Route path="*" element={<Navigate to="/hub/clientes" replace />} />
+          <Route path="/" element={<HubHomePage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AlertProvider>
     </AuthProvider>
