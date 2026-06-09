@@ -64,3 +64,13 @@ export function shouldShowUnitIncompleteHint(): boolean {
     return false;
   }
 }
+
+/** Remove o lembrete pós-onboarding (ex.: após abrir o perfil da clínica com sucesso). */
+export function clearHubUnitIncompleteHint(): void {
+  try {
+    sessionStorage.removeItem('hub_show_unit_incomplete_hint');
+    window.dispatchEvent(new Event('petimi:hub-unit-hint-updated'));
+  } catch {
+    /* ignore */
+  }
+}
