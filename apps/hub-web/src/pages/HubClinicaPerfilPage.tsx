@@ -19,6 +19,7 @@ import { useHubUnit } from '../contexts/HubUnitContext';
 import { hubClinicProfileApi } from '../services/hubClinicProfileApi';
 import { hubUnitsApi } from '../services/hubUnitsApi';
 import { formatCNPJ } from '../utils/brValidators';
+import { clearHubUnitIncompleteHint } from '../utils/hubOnboardingState';
 import type { HubClinicProfile, HubUnitProfile } from '../types/hubClinicProfile';
 
 const terracotta = '#c86a4d';
@@ -152,6 +153,8 @@ const HubClinicaPerfilPage: React.FC = () => {
         } else if (!cancelled) {
           setUnit(fromList ? unitFromListRow(fromList) : selectedUnit ? unitFromListRow(selectedUnit) : null);
         }
+
+        if (!cancelled) clearHubUnitIncompleteHint();
       } catch (e: unknown) {
         if (!cancelled) {
           showError((e as Error)?.message || 'Erro ao carregar perfil da clínica');

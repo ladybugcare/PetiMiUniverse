@@ -19,6 +19,14 @@ Neste diretório: `npm run dev`
 
 **Nota:** sessão e `localStorage` são por origem; ao usar outra porta que o Vet, é necessário fazer login nesta app (comportamento esperado).
 
+## Deploy (Vercel)
+
+O Hub é uma SPA (React Router). Em produção, um **reload** em rotas como `/hub/orcamentos` ou `/hub/perfil-clinica` pede esse caminho ao servidor; sem reescrita, o Vercel devolve **404**.
+
+Este diretório inclui [`vercel.json`](vercel.json) com `rewrites` para servir `index.html` em qualquer rota (ficheiros estáticos existentes, por exemplo em `/assets/`, continuam a ter prioridade).
+
+Confirma no painel do projeto Vercel que a **raiz do código** é `apps/hub-web` (ou que o `vercel.json` aplicado ao deploy contém rewrites equivalentes).
+
 ## Documentação de produto (Hub)
 
 - Cadastro futuro (pessoa admin → primeira unidade), em backlog: [`docs/architecture/HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md`](../../docs/architecture/HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md).

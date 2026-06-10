@@ -1,10 +1,17 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import { shouldShowUnitIncompleteHint } from '../utils/hubOnboardingState';
 
 /** Lembrete não bloqueante — completar dados opcionais da unidade (entrega futura). */
 const HubUnitIncompleteBanner: React.FC = () => {
+  const [, setHintTick] = useState(0);
+  useEffect(() => {
+    const onHintUpdated = () => setHintTick((n) => n + 1);
+    window.addEventListener('petimi:hub-unit-hint-updated', onHintUpdated);
+    return () => window.removeEventListener('petimi:hub-unit-hint-updated', onHintUpdated);
+  }, []);
+
   if (!shouldShowUnitIncompleteHint()) return null;
 
   return (
