@@ -22,7 +22,7 @@ import { useAuth } from '@petimi/web-core';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const markSrc = `${baseUrl}hub-mark.svg`;
-const footerPetSrc = `${baseUrl}hub-sidebar-support-dog.png`;
+const landingPetSrc = `${baseUrl}freelancer.png`;
 const vetBase = (import.meta.env.VITE_VET_WEB_URL || '').replace(/\/$/, '');
 
 const FEATURES = [
@@ -340,7 +340,7 @@ const HubHomePage: React.FC = () => {
             <div className="hub-landing-cta__split">
               <div className="hub-landing-cta__visual" aria-hidden>
                 <img
-                  src={footerPetSrc}
+                  src={landingPetSrc}
                   alt=""
                   className="hub-landing-cta__pet"
                   width={280}
