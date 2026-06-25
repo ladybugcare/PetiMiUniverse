@@ -12,6 +12,8 @@ import {
 } from '../../api/hubFinancialApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { ComandaCancellationResolveDrawer } from './ComandaCancellationResolveDrawer';
+import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
+import { HubDateField } from '../../components/HubDateField';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
@@ -20,6 +22,16 @@ import './hub-finance-page.css';
 function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 }
+
+const METHOD_LABELS: Record<string, string> = {
+  cash: 'Dinheiro',
+  pix: 'Pix',
+  credit_card: 'Cartão de crédito',
+  debit_card: 'Cartão de débito',
+  transfer: 'Transferência',
+  payment_link: 'Link de pagamento',
+  customer_credit: 'Crédito do tutor',
+};
 
 const HubCaixaPage: React.FC = () => {
   const { hasPermission, loading: permLoading } = usePermissions();
@@ -47,8 +59,17 @@ const HubCaixaPage: React.FC = () => {
   const [cancellationQueue, setCancellationQueue] = useState<Array<Record<string, unknown>>>([]);
   const [resolveComanda, setResolveComanda] = useState<Record<string, unknown> | null>(null);
   const [closedSessions, setClosedSessions] = useState<HubCashSession[]>([]);
+  // Caixa: receber comanda diretamente
+  const [caixaCheckoutComandaId, setCaixaCheckoutComandaId] = useState<string | null>(null);
+  // Caixa: enviar comanda ao financeiro
+  const [caixaFinanceiro, setCaixaFinanceiro] = useState<{ comandaId: string; dueDate: string } | null>(null);
+  const [caixaFinanceiroBusy, setCaixaFinanceiroBusy] = useState(false);
+  // Estorno inline
+  const [reverseReason, setReverseReason] = useState('');
+  const [reverseTargetId, setReverseTargetId] = useState<string | null>(null);
 
   const canFinancialWrite = hasPermission('hub.financial.write');
+  const canCreateReceivable = hasPermission('hub.receivables.create');
 
   const load = useCallback(async () => {
     if (!clinicId || !unitId) {
@@ -61,7 +82,7 @@ const HubCaixaPage: React.FC = () => {
         hubFinancialApi.getPendingBillingCount(clinicId, unitId),
         hubFinancialApi.listUnbilledCompleted(clinicId, unitId),
         hubFinancialApi.getCashSessionOpen(clinicId, unitId),
-        hubComandaApi.listComandas({ clinic_id: clinicId, unit_id: unitId, status: 'aberta' }).catch(() => ({ comandas: [] })),
+        hubComandaApi.listComandas({ clinic_id: clinicId, unit_id: unitId, status: 'aberta', enrich: true }).catch(() => ({ comandas: [] })),
         hubComandaApi.getCancellationPendingCount(clinicId, unitId).catch(() => ({ count: 0 })),
         hubComandaApi.listCancellationPending({ clinic_id: clinicId, unit_id: unitId }).catch(() => ({ comandas: [] })),
         hubFinancialApi.listClosedCashSessions(clinicId, unitId, 25).catch(() => ({ sessions: [] })),
@@ -174,6 +195,12 @@ const HubCaixaPage: React.FC = () => {
       showError('Saldo de fecho inválido.');
       return;
     }
+    if (openComandas.length > 0) {
+      const ok = window.confirm(
+        `Há ${openComandas.length} comanda(s) em aberto nesta unidade. Deseja fechar o caixa mesmo assim?`
+      );
+      if (!ok) return;
+    }
     try {
       await hubFinancialApi.closeCashSession(sessionId, {
         clinic_id: clinicId,
@@ -184,6 +211,27 @@ const HubCaixaPage: React.FC = () => {
       await load();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao fechar caixa');
+    }
+  };
+
+  const onEnviarFinanceiro = async () => {
+    if (!caixaFinanceiro || !clinicId) return;
+    setCaixaFinanceiroBusy(true);
+    try {
+      await hubComandaApi.checkout(caixaFinanceiro.comandaId, {
+        clinic_id: clinicId,
+        grouping: 'all',
+        action: 'leave_pending',
+        due_date: caixaFinanceiro.dueDate,
+        payment_timing: 'on_checkout',
+      });
+      showSuccess('Comanda enviada ao financeiro.');
+      setCaixaFinanceiro(null);
+      await load();
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro ao enviar ao financeiro');
+    } finally {
+      setCaixaFinanceiroBusy(false);
     }
   };
 
@@ -214,40 +262,27 @@ const HubCaixaPage: React.FC = () => {
     }
   };
 
-  const onReversePayment = async () => {
+  const onReverseConfirm = async () => {
     if (!clinicId) return;
     if (!hasPermission('hub.cash.receive')) {
       showError('Sem permissão para estornar pagamentos.');
       return;
     }
-    const paymentId = reversePaymentId.trim();
+    const paymentId = (reverseTargetId ?? reversePaymentId).trim();
     if (!paymentId) {
       showError('Informe o ID do pagamento.');
       return;
     }
-    const reason = window.prompt('Motivo do estorno:');
-    if (!reason?.trim()) return;
-    try {
-      const res = await hubFinancialApi.reversePayment(paymentId, { clinic_id: clinicId, reason: reason.trim() });
-      showSuccess(res.warning || 'Pagamento estornado e recebível recalculado.');
-      setReversePaymentId('');
-      await load();
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao estornar pagamento');
-    }
-  };
-
-  const onReversePaymentId = async (paymentId: string) => {
-    if (!clinicId) return;
-    if (!hasPermission('hub.cash.receive')) {
-      showError('Sem permissão para estornar pagamentos.');
+    if (!reverseReason.trim() || reverseReason.trim().length < 3) {
+      showError('Informe o motivo do estorno (mín. 3 caracteres).');
       return;
     }
-    const reason = window.prompt(`Motivo do estorno (pagamento ${paymentId.slice(0, 8)}…):`);
-    if (!reason?.trim()) return;
     try {
-      const res = await hubFinancialApi.reversePayment(paymentId, { clinic_id: clinicId, reason: reason.trim() });
+      const res = await hubFinancialApi.reversePayment(paymentId, { clinic_id: clinicId, reason: reverseReason.trim() });
       showSuccess(res.warning || 'Pagamento estornado e recebível recalculado.');
+      setReversePaymentId('');
+      setReverseReason('');
+      setReverseTargetId(null);
       await load();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao estornar pagamento');
@@ -328,9 +363,9 @@ const HubCaixaPage: React.FC = () => {
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Entradas em dinheiro</div>
+            <div className="hub-servicos__metric-label">Dinheiro recebido</div>
             <div className="hub-servicos__metric-value">{loading ? '—' : formatBrl(cashSummary?.summary.cash_payments_total ?? 0)}</div>
-            <div className="hub-servicos__metric-sub">Pagamentos da sessão</div>
+            <div className="hub-servicos__metric-sub">Somente entradas em dinheiro na sessão</div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <TrendingUp size={22} strokeWidth={1.75} />
@@ -338,9 +373,9 @@ const HubCaixaPage: React.FC = () => {
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Saldo esperado</div>
+            <div className="hub-servicos__metric-label">Saldo esperado (gaveta)</div>
             <div className="hub-servicos__metric-value">{loading ? '—' : formatBrl(expectedBalance)}</div>
-            <div className="hub-servicos__metric-sub">Inicial + dinheiro + suprimentos - sangrias</div>
+            <div className="hub-servicos__metric-sub">Inicial + dinheiro + suprimentos − sangrias</div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <ClipboardList size={22} strokeWidth={1.75} />
@@ -491,6 +526,23 @@ const HubCaixaPage: React.FC = () => {
             )}
           </section>
         ) : null}
+        {cashOpen && cashSummary?.summary.totals_by_method ? (
+          <section className="hub-finance-page__panel-section">
+            <h3 className="hub-finance-page__subsection-title">Recebido por método (informativo)</h3>
+            <p className="hub-clientes__muted">
+              O <strong>saldo esperado</strong> da gaveta considera apenas <strong>dinheiro</strong>. Pix, cartão e
+              outros métodos são exibidos abaixo somente para conferência.
+            </p>
+            <ul className="hub-finance-page__item-list">
+              {Object.entries(cashSummary.summary.totals_by_method).map(([method, total]) => (
+                <li key={method} className="hub-finance-page__item-list-row">
+                  <span>{METHOD_LABELS[method] ?? method}</span>
+                  <strong>{formatBrl(Number(total))}</strong>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
       </section> : null}
 
       {tab === 'cancellation' ? (
@@ -559,7 +611,38 @@ const HubCaixaPage: React.FC = () => {
 
       {tab === 'comandas' ? (
         <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">Comandas abertas nesta unidade</h2>
+          <h2 className="hub-clientes__form-title">A receber — Comandas abertas</h2>
+          {caixaFinanceiro ? (
+            <div className="hub-finance-page__card-panel hub-finance-page__card-panel--stack">
+              <p className="hub-clientes__label">Enviar ao financeiro — escolha o vencimento</p>
+              <div className="hub-clientes__field">
+                <HubDateField
+                  id="caixa-due-date"
+                  label="Vencimento"
+                  valueIso={caixaFinanceiro.dueDate}
+                  onChangeIso={(d) => setCaixaFinanceiro((prev) => prev ? { ...prev, dueDate: d } : null)}
+                />
+              </div>
+              <div className="hub-finance-page__resolve-actions">
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                  disabled={caixaFinanceiroBusy}
+                  onClick={() => setCaixaFinanceiro(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                  disabled={caixaFinanceiroBusy || !caixaFinanceiro.dueDate}
+                  onClick={() => void onEnviarFinanceiro()}
+                >
+                  {caixaFinanceiroBusy ? 'Enviando…' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          ) : null}
           {loading ? (
             <p className="hub-clientes__muted">Carregando…</p>
           ) : openComandas.length === 0 ? (
@@ -569,32 +652,60 @@ const HubCaixaPage: React.FC = () => {
               <table className="hub-clientes__table hub-finance-page__table">
                 <thead>
                   <tr>
+                    <th>Tutor / Pet</th>
                     <th>Origem</th>
-                    <th>Financeiro</th>
-                    <th>Valor</th>
+                    <th className="hub-finance-page__th-num">Valor</th>
                     <th>Aberta em</th>
+                    <th>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {openComandas.map((c) => (
-                    <tr key={String(c.id)}>
-                      <td>
-                        <span className="hub-clientes__muted">{String(c.origin_type ?? '—')}</span> · #
-                        {String(c.origin_id ?? '').slice(0, 8)}…
-                      </td>
-                      <td>{String(c.financial_status ?? '—')}</td>
-                      <td className="hub-finance-page__td-num">{formatBrl(Number(c.total_amount ?? 0))}</td>
-                      <td>{c.opened_at ? new Date(String(c.opened_at)).toLocaleString('pt-BR') : '—'}</td>
-                    </tr>
-                  ))}
+                  {openComandas.map((c) => {
+                    const guardian = c.guardian as { full_name?: string } | null;
+                    const pet = c.pet as { name?: string } | null;
+                    const tutorPet = [guardian?.full_name, pet?.name].filter(Boolean).join(' / ') || '—';
+                    return (
+                      <tr key={String(c.id)}>
+                        <td>{tutorPet}</td>
+                        <td>
+                          <span className="hub-clientes__muted">{String(c.origin_type ?? '—')}</span>
+                        </td>
+                        <td className="hub-finance-page__td-num">{formatBrl(Number(c.total_amount ?? 0))}</td>
+                        <td>{c.opened_at ? new Date(String(c.opened_at)).toLocaleString('pt-BR') : '—'}</td>
+                        <td>
+                          <div className="hub-clientes__btn-row">
+                            {canCreateReceivable && (
+                              <button
+                                type="button"
+                                className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                                onClick={() => setCaixaCheckoutComandaId(String(c.id))}
+                              >
+                                Receber
+                              </button>
+                            )}
+                            {canCreateReceivable && (
+                              <button
+                                type="button"
+                                className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                                onClick={() =>
+                                  setCaixaFinanceiro({
+                                    comandaId: String(c.id),
+                                    dueDate: new Date().toISOString().slice(0, 10),
+                                  })
+                                }
+                              >
+                                Financeiro
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
-          <p className="hub-clientes__muted" style={{ marginTop: 12 }}>
-            Para conferir itens e receber, abra o checkout a partir da agenda, do Banho &amp; Tosa, do orçamento ou do
-            atendimento clínico.
-          </p>
         </section>
       ) : null}
 
@@ -657,7 +768,10 @@ const HubCaixaPage: React.FC = () => {
                         <button
                           type="button"
                           className="hub-servicos__btn-ghost-sm"
-                          onClick={() => void onReversePaymentId(p.id)}
+                          onClick={() => {
+                            setReverseTargetId(p.id);
+                            setReverseReason('');
+                          }}
                         >
                           Estornar
                         </button>
@@ -672,26 +786,56 @@ const HubCaixaPage: React.FC = () => {
         <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>
           Ou informe manualmente o UUID do pagamento (ex.: cópia do financeiro).
         </p>
-        <div className="hub-finance-page__card-panel">
-          <div className="hub-clientes__field hub-finance-page__field-grow">
-            <label className="hub-clientes__label" htmlFor="caixa-reverse-payment">
-              ID do pagamento
+        <div className="hub-finance-page__card-panel hub-finance-page__card-panel--stack">
+          {reverseTargetId ? (
+            <p className="hub-clientes__muted">
+              Estornando pagamento <strong>{reverseTargetId.slice(0, 8)}…</strong>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                style={{ marginLeft: 8 }}
+                onClick={() => setReverseTargetId(null)}
+              >
+                Trocar
+              </button>
+            </p>
+          ) : (
+            <div className="hub-clientes__field hub-finance-page__field-grow">
+              <label className="hub-clientes__label" htmlFor="caixa-reverse-payment">
+                ID do pagamento
+              </label>
+              <input
+                id="caixa-reverse-payment"
+                className="hub-clientes__input"
+                value={reversePaymentId}
+                onChange={(e) => setReversePaymentId(e.target.value)}
+                placeholder="UUID do hub_payments"
+              />
+            </div>
+          )}
+          <div className="hub-clientes__field">
+            <label className="hub-clientes__label" htmlFor="caixa-reverse-reason">
+              Motivo do estorno
             </label>
-            <input
-              id="caixa-reverse-payment"
+            <textarea
+              id="caixa-reverse-reason"
               className="hub-clientes__input"
-              value={reversePaymentId}
-              onChange={(e) => setReversePaymentId(e.target.value)}
-              placeholder="UUID do hub_payments"
+              rows={2}
+              value={reverseReason}
+              onChange={(e) => setReverseReason(e.target.value)}
+              placeholder="Descreva o motivo (mín. 3 caracteres)"
             />
           </div>
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost"
-            onClick={() => void onReversePayment()}
-          >
-            Estornar
-          </button>
+          <div>
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost"
+              disabled={!reverseReason.trim() || reverseReason.trim().length < 3}
+              onClick={() => void onReverseConfirm()}
+            >
+              Confirmar estorno
+            </button>
+          </div>
         </div>
       </section> : null}
 
@@ -753,6 +897,21 @@ const HubCaixaPage: React.FC = () => {
         )}
       </section> : null}
     </>,
+    clinicId && caixaCheckoutComandaId && unitId ? (
+      <ComandaCheckoutDrawer
+        key={caixaCheckoutComandaId}
+        open={!!caixaCheckoutComandaId}
+        onClose={() => setCaixaCheckoutComandaId(null)}
+        clinicId={clinicId}
+        unitId={unitId}
+        comandaId={caixaCheckoutComandaId}
+        onSuccess={() => {
+          showSuccess('Checkout concluído.');
+          setCaixaCheckoutComandaId(null);
+          void load();
+        }}
+      />
+    ) : null,
     selectedCashItem ? (
       <aside className="hub-clientes__panel hub-finance-page__panel" aria-label="Detalhe do movimento de caixa">
         <div className="hub-clientes__panel-scroll">

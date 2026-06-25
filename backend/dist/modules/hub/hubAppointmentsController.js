@@ -7,6 +7,7 @@ const hubServiceGroupsController_1 = require("./hubServiceGroupsController");
 const hubClinicSettingsController_1 = require("./hubClinicSettingsController");
 const hubServiceTypesPricingMatrix_1 = require("./hubServiceTypesPricingMatrix");
 const hubPricingResolve_1 = require("./hubPricingResolve");
+const hubComandasController_1 = require("./hubComandasController");
 /** Reparte um total comercial (ex.: ida+volta L&T) em duas linhas contábeis com soma exacta. */
 function splitMoneyTotalAcrossTwoLegs(total) {
     const a = (0, hubServiceTypesPricingMatrix_1.roundMoney2)(total / 2);
@@ -528,6 +529,9 @@ async function enrichAppointments(rows) {
         arr.push(line);
         svcByAppt.set(apptId, arr);
     }
+    const adjustmentFlags = clinicId
+        ? await (0, hubComandasController_1.financialAdjustmentFlagsForAppointments)(clinicId, apptIds)
+        : new Map();
     return rows.map((r) => {
         const st = stMap.get(r.hub_service_type_id);
         const sm = r.hub_staff_member_id ? staffMap.get(r.hub_staff_member_id) : null;
@@ -552,6 +556,7 @@ async function enrichAppointments(rows) {
             service_type: stMap.get(l.hub_service_type_id) ?? null,
         }));
         const linked = encByAppt.get(r.id);
+        const adj = adjustmentFlags.get(r.id);
         return {
             ...r,
             service_type: st ?? null,
@@ -562,6 +567,8 @@ async function enrichAppointments(rows) {
             services,
             hub_encounter_id: linked?.id ?? null,
             hub_encounter_status: linked?.status ?? null,
+            financial_adjustment_pending: adj?.financial_adjustment_pending ?? false,
+            comanda_id: adj?.comanda_id ?? null,
         };
     });
 }
@@ -1597,6 +1604,11 @@ const patchHubAppointment = async (req, res) => {
                     const ar = apRow;
                     await refreshSnapshotsForAppointment(b.clinic_id, tid, ar.starts_at, ar.pet_id, ar.pricing_porte_tier ?? null, ar.pricing_coat_type ?? null);
                 }
+            }
+        }
+        if (patch.status === 'cancelled') {
+            for (const tid of targetIds) {
+                void (0, hubComandasController_1.maybeFlagComandaCancellationPending)(b.clinic_id, 'appointment', tid);
             }
         }
         const { data: updated } = await supabase_1.supabaseAdmin

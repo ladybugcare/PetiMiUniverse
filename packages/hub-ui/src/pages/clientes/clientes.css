@@ -766,6 +766,12 @@ a.hub-clientes__btn:focus-visible {
   margin-bottom: 16px;
 }
 
+.hub-clientes__error {
+  color: var(--hc-danger, #c0392b);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
 @media (max-width: 1100px) {
   .hub-clientes {
     flex-direction: column;

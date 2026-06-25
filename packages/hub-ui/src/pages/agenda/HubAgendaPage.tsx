@@ -112,7 +112,7 @@ function quoteLineServiceName(line: HubQuoteLine): string | null {
 const HubAgendaPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { showAlert, showInfo, showError, showConfirm } = useAlert();
+  const { showAlert, showInfo, showSuccess, showError, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
   const clinicId = getStoredClinicId();
@@ -1660,7 +1660,7 @@ const HubAgendaPage: React.FC = () => {
           originId={checkoutAppointmentId}
           onSuccess={() => {
             bumpReload();
-            showInfo('Checkout concluído.', 'Financeiro');
+            showSuccess('Checkout concluído.');
           }}
         />
       ) : null}

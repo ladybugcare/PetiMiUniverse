@@ -18,6 +18,8 @@ export type HubComandaItem = {
   clinic_id: string;
   comanda_id: string;
   pet_id: string | null;
+  /** Nome do pet (enriquecido pelo backend). */
+  pet_name?: string | null;
   item_kind: string;
   hub_service_type_id?: string | null;
   description: string;
@@ -118,12 +120,15 @@ export const hubComandaApi = {
     status?: 'aberta' | 'fechada' | 'cancelada';
     hub_case_id?: string;
     cancellation_pending?: boolean;
+    /** Quando true, inclui guardian/pet/paid_total em cada comanda. */
+    enrich?: boolean;
   }): Promise<{ comandas: Array<Record<string, unknown>> }> {
     const q = new URLSearchParams({ clinic_id: params.clinic_id });
     if (params.unit_id) q.set('unit_id', params.unit_id);
     if (params.status) q.set('status', params.status);
     if (params.hub_case_id) q.set('hub_case_id', params.hub_case_id);
     if (params.cancellation_pending) q.set('cancellation_pending', 'true');
+    if (params.enrich) q.set('enrich', 'true');
     return apiRequest(`${base}?${q}`) as Promise<{ comandas: Array<Record<string, unknown>> }>;
   },
 

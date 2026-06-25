@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { HubSidePanel } from '../../components/HubSidePanel';
+import { HubDateField } from '../../components/HubDateField';
 import { hubComandaApi, type HubComandaDetailResponse, type HubComandaOriginType } from '../../api/hubComandaApi';
 import { hubFinancialApi, type HubPaymentMethod } from '../../api/hubFinancialApi';
+import '../clientes/clientes.css';
+import './hub-finance-page.css';
 
 function formatBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -12,20 +15,23 @@ export type ComandaCheckoutDrawerProps = {
   onClose: () => void;
   clinicId: string;
   unitId: string;
-  originType: HubComandaOriginType;
-  originId: string;
   onSuccess?: (payload: { receivableIds: string[]; comandaId: string }) => void;
-};
+} & (
+  | { comandaId: string; originType?: never; originId?: never }
+  | { comandaId?: never; originType: HubComandaOriginType; originId: string }
+);
 
 export function ComandaCheckoutDrawer({
   open,
   onClose,
   clinicId,
   unitId,
-  originType,
-  originId,
   onSuccess,
+  ...rest
 }: ComandaCheckoutDrawerProps) {
+  const comandaId = 'comandaId' in rest ? rest.comandaId : undefined;
+  const originType = 'originType' in rest ? rest.originType : undefined;
+  const originId = 'originId' in rest ? rest.originId : undefined;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<HubComandaDetailResponse | null>(null);
@@ -35,26 +41,34 @@ export function ComandaCheckoutDrawer({
   const [dueDate, setDueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [paymentMethod, setPaymentMethod] = useState<HubPaymentMethod>('pix');
   const [cashSessionId, setCashSessionId] = useState<string | null>(null);
-  const [waiveReason, setWaiveReason] = useState('');
   /** advance = antecipado (comanda pode permanecer aberta até concluir o serviço). */
   const [paymentTiming, setPaymentTiming] = useState<'on_checkout' | 'advance'>('on_checkout');
+  const [waiveReason, setWaiveReason] = useState('');
 
   const loadComanda = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      try {
-        const d = await hubComandaApi.openComanda({ clinic_id: clinicId, origin_type: originType, origin_id: originId });
+      if (comandaId) {
+        // Abrir pelo ID da comanda diretamente (ex.: Caixa, comandas manuais)
+        const d = await hubComandaApi.getComandaDetail(comandaId, clinicId);
         setDetail(d);
-      } catch (openErr: unknown) {
-        const msg = (openErr as Error)?.message ?? '';
-        /** 409 «Já existe comanda aberta» — carregar detalhe existente; outros erros propagam. */
-        if (msg.includes('Já existe comanda aberta')) {
-          const d = await hubComandaApi.getComandaByOrigin({ clinic_id: clinicId, origin_type: originType, origin_id: originId });
+      } else if (originType && originId) {
+        try {
+          const d = await hubComandaApi.openComanda({ clinic_id: clinicId, origin_type: originType, origin_id: originId });
           setDetail(d);
-        } else {
-          throw openErr;
+        } catch (openErr: unknown) {
+          const msg = (openErr as Error)?.message ?? '';
+          /** 409 «Já existe comanda aberta» — carregar detalhe existente; outros erros propagam. */
+          if (msg.includes('Já existe comanda aberta')) {
+            const d = await hubComandaApi.getComandaByOrigin({ clinic_id: clinicId, origin_type: originType, origin_id: originId });
+            setDetail(d);
+          } else {
+            throw openErr;
+          }
         }
+      } else {
+        throw new Error('Informe originType+originId ou comandaId para abrir o checkout.');
       }
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Erro ao abrir comanda');
@@ -62,7 +76,7 @@ export function ComandaCheckoutDrawer({
     } finally {
       setLoading(false);
     }
-  }, [clinicId, originType, originId]);
+  }, [clinicId, comandaId, originType, originId]);
 
   const syncFromOrigin = useCallback(async () => {
     const cid = detail?.comanda?.id as string | undefined;
@@ -130,9 +144,10 @@ export function ComandaCheckoutDrawer({
     for (const pid of sortedPetIds) {
       const arr = byPet.get(pid)!;
       const t = arr.reduce((s, it) => s + Number(it.line_total ?? 0), 0);
+      const petLabel = arr[0]?.pet_name ?? `Pet (${pid.slice(0, 8)}…)`;
       rows.push({
         groupIndex: gi++,
-        label: `Pet (${pid.slice(0, 8)}…)`,
+        label: petLabel,
         total: t,
       });
     }
@@ -232,172 +247,261 @@ export function ComandaCheckoutDrawer({
     <HubSidePanel
       open={open}
       title="Checkout — Comanda"
+      subtitle="Confirme os itens e registre o pagamento ou envie ao financeiro."
       onClose={onClose}
       footer={
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <button type="button" className="hub-btn hub-btn--ghost" onClick={onClose} disabled={loading}>
+        <div className="hub-finance-page__drawer-footer">
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost"
+            onClick={onClose}
+            disabled={loading}
+          >
             Fechar
           </button>
-          <button type="button" className="hub-btn hub-btn--primary" onClick={() => void submit()} disabled={loading || !detail}>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary"
+            onClick={() => void submit()}
+            disabled={loading || !detail}
+          >
             {loading ? 'Processando…' : 'Confirmar'}
           </button>
         </div>
       }
     >
-      {error && (
-        <div className="hub-alert hub-alert--error" style={{ marginBottom: 12 }}>
-          {error}
-        </div>
-      )}
-      {loading && !detail && <p>Carregando comanda…</p>}
-      {detail && (
-        <>
-          <p className="hub-servicos__metric-sub" style={{ marginBottom: 12 }}>
-            Conferir itens e escolher como cobrar. Origem: {originType} · {openItems.length} item(ns) em aberto
+      <div className="hub-finance-page__card-panel hub-finance-page__card-panel--stack">
+        {error && (
+          <p className="hub-clientes__error" role="alert">
+            {error}
           </p>
-          {typeof detail.paid_total === 'number' ? (
-            <div style={{ marginBottom: 12, fontSize: 14 }}>
-              <strong>Já pago:</strong> {formatBrl(detail.paid_total)}
-              {typeof detail.balance_due === 'number' ? (
-                <>
-                  {' '}
-                  · <strong>Saldo a cobrar:</strong> {formatBrl(detail.balance_due)}
-                </>
-              ) : null}
-              {detail.operational_complete === false ? (
-                <span style={{ color: 'var(--hub-muted)', display: 'block', marginTop: 4 }}>
-                  Serviço ainda não concluído na operação — a comanda pode permanecer aberta após pagamento antecipado.
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-          {originType !== 'manual' ? (
-            <div style={{ marginBottom: 12 }}>
-              <button type="button" className="hub-btn hub-btn--ghost" disabled={loading} onClick={() => void syncFromOrigin()}>
-                Sincronizar itens com o serviço
-              </button>
-            </div>
-          ) : null}
-          <div style={{ marginBottom: 16 }}>
-            <strong>Itens</strong>
-            <ul style={{ margin: '8px 0', paddingLeft: 18 }}>
-              {openItems.map((it) => (
-                <li key={it.id}>
-                  {it.description} — {formatBrl(Number(it.line_total ?? 0))}
-                  {it.pet_id ? <span style={{ color: 'var(--hub-muted)' }}> (pet)</span> : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <strong>Agrupamento</strong>
-            <label style={{ display: 'block', marginTop: 8 }}>
-              <input type="radio" name="grp" checked={grouping === 'all'} onChange={() => setGrouping('all')} /> Tudo em uma
-              cobrança
-            </label>
-            <label style={{ display: 'block' }}>
-              <input type="radio" name="grp" checked={grouping === 'by_pet'} onChange={() => setGrouping('by_pet')} /> Separar
-              por pet
-            </label>
-            {grouping === 'by_pet' && (
-              <div style={{ marginTop: 8, fontSize: 13 }}>
-                <label>
-                  Itens do tutor anexar ao grupo índice:{' '}
-                  <input
-                    type="number"
-                    min={0}
-                    value={tutorGroupIdx}
-                    onChange={(e) => setTutorGroupIdx(Number(e.target.value) || 0)}
-                    style={{ width: 64 }}
-                  />
-                </label>
+        )}
+
+        {loading && !detail && (
+          <p className="hub-clientes__muted">Carregando comanda…</p>
+        )}
+
+        {detail && (
+          <>
+          {(() => {
+            const gu = detail.comanda.guardian as { full_name?: string } | null;
+            const pet = detail.comanda.pet as { name?: string } | null;
+            const tutorPet = [gu?.full_name, pet?.name].filter(Boolean).join(' · ');
+            return tutorPet ? (
+              <p className="hub-clientes__muted">
+                <strong>{tutorPet}</strong>
+              </p>
+            ) : null;
+          })()}
+          <p className="hub-clientes__muted">
+            Origem: <strong>{String(detail.comanda.origin_type ?? originType ?? '—')}</strong> · {openItems.length} item(ns) em aberto
+          </p>
+
+            {typeof detail.paid_total === 'number' && (
+              <div className="hub-finance-page__summary-row">
+                <span>Já pago: <strong>{formatBrl(detail.paid_total)}</strong></span>
+                {typeof detail.balance_due === 'number' && (
+                  <span>Saldo a cobrar: <strong>{formatBrl(detail.balance_due)}</strong></span>
+                )}
+                {detail.operational_complete === false && (
+                  <p className="hub-clientes__muted">
+                    Serviço ainda não concluído — a comanda pode permanecer aberta após pagamento antecipado.
+                  </p>
+                )}
               </div>
             )}
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <strong>Ação</strong>
-            <label style={{ display: 'block', marginTop: 8 }}>
-              <input type="radio" name="act" checked={action === 'receive_now'} onChange={() => setAction('receive_now')} />{' '}
-              Receber agora
-            </label>
-            <label style={{ display: 'block' }}>
-              <input type="radio" name="act" checked={action === 'leave_pending'} onChange={() => setAction('leave_pending')} />{' '}
-              Deixar pendente (conta a receber)
-            </label>
-            <label style={{ display: 'block' }}>
-              <input type="radio" name="act" checked={action === 'cancel'} onChange={() => setAction('cancel')} /> Cancelar / sem
-              cobrança
-            </label>
-          </div>
-          {action === 'leave_pending' && (
-            <label style={{ display: 'block', marginBottom: 12 }}>
-              Vencimento <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </label>
-          )}
-          {action === 'receive_now' && (
-            <div style={{ marginBottom: 12 }}>
-              <strong>Momento do pagamento</strong>
-              <label style={{ display: 'block', marginTop: 8 }}>
-                <input
-                  type="radio"
-                  name="pt"
-                  checked={paymentTiming === 'on_checkout'}
-                  onChange={() => setPaymentTiming('on_checkout')}
-                />{' '}
-                No fecho (após o serviço)
-              </label>
-              <label style={{ display: 'block' }}>
-                <input type="radio" name="pt" checked={paymentTiming === 'advance'} onChange={() => setPaymentTiming('advance')} />{' '}
-                Antecipado (antes de concluir o serviço)
-              </label>
-            </div>
-          )}
-          {action === 'receive_now' && (
-            <div style={{ marginBottom: 12 }}>
-              <strong>Forma de pagamento</strong> (aplicada a cada grupo)
-              <select
-                className="hub-input"
-                style={{ display: 'block', marginTop: 8, maxWidth: 280 }}
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as HubPaymentMethod)}
-              >
-                <option value="pix">Pix</option>
-                <option value="cash">Dinheiro</option>
-                <option value="credit_card">Cartão de crédito</option>
-                <option value="debit_card">Cartão de débito</option>
-                <option value="transfer">Transferência</option>
-                <option value="payment_link">Link de pagamento</option>
-                <option value="customer_credit">Crédito do tutor</option>
-              </select>
-              {paymentMethod === 'cash' && (
-                <p style={{ fontSize: 13, marginTop: 8 }}>
-                  {cashSessionId
-                    ? `Caixa aberto (sessão ${cashSessionId.slice(0, 8)}…)`
-                    : 'Não há caixa aberto — abra no módulo Caixa.'}
-                </p>
-              )}
-            </div>
-          )}
-          {action === 'cancel' && (
-            <label style={{ display: 'block', marginBottom: 12 }}>
-              Motivo (waive)
-              <textarea className="hub-input" rows={3} value={waiveReason} onChange={(e) => setWaiveReason(e.target.value)} />
-            </label>
-          )}
-          {action === 'receive_now' && groupTotals.length > 0 && (
-            <div style={{ fontSize: 14 }}>
-              <strong>Resumo por cobrança</strong>
-              <ul>
-                {groupTotals.map((g) => (
-                  <li key={g.groupIndex}>
-                    {g.label}: {formatBrl(g.total)}
+
+            {originType && originType !== 'manual' && (
+              <div>
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                  disabled={loading}
+                  onClick={() => void syncFromOrigin()}
+                >
+                  Sincronizar itens com o serviço
+                </button>
+              </div>
+            )}
+
+            <div>
+              <p className="hub-clientes__label">Itens em aberto</p>
+              <ul className="hub-finance-page__item-list">
+                {openItems.map((it) => (
+                  <li key={it.id} className="hub-finance-page__item-list-row">
+                    <span>{it.description}</span>
+                    <span>{formatBrl(Number(it.line_total ?? 0))}</span>
+                    {it.pet_id && <span className="hub-clientes__muted">(pet)</span>}
                   </li>
                 ))}
               </ul>
             </div>
-          )}
-        </>
-      )}
+
+            <fieldset className="hub-finance-page__resolve-options">
+              <legend className="hub-clientes__label">Agrupamento</legend>
+              <label className="hub-finance-page__resolve-option">
+                <input
+                  type="radio"
+                  name="checkout-grp"
+                  checked={grouping === 'all'}
+                  onChange={() => setGrouping('all')}
+                />
+                Tudo em uma cobrança
+              </label>
+              <label className="hub-finance-page__resolve-option">
+                <input
+                  type="radio"
+                  name="checkout-grp"
+                  checked={grouping === 'by_pet'}
+                  onChange={() => setGrouping('by_pet')}
+                />
+                Separar por pet
+              </label>
+              {grouping === 'by_pet' && (
+                <div className="hub-clientes__field">
+                  <label className="hub-clientes__label" htmlFor="tutor-group-idx">
+                    Itens do tutor — anexar ao grupo índice
+                  </label>
+                  <input
+                    id="tutor-group-idx"
+                    type="number"
+                    min={0}
+                    className="hub-clientes__input"
+                    style={{ maxWidth: 80 }}
+                    value={tutorGroupIdx}
+                    onChange={(e) => setTutorGroupIdx(Number(e.target.value) || 0)}
+                  />
+                </div>
+              )}
+            </fieldset>
+
+            <fieldset className="hub-finance-page__resolve-options">
+              <legend className="hub-clientes__label">Ação</legend>
+              <label className="hub-finance-page__resolve-option">
+                <input
+                  type="radio"
+                  name="checkout-act"
+                  checked={action === 'receive_now'}
+                  onChange={() => setAction('receive_now')}
+                />
+                Receber agora
+              </label>
+              <label className="hub-finance-page__resolve-option">
+                <input
+                  type="radio"
+                  name="checkout-act"
+                  checked={action === 'leave_pending'}
+                  onChange={() => setAction('leave_pending')}
+                />
+                Deixar pendente (conta a receber)
+              </label>
+              <label className="hub-finance-page__resolve-option">
+                <input
+                  type="radio"
+                  name="checkout-act"
+                  checked={action === 'cancel'}
+                  onChange={() => setAction('cancel')}
+                />
+                Cancelar / sem cobrança
+              </label>
+            </fieldset>
+
+            {action === 'leave_pending' && (
+              <div className="hub-clientes__field">
+                <HubDateField
+                  id="checkout-due-date"
+                  label="Vencimento"
+                  valueIso={dueDate}
+                  onChangeIso={setDueDate}
+                />
+              </div>
+            )}
+
+            {action === 'receive_now' && (
+              <fieldset className="hub-finance-page__resolve-options">
+                <legend className="hub-clientes__label">Momento do pagamento</legend>
+                <label className="hub-finance-page__resolve-option">
+                  <input
+                    type="radio"
+                    name="checkout-pt"
+                    checked={paymentTiming === 'on_checkout'}
+                    onChange={() => setPaymentTiming('on_checkout')}
+                  />
+                  No fecho (após o serviço)
+                </label>
+                <label className="hub-finance-page__resolve-option">
+                  <input
+                    type="radio"
+                    name="checkout-pt"
+                    checked={paymentTiming === 'advance'}
+                    onChange={() => setPaymentTiming('advance')}
+                  />
+                  Antecipado (antes de concluir o serviço)
+                </label>
+              </fieldset>
+            )}
+
+            {action === 'receive_now' && (
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="checkout-payment-method">
+                  Forma de pagamento (aplicada a cada grupo)
+                </label>
+                <select
+                  id="checkout-payment-method"
+                  className="hub-clientes__select-input"
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value as HubPaymentMethod)}
+                >
+                  <option value="pix">Pix</option>
+                  <option value="cash">Dinheiro</option>
+                  <option value="credit_card">Cartão de crédito</option>
+                  <option value="debit_card">Cartão de débito</option>
+                  <option value="transfer">Transferência</option>
+                  <option value="payment_link">Link de pagamento</option>
+                  <option value="customer_credit">Crédito do tutor</option>
+                </select>
+                {paymentMethod === 'cash' && (
+                  <p className="hub-clientes__muted">
+                    {cashSessionId
+                      ? `Caixa aberto (sessão ${cashSessionId.slice(0, 8)}…)`
+                      : 'Não há caixa aberto — abra no módulo Caixa.'}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {action === 'cancel' && (
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="checkout-waive-reason">
+                  Motivo do cancelamento (obrigatório)
+                </label>
+                <textarea
+                  id="checkout-waive-reason"
+                  className="hub-clientes__input"
+                  rows={3}
+                  value={waiveReason}
+                  onChange={(e) => setWaiveReason(e.target.value)}
+                  placeholder="Informe o motivo (mín. 3 caracteres)"
+                />
+              </div>
+            )}
+
+            {action === 'receive_now' && groupTotals.length > 0 && (
+              <div>
+                <p className="hub-clientes__label">Resumo por cobrança</p>
+                <ul className="hub-finance-page__item-list">
+                  {groupTotals.map((g) => (
+                    <li key={g.groupIndex} className="hub-finance-page__item-list-row">
+                      <span>{g.label}</span>
+                      <strong>{formatBrl(g.total)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </HubSidePanel>
   );
 }

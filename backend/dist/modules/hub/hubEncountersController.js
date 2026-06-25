@@ -331,6 +331,11 @@ async function enrichEncounter(row) {
             .maybeSingle();
         serviceType = st;
     }
+    const clinicId = row.clinic_id;
+    const encId = row.id;
+    const adj = clinicId
+        ? (await (0, hubComandasController_1.financialAdjustmentFlagsForEncounters)(clinicId, [encId])).get(encId)
+        : undefined;
     return {
         ...row,
         pet: petRes.data,
@@ -339,6 +344,8 @@ async function enrichEncounter(row) {
         appointment: appt,
         service_type: serviceType,
         case: caseRes.data,
+        financial_adjustment_pending: adj?.financial_adjustment_pending ?? false,
+        comanda_id: adj?.comanda_id ?? null,
     };
 }
 async function enrichEncounters(rows) {
@@ -572,6 +579,20 @@ const getHubEncountersDayBoard = async (req, res) => {
             const tb = new Date(b.starts_at || b.started_at || b.appointment?.starts_at || 0).getTime();
             return ta - tb;
         });
+        const apptIdsForAdj = [
+            ...new Set(items.map((it) => it.appointment_id).filter(Boolean)),
+        ];
+        const adjByAppt = await (0, hubComandasController_1.financialAdjustmentFlagsForAppointments)(clinic_id, apptIdsForAdj);
+        for (const item of items) {
+            const aid = item.appointment_id;
+            if (!aid)
+                continue;
+            const f = adjByAppt.get(aid);
+            if (f?.financial_adjustment_pending) {
+                item.financial_adjustment_pending = true;
+                item.comanda_id = f.comanda_id;
+            }
+        }
         return res.json({
             items,
             date: dateYmd,
@@ -1053,6 +1074,9 @@ const patchHubEncounter = async (req, res) => {
             return res.status(500).json({ error: error.message });
         if (!data)
             return res.status(404).json({ error: 'Atendimento não encontrado' });
+        if (patch.status === 'cancelled') {
+            void (0, hubComandasController_1.maybeFlagComandaCancellationPending)(b.clinic_id, 'encounter', id.data);
+        }
         const encounter = await enrichEncounter(data);
         return res.json({ encounter });
     }

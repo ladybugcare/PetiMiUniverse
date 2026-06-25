@@ -79,6 +79,7 @@ const HubClinicCasePage: React.FC = () => {
   const canRead = hasPermission('hub.clinic.read');
   const canWrite = hasPermission('hub.clinic.write');
   const canFinancial = hasPermission('hub.financial.read');
+  const canCreateReceivable = hasPermission('hub.receivables.create');
 
   const [clinicalCase, setClinicalCase] = useState<HubClinicalCase | null>(null);
   const [tab, setTab] = useState<TabId>('resumo');
@@ -97,6 +98,7 @@ const HubClinicCasePage: React.FC = () => {
   const [savingStatus, setSavingStatus] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutEncounterId, setCheckoutEncounterId] = useState<string | null>(null);
+  const [checkoutUnitId, setCheckoutUnitId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!clinicId || !caseId) return;
@@ -173,14 +175,19 @@ const HubClinicCasePage: React.FC = () => {
   }, [load]);
 
   const openComandaForCase = () => {
-    const completedEnc = [...encounters]
-      .filter((e) => e.status === 'completed')
+    const latestEnc = [...encounters]
       .sort((a, b) => new Date(b.started_at ?? 0).getTime() - new Date(a.started_at ?? 0).getTime())[0];
-    if (!completedEnc) {
-      showError('Nenhum atendimento concluído encontrado para gerar comanda.');
+    if (!latestEnc) {
+      showError('Nenhum atendimento encontrado neste caso para abrir o checkout.');
       return;
     }
-    setCheckoutEncounterId(completedEnc.id);
+    const resolvedUnitId = latestEnc.unit_id ?? null;
+    if (!resolvedUnitId) {
+      showError('A unidade não pôde ser determinada para este atendimento. Verifique o cadastro da unidade.');
+      return;
+    }
+    setCheckoutEncounterId(latestEnc.id);
+    setCheckoutUnitId(resolvedUnitId);
     setCheckoutOpen(true);
   };
 
@@ -285,8 +292,8 @@ const HubClinicCasePage: React.FC = () => {
                 <span className={`hub-clinic-cases__badge hub-clinic-cases__badge--${clinicalCase.status}`}>
                   {STATUS_LABELS[clinicalCase.status]}
                 </span>
-                {canWrite && (
-                  <>
+                <>
+                  {canWrite && (
                     <button
                       type="button"
                       className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
@@ -294,15 +301,17 @@ const HubClinicCasePage: React.FC = () => {
                     >
                       Alterar status
                     </button>
+                  )}
+                  {canCreateReceivable && (
                     <button
                       type="button"
                       className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
                       onClick={openComandaForCase}
                     >
-                      Abrir comanda
+                      Abrir checkout
                     </button>
-                  </>
-                )}
+                  )}
+                </>
               </>
             )}
           </div>
@@ -613,16 +622,16 @@ const HubClinicCasePage: React.FC = () => {
         </div>
       )}
 
-      {checkoutOpen && checkoutEncounterId && (
+      {checkoutOpen && checkoutEncounterId && checkoutUnitId && (
         <ComandaCheckoutDrawer
           open={checkoutOpen}
           onClose={() => setCheckoutOpen(false)}
           clinicId={clinicId}
-          unitId={clinicalCase.unit_id ?? clinicId}
+          unitId={checkoutUnitId}
           originType="encounter"
           originId={checkoutEncounterId}
           onSuccess={() => {
-            showSuccess('Comanda aberta com sucesso.');
+            showSuccess('Checkout concluído.');
             setCheckoutOpen(false);
             void load();
           }}

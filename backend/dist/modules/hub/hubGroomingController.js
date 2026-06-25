@@ -489,6 +489,21 @@ const getHubGroomingDayBoard = async (req, res) => {
             const tb = new Date(b.starts_at || 0).getTime();
             return ta - tb;
         });
+        const apptIdsForAdj = [
+            ...new Set(items.map((it) => it.appointment_id).filter(Boolean)),
+        ];
+        const adjByAppt = await (0, hubComandasController_1.financialAdjustmentFlagsForAppointments)(clinic_id, apptIdsForAdj);
+        for (const item of items) {
+            const aid = item.appointment_id;
+            if (!aid) {
+                item.financial_adjustment_pending = false;
+                item.comanda_id = null;
+                continue;
+            }
+            const f = adjByAppt.get(aid);
+            item.financial_adjustment_pending = f?.financial_adjustment_pending ?? false;
+            item.comanda_id = f?.comanda_id ?? null;
+        }
         return res.json({
             items,
             date: dateYmd,

@@ -168,6 +168,8 @@ export type HubCashSessionSummary = {
     deposits_total: number;
     withdrawals_total: number;
     expected_balance: number;
+    /** Totais por método de pagamento (pix, credit_card, etc.) — informativo, não entra no saldo da gaveta. */
+    totals_by_method?: Record<string, number>;
   };
 };
 

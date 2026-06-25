@@ -673,3 +673,37 @@
   justify-content: flex-end;
   margin-top: 12px;
 }
+
+.hub-finance-page__drawer-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.hub-finance-page__summary-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.hub-finance-page__item-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hub-finance-page__item-list-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.hub-finance-page__item-list-row span:last-child {
+  margin-left: auto;
+}

@@ -14,6 +14,19 @@ function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
+/** Retorna o ID da sessão de caixa aberta para uma unidade, ou null se não houver. */
+export async function resolveOpenCashSessionId(clinicId: string, unitId: string | null): Promise<string | null> {
+  if (!unitId) return null;
+  const { data } = await supabaseAdmin
+    .from('hub_cash_sessions')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('unit_id', unitId)
+    .eq('status', 'open')
+    .maybeSingle();
+  return (data?.id as string | null) ?? null;
+}
+
 /** Unidade principal da clínica, ou a primeira cadastrada (orçamentos sem unit_id herdavam null e sumiam no filtro do financeiro). */
 async function resolveClinicDefaultUnitId(clinicId: string): Promise<string | null> {
   const { data: main } = await supabaseAdmin
@@ -817,6 +830,9 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
         return res.status(409).json({ error: 'Sessão de caixa inválida ou fechada para este recebimento em dinheiro.' });
       }
       validatedCashSessionId = cashSession.id as string;
+    } else {
+      // Pagamentos não-dinheiro: carimbar a sessão aberta da unidade para rastreamento do dia
+      validatedCashSessionId = await resolveOpenCashSessionId(clinic_id, rec.unit_id as string | null);
     }
 
     const payAt = payment_date ?? new Date().toISOString();
@@ -1578,7 +1594,7 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
     if (sErr) return res.status(500).json({ error: sErr.message });
     if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
 
-    const [{ data: payments, error: pErr }, { data: movements, error: mErr }] = await Promise.all([
+    const [{ data: payments, error: pErr }, { data: allPayments, error: allPErr }, { data: movements, error: mErr }] = await Promise.all([
       supabaseAdmin
         .from('hub_payments')
         .select('*, receivable:hub_receivables(id, source_type, source_id, guardian_id, final_amount)')
@@ -1587,6 +1603,11 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
         .eq('payment_method', 'cash')
         .order('payment_date', { ascending: false }),
       supabaseAdmin
+        .from('hub_payments')
+        .select('payment_method, amount')
+        .eq('clinic_id', clinicId.data)
+        .eq('cash_session_id', sessionId.data),
+      supabaseAdmin
         .from('hub_cash_movements')
         .select('*')
         .eq('clinic_id', clinicId.data)
@@ -1594,6 +1615,7 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
         .order('created_at', { ascending: false }),
     ]);
     if (pErr) return res.status(500).json({ error: pErr.message });
+    if (allPErr) return res.status(500).json({ error: allPErr.message });
     if (mErr) return res.status(500).json({ error: mErr.message });
 
     const cashInBase = round2((payments ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0));
@@ -1611,6 +1633,15 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
     );
     const openingBalance = Number(session.opening_balance ?? 0);
     const expectedBalance = round2(openingBalance + cashIn + deposits - withdrawals);
+
+    // Totais por método de pagamento (informativo, não afeta o saldo da gaveta)
+    const totalsMap = new Map<string, number>();
+    for (const p of allPayments ?? []) {
+      const method = String(p.payment_method ?? 'outros');
+      totalsMap.set(method, round2((totalsMap.get(method) ?? 0) + Number(p.amount ?? 0)));
+    }
+    const totals_by_method = Object.fromEntries(totalsMap.entries());
+
     return res.json({
       cash_session: session,
       payments: payments ?? [],
@@ -1623,6 +1654,7 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
         deposits_total: deposits,
         withdrawals_total: withdrawals,
         expected_balance: expectedBalance,
+        totals_by_method,
       },
     });
   } catch (e: unknown) {

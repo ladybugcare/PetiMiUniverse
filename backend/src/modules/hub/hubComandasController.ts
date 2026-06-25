@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { resolveOpenCashSessionId } from './hubFinancialController';
 
 const uuidStr = z.string().uuid();
 
@@ -1101,11 +1102,32 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       });
       built = a;
     } else if (origin_type === 'grooming_session') {
-      built = await buildComandaItemsFromGroomingSession(clinic_id, effectiveOriginId);
+      const { data: sess, error: sessErr } = await supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select('grooming_stage, hub_appointment_id, unit_id')
+        .eq('id', effectiveOriginId)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (sessErr) throw new Error(sessErr.message);
+      if (!sess) throw new Error('NOT_FOUND');
+      if (String(sess.grooming_stage) === 'closed') {
+        built = await buildComandaItemsFromGroomingSession(clinic_id, effectiveOriginId);
+      } else {
+        // Pagamento antecipado: sessão ainda em andamento — usar itens do agendamento como rascunho
+        const apptId = sess.hub_appointment_id as string | null;
+        if (!apptId) throw new Error('NOT_READY');
+        const apptBuilt = await buildComandaItemsFromAppointment(clinic_id, apptId, { allowIncompleteStatus: true });
+        built = {
+          ...apptBuilt,
+          unit_id: (sess.unit_id as string | null) ?? apptBuilt.unit_id,
+        };
+      }
     } else if (origin_type === 'quote') {
       built = await buildComandaItemsFromQuote(clinic_id, effectiveOriginId);
     } else {
-      built = await buildComandaItemsFromEncounter(clinic_id, effectiveOriginId);
+      // Encounter: permite comanda antecipada (allowIncomplete) para recebimento antes de concluir
+      built = await buildComandaItemsFromEncounter(clinic_id, effectiveOriginId, { allowIncomplete: true });
     }
 
     const discount = 0;
@@ -1240,9 +1262,33 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
   const { paid_total, balance_due } = await computeComandaBalancePayload(comandaId, clinicId);
   const operational_complete = await isOperationalCompleteForComanda(comandaRow);
 
+  // Enriquecer com nomes de tutor/pet
+  const guardianId = comandaRow.guardian_id as string | null;
+  const petId = comandaRow.pet_id as string | null;
+  const petIds = [...new Set((items ?? []).map((it) => it.pet_id as string | null).filter(Boolean))] as string[];
+  const [guRes, petRes, itemPetsRes] = await Promise.all([
+    guardianId
+      ? supabaseAdmin.from('hub_guardians').select('id, full_name').eq('id', guardianId).maybeSingle()
+      : Promise.resolve({ data: null }),
+    petId
+      ? supabaseAdmin.from('hub_pets').select('id, name').eq('id', petId).maybeSingle()
+      : Promise.resolve({ data: null }),
+    petIds.length
+      ? supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+  ]);
+  const guardian = guRes.data ? { id: (guRes.data as Record<string, unknown>).id, full_name: (guRes.data as Record<string, unknown>).full_name } : null;
+  const pet = petRes.data ? { id: (petRes.data as Record<string, unknown>).id, name: (petRes.data as Record<string, unknown>).name } : null;
+  const petNameMap = new Map((itemPetsRes.data ?? []).map((p) => [p.id as string, p.name as string]));
+
+  const enrichedItems = (items ?? []).map((it) => ({
+    ...it,
+    pet_name: it.pet_id ? (petNameMap.get(it.pet_id as string) ?? null) : null,
+  }));
+
   return {
-    comanda,
-    items: items ?? [],
+    comanda: { ...comanda, guardian, pet },
+    items: enrichedItems,
     open_item_ids: openItemIds,
     invoiced_item_ids: [...invoicedItemIds],
     paid_total,
@@ -1598,6 +1644,9 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
             return res.status(409).json({ error: 'Sessão de caixa inválida ou fechada.' });
           }
           validatedCashSessionId = cashSession.id as string;
+        } else {
+          // Pagamentos não-dinheiro: carimbar a sessão aberta da unidade para rastreamento do dia
+          validatedCashSessionId = await resolveOpenCashSessionId(clinic_id, recRow?.unit_id as string | null);
         }
 
         const { error: pErr } = await supabaseAdmin.from('hub_payments').insert({
@@ -1833,6 +1882,10 @@ const listComandasQuerySchema = z
     status: z.enum(['aberta', 'fechada', 'cancelada']).optional(),
     hub_case_id: uuidStr.optional(),
     cancellation_pending: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => v === 'true'),
+    enrich: z
       .enum(['true', 'false'])
       .optional()
       .transform((v) => v === 'true'),
@@ -2230,7 +2283,7 @@ export const listHubComandas = async (req: Request, res: Response) => {
     if (!parsed.success) {
       return res.status(400).json({ error: 'clinic_id obrigatório', details: parsed.error.flatten() });
     }
-    const { clinic_id, unit_id, status, hub_case_id, cancellation_pending } = parsed.data;
+    const { clinic_id, unit_id, status, hub_case_id, cancellation_pending, enrich } = parsed.data;
     let q = supabaseAdmin
       .from('hub_comandas')
       .select('*')
@@ -2254,7 +2307,8 @@ export const listHubComandas = async (req: Request, res: Response) => {
       return res.status(500).json({ error: error.message });
     }
     const rows = (data ?? []) as Record<string, unknown>[];
-    const comandas = cancellation_pending ? await enrichCancellationQueueRows(clinic_id, rows) : rows;
+    const shouldEnrich = cancellation_pending || enrich;
+    const comandas = shouldEnrich ? await enrichCancellationQueueRows(clinic_id, rows) : rows;
     return res.json({ comandas });
   } catch (e: unknown) {
     console.error('listHubComandas', e);

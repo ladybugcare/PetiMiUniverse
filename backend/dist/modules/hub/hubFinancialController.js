@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.postHubFinanceCashMovement = exports.postHubFinanceExpense = exports.listHubFinanceExpenses = exports.getHubFinanceAgingReport = exports.getHubFinanceTopServicesReport = exports.getHubFinanceTicketAverageReport = exports.getHubFinanceRevenueSeries = exports.getHubFinanceRevenueReport = exports.getHubFinanceCashFlow = exports.getHubFinanceDashboardSummary = exports.getHubFinancePendingBillingCount = exports.getHubFinanceUnbilledCompleted = exports.getHubFinanceCashSessionSummary = exports.getHubFinanceCashSessionOpen = exports.listHubFinanceCashSessionsClosed = exports.postHubFinanceCashSessionClose = exports.postHubFinanceCashSessionOpen = exports.listHubFinanceReceivables = exports.getHubFinancePaymentReceipt = exports.getHubFinanceReceivableDetail = exports.postHubFinanceReceivableCancel = exports.postHubFinancePaymentReverse = exports.deleteHubFinanceReceivableProductLine = exports.postHubFinanceReceivableProductLine = exports.postHubFinanceReceivablePayment = exports.postHubFinanceWaiveBilling = exports.postHubFinanceReceivable = exports.getHubFinancePreview = void 0;
+exports.resolveOpenCashSessionId = resolveOpenCashSessionId;
 const node_crypto_1 = require("node:crypto");
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
@@ -12,6 +13,19 @@ const financeSourceTypeSchema = zod_1.z.enum(['grooming_session', 'encounter', '
 const receivableSourceTypeSchema = zod_1.z.enum(['grooming_session', 'encounter', 'quote', 'appointment', 'manual']);
 function round2(n) {
     return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+/** Retorna o ID da sessão de caixa aberta para uma unidade, ou null se não houver. */
+async function resolveOpenCashSessionId(clinicId, unitId) {
+    if (!unitId)
+        return null;
+    const { data } = await supabase_1.supabaseAdmin
+        .from('hub_cash_sessions')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('unit_id', unitId)
+        .eq('status', 'open')
+        .maybeSingle();
+    return data?.id ?? null;
 }
 /** Unidade principal da clínica, ou a primeira cadastrada (orçamentos sem unit_id herdavam null e sumiam no filtro do financeiro). */
 async function resolveClinicDefaultUnitId(clinicId) {
@@ -797,6 +811,10 @@ const postHubFinanceReceivablePayment = async (req, res) => {
             }
             validatedCashSessionId = cashSession.id;
         }
+        else {
+            // Pagamentos não-dinheiro: carimbar a sessão aberta da unidade para rastreamento do dia
+            validatedCashSessionId = await resolveOpenCashSessionId(clinic_id, rec.unit_id);
+        }
         const payAt = payment_date ?? new Date().toISOString();
         const { data: pay, error: pErr } = await supabase_1.supabaseAdmin
             .from('hub_payments')
@@ -1568,7 +1586,7 @@ const getHubFinanceCashSessionSummary = async (req, res) => {
             return res.status(500).json({ error: sErr.message });
         if (!session)
             return res.status(404).json({ error: 'Sessão não encontrada' });
-        const [{ data: payments, error: pErr }, { data: movements, error: mErr }] = await Promise.all([
+        const [{ data: payments, error: pErr }, { data: allPayments, error: allPErr }, { data: movements, error: mErr }] = await Promise.all([
             supabase_1.supabaseAdmin
                 .from('hub_payments')
                 .select('*, receivable:hub_receivables(id, source_type, source_id, guardian_id, final_amount)')
@@ -1576,6 +1594,11 @@ const getHubFinanceCashSessionSummary = async (req, res) => {
                 .eq('cash_session_id', sessionId.data)
                 .eq('payment_method', 'cash')
                 .order('payment_date', { ascending: false }),
+            supabase_1.supabaseAdmin
+                .from('hub_payments')
+                .select('payment_method, amount')
+                .eq('clinic_id', clinicId.data)
+                .eq('cash_session_id', sessionId.data),
             supabase_1.supabaseAdmin
                 .from('hub_cash_movements')
                 .select('*')
@@ -1585,6 +1608,8 @@ const getHubFinanceCashSessionSummary = async (req, res) => {
         ]);
         if (pErr)
             return res.status(500).json({ error: pErr.message });
+        if (allPErr)
+            return res.status(500).json({ error: allPErr.message });
         if (mErr)
             return res.status(500).json({ error: mErr.message });
         const cashInBase = round2((payments ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0));
@@ -1598,6 +1623,13 @@ const getHubFinanceCashSessionSummary = async (req, res) => {
             .reduce((sum, row) => sum + Number(row.amount ?? 0), 0));
         const openingBalance = Number(session.opening_balance ?? 0);
         const expectedBalance = round2(openingBalance + cashIn + deposits - withdrawals);
+        // Totais por método de pagamento (informativo, não afeta o saldo da gaveta)
+        const totalsMap = new Map();
+        for (const p of allPayments ?? []) {
+            const method = String(p.payment_method ?? 'outros');
+            totalsMap.set(method, round2((totalsMap.get(method) ?? 0) + Number(p.amount ?? 0)));
+        }
+        const totals_by_method = Object.fromEntries(totalsMap.entries());
         return res.json({
             cash_session: session,
             payments: payments ?? [],
@@ -1610,6 +1642,7 @@ const getHubFinanceCashSessionSummary = async (req, res) => {
                 deposits_total: deposits,
                 withdrawals_total: withdrawals,
                 expected_balance: expectedBalance,
+                totals_by_method,
             },
         });
     }

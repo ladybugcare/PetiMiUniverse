@@ -193,11 +193,13 @@ router.post('/clinical/surgeries', authMiddleware_1.authenticateUser, (0, authMi
 router.patch('/clinical/surgeries/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.patchHubSurgery);
 /** Comandas / checkout operacional */
 router.get('/comandas', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.listHubComandas);
+router.get('/comandas/cancellation-pending-count', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaCancellationPendingCount);
 router.get('/comandas/by-origin', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaByOrigin);
 router.post('/comandas/open', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaOpen);
 router.get('/comandas/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaDetail);
 router.post('/comandas/:id/sync-from-origin', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaSyncFromOrigin);
 router.post('/comandas/:id/checkout', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaCheckout);
+router.post('/comandas/:id/resolve-cancellation', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubComandasController_1.postHubComandaResolveCancellation);
 /** Financeiro — Fase 1 (recebíveis, sem cobrança, caixa básico) */
 router.get('/finance/preview', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinancePreview);
 router.get('/finance/unbilled-completed', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinanceUnbilledCompleted);
