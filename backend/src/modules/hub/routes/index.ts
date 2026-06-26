@@ -208,6 +208,16 @@ import {
   deleteHubCommissionRule,
   getHubCommissionPreview,
 } from '../hubCommissionRulesController';
+import {
+  getHubBoardingDayBoard,
+  openHubBoardingReservationFromAppointment,
+  createHubBoardingReservation,
+  patchHubBoardingReservation,
+} from '../hubBoardingController';
+import {
+  getHubBoardingReservationDrawer,
+  postHubBoardingDailyLog,
+} from '../hubBoardingDrawerController';
 
 /**
  * PetMi Hub API — rotas do sistema operacional do negócio pet.
@@ -1020,6 +1030,44 @@ router.delete(
   authenticateUser,
   requirePermission('hub.financial.write'),
   deleteHubCommissionRule
+);
+
+/* --- Hotel & Creche (boarding operacional) --- */
+router.get(
+  '/boarding/day-board',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingDayBoard
+);
+router.post(
+  '/boarding/reservations/open-from-appointment',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  openHubBoardingReservationFromAppointment
+);
+router.post(
+  '/boarding/reservations',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  createHubBoardingReservation
+);
+router.patch(
+  '/boarding/reservations/:id',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  patchHubBoardingReservation
+);
+router.get(
+  '/boarding/reservations/:id/drawer',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingReservationDrawer
+);
+router.post(
+  '/boarding/reservations/:id/daily-logs',
+  authenticateUser,
+  requirePermission('boarding.daily_report.write'),
+  postHubBoardingDailyLog
 );
 
 export default router;

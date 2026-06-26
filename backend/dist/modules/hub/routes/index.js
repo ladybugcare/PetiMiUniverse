@@ -31,6 +31,8 @@ const hubComandasController_1 = require("../hubComandasController");
 const hubCustomerCreditController_1 = require("../hubCustomerCreditController");
 const hubPackagesController_1 = require("../hubPackagesController");
 const hubCommissionRulesController_1 = require("../hubCommissionRulesController");
+const hubBoardingController_1 = require("../hubBoardingController");
+const hubBoardingDrawerController_1 = require("../hubBoardingDrawerController");
 /**
  * PetMi Hub API — rotas do sistema operacional do negócio pet.
  * Prefixo montado em app.ts: `/api/hub`.
@@ -238,4 +240,11 @@ router.get('/finance/commission-rules', authMiddleware_1.authenticateUser, (0, a
 router.post('/finance/commission-rules', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubCommissionRulesController_1.postHubCommissionRule);
 router.patch('/finance/commission-rules/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubCommissionRulesController_1.patchHubCommissionRule);
 router.delete('/finance/commission-rules/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubCommissionRulesController_1.deleteHubCommissionRule);
+/* --- Hotel & Creche (boarding operacional) --- */
+router.get('/boarding/day-board', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingController_1.getHubBoardingDayBoard);
+router.post('/boarding/reservations/open-from-appointment', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingController_1.openHubBoardingReservationFromAppointment);
+router.post('/boarding/reservations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingController_1.createHubBoardingReservation);
+router.patch('/boarding/reservations/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingController_1.patchHubBoardingReservation);
+router.get('/boarding/reservations/:id/drawer', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingDrawerController_1.getHubBoardingReservationDrawer);
+router.post('/boarding/reservations/:id/daily-logs', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingDrawerController_1.postHubBoardingDailyLog);
 exports.default = router;

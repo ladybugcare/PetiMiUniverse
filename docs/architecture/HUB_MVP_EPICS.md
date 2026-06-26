@@ -239,22 +239,26 @@ Qualquer outro role (`VET`, `FREELANCER`, `ADMIN`) que tente fazer login no Hub 
 
 ---
 
-## Epic 9 — WhatsApp (MVP operacional)
+## Epic 9 — WhatsApp / comunicação (MVP operacional, **sem custo**)
 
 **Objetivo**: comunicação rápida sem CRM completo.
 
+> **Decisão de produto (jun/2026):** usar **apenas o que não tem custo**. No MVP, WhatsApp via **link de clique para conversar** (`wa.me` / click-to-chat) — sem API paga, sem provedor, sem templates aprovados pela Meta — somado a **notificação in-app** para a equipe. A WhatsApp Business **Cloud API** (paga) fica como fase futura. Plano completo: [HUB_COMMUNICATION_WHATSAPP_PLAN.md](./HUB_COMMUNICATION_WHATSAPP_PLAN.md).
+
 **Entregas**
 
-- Definir provedor (Twilio, Z-API, etc.) — **spike** se ainda não houver.
-- Ação “Enviar mensagem” a partir da ficha do tutor/pet com template parametrizado (ex.: “Seu pet está pronto”).
-- Log de envio (tabela `hub_message_logs`) sem armazenar conteúdo sensível desnecessário.
+- Utilitário `buildWhatsappLink` + templates de texto local (ex.: “Seu pet está pronto”).
+- Botão «WhatsApp» na ficha do tutor/pet, drawer de B&T (`ready`), Hotel & Creche e Leva e Traz.
+- (Opcional) Log de **tentativa** (tabela `hub_message_logs`) sem conteúdo sensível.
+- Notificação in-app reusando o sistema do Vet (`notificationsController`).
 
 **Deps**: Epic 1 (telefone do tutor).
 
 **Aceite**
 
-- [ ] Envio gera log com status sucesso/falha.
-- [ ] Falha de provider não quebra check-out (apenas alerta UI).
+- [ ] Botão abre conversa com a mensagem pré-preenchida correta; telefone inválido desabilita o botão.
+- [ ] Nenhuma chamada a API paga / nenhum custo gerado.
+- [ ] Falha de validação de telefone não quebra check-out (apenas botão desabilitado/alerta UI).
 
 ---
 
@@ -290,12 +294,25 @@ Conforme plano estratégico:
 
 ---
 
+## Módulos operacionais no MVP (planos em fases)
+
+Decisão (jun/2026): os módulos abaixo **permanecem no MVP** e têm plano de implementação em fases dedicado.
+
+- **Banho & Tosa** — [HUB_GROOMING_OPERATIONAL_PLAN.md](./HUB_GROOMING_OPERATIONAL_PLAN.md) (Fases 0–3 concluídas).
+- **Hotel & Creche** — [HUB_BOARDING_OPERATIONAL_PLAN.md](./HUB_BOARDING_OPERATIONAL_PLAN.md) (hoje placeholder; agenda/preço já existem).
+- **Leva e Traz** — [HUB_PICKUP_DELIVERY_OPERATIONAL_PLAN.md](./HUB_PICKUP_DELIVERY_OPERATIONAL_PLAN.md) (hoje placeholder; perna de transporte já existe na agenda).
+
+## Qualidade / release
+
+- **QA manual do MVP** — cenários passo a passo (multi-tenant, permissões, fluxos core, financeiro): [HUB_MVP_MANUAL_QA.md](./HUB_MVP_MANUAL_QA.md).
+- **Testes automatizados** — plano para financeiro e atendimento: [HUB_AUTOMATED_TESTING_PLAN.md](./HUB_AUTOMATED_TESTING_PLAN.md).
+
 ## Pós-MVP imediato (não bloqueia release Foundation)
 
 - Entitlements por módulo (`module.hub_core`, …).
 - Consentimento LGPD explícito em guardian/pet.
 - Integração bidirecional com vet-match (demanda gerada a partir de escala) — Fase ecossistema.
-- **Tela operacional Banho & Tosa** — plano em fases: [HUB_GROOMING_OPERATIONAL_PLAN.md](./HUB_GROOMING_OPERATIONAL_PLAN.md).
+- WhatsApp Business Cloud API (paga) — evolução do [plano de comunicação](./HUB_COMMUNICATION_WHATSAPP_PLAN.md).
 
 ---
 

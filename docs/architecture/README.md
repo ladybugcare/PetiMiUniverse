@@ -19,6 +19,12 @@ Este diretório documenta a estratégia oficial para evoluir o monorepo **PetiMi
 | [HUB_QUOTES_AND_PROSPECTS.md](./HUB_QUOTES_AND_PROSPECTS.md) | Orçamentos e contatos (prospects) sem «falso cliente»; API `/api/hub/prospects` e `/api/hub/quotes` + UI Hub em `/hub/orcamentos` |
 | [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md) | Modelo financeiro Hub: recebíveis, fluxo único «Gerar cobrança», sem cobrança, orçamentos, caixa, evolução (Payment Intent, comissões) |
 | [HUB_FINANCIAL_IMPLEMENTATION_PLAN.md](./HUB_FINANCIAL_IMPLEMENTATION_PLAN.md) | Plano por fases (Fase 1–4) e checklist de entrega do módulo Financeiro e Caixa |
+| [HUB_GROOMING_OPERATIONAL_PLAN.md](./HUB_GROOMING_OPERATIONAL_PLAN.md) | Plano em fases da tela operacional Banho & Tosa (Fases 0–3 concluídas) |
+| [HUB_BOARDING_OPERATIONAL_PLAN.md](./HUB_BOARDING_OPERATIONAL_PLAN.md) | **MVP:** plano em fases da tela operacional Hotel & Creche |
+| [HUB_PICKUP_DELIVERY_OPERATIONAL_PLAN.md](./HUB_PICKUP_DELIVERY_OPERATIONAL_PLAN.md) | **MVP:** plano em fases da tela operacional Leva e Traz |
+| [HUB_COMMUNICATION_WHATSAPP_PLAN.md](./HUB_COMMUNICATION_WHATSAPP_PLAN.md) | **MVP:** comunicação com o tutor via WhatsApp click-to-chat (`wa.me`, sem custo) + in-app |
+| [HUB_MVP_MANUAL_QA.md](./HUB_MVP_MANUAL_QA.md) | Cenários de QA manual passo a passo do MVP (multi-tenant, permissões, fluxos core, financeiro) |
+| [HUB_AUTOMATED_TESTING_PLAN.md](./HUB_AUTOMATED_TESTING_PLAN.md) | Plano de testes automatizados (financeiro e atendimento) |
 
 ## Princípios
 

@@ -15,6 +15,7 @@ import {
   HubOrcamentosRoutes,
   HubClinicRoutes,
   HubGroomingQueuePage,
+  HubBoardingPage,
   HubCaixaPage,
   HubFinanceiroPage,
   HubDashboardPage,
@@ -82,10 +83,7 @@ const App: React.FC = () => {
             <Route path="orcamentos/*" element={<HubOrcamentosRoutes />} />
             <Route path="servicos/*" element={<HubServicosRoutes />} />
             <Route path="clinica/*" element={<HubClinicRoutes />} />
-            <Route
-              path="hotel-creche"
-              element={<HubComingSoonPage title="Hotel & Creche" />}
-            />
+            <Route path="hotel-creche" element={<HubBoardingPage />} />
             <Route path="banho-tosa" element={<HubGroomingQueuePage />} />
             <Route path="leva-e-traz" element={<HubComingSoonPage title="Leva e Traz" />} />
             <Route path="estoque/*" element={<HubEstoqueRoutes />} />

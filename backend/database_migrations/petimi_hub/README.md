@@ -130,3 +130,7 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 49. **`alter_hub_comandas_prepaid.sql`** — `payment_timing` em `hub_payments` (`on_checkout` | `advance`) e `financial_status` em `hub_comandas` (`open` | `awaiting_balance` | `balanced`). Executar depois dos itens 35, 39 e 44 (pagamentos/comandas/crédito).
 
 50. **`alter_hub_comandas_cancellation_resolution.sql`** — Pendência e resolução financeira após cancelamento operacional com pagamento antecipado (`cancellation_*` em `hub_comandas`, fila no Caixa). Executar depois do item 49.
+
+51. **Módulo Hotel & Creche — Fases 2 e 3** (reservas, diárias e relatório diário):
+    - **`create_hub_boarding_reservations.sql`** — `hub_boarding_reservations` (reserva/estadia por pet; índice único parcial por agendamento; `mode` hotel/daycare; `status` reserved/checked_in/checked_out/cancelled/no_show; `daily_rate_cents`; soft delete) + `hub_boarding_daily_logs` (relatório diário: alimentação, medicação, passeios, humor, notas; índice único por reserva × data).
+    - Plano completo: [`HUB_BOARDING_OPERATIONAL_PLAN.md`](../../docs/architecture/HUB_BOARDING_OPERATIONAL_PLAN.md).
