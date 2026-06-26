@@ -10,6 +10,9 @@ import { getStoredClinicId } from '@petimi/web-core';
 import { PORTE_LABELS, type PetBodyPorteValue } from '../../utils/hubServiceTypesPricingMatrix';
 import { BOARDING_STAGE_LABELS, getBoardingItemStage } from './boardingStages';
 import { useAlert } from '../../components/AlertProvider';
+import { buildWhatsappLink } from '../../utils/whatsappLink';
+import { renderTemplate } from '../../utils/hubMessageTemplates';
+import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 
 function formatDate(iso?: string | null): string {
   if (!iso) return '—';
@@ -136,6 +139,17 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
 
   const petName = item.pet?.name || 'Sem pet';
   const stage = getBoardingItemStage(item);
+  const guardianPhone = item.guardian?.phone ?? null;
+  const notifyTutorHref =
+    stage === 'checked_in' || item.is_late
+      ? buildWhatsappLink(
+          guardianPhone,
+          renderTemplate('pet_ready', {
+            tutor: item.guardian?.full_name,
+            pet: petName,
+          }),
+        )
+      : null;
   const modeLabel = item.mode === 'hotel' ? 'Hotel' : item.mode === 'daycare' ? 'Creche' : String(item.mode);
   const porte = item.pet?.size_tier
     ? (PORTE_LABELS[item.pet.size_tier as PetBodyPorteValue] ?? item.pet.size_tier)
@@ -195,6 +209,27 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
                 {guardian.phone}
               </a>
             )}
+          </div>
+        )}
+        {notifyTutorHref && (
+          <div className="hub-drawer-row">
+            <a
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              href={notifyTutorHref}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => {
+                void logMessageAttempt({
+                  clinic_id: clinicId ?? '',
+                  guardian_id: item.guardian?.id ?? null,
+                  pet_id: item.pet?.id ?? null,
+                  channel: 'whatsapp_link',
+                  template_key: 'pet_ready',
+                });
+              }}
+            >
+              Avisar retirada
+            </a>
           </div>
         )}
         {reservation?.checked_in_at && (

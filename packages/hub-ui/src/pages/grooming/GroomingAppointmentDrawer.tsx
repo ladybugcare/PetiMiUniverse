@@ -18,6 +18,9 @@ import {
 } from './groomingStages';
 import type { GroomingQuickAction } from './GroomingQueueBoard';
 import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
+import { buildWhatsappLink } from '../../utils/whatsappLink';
+import { renderTemplate } from '../../utils/hubMessageTemplates';
+import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 
 const ADVANCE_LABEL: Partial<Record<GroomingStage, string>> = {
   scheduled: 'Check-in',
@@ -72,13 +75,6 @@ function formatBrl(n: number | null | undefined): string {
   return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function whatsappReadyLink(phone: string, petName: string): string | null {
-  const digits = phone.replace(/\D/g, '');
-  if (!digits) return null;
-  const brDigits = digits.startsWith('55') ? digits : `55${digits}`;
-  const text = encodeURIComponent(`Olá! ${petName} já está pronto(a) para retirada. PetMi`);
-  return `https://wa.me/${brDigits}?text=${text}`;
-}
 
 function resolveDrawerQuickAction(item: GroomingDayBoardItem, canWrite: boolean): GroomingQuickAction | null {
   if (!canWrite) return null;
@@ -260,7 +256,10 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
   const petName = item.pet?.name || 'Pet';
   const tutor = item.guardian?.full_name || '—';
   const phone = item.guardian?.phone?.trim();
-  const notifyTutorHref = phone && stage === 'ready' ? whatsappReadyLink(phone, petName) : null;
+  const notifyTutorHref =
+    stage === 'ready'
+      ? buildWhatsappLink(phone, renderTemplate('pet_ready', { tutor, pet: petName }))
+      : null;
   const porte =
     item.pet?.size_tier && PORTE_LABELS[item.pet.size_tier as PetBodyPorteValue]
       ? PORTE_LABELS[item.pet.size_tier as PetBodyPorteValue]
@@ -374,6 +373,15 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
               target="_blank"
               rel="noreferrer"
               style={{ marginTop: 10 }}
+              onClick={() => {
+                void logMessageAttempt({
+                  clinic_id: clinicId ?? '',
+                  guardian_id: item.guardian?.id ?? null,
+                  pet_id: item.pet?.id ?? null,
+                  channel: 'whatsapp_link',
+                  template_key: 'pet_ready',
+                });
+              }}
             >
               Avisar tutor
             </a>

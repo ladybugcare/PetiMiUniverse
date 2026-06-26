@@ -21,7 +21,9 @@ interface NotificationData {
     | 'invite_rejected'
     | 'check_in'
     | 'report_submitted'
-    | 'report_approved';
+    | 'report_approved'
+    | 'hub_pet_ready'
+    | 'hub_pet_on_the_way';
   title: string;
   message: string;
   link?: string;

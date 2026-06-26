@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { createNotification } from '../../controllers/notificationsController';
 import {
   GROOMING_STAGES,
   GROOMING_EVENT_TITLES,
@@ -748,6 +749,63 @@ const patchSessionSchema = z
   .strict();
 
 /** PATCH /grooming/sessions/:id */
+async function notifyUnitStaffPetReady(opts: {
+  clinicId: string;
+  unitId: string | null | undefined;
+  petId: string | null | undefined;
+  sessionId: string;
+}): Promise<void> {
+  try {
+    let staffQuery = supabaseAdmin
+      .from('hub_staff_members')
+      .select('clinic_user_id')
+      .eq('clinic_id', opts.clinicId)
+      .eq('has_hub_access', true)
+      .not('clinic_user_id', 'is', null)
+      .is('deleted_at', null);
+    if (opts.unitId) {
+      staffQuery = staffQuery.eq('default_unit_id', opts.unitId);
+    }
+    const { data: staff } = await staffQuery;
+    if (!staff?.length) return;
+
+    const clinicUserIds = staff.map((s) => s.clinic_user_id as string).filter(Boolean);
+    if (!clinicUserIds.length) return;
+
+    const { data: clinicUsers } = await supabaseAdmin
+      .from('clinic_users')
+      .select('user_id')
+      .in('id', clinicUserIds);
+    if (!clinicUsers?.length) return;
+
+    let petName = 'Pet';
+    if (opts.petId) {
+      const { data: petRow } = await supabaseAdmin
+        .from('hub_pets')
+        .select('name')
+        .eq('id', opts.petId)
+        .maybeSingle();
+      if (petRow?.name) petName = String(petRow.name);
+    }
+    const pet = petName;
+    await Promise.all(
+      clinicUsers.map((cu) =>
+        createNotification({
+          user_id: cu.user_id as string,
+          type: 'hub_pet_ready',
+          title: 'Pet pronto para retirada',
+          message: `${pet} já está pronto(a) para retirada.`,
+          link: `/hub/banho-tosa`,
+          entity_type: 'grooming_session',
+          entity_id: opts.sessionId,
+        }),
+      ),
+    );
+  } catch (e) {
+    console.error('notifyUnitStaffPetReady', e);
+  }
+}
+
 export const patchHubGroomingSession = async (req: Request, res: Response) => {
   try {
     const id = uuidStr.safeParse(req.params.id);
@@ -854,6 +912,14 @@ export const patchHubGroomingSession = async (req: Request, res: Response) => {
       );
       if (b.grooming_stage === 'closed') {
         void syncOpenComandasAfterGroomingClosed(b.clinic_id, id.data);
+      }
+      if (b.grooming_stage === 'ready') {
+        void notifyUnitStaffPetReady({
+          clinicId: b.clinic_id,
+          unitId: (current as Record<string, unknown>).unit_id as string | null,
+          petId: (current as Record<string, unknown>).pet_id as string | null,
+          sessionId: id.data,
+        });
       }
     }
 

@@ -1,7 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDownToLine, ArrowUpFromLine, HelpCircle } from 'lucide-react';
+import { getStoredClinicId } from '@petimi/web-core';
 import type { PickupDayBoardItem, PickupDirection } from '../../api/hubPickupApi';
+import { buildWhatsappLink } from '../../utils/whatsappLink';
+import { renderTemplate } from '../../utils/hubMessageTemplates';
+import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 
 // Colunas operacionais (status → coluna)
 export type PickupBoardColumn = 'todo' | 'en_route' | 'done';
@@ -71,6 +75,19 @@ function PickupCard({
   canWrite: boolean;
   onStatusChange: (item: PickupDayBoardItem, status: string) => void;
 }) {
+  const clinicId = getStoredClinicId();
+  const petName = item.pet?.name ?? '';
+  const onTheWayHref =
+    item.status === 'in_progress'
+      ? buildWhatsappLink(
+          item.guardian?.phone,
+          renderTemplate('pet_on_the_way', {
+            tutor: item.guardian?.full_name,
+            pet: petName,
+          }),
+        )
+      : null;
+
   return (
     <div className="hub-pickup-card">
       <div className="hub-pickup-card__header">
@@ -111,6 +128,26 @@ function PickupCard({
         ) : (
           <span className="hub-clientes__pill">{item.status}</span>
         )}
+
+        {onTheWayHref ? (
+          <a
+            className="hub-pickup-card__wa-btn"
+            href={onTheWayHref}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => {
+              void logMessageAttempt({
+                clinic_id: clinicId ?? '',
+                guardian_id: item.guardian?.id ?? null,
+                pet_id: item.pet?.id ?? null,
+                channel: 'whatsapp_link',
+                template_key: 'pet_on_the_way',
+              });
+            }}
+          >
+            Avisar que está a caminho
+          </a>
+        ) : null}
 
         <Link
           to={`/hub/appointments?highlight=${item.appointment_id}`}

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Phone, Mail, MessageCircle, MoreHorizontal, PlusCircle } from 'lucide-react';
+import { buildWhatsappLink } from '../../utils/whatsappLink';
 
 type Props = {
   guardianId: string;
@@ -24,19 +25,20 @@ export const GuardianDetailQuickActions: React.FC<Props> = ({ guardianId, phone,
   }, [open]);
 
   const petsUrl = `/hub/pets/novo?guardianId=${encodeURIComponent(guardianId)}`;
+  const waHref = buildWhatsappLink(phone, '');
 
   return (
     <div className="hub-clientes__quick-actions">
       <a
         className="hub-clientes__icon-btn"
-        href={phone ? `https://wa.me/${phone.replace(/\D/g, '')}` : '#'}
+        href={waHref ?? '#'}
         target="_blank"
         rel="noopener noreferrer"
         title="WhatsApp"
         onClick={(e) => {
-          if (!phone) e.preventDefault();
+          if (!waHref) e.preventDefault();
         }}
-        aria-disabled={!phone}
+        aria-disabled={!waHref}
       >
         <MessageCircle size={18} />
       </a>

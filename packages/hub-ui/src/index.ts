@@ -121,3 +121,8 @@ export { default as HubFinanceiroPage } from './pages/finance/HubFinanceiroPage'
 export { default as HubDashboardPage } from './pages/finance/HubDashboardPage';
 export { default as HubRelatoriosPage } from './pages/finance/HubRelatoriosPage';
 export { maskTaxIdForList } from './utils/maskTaxId';
+export { buildWhatsappLink, normalizeBrPhone } from './utils/whatsappLink';
+export { renderTemplate } from './utils/hubMessageTemplates';
+export type { MessageTemplateKey } from './utils/hubMessageTemplates';
+export { logMessageAttempt } from './api/hubMessageLogsApi';
+export type { MessageLogChannel, CreateMessageLogPayload } from './api/hubMessageLogsApi';

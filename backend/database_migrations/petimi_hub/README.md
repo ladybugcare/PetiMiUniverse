@@ -134,3 +134,7 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 51. **Módulo Hotel & Creche — Fases 2 e 3** (reservas, diárias e relatório diário):
     - **`create_hub_boarding_reservations.sql`** — `hub_boarding_reservations` (reserva/estadia por pet; índice único parcial por agendamento; `mode` hotel/daycare; `status` reserved/checked_in/checked_out/cancelled/no_show; `daily_rate_cents`; soft delete) + `hub_boarding_daily_logs` (relatório diário: alimentação, medicação, passeios, humor, notas; índice único por reserva × data).
     - Plano completo: [`HUB_BOARDING_OPERATIONAL_PLAN.md`](../../docs/architecture/HUB_BOARDING_OPERATIONAL_PLAN.md).
+
+52. **`create_hub_message_logs.sql`** — Log de tentativas de comunicação com tutores (Epic 9 — WhatsApp click-to-chat e notificações in-app). Tabela `hub_message_logs` com `channel` (`whatsapp_link` | `in_app`), `template_key`, referências a tutor/pet/staff. Não armazena conteúdo de mensagens. Executar depois de tutores e pets.
+
+53. **`alter_notifications_hub_types.sql`** — Amplia o CHECK de `notifications.type` para incluir tipos Hub (`hub_pet_ready`, `hub_pet_on_the_way`) e tipos já em uso no TypeScript mas ausentes do SQL original (`demand_invite`, `invite_accepted`, `invite_rejected`, `check_in`, `report_submitted`, `report_approved`). Executar depois de `create_notifications_system.sql` (Vet).

@@ -1,4 +1,5 @@
 /** Texto e links para envio de orçamento (WhatsApp, cópia). */
+import { buildWhatsappLink } from '../../utils/whatsappLink';
 
 export function prospectFirstName(fullName: string | undefined | null): string {
   const t = (fullName ?? '').trim();
@@ -39,18 +40,7 @@ export function buildWhatsAppMessagePdfVariant(firstName: string, publicLink: st
   ].join('\n');
 }
 
-/** Base `https://wa.me/...` sem texto (só número internacional). */
-export function waMeBaseUrl(phone: string): string | null {
-  const d = phone.replace(/\D/g, '');
-  if (d.length < 10) return null;
-  const n = d.length <= 11 && !d.startsWith('55') ? `55${d}` : d;
-  return `https://wa.me/${n}`;
-}
-
 /** Abre conversa com mensagem pré-preenchida; retorna null se telefone inválido. */
 export function waMeUrlWithText(phone: string | undefined | null, message: string): string | null {
-  if (!phone?.trim()) return null;
-  const base = waMeBaseUrl(phone);
-  if (!base) return null;
-  return `${base}?text=${encodeURIComponent(message)}`;
+  return buildWhatsappLink(phone, message);
 }

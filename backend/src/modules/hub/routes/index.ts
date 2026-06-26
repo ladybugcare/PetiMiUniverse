@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticateUser, requirePermission } from '../../../middleware/authMiddleware';
 import { authLimiter } from '../../../middleware/rateLimiter.js';
 import { postHubSignup, postHubOnboardingClinic } from '../hubSignupController.js';
+import { postHubMessageLog } from '../hubMessageLogsController';
 import {
   listHubGuardians,
   createHubGuardian,
@@ -1078,5 +1079,8 @@ router.post(
   requirePermission('boarding.daily_report.write'),
   postHubBoardingDailyLog
 );
+
+// ─── Comunicação — log de tentativas (click-to-chat / in-app) ──────────────
+router.post('/message-logs', authenticateUser, postHubMessageLog);
 
 export default router;
