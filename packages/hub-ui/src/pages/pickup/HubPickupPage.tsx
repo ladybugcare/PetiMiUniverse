@@ -14,6 +14,9 @@ import {
   saveAgendaPersistedUnit,
 } from '../agenda/agendaFilters';
 import PickupDayBoard from './PickupDayBoard';
+import PickupRoutePanel from './PickupRoutePanel';
+import PickupRouteBuilder from './PickupRouteBuilder';
+import PickupStopDrawer from './PickupStopDrawer';
 import '../clinica/clinica-page.css';
 import '../clientes/clientes.css';
 import './pickup-page.css';
@@ -35,6 +38,7 @@ const HubPickupPage: React.FC = () => {
   const clinicId = getStoredClinicId();
   const accessAllowed = hasPermission('pickup.routes.read');
   const canWrite = hasPermission('pickup.stops.update') && hasPermission('hub.appointments.write');
+  const canManage = hasPermission('pickup.routes.manage');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<PickupDayBoardItem[]>([]);
@@ -46,6 +50,14 @@ const HubPickupPage: React.FC = () => {
   const [searchQ, setSearchQ] = useState('');
   const [cursor, setCursor] = useState(() => new Date());
 
+  // Drawer de parada
+  const [selectedItem, setSelectedItem] = useState<PickupDayBoardItem | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Builder de rota
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const [routeRefreshTrigger, setRouteRefreshTrigger] = useState(0);
+
   const dayRange = useMemo(() => dayRangeIsoLocal(cursor), [cursor]);
 
   const unitIdParam = useMemo(() => {
@@ -54,6 +66,9 @@ const HubPickupPage: React.FC = () => {
     const match = units.find((u) => u.name === unitFilter);
     return match?.id;
   }, [unitFilter, units]);
+
+  // Pernas ainda soltas (sem rota atribuída) para o builder
+  const looseItems = useMemo(() => items.filter((i) => !i.route_id), [items]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -106,13 +121,38 @@ const HubPickupPage: React.FC = () => {
     if (!clinicId || !canWrite) return;
     setActionBusy(true);
     try {
-      await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: status as 'confirmed' | 'in_progress' | 'done' });
+      if (item.stop_id) {
+        await hubPickupApi.patchStop(item.stop_id, {
+          clinic_id: clinicId,
+          status: status as import('../../api/hubPickupApi').PickupStopStatus,
+        });
+      } else {
+        await hubAgendaApi.patch(item.appointment_id, {
+          clinic_id: clinicId,
+          status: status as 'confirmed' | 'in_progress' | 'done',
+        });
+      }
       await load();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao atualizar status da parada');
     } finally {
       setActionBusy(false);
     }
+  };
+
+  const handleSelectItem = (item: PickupDayBoardItem) => {
+    setSelectedItem(item);
+    setDrawerOpen(true);
+  };
+
+  const handleDrawerUpdated = async () => {
+    await load();
+  };
+
+  const handleBuilderSaved = () => {
+    setBuilderOpen(false);
+    setRouteRefreshTrigger((n) => n + 1);
+    void load();
   };
 
   const unitOptions: HubComboboxOption[] = useMemo(() => {
@@ -153,6 +193,8 @@ const HubPickupPage: React.FC = () => {
     day: 'numeric',
     month: 'long',
   });
+
+  const dateYmd = dayRange.dateYmd;
 
   return (
     <div className="hub-pickup-page">
@@ -237,6 +279,31 @@ const HubPickupPage: React.FC = () => {
         </p>
       ) : null}
 
+      {/* Painel de rotas do dia (visível para quem tem read) */}
+      {!loading ? (
+        <PickupRoutePanel
+          dateYmd={dateYmd}
+          unitId={unitIdParam}
+          canManage={canManage}
+          onBuildRoute={() => setBuilderOpen(true)}
+          onSelectRoute={() => {/* TODO: abrir detail de rota */}}
+          refreshTrigger={routeRefreshTrigger}
+        />
+      ) : null}
+
+      {/* Builder de rota (modal) */}
+      {builderOpen ? (
+        <div className="hub-pickup-builder__overlay">
+          <PickupRouteBuilder
+            looseItems={looseItems}
+            dateYmd={dateYmd}
+            unitId={unitIdParam}
+            onClose={() => setBuilderOpen(false)}
+            onSaved={handleBuilderSaved}
+          />
+        </div>
+      ) : null}
+
       {loading ? (
         <p className="hub-clientes__muted hub-clinic-page__pad">Carregando paradas…</p>
       ) : items.length === 0 ? (
@@ -250,8 +317,18 @@ const HubPickupPage: React.FC = () => {
           canWrite={canWrite && !actionBusy}
           searchQ={searchQ}
           onStatusChange={(item, status) => void handleStatusChange(item, status)}
+          onSelect={handleSelectItem}
         />
       )}
+
+      {/* Drawer de parada */}
+      <PickupStopDrawer
+        item={selectedItem}
+        open={drawerOpen}
+        canUpdate={canWrite}
+        onClose={() => setDrawerOpen(false)}
+        onUpdated={() => void handleDrawerUpdated()}
+      />
     </div>
   );
 };

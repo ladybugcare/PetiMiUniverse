@@ -17,6 +17,7 @@ import {
   HubGroomingQueuePage,
   HubBoardingPage,
   HubPickupPage,
+  PickupDriverView,
   HubCaixaPage,
   HubFinanceiroPage,
   HubDashboardPage,
@@ -34,6 +35,13 @@ import HubClinicaPerfilPage from './pages/HubClinicaPerfilPage';
 import HubDesignSystemPage from './pages/HubDesignSystemPage';
 import PublicQuotePage from './pages/PublicQuotePage';
 import HubHomePage from './pages/HubHomePage';
+import { useParams } from 'react-router-dom';
+
+function PickupDriverViewPage() {
+  const { routeId } = useParams<{ routeId: string }>();
+  if (!routeId) return <p style={{ padding: '1rem' }}>ID de rota inválido.</p>;
+  return <PickupDriverView routeId={routeId} />;
+}
 
 const App: React.FC = () => {
   return (
@@ -86,6 +94,12 @@ const App: React.FC = () => {
             <Route path="hotel-creche" element={<HubBoardingPage />} />
             <Route path="banho-tosa" element={<HubGroomingQueuePage />} />
             <Route path="leva-e-traz" element={<HubPickupPage />} />
+            <Route
+              path="leva-e-traz/motorista/:routeId"
+              element={
+                <PickupDriverViewPage />
+              }
+            />
             <Route path="estoque/*" element={<HubEstoqueRoutes />} />
             <Route path="equipe" element={<HubStaffPage />} />
             <Route path="relatorios" element={<HubRelatoriosPage />} />

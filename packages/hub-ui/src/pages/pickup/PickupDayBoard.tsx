@@ -72,11 +72,13 @@ function PickupCard({
   canWrite,
   templateOverrides,
   onStatusChange,
+  onSelect,
 }: {
   item: PickupDayBoardItem;
   canWrite: boolean;
   templateOverrides: Record<string, string>;
   onStatusChange: (item: PickupDayBoardItem, status: string) => void;
+  onSelect?: (item: PickupDayBoardItem) => void;
 }) {
   const clinicId = getStoredClinicId();
   const petName = item.pet?.name ?? '';
@@ -89,7 +91,14 @@ function PickupCard({
       : null;
 
   return (
-    <div className="hub-pickup-card">
+    <div
+      className="hub-pickup-card"
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={onSelect ? () => onSelect(item) : undefined}
+      onKeyDown={onSelect ? (e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(item); } : undefined}
+      style={onSelect ? { cursor: 'pointer' } : undefined}
+    >
       <div className="hub-pickup-card__header">
         <span className="hub-pickup-card__pet-name">{item.pet?.name ?? '—'}</span>
         <DirectionBadge direction={item.direction} />
@@ -165,9 +174,10 @@ type Props = {
   canWrite: boolean;
   searchQ: string;
   onStatusChange: (item: PickupDayBoardItem, status: string) => void;
+  onSelect?: (item: PickupDayBoardItem) => void;
 };
 
-export default function PickupDayBoard({ items, canWrite, searchQ, onStatusChange }: Props) {
+export default function PickupDayBoard({ items, canWrite, searchQ, onStatusChange, onSelect }: Props) {
   const templateOverrides = useMessageTemplates();
   const q = searchQ.toLowerCase().trim();
 
@@ -206,6 +216,7 @@ export default function PickupDayBoard({ items, canWrite, searchQ, onStatusChang
               canWrite={canWrite}
               templateOverrides={templateOverrides}
               onStatusChange={onStatusChange}
+              onSelect={onSelect}
             />
           ))}
           {columns[col].length === 0 ? (

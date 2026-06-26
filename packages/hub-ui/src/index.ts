@@ -73,7 +73,21 @@ export { hubGroomingApi } from './api/hubGroomingApi';
 export type { GroomingDayBoardItem, GroomingDayBoardResponse } from './api/hubGroomingApi';
 export { default as HubPickupPage } from './pages/pickup/HubPickupPage';
 export { hubPickupApi } from './api/hubPickupApi';
-export type { PickupDayBoardItem, PickupDayBoardResponse, PickupDirection } from './api/hubPickupApi';
+export type {
+  PickupDayBoardItem,
+  PickupDayBoardResponse,
+  PickupDirection,
+  PickupRoute,
+  PickupRouteStatus,
+  PickupStop,
+  PickupStopStatus,
+  PickupRoutesResponse,
+  PickupRouteDetailResponse,
+  PickupGuardian,
+} from './api/hubPickupApi';
+export { default as PickupStopDrawer } from './pages/pickup/PickupStopDrawer';
+export type { PickupStopDrawerProps } from './pages/pickup/PickupStopDrawer';
+export { default as PickupDriverView } from './pages/pickup/PickupDriverView';
 export { default as HubBoardingPage } from './pages/boarding/HubBoardingPage';
 export { hubBoardingApi } from './api/hubBoardingApi';
 export type {

@@ -91,7 +91,15 @@ import {
   listHubGroomingSessionEvents,
   postHubGroomingSessionEvent,
 } from '../hubGroomingController';
-import { getHubPickupDayBoard } from '../hubPickupController';
+import {
+  getHubPickupDayBoard,
+  createHubPickupRoute,
+  listHubPickupRoutes,
+  addHubPickupStops,
+  patchHubPickupRoute,
+  getHubPickupRoute,
+  patchHubPickupStop,
+} from '../hubPickupController';
 import {
   getHubGroomingSessionDrawer,
   postHubGroomingSessionExtra,
@@ -539,6 +547,42 @@ router.get(
   authenticateUser,
   requirePermission('pickup.routes.read'),
   getHubPickupDayBoard,
+);
+router.get(
+  '/pickup/routes',
+  authenticateUser,
+  requirePermission('pickup.routes.read'),
+  listHubPickupRoutes,
+);
+router.post(
+  '/pickup/routes',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  createHubPickupRoute,
+);
+router.get(
+  '/pickup/routes/:id',
+  authenticateUser,
+  requirePermission('pickup.routes.read'),
+  getHubPickupRoute,
+);
+router.patch(
+  '/pickup/routes/:id',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  patchHubPickupRoute,
+);
+router.post(
+  '/pickup/routes/:id/stops',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  addHubPickupStops,
+);
+router.patch(
+  '/pickup/stops/:id',
+  authenticateUser,
+  requirePermission('pickup.stops.update'),
+  patchHubPickupStop,
 );
 
 /* --- Banho & Tosa (fila operacional) --- */
