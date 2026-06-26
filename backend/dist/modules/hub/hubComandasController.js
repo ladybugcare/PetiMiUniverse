@@ -605,10 +605,9 @@ async function buildComandaItemsFromEncounter(clinicId, encounterId, opts) {
     const encStatus = String(enc.status ?? '');
     const apptIdEarly = enc.hub_appointment_id;
     if (opts?.allowIncomplete && encStatus !== 'completed') {
-        if (!apptIdEarly)
-            throw new Error('NOT_READY');
         let guardianId = enc.guardian_id;
         let petId = enc.pet_id ?? null;
+        // Resolver identidade via caso clínico quando encounter não tem tutor/pet
         if (!guardianId || !petId) {
             const caseId = enc.hub_case_id;
             if (caseId) {
@@ -632,36 +631,66 @@ async function buildComandaItemsFromEncounter(clinicId, encounterId, opts) {
         }
         if (!guardianId)
             throw new Error('NO_GUARDIAN');
-        if (!petId)
-            throw new Error('NO_PET');
-        const ap = await sumAppointmentServicesSaleForComanda(apptIdEarly, petId);
-        const allItems = [...ap.items];
-        let subtotal = ap.subtotal;
-        if (allItems.length === 0) {
-            allItems.push({
+        if (apptIdEarly) {
+            // Encounter com agendamento — usar itens do agendamento como rascunho
+            if (!petId)
+                throw new Error('NO_PET');
+            const ap = await sumAppointmentServicesSaleForComanda(apptIdEarly, petId);
+            const allItems = [...ap.items];
+            let subtotal = ap.subtotal;
+            if (allItems.length === 0) {
+                allItems.push({
+                    pet_id: petId,
+                    item_kind: 'fee',
+                    hub_service_type_id: null,
+                    hub_inventory_item_id: null,
+                    hub_inventory_lot_id: null,
+                    description: 'Consulta / atendimento clínico (parcial)',
+                    quantity: 1,
+                    unit_amount: 0,
+                    discount_amount: 0,
+                    line_total: 0,
+                    service_date: null,
+                    origin_type: null,
+                    origin_id: null,
+                    sort_order: 0,
+                });
+            }
+            return {
+                items: allItems,
+                subtotal: round2(subtotal),
+                unit_id: enc.unit_id ?? null,
+                guardian_id: guardianId,
                 pet_id: petId,
-                item_kind: 'fee',
-                hub_service_type_id: null,
-                hub_inventory_item_id: null,
-                hub_inventory_lot_id: null,
-                description: 'Consulta / atendimento clínico (parcial)',
-                quantity: 1,
-                unit_amount: 0,
-                discount_amount: 0,
-                line_total: 0,
-                service_date: null,
-                origin_type: null,
-                origin_id: null,
-                sort_order: 0,
-            });
+            };
         }
-        return {
-            items: allItems,
-            subtotal: round2(subtotal),
-            unit_id: enc.unit_id ?? null,
-            guardian_id: guardianId,
-            pet_id: petId,
-        };
+        else {
+            // Walk-in clínico antecipado — sem agendamento, item de placeholder com tutor/pet do encounter
+            return {
+                items: [
+                    {
+                        pet_id: petId,
+                        item_kind: 'fee',
+                        hub_service_type_id: null,
+                        hub_inventory_item_id: null,
+                        hub_inventory_lot_id: null,
+                        description: 'Consulta / atendimento clínico (parcial)',
+                        quantity: 1,
+                        unit_amount: 0,
+                        discount_amount: 0,
+                        line_total: 0,
+                        service_date: null,
+                        origin_type: null,
+                        origin_id: null,
+                        sort_order: 0,
+                    },
+                ],
+                subtotal: 0,
+                unit_id: enc.unit_id ?? null,
+                guardian_id: guardianId,
+                pet_id: petId,
+            };
+        }
     }
     if (enc.status !== 'completed')
         throw new Error('NOT_READY');
@@ -1012,7 +1041,7 @@ const postHubComandaOpen = async (req, res) => {
         else if (origin_type === 'grooming_session') {
             const { data: sess, error: sessErr } = await supabase_1.supabaseAdmin
                 .from('hub_grooming_sessions')
-                .select('grooming_stage, hub_appointment_id, unit_id')
+                .select('grooming_stage, hub_appointment_id, unit_id, guardian_id')
                 .eq('id', effectiveOriginId)
                 .eq('clinic_id', clinic_id)
                 .is('deleted_at', null)
@@ -1025,15 +1054,45 @@ const postHubComandaOpen = async (req, res) => {
                 built = await buildComandaItemsFromGroomingSession(clinic_id, effectiveOriginId);
             }
             else {
-                // Pagamento antecipado: sessão ainda em andamento — usar itens do agendamento como rascunho
                 const apptId = sess.hub_appointment_id;
-                if (!apptId)
-                    throw new Error('NOT_READY');
-                const apptBuilt = await buildComandaItemsFromAppointment(clinic_id, apptId, { allowIncompleteStatus: true });
-                built = {
-                    ...apptBuilt,
-                    unit_id: sess.unit_id ?? apptBuilt.unit_id,
-                };
+                if (apptId) {
+                    // Pagamento antecipado com agendamento — usar itens do agendamento como rascunho
+                    const apptBuilt = await buildComandaItemsFromAppointment(clinic_id, apptId, { allowIncompleteStatus: true });
+                    built = {
+                        ...apptBuilt,
+                        unit_id: sess.unit_id ?? apptBuilt.unit_id,
+                    };
+                }
+                else {
+                    // Walk-in antecipado — sem agendamento, criar item de placeholder com o tutor da sessão
+                    const guardianId = sess.guardian_id;
+                    if (!guardianId)
+                        throw new Error('NO_GUARDIAN');
+                    built = {
+                        items: [
+                            {
+                                pet_id: null,
+                                item_kind: 'fee',
+                                hub_service_type_id: null,
+                                hub_inventory_item_id: null,
+                                hub_inventory_lot_id: null,
+                                description: 'Banho e Tosa (avulso — antecipado)',
+                                quantity: 1,
+                                unit_amount: 0,
+                                discount_amount: 0,
+                                line_total: 0,
+                                service_date: null,
+                                origin_type: null,
+                                origin_id: null,
+                                sort_order: 0,
+                            },
+                        ],
+                        subtotal: 0,
+                        unit_id: sess.unit_id ?? null,
+                        guardian_id: guardianId,
+                        pet_id: null,
+                    };
+                }
             }
         }
         else if (origin_type === 'quote') {

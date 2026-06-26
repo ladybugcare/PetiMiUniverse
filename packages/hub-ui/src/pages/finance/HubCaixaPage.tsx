@@ -35,7 +35,7 @@ const METHOD_LABELS: Record<string, string> = {
 
 const HubCaixaPage: React.FC = () => {
   const { hasPermission, loading: permLoading } = usePermissions();
-  const { showError, showSuccess } = useAlert();
+  const { showError, showSuccess, showConfirm } = useAlert();
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
 
@@ -187,20 +187,7 @@ const HubCaixaPage: React.FC = () => {
     }
   };
 
-  const onCloseCash = async () => {
-    if (!cashOpen?.id) return;
-    const sessionId = cashOpen.id;
-    const v = Number(String(closeBal).replace(',', '.'));
-    if (Number.isNaN(v) || v < 0) {
-      showError('Saldo de fecho inválido.');
-      return;
-    }
-    if (openComandas.length > 0) {
-      const ok = window.confirm(
-        `Há ${openComandas.length} comanda(s) em aberto nesta unidade. Deseja fechar o caixa mesmo assim?`
-      );
-      if (!ok) return;
-    }
+  const executarFechamentoCaixa = async (sessionId: string, v: number) => {
     try {
       await hubFinancialApi.closeCashSession(sessionId, {
         clinic_id: clinicId,
@@ -212,6 +199,25 @@ const HubCaixaPage: React.FC = () => {
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao fechar caixa');
     }
+  };
+
+  const onCloseCash = () => {
+    if (!cashOpen?.id) return;
+    const sessionId = cashOpen.id;
+    const v = Number(String(closeBal).replace(',', '.'));
+    if (Number.isNaN(v) || v < 0) {
+      showError('Saldo de fecho inválido.');
+      return;
+    }
+    if (openComandas.length > 0) {
+      showConfirm(
+        `Há ${openComandas.length} comanda(s) em aberto nesta unidade. Deseja fechar o caixa mesmo assim?`,
+        () => void executarFechamentoCaixa(sessionId, v),
+        'Fechar caixa',
+      );
+      return;
+    }
+    void executarFechamentoCaixa(sessionId, v);
   };
 
   const onEnviarFinanceiro = async () => {
@@ -327,7 +333,7 @@ const HubCaixaPage: React.FC = () => {
         ariaLabel="Seções do caixa"
         items={[
           { id: 'session', label: 'Sessão do caixa' },
-          { id: 'comandas', label: 'Comandas abertas' },
+          { id: 'comandas', label: 'A receber' },
           { id: 'cancellation', label: 'Ajustes por cancelamento' },
           { id: 'pending', label: 'Pendentes de cobrança' },
           { id: 'historico', label: 'Sessões fechadas' },
@@ -478,7 +484,7 @@ const HubCaixaPage: React.FC = () => {
                   inputMode="decimal"
                 />
               </div>
-              <button type="button" className="hub-clientes__btn" onClick={() => void onCloseCash()}>
+              <button type="button" className="hub-clientes__btn" onClick={onCloseCash}>
                 Fechar caixa
               </button>
             </div>
@@ -611,7 +617,7 @@ const HubCaixaPage: React.FC = () => {
 
       {tab === 'comandas' ? (
         <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">A receber — Comandas abertas</h2>
+          <h2 className="hub-clientes__form-title">A receber</h2>
           {caixaFinanceiro ? (
             <div className="hub-finance-page__card-panel hub-finance-page__card-panel--stack">
               <p className="hub-clientes__label">Enviar ao financeiro — escolha o vencimento</p>
@@ -897,54 +903,56 @@ const HubCaixaPage: React.FC = () => {
         )}
       </section> : null}
     </>,
-    clinicId && caixaCheckoutComandaId && unitId ? (
-      <ComandaCheckoutDrawer
-        key={caixaCheckoutComandaId}
-        open={!!caixaCheckoutComandaId}
-        onClose={() => setCaixaCheckoutComandaId(null)}
-        clinicId={clinicId}
-        unitId={unitId}
-        comandaId={caixaCheckoutComandaId}
-        onSuccess={() => {
-          showSuccess('Checkout concluído.');
-          setCaixaCheckoutComandaId(null);
-          void load();
-        }}
-      />
-    ) : null,
-    selectedCashItem ? (
-      <aside className="hub-clientes__panel hub-finance-page__panel" aria-label="Detalhe do movimento de caixa">
-        <div className="hub-clientes__panel-scroll">
-          <div className="hub-clientes__panel-header">
-            <div>
-              <h2 className="hub-clientes__panel-title">{String(selectedCashItem.label ?? 'Movimento')}</h2>
-              <p className="hub-clientes__muted">#{String(selectedCashItem.id ?? '').slice(0, 8)}</p>
+    <>
+      {clinicId && caixaCheckoutComandaId && unitId ? (
+        <ComandaCheckoutDrawer
+          key={caixaCheckoutComandaId}
+          open={!!caixaCheckoutComandaId}
+          onClose={() => setCaixaCheckoutComandaId(null)}
+          clinicId={clinicId}
+          unitId={unitId}
+          comandaId={caixaCheckoutComandaId}
+          onSuccess={() => {
+            showSuccess('Checkout concluído.');
+            setCaixaCheckoutComandaId(null);
+            void load();
+          }}
+        />
+      ) : null}
+      {selectedCashItem ? (
+        <aside className="hub-clientes__panel hub-finance-page__panel" aria-label="Detalhe do movimento de caixa">
+          <div className="hub-clientes__panel-scroll">
+            <div className="hub-clientes__panel-header">
+              <div>
+                <h2 className="hub-clientes__panel-title">{String(selectedCashItem.label ?? 'Movimento')}</h2>
+                <p className="hub-clientes__muted">#{String(selectedCashItem.id ?? '').slice(0, 8)}</p>
+              </div>
+              <button
+                type="button"
+                className="hub-clientes__panel-close"
+                aria-label="Fechar detalhe do movimento"
+                onClick={() => setSelectedCashItem(null)}
+              >
+                <X size={18} strokeWidth={2} />
+              </button>
             </div>
-            <button
-              type="button"
-              className="hub-clientes__panel-close"
-              aria-label="Fechar detalhe do movimento"
-              onClick={() => setSelectedCashItem(null)}
-            >
-              <X size={18} strokeWidth={2} />
-            </button>
-          </div>
-          <div className="hub-finance-page__detail-hero">
-            <strong>{formatBrl(Number(selectedCashItem.signed_amount ?? selectedCashItem.amount ?? 0))}</strong>
-            <span className="hub-clientes__muted">
-              {selectedCashItem.happened_at ? new Date(String(selectedCashItem.happened_at)).toLocaleString('pt-BR') : '—'}
-            </span>
-          </div>
-          <section className="hub-finance-page__panel-section">
-            <div className="hub-finance-page__detail-list">
-              <p><strong>Tipo:</strong> {String(selectedCashItem.label ?? '—')}</p>
-              <p><strong>Origem:</strong> {selectedCashItem.row_kind === 'payment' ? 'Financeiro' : 'Movimento manual do caixa'}</p>
-              <p><strong>Observações:</strong> {String(selectedCashItem.notes ?? '—')}</p>
+            <div className="hub-finance-page__detail-hero">
+              <strong>{formatBrl(Number(selectedCashItem.signed_amount ?? selectedCashItem.amount ?? 0))}</strong>
+              <span className="hub-clientes__muted">
+                {selectedCashItem.happened_at ? new Date(String(selectedCashItem.happened_at)).toLocaleString('pt-BR') : '—'}
+              </span>
             </div>
-          </section>
-        </div>
-      </aside>
-    ) : null,
+            <section className="hub-finance-page__panel-section">
+              <div className="hub-finance-page__detail-list">
+                <p><strong>Tipo:</strong> {String(selectedCashItem.label ?? '—')}</p>
+                <p><strong>Origem:</strong> {selectedCashItem.row_kind === 'payment' ? 'Financeiro' : 'Movimento manual do caixa'}</p>
+                <p><strong>Observações:</strong> {String(selectedCashItem.notes ?? '—')}</p>
+              </div>
+            </section>
+          </div>
+        </aside>
+      ) : null}
+    </>,
   );
 };
 
