@@ -20,6 +20,7 @@ import type { GroomingQuickAction } from './GroomingQueueBoard';
 import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
 import { renderTemplate } from '../../utils/hubMessageTemplates';
+import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 
 const ADVANCE_LABEL: Partial<Record<GroomingStage, string>> = {
@@ -107,6 +108,7 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
   busy,
 }) => {
   const clinicId = getStoredClinicId();
+  const templateOverrides = useMessageTemplates();
   const [events, setEvents] = useState<GroomingSessionEvent[]>([]);
   const [noteDraft, setNoteDraft] = useState('');
   const [noteBusy, setNoteBusy] = useState(false);
@@ -258,7 +260,7 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
   const phone = item.guardian?.phone?.trim();
   const notifyTutorHref =
     stage === 'ready'
-      ? buildWhatsappLink(phone, renderTemplate('pet_ready', { tutor, pet: petName }))
+      ? buildWhatsappLink(phone, renderTemplate('pet_ready', { tutor, pet: petName }, templateOverrides))
       : null;
   const porte =
     item.pet?.size_tier && PORTE_LABELS[item.pet.size_tier as PetBodyPorteValue]

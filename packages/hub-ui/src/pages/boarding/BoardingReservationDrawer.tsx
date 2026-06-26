@@ -12,7 +12,10 @@ import { BOARDING_STAGE_LABELS, getBoardingItemStage } from './boardingStages';
 import { useAlert } from '../../components/AlertProvider';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
 import { renderTemplate } from '../../utils/hubMessageTemplates';
+import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
+import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
+import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryApi';
 
 function formatDate(iso?: string | null): string {
   if (!iso) return '—';
@@ -47,6 +50,8 @@ export type BoardingReservationDrawerProps = {
   /** Reservado para ações futuras (ex.: edição de notas da reserva). */
   canWrite: boolean;
   canDailyReport: boolean;
+  canManageFinance?: boolean;
+  canWriteInventory?: boolean;
   onClose: () => void;
   onUpdated?: () => void;
 };
@@ -56,11 +61,20 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
   open,
   canWrite: _canWrite,
   canDailyReport,
+  canManageFinance,
+  canWriteInventory,
   onClose,
   onUpdated,
 }) => {
   const clinicId = getStoredClinicId();
+  const templateOverrides = useMessageTemplates();
   const { showError, showSuccess } = useAlert();
+  const [checkoutDrawerOpen, setCheckoutDrawerOpen] = useState(false);
+  const [stockItems, setStockItems] = useState<HubInventoryItem[]>([]);
+  const [stockItemId, setStockItemId] = useState('');
+  const [stockQty, setStockQty] = useState('1');
+  const [stockNotes, setStockNotes] = useState('');
+  const [stockBusy, setStockBusy] = useState(false);
   const [drawer, setDrawer] = useState<BoardingDrawerResponse | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [todayLog, setTodayLog] = useState<BoardingDailyLog | null>(null);
@@ -112,6 +126,37 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
     if (item?.reservation_id) void loadDrawer();
   }, [open, item?.reservation_id, loadDrawer]);
 
+  useEffect(() => {
+    if (!open || !clinicId || !canWriteInventory) return;
+    void hubInventoryApi.items.list(clinicId).then((r) => setStockItems(r.items ?? [])).catch(() => {});
+  }, [open, clinicId, canWriteInventory]);
+
+  const handleStockMovement = async () => {
+    if (!clinicId || !item?.reservation_id || !stockItemId) return;
+    const qty = parseFloat(stockQty);
+    if (!qty || qty <= 0) return;
+    setStockBusy(true);
+    try {
+      await hubInventoryApi.movements.create({
+        clinic_id: clinicId,
+        item_id: stockItemId,
+        movement_type: 'adjustment_out',
+        qty,
+        notes: stockNotes.trim() || null,
+        reference_type: 'hub_boarding_reservation',
+        reference_id: item.reservation_id,
+      });
+      showSuccess('Consumo registrado no estoque');
+      setStockItemId('');
+      setStockQty('1');
+      setStockNotes('');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao registrar consumo');
+    } finally {
+      setStockBusy(false);
+    }
+  };
+
   const handleSaveLog = async () => {
     if (!clinicId || !item?.reservation_id) return;
     setLogBusy(true);
@@ -144,10 +189,7 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
     stage === 'checked_in' || item.is_late
       ? buildWhatsappLink(
           guardianPhone,
-          renderTemplate('pet_ready', {
-            tutor: item.guardian?.full_name,
-            pet: petName,
-          }),
+          renderTemplate('pet_ready', { tutor: item.guardian?.full_name, pet: petName }, templateOverrides),
         )
       : null;
   const modeLabel = item.mode === 'hotel' ? 'Hotel' : item.mode === 'daycare' ? 'Creche' : String(item.mode);
@@ -165,8 +207,22 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
     ? `${formatDate(reservation.expected_check_in as string)} → ${formatDate(reservation.expected_check_out as string)}`
     : `${formatDate(item.starts_at)} → ${formatDate(item.ends_at)}`;
 
+  const showBillingBtn =
+    canManageFinance &&
+    item?.reservation_id &&
+    stage === 'checked_out';
+
   const footer = (
-    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+      {showBillingBtn && (
+        <button
+          type="button"
+          className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+          onClick={() => setCheckoutDrawerOpen(true)}
+        >
+          Gerar cobrança
+        </button>
+      )}
       <button type="button" className="hub-btn hub-btn--ghost" onClick={onClose}>
         Fechar
       </button>
@@ -174,6 +230,7 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
   );
 
   return (
+    <>
     <HubSidePanel open={open} onClose={onClose} title={petName} subtitle={subtitle} footer={footer}>
       {/* Cabeçalho informativo */}
       <div className="hub-drawer-section">
@@ -395,7 +452,77 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
           </p>
         </div>
       )}
+
+      {/* Consumo de estoque (opcional) */}
+      {canWriteInventory && item.reservation_id && stockItems.length > 0 && (
+        <div className="hub-drawer-section">
+          <h4 className="hub-drawer-section__title">Registrar consumo de estoque</h4>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ flex: '2 1 160px' }}>
+              <label className="hub-clientes__label" htmlFor="boarding-stock-item">Item</label>
+              <select
+                id="boarding-stock-item"
+                className="hub-clientes__select"
+                value={stockItemId}
+                onChange={(e) => setStockItemId(e.target.value)}
+              >
+                <option value="">Selecione…</option>
+                {stockItems.map((si) => (
+                  <option key={si.id} value={si.id}>{si.name}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ flex: '0 1 80px' }}>
+              <label className="hub-clientes__label" htmlFor="boarding-stock-qty">Qtd</label>
+              <input
+                id="boarding-stock-qty"
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="hub-clientes__input"
+                value={stockQty}
+                onChange={(e) => setStockQty(e.target.value)}
+              />
+            </div>
+            <div style={{ flex: '2 1 120px' }}>
+              <label className="hub-clientes__label" htmlFor="boarding-stock-notes">Obs</label>
+              <input
+                id="boarding-stock-notes"
+                type="text"
+                className="hub-clientes__input"
+                value={stockNotes}
+                onChange={(e) => setStockNotes(e.target.value)}
+                placeholder="Opcional"
+              />
+            </div>
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+              disabled={stockBusy || !stockItemId || !parseFloat(stockQty)}
+              onClick={() => void handleStockMovement()}
+            >
+              {stockBusy ? '…' : 'Registrar'}
+            </button>
+          </div>
+        </div>
+      )}
     </HubSidePanel>
+
+    {showBillingBtn && item?.reservation_id && clinicId && (
+      <ComandaCheckoutDrawer
+        open={checkoutDrawerOpen}
+        onClose={() => setCheckoutDrawerOpen(false)}
+        clinicId={clinicId}
+        unitId=""
+        originType="boarding_reservation"
+        originId={item.reservation_id}
+        onSuccess={() => {
+          setCheckoutDrawerOpen(false);
+          onUpdated?.();
+        }}
+      />
+    )}
+  </>
   );
 };
 

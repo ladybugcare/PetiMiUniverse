@@ -215,6 +215,10 @@ import {
   openHubBoardingReservationFromAppointment,
   createHubBoardingReservation,
   patchHubBoardingReservation,
+  getHubBoardingUnitSettings,
+  patchHubBoardingUnitSettings,
+  getHubBoardingOccupancy,
+  getHubBoardingCalendar,
 } from '../hubBoardingController';
 import {
   getHubBoardingReservationDrawer,
@@ -1078,6 +1082,30 @@ router.post(
   authenticateUser,
   requirePermission('boarding.daily_report.write'),
   postHubBoardingDailyLog
+);
+router.get(
+  '/boarding/unit-settings',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingUnitSettings
+);
+router.patch(
+  '/boarding/unit-settings',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  patchHubBoardingUnitSettings
+);
+router.get(
+  '/boarding/occupancy',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingOccupancy
+);
+router.get(
+  '/boarding/calendar',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingCalendar
 );
 
 // ─── Comunicação — log de tentativas (click-to-chat / in-app) ──────────────

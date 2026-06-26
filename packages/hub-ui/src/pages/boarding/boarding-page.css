@@ -1,0 +1,186 @@
+/* ─── Módulo Hotel & Creche — estilos específicos ─────────────────────────── */
+
+/* Banner de warning para overbooking */
+.hub-clinic-banner--warning {
+  background: #fef9c3;
+  border: 1px solid #fde047;
+  color: #713f12;
+}
+
+/* Página principal de boarding */
+.hub-boarding-page .hub-clinic-queue__actions .hub-clientes__btn--sm {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* Avatar do pet no card do painel */
+.hub-boarding-card__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid var(--hc-border, #e5dcd6);
+}
+
+.hub-boarding-card__avatar-placeholder {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f3ece8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+  color: #8e6e67;
+}
+
+/* Chip de ocupação na barra de métricas */
+.hub-boarding-page__occupancy-chip {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a3b3a;
+}
+
+.hub-boarding-page__occupancy-chip--over {
+  color: #b45309;
+}
+
+/* ─── Calendário semanal ───────────────────────────────────────────────────── */
+
+.hub-boarding-calendar {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hub-boarding-calendar__nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.hub-boarding-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  gap: 8px;
+  min-width: 700px;
+}
+
+.hub-boarding-calendar__day {
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 8px;
+  padding: 8px;
+  background: #fff;
+  min-height: 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hub-boarding-calendar__day-header {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+  color: #6b5c55;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--hc-border, #e5dcd6);
+  padding-bottom: 4px;
+}
+
+.hub-boarding-calendar__empty {
+  font-size: 11px;
+  margin-top: auto;
+  opacity: 0.5;
+}
+
+.hub-boarding-calendar__event {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: #f3ece8;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font-size: 12px;
+  transition: background 0.15s;
+}
+
+.hub-boarding-calendar__event:hover {
+  background: #ede4df;
+}
+
+.hub-boarding-calendar__event--hotel {
+  background: #e0f2fe;
+  border-color: #bae6fd;
+  color: #0c4a6e;
+}
+
+.hub-boarding-calendar__event--hotel:hover {
+  background: #bae6fd;
+}
+
+.hub-boarding-calendar__event--daycare {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #14532d;
+}
+
+.hub-boarding-calendar__event--daycare:hover {
+  background: #dcfce7;
+}
+
+.hub-boarding-calendar__event-mode {
+  font-size: 10px;
+}
+
+.hub-boarding-calendar__event-pet {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hub-boarding-calendar__event-status {
+  font-size: 10px;
+  display: block;
+}
+
+/* ─── Responsive ───────────────────────────────────────────────────────────── */
+
+/* Tablet: scroll horizontal no board */
+@media (max-width: 960px) {
+  .hub-boarding-page .hub-clinic-queue {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 12px;
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+  }
+
+  .hub-boarding-calendar__grid {
+    grid-template-columns: repeat(7, minmax(100px, 1fr));
+  }
+}
+
+/* Mobile: coluna única */
+@media (max-width: 640px) {
+  .hub-boarding-page .hub-clinic-queue {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-boarding-page .hub-clinic-queue__actions .hub-clientes__btn--sm {
+    padding: 10px 14px;
+    font-size: 15px;
+    min-height: 44px;
+  }
+
+  .hub-boarding-calendar__grid {
+    grid-template-columns: minmax(110px, 1fr);
+  }
+}

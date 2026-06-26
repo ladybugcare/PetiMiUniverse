@@ -10,7 +10,7 @@ function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
-const comandaOriginSchema = z.enum(['appointment', 'grooming_session', 'quote', 'encounter', 'manual']);
+const comandaOriginSchema = z.enum(['appointment', 'grooming_session', 'quote', 'encounter', 'manual', 'boarding_reservation']);
 
 async function resolveClinicDefaultUnitId(clinicId: string): Promise<string | null> {
   const { data: main } = await supabaseAdmin
@@ -934,6 +934,72 @@ async function buildComandaItemsFromEncounter(
   };
 }
 
+async function buildComandaItemsFromBoardingReservation(
+  clinicId: string,
+  reservationId: string
+): Promise<{
+  items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[];
+  subtotal: number;
+  unit_id: string | null;
+  guardian_id: string;
+  pet_id: string | null;
+}> {
+  const { data: res, error } = await supabaseAdmin
+    .from('hub_boarding_reservations')
+    .select('id, pet_id, guardian_id, unit_id, mode, status, expected_check_in, expected_check_out, checked_in_at, checked_out_at, daily_rate_cents, hub_appointment_id')
+    .eq('id', reservationId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!res) throw new Error('NOT_FOUND');
+
+  const guardianId = res.guardian_id as string | null;
+  if (!guardianId) throw new Error('NO_GUARDIAN');
+
+  const checkIn = res.checked_in_at as string | null ?? res.expected_check_in as string | null;
+  const checkOut = res.checked_out_at as string | null ?? res.expected_check_out as string | null;
+  const dailyRateCents = (res.daily_rate_cents as number | null) ?? 0;
+  const mode = res.mode as string;
+
+  let nights = 0;
+  if (checkIn && checkOut) {
+    const d1 = new Date(checkIn);
+    const d2 = new Date(checkOut);
+    nights = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+  }
+  const quantity = mode === 'hotel' ? Math.max(1, nights) : 1;
+  const unitAmount = round2(dailyRateCents / 100);
+  const lineTotal = round2(quantity * unitAmount);
+  const label = mode === 'hotel' ? 'Hotel' : 'Creche';
+
+  const items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[] = [
+    {
+      pet_id: res.pet_id as string | null,
+      item_kind: 'service',
+      hub_service_type_id: null,
+      hub_inventory_item_id: null,
+      hub_inventory_lot_id: null,
+      description: `${label} — ${quantity} ${mode === 'hotel' ? (quantity === 1 ? 'diária' : 'diárias') : 'bloco(s)'}`,
+      quantity,
+      unit_amount: unitAmount,
+      discount_amount: 0,
+      line_total: lineTotal,
+      service_date: checkIn ? checkIn.slice(0, 10) : null,
+      origin_type: 'boarding_reservation',
+      origin_id: reservationId,
+      sort_order: 0,
+    },
+  ];
+
+  return {
+    items,
+    subtotal: lineTotal,
+    unit_id: (res.unit_id as string | null) ?? null,
+    guardian_id: guardianId,
+    pet_id: res.pet_id as string | null,
+  };
+}
+
 function mapItemToReceivableLineKind(originType: string | null): 'appointment_service' | 'grooming_extra' | 'quote_line' | 'manual' {
   if (originType === 'appointment_service') return 'appointment_service';
   if (originType === 'grooming_extra') return 'grooming_extra';
@@ -1001,13 +1067,16 @@ async function buildDesiredComandaSnapshot(
     const q = await buildComandaItemsFromQuote(clinicId, oid);
     return { ...q, pet_id: null };
   }
+  if (ot === 'boarding_reservation') {
+    return await buildComandaItemsFromBoardingReservation(clinicId, oid);
+  }
   throw new Error('NOT_FOUND');
 }
 
 const openComandaBodySchema = z
   .object({
     clinic_id: uuidStr,
-    origin_type: z.enum(['appointment', 'grooming_session', 'quote', 'encounter', 'manual']),
+    origin_type: z.enum(['appointment', 'grooming_session', 'quote', 'encounter', 'manual', 'boarding_reservation']),
     origin_id: uuidStr.optional(),
     guardian_id: uuidStr.optional(),
     unit_id: uuidStr.optional().nullable(),
@@ -1184,6 +1253,13 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       }
     } else if (origin_type === 'quote') {
       built = await buildComandaItemsFromQuote(clinic_id, effectiveOriginId);
+    } else if (origin_type === 'boarding_reservation') {
+      const existingId = await resolveExistingOpenComandaIdForOpen(clinic_id, 'boarding_reservation', effectiveOriginId);
+      if (existingId) {
+        const detail = await getHubComandaDetailPayload(existingId, clinic_id);
+        return res.status(200).json(detail);
+      }
+      built = await buildComandaItemsFromBoardingReservation(clinic_id, effectiveOriginId);
     } else {
       // Encounter: permite comanda antecipada (allowIncomplete) para recebimento antes de concluir
       built = await buildComandaItemsFromEncounter(clinic_id, effectiveOriginId, { allowIncomplete: true });

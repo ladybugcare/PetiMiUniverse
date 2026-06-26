@@ -120,7 +120,17 @@ const BoardingDayBoard: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="hub-clinic-queue__card-body">
+        <div className="hub-clinic-queue__card-body" style={{ display: 'flex', gap: 10 }}>
+          {item.pet?.avatar_url ? (
+            <img
+              src={item.pet.avatar_url}
+              alt={petName}
+              className="hub-boarding-card__avatar"
+            />
+          ) : (
+            <span className="hub-boarding-card__avatar-placeholder" aria-hidden>🐾</span>
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
           <strong className="hub-clinic-queue__pet-name">{petName}</strong>
           {porte && <span className="hub-clientes__muted hub-clinic-queue__porte"> · {porte}</span>}
           <div className="hub-clientes__muted hub-clinic-queue__tutor">{tutor}</div>
@@ -151,6 +161,7 @@ const BoardingDayBoard: React.FC<Props> = ({
               ))}
             </div>
           )}
+          </div>
         </div>
 
         <div className="hub-clinic-queue__card-actions">

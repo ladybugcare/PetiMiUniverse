@@ -95,7 +95,7 @@ const HubServicosConfigPage: React.FC = () => {
     const n = Math.min(24, Math.max(1, Math.round(Number(puppyMaxMonths)) || 8));
     setPuppySaving(true);
     try {
-      const res = await hubClinicSettingsApi.patch(clinicId, n);
+      const res = await hubClinicSettingsApi.patch(clinicId, { pet_puppy_max_months: n });
       setPuppyMaxMonths(res.settings.pet_puppy_max_months);
       showSuccess('Preferência de filhotes atualizada.');
     } catch (e: unknown) {

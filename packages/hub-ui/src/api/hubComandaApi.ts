@@ -2,7 +2,7 @@ import { apiRequest } from '@petimi/web-core';
 
 const base = '/api/hub/comandas';
 
-export type HubComandaOriginType = 'appointment' | 'grooming_session' | 'quote' | 'encounter' | 'manual';
+export type HubComandaOriginType = 'appointment' | 'grooming_session' | 'quote' | 'encounter' | 'manual' | 'boarding_reservation';
 
 export type CancellationResolution = 'refund' | 'customer_credit' | 'keep_billing';
 

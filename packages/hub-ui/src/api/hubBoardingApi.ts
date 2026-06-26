@@ -171,4 +171,78 @@ export const hubBoardingApi = {
       body: JSON.stringify(payload),
     }) as Promise<{ log: BoardingDailyLog }>;
   },
+
+  getUnitSettings(clinicId: string, unitId?: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (unitId) q.set('unit_id', unitId);
+    return apiRequest(`${boardingBase}/unit-settings?${q}`) as Promise<{
+      settings: BoardingUnitSettings[];
+    }>;
+  },
+
+  patchUnitSettings(payload: {
+    clinic_id: string;
+    unit_id: string;
+    hotel_slots?: number | null;
+    daycare_slots_per_shift?: number | null;
+    checkout_cutoff_time?: string | null;
+  }) {
+    return apiRequest(`${boardingBase}/unit-settings`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ settings: BoardingUnitSettings }>;
+  },
+
+  getOccupancy(clinicId: string, opts?: { unitId?: string; dateYmd?: string; mode?: BoardingMode }) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.unitId) q.set('unit_id', opts.unitId);
+    if (opts?.dateYmd) q.set('date', opts.dateYmd);
+    if (opts?.mode && opts.mode !== 'all') q.set('mode', opts.mode);
+    return apiRequest(`${boardingBase}/occupancy?${q}`) as Promise<BoardingOccupancyResponse>;
+  },
+
+  getCalendar(clinicId: string, from: string, to: string, opts?: { unitId?: string; mode?: BoardingMode }) {
+    const q = new URLSearchParams({ clinic_id: clinicId, from, to });
+    if (opts?.unitId) q.set('unit_id', opts.unitId);
+    if (opts?.mode && opts.mode !== 'all') q.set('mode', opts.mode);
+    return apiRequest(`${boardingBase}/calendar?${q}`) as Promise<BoardingCalendarResponse>;
+  },
+};
+
+// ─── Tipos adicionais ────────────────────────────────────────────────────────
+
+export type BoardingUnitSettings = {
+  unit_id: string;
+  clinic_id: string;
+  hotel_slots: number | null;
+  daycare_slots_per_shift: number | null;
+  checkout_cutoff_time: string | null;
+  updated_at: string;
+};
+
+export type BoardingOccupancySlot = {
+  current: number;
+  max: number | null;
+  over_capacity: boolean;
+};
+
+export type BoardingOccupancyResponse = {
+  hotel: BoardingOccupancySlot;
+  daycare: BoardingOccupancySlot;
+};
+
+export type BoardingCalendarEvent = {
+  id: string;
+  mode: BoardingMode | string;
+  status: BoardingStage | string;
+  expected_check_in: string;
+  expected_check_out: string;
+  checked_in_at?: string | null;
+  checked_out_at?: string | null;
+  pet?: { id: string; name: string; size_tier?: string | null } | null;
+  guardian?: { id: string; full_name: string; phone?: string | null } | null;
+};
+
+export type BoardingCalendarResponse = {
+  events: BoardingCalendarEvent[];
 };

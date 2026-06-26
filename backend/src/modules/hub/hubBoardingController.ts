@@ -580,3 +580,191 @@ export const patchHubBoardingReservation = async (req: Request, res: Response) =
     return res.status(500).json({ error: (e as Error)?.message || 'Erro ao atualizar reserva' });
   }
 };
+
+// ─── Configurações de capacidade por unidade ────────────────────────────────
+
+const unitSettingsQuerySchema = z.object({
+  clinic_id: uuidStr,
+  unit_id: uuidStr.optional(),
+});
+
+const unitSettingsPatchSchema = z.object({
+  clinic_id: uuidStr,
+  unit_id: uuidStr,
+  hotel_slots: z.number().int().positive().nullable().optional(),
+  daycare_slots_per_shift: z.number().int().positive().nullable().optional(),
+  checkout_cutoff_time: z
+    .string()
+    .regex(/^\d{2}:\d{2}(:\d{2})?$/)
+    .nullable()
+    .optional(),
+});
+
+export const getHubBoardingUnitSettings = async (req: Request, res: Response) => {
+  const parsed = unitSettingsQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { clinic_id, unit_id } = parsed.data;
+
+  try {
+    let q = supabaseAdmin
+      .from('hub_unit_boarding_settings')
+      .select('unit_id, clinic_id, hotel_slots, daycare_slots_per_shift, checkout_cutoff_time, updated_at')
+      .eq('clinic_id', clinic_id);
+    if (unit_id) q = q.eq('unit_id', unit_id);
+
+    const { data, error } = await q;
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ settings: data ?? [] });
+  } catch (e: unknown) {
+    console.error('getHubBoardingUnitSettings', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao buscar configurações' });
+  }
+};
+
+export const patchHubBoardingUnitSettings = async (req: Request, res: Response) => {
+  const parsed = unitSettingsPatchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { clinic_id, unit_id, ...fields } = parsed.data;
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('hub_unit_boarding_settings')
+      .upsert({ unit_id, clinic_id, ...fields }, { onConflict: 'unit_id' })
+      .select()
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ settings: data });
+  } catch (e: unknown) {
+    console.error('patchHubBoardingUnitSettings', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao salvar configurações' });
+  }
+};
+
+// ─── Ocupação (sem bloqueio — só alerta) ────────────────────────────────────
+
+const occupancyQuerySchema = z.object({
+  clinic_id: uuidStr,
+  unit_id: uuidStr.optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  mode: z.enum(BOARDING_MODES).optional(),
+});
+
+export const getHubBoardingOccupancy = async (req: Request, res: Response) => {
+  const parsed = occupancyQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { clinic_id, unit_id, mode } = parsed.data;
+
+  try {
+    const dateYmd = parsed.data.date ?? parsed.data.from?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
+    const { from, to } = parsed.data.from && parsed.data.to
+      ? { from: parsed.data.from, to: parsed.data.to }
+      : dayBoundsFromYmdSaoPaulo(dateYmd);
+
+    // Reservas ativas no intervalo (overlap)
+    let rQ = supabaseAdmin
+      .from('hub_boarding_reservations')
+      .select('id, mode', { count: 'exact', head: false })
+      .eq('clinic_id', clinic_id)
+      .in('status', ['reserved', 'checked_in'])
+      .lt('expected_check_in', to)
+      .gt('expected_check_out', from);
+    if (unit_id) rQ = rQ.eq('unit_id', unit_id);
+    if (mode && mode !== 'all') rQ = rQ.eq('mode', mode);
+
+    const { data: reservations, error: rErr } = await rQ;
+    if (rErr) return res.status(500).json({ error: rErr.message });
+
+    // Configuração de capacidade
+    let settingsQ = supabaseAdmin
+      .from('hub_unit_boarding_settings')
+      .select('hotel_slots, daycare_slots_per_shift')
+      .eq('clinic_id', clinic_id);
+    if (unit_id) settingsQ = settingsQ.eq('unit_id', unit_id);
+    const { data: settingsRows } = await settingsQ;
+
+    const settings = settingsRows?.[0] ?? null;
+    const hotelMax = settings?.hotel_slots ?? null;
+    const daycareMax = settings?.daycare_slots_per_shift ?? null;
+
+    const hotelCount = (reservations ?? []).filter((r) => r.mode === 'hotel').length;
+    const daycareCount = (reservations ?? []).filter((r) => r.mode === 'daycare').length;
+
+    return res.json({
+      hotel: {
+        current: hotelCount,
+        max: hotelMax,
+        over_capacity: hotelMax != null ? hotelCount > hotelMax : false,
+      },
+      daycare: {
+        current: daycareCount,
+        max: daycareMax,
+        over_capacity: daycareMax != null ? daycareCount > daycareMax : false,
+      },
+    });
+  } catch (e: unknown) {
+    console.error('getHubBoardingOccupancy', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao calcular ocupação' });
+  }
+};
+
+// ─── Calendário de reservas futuras ─────────────────────────────────────────
+
+const calendarQuerySchema = z.object({
+  clinic_id: uuidStr,
+  unit_id: uuidStr.optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  mode: z.enum(BOARDING_MODES).optional(),
+});
+
+export const getHubBoardingCalendar = async (req: Request, res: Response) => {
+  const parsed = calendarQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { clinic_id, unit_id, from, to, mode } = parsed.data;
+
+  try {
+    const fromTs = new Date(`${from}T00:00:00-03:00`).toISOString();
+    const toTs = new Date(`${to}T23:59:59.999-03:00`).toISOString();
+
+    // Reservas que se sobrepõem ao intervalo
+    let rQ = supabaseAdmin
+      .from('hub_boarding_reservations')
+      .select(`
+        id, mode, status, expected_check_in, expected_check_out,
+        checked_in_at, checked_out_at, pet_id, guardian_id,
+        hub_pets!hub_boarding_reservations_pet_id_fkey(id, name, size_tier),
+        hub_guardians!hub_boarding_reservations_guardian_id_fkey(id, full_name, phone)
+      `)
+      .eq('clinic_id', clinic_id)
+      .not('status', 'in', '("cancelled","no_show")')
+      .lt('expected_check_in', toTs)
+      .gt('expected_check_out', fromTs)
+      .order('expected_check_in');
+    if (unit_id) rQ = rQ.eq('unit_id', unit_id);
+    if (mode && mode !== 'all') rQ = rQ.eq('mode', mode);
+
+    const { data, error } = await rQ;
+    if (error) return res.status(500).json({ error: error.message });
+
+    const events = (data ?? []).map((r) => ({
+      id: r.id,
+      mode: r.mode,
+      status: r.status,
+      expected_check_in: r.expected_check_in,
+      expected_check_out: r.expected_check_out,
+      checked_in_at: r.checked_in_at,
+      checked_out_at: r.checked_out_at,
+      pet: (r as unknown as { hub_pets?: { id: string; name: string; size_tier: string | null } }).hub_pets ?? null,
+      guardian:
+        (r as unknown as { hub_guardians?: { id: string; full_name: string; phone: string | null } }).hub_guardians ??
+        null,
+    }));
+
+    return res.json({ events });
+  } catch (e: unknown) {
+    console.error('getHubBoardingCalendar', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao buscar calendário' });
+  }
+};

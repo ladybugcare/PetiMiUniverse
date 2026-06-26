@@ -1885,6 +1885,54 @@ async function collectUnbilledItems(
     });
   }
 
+  // Reservas de Hotel & Creche com check-out realizado e sem cobrança
+  let bq = supabaseAdmin
+    .from('hub_boarding_reservations')
+    .select(
+      `
+      id, unit_id, checked_out_at, expected_check_out, guardian_id, pet_id, mode, daily_rate_cents,
+      pet:hub_pets(id, name),
+      guardian:hub_guardians(id, full_name)
+    `
+    )
+    .eq('clinic_id', clinicId)
+    .eq('status', 'checked_out')
+    .order('checked_out_at', { ascending: false })
+    .limit(200);
+  if (unitId) bq = bq.eq('unit_id', unitId);
+  const { data: boardingRows, error: bErr } = await bq;
+  if (bErr) throw new Error(bErr.message);
+  for (const row of boardingRows ?? []) {
+    if (keys.has(`boarding_reservation:${row.id}`)) continue;
+    if (comandaOpenKeys.has(`boarding_reservation:${row.id}`)) continue;
+    const modeLabel = row.mode === 'hotel' ? 'Hotel' : 'Creche';
+    const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
+    const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
+    const dailyRateCents = (row.daily_rate_cents as number | null) ?? 0;
+    const checkIn = null as string | null;
+    const checkOut = (row.checked_out_at as string | null) ?? (row.expected_check_out as string | null);
+    let nights = 0;
+    if (checkIn && checkOut) {
+      const d1 = new Date(checkIn);
+      const d2 = new Date(checkOut);
+      nights = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+    }
+    const qty = row.mode === 'hotel' ? Math.max(1, nights) : 1;
+    const estimated = Math.round(qty * dailyRateCents) / 100;
+    items.push({
+      source_type: 'boarding_reservation' as string,
+      source_id: row.id as string,
+      origin_label: `Hotel & Creche (${modeLabel})`,
+      completed_at: checkOut,
+      unit_id: (row.unit_id as string) ?? null,
+      guardian: g ? (Array.isArray(g) ? g[0] : g) : null,
+      pet: pet ? (Array.isArray(pet) ? pet[0] : pet) : null,
+      staff: null,
+      estimated_amount: estimated,
+      operational_status: 'checked_out',
+    });
+  }
+
   items.sort((a, b) => {
     const ta = a.completed_at ? new Date(a.completed_at).getTime() : 0;
     const tb = b.completed_at ? new Date(b.completed_at).getTime() : 0;

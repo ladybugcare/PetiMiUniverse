@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
-import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
+import { CalendarDays, ChevronLeft, ChevronRight, PlusCircle, RefreshCw, Search } from 'lucide-react';
+import { apiRequest, getStoredClinicId, getSupabase, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
-import { hubBoardingApi, type BoardingDayBoardItem } from '../../api/hubBoardingApi';
+import { hubBoardingApi, type BoardingDayBoardItem, type BoardingOccupancyResponse } from '../../api/hubBoardingApi';
 import { hubAgendaApi } from '../../api/hubAgendaApi';
 import {
   dayRangeIsoLocal,
@@ -17,8 +17,11 @@ import {
 import type { BoardingMode } from './boardingStages';
 import BoardingDayBoard from './BoardingDayBoard';
 import BoardingReservationDrawer from './BoardingReservationDrawer';
+import BoardingCalendarView from './BoardingCalendarView';
+import BoardingWalkInPanel from './BoardingWalkInPanel';
 import '../clinica/clinica-page.css';
 import '../clientes/clientes.css';
+import './boarding-page.css';
 
 const POLL_MS = 30_000;
 
@@ -32,6 +35,8 @@ const HubBoardingPage: React.FC = () => {
   const canWrite =
     hasPermission('boarding.reservations.manage') && hasPermission('hub.appointments.write');
   const canDailyReport = hasPermission('boarding.daily_report.write');
+  const canManageFinance = hasPermission('hub.receivables.create');
+  const canWriteInventory = hasPermission('hub.inventory.write');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [activeMode, setActiveMode] = useState<BoardingMode>('all');
@@ -44,6 +49,10 @@ const HubBoardingPage: React.FC = () => {
   const [boardingTypesConfigured, setBoardingTypesConfigured] = useState(true);
   const [selected, setSelected] = useState<BoardingDayBoardItem | null>(null);
   const [cursor, setCursor] = useState(() => new Date());
+  const [viewMode, setViewMode] = useState<'board' | 'calendar'>('board');
+  const [occupancy, setOccupancy] = useState<BoardingOccupancyResponse | null>(null);
+  const [walkInOpen, setWalkInOpen] = useState(false);
+  const [walkInBusy, setWalkInBusy] = useState(false);
 
   const dayRange = useMemo(() => dayRangeIsoLocal(cursor), [cursor]);
 
@@ -95,6 +104,40 @@ const HubBoardingPage: React.FC = () => {
   }, [clinicId, accessAllowed, load]);
 
   useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Realtime: escuta mudanças em hub_boarding_reservations para o clinic_id atual.
+  // Complementa o polling (não o substitui) para reduzir latência de atualizações.
+  useEffect(() => {
+    if (!clinicId || !accessAllowed) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const channel = supabase
+      .channel(`hub_boarding_${clinicId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'hub_boarding_reservations',
+          filter: `clinic_id=eq.${clinicId}`,
+        },
+        () => { void load(); }
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [clinicId, accessAllowed, load]);
+
+  useEffect(() => {
     if (!clinicId) return;
     void (apiRequest(`/units/clinic/${encodeURIComponent(clinicId)}?activeOnly=true`) as Promise<{
       units?: { id: string; name: string }[];
@@ -103,9 +146,57 @@ const HubBoardingPage: React.FC = () => {
       .catch(() => setUnits([]));
   }, [clinicId]);
 
+  const loadOccupancy = useCallback(async () => {
+    if (!clinicId) return;
+    try {
+      const occ = await hubBoardingApi.getOccupancy(clinicId, {
+        unitId: unitIdParam,
+        dateYmd: dayRange.dateYmd,
+        mode: activeMode === 'all' ? undefined : activeMode,
+      });
+      setOccupancy(occ);
+    } catch {
+      // Ocupação é não-crítica: falha silenciosa
+    }
+  }, [clinicId, unitIdParam, dayRange.dateYmd, activeMode]);
+
+  useEffect(() => {
+    void loadOccupancy();
+  }, [loadOccupancy]);
+
   const handleUnitFilterChange = (value: string) => {
     setUnitFilter(value);
     saveAgendaPersistedUnit(value);
+  };
+
+  const handleWalkIn = async (payload: {
+    petId: string;
+    guardianId?: string;
+    mode: BoardingMode;
+    expectedCheckIn?: string;
+    expectedCheckOut?: string;
+    notes?: string;
+  }) => {
+    if (!clinicId) return;
+    setWalkInBusy(true);
+    try {
+      await hubBoardingApi.createReservation({
+        clinic_id: clinicId,
+        pet_id: payload.petId,
+        guardian_id: payload.guardianId ?? null,
+        unit_id: unitIdParam ?? null,
+        mode: payload.mode,
+        expected_check_in: payload.expectedCheckIn ?? null,
+        expected_check_out: payload.expectedCheckOut ?? null,
+        notes: payload.notes ?? null,
+      });
+      setWalkInOpen(false);
+      await load();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao registrar entrada avulsa');
+    } finally {
+      setWalkInBusy(false);
+    }
   };
 
   const handleCheckIn = async (item: BoardingDayBoardItem) => {
@@ -202,8 +293,12 @@ const HubBoardingPage: React.FC = () => {
     { mode: 'daycare', label: 'Creche' },
   ];
 
+  const overHotel = occupancy?.hotel.over_capacity ?? false;
+  const overDaycare = occupancy?.daycare.over_capacity ?? false;
+  const hasOverbooking = overHotel || overDaycare;
+
   return (
-    <div className="hub-grooming-page">
+    <div className="hub-grooming-page hub-boarding-page">
       {!boardingTypesConfigured && !loading && (
         <div className="hub-clinic-banner">
           <p>
@@ -213,6 +308,23 @@ const HubBoardingPage: React.FC = () => {
           <Link to="/hub/servicos" className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm">
             Configurar serviços
           </Link>
+        </div>
+      )}
+      {hasOverbooking && (
+        <div className="hub-clinic-banner hub-clinic-banner--warning">
+          <p>
+            {overHotel && (
+              <>
+                <strong>Hotel</strong>: {occupancy!.hotel.current}/{occupancy!.hotel.max} vagas ocupadas.{' '}
+              </>
+            )}
+            {overDaycare && (
+              <>
+                <strong>Creche</strong>: {occupancy!.daycare.current}/{occupancy!.daycare.max} cães no turno.{' '}
+              </>
+            )}
+            Capacidade excedida. As reservas continuam sendo aceitas.
+          </p>
         </div>
       )}
 
@@ -270,6 +382,28 @@ const HubBoardingPage: React.FC = () => {
           <RefreshCw size={16} />
         </button>
 
+        <button
+          type="button"
+          className={`hub-clientes__btn hub-clientes__btn--ghost${viewMode === 'calendar' ? ' hub-clientes__btn--primary' : ''}`}
+          onClick={() => setViewMode((v) => (v === 'board' ? 'calendar' : 'board'))}
+          aria-label="Alternar para calendário"
+          title="Calendário de reservas"
+        >
+          <CalendarDays size={16} />
+        </button>
+
+        {canWrite && (
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost"
+            onClick={() => setWalkInOpen(true)}
+            aria-label="Entrada avulsa"
+            title="Entrada avulsa"
+          >
+            <PlusCircle size={16} />
+          </button>
+        )}
+
         <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--ghost">
           Agenda
         </Link>
@@ -297,10 +431,26 @@ const HubBoardingPage: React.FC = () => {
         <p className="hub-clientes__muted hub-grooming-page__metrics">
           {metrics.total} previstos · {metrics.hosting} hospedados
           {metrics.late > 0 ? ` · ${metrics.late} em atraso` : ''}
+          {occupancy && (occupancy.hotel.max != null || occupancy.daycare.max != null) && (
+            <span className={`hub-boarding-page__occupancy-chip${hasOverbooking ? ' hub-boarding-page__occupancy-chip--over' : ''}`}>
+              {occupancy.hotel.max != null && ` · ${occupancy.hotel.current}/${occupancy.hotel.max} hotel`}
+              {occupancy.daycare.max != null && ` · ${occupancy.daycare.current}/${occupancy.daycare.max} creche`}
+            </span>
+          )}
         </p>
       )}
 
-      {loading ? (
+      {viewMode === 'calendar' ? (
+        <BoardingCalendarView
+          clinicId={clinicId ?? ''}
+          unitId={unitIdParam}
+          mode={activeMode}
+          onSelectReservationId={(id) => {
+            const found = items.find((i) => i.reservation_id === id);
+            if (found) setSelected(found);
+          }}
+        />
+      ) : loading ? (
         <p className="hub-clientes__muted hub-clinic-page__pad">Carregando painel…</p>
       ) : items.length === 0 ? (
         <p className="hub-clientes__muted hub-clinic-page__pad">
@@ -323,9 +473,22 @@ const HubBoardingPage: React.FC = () => {
         open={!!selected}
         canWrite={canWrite}
         canDailyReport={canDailyReport}
+        canManageFinance={canManageFinance}
+        canWriteInventory={canWriteInventory}
         onClose={() => setSelected(null)}
         onUpdated={() => void load()}
       />
+
+      {canWrite && (
+        <BoardingWalkInPanel
+          open={walkInOpen}
+          clinicId={clinicId ?? ''}
+          unitId={unitIdParam}
+          onClose={() => setWalkInOpen(false)}
+          onSubmit={handleWalkIn}
+          submitting={walkInBusy}
+        />
+      )}
     </div>
   );
 };

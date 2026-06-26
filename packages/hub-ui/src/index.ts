@@ -50,7 +50,7 @@ export type {
 export { hubPetsApi } from './api/hubPetsApi';
 export type { HubPet, HubPetGuardianRef } from './api/hubPetsApi';
 export { hubClinicSettingsApi } from './api/hubClinicSettingsApi';
-export type { HubClinicSettings } from './api/hubClinicSettingsApi';
+export type { HubClinicSettings, PatchHubClinicSettingsPayload } from './api/hubClinicSettingsApi';
 export { hubServiceGroupsApi } from './api/hubServiceGroupsApi';
 export type { HubServiceGroupRow } from './api/hubServiceGroupsApi';
 export { hubStaffApi } from './api/hubStaffApi';
@@ -76,7 +76,15 @@ export { hubPickupApi } from './api/hubPickupApi';
 export type { PickupDayBoardItem, PickupDayBoardResponse, PickupDirection } from './api/hubPickupApi';
 export { default as HubBoardingPage } from './pages/boarding/HubBoardingPage';
 export { hubBoardingApi } from './api/hubBoardingApi';
-export type { BoardingDayBoardItem, BoardingDayBoardResponse, BoardingReservation } from './api/hubBoardingApi';
+export type {
+  BoardingDayBoardItem,
+  BoardingDayBoardResponse,
+  BoardingReservation,
+  BoardingUnitSettings,
+  BoardingOccupancyResponse,
+  BoardingCalendarEvent,
+  BoardingCalendarResponse,
+} from './api/hubBoardingApi';
 export { hubEncountersApi, hubClinicalApi } from './api/hubClinicalApi';
 export type { HubEncounter, HubEncounterStatus, DayBoardItem } from './api/hubClinicalApi';
 export { default as HubOrcamentosRoutes } from './pages/orcamentos/HubOrcamentosRoutes';
@@ -122,7 +130,8 @@ export { default as HubDashboardPage } from './pages/finance/HubDashboardPage';
 export { default as HubRelatoriosPage } from './pages/finance/HubRelatoriosPage';
 export { maskTaxIdForList } from './utils/maskTaxId';
 export { buildWhatsappLink, normalizeBrPhone } from './utils/whatsappLink';
-export { renderTemplate } from './utils/hubMessageTemplates';
+export { renderTemplate, DEFAULT_TEMPLATES, TEMPLATE_LABELS, TEMPLATE_PLACEHOLDER_HINTS } from './utils/hubMessageTemplates';
 export type { MessageTemplateKey } from './utils/hubMessageTemplates';
+export { useMessageTemplates } from './utils/useMessageTemplates';
 export { logMessageAttempt } from './api/hubMessageLogsApi';
 export type { MessageLogChannel, CreateMessageLogPayload } from './api/hubMessageLogsApi';

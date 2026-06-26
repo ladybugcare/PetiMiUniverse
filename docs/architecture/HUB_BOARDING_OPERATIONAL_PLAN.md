@@ -247,7 +247,7 @@ A equipe de Hotel & Creche consegue, **sem planilha paralela**:
 | 1 — Painel do dia MVP | **Concluída** (jun/2026) |
 | 2 — Reserva/estadia + diárias | **Concluída** (jun/2026) |
 | 3 — Drawer + relatório diário | **Concluída** (jun/2026) |
-| 4 — Capacidade & UX | Pendente |
-| 5 — Integrações | Pendente |
+| 4 — Capacidade & UX | **Concluída** (jun/2026) |
+| 5 — Integrações | **Concluída** (jun/2026) |
 
-*Última atualização: jun/2026 — Fases 0–3 implementadas. Executar `create_hub_boarding_reservations.sql` no Supabase SQL Editor para ativar as tabelas de reserva e logs diários.*
+*Última atualização: jun/2026 — Todas as fases (0–5) implementadas. Executar as migrações SQL no Supabase SQL Editor em ordem: `create_hub_boarding_reservations.sql` (item 51) e `create_hub_unit_boarding_settings.sql` (item 52).*

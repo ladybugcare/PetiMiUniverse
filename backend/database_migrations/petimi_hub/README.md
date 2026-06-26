@@ -131,6 +131,9 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 
 50. **`alter_hub_comandas_cancellation_resolution.sql`** — Pendência e resolução financeira após cancelamento operacional com pagamento antecipado (`cancellation_*` em `hub_comandas`, fila no Caixa). Executar depois do item 49.
 
+52. **Módulo Hotel & Creche — Fase 4 (capacidade por unidade)**:
+    - **`create_hub_unit_boarding_settings.sql`** — `hub_unit_boarding_settings` (vagas hotel, cães por turno creche, horário-limite de checkout; NULL = sem limite). Executar depois do item 51.
+
 51. **Módulo Hotel & Creche — Fases 2 e 3** (reservas, diárias e relatório diário):
     - **`create_hub_boarding_reservations.sql`** — `hub_boarding_reservations` (reserva/estadia por pet; índice único parcial por agendamento; `mode` hotel/daycare; `status` reserved/checked_in/checked_out/cancelled/no_show; `daily_rate_cents`; soft delete) + `hub_boarding_daily_logs` (relatório diário: alimentação, medicação, passeios, humor, notas; índice único por reserva × data).
     - Plano completo: [`HUB_BOARDING_OPERATIONAL_PLAN.md`](../../docs/architecture/HUB_BOARDING_OPERATIONAL_PLAN.md).
@@ -138,3 +141,5 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 52. **`create_hub_message_logs.sql`** — Log de tentativas de comunicação com tutores (Epic 9 — WhatsApp click-to-chat e notificações in-app). Tabela `hub_message_logs` com `channel` (`whatsapp_link` | `in_app`), `template_key`, referências a tutor/pet/staff. Não armazena conteúdo de mensagens. Executar depois de tutores e pets.
 
 53. **`alter_notifications_hub_types.sql`** — Amplia o CHECK de `notifications.type` para incluir tipos Hub (`hub_pet_ready`, `hub_pet_on_the_way`) e tipos já em uso no TypeScript mas ausentes do SQL original (`demand_invite`, `invite_accepted`, `invite_rejected`, `check_in`, `report_submitted`, `report_approved`). Executar depois de `create_notifications_system.sql` (Vet).
+
+54. **`alter_hub_clinic_settings_message_templates.sql`** — Adiciona coluna `message_templates jsonb NOT NULL DEFAULT '{}'` em `hub_clinic_settings`. Permite que cada clínica personalize os textos pré-preenchidos dos links WhatsApp (`pet_ready`, `pet_on_the_way`, `appointment_reminder`). Executar depois de `create_hub_clinic_settings.sql`.

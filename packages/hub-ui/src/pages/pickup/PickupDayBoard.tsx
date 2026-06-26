@@ -5,6 +5,7 @@ import { getStoredClinicId } from '@petimi/web-core';
 import type { PickupDayBoardItem, PickupDirection } from '../../api/hubPickupApi';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
 import { renderTemplate } from '../../utils/hubMessageTemplates';
+import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 
 // Colunas operacionais (status → coluna)
@@ -69,10 +70,12 @@ function DirectionBadge({ direction }: { direction: PickupDirection }) {
 function PickupCard({
   item,
   canWrite,
+  templateOverrides,
   onStatusChange,
 }: {
   item: PickupDayBoardItem;
   canWrite: boolean;
+  templateOverrides: Record<string, string>;
   onStatusChange: (item: PickupDayBoardItem, status: string) => void;
 }) {
   const clinicId = getStoredClinicId();
@@ -81,10 +84,7 @@ function PickupCard({
     item.status === 'in_progress'
       ? buildWhatsappLink(
           item.guardian?.phone,
-          renderTemplate('pet_on_the_way', {
-            tutor: item.guardian?.full_name,
-            pet: petName,
-          }),
+          renderTemplate('pet_on_the_way', { tutor: item.guardian?.full_name, pet: petName }, templateOverrides),
         )
       : null;
 
@@ -168,6 +168,7 @@ type Props = {
 };
 
 export default function PickupDayBoard({ items, canWrite, searchQ, onStatusChange }: Props) {
+  const templateOverrides = useMessageTemplates();
   const q = searchQ.toLowerCase().trim();
 
   const filtered = q
@@ -203,6 +204,7 @@ export default function PickupDayBoard({ items, canWrite, searchQ, onStatusChang
               key={item.appointment_id}
               item={item}
               canWrite={canWrite}
+              templateOverrides={templateOverrides}
               onStatusChange={onStatusChange}
             />
           ))}
