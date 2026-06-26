@@ -90,6 +90,7 @@ import {
   listHubGroomingSessionEvents,
   postHubGroomingSessionEvent,
 } from '../hubGroomingController';
+import { getHubPickupDayBoard } from '../hubPickupController';
 import {
   getHubGroomingSessionDrawer,
   postHubGroomingSessionExtra,
@@ -525,6 +526,14 @@ router.post(
   authenticateUser,
   requirePermission('hub.clinic.write'),
   completeHubEncounter
+);
+
+/* --- Leva e Traz (paradas operacionais) --- */
+router.get(
+  '/pickup/day-board',
+  authenticateUser,
+  requirePermission('pickup.routes.read'),
+  getHubPickupDayBoard,
 );
 
 /* --- Banho & Tosa (fila operacional) --- */

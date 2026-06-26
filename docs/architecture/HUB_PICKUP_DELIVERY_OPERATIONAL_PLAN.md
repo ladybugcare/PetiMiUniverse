@@ -241,11 +241,11 @@ A equipe consegue, **sem planilha paralela**:
 
 | Fase | Status |
 |------|--------|
-| 0 — Permissões + rota UI | Pendente |
-| 1 — Lista de paradas MVP | Pendente |
+| 0 — Permissões + rota UI | **Concluído** (jun/2026) |
+| 1 — Lista de paradas MVP | **Concluído** (jun/2026) |
 | 2 — Rotas + motorista | Pendente |
 | 3 — Execução | Pendente |
 | 4 — UX motorista mobile | Pendente |
 | 5 — Integrações | Pendente |
 
-*Última atualização: jun/2026 — revisar após cada fase concluída.*
+*Última atualização: jun/2026 — Fases 0 e 1 implementadas.*

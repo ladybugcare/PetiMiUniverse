@@ -16,6 +16,7 @@ import {
   HubClinicRoutes,
   HubGroomingQueuePage,
   HubBoardingPage,
+  HubPickupPage,
   HubCaixaPage,
   HubFinanceiroPage,
   HubDashboardPage,
@@ -28,7 +29,6 @@ import HubEmailConfirmedPage from './pages/HubEmailConfirmedPage';
 import HubClinicOnboardingPage from './pages/HubClinicOnboardingPage';
 import HubAppShell from './components/HubAppShell';
 import HubOnboardingGuard from './routes/HubOnboardingGuard';
-import HubComingSoonPage from './pages/HubComingSoonPage';
 import HubMeuPerfilPage from './pages/HubMeuPerfilPage';
 import HubClinicaPerfilPage from './pages/HubClinicaPerfilPage';
 import HubDesignSystemPage from './pages/HubDesignSystemPage';
@@ -85,7 +85,7 @@ const App: React.FC = () => {
             <Route path="clinica/*" element={<HubClinicRoutes />} />
             <Route path="hotel-creche" element={<HubBoardingPage />} />
             <Route path="banho-tosa" element={<HubGroomingQueuePage />} />
-            <Route path="leva-e-traz" element={<HubComingSoonPage title="Leva e Traz" />} />
+            <Route path="leva-e-traz" element={<HubPickupPage />} />
             <Route path="estoque/*" element={<HubEstoqueRoutes />} />
             <Route path="equipe" element={<HubStaffPage />} />
             <Route path="relatorios" element={<HubRelatoriosPage />} />
