@@ -148,6 +148,31 @@ function toIsoTs(dateYmd: string, hm: string): string {
   return d.toISOString();
 }
 
+function addDaysToYmd(dateYmd: string, days: number): string {
+  const [y, mo, d] = dateYmd.split('-').map(Number);
+  const dt = new Date(y!, (mo ?? 1) - 1, d ?? 1, 12, 0, 0, 0);
+  dt.setDate(dt.getDate() + days);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+/** Fim do intervalo HH:MM; avança um dia quando endHm <= startHm (cruza meia-noite). */
+function toEndIsoTs(dateYmd: string, startHm: string, endHm: string): string {
+  const endDate = hmToMinutes(endHm) <= hmToMinutes(startHm) ? addDaysToYmd(dateYmd, 1) : dateYmd;
+  return toIsoTs(endDate, endHm);
+}
+
+/** Primeiro instante em dateYmd+HM que não seja anterior a anchorIso. */
+function toIsoTsOnOrAfter(dateYmd: string, hm: string, anchorIso: string): string {
+  let candDate = dateYmd;
+  let candidate = toIsoTs(candDate, hm);
+  const anchorMs = new Date(anchorIso).getTime();
+  while (new Date(candidate).getTime() < anchorMs) {
+    candDate = addDaysToYmd(candDate, 1);
+    candidate = toIsoTs(candDate, hm);
+  }
+  return candidate;
+}
+
 function addMinutes(hm: string, mins: number): string {
   const [h, m] = hm.split(':').map(Number);
   const total = (h ?? 0) * 60 + (m ?? 0) + mins;
@@ -1089,7 +1114,17 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
     try {
       const startsAt = toIsoTs(dateYmd, startsHm);
-      const endsAt = toIsoTs(dateYmd, endsHm);
+      const endsAt = toEndIsoTs(dateYmd, startsHm, endsHm);
+
+      let lastServiceEndAt = endsAt;
+      const resolvedExtraBlocks = extraBlocks
+        .filter((b) => b.services.length > 0)
+        .map((b) => {
+          const blockStart = toIsoTsOnOrAfter(dateYmd, b.starts_hm, lastServiceEndAt);
+          const blockEnd = toEndIsoTs(blockStart.slice(0, 10), b.starts_hm, b.ends_hm);
+          lastServiceEndAt = blockEnd;
+          return { block: b, blockStart, blockEnd };
+        });
 
       const payload: CreateHubAppointmentPayload = {
         clinic_id: clinicId,
@@ -1127,13 +1162,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       if (withPickup) {
         payload.with_pickup_route_before = {
           starts_at: toIsoTs(dateYmd, pickupBefore.starts_hm),
-          ends_at: toIsoTs(dateYmd, pickupBefore.ends_hm),
+          ends_at: toEndIsoTs(dateYmd, pickupBefore.starts_hm, pickupBefore.ends_hm),
           hub_staff_member_id: pickupBefore.hub_staff_member_id || null,
           resource_label: pickupBefore.resource_label || null,
         };
+        const pickupAfterStart = toIsoTsOnOrAfter(dateYmd, pickupAfter.starts_hm, lastServiceEndAt);
         payload.with_pickup_route_after = {
-          starts_at: toIsoTs(dateYmd, pickupAfter.starts_hm),
-          ends_at: toIsoTs(dateYmd, pickupAfter.ends_hm),
+          starts_at: pickupAfterStart,
+          ends_at: toEndIsoTs(pickupAfterStart.slice(0, 10), pickupAfter.starts_hm, pickupAfter.ends_hm),
           hub_staff_member_id: pickupAfter.hub_staff_member_id || null,
           resource_label: pickupAfter.resource_label || null,
         };
@@ -1143,22 +1179,20 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         };
       }
 
-      if (extraBlocks.length > 0) {
-        payload.extra_blocks = extraBlocks
-          .filter((b) => b.services.length > 0)
-          .map((b) => ({
-            starts_at: toIsoTs(dateYmd, b.starts_hm),
-            ends_at: toIsoTs(dateYmd, b.ends_hm),
-            services: b.services.map((s) => ({
-              hub_service_type_id: s.hub_service_type_id,
-              duration_minutes: s.duration_minutes,
-              pricing_variant: s.pricing_variant ?? undefined,
-            })),
-            hub_staff_member_id: b.hub_staff_member_id || null,
-            resource_label: b.resource_label || null,
-            title: b.block_title.trim() || null,
-            notes: b.block_description.trim() || null,
-          }));
+      if (resolvedExtraBlocks.length > 0) {
+        payload.extra_blocks = resolvedExtraBlocks.map(({ block: b, blockStart, blockEnd }) => ({
+          starts_at: blockStart,
+          ends_at: blockEnd,
+          services: b.services.map((s) => ({
+            hub_service_type_id: s.hub_service_type_id,
+            duration_minutes: s.duration_minutes,
+            pricing_variant: s.pricing_variant ?? undefined,
+          })),
+          hub_staff_member_id: b.hub_staff_member_id || null,
+          resource_label: b.resource_label || null,
+          title: b.block_title.trim() || null,
+          notes: b.block_description.trim() || null,
+        }));
       }
 
       if (withRecurrence) {

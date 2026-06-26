@@ -8,6 +8,34 @@ exports.isRateLimitDisabled = isRateLimitDisabled;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const logger_js_1 = require("../utils/logger.js");
 require("../config/loadEnv.js");
+function parseJwtSub(authHeader) {
+    if (!authHeader?.startsWith('Bearer '))
+        return null;
+    const token = authHeader.slice(7);
+    const parts = token.split('.');
+    if (parts.length < 2 || !parts[1])
+        return null;
+    try {
+        const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+        return typeof payload.sub === 'string' && payload.sub.length > 0 ? payload.sub : null;
+    }
+    catch {
+        return null;
+    }
+}
+/** Chave por utilizador autenticado (JWT); senão IP (atrás de trust proxy). */
+function rateLimitKey(req) {
+    const sub = parseJwtSub(req.headers.authorization);
+    if (sub)
+        return `user:${sub}`;
+    return req.ip ?? 'unknown';
+}
+function parsePositiveInt(raw, fallback) {
+    if (!raw)
+        return fallback;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 /** Em .env.local: DISABLE_RATE_LIMIT=true (apenas NODE_ENV=development) */
 function isRateLimitDisabled() {
     return (process.env.NODE_ENV === 'development' && process.env.DISABLE_RATE_LIMIT === 'true');
@@ -21,19 +49,24 @@ function shouldSkipRateLimit(req) {
 }
 /**
  * Rate limiter geral para todas as rotas
- * Limites diferentes por ambiente:
- * - Development: 1000 req/15min (para suportar StrictMode e desenvolvimento ativo)
- * - Staging: 500 req/15min (para suportar polling de dashboard e múltiplos componentes)
- * - Production: 100 req/15min (limite mais restritivo)
+ * Limites diferentes por ambiente (override: GENERAL_RATE_LIMIT_MAX / GENERAL_RATE_LIMIT_WINDOW_MS):
+ * - Development: 1000 req/15min
+ * - Staging: 500 req/15min
+ * - Production: 800 req/15min (Hub faz polling + vários GETs por ecrã; 100 era demasiado baixo)
+ *
+ * Com Bearer JWT, a chave é o `sub` do token (por utilizador), não só o IP partilhado atrás do proxy.
  */
 const isDevelopment = process.env.NODE_ENV === 'development';
 const isStaging = process.env.NODE_ENV === 'staging' || process.env.RENDER_SERVICE_NAME?.includes('staging');
-const maxRequests = isDevelopment ? 1000 : isStaging ? 500 : 100;
+const defaultMaxRequests = isDevelopment ? 1000 : isStaging ? 500 : 800;
+const maxRequests = parsePositiveInt(process.env.GENERAL_RATE_LIMIT_MAX, defaultMaxRequests);
+const generalWindowMs = parsePositiveInt(process.env.GENERAL_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
 exports.generalLimiter = (0, express_rate_limit_1.default)({
-    windowMs: 15 * 60 * 1000, // 15 minutos
-    max: maxRequests, // máximo de requisições por IP (ajustado por ambiente)
+    windowMs: generalWindowMs,
+    max: maxRequests,
+    keyGenerator: rateLimitKey,
     message: {
-        error: 'Muitas requisições deste IP, tente novamente em alguns minutos.',
+        error: 'Muitas requisições. Tente novamente em alguns minutos.',
     },
     standardHeaders: true, // Retorna rate limit info nos headers `RateLimit-*`
     legacyHeaders: false, // Desabilita headers `X-RateLimit-*`
@@ -78,8 +111,9 @@ exports.createLimiter = (0, express_rate_limit_1.default)({
  */
 const statsMaxRequests = isDevelopment ? 500 : isStaging ? 300 : 200;
 exports.statsLimiter = (0, express_rate_limit_1.default)({
-    windowMs: 15 * 60 * 1000, // 15 minutos
+    windowMs: generalWindowMs,
     max: statsMaxRequests, // máximo de requisições por IP (ajustado por ambiente)
+    keyGenerator: rateLimitKey,
     message: {
         error: 'Muitas requisições de estatísticas. Tente novamente em alguns minutos.',
     },

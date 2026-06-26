@@ -110,19 +110,44 @@ type GuardianRow = {
   id: string;
   full_name: string;
   phone?: string | null;
-  address_street?: string | null;
-  address_neighborhood?: string | null;
-  address_city?: string | null;
-  address_state?: string | null;
+  street?: string | null;
+  street_number?: string | null;
+  district?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
 };
+
+/**
+ * Geocodifica um endereço textual usando Nominatim (OpenStreetMap, gratuito).
+ * Retorna null silenciosamente em caso de falha — geocoding não é crítico.
+ * Respeita o limite de uso: chamadas devem ser espaçadas ≥ 1 segundo.
+ */
+async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'PetiMiHub/1.0 (geocoding@petimi.com.br)' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Array<{ lat: string; lon: string }>;
+    if (data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch {
+    // falha silenciosa — geocoding é enriquecimento opcional
+  }
+  return null;
+}
 
 function formatAddress(gu: GuardianRow | null): string | null {
   if (!gu) return null;
-  return (
-    [gu.address_street, gu.address_neighborhood, gu.address_city, gu.address_state]
-      .filter(Boolean)
-      .join(', ') || null
-  );
+  const parts = [
+    gu.street && gu.street_number ? `${gu.street}, ${gu.street_number}` : gu.street,
+    gu.district,
+    gu.city,
+    gu.state,
+  ];
+  return parts.filter(Boolean).join(', ') || null;
 }
 
 // ─── GET /api/hub/pickup/day-board ────────────────────────────────────────
@@ -248,7 +273,7 @@ export const getHubPickupDayBoard = async (req: Request, res: Response) => {
       guIds.length
         ? supabaseAdmin
             .from('hub_guardians')
-            .select('id, full_name, phone, address_street, address_neighborhood, address_city, address_state')
+            .select('id, full_name, phone, street, street_number, district, city, state, postal_code')
             .in('id', guIds)
         : Promise.resolve({ data: [] }),
       stIds.length
@@ -520,28 +545,63 @@ export const addHubPickupStops = async (req: Request, res: Response) => {
     ];
     const { data: guardians } = await supabaseAdmin
       .from('hub_guardians')
-      .select('id, address_street, address_neighborhood, address_city, address_state, address_zip')
+      .select('id, street, street_number, district, city, state, postal_code')
       .in('id', guardianIds);
     const guardianMap = new Map(
       ((guardians ?? []) as Array<{ id: string } & Record<string, unknown>>).map((g) => [g.id, g]),
     );
 
-    const inserts = stops.map((s, idx) => {
+    type StopInsert = {
+      clinic_id: string;
+      hub_pickup_route_id: string;
+      hub_appointment_id: string;
+      pet_id: string | null;
+      guardian_id: string | null;
+      direction: string;
+      address_snapshot: Record<string, unknown> | null;
+      sequence: number;
+      planned_at: string | null;
+      status: string;
+    };
+
+    const inserts: StopInsert[] = [];
+    for (let idx = 0; idx < stops.length; idx++) {
+      const s = stops[idx];
       const appt = apptMap.get(s.hub_appointment_id)!;
-      const gu = appt.guardian_id ? guardianMap.get(appt.guardian_id) : null;
-      return {
+      const gu = (appt.guardian_id ? guardianMap.get(appt.guardian_id) : null) as Record<string, unknown> | undefined;
+
+      let addressSnapshot: Record<string, unknown> | null = gu ?? null;
+
+      // Geocodificar se o tutor tem endereço
+      if (gu) {
+        const addrStr = [gu.street, gu.district, gu.city, gu.state, 'Brasil']
+          .filter(Boolean)
+          .join(', ');
+        if (addrStr.length > 10) {
+          const coords = await geocodeAddress(addrStr);
+          if (coords) {
+            addressSnapshot = { ...gu, lat: coords.lat, lng: coords.lng };
+          }
+          // Respeita limite de 1 req/s do Nominatim entre paradas
+          if (idx < stops.length - 1) {
+            await new Promise<void>((r) => setTimeout(r, 1100));
+          }
+        }
+      }
+
+      inserts.push({
         clinic_id,
         hub_pickup_route_id: id,
         hub_appointment_id: s.hub_appointment_id,
         pet_id: appt.pet_id ?? null,
         guardian_id: appt.guardian_id ?? null,
         direction: s.direction,
-        address_snapshot: gu ?? null,
+        address_snapshot: addressSnapshot,
         sequence: s.sequence ?? idx,
         planned_at: s.planned_at ?? null,
         status: 'pending',
-      };
-    });
+      });
+    }
 
     const { data: created, error: insErr } = await supabaseAdmin
       .from('hub_pickup_stops')

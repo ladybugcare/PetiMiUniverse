@@ -36,7 +36,7 @@ interface LoginData {
 
 const requestCache = new Map<string, { data: unknown; timestamp: number }>();
 const CACHE_TTL = 12000;
-const maxRetries = 3;
+const max429Retries = 1;
 const baseDelay = 1000;
 
 export const apiRequest = async (
@@ -169,10 +169,9 @@ export const apiRequest = async (
         errorText = 'Erro desconhecido';
       }
 
-      if (response.status === 429 && retryCount < maxRetries) {
-        const delay = baseDelay * Math.pow(2, retryCount);
+      if (response.status === 429 && retryCount < max429Retries) {
         const retryAfter = response.headers.get('Retry-After');
-        const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : delay;
+        const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : baseDelay * 2;
         await new Promise((resolve) => setTimeout(resolve, waitTime));
         return apiRequest(endpoint, options, retryCount + 1);
       }
