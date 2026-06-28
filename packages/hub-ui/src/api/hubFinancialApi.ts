@@ -178,6 +178,8 @@ export type HubCashSession = {
 export type HubCashSessionSummary = {
   cash_session: HubCashSession;
   payments: Array<HubFinancePayment & { receivable?: Partial<HubFinanceReceivable> | null }>;
+  /** Todos os pagamentos da sessão (todos os métodos), para histórico. */
+  all_payments?: Array<HubFinancePayment & { receivable?: Partial<HubFinanceReceivable> | null }>;
   movements: Array<{
     id: string;
     movement_type: 'withdrawal' | 'deposit' | 'opening_adjustment';

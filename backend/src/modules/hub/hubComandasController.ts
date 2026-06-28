@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
-import { resolveOpenCashSessionId } from './hubFinancialController';
+import { resolvePaymentCashSessionId } from './hubFinancialController';
 import { resolveServiceLinePricing, type PetPricingFields } from './hubPricingResolve';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
 import { streamComandaPdf } from './hubComandaPdf';
@@ -2081,8 +2081,11 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
           }
           validatedCashSessionId = cashSession.id as string;
         } else {
-          // Pagamentos não-dinheiro: carimbar a sessão aberta da unidade para rastreamento do dia
-          validatedCashSessionId = await resolveOpenCashSessionId(clinic_id, recRow?.unit_id as string | null);
+          validatedCashSessionId = await resolvePaymentCashSessionId(
+            clinic_id,
+            recRow?.unit_id as string | null,
+            unitId,
+          );
         }
 
         const { error: pErr } = await supabaseAdmin.from('hub_payments').insert({
@@ -3400,7 +3403,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             }
             validatedCashSessionId = cash_session_id;
           } else {
-            validatedCashSessionId = await resolveOpenCashSessionId(clinic_id, unitId);
+            validatedCashSessionId = await resolvePaymentCashSessionId(clinic_id, unitId, unitId);
           }
 
           await supabaseAdmin.from('hub_payments').insert({

@@ -27,6 +27,76 @@ export async function resolveOpenCashSessionId(clinicId: string, unitId: string 
   return (data?.id as string | null) ?? null;
 }
 
+/** Resolve unidade efetiva do recebível (recebível → comanda) e associa à sessão aberta. */
+export async function resolvePaymentCashSessionId(
+  clinicId: string,
+  recUnitId: string | null | undefined,
+  comandaUnitId?: string | null,
+): Promise<string | null> {
+  const unitId = recUnitId ?? comandaUnitId ?? null;
+  return resolveOpenCashSessionId(clinicId, unitId);
+}
+
+function paymentYmd(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+/**
+ * Vincula pagamentos órfãos (sem cash_session_id) à sessão aberta quando pertencem
+ * à mesma unidade e ao mesmo dia da abertura — ex.: pagamento antes de abrir o caixa.
+ */
+export async function linkOrphanPaymentsToSession(
+  clinicId: string,
+  session: { id: string; unit_id: string; opened_at: string },
+): Promise<void> {
+  const sessionDay = paymentYmd(session.opened_at);
+  const { data: orphans, error } = await supabaseAdmin
+    .from('hub_payments')
+    .select('id, payment_date, receivable_id')
+    .eq('clinic_id', clinicId)
+    .is('cash_session_id', null);
+  if (error || !orphans?.length) return;
+
+  const recIds = [...new Set(orphans.map((p) => p.receivable_id as string).filter(Boolean))];
+  if (!recIds.length) return;
+
+  const { data: recs } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('id, unit_id, comanda_id')
+    .in('id', recIds);
+
+  const comandaIds = [...new Set((recs ?? []).map((r) => r.comanda_id as string).filter(Boolean))];
+  const comandaUnitById = new Map<string, string | null>();
+  if (comandaIds.length) {
+    const { data: comandas } = await supabaseAdmin
+      .from('hub_comandas')
+      .select('id, unit_id')
+      .in('id', comandaIds);
+    for (const c of comandas ?? []) {
+      comandaUnitById.set(c.id as string, (c.unit_id as string | null) ?? null);
+    }
+  }
+
+  const unitByRecId = new Map<string, string | null>();
+  for (const r of recs ?? []) {
+    const comandaId = r.comanda_id as string | null;
+    const unit = (r.unit_id as string | null) ?? (comandaId ? comandaUnitById.get(comandaId) ?? null : null);
+    unitByRecId.set(r.id as string, unit);
+  }
+
+  const toLink: string[] = [];
+  for (const p of orphans) {
+    if (paymentYmd(String(p.payment_date)) !== sessionDay) continue;
+    const unit = unitByRecId.get(p.receivable_id as string);
+    if (unit !== session.unit_id) continue;
+    toLink.push(p.id as string);
+  }
+
+  if (toLink.length) {
+    await supabaseAdmin.from('hub_payments').update({ cash_session_id: session.id }).in('id', toLink);
+  }
+}
+
 /** Unidade principal da clínica, ou a primeira cadastrada (orçamentos sem unit_id herdavam null e sumiam no filtro do financeiro). */
 async function resolveClinicDefaultUnitId(clinicId: string): Promise<string | null> {
   const { data: main } = await supabaseAdmin
@@ -802,7 +872,7 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
 
     const { data: rec, error: rErr } = await supabaseAdmin
       .from('hub_receivables')
-      .select('id, clinic_id, unit_id, status, final_amount')
+      .select('id, clinic_id, unit_id, comanda_id, status, final_amount')
       .eq('id', receivableId)
       .maybeSingle();
     if (rErr || !rec || rec.clinic_id !== clinic_id) return res.status(404).json({ error: 'Recebível não encontrado' });
@@ -831,8 +901,20 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
       }
       validatedCashSessionId = cashSession.id as string;
     } else {
-      // Pagamentos não-dinheiro: carimbar a sessão aberta da unidade para rastreamento do dia
-      validatedCashSessionId = await resolveOpenCashSessionId(clinic_id, rec.unit_id as string | null);
+      let comandaUnitId: string | null = null;
+      if (rec.comanda_id) {
+        const { data: comanda } = await supabaseAdmin
+          .from('hub_comandas')
+          .select('unit_id')
+          .eq('id', rec.comanda_id as string)
+          .maybeSingle();
+        comandaUnitId = (comanda?.unit_id as string | null) ?? null;
+      }
+      validatedCashSessionId = await resolvePaymentCashSessionId(
+        clinic_id,
+        rec.unit_id as string | null,
+        comandaUnitId,
+      );
     }
 
     const payAt = payment_date ?? new Date().toISOString();
@@ -1445,6 +1527,13 @@ export const postHubFinanceCashSessionOpen = async (req: Request, res: Response)
       .select('*')
       .single();
     if (error) return res.status(500).json({ error: error.message });
+    if (data) {
+      await linkOrphanPaymentsToSession(clinic_id, {
+        id: data.id as string,
+        unit_id: data.unit_id as string,
+        opened_at: data.opened_at as string,
+      });
+    }
     return res.status(201).json({ cash_session: data });
   } catch (e: unknown) {
     console.error('postHubFinanceCashSessionOpen', e);
@@ -1594,7 +1683,13 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
     if (sErr) return res.status(500).json({ error: sErr.message });
     if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
 
-    const [{ data: payments, error: pErr }, { data: allPayments, error: allPErr }, { data: movements, error: mErr }] = await Promise.all([
+    await linkOrphanPaymentsToSession(clinicId.data, {
+      id: session.id as string,
+      unit_id: session.unit_id as string,
+      opened_at: session.opened_at as string,
+    });
+
+    const [{ data: payments, error: pErr }, { data: allPayments, error: allPErr }, { data: allPaymentsDetailed, error: allDetErr }, { data: movements, error: mErr }] = await Promise.all([
       supabaseAdmin
         .from('hub_payments')
         .select('*, receivable:hub_receivables(id, source_type, source_id, guardian_id, final_amount)')
@@ -1608,6 +1703,12 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
         .eq('clinic_id', clinicId.data)
         .eq('cash_session_id', sessionId.data),
       supabaseAdmin
+        .from('hub_payments')
+        .select('*, receivable:hub_receivables(id, source_type, source_id, guardian_id, final_amount)')
+        .eq('clinic_id', clinicId.data)
+        .eq('cash_session_id', sessionId.data)
+        .order('payment_date', { ascending: false }),
+      supabaseAdmin
         .from('hub_cash_movements')
         .select('*')
         .eq('clinic_id', clinicId.data)
@@ -1616,6 +1717,7 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
     ]);
     if (pErr) return res.status(500).json({ error: pErr.message });
     if (allPErr) return res.status(500).json({ error: allPErr.message });
+    if (allDetErr) return res.status(500).json({ error: allDetErr.message });
     if (mErr) return res.status(500).json({ error: mErr.message });
 
     const cashInBase = round2((payments ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0));
@@ -1645,6 +1747,7 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
     return res.json({
       cash_session: session,
       payments: payments ?? [],
+      all_payments: allPaymentsDetailed ?? [],
       movements: movements ?? [],
       summary: {
         opening_balance: round2(openingBalance),

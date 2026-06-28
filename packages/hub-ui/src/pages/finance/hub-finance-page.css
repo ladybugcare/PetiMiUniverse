@@ -1242,3 +1242,201 @@
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
+
+/* ── Caixa — layout unificado (3 colunas) ─────────────────────────────────── */
+
+.hub-caixa-page__ops-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .hub-caixa-page__ops-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-caixa-page__col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.hub-caixa-page__card {
+  background: #fff;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(74, 59, 58, 0.06);
+}
+
+.hub-caixa-page__card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-caixa-page__card-title-help {
+  display: inline-flex;
+  color: #9a8a84;
+  cursor: help;
+}
+
+.hub-caixa-page__form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.hub-caixa-page__form-row--single {
+  grid-template-columns: 1fr;
+}
+
+.hub-caixa-page__money-field {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.hub-caixa-page__money-field .hub-clientes__input {
+  border: none;
+  border-radius: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-caixa-page__money-prefix {
+  padding: 0 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #8a6f64;
+  white-space: nowrap;
+}
+
+.hub-caixa-page__btn-register {
+  margin-top: 4px;
+}
+
+.hub-caixa-page__kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 14px;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-caixa-page__kv-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-caixa-page__kv-row--divider {
+  border-top: 1px solid var(--hc-border, #e5dcd6);
+  margin-top: 4px;
+  padding-top: 12px;
+}
+
+.hub-caixa-page__kv-diff--pos {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.hub-caixa-page__kv-diff--neg {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.hub-caixa-page__btn-close {
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-caixa-page__methods-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hub-caixa-page__methods-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(229, 220, 214, 0.6);
+}
+
+.hub-caixa-page__methods-row:last-child {
+  border-bottom: none;
+}
+
+.hub-caixa-page__methods-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-caixa-page__methods-total {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hc-border, #e5dcd6);
+  font-weight: 700;
+}
+
+.hub-caixa-page__methods-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #8a6f64;
+  line-height: 1.4;
+}
+
+.hub-caixa-page__empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: #8a6f64;
+}
+
+.hub-caixa-page__history-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.hub-caixa-page__history-table {
+  font-size: 12px;
+}
+
+.hub-caixa-page__history-table th,
+.hub-caixa-page__history-table td {
+  padding: 8px 6px;
+}
+
+.hub-caixa-page__history-table tbody tr {
+  cursor: pointer;
+}
+
+.hub-caixa-page__open-card .hub-clientes__field {
+  margin-bottom: 12px;
+}
