@@ -131,6 +131,8 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 
 50. **`alter_hub_comandas_cancellation_resolution.sql`** — Pendência e resolução financeira após cancelamento operacional com pagamento antecipado (`cancellation_*` em `hub_comandas`, fila no Caixa). Executar depois do item 49.
 
+50b. **`alter_hub_comandas_finance_handoff.sql`** — Coluna `finance_handoff_at` em `hub_comandas` (preenchida no checkout `leave_pending`; bloqueia edição no Caixa). Executar depois do item 49.
+
 52. **Módulo Hotel & Creche — Fase 4 (capacidade por unidade)**:
     - **`create_hub_unit_boarding_settings.sql`** — `hub_unit_boarding_settings` (vagas hotel, cães por turno creche, horário-limite de checkout; NULL = sem limite). Executar depois do item 51.
 
@@ -143,3 +145,5 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 53. **`alter_notifications_hub_types.sql`** — Amplia o CHECK de `notifications.type` para incluir tipos Hub (`hub_pet_ready`, `hub_pet_on_the_way`) e tipos já em uso no TypeScript mas ausentes do SQL original (`demand_invite`, `invite_accepted`, `invite_rejected`, `check_in`, `report_submitted`, `report_approved`). Executar depois de `create_notifications_system.sql` (Vet).
 
 54. **`alter_hub_clinic_settings_message_templates.sql`** — Adiciona coluna `message_templates jsonb NOT NULL DEFAULT '{}'` em `hub_clinic_settings`. Permite que cada clínica personalize os textos pré-preenchidos dos links WhatsApp (`pet_ready`, `pet_on_the_way`, `appointment_reminder`). Executar depois de `create_hub_clinic_settings.sql`.
+
+55. **`create_hub_service_group_checklist_templates.sql`** — Templates de checklist operacional por grupo de serviço (`hub_service_group_checklist_templates`). Migra dados de `hub_grooming_checklist_templates` (nível clínica) para `banho_tosa`. Executar depois dos itens 17 e 32.

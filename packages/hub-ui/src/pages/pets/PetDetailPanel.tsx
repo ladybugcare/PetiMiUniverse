@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   X,
   Pencil,
@@ -81,6 +81,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   unitId,
   canCreateReceivable = false,
 }) => {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<PetDetailTab>('resumo');
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -119,15 +120,22 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
 
   const handleOpenComandaManual = async () => {
     if (!clinicId) return;
+    const guardianId = pet.primary_guardian?.guardian_id;
+    if (!guardianId) {
+      alert('Este pet não tem tutor principal cadastrado.');
+      return;
+    }
     setOpeningComanda(true);
     try {
       const detail = await hubComandaApi.openComanda({
         clinic_id: clinicId,
         origin_type: 'manual',
+        guardian_id: guardianId,
         unit_id: unitId ?? undefined,
+        manual_lines: [],
       });
-      setCheckoutComandaId((detail.comanda as Record<string, unknown>).id as string);
-      void loadFinanceiro();
+      const comandaId = (detail.comanda as Record<string, unknown>).id as string;
+      navigate(`/hub/caixa/comanda/${comandaId}`);
     } catch (e: unknown) {
       alert((e as Error)?.message || 'Erro ao abrir comanda');
     } finally {

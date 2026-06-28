@@ -40,7 +40,6 @@ export type CaixaMetricsRowProps = {
   cashOpenedAt: string | null | undefined;
   cashPaymentsTotal: number;
   expectedBalance: number;
-  cancellationPendingCount: number;
   dayBoardCount: number;
 };
 
@@ -51,7 +50,6 @@ export const CaixaMetricsRow: React.FC<CaixaMetricsRowProps> = ({
   cashOpenedAt,
   cashPaymentsTotal,
   expectedBalance,
-  cancellationPendingCount,
   dayBoardCount,
 }) => {
   const dash = '—';
@@ -59,7 +57,7 @@ export const CaixaMetricsRow: React.FC<CaixaMetricsRowProps> = ({
   if (loading) {
     return (
       <div className="hub-clientes__metrics hub-caixa-page__metrics" aria-live="polite">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
+        {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="hub-clientes__metric-card">
             <div className="hub-pets-metric-card__top">
               <div>
@@ -106,13 +104,6 @@ export const CaixaMetricsRow: React.FC<CaixaMetricsRowProps> = ({
         value={formatBrl(expectedBalance)}
         sub="Inicial + dinheiro ± movimentos"
         icon={<ClipboardList size={20} strokeWidth={1.75} />}
-        iconTone="brand"
-      />
-      <MetricCard
-        label="Cancelamentos"
-        value={String(cancellationPendingCount)}
-        sub="Pagamento antecipado cancelado"
-        icon={<AlertCircle size={20} strokeWidth={1.75} />}
         iconTone="brand"
       />
       <MetricCard

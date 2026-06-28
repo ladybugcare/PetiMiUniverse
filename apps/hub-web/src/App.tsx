@@ -20,6 +20,8 @@ import {
   PickupDriverView,
   HubCaixaPage,
   HubComandaPage,
+  HubComandaFinancePage,
+  HubComandaReadyToSendPage,
   HubFinanceiroPage,
   HubDashboardPage,
   HubRelatoriosPage,
@@ -35,6 +37,7 @@ import HubMeuPerfilPage from './pages/HubMeuPerfilPage';
 import HubClinicaPerfilPage from './pages/HubClinicaPerfilPage';
 import HubDesignSystemPage from './pages/HubDesignSystemPage';
 import PublicQuotePage from './pages/PublicQuotePage';
+import PublicComandaPage from './pages/PublicComandaPage';
 import HubHomePage from './pages/HubHomePage';
 import { useParams } from 'react-router-dom';
 
@@ -54,6 +57,7 @@ const App: React.FC = () => {
           <Route path="/signup" element={<HubSignUpPage />} />
           <Route path="/email-confirmed" element={<HubEmailConfirmedPage />} />
           <Route path="/orcamento/:token" element={<PublicQuotePage />} />
+          <Route path="/comanda/:token" element={<PublicComandaPage />} />
           <Route
             path="/hub/onboarding/clinica"
             element={
@@ -88,8 +92,11 @@ const App: React.FC = () => {
             <Route path="pets/novo" element={<HubPetWizardPage />} />
             <Route path="pets" element={<HubPetsPage />} />
             <Route path="financeiro" element={<HubFinanceiroPage />} />
+            <Route path="financeiro/comanda/:id" element={<HubComandaFinancePage />} />
+            <Route path="financeiro/comanda/:id/pronto-para-envio" element={<HubComandaReadyToSendPage />} />
             <Route path="caixa" element={<HubCaixaPage />} />
             <Route path="caixa/comanda/:id" element={<HubComandaPage />} />
+          <Route path="caixa/comanda/:id/pronto-para-envio" element={<HubComandaReadyToSendPage />} />
             <Route path="orcamentos/*" element={<HubOrcamentosRoutes />} />
             <Route path="servicos/*" element={<HubServicosRoutes />} />
             <Route path="clinica/*" element={<HubClinicRoutes />} />

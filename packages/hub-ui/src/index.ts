@@ -113,8 +113,8 @@ export type {
   HubQuotePetInput,
   HubQuoteLine,
 } from './api/hubQuotesApi';
-export { hubComandaApi } from './api/hubComandaApi';
-export type { HubComandaOriginType, HubComandaItem, HubComandaDetailResponse, HubComandaOpenBody, HubComandaManualLine } from './api/hubComandaApi';
+export type { HubComandaOriginType, HubComandaItem, HubComandaDetailResponse, HubComandaOpenBody, HubComandaManualLine, HubPublicComandaResponse, HubComandaAllowedGuardian, HubComandaGuardianEmbed, HubComandaEditContext, HubComandaEditScopes } from './api/hubComandaApi';
+export { hubComandaApi, openHubComandaPdf, downloadHubComandaPdf } from './api/hubComandaApi';
 export { ComandaCheckoutDrawer } from './pages/finance/ComandaCheckoutDrawer';
 export type { ComandaCheckoutDrawerProps } from './pages/finance/ComandaCheckoutDrawer';
 export { hubFinancialApi } from './api/hubFinancialApi';
@@ -140,6 +140,9 @@ export type {
 } from './api/hubFinancialApi';
 export { default as HubCaixaPage } from './pages/finance/HubCaixaPage';
 export { default as HubComandaPage } from './pages/finance/HubComandaPage';
+export { default as HubComandaFinancePage } from './pages/finance/HubComandaFinancePage';
+export { default as HubComandaReadyToSendPage } from './pages/finance/HubComandaReadyToSendPage';
+export { HubComandaPublicView } from './pages/finance/HubComandaPublicView';
 export { default as HubFinanceiroPage } from './pages/finance/HubFinanceiroPage';
 export { default as HubDashboardPage } from './pages/finance/HubDashboardPage';
 export { default as HubRelatoriosPage } from './pages/finance/HubRelatoriosPage';

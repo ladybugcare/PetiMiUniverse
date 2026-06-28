@@ -22,6 +22,9 @@ export type HubFinanceDayBoardBilling = {
   comanda_id: string | null;
   comanda_status: string | null;
   has_receivable: boolean;
+  receivable_status: 'pending' | 'partially_paid' | 'paid' | null;
+  finance_handoff_at?: string | null;
+  active_receivable_id?: string | null;
 };
 
 export type HubFinanceDayBoardItem = {
@@ -35,6 +38,7 @@ export type HubFinanceDayBoardItem = {
   pet: { id: string; name: string } | null;
   operational_status: string;
   estimated_amount: number;
+  services: { name: string; amount: number }[];
   billing: HubFinanceDayBoardBilling;
 };
 
@@ -44,6 +48,7 @@ export type HubFinanceReceivable = {
   unit_id: string | null;
   guardian_id: string | null;
   guardian?: { id: string; full_name: string } | null;
+  comanda_id?: string | null;
   source_type: string;
   source_id: string;
   original_amount: number;
@@ -278,10 +283,16 @@ export const hubFinancialApi = {
     return res.items ?? [];
   },
 
-  async getDayBoard(clinicId: string, unitId?: string | null, date?: string | null): Promise<HubFinanceDayBoardItem[]> {
+  async getDayBoard(
+    clinicId: string,
+    unitId?: string | null,
+    date?: string | null,
+    opts?: { billing_scope?: 'financeiro' },
+  ): Promise<HubFinanceDayBoardItem[]> {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (unitId) q.set('unit_id', unitId);
     if (date) q.set('date', date);
+    if (opts?.billing_scope) q.set('billing_scope', opts.billing_scope);
     const res = (await apiRequest(`${base}/day-board?${q.toString()}`)) as {
       items?: HubFinanceDayBoardItem[];
     };

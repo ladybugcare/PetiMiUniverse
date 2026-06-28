@@ -4,6 +4,7 @@ import { HubTabs } from '../../components/HubTabs';
 const links = [
   { to: 'servicos-funcoes', label: 'Serviços e Funções' },
   { to: 'templates-mensagem', label: 'Templates de Mensagem' },
+  { to: 'checklists', label: 'Checklists operacionais' },
 ];
 
 const HubSystemSettingsSubnav: React.FC = () => {

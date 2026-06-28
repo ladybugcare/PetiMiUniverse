@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, ExternalLink, Phone, Mail, MapPin, Info, Pencil, FilePlus2, Coins } from 'lucide-react';
 import type { HubGuardian, HubGuardianPet } from '../../api/hubGuardiansApi';
 import { formatGuardianAddress } from './formatters';
@@ -48,6 +49,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   unitId,
   canCreateReceivable = false,
 }) => {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<DetailTab>('resumo');
   const [comandas, setComandas] = useState<Array<Record<string, unknown>>>([]);
   const [receivables, setReceivables] = useState<HubFinanceReceivable[]>([]);
@@ -95,9 +97,10 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
         origin_type: 'manual',
         guardian_id: guardian.id,
         unit_id: unitId ?? undefined,
+        manual_lines: [],
       });
-      setCheckoutComandaId((detail.comanda as Record<string, unknown>).id as string);
-      void loadFinanceiro();
+      const comandaId = (detail.comanda as Record<string, unknown>).id as string;
+      navigate(`/hub/caixa/comanda/${comandaId}`);
     } catch (e: unknown) {
       alert((e as Error)?.message || 'Erro ao abrir comanda');
     } finally {

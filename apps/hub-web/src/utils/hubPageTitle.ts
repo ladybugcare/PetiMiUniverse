@@ -9,6 +9,8 @@ const ROUTES: { path: string; title: string }[] = [
   { path: '/hub/estoque/validade', title: 'Estoque — Validade' },
   { path: '/hub/estoque/alertas', title: 'Estoque — Alertas' },
   { path: '/hub/estoque/inventario', title: 'Estoque — Inventário' },
+  { path: '/hub/configuracoes-sistema/checklists', title: 'Configurações — Checklists operacionais' },
+  { path: '/hub/configuracoes-sistema/templates-mensagem', title: 'Configurações — Templates de Mensagem' },
   { path: '/hub/configuracoes-sistema/servicos-funcoes', title: 'Configurações — Serviços e Funções' },
   { path: '/hub/configuracoes-sistema', title: 'Configurações do Sistema' },
   { path: '/hub/clinica/atendimentos', title: 'Clínica — Atendimentos' },
@@ -54,6 +56,9 @@ export function hubPageTitleFromPath(pathname: string): string {
   if (/^\/hub\/clinica\/atendimentos\/[^/]+$/.test(pathname)) return 'Clínica — Atendimento';
   if (/^\/hub\/clientes\/[^/]+$/.test(pathname)) return 'Cliente';
   if (/^\/hub\/orcamentos\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Orçamento — Pronto para envio';
+  if (/^\/hub\/caixa\/comanda\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Comanda — Pronto para envio';
+  if (/^\/hub\/caixa\/comanda\/[^/]+$/.test(pathname)) return 'Comanda';
+  if (/^\/comanda\//.test(pathname)) return 'Comanda (público)';
   const hit = ROUTES_BY_SPECIFICITY.find((r) => pathname === r.path || pathname.startsWith(`${r.path}/`));
   return hit?.title ?? 'PetMi Hub';
 }

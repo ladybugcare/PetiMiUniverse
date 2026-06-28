@@ -70,6 +70,7 @@ const demandInvites_js_1 = __importDefault(require("./routes/demandInvites.js"))
 const workProof_js_1 = __importDefault(require("./routes/workProof.js"));
 const index_js_1 = __importDefault(require("./modules/hub/routes/index.js"));
 const publicQuotes_js_1 = __importDefault(require("./modules/hub/routes/publicQuotes.js"));
+const publicComandas_js_1 = __importDefault(require("./modules/hub/routes/publicComandas.js"));
 // 🔹 Variáveis de ambiente são carregadas automaticamente por loadEnv.ts
 // quando importamos supabase (config/supabase.ts importa './loadEnv')
 // Ordem de carregamento: .env.${NODE_ENV}.local > .env.${NODE_ENV} > .env.local > .env
@@ -211,6 +212,7 @@ app.use('/api', demandInvites_js_1.default);
 app.use('/api', workProof_js_1.default);
 app.use('/api/hub', index_js_1.default);
 app.use('/api/public', publicQuotes_js_1.default);
+app.use('/api/public', publicComandas_js_1.default);
 app.use('/health', health_js_1.default);
 // 🔹 Healthcheck melhorado (verifica dependências)
 app.get('/', async (req, res) => {

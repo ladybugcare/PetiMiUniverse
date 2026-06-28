@@ -1,10 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Download, MessageCircle } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubDateField } from '../../components/HubDateField';
-import { hubComandaApi, type HubComandaDetailResponse, type HubComandaOriginType } from '../../api/hubComandaApi';
+import {
+  hubComandaApi,
+  downloadHubComandaPdf,
+  type HubComandaDetailResponse,
+  type HubComandaOriginType,
+} from '../../api/hubComandaApi';
 import { hubFinancialApi, type HubPaymentMethod } from '../../api/hubFinancialApi';
+import {
+  buildWhatsAppMessageChargePending,
+  buildWhatsAppMessagePaymentReceipt,
+  formatBrlLabel,
+  formatDueDateLabel,
+  guardianFirstName,
+  paymentMethodLabel,
+  waMeUrlWithText,
+} from './hubComandaShareUtils';
 import '../clientes/clientes.css';
 import './hub-finance-page.css';
+import '../orcamentos/orcamentos-page.css';
 
 function formatBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -15,7 +31,12 @@ export type ComandaCheckoutDrawerProps = {
   onClose: () => void;
   clinicId: string;
   unitId: string;
-  onSuccess?: (payload: { receivableIds: string[]; comandaId: string }) => void;
+  mode?: 'caixa' | 'financeiro';
+  onSuccess?: (payload: {
+    receivableIds: string[];
+    comandaId: string;
+    kind: 'leave_pending' | 'receive_now' | 'cancel';
+  }) => void;
 } & (
   | { comandaId: string; originType?: never; originId?: never }
   | { comandaId?: never; originType: HubComandaOriginType; originId: string }
@@ -26,6 +47,7 @@ export function ComandaCheckoutDrawer({
   onClose,
   clinicId,
   unitId,
+  mode = 'caixa',
   onSuccess,
   ...rest
 }: ComandaCheckoutDrawerProps) {
@@ -44,6 +66,14 @@ export function ComandaCheckoutDrawer({
   /** advance = antecipado (comanda pode permanecer aberta até concluir o serviço). */
   const [paymentTiming, setPaymentTiming] = useState<'on_checkout' | 'advance'>('on_checkout');
   const [waiveReason, setWaiveReason] = useState('');
+  const [successState, setSuccessState] = useState<{
+    kind: 'leave_pending' | 'receive_now';
+    comandaId: string;
+    amount: number;
+    paymentMethod?: HubPaymentMethod;
+    receivableIds: string[];
+  } | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
 
   const loadComanda = useCallback(async () => {
     setLoading(true);
@@ -84,19 +114,20 @@ export function ComandaCheckoutDrawer({
     setLoading(true);
     setError(null);
     try {
-      const d = await hubComandaApi.syncComandaFromOrigin(cid, clinicId);
+      const d = await hubComandaApi.syncComandaFromOrigin(cid, clinicId, mode);
       setDetail(d);
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Erro ao sincronizar');
     } finally {
       setLoading(false);
     }
-  }, [clinicId, detail?.comanda?.id]);
+  }, [clinicId, detail?.comanda?.id, mode]);
 
   useEffect(() => {
     if (!open) {
       setDetail(null);
       setError(null);
+      setSuccessState(null);
       return;
     }
     void loadComanda();
@@ -123,6 +154,24 @@ export function ComandaCheckoutDrawer({
     const set = new Set(detail.open_item_ids);
     return detail.items.filter((it) => set.has(it.id));
   }, [detail]);
+
+  const checkoutLocked = Boolean(detail?.edit_scopes && !detail.edit_scopes[mode]);
+
+  const checkoutLockedMessage = useMemo(() => {
+    const reason = detail?.edit_scopes?.locked_reason;
+    const moduleLabel = mode === 'financeiro' ? 'Financeiro' : 'Caixa';
+    if (!reason) return `Esta comanda não pode ser cobrada no ${moduleLabel.toLowerCase()}.`;
+    if (reason === 'paid_and_complete') {
+      return 'Comanda quitada e serviço concluído. Alterações de valor via estorno no Financeiro.';
+    }
+    if (reason === 'finance_handoff' && mode === 'caixa') {
+      return 'Comanda enviada ao financeiro. Cobrança pelo módulo Financeiro.';
+    }
+    if (reason === 'closed') {
+      return 'Comanda não está aberta.';
+    }
+    return `Esta comanda não pode ser cobrada no ${moduleLabel.toLowerCase()}.`;
+  }, [detail?.edit_scopes?.locked_reason, mode]);
 
   const groupTotals = useMemo(() => {
     if (!openItems.length) return [];
@@ -186,13 +235,14 @@ export function ComandaCheckoutDrawer({
           waive_reason: waiveReason.trim(),
           payment_timing: 'on_checkout',
         });
-        onSuccess?.({ receivableIds: [], comandaId });
+        onSuccess?.({ receivableIds: [], comandaId, kind: 'cancel' });
         onClose();
         return;
       }
 
       if (action === 'leave_pending') {
-        await hubComandaApi.checkout(comandaId, {
+        const totalPending = groupTotals.reduce((s, g) => s + g.total, 0);
+        const res = await hubComandaApi.checkout(comandaId, {
           clinic_id: clinicId,
           grouping,
           tutor_items_group_index: grouping === 'by_pet' ? tutorGroupIdx : undefined,
@@ -200,8 +250,12 @@ export function ComandaCheckoutDrawer({
           due_date: dueDate,
           payment_timing: paymentTiming,
         });
-        onSuccess?.({ receivableIds: [], comandaId });
-        onClose();
+        setSuccessState({
+          kind: 'leave_pending',
+          comandaId,
+          amount: totalPending,
+          receivableIds: res.receivable_ids ?? [],
+        });
         return;
       }
 
@@ -234,8 +288,14 @@ export function ComandaCheckoutDrawer({
         payments: payments.length ? payments : undefined,
         payment_timing: paymentTiming,
       });
-      onSuccess?.({ receivableIds: res.receivable_ids, comandaId });
-      onClose();
+      const paidAmount = payments.reduce((s, p) => s + p.amount, 0);
+      setSuccessState({
+        kind: 'receive_now',
+        comandaId,
+        amount: paidAmount,
+        paymentMethod,
+        receivableIds: res.receivable_ids,
+      });
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Erro no checkout');
     } finally {
@@ -243,34 +303,139 @@ export function ComandaCheckoutDrawer({
     }
   };
 
+  const guardianPhone = useMemo(() => {
+    const g = detail?.comanda?.guardian as { phone?: string | null; full_name?: string } | null | undefined;
+    return g?.phone?.trim() ?? '';
+  }, [detail]);
+
+  const guardianName = useMemo(() => {
+    const g = detail?.comanda?.guardian as { full_name?: string } | null | undefined;
+    return g?.full_name ?? '';
+  }, [detail]);
+
+  const openSuccessWhatsApp = async () => {
+    if (!successState || !guardianPhone) return;
+    setShareBusy(true);
+    try {
+      const { public_token } = await hubComandaApi.ensurePublicToken(successState.comandaId, clinicId);
+      const publicUrl = hubComandaApi.publicLink(public_token);
+      const firstName = guardianFirstName(guardianName);
+      const msg =
+        successState.kind === 'leave_pending'
+          ? buildWhatsAppMessageChargePending(
+              firstName,
+              formatBrlLabel(successState.amount),
+              formatDueDateLabel(dueDate),
+              publicUrl,
+            )
+          : buildWhatsAppMessagePaymentReceipt(
+              firstName,
+              formatBrlLabel(successState.amount),
+              paymentMethodLabel(successState.paymentMethod ?? paymentMethod),
+            );
+      const wa = waMeUrlWithText(guardianPhone, msg);
+      if (wa) window.open(wa, '_blank', 'noopener,noreferrer');
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const downloadSuccessPdf = async () => {
+    if (!successState) return;
+    setShareBusy(true);
+    try {
+      await downloadHubComandaPdf(successState.comandaId, clinicId);
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const finishSuccess = () => {
+    if (successState) {
+      onSuccess?.({
+        receivableIds: successState.receivableIds,
+        comandaId: successState.comandaId,
+        kind: successState.kind,
+      });
+    }
+    setSuccessState(null);
+    onClose();
+  };
+
   return (
     <HubSidePanel
       open={open}
-      title="Cobrar — Comanda"
-      subtitle="Confirme os itens e registre o pagamento ou envie ao financeiro."
-      onClose={onClose}
+      title={successState ? 'Cobrança registrada' : 'Cobrar — Comanda'}
+      subtitle={
+        successState
+          ? 'Envie a confirmação ou cobrança ao cliente antes de fechar.'
+          : 'Confirme os itens e registre o pagamento ou envie ao financeiro.'
+      }
+      onClose={successState ? finishSuccess : onClose}
       footer={
-        <div className="hub-finance-page__drawer-footer">
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost"
-            onClick={onClose}
-            disabled={loading}
-          >
-            Fechar
-          </button>
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary"
-            onClick={() => void submit()}
-            disabled={loading || !detail}
-          >
-            {loading ? 'Processando…' : 'Confirmar'}
-          </button>
-        </div>
+        successState ? (
+          <div className="hub-finance-page__drawer-footer">
+            <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={finishSuccess}>
+              Concluir
+            </button>
+          </div>
+        ) : (
+          <div className="hub-finance-page__drawer-footer">
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost"
+              onClick={onClose}
+              disabled={loading}
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              onClick={() => void submit()}
+              disabled={loading || !detail || checkoutLocked}
+            >
+              {loading ? 'Processando…' : 'Confirmar'}
+            </button>
+          </div>
+        )
       }
     >
       <div className="hub-finance-page__card-panel hub-finance-page__card-panel--stack">
+        {successState ? (
+          <section className="hub-orcamento-novo__card hub-quote-ready__message-card">
+            <p className="hub-orcamento-novo__topbar-subtitle">
+              {successState.kind === 'leave_pending'
+                ? 'Cobrança pendente criada. Avise o tutor pelo WhatsApp ou compartilhe a comanda.'
+                : 'Pagamento registrado. Envie a confirmação ao tutor se desejar.'}
+            </p>
+            <div className="hub-quote-ready__message-actions" style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary"
+                disabled={shareBusy || !guardianPhone}
+                title={!guardianPhone ? 'Cadastre o telefone do tutor' : undefined}
+                onClick={() => void openSuccessWhatsApp()}
+              >
+                <MessageCircle size={18} aria-hidden />
+                Abrir WhatsApp
+              </button>
+              <button
+                type="button"
+                className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline"
+                disabled={shareBusy}
+                onClick={() => void downloadSuccessPdf()}
+              >
+                <Download size={18} aria-hidden />
+                Baixar PDF da comanda
+              </button>
+            </div>
+            {!guardianPhone ? (
+              <p className="hub-quote-ready__wa-hint">Sem telefone no tutor — use o PDF ou copie a mensagem na ficha da comanda.</p>
+            ) : null}
+          </section>
+        ) : (
+          <>
         {error && (
           <p className="hub-clientes__error" role="alert">
             {error}
@@ -281,7 +446,11 @@ export function ComandaCheckoutDrawer({
           <p className="hub-clientes__muted">Carregando comanda…</p>
         )}
 
-        {detail && (
+        {detail && checkoutLocked ? (
+          <p className="hub-clientes__muted" role="status">
+            {checkoutLockedMessage}
+          </p>
+        ) : detail ? (
           <>
           {(() => {
             const gu = detail.comanda.guardian as { full_name?: string } | null;
@@ -499,6 +668,8 @@ export function ComandaCheckoutDrawer({
                 </ul>
               </div>
             )}
+          </>
+        ) : null}
           </>
         )}
       </div>

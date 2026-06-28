@@ -136,6 +136,9 @@ async function syncAppointmentStatusForStage(clinicId, appointmentId, stage) {
         .update({ status: nextStatus })
         .eq('id', appointmentId)
         .eq('clinic_id', clinicId);
+    if (nextStatus === 'done' || nextStatus === 'paid') {
+        void (0, hubComandasController_1.syncOpenComandasAfterAppointmentOperationalComplete)(clinicId, appointmentId);
+    }
 }
 function buildServiceLinesForAppointment(apptId, a, lineRowsByAppt, stMap) {
     const lineDefs = lineRowsByAppt.get(apptId) ?? [];

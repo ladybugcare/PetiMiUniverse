@@ -27,6 +27,25 @@ function pickupLegMinutes(startsAt, endsAt) {
     const m = Math.round(ms / 60_000);
     return Math.max(1, Number.isFinite(m) ? m : 1);
 }
+async function resolveClinicDefaultUnitId(clinicId) {
+    const { data: main } = await supabase_1.supabaseAdmin
+        .from('units')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('is_main', true)
+        .limit(1)
+        .maybeSingle();
+    if (main?.id)
+        return main.id;
+    const { data: first } = await supabase_1.supabaseAdmin
+        .from('units')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .order('name', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+    return first?.id ?? null;
+}
 const uuidStr = zod_1.z.string().uuid();
 const optionalTrim = (max) => zod_1.z
     .union([zod_1.z.string(), zod_1.z.null(), zod_1.z.undefined()])
@@ -454,17 +473,31 @@ function shiftTimestampToDate(originalTs, newDate) {
 async function enrichAppointments(rows) {
     if (rows.length === 0)
         return [];
-    const stIds = [...new Set(rows.map((r) => r.hub_service_type_id))];
     const staffIds = [...new Set(rows.map((r) => r.hub_staff_member_id).filter(Boolean))];
     const petIds = [...new Set(rows.map((r) => r.pet_id).filter(Boolean))];
     const guIds = [...new Set(rows.map((r) => r.guardian_id).filter(Boolean))];
     const unitIds = [...new Set(rows.map((r) => r.unit_id).filter(Boolean))];
     const apptIds = rows.map((r) => r.id);
-    const [stRes, staffRes, petsRes, guRes, unitsRes, svcLinesRes, encRes] = await Promise.all([
-        supabase_1.supabaseAdmin
-            .from('hub_service_types')
-            .select('id, name, code, service_group, agenda_color, default_duration_minutes')
-            .in('id', stIds),
+    const svcLinesRes = apptIds.length
+        ? await supabase_1.supabaseAdmin
+            .from('hub_appointment_services')
+            .select('id, appointment_id, hub_service_type_id, duration_minutes, order_index, pricing_porte_tier_applied, pricing_coat_type_applied, cost_amount_applied, sale_amount_applied, pricing_variant')
+            .in('appointment_id', apptIds)
+            .order('order_index')
+        : { data: [], error: null };
+    const stIds = [
+        ...new Set([
+            ...rows.map((r) => r.hub_service_type_id),
+            ...(svcLinesRes.data ?? []).map((l) => l.hub_service_type_id),
+        ]),
+    ];
+    const [stRes, staffRes, petsRes, guRes, unitsRes, encRes] = await Promise.all([
+        stIds.length
+            ? supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .select('id, name, code, service_group, agenda_color, default_duration_minutes, is_addon')
+                .in('id', stIds)
+            : Promise.resolve({ data: [] }),
         staffIds.length
             ? supabase_1.supabaseAdmin.from('hub_staff_members').select('id, full_name, agenda_color').in('id', staffIds)
             : Promise.resolve({ data: [] }),
@@ -476,13 +509,6 @@ async function enrichAppointments(rows) {
             : Promise.resolve({ data: [] }),
         unitIds.length
             ? supabase_1.supabaseAdmin.from('units').select('id, name').in('id', unitIds)
-            : Promise.resolve({ data: [] }),
-        apptIds.length
-            ? supabase_1.supabaseAdmin
-                .from('hub_appointment_services')
-                .select('id, appointment_id, hub_service_type_id, duration_minutes, order_index, pricing_porte_tier_applied, pricing_coat_type_applied, cost_amount_applied, sale_amount_applied, pricing_variant')
-                .in('appointment_id', apptIds)
-                .order('order_index')
             : Promise.resolve({ data: [] }),
         apptIds.length
             ? supabase_1.supabaseAdmin
@@ -883,6 +909,8 @@ const createHubAppointment = async (req, res) => {
         if (!(await assertUnitInClinic(b.clinic_id, b.unit_id ?? null))) {
             return res.status(400).json({ error: 'Unidade inválida ou não pertence à clínica' });
         }
+        // Se a unidade não foi informada, tenta usar a unidade padrão da clínica
+        const resolvedUnitId = b.unit_id ?? (await resolveClinicDefaultUnitId(b.clinic_id));
         // Validate service types for extra services
         const allServiceTypeIds = b.services ? b.services.map((s) => s.hub_service_type_id) : [];
         for (const stId of allServiceTypeIds) {
@@ -1065,7 +1093,7 @@ const createHubAppointment = async (req, res) => {
             }
             let skipOcc = false;
             for (const w of conflictWindows) {
-                const chk = await assertNoScheduleConflict(b.clinic_id, [], w.staff, w.resource, b.unit_id ?? null, w.starts, w.ends);
+                const chk = await assertNoScheduleConflict(b.clinic_id, [], w.staff, w.resource, resolvedUnitId, w.starts, w.ends);
                 if (chk.conflict) {
                     conflicts.push({
                         date: occDate,
@@ -1080,7 +1108,7 @@ const createHubAppointment = async (req, res) => {
                 continue;
             const insert = {
                 clinic_id: b.clinic_id,
-                unit_id: b.unit_id ?? null,
+                unit_id: resolvedUnitId,
                 hub_service_type_id: b.hub_service_type_id,
                 hub_staff_member_id: b.hub_staff_member_id ?? null,
                 pet_id: b.pet_id ?? null,
@@ -1162,7 +1190,7 @@ const createHubAppointment = async (req, res) => {
                     .from('hub_appointments')
                     .insert({
                     clinic_id: b.clinic_id,
-                    unit_id: b.unit_id ?? null,
+                    unit_id: resolvedUnitId,
                     hub_service_type_id: ltCfg.hub_service_type_id,
                     hub_staff_member_id: pickupBlock.hub_staff_member_id ?? null,
                     pet_id: b.pet_id ?? null,
@@ -1228,7 +1256,7 @@ const createHubAppointment = async (req, res) => {
                     .from('hub_appointments')
                     .insert({
                     clinic_id: b.clinic_id,
-                    unit_id: b.unit_id ?? null,
+                    unit_id: resolvedUnitId,
                     hub_service_type_id: firstSvcType,
                     hub_staff_member_id: block.hub_staff_member_id ?? null,
                     pet_id: b.pet_id ?? null,
@@ -1609,6 +1637,11 @@ const patchHubAppointment = async (req, res) => {
         if (patch.status === 'cancelled') {
             for (const tid of targetIds) {
                 void (0, hubComandasController_1.maybeFlagComandaCancellationPending)(b.clinic_id, 'appointment', tid);
+            }
+        }
+        if (b.status === 'done' || b.status === 'paid') {
+            for (const tid of targetIds) {
+                void (0, hubComandasController_1.syncOpenComandasAfterAppointmentOperationalComplete)(b.clinic_id, tid);
             }
         }
         const { data: updated } = await supabase_1.supabaseAdmin

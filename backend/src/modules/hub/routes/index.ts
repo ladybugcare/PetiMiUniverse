@@ -26,6 +26,12 @@ import {
   deleteHubServiceGroup,
 } from '../hubServiceGroupsController';
 import {
+  listHubServiceGroupChecklists,
+  getHubServiceGroupChecklist,
+  putHubServiceGroupChecklist,
+  deleteHubServiceGroupChecklist,
+} from '../hubServiceGroupChecklistController';
+import {
   getHubServiceGroupAddons,
   putHubServiceGroupAddons,
   getHubServiceTypeAddonAvailability,
@@ -215,6 +221,9 @@ import {
   listHubComandas,
   getHubComandaCancellationPendingCount,
   postHubComandaResolveCancellation,
+  getHubComandaPdf,
+  ensureComandaPublicToken,
+  getPublicComanda,
 } from '../hubComandasController';
 import { postHubCustomerCreditMovement, getHubCustomerCreditBalance } from '../hubCustomerCreditController';
 import { listHubPackages, postHubPackage } from '../hubPackagesController';
@@ -379,6 +388,31 @@ router.put(
   authenticateUser,
   requirePermission('hub.service_types.write'),
   putHubAddonDeployments
+);
+
+router.get(
+  '/service-groups/checklists',
+  authenticateUser,
+  requirePermission('hub.service_types.read'),
+  listHubServiceGroupChecklists
+);
+router.get(
+  '/service-groups/checklists/:slug',
+  authenticateUser,
+  requirePermission('hub.service_types.read'),
+  getHubServiceGroupChecklist
+);
+router.put(
+  '/service-groups/checklists/:slug',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  putHubServiceGroupChecklist
+);
+router.delete(
+  '/service-groups/checklists/:slug',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  deleteHubServiceGroupChecklist
 );
 
 router.get(
@@ -850,6 +884,18 @@ router.post(
   authenticateUser,
   requirePermission('hub.receivables.create'),
   postHubComandaOpen
+);
+router.get(
+  '/comandas/:id/pdf',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubComandaPdf
+);
+router.post(
+  '/comandas/:id/public-token',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  ensureComandaPublicToken
 );
 router.get(
   '/comandas/:id',

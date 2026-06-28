@@ -17,6 +17,7 @@ import {
 import {
   maybeFlagComandaCancellationPending,
   financialAdjustmentFlagsForAppointments,
+  syncOpenComandasAfterAppointmentOperationalComplete,
 } from './hubComandasController';
 
 /** Reparte um total comercial (ex.: ida+volta L&T) em duas linhas contábeis com soma exacta. */
@@ -37,6 +38,25 @@ function pickupLegMinutes(startsAt: string, endsAt: string): number {
   const ms = new Date(endsAt).getTime() - new Date(startsAt).getTime();
   const m = Math.round(ms / 60_000);
   return Math.max(1, Number.isFinite(m) ? m : 1);
+}
+
+async function resolveClinicDefaultUnitId(clinicId: string): Promise<string | null> {
+  const { data: main } = await supabaseAdmin
+    .from('units')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('is_main', true)
+    .limit(1)
+    .maybeSingle();
+  if (main?.id) return main.id as string;
+  const { data: first } = await supabaseAdmin
+    .from('units')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .order('name', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return (first?.id as string) ?? null;
 }
 
 const uuidStr = z.string().uuid();
@@ -1009,6 +1029,9 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Unidade inválida ou não pertence à clínica' });
     }
 
+    // Se a unidade não foi informada, tenta usar a unidade padrão da clínica
+    const resolvedUnitId: string | null = b.unit_id ?? (await resolveClinicDefaultUnitId(b.clinic_id));
+
     // Validate service types for extra services
     const allServiceTypeIds = b.services ? b.services.map((s) => s.hub_service_type_id) : [];
     for (const stId of allServiceTypeIds) {
@@ -1218,7 +1241,7 @@ export const createHubAppointment = async (req: Request, res: Response) => {
           [],
           w.staff,
           w.resource,
-          b.unit_id ?? null,
+          resolvedUnitId,
           w.starts,
           w.ends,
         );
@@ -1236,7 +1259,7 @@ export const createHubAppointment = async (req: Request, res: Response) => {
 
       const insert = {
         clinic_id: b.clinic_id,
-        unit_id: b.unit_id ?? null,
+        unit_id: resolvedUnitId,
         hub_service_type_id: b.hub_service_type_id,
         hub_staff_member_id: b.hub_staff_member_id ?? null,
         pet_id: b.pet_id ?? null,
@@ -1318,7 +1341,7 @@ export const createHubAppointment = async (req: Request, res: Response) => {
           .from('hub_appointments')
           .insert({
             clinic_id: b.clinic_id,
-            unit_id: b.unit_id ?? null,
+            unit_id: resolvedUnitId,
             hub_service_type_id: ltCfg.hub_service_type_id,
             hub_staff_member_id: pickupBlock.hub_staff_member_id ?? null,
             pet_id: b.pet_id ?? null,
@@ -1383,7 +1406,7 @@ export const createHubAppointment = async (req: Request, res: Response) => {
           .from('hub_appointments')
           .insert({
             clinic_id: b.clinic_id,
-            unit_id: b.unit_id ?? null,
+            unit_id: resolvedUnitId,
             hub_service_type_id: firstSvcType,
             hub_staff_member_id: block.hub_staff_member_id ?? null,
             pet_id: b.pet_id ?? null,
@@ -1774,6 +1797,12 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     if (patch.status === 'cancelled') {
       for (const tid of targetIds) {
         void maybeFlagComandaCancellationPending(b.clinic_id, 'appointment', tid);
+      }
+    }
+
+    if (b.status === 'done' || b.status === 'paid') {
+      for (const tid of targetIds) {
+        void syncOpenComandasAfterAppointmentOperationalComplete(b.clinic_id, tid);
       }
     }
 

@@ -1986,21 +1986,58 @@ type DayBoardBilling = {
   comanda_id: string | null;
   comanda_status: string | null;
   has_receivable: boolean;
+  receivable_status: 'pending' | 'partially_paid' | 'paid' | null;
+  finance_handoff_at: string | null;
+  active_receivable_id: string | null;
 };
 
-type DayBoardItem = {
-  origin_type: string;
-  origin_id: string;
-  origin_label: string;
-  starts_at: string | null;
-  guardian_id: string | null;
-  guardian: { id: string; full_name: string } | null;
-  pet_id: string | null;
-  pet: { id: string; name: string } | null;
-  operational_status: string;
-  estimated_amount: number;
-  billing: DayBoardBilling;
-};
+function isDayBoardOperationallyComplete(originType: string, operationalStatus: string): boolean {
+  switch (originType) {
+    case 'appointment':
+      return operationalStatus === 'done' || operationalStatus === 'paid';
+    case 'grooming_session':
+      return operationalStatus === 'closed';
+    case 'encounter':
+      return operationalStatus === 'completed';
+    case 'quote':
+    case 'manual':
+    case 'boarding_reservation':
+      return true;
+    default:
+      return true;
+  }
+}
+
+function isDayBoardPaidAndComplete(
+  originType: string,
+  operationalStatus: string,
+  receivableStatus: DayBoardBilling['receivable_status']
+): boolean {
+  return receivableStatus === 'paid' && isDayBoardOperationallyComplete(originType, operationalStatus);
+}
+
+function pickActiveReceivableId(statusesWithIds: Array<{ id: string; status: string }>): string | null {
+  const pending = statusesWithIds.find((r) => r.status === 'pending');
+  if (pending) return pending.id;
+  const partial = statusesWithIds.find((r) => r.status === 'partially_paid');
+  if (partial) return partial.id;
+  const paid = statusesWithIds.find((r) => r.status === 'paid');
+  return paid?.id ?? null;
+}
+
+function matchesFinanceiroDayBoardScope(billing: DayBoardBilling): boolean {
+  if (billing.finance_handoff_at) return true;
+  if (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid') return true;
+  return false;
+}
+
+function aggregateReceivableStatus(statuses: string[]): 'pending' | 'partially_paid' | 'paid' | null {
+  if (statuses.length === 0) return null;
+  if (statuses.some((s) => s === 'pending')) return 'pending';
+  if (statuses.some((s) => s === 'partially_paid')) return 'partially_paid';
+  if (statuses.every((s) => s === 'paid')) return 'paid';
+  return null;
+}
 
 /** Carrega comanda e status de recebível para um conjunto de origens em batch. */
 async function fetchBillingStatusBatch(
@@ -2013,47 +2050,85 @@ async function fetchBillingStatusBatch(
   // Carrega todas as comandas não canceladas para as origens
   const { data: comandas } = await supabaseAdmin
     .from('hub_comandas')
-    .select('id, origin_type, origin_id, status')
+    .select('id, origin_type, origin_id, status, finance_handoff_at')
     .eq('clinic_id', clinicId)
     .neq('status', 'cancelada')
     .is('deleted_at', null)
     .not('origin_id', 'is', null);
 
-  const comandaByKey = new Map<string, { id: string; status: string }>();
+  const comandaByKey = new Map<string, { id: string; status: string; finance_handoff_at: string | null }>();
   for (const c of comandas ?? []) {
     const key = `${c.origin_type as string}:${c.origin_id as string}`;
-    comandaByKey.set(key, { id: c.id as string, status: c.status as string });
+    comandaByKey.set(key, {
+      id: c.id as string,
+      status: c.status as string,
+      finance_handoff_at: (c.finance_handoff_at as string | null) ?? null,
+    });
   }
 
-  // Carrega recebíveis ativos por source_key
+  // Carrega recebíveis ativos por source_key e comanda_id
   const { data: receivables } = await supabaseAdmin
     .from('hub_receivables')
-    .select('source_type, source_id, comanda_id')
+    .select('id, source_type, source_id, comanda_id, status')
     .eq('clinic_id', clinicId)
     .is('deleted_at', null)
     .neq('status', 'cancelled');
 
-  const receivableSourceKeys = new Set<string>();
-  const receivableByComandaId = new Set<string>();
+  const receivableRowsBySourceKey = new Map<string, Array<{ id: string; status: string }>>();
+  const receivableRowsByComandaId = new Map<string, Array<{ id: string; status: string }>>();
+
+  const pushReceivable = (map: Map<string, Array<{ id: string; status: string }>>, mapKey: string, row: { id: string; status: string }) => {
+    const list = map.get(mapKey) ?? [];
+    list.push(row);
+    map.set(mapKey, list);
+  };
+
   for (const r of receivables ?? []) {
-    receivableSourceKeys.add(`${r.source_type as string}:${r.source_id as string}`);
-    if (r.comanda_id) receivableByComandaId.add(r.comanda_id as string);
+    const row = { id: r.id as string, status: String(r.status) };
+    pushReceivable(receivableRowsBySourceKey, `${r.source_type as string}:${r.source_id as string}`, row);
+    if (r.comanda_id) {
+      pushReceivable(receivableRowsByComandaId, r.comanda_id as string, row);
+    }
   }
 
   for (const { origin_type, origin_id } of originKeys) {
     const key = `${origin_type}:${origin_id}`;
     const comanda = comandaByKey.get(key) ?? null;
-    const has_receivable =
-      receivableSourceKeys.has(key) ||
-      (comanda ? receivableByComandaId.has(comanda.id) : false);
+    const rowsById = new Map<string, { id: string; status: string }>();
+    for (const row of receivableRowsBySourceKey.get(key) ?? []) rowsById.set(row.id, row);
+    if (comanda) {
+      for (const row of receivableRowsByComandaId.get(comanda.id) ?? []) rowsById.set(row.id, row);
+    }
+    const receivableRows = [...rowsById.values()];
+    const statuses = receivableRows.map((r) => r.status);
+    const receivable_status = aggregateReceivableStatus(statuses);
+    const has_receivable = statuses.length > 0;
     result.set(key, {
       comanda_id: comanda?.id ?? null,
       comanda_status: comanda?.status ?? null,
       has_receivable,
+      receivable_status,
+      finance_handoff_at: comanda?.finance_handoff_at ?? null,
+      active_receivable_id: pickActiveReceivableId(receivableRows),
     });
   }
   return result;
 }
+
+type DayBoardItem = {
+  origin_type: string;
+  origin_id: string;
+  origin_label: string;
+  starts_at: string | null;
+  guardian_id: string | null;
+  guardian: { id: string; full_name: string } | null;
+  pet_id: string | null;
+  pet: { id: string; name: string } | null;
+  operational_status: string;
+  estimated_amount: number;
+  services: { name: string; amount: number }[];
+  billing: DayBoardBilling;
+};
 
 const dayBoardQuerySchema = z
   .object({
@@ -2063,6 +2138,7 @@ const dayBoardQuerySchema = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .optional(),
+    billing_scope: z.enum(['financeiro']).optional(),
   })
   .strict();
 
@@ -2072,7 +2148,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
     if (!parsed.success) {
       return res.status(400).json({ error: 'clinic_id obrigatório (UUID)' });
     }
-    const { clinic_id, unit_id } = parsed.data;
+    const { clinic_id, unit_id, billing_scope } = parsed.data;
     const dateYmd = parsed.data.date ?? ymdTodayUtc();
     const dayStart = utcDayStartIso(dateYmd);
     const dayEnd = utcDayEndIso(dateYmd);
@@ -2095,7 +2171,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       .gte('starts_at', dayStart)
       .lte('starts_at', dayEnd)
       .order('starts_at', { ascending: true });
-    if (unit_id) aq = aq.eq('unit_id', unit_id);
+    if (unit_id) aq = aq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
     const { data: apptRows, error: aErr } = await aq;
     if (aErr) throw new Error(aErr.message);
 
@@ -2104,7 +2180,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       const id = row.id as string;
       const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
       const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
-      const services = (row.appointment_services as Array<{ sale_amount_applied?: number | null }>) ?? [];
+      const services = (row.appointment_services as Array<{ sale_amount_applied?: number | null; service_type?: { name?: string } | null }>) ?? [];
       const estimated = round2(services.reduce((s, sv) => s + Number(sv.sale_amount_applied ?? 0), 0));
       originKeys.push({ origin_type: 'appointment', origin_id: id });
       items.push({
@@ -2118,7 +2194,18 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
         operational_status: String(row.status),
         estimated_amount: estimated,
-        billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+        services: services.map((sv) => ({
+          name: String(sv.service_type?.name ?? 'Serviço'),
+          amount: round2(Number(sv.sale_amount_applied ?? 0)),
+        })),
+        billing: {
+          comanda_id: null,
+          comanda_status: null,
+          has_receivable: false,
+          receivable_status: null,
+          finance_handoff_at: null,
+          active_receivable_id: null,
+        },
       });
     }
 
@@ -2137,7 +2224,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       .gte('created_at', dayStart)
       .lte('created_at', dayEnd)
       .order('created_at', { ascending: true });
-    if (unit_id) gq = gq.eq('unit_id', unit_id);
+    if (unit_id) gq = gq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
     const { data: groomRows, error: gErr } = await gq;
     if (gErr) throw new Error(gErr.message);
 
@@ -2158,7 +2245,15 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
         operational_status: String(row.grooming_stage),
         estimated_amount: 0,
-        billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+        services: [],
+        billing: {
+          comanda_id: null,
+          comanda_status: null,
+          has_receivable: false,
+          receivable_status: null,
+          finance_handoff_at: null,
+          active_receivable_id: null,
+        },
       });
     }
 
@@ -2177,7 +2272,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       .gte('created_at', dayStart)
       .lte('created_at', dayEnd)
       .order('created_at', { ascending: true });
-    if (unit_id) eq = eq.eq('unit_id', unit_id);
+    if (unit_id) eq = eq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
     const { data: encRows, error: eErr } = await eq;
     if (eErr) throw new Error(eErr.message);
 
@@ -2198,7 +2293,15 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
         operational_status: String(row.status),
         estimated_amount: 0,
-        billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+        services: [],
+        billing: {
+          comanda_id: null,
+          comanda_status: null,
+          has_receivable: false,
+          receivable_status: null,
+          finance_handoff_at: null,
+          active_receivable_id: null,
+        },
       });
     }
 
@@ -2216,7 +2319,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       .gte('expected_check_out', dayStart)
       .lte('expected_check_out', dayEnd)
       .order('expected_check_out', { ascending: true });
-    if (unit_id) bq = bq.eq('unit_id', unit_id);
+    if (unit_id) bq = bq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
     const { data: boardingRows, error: bErr } = await bq;
     if (bErr) throw new Error(bErr.message);
 
@@ -2239,7 +2342,15 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
         operational_status: String(row.status),
         estimated_amount: estimated,
-        billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+        services: [],
+        billing: {
+          comanda_id: null,
+          comanda_status: null,
+          has_receivable: false,
+          receivable_status: null,
+          finance_handoff_at: null,
+          active_receivable_id: null,
+        },
       });
     }
 
@@ -2251,13 +2362,24 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       if (billing) item.billing = billing;
     }
 
-    items.sort((a, b) => {
+    let filteredItems = items;
+    if (billing_scope === 'financeiro') {
+      filteredItems = items.filter((item) => {
+        const { billing } = item;
+        if (isDayBoardPaidAndComplete(item.origin_type, item.operational_status, billing.receivable_status)) {
+          return false;
+        }
+        return matchesFinanceiroDayBoardScope(billing);
+      });
+    }
+
+    filteredItems.sort((a, b) => {
       const ta = a.starts_at ? new Date(a.starts_at).getTime() : 0;
       const tb = b.starts_at ? new Date(b.starts_at).getTime() : 0;
       return ta - tb;
     });
 
-    return res.json({ items, date: dateYmd, count: items.length });
+    return res.json({ items: filteredItems, date: dateYmd, count: filteredItems.length });
   } catch (e: unknown) {
     console.error('getHubFinanceDayBoard', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });

@@ -3,12 +3,13 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import {
   AlertCircle,
-  Ban,
-  FilePlus2,
+  ChevronLeft,
+  ChevronRight,
   Coins,
   Layers,
   Pencil,
   Receipt,
+  Search,
   X,
 } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
@@ -21,9 +22,10 @@ import {
   type HubCashSessionSummary,
 } from '../../api/hubFinancialApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
-import { ComandaCancellationResolveDrawer } from './ComandaCancellationResolveDrawer';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
 import { CaixaMetricsRow } from './CaixaMetricsRow';
+import { canCaixaEditOpenComanda } from './hubComandaEditUtils';
+import { FinanceDayBoardTable } from './FinanceDayBoardTable';
 import { HubDateField } from '../../components/HubDateField';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import '../clientes/clientes.css';
@@ -40,6 +42,19 @@ function ymdToday(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function addDays(ymd: string, days: number): string {
+  const d = new Date(`${ymd}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function normalizeText(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 const METHOD_LABELS: Record<string, string> = {
   cash: 'Dinheiro',
   pix: 'Pix',
@@ -50,188 +65,7 @@ const METHOD_LABELS: Record<string, string> = {
   customer_credit: 'Crédito do tutor',
 };
 
-const STATUS_OP_LABEL: Record<string, string> = {
-  scheduled: 'Agendado',
-  checked_in: 'Check-in',
-  in_progress: 'Em atendimento',
-  done: 'Concluído',
-  paid: 'Pago',
-  grooming: 'Tosa',
-  bath_and_groom: 'Banho e Tosa',
-  checked_out: 'Check-out realizado',
-  waiting: 'Aguardando',
-  completed: 'Concluído',
-};
-
-// ─── Day Board Badge ─────────────────────────────────────────────────────────
-
-function ComandaStatusBadge({ billing }: { billing: HubFinanceDayBoardItem['billing'] }) {
-  if (billing.has_receivable && billing.comanda_status === 'fechada') {
-    return <span className="hub-dayboard__badge hub-dayboard__badge--received">Recebido</span>;
-  }
-  if (billing.has_receivable && billing.comanda_status !== 'fechada') {
-    return <span className="hub-dayboard__badge hub-dayboard__badge--pending">A receber</span>;
-  }
-  if (billing.comanda_id && billing.comanda_status === 'aberta') {
-    return <span className="hub-dayboard__badge hub-dayboard__badge--open">Comanda aberta</span>;
-  }
-  return <span className="hub-dayboard__badge hub-dayboard__badge--none">Sem comanda</span>;
-}
-
-// ─── Day Board Group ─────────────────────────────────────────────────────────
-
-type DayBoardGroupProps = {
-  label: string;
-  items: HubFinanceDayBoardItem[];
-  totalEstimated: number;
-  canCreateReceivable: boolean;
-  canFinancialWrite: boolean;
-  onOpenComanda: (item: HubFinanceDayBoardItem) => void;
-  onEditComanda: (item: HubFinanceDayBoardItem) => void;
-  onCheckout: (item: HubFinanceDayBoardItem) => void;
-  onBulkCheckout?: (items: HubFinanceDayBoardItem[]) => void;
-  onWaive: (item: HubFinanceDayBoardItem) => void;
-  busy: boolean;
-};
-
-function DayBoardGroup({
-  label,
-  items,
-  totalEstimated,
-  canCreateReceivable,
-  canFinancialWrite,
-  onOpenComanda,
-  onEditComanda,
-  onCheckout,
-  onBulkCheckout,
-  onWaive,
-  busy,
-}: DayBoardGroupProps) {
-  const openComandas = items.filter(
-    (it) => it.billing.comanda_id && it.billing.comanda_status === 'aberta'
-  );
-
-  return (
-    <div className="hub-dayboard__group">
-      <div className="hub-dayboard__group-header">
-        <span className="hub-dayboard__group-name">{label}</span>
-        <span className="hub-dayboard__group-amount">{formatBrl(totalEstimated)}</span>
-        <div className="hub-dayboard__group-actions">
-          {/* Receber em conjunto: somente se houver 2+ comandas abertas */}
-          {onBulkCheckout && openComandas.length >= 2 && canCreateReceivable && (
-            <button
-              type="button"
-              className="hub-dayboard__action-btn"
-              title="Receber todas as comandas em conjunto"
-              aria-label="Receber em conjunto"
-              disabled={busy}
-              onClick={() => onBulkCheckout(openComandas)}
-            >
-              <Layers size={15} strokeWidth={2} />
-            </button>
-          )}
-        </div>
-      </div>
-      {items.map((item) => {
-        const hasComanda = !!item.billing.comanda_id;
-        const isOpen = item.billing.comanda_status === 'aberta';
-        const hasReceivable = item.billing.has_receivable;
-        const opLabel = STATUS_OP_LABEL[item.operational_status] ?? item.operational_status;
-        const timeStr = item.starts_at
-          ? new Date(item.starts_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-          : null;
-
-        return (
-          <div key={`${item.origin_type}:${item.origin_id}`} className="hub-dayboard__item">
-            <div className="hub-dayboard__item-label">
-              <div>{item.origin_label}</div>
-              <div className="hub-dayboard__item-sub">
-                {timeStr ? `${timeStr} · ` : ''}
-                {opLabel}
-                {item.pet ? ` · ${item.pet.name}` : ''}
-              </div>
-            </div>
-            <ComandaStatusBadge billing={item.billing} />
-            <span className="hub-dayboard__item-amount">
-              {item.estimated_amount > 0 ? formatBrl(item.estimated_amount) : '—'}
-            </span>
-            <div className="hub-dayboard__item-actions">
-              {/* Abrir comanda */}
-              {!hasComanda && canCreateReceivable && (
-                <button
-                  type="button"
-                  className="hub-dayboard__action-btn"
-                  title="Abrir comanda"
-                  aria-label="Abrir comanda"
-                  disabled={busy}
-                  onClick={() => onOpenComanda(item)}
-                >
-                  <FilePlus2 size={15} strokeWidth={2} />
-                </button>
-              )}
-              {/* Editar comanda */}
-              {hasComanda && isOpen && canCreateReceivable && (
-                <button
-                  type="button"
-                  className="hub-dayboard__action-btn"
-                  title="Editar comanda"
-                  aria-label="Editar comanda"
-                  disabled={busy}
-                  onClick={() => onEditComanda(item)}
-                >
-                  <Pencil size={15} strokeWidth={2} />
-                </button>
-              )}
-              {/* Receber */}
-              {hasComanda && isOpen && !hasReceivable && canCreateReceivable && (
-                <button
-                  type="button"
-                  className="hub-dayboard__action-btn hub-dayboard__action-btn--primary"
-                  title="Receber"
-                  aria-label="Receber"
-                  disabled={busy}
-                  onClick={() => onCheckout(item)}
-                >
-                  <Coins size={15} strokeWidth={2} />
-                </button>
-              )}
-              {/* Ver comanda já faturada */}
-              {hasComanda && hasReceivable && (
-                <button
-                  type="button"
-                  className="hub-dayboard__action-btn"
-                  title="Ver comanda"
-                  aria-label="Ver comanda"
-                  disabled={busy}
-                  onClick={() => onCheckout(item)}
-                >
-                  <Receipt size={15} strokeWidth={2} />
-                </button>
-              )}
-              {/* Sem cobrança */}
-              {!hasReceivable && canFinancialWrite && (
-                <button
-                  type="button"
-                  className="hub-dayboard__action-btn"
-                  title="Marcar sem cobrança"
-                  aria-label="Marcar sem cobrança"
-                  disabled={busy}
-                  onClick={() => onWaive(item)}
-                >
-                  <Ban size={15} strokeWidth={2} />
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── HubCaixaPage ────────────────────────────────────────────────────────────
-
-type TabId = 'atendimentos' | 'session' | 'pending' | 'reversal' | 'historico' | 'cancellation';
+type TabId = 'atendimentos' | 'session' | 'pending' | 'historico';
 
 const HubCaixaPage: React.FC = () => {
   const navigate = useNavigate();
@@ -251,25 +85,19 @@ const HubCaixaPage: React.FC = () => {
   const [movType, setMovType] = useState<'withdrawal' | 'deposit'>('withdrawal');
   const [movAmount, setMovAmount] = useState('');
   const [movNotes, setMovNotes] = useState('');
-  const [reversePaymentId, setReversePaymentId] = useState('');
   const [selectedCashItem, setSelectedCashItem] = useState<Record<string, unknown> | null>(null);
   const [openComandas, setOpenComandas] = useState<Array<Record<string, unknown>>>([]);
-  const [cancellationPendingCount, setCancellationPendingCount] = useState(0);
-  const [cancellationQueue, setCancellationQueue] = useState<Array<Record<string, unknown>>>([]);
-  const [resolveComanda, setResolveComanda] = useState<Record<string, unknown> | null>(null);
   const [closedSessions, setClosedSessions] = useState<HubCashSession[]>([]);
 
   // Day board
   const [dayBoardItems, setDayBoardItems] = useState<HubFinanceDayBoardItem[]>([]);
   const [dayBoardDate, setDayBoardDate] = useState(() => ymdToday());
-  const [dayBoardGroupBy, setDayBoardGroupBy] = useState<'tutor' | 'pet'>('tutor');
   const [dayBoardBusy, setDayBoardBusy] = useState(false);
   const [atendimentosStatusFilter, setAtendimentosStatusFilter] = useState<'all' | 'sem_comanda' | 'comanda_aberta' | 'a_receber' | 'recebido'>('all');
+  const [dayBoardSearch, setDayBoardSearch] = useState('');
 
   // Drawers
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
-  const [reverseReason, setReverseReason] = useState('');
-  const [reverseTargetId, setReverseTargetId] = useState<string | null>(null);
 
   // Sessão de dia anterior aberta
   const isPreviousDaySession = cashOpen?.opened_at
@@ -303,21 +131,17 @@ const HubCaixaPage: React.FC = () => {
     }
     setLoading(true);
     try {
-      const [c, list, cash, comandasRes, cancelCountRes, cancelQueueRes, closedRes, dayBoard] = await Promise.all([
+      const [c, list, cash, comandasRes, closedRes, dayBoard] = await Promise.all([
         hubFinancialApi.getPendingBillingCount(clinicId, unitId),
         hubFinancialApi.listUnbilledCompleted(clinicId, unitId),
         hubFinancialApi.getCashSessionOpen(clinicId, unitId),
         hubComandaApi.listComandas({ clinic_id: clinicId, unit_id: unitId, status: 'aberta', enrich: true }).catch(() => ({ comandas: [] })),
-        hubComandaApi.getCancellationPendingCount(clinicId, unitId).catch(() => ({ count: 0 })),
-        hubComandaApi.listCancellationPending({ clinic_id: clinicId, unit_id: unitId }).catch(() => ({ comandas: [] })),
         hubFinancialApi.listClosedCashSessions(clinicId, unitId, 25).catch(() => ({ sessions: [] })),
         hubFinancialApi.getDayBoard(clinicId, unitId, dayBoardDate).catch(() => [] as HubFinanceDayBoardItem[]),
       ]);
       setPending(c);
       setItems(list);
       setOpenComandas(comandasRes.comandas ?? []);
-      setCancellationPendingCount(cancelCountRes.count ?? 0);
-      setCancellationQueue(cancelQueueRes.comandas ?? []);
       setClosedSessions(closedRes.sessions ?? []);
       setDayBoardItems(dayBoard);
       const open = cash.cash_session ?? null;
@@ -386,7 +210,24 @@ const HubCaixaPage: React.FC = () => {
   };
 
   const onEditComanda = (item: HubFinanceDayBoardItem) => {
-    if (item.billing.comanda_id) navigate(`/hub/caixa/comanda/${item.billing.comanda_id}`);
+    if (!item.billing.comanda_id) return;
+    const comanda = openComandas.find((c) => String(c.id) === item.billing.comanda_id);
+    if (comanda?.finance_handoff_at) {
+      navigate(`/hub/financeiro/comanda/${item.billing.comanda_id}`);
+    } else {
+      navigate(`/hub/caixa/comanda/${item.billing.comanda_id}`);
+    }
+  };
+
+  const onViewComanda = (item: HubFinanceDayBoardItem) => {
+    if (!item.billing.comanda_id) return;
+    navigate(`/hub/caixa/comanda/${item.billing.comanda_id}`);
+  };
+
+  const onShareComanda = (item: HubFinanceDayBoardItem) => {
+    if (item.billing.comanda_id) {
+      navigate(`/hub/caixa/comanda/${item.billing.comanda_id}/pronto-para-envio`);
+    }
   };
 
   const onCheckoutFromBoard = (item: HubFinanceDayBoardItem) => {
@@ -449,35 +290,67 @@ const HubCaixaPage: React.FC = () => {
     }
   };
 
-  // ── Groups ───────────────────────────────────────────────────────────────
-
-  const dayBoardGroups = useMemo(() => {
-    const map = new Map<string, HubFinanceDayBoardItem[]>();
-    for (const item of dayBoardItems) {
-      const key =
-        dayBoardGroupBy === 'tutor'
-          ? item.guardian_id ?? `unknown-${item.origin_id}`
-          : item.pet_id ?? `unknown-${item.origin_id}`;
-      const label =
-        dayBoardGroupBy === 'tutor'
-          ? item.guardian?.full_name ?? 'Tutor desconhecido'
-          : item.pet?.name ?? 'Pet desconhecido';
-      const existing = map.get(key);
-      if (existing) {
-        existing.push(item);
-      } else {
-        map.set(key, [item]);
+  const onSendToFinanceiro = async (item: HubFinanceDayBoardItem) => {
+    if (!canCreateReceivable) { showError('Sem permissão para enviar ao financeiro.'); return; }
+    setDayBoardBusy(true);
+    try {
+      let comandaId = item.billing.comanda_id;
+      if (!comandaId) {
+        const detail = await hubComandaApi.openComanda({
+          clinic_id: clinicId,
+          origin_type: item.origin_type as 'appointment' | 'grooming_session' | 'encounter' | 'boarding_reservation',
+          origin_id: item.origin_id,
+          unit_id: unitId,
+        });
+        comandaId = (detail.comanda as Record<string, unknown>).id as string;
       }
+      const dueDate = item.starts_at?.slice(0, 10) ?? ymdToday();
+      await hubComandaApi.checkoutBulk({
+        clinic_id: clinicId,
+        unit_id: unitId,
+        comanda_ids: [comandaId],
+        action: 'leave_pending',
+        due_date: dueDate,
+      });
+      showSuccess('Enviado ao financeiro como pendente.');
+      await loadDayBoard();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao enviar ao financeiro');
+    } finally {
+      setDayBoardBusy(false);
     }
-    return Array.from(map.entries()).map(([key, groupItems]) => {
-      const label =
-        dayBoardGroupBy === 'tutor'
-          ? groupItems[0]?.guardian?.full_name ?? 'Tutor desconhecido'
-          : groupItems[0]?.pet?.name ?? 'Pet desconhecido';
-      const totalEstimated = groupItems.reduce((s, it) => s + (it.estimated_amount ?? 0), 0);
-      return { key, label, items: groupItems, totalEstimated };
-    });
-  }, [dayBoardItems, dayBoardGroupBy]);
+  };
+
+  // ── Flat filtered list ────────────────────────────────────────────────────
+
+  const dayBoardFiltered = useMemo(() => {
+    const searchTerm = normalizeText(dayBoardSearch.trim());
+    let result = searchTerm
+      ? dayBoardItems.filter((item) => {
+          const guardian = normalizeText(item.guardian?.full_name ?? '');
+          const pet = normalizeText(item.pet?.name ?? '');
+          const svcNames = normalizeText((item.services ?? []).map((s) => s.name).join(' '));
+          const label = normalizeText(item.origin_label ?? '');
+          return guardian.includes(searchTerm) || pet.includes(searchTerm) || svcNames.includes(searchTerm) || label.includes(searchTerm);
+        })
+      : dayBoardItems;
+
+    if (atendimentosStatusFilter !== 'all') {
+      result = result.filter((it) => {
+        if (atendimentosStatusFilter === 'sem_comanda') return !it.billing.comanda_id && !it.billing.receivable_status;
+        if (atendimentosStatusFilter === 'comanda_aberta') {
+          return it.billing.comanda_id && it.billing.comanda_status === 'aberta' && !it.billing.receivable_status;
+        }
+        if (atendimentosStatusFilter === 'a_receber') {
+          return it.billing.receivable_status === 'pending' || it.billing.receivable_status === 'partially_paid';
+        }
+        if (atendimentosStatusFilter === 'recebido') return it.billing.receivable_status === 'paid';
+        return true;
+      });
+    }
+
+    return result;
+  }, [dayBoardItems, dayBoardSearch, atendimentosStatusFilter]);
 
   // ── Legacy handlers ──────────────────────────────────────────────────────
 
@@ -536,7 +409,7 @@ const HubCaixaPage: React.FC = () => {
    */
   const enviarComandasAbertas = async (): Promise<boolean> => {
     const today = ymdToday();
-    const abertas = openComandas.filter((c) => c.status === 'aberta');
+    const abertas = openComandas.filter((c) => c.status === 'aberta' && canCaixaEditOpenComanda(c));
     if (abertas.length === 0) return true;
     const erros: string[] = [];
     for (const c of abertas) {
@@ -564,7 +437,7 @@ const HubCaixaPage: React.FC = () => {
     const sessionId = cashOpen.id;
     const v = Number(String(closeBal).replace(',', '.'));
     if (Number.isNaN(v) || v < 0) { showError('Saldo de fecho inválido.'); return; }
-    const abertas = openComandas.filter((c) => c.status === 'aberta');
+    const abertas = openComandas.filter((c) => c.status === 'aberta' && canCaixaEditOpenComanda(c));
     if (abertas.length > 0) {
       showConfirm(
         `Há ${abertas.length} comanda(s) em aberto. Ao fechar o caixa, esses itens serão enviados ao financeiro (cobrança pendente). Deseja continuar?`,
@@ -592,24 +465,6 @@ const HubCaixaPage: React.FC = () => {
       await load();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao registar movimento');
-    }
-  };
-
-  const onReverseConfirm = async () => {
-    if (!clinicId) return;
-    if (!hasPermission('hub.cash.receive')) { showError('Sem permissão para estornar pagamentos.'); return; }
-    const paymentId = (reverseTargetId ?? reversePaymentId).trim();
-    if (!paymentId) { showError('Informe o ID do pagamento.'); return; }
-    if (!reverseReason.trim() || reverseReason.trim().length < 3) { showError('Informe o motivo do estorno (mín. 3 caracteres).'); return; }
-    try {
-      const res = await hubFinancialApi.reversePayment(paymentId, { clinic_id: clinicId, reason: reverseReason.trim() });
-      showSuccess(res.warning || 'Pagamento estornado e recebível recalculado.');
-      setReversePaymentId('');
-      setReverseReason('');
-      setReverseTargetId(null);
-      await load();
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao estornar pagamento');
     }
   };
 
@@ -661,10 +516,8 @@ const HubCaixaPage: React.FC = () => {
         items={[
           { id: 'atendimentos', label: 'Atendimentos' },
           { id: 'session', label: 'Sessão do caixa' },
-          { id: 'cancellation', label: 'Ajustes por cancelamento' },
           { id: 'pending', label: 'Pendentes de cobrança' },
           { id: 'historico', label: 'Sessões fechadas' },
-          { id: 'reversal', label: 'Estornos' },
         ]}
         activeId={tab}
         onTabChange={(id) => {
@@ -680,7 +533,6 @@ const HubCaixaPage: React.FC = () => {
         cashOpenedAt={cashOpen?.opened_at}
         cashPaymentsTotal={cashSummary?.summary.cash_payments_total ?? 0}
         expectedBalance={expectedBalance}
-        cancellationPendingCount={cancellationPendingCount}
         dayBoardCount={dayBoardItems.length}
       />
 
@@ -689,30 +541,67 @@ const HubCaixaPage: React.FC = () => {
         <section className="hub-finance-page__section">
           <h2 className="hub-clientes__form-title">Atendimentos</h2>
           <div className="hub-dayboard__toolbar">
-            <HubDateField
-              id="dayboard-date"
-              label="Data"
-              valueIso={dayBoardDate}
-              onChangeIso={(d) => {
-                setDayBoardDate(d);
-                void loadDayBoard(d);
-              }}
-            />
-            <div className="hub-dayboard__toggle" role="group" aria-label="Agrupar por">
+            <div className="hub-dayboard__date-nav">
               <button
                 type="button"
-                className={`hub-dayboard__toggle-btn${dayBoardGroupBy === 'tutor' ? ' hub-dayboard__toggle-btn--active' : ''}`}
-                onClick={() => setDayBoardGroupBy('tutor')}
+                className="hub-dayboard__nav-btn"
+                aria-label="Dia anterior"
+                disabled={dayBoardBusy}
+                onClick={() => {
+                  const prev = addDays(dayBoardDate, -1);
+                  setDayBoardDate(prev);
+                  void loadDayBoard(prev);
+                }}
               >
-                Tutor
+                <ChevronLeft size={16} />
               </button>
+              <HubDateField
+                id="dayboard-date"
+                label="Data"
+                valueIso={dayBoardDate}
+                onChangeIso={(d) => {
+                  setDayBoardDate(d);
+                  void loadDayBoard(d);
+                }}
+              />
               <button
                 type="button"
-                className={`hub-dayboard__toggle-btn${dayBoardGroupBy === 'pet' ? ' hub-dayboard__toggle-btn--active' : ''}`}
-                onClick={() => setDayBoardGroupBy('pet')}
+                className="hub-dayboard__nav-btn"
+                aria-label="Próximo dia"
+                disabled={dayBoardBusy}
+                onClick={() => {
+                  const next = addDays(dayBoardDate, 1);
+                  setDayBoardDate(next);
+                  void loadDayBoard(next);
+                }}
               >
-                Pet
+                <ChevronRight size={16} />
               </button>
+            </div>
+            {dayBoardDate !== ymdToday() && (
+              <span className="hub-dayboard__date-badge">
+                {dayBoardDate < ymdToday() ? 'Data passada' : 'Data futura'}
+              </span>
+            )}
+            <div className="hub-dayboard__search-wrap">
+              <Search size={14} className="hub-dayboard__search-icon" />
+              <input
+                type="text"
+                className="hub-dayboard__search"
+                placeholder="Buscar tutor, pet ou serviço…"
+                value={dayBoardSearch}
+                onChange={(e) => setDayBoardSearch(e.target.value)}
+              />
+              {dayBoardSearch && (
+                <button
+                  type="button"
+                  className="hub-dayboard__search-clear"
+                  aria-label="Limpar busca"
+                  onClick={() => setDayBoardSearch('')}
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
             <button
               type="button"
@@ -730,8 +619,8 @@ const HubCaixaPage: React.FC = () => {
               { id: 'all', label: 'Tudo' },
               { id: 'sem_comanda', label: 'Sem comanda' },
               { id: 'comanda_aberta', label: 'Comanda aberta' },
-              { id: 'a_receber', label: 'A receber' },
-              { id: 'recebido', label: 'Recebido' },
+              { id: 'a_receber', label: 'Pendente' },
+              { id: 'recebido', label: 'Pago' },
             ] as const).map((f) => (
               <button
                 key={f.id}
@@ -746,43 +635,28 @@ const HubCaixaPage: React.FC = () => {
 
           {loading || dayBoardBusy ? (
             <p className="hub-clientes__muted">Carregando…</p>
-          ) : dayBoardGroups.length === 0 && openComandas.length === 0 ? (
+          ) : dayBoardFiltered.length === 0 && openComandas.length === 0 ? (
             <div className="hub-dayboard__empty">
               Nenhum atendimento encontrado para esta data nesta unidade.
             </div>
           ) : (
             <>
-              {dayBoardGroups
-                .map((group) => ({
-                  ...group,
-                  items: group.items.filter((it) => {
-                    if (atendimentosStatusFilter === 'all') return true;
-                    if (atendimentosStatusFilter === 'sem_comanda') return !it.billing.comanda_id;
-                    if (atendimentosStatusFilter === 'comanda_aberta') return it.billing.comanda_id && it.billing.comanda_status === 'aberta';
-                    if (atendimentosStatusFilter === 'a_receber') return it.billing.has_receivable && it.billing.comanda_status !== 'fechada';
-                    if (atendimentosStatusFilter === 'recebido') return it.billing.has_receivable && it.billing.comanda_status === 'fechada';
-                    return true;
-                  }),
-                }))
-                .filter((group) => group.items.length > 0)
-                .map((group) => (
-                  <DayBoardGroup
-                    key={group.key}
-                    label={group.label}
-                    items={group.items}
-                    totalEstimated={group.totalEstimated}
-                    canCreateReceivable={canCreateReceivable}
-                    canFinancialWrite={canFinancialWrite}
-                    onOpenComanda={onOpenComanda}
-                    onEditComanda={onEditComanda}
-                    onCheckout={onCheckoutFromBoard}
-                    onBulkCheckout={group.items.filter((it) => it.billing.comanda_status === 'aberta').length >= 2
-                      ? onBulkCheckout
-                      : undefined}
-                    onWaive={onWaiveFromBoard}
-                    busy={dayBoardBusy}
-                  />
-                ))}
+              {dayBoardFiltered.length > 0 && (
+                <FinanceDayBoardTable
+                  mode="caixa"
+                  items={dayBoardFiltered}
+                  canCreateReceivable={canCreateReceivable}
+                  canFinancialWrite={canFinancialWrite}
+                  onOpenComanda={onOpenComanda}
+                  onEditComanda={onEditComanda}
+                  onViewComanda={onViewComanda}
+                  onCheckout={onCheckoutFromBoard}
+                  onSendToFinanceiro={onSendToFinanceiro}
+                  onWaive={onWaiveFromBoard}
+                  onShareComanda={onShareComanda}
+                  busy={dayBoardBusy}
+                />
+              )}
 
               {/* Comandas abertas de outros dias */}
               {(atendimentosStatusFilter === 'all' || atendimentosStatusFilter === 'comanda_aberta') && openComandas.length > 0 && (() => {
@@ -815,18 +689,24 @@ const HubCaixaPage: React.FC = () => {
                                 <td>{c.opened_at ? new Date(String(c.opened_at)).toLocaleString('pt-BR') : '—'}</td>
                                 <td>
                                   <div className="hub-dayboard__item-actions">
-                                    {canCreateReceivable && (
+                                    {canCreateReceivable && canCaixaEditOpenComanda(c) && (
                                       <button
                                         type="button"
                                         className="hub-dayboard__action-btn"
                                         title="Editar comanda"
                                         aria-label="Editar comanda"
-                                        onClick={() => navigate(`/hub/caixa/comanda/${String(c.id)}`)}
+                                        onClick={() => {
+                                          if (c.finance_handoff_at) {
+                                            navigate(`/hub/financeiro/comanda/${String(c.id)}`);
+                                          } else {
+                                            navigate(`/hub/caixa/comanda/${String(c.id)}`);
+                                          }
+                                        }}
                                       >
                                         <Pencil size={15} strokeWidth={2} />
                                       </button>
                                     )}
-                                    {canCreateReceivable && (
+                                    {canCreateReceivable && canCaixaEditOpenComanda(c) && (
                                       <button
                                         type="button"
                                         className="hub-dayboard__action-btn hub-dayboard__action-btn--primary"
@@ -835,6 +715,17 @@ const HubCaixaPage: React.FC = () => {
                                         onClick={() => setCheckoutComandaId(String(c.id))}
                                       >
                                         <Coins size={15} strokeWidth={2} />
+                                      </button>
+                                    )}
+                                    {canCreateReceivable && !canCaixaEditOpenComanda(c) && (
+                                      <button
+                                        type="button"
+                                        className="hub-dayboard__action-btn"
+                                        title="Ver comanda"
+                                        aria-label="Ver comanda"
+                                        onClick={() => navigate(`/hub/caixa/comanda/${String(c.id)}`)}
+                                      >
+                                        <Receipt size={15} strokeWidth={2} />
                                       </button>
                                     )}
                                   </div>
@@ -950,54 +841,6 @@ const HubCaixaPage: React.FC = () => {
         </section>
       ) : null}
 
-      {/* ── Aba: Ajustes por cancelamento ── */}
-      {tab === 'cancellation' ? (
-        <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">Ajustes por cancelamento</h2>
-          <p className="hub-clientes__muted" style={{ marginTop: 0 }}>Operação cancelada na agenda ou no atendimento, com pagamento já registrado na comanda. Resolva aqui (reembolso, crédito ou manter cobrança).</p>
-          {loading ? (
-            <p className="hub-clientes__muted">Carregando…</p>
-          ) : cancellationQueue.length === 0 ? (
-            <p className="hub-clientes__muted">Nenhuma pendência de cancelamento nesta unidade.</p>
-          ) : (
-            <div className="hub-clientes__table-wrap">
-              <table className="hub-clientes__table hub-finance-page__table">
-                <thead>
-                  <tr>
-                    <th>Tutor / Pet</th><th>Origem</th>
-                    <th className="hub-finance-page__th-num">Pago</th>
-                    <th>Cancelamento</th>
-                    <th className="hub-clientes__th-actions">Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cancellationQueue.map((c) => {
-                    const gu = c.guardian as { full_name?: string } | null | undefined;
-                    const pet = c.pet as { name?: string } | null | undefined;
-                    const cancelledAt = c.cancellation_operational_at ? new Date(String(c.cancellation_operational_at)).toLocaleString('pt-BR') : '—';
-                    return (
-                      <tr key={String(c.id)}>
-                        <td>{gu?.full_name ?? '—'}{pet?.name ? ` · ${pet.name}` : ''}</td>
-                        <td><span className="hub-clientes__muted">{String(c.cancellation_operational_type ?? c.origin_type ?? '—')}</span></td>
-                        <td className="hub-finance-page__td-num">{formatBrl(Number(c.paid_total ?? 0))}</td>
-                        <td>{cancelledAt}</td>
-                        <td className="hub-clientes__td-actions">
-                          {canFinancialWrite ? (
-                            <button type="button" className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm" onClick={() => setResolveComanda(c)}>Resolver</button>
-                          ) : (
-                            <span className="hub-clientes__muted">Sem permissão</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      ) : null}
-
       {/* ── Aba: Sessões fechadas ── */}
       {tab === 'historico' ? (
         <section className="hub-finance-page__section">
@@ -1026,55 +869,6 @@ const HubCaixaPage: React.FC = () => {
               </table>
             </div>
           )}
-        </section>
-      ) : null}
-
-      {/* ── Aba: Estornos ── */}
-      {tab === 'reversal' ? (
-        <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">Estorno de pagamento</h2>
-          {cashOpen && cashSummary?.payments?.length ? (
-            <div className="hub-finance-page__panel-section" style={{ marginBottom: 20 }}>
-              <h3 className="hub-finance-page__subsection-title">Recebimentos em dinheiro (sessão aberta)</h3>
-              <div className="hub-clientes__table-wrap">
-                <table className="hub-clientes__table hub-finance-page__table">
-                  <thead><tr><th>Data</th><th className="hub-finance-page__th-num">Valor</th><th className="hub-clientes__th-actions">Ação</th></tr></thead>
-                  <tbody>
-                    {(cashSummary.payments ?? []).map((p) => (
-                      <tr key={p.id}>
-                        <td>{p.payment_date ? new Date(p.payment_date).toLocaleString('pt-BR') : '—'}</td>
-                        <td className="hub-finance-page__td-num">{formatBrl(Number(p.amount ?? 0))}</td>
-                        <td className="hub-clientes__td-actions">
-                          <button type="button" className="hub-servicos__btn-ghost-sm" onClick={() => { setReverseTargetId(p.id); setReverseReason(''); }}>Estornar</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
-          <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>Ou informe manualmente o UUID do pagamento (ex.: cópia do financeiro).</p>
-          <div className="hub-finance-page__card-panel hub-finance-page__card-panel--stack">
-            {reverseTargetId ? (
-              <p className="hub-clientes__muted">
-                Estornando pagamento <strong>{reverseTargetId.slice(0, 8)}…</strong>
-                <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm" style={{ marginLeft: 8 }} onClick={() => setReverseTargetId(null)}>Trocar</button>
-              </p>
-            ) : (
-              <div className="hub-clientes__field hub-finance-page__field-grow">
-                <label className="hub-clientes__label" htmlFor="caixa-reverse-payment">ID do pagamento</label>
-                <input id="caixa-reverse-payment" className="hub-clientes__input" value={reversePaymentId} onChange={(e) => setReversePaymentId(e.target.value)} placeholder="UUID do hub_payments" />
-              </div>
-            )}
-            <div className="hub-clientes__field">
-              <label className="hub-clientes__label" htmlFor="caixa-reverse-reason">Motivo do estorno</label>
-              <textarea id="caixa-reverse-reason" className="hub-clientes__input" rows={2} value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} placeholder="Descreva o motivo (mín. 3 caracteres)" />
-            </div>
-            <div>
-              <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" disabled={!reverseReason.trim() || reverseReason.trim().length < 3} onClick={() => void onReverseConfirm()}>Confirmar estorno</button>
-            </div>
-          </div>
         </section>
       ) : null}
 
@@ -1116,15 +910,6 @@ const HubCaixaPage: React.FC = () => {
       ) : null}
     </>,
     <>
-      <ComandaCancellationResolveDrawer
-        open={!!resolveComanda}
-        onClose={() => setResolveComanda(null)}
-        clinicId={clinicId}
-        unitId={unitId}
-        comanda={resolveComanda}
-        onResolved={() => void load()}
-      />
-
       {clinicId && checkoutComandaId && unitId ? (
         <ComandaCheckoutDrawer
           key={checkoutComandaId}
@@ -1133,11 +918,19 @@ const HubCaixaPage: React.FC = () => {
           clinicId={clinicId}
           unitId={unitId}
           comandaId={checkoutComandaId}
-          onSuccess={() => {
-            showSuccess('Cobrança concluída.');
+          onSuccess={({ comandaId, kind, receivableIds }) => {
+            showSuccess(kind === 'leave_pending' ? 'Comanda enviada ao financeiro.' : 'Cobrança concluída.');
             setCheckoutComandaId(null);
             void load();
             void loadDayBoard();
+            if (kind === 'leave_pending') {
+              const rid = receivableIds[0];
+              navigate(
+                rid
+                  ? `/hub/financeiro/comanda/${comandaId}?receivable_id=${rid}`
+                  : `/hub/financeiro/comanda/${comandaId}`,
+              );
+            }
           }}
         />
       ) : null}

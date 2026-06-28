@@ -1,14 +1,34 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Ban, Coins, FilePlus2, Search, Send, Trash2 } from 'lucide-react';
+import { FilePlus2, Search, Trash2 } from 'lucide-react';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
-import { hubComandaApi, type HubComandaDetailResponse, type HubComandaItem } from '../../api/hubComandaApi';
+import {
+  hubComandaApi,
+  openHubComandaPdf,
+  type HubComandaAllowedGuardian,
+  type HubComandaDetailResponse,
+  type HubComandaEditContext,
+  type HubComandaGuardianEmbed,
+  type HubComandaItem,
+} from '../../api/hubComandaApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { useAlert } from '../../components/AlertProvider';
 import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
-import { DiscountControl, resolveDiscountAmount, inferDiscountKindAndValue, type DiscountKind } from '../../components/billing/DiscountControl';
+import {
+  DiscountControl,
+  resolveDiscountAmount,
+  inferDiscountKindAndValue,
+  type DiscountKind,
+} from '../../components/billing/DiscountControl';
 import { FinancialSummaryCard } from '../../components/billing/FinancialSummaryCard';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
+import HubComandaDetailLayout from './HubComandaDetailLayout';
+import {
+  buildWhatsAppMessageComandaLinkVariant,
+  formatBrlLabel,
+  guardianFirstName,
+  waMeUrlWithText,
+} from './hubComandaShareUtils';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import './hub-finance-page.css';
 import '../orcamentos/orcamentos-page.css';
@@ -27,7 +47,6 @@ function round2(n: number): number {
 }
 
 type ItemDraft = {
-  /** null = item novo (não persistido) */
   id: string | null;
   description: string;
   quantity: string;
@@ -37,7 +56,6 @@ type ItemDraft = {
   origin_type: string | null;
   pet_name: string | null;
   hub_service_type_id: string | null;
-  /** Item já está em receivable_lines (faturado). */
   invoiced: boolean;
   isNew?: boolean;
 };
@@ -82,29 +100,25 @@ function newItemDraft(): ItemDraft {
   };
 }
 
-interface ComandaHeaderInfo {
-  status: string;
-  guardian_name?: string | null;
-  pet_name?: string | null;
-  total_amount?: number;
-  discount_amount?: number;
-  notes?: string | null;
+function extractGuardian(comanda: Record<string, unknown>): HubComandaGuardianEmbed | null {
+  const g = comanda.guardian as HubComandaGuardianEmbed | null | undefined;
+  if (!g?.id) return null;
+  return g;
 }
 
-function extractComandaInfo(comanda: Record<string, unknown>): ComandaHeaderInfo {
-  return {
-    status: String(comanda.status ?? ''),
-    guardian_name: comanda.guardian_name as string | null,
-    pet_name: comanda.pet_name as string | null,
-    total_amount: Number(comanda.total_amount ?? 0),
-    discount_amount: Number(comanda.discount_amount ?? 0),
-    notes: comanda.notes as string | null,
-  };
-}
+export type HubComandaPageMode = 'caixa' | 'financeiro';
 
-export default function HubComandaPage() {
+export type HubComandaPageProps = {
+  mode?: HubComandaPageMode;
+  financePanel?: React.ReactNode;
+  onDetailLoaded?: (detail: HubComandaDetailResponse) => void;
+  refreshKey?: number;
+};
+
+export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailLoaded, refreshKey = 0 }: HubComandaPageProps) {
   const { id: comandaId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const editContext: HubComandaEditContext = mode;
   const { hasPermission } = usePermissions();
   const { showError, showSuccess, showConfirm } = useAlert();
   const clinicId = getStoredClinicId();
@@ -125,10 +139,10 @@ export default function HubComandaPage() {
 
   const newItemCounterRef = useRef(0);
 
-  const comandaInfo = useMemo(() => {
-    if (!payload?.comanda) return null;
-    return extractComandaInfo(payload.comanda);
-  }, [payload]);
+  const comandaRow = payload?.comanda as Record<string, unknown> | undefined;
+  const status = String(comandaRow?.status ?? '');
+  const guardian = comandaRow ? extractGuardian(comandaRow) : null;
+  const allowedGuardians = (payload?.allowed_guardians ?? []) as HubComandaAllowedGuardian[];
 
   const load = useCallback(async () => {
     if (!comandaId || !clinicId) return;
@@ -139,6 +153,7 @@ export default function HubComandaPage() {
         hubServiceTypesApi.list(clinicId),
       ]);
       setPayload(detail);
+      onDetailLoaded?.(detail);
       setServiceTypes(stRes.service_types);
 
       const invoicedSet = new Set(detail.invoiced_item_ids ?? []);
@@ -147,9 +162,9 @@ export default function HubComandaPage() {
         .map((it) => apiItemToDraft(it, invoicedSet.has(it.id)));
       setItems(drafts);
 
-      const info = extractComandaInfo(detail.comanda);
-      setNotes(info.notes ?? '');
-      const discAmt = info.discount_amount ?? 0;
+      const info = detail.comanda as Record<string, unknown>;
+      setNotes(String(info.notes ?? ''));
+      const discAmt = Number(info.discount_amount ?? 0);
       const subtotalEst = (detail.items ?? []).reduce((s, it) => s + Number(it.line_total ?? 0), 0);
       const { kind, valueStr } = inferDiscountKindAndValue(discAmt, subtotalEst);
       setDiscountKind(kind);
@@ -159,11 +174,11 @@ export default function HubComandaPage() {
     } finally {
       setLoading(false);
     }
-  }, [comandaId, clinicId, showError]);
+  }, [comandaId, clinicId, showError, onDetailLoaded]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   const summary = useMemo(() => {
     const subtotal = items.reduce((s, it) => s + computeLineTotal(it), 0);
@@ -204,7 +219,7 @@ export default function HubComandaPage() {
 
     showConfirm('Remover item da comanda?', async () => {
       try {
-        const detail = await hubComandaApi.deleteItem(comandaId, item.id!, clinicId);
+        const detail = await hubComandaApi.deleteItem(comandaId, item.id!, clinicId, editContext);
         setPayload(detail);
         const invoicedSet = new Set(detail.invoiced_item_ids ?? []);
         setItems(
@@ -219,55 +234,62 @@ export default function HubComandaPage() {
     });
   };
 
+  const persistComanda = async () => {
+    if (!clinicId || !comandaId || !canWrite) return;
+
+    const newItems = items.filter((it) => it.isNew || (it.id && it.id.startsWith(NEW_ITEM_KEY_PREFIX)));
+    if (newItems.length > 0) {
+      await hubComandaApi.addItems(comandaId, {
+        clinic_id: clinicId,
+        edit_context: editContext,
+        items: newItems.map((it) => ({
+          description: it.description || 'Serviço',
+          quantity: parseMoney(it.quantity) || 1,
+          unit_amount: parseMoney(it.unit_amount),
+          discount_amount: parseMoney(it.discount_amount),
+          hub_service_type_id: it.hub_service_type_id ?? undefined,
+          item_kind: 'service' as const,
+        })),
+      });
+    }
+
+    const existingEdited = items.filter(
+      (it) => it.id && !it.id.startsWith(NEW_ITEM_KEY_PREFIX) && !it.isNew && !it.invoiced,
+    );
+    for (const it of existingEdited) {
+      await hubComandaApi.patchItem(comandaId, it.id!, {
+        clinic_id: clinicId,
+        edit_context: editContext,
+        quantity: parseMoney(it.quantity) || 1,
+        unit_amount: parseMoney(it.unit_amount),
+        discount_amount: parseMoney(it.discount_amount),
+        ...(it.origin_type === 'manual' ? { description: it.description } : {}),
+      });
+    }
+
+    const discountAmount = resolveDiscountAmount(discountKind, discountValueStr, summary.subtotal);
+    return hubComandaApi.updateComanda(comandaId, {
+      clinic_id: clinicId,
+      edit_context: editContext,
+      discount_amount: discountAmount,
+      notes: notes.trim() || null,
+    });
+  };
+
   const handleSave = async () => {
     if (!clinicId || !comandaId || !canWrite) return;
     setSaving(true);
     try {
-      // 1. Persistir itens novos (não têm id real)
-      const newItems = items.filter((it) => it.isNew || (it.id && it.id.startsWith(NEW_ITEM_KEY_PREFIX)));
-      if (newItems.length > 0) {
-        await hubComandaApi.addItems(comandaId, {
-          clinic_id: clinicId,
-          items: newItems.map((it) => ({
-            description: it.description || 'Serviço',
-            quantity: parseMoney(it.quantity) || 1,
-            unit_amount: parseMoney(it.unit_amount),
-            discount_amount: parseMoney(it.discount_amount),
-            hub_service_type_id: it.hub_service_type_id ?? undefined,
-            item_kind: 'service' as const,
-          })),
-        });
+      const detail = await persistComanda();
+      if (detail) {
+        setPayload(detail);
+        const invoicedSet = new Set(detail.invoiced_item_ids ?? []);
+        setItems(
+          (detail.items ?? [])
+            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+            .map((it) => apiItemToDraft(it, invoicedSet.has(it.id))),
+        );
       }
-
-      // 2. Persistir edições em itens existentes
-      const existingEdited = items.filter(
-        (it) => it.id && !it.id.startsWith(NEW_ITEM_KEY_PREFIX) && !it.isNew && !it.invoiced,
-      );
-      for (const it of existingEdited) {
-        await hubComandaApi.patchItem(comandaId, it.id!, {
-          clinic_id: clinicId,
-          quantity: parseMoney(it.quantity) || 1,
-          unit_amount: parseMoney(it.unit_amount),
-          discount_amount: parseMoney(it.discount_amount),
-          ...(it.origin_type === 'manual' ? { description: it.description } : {}),
-        });
-      }
-
-      // 3. Atualizar desconto global + notas
-      const discountAmount = resolveDiscountAmount(discountKind, discountValueStr, summary.subtotal);
-      const detail = await hubComandaApi.updateComanda(comandaId, {
-        clinic_id: clinicId,
-        discount_amount: discountAmount,
-        notes: notes.trim() || null,
-      });
-
-      setPayload(detail);
-      const invoicedSet = new Set(detail.invoiced_item_ids ?? []);
-      setItems(
-        (detail.items ?? [])
-          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-          .map((it) => apiItemToDraft(it, invoicedSet.has(it.id))),
-      );
       showSuccess('Comanda salva.');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao salvar');
@@ -281,20 +303,16 @@ export default function HubComandaPage() {
     showConfirm('Enviar comanda ao financeiro? Os itens ficarão como recebíveis pendentes.', async () => {
       setSaving(true);
       try {
-        const discountAmount = resolveDiscountAmount(discountKind, discountValueStr, summary.subtotal);
-        await hubComandaApi.updateComanda(comandaId, {
-          clinic_id: clinicId,
-          discount_amount: discountAmount,
-          notes: notes.trim() || null,
-        });
-
+        await persistComanda();
+        const dueDate = new Date().toISOString().slice(0, 10);
         await hubComandaApi.checkout(comandaId, {
           clinic_id: clinicId,
           grouping: 'all',
           action: 'leave_pending',
+          due_date: dueDate,
         });
         showSuccess('Comanda enviada ao financeiro.');
-        navigate('/hub/caixa');
+        navigate(`/hub/financeiro/comanda/${comandaId}`);
       } catch (e: unknown) {
         showError((e as Error)?.message || 'Erro ao enviar ao financeiro');
       } finally {
@@ -303,12 +321,78 @@ export default function HubComandaPage() {
     });
   };
 
-  // Serviços disponíveis para o combobox de adição
+  const handleGuardianChange = async (guardianId: string) => {
+    if (!clinicId || !comandaId || !canWrite) return;
+    setSaving(true);
+    try {
+      const detail = await hubComandaApi.updateComanda(comandaId, {
+        clinic_id: clinicId,
+        edit_context: editContext,
+        guardian_id: guardianId,
+      });
+      setPayload(detail);
+      showSuccess('Tutor de cobrança atualizado.');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao trocar tutor');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const ensurePublicUrl = async (): Promise<string> => {
+    if (!clinicId || !comandaId) throw new Error('Comanda inválida');
+    const { public_token } = await hubComandaApi.ensurePublicToken(comandaId, clinicId);
+    return hubComandaApi.publicLink(public_token);
+  };
+
+  const copyPublicLink = async () => {
+    try {
+      const url = await ensurePublicUrl();
+      await navigator.clipboard.writeText(url);
+      showSuccess('Link público copiado');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao gerar link');
+    }
+  };
+
+  const openPublicComanda = async () => {
+    try {
+      const url = await ensurePublicUrl();
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao abrir link público');
+    }
+  };
+
+  const shareWhatsAppWithMessage = async () => {
+    if (!guardian) return;
+    try {
+      const publicUrl = await ensurePublicUrl();
+      const firstName = guardianFirstName(guardian.full_name);
+      const msg = buildWhatsAppMessageComandaLinkVariant(firstName, publicUrl, formatBrlLabel(summary.total));
+      const waUrl = waMeUrlWithText(guardian.phone, msg);
+      if (!waUrl) {
+        showError('Cadastre um telefone válido no tutor.');
+        return;
+      }
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao preparar WhatsApp');
+    }
+  };
+
+  const openPdf = async () => {
+    if (!clinicId || !comandaId) return;
+    try {
+      await openHubComandaPdf(comandaId, clinicId);
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao abrir PDF');
+    }
+  };
+
   const serviceComboOptions = useMemo((): HubComboboxOption[] => {
     const q = serviceSearch.trim().toLowerCase();
-    const active = serviceTypes.filter(
-      (s) => !s.deleted_at && s.active !== false && !s.is_addon,
-    );
+    const active = serviceTypes.filter((s) => !s.deleted_at && s.active !== false && !s.is_addon);
     const filtered = q ? active.filter((s) => s.name.toLowerCase().includes(q)) : active;
     return [
       { value: '', label: '— Selecionar serviço —' },
@@ -342,11 +426,34 @@ export default function HubComandaPage() {
     [clinicId, serviceTypes],
   );
 
-  const isAberta = comandaInfo?.status === 'aberta';
+  const isAberta = status === 'aberta';
+  const canEdit = Boolean(payload?.edit_scopes?.[editContext] ?? (isAberta && canWrite));
+  const lockedReason = payload?.edit_scopes?.locked_reason ?? null;
+
+  const readOnlyBanner = useMemo(() => {
+    if (canEdit || !lockedReason) return null;
+    if (lockedReason === 'finance_handoff' && mode === 'caixa') {
+      return (
+        <>
+          Esta comanda foi enviada ao financeiro. Edite e cobre em{' '}
+          <Link to={`/hub/financeiro/comanda/${comandaId}`}>Financeiro</Link>.
+        </>
+      );
+    }
+    if (lockedReason === 'paid_and_complete') {
+      return (
+        <>
+          Comanda quitada e serviço concluído. Alterações de valor via estorno no{' '}
+          <Link to={`/hub/financeiro/comanda/${comandaId}`}>Financeiro</Link>.
+        </>
+      );
+    }
+    return null;
+  }, [canEdit, lockedReason, mode, comandaId]);
 
   if (!clinicId || !unitId) {
     return (
-      <div className="hub-orcamento-novo">
+      <div className="hub-quote-detail" style={{ padding: 24 }}>
         <p className="hub-clientes__muted">Selecione a unidade para continuar.</p>
       </div>
     );
@@ -354,349 +461,268 @@ export default function HubComandaPage() {
 
   if (loading) {
     return (
-      <div className="hub-orcamento-novo">
+      <div className="hub-quote-detail" style={{ padding: 24 }}>
         <p className="hub-clientes__muted">Carregando…</p>
       </div>
     );
   }
 
-  if (!payload || !comandaInfo) {
+  if (!payload || !comandaRow || !comandaId) {
     return (
-      <div className="hub-orcamento-novo">
+      <div className="hub-quote-detail" style={{ padding: 24 }}>
         <p className="hub-clientes__muted">Comanda não encontrada.</p>
       </div>
     );
   }
 
-  const statusLabel: Record<string, string> = {
-    aberta: 'Aberta',
-    fechada: 'Fechada',
-    cancelada: 'Cancelada',
-  };
+  const itemsSection = (
+    <>
+      {canEdit && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <div className="hub-orcamento-novo__services-search-wrap" style={{ minWidth: 180, flex: 1 }}>
+            <Search size={15} className="hub-orcamento-novo__services-search-icon" aria-hidden />
+            <input
+              type="search"
+              className="hub-orcamento-novo__input hub-orcamento-novo__services-search-input"
+              placeholder="Buscar serviço"
+              value={serviceSearch}
+              onChange={(e) => setServiceSearch(e.target.value)}
+              aria-label="Buscar serviço"
+            />
+          </div>
+          <button
+            type="button"
+            className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline"
+            onClick={addNewItem}
+          >
+            <FilePlus2 size={15} />
+            Adicionar item
+          </button>
+        </div>
+      )}
+      {items.length === 0 ? (
+        <p className="hub-quote-detail__muted">Nenhum item na comanda.</p>
+      ) : (
+        <div className="hub-quote-detail__table-scroll">
+          <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
+            <thead>
+              <tr>
+                <th>Descrição / Serviço</th>
+                <th>Pet</th>
+                <th className="right">Qtd</th>
+                <th className="right">Valor unit.</th>
+                <th className="right">Desconto</th>
+                <th className="right">Total linha</th>
+                {canEdit && <th aria-label="Ações" />}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it, idx) => {
+                const editable = canEdit && !it.invoiced;
+                const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
+                return (
+                  <tr key={it.id ?? `new-${idx}`} className={it.invoiced ? 'hub-comanda-row--invoiced' : ''}>
+                    <td style={{ minWidth: 200 }}>
+                      {editable && it.isNew ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <HubSearchableCombobox
+                            id={`comanda-svc-${idx}`}
+                            className="hub-orcamento-novo__combobox hub-orcamento-novo__service-combobox"
+                            options={serviceComboOptions}
+                            value={it.hub_service_type_id ?? ''}
+                            onChange={(v) => void applyServiceToItem(idx, v)}
+                            placeholder="— Selecionar serviço —"
+                            searchPlaceholder="Buscar serviço…"
+                            ariaLabel="Serviço"
+                          />
+                          <input
+                            className="hub-orcamento-novo__input"
+                            placeholder="Ou digitar descrição livre"
+                            value={it.description}
+                            onChange={(e) => updateItem(idx, { description: e.target.value })}
+                          />
+                        </div>
+                      ) : editable && isManual ? (
+                        <input
+                          className="hub-orcamento-novo__input"
+                          value={it.description}
+                          onChange={(e) => updateItem(idx, { description: e.target.value })}
+                        />
+                      ) : (
+                        <span title={it.origin_type ?? undefined}>{it.description}</span>
+                      )}
+                    </td>
+                    <td className="hub-orcamento-novo__services-table-cell--muted">{it.pet_name ?? '—'}</td>
+                    <td className="right" style={{ minWidth: 64 }}>
+                      {editable ? (
+                        <input
+                          className="hub-orcamento-novo__input"
+                          style={{ textAlign: 'right', maxWidth: 64 }}
+                          value={it.quantity}
+                          onChange={(e) => updateItem(idx, { quantity: e.target.value })}
+                        />
+                      ) : (
+                        it.quantity
+                      )}
+                    </td>
+                    <td className="right" style={{ minWidth: 96 }}>
+                      {editable ? (
+                        <input
+                          className="hub-orcamento-novo__input"
+                          style={{ textAlign: 'right', maxWidth: 96 }}
+                          value={it.unit_amount}
+                          onChange={(e) => updateItem(idx, { unit_amount: e.target.value })}
+                        />
+                      ) : (
+                        fmtBrl(Number(it.unit_amount))
+                      )}
+                    </td>
+                    <td className="right" style={{ minWidth: 96 }}>
+                      {editable ? (
+                        <input
+                          className="hub-orcamento-novo__input"
+                          style={{ textAlign: 'right', maxWidth: 96 }}
+                          value={it.discount_amount}
+                          onChange={(e) => updateItem(idx, { discount_amount: e.target.value })}
+                        />
+                      ) : (
+                        fmtBrl(Number(it.discount_amount))
+                      )}
+                    </td>
+                    <td className="right" style={{ fontWeight: 500 }}>
+                      {fmtBrl(computeLineTotal(it))}
+                    </td>
+                    {canEdit && (
+                      <td>
+                        {it.invoiced ? (
+                          <span className="hub-orcamento-novo__services-table-cell--muted" style={{ fontSize: 11 }}>
+                            Faturado
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost hub-orcamento-novo__btn--icon"
+                            aria-label="Remover item"
+                            onClick={() => void removeItem(idx)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+
+  const notesSection = (
+    <section className="hub-quote-detail__card hub-quote-detail__card--internal">
+      <h2 className="hub-quote-detail__card-title">Observação interna</h2>
+      <textarea
+        className="hub-orcamento-novo__textarea"
+        rows={3}
+        maxLength={2000}
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="Apenas a equipe vê"
+        disabled={!canEdit}
+      />
+      <p className="hub-orcamento-novo__char-count">{notes.length}/2000</p>
+    </section>
+  );
+
+  const sidebarActions =
+    canEdit ? (
+      <FinancialSummaryCard
+        subtotal={summary.subtotal}
+        discountAmount={summary.discountAmount}
+        total={summary.total}
+        discountControl={
+          <DiscountControl
+            idPrefix="comanda"
+            kind={discountKind}
+            valueStr={discountValueStr}
+            onKindChange={setDiscountKind}
+            onValueStrChange={setDiscountValueStr}
+            disabled={saving}
+          />
+        }
+      />
+    ) : null;
 
   return (
-    <div className="hub-orcamento-novo">
-      {/* ── Topbar / Header ── */}
-      <header className="hub-orcamento-novo__topbar">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--hub-muted)' }}>
-            <Link to="/hub/caixa" style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'inherit', textDecoration: 'none' }}>
-              <ArrowLeft size={14} />
-              Caixa
-            </Link>
-            <span>/</span>
-            <span>Comanda</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className={`hub-finance-badge hub-finance-badge--${comandaInfo.status}`}>
-              {statusLabel[comandaInfo.status] ?? comandaInfo.status}
-            </span>
-            {comandaInfo.guardian_name && (
-              <span style={{ fontSize: 14, color: 'var(--hub-text)' }}>
-                Tutor: <strong>{comandaInfo.guardian_name}</strong>
-              </span>
-            )}
-            {comandaInfo.pet_name && (
-              <span style={{ fontSize: 14, color: 'var(--hub-text)' }}>
-                Pet: <strong>{comandaInfo.pet_name}</strong>
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="hub-orcamento-novo__topbar-actions">
-          {isAberta && canWrite && (
-            <>
-              <button
-                type="button"
-                className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline"
-                disabled={saving}
-                onClick={() => void handleSave()}
-              >
-                Salvar
-              </button>
-              <button
-                type="button"
-                className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary"
-                disabled={saving}
-                onClick={() => setShowCheckout(true)}
-              >
-                <Coins size={16} style={{ marginRight: 4 }} />
-                Cobrar
-              </button>
-            </>
-          )}
-        </div>
-      </header>
+    <>
+      <HubComandaDetailLayout
+        comandaId={comandaId}
+        status={status}
+        openedAt={comandaRow.opened_at as string | null}
+        closedAt={comandaRow.closed_at as string | null}
+        guardian={guardian}
+        allowedGuardians={allowedGuardians}
+        subtotal={summary.subtotal}
+        discountAmount={summary.discountAmount}
+        total={summary.total}
+        paidTotal={payload.paid_total}
+        balanceDue={payload.balance_due}
+        canWrite={canWrite}
+        canEdit={canEdit}
+        saving={saving}
+        isAberta={isAberta}
+        mode={mode}
+        readOnlyBanner={readOnlyBanner}
+        selectedGuardianId={guardian?.id ?? null}
+        onGuardianChange={allowedGuardians.length > 1 ? (id) => void handleGuardianChange(id) : undefined}
+        onSave={() => void handleSave()}
+        onCheckout={canEdit && (payload?.balance_due ?? 0) > 0.009 ? () => setShowCheckout(true) : undefined}
+        onSendToFinancial={mode === 'caixa' ? handleSendToFinancial : undefined}
+        onOpenPdf={() => void openPdf()}
+        onCopyPublic={() => void copyPublicLink()}
+        onShareOpenPublic={() => void openPublicComanda()}
+        onShareWhatsAppWithMessage={() => void shareWhatsAppWithMessage()}
+        itemsSection={itemsSection}
+        notesSection={notesSection}
+        sidebarActions={sidebarActions}
+        financePanel={financePanel}
+      />
 
-      {/* ── Layout 2 colunas ── */}
-      <div className="hub-orcamento-novo__grid">
-        {/* ── Coluna principal: itens ── */}
-        <div className="hub-orcamento-novo__main">
-          <section className="hub-orcamento-novo__card">
-            <div className="hub-orcamento-novo__card-header">
-              <div>
-                <h2 className="hub-orcamento-novo__card-title">Itens da comanda</h2>
-                {!isAberta && (
-                  <p className="hub-orcamento-novo__card-subtitle">Esta comanda não está aberta e não pode ser editada.</p>
-                )}
-              </div>
-              {isAberta && canWrite && (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <div className="hub-orcamento-novo__services-search-wrap" style={{ minWidth: 180 }}>
-                    <Search size={15} className="hub-orcamento-novo__services-search-icon" aria-hidden />
-                    <input
-                      type="search"
-                      className="hub-orcamento-novo__input hub-orcamento-novo__services-search-input"
-                      placeholder="Buscar serviço"
-                      value={serviceSearch}
-                      onChange={(e) => setServiceSearch(e.target.value)}
-                      aria-label="Buscar serviço"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline"
-                    onClick={addNewItem}
-                  >
-                    <FilePlus2 size={15} />
-                    Adicionar item
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {items.length === 0 ? (
-              <p className="hub-orcamento-novo__help">Nenhum item na comanda.</p>
-            ) : (
-              <div className="hub-orcamento-novo__services-scroller">
-                <table className="hub-orcamento-novo__services-table">
-                  <thead>
-                    <tr>
-                      <th>Descrição / Serviço</th>
-                      <th>Pet</th>
-                      <th className="right">Qtd</th>
-                      <th className="right">Valor unit.</th>
-                      <th className="right">Desconto</th>
-                      <th className="right">Total linha</th>
-                      {isAberta && canWrite && <th aria-label="Ações" />}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((it, idx) => {
-                      const editable = isAberta && canWrite && !it.invoiced;
-                      const isManual = it.origin_type === 'manual';
-                      return (
-                        <tr
-                          key={it.id ?? `new-${idx}`}
-                          className={it.invoiced ? 'hub-comanda-row--invoiced' : ''}
-                        >
-                          <td style={{ minWidth: 200 }}>
-                            {editable && it.isNew ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                <HubSearchableCombobox
-                                  id={`comanda-svc-${idx}`}
-                                  className="hub-orcamento-novo__combobox hub-orcamento-novo__service-combobox"
-                                  options={serviceComboOptions}
-                                  value={it.hub_service_type_id ?? ''}
-                                  onChange={(v) => void applyServiceToItem(idx, v)}
-                                  placeholder="— Selecionar serviço —"
-                                  searchPlaceholder="Buscar serviço…"
-                                  ariaLabel="Serviço"
-                                />
-                                <input
-                                  className="hub-orcamento-novo__input"
-                                  placeholder="Ou digitar descrição livre"
-                                  value={it.description}
-                                  onChange={(e) => updateItem(idx, { description: e.target.value })}
-                                />
-                              </div>
-                            ) : editable && isManual ? (
-                              <input
-                                className="hub-orcamento-novo__input"
-                                value={it.description}
-                                onChange={(e) => updateItem(idx, { description: e.target.value })}
-                              />
-                            ) : (
-                              <span title={it.origin_type ?? undefined}>{it.description}</span>
-                            )}
-                          </td>
-                          <td className="hub-orcamento-novo__services-table-cell--muted">
-                            {it.pet_name ?? '—'}
-                          </td>
-                          <td className="right" style={{ minWidth: 64 }}>
-                            {editable ? (
-                              <input
-                                className="hub-orcamento-novo__input"
-                                style={{ textAlign: 'right', maxWidth: 64 }}
-                                value={it.quantity}
-                                onChange={(e) => updateItem(idx, { quantity: e.target.value })}
-                              />
-                            ) : (
-                              it.quantity
-                            )}
-                          </td>
-                          <td className="right" style={{ minWidth: 96 }}>
-                            {editable ? (
-                              <input
-                                className="hub-orcamento-novo__input"
-                                style={{ textAlign: 'right', maxWidth: 96 }}
-                                value={it.unit_amount}
-                                onChange={(e) => updateItem(idx, { unit_amount: e.target.value })}
-                              />
-                            ) : (
-                              fmtBrl(Number(it.unit_amount))
-                            )}
-                          </td>
-                          <td className="right" style={{ minWidth: 96 }}>
-                            {editable ? (
-                              <input
-                                className="hub-orcamento-novo__input"
-                                style={{ textAlign: 'right', maxWidth: 96 }}
-                                value={it.discount_amount}
-                                onChange={(e) => updateItem(idx, { discount_amount: e.target.value })}
-                              />
-                            ) : (
-                              fmtBrl(Number(it.discount_amount))
-                            )}
-                          </td>
-                          <td className="right" style={{ fontWeight: 500 }}>
-                            {fmtBrl(computeLineTotal(it))}
-                          </td>
-                          {isAberta && canWrite && (
-                            <td>
-                              {it.invoiced ? (
-                                <span
-                                  className="hub-orcamento-novo__services-table-cell--muted"
-                                  title="Item faturado"
-                                  style={{ fontSize: 11 }}
-                                >
-                                  Faturado
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost hub-orcamento-novo__btn--icon"
-                                  aria-label="Remover item"
-                                  onClick={() => void removeItem(idx)}
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                              )}
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        </div>
-
-        {/* ── Sidebar: resumo + ações ── */}
-        <aside className="hub-orcamento-novo__sidebar">
-          <FinancialSummaryCard
-            subtotal={summary.subtotal}
-            discountAmount={summary.discountAmount}
-            total={summary.total}
-            discountControl={
-              isAberta && canWrite ? (
-                <div className="hub-orcamento-novo__card" style={{ boxShadow: 'none', padding: 0 }}>
-                  <h4 className="hub-orcamento-novo__footer-card-title" style={{ marginBottom: 6 }}>Desconto global</h4>
-                  <DiscountControl
-                    idPrefix="comanda"
-                    kind={discountKind}
-                    valueStr={discountValueStr}
-                    onKindChange={setDiscountKind}
-                    onValueStrChange={setDiscountValueStr}
-                    disabled={saving}
-                  />
-                </div>
-              ) : null
-            }
-          />
-
-          {/* Notas internas */}
-          <div className="hub-orcamento-novo__card">
-            <h3 className="hub-orcamento-novo__card-title">Observação interna</h3>
-            <div className="hub-orcamento-novo__field hub-orcamento-novo__field--wide">
-              <textarea
-                className="hub-orcamento-novo__textarea"
-                rows={3}
-                maxLength={2000}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Apenas a equipe vê"
-                disabled={!isAberta || !canWrite}
-              />
-              <p className="hub-orcamento-novo__char-count">{notes.length}/2000</p>
-            </div>
-          </div>
-
-          {/* Ações */}
-          {isAberta && canWrite && (
-            <div className="hub-orcamento-novo__card">
-              <h3 className="hub-orcamento-novo__card-title">Ações</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <button
-                  type="button"
-                  className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary"
-                  style={{ width: '100%', justifyContent: 'center' }}
-                  disabled={saving}
-                  onClick={() => setShowCheckout(true)}
-                >
-                  <Coins size={16} />
-                  Cobrar
-                </button>
-                <button
-                  type="button"
-                  className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline"
-                  style={{ width: '100%', justifyContent: 'center' }}
-                  disabled={saving}
-                  onClick={() => handleSendToFinancial()}
-                >
-                  <Send size={16} />
-                  Enviar ao financeiro
-                </button>
-                <button
-                  type="button"
-                  className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost"
-                  style={{ width: '100%', justifyContent: 'center' }}
-                  disabled={saving}
-                  onClick={() => void handleSave()}
-                >
-                  Salvar
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!isAberta && (
-            <div className="hub-orcamento-novo__card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--hub-muted)' }}>
-                <Ban size={16} />
-                <span style={{ fontSize: 13 }}>Comanda encerrada — somente leitura.</span>
-              </div>
-            </div>
-          )}
-        </aside>
-      </div>
-
-      {/* ── Drawer de cobrança ── */}
-      {showCheckout && comandaId && clinicId && unitId && (
+      {showCheckout && clinicId && unitId && (
         <ComandaCheckoutDrawer
+          mode={mode}
           open={showCheckout}
           onClose={() => setShowCheckout(false)}
           clinicId={clinicId}
           unitId={unitId}
           comandaId={comandaId}
-          onSuccess={() => {
+          onSuccess={({ comandaId, kind, receivableIds }) => {
             setShowCheckout(false);
+            void load();
+            if (mode === 'financeiro') {
+              const rid = receivableIds[0];
+              navigate(
+                rid
+                  ? `/hub/financeiro/comanda/${comandaId}?receivable_id=${rid}`
+                  : `/hub/financeiro/comanda/${comandaId}`,
+              );
+              return;
+            }
+            if (kind === 'leave_pending') {
+              const rid = receivableIds[0];
+              navigate(
+                rid
+                  ? `/hub/financeiro/comanda/${comandaId}?receivable_id=${rid}`
+                  : `/hub/financeiro/comanda/${comandaId}`,
+              );
+              return;
+            }
             navigate('/hub/caixa');
           }}
         />
       )}
-    </div>
+    </>
   );
 }

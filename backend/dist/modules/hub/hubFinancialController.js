@@ -1962,6 +1962,53 @@ const getHubFinancePendingBillingCount = async (req, res) => {
     }
 };
 exports.getHubFinancePendingBillingCount = getHubFinancePendingBillingCount;
+function isDayBoardOperationallyComplete(originType, operationalStatus) {
+    switch (originType) {
+        case 'appointment':
+            return operationalStatus === 'done' || operationalStatus === 'paid';
+        case 'grooming_session':
+            return operationalStatus === 'closed';
+        case 'encounter':
+            return operationalStatus === 'completed';
+        case 'quote':
+        case 'manual':
+        case 'boarding_reservation':
+            return true;
+        default:
+            return true;
+    }
+}
+function isDayBoardPaidAndComplete(originType, operationalStatus, receivableStatus) {
+    return receivableStatus === 'paid' && isDayBoardOperationallyComplete(originType, operationalStatus);
+}
+function pickActiveReceivableId(statusesWithIds) {
+    const pending = statusesWithIds.find((r) => r.status === 'pending');
+    if (pending)
+        return pending.id;
+    const partial = statusesWithIds.find((r) => r.status === 'partially_paid');
+    if (partial)
+        return partial.id;
+    const paid = statusesWithIds.find((r) => r.status === 'paid');
+    return paid?.id ?? null;
+}
+function matchesFinanceiroDayBoardScope(billing) {
+    if (billing.finance_handoff_at)
+        return true;
+    if (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid')
+        return true;
+    return false;
+}
+function aggregateReceivableStatus(statuses) {
+    if (statuses.length === 0)
+        return null;
+    if (statuses.some((s) => s === 'pending'))
+        return 'pending';
+    if (statuses.some((s) => s === 'partially_paid'))
+        return 'partially_paid';
+    if (statuses.every((s) => s === 'paid'))
+        return 'paid';
+    return null;
+}
 /** Carrega comanda e status de recebível para um conjunto de origens em batch. */
 async function fetchBillingStatusBatch(clinicId, originKeys) {
     const result = new Map();
@@ -1970,7 +2017,7 @@ async function fetchBillingStatusBatch(clinicId, originKeys) {
     // Carrega todas as comandas não canceladas para as origens
     const { data: comandas } = await supabase_1.supabaseAdmin
         .from('hub_comandas')
-        .select('id, origin_type, origin_id, status')
+        .select('id, origin_type, origin_id, status, finance_handoff_at')
         .eq('clinic_id', clinicId)
         .neq('status', 'cancelada')
         .is('deleted_at', null)
@@ -1978,31 +2025,54 @@ async function fetchBillingStatusBatch(clinicId, originKeys) {
     const comandaByKey = new Map();
     for (const c of comandas ?? []) {
         const key = `${c.origin_type}:${c.origin_id}`;
-        comandaByKey.set(key, { id: c.id, status: c.status });
+        comandaByKey.set(key, {
+            id: c.id,
+            status: c.status,
+            finance_handoff_at: c.finance_handoff_at ?? null,
+        });
     }
-    // Carrega recebíveis ativos por source_key
+    // Carrega recebíveis ativos por source_key e comanda_id
     const { data: receivables } = await supabase_1.supabaseAdmin
         .from('hub_receivables')
-        .select('source_type, source_id, comanda_id')
+        .select('id, source_type, source_id, comanda_id, status')
         .eq('clinic_id', clinicId)
         .is('deleted_at', null)
         .neq('status', 'cancelled');
-    const receivableSourceKeys = new Set();
-    const receivableByComandaId = new Set();
+    const receivableRowsBySourceKey = new Map();
+    const receivableRowsByComandaId = new Map();
+    const pushReceivable = (map, mapKey, row) => {
+        const list = map.get(mapKey) ?? [];
+        list.push(row);
+        map.set(mapKey, list);
+    };
     for (const r of receivables ?? []) {
-        receivableSourceKeys.add(`${r.source_type}:${r.source_id}`);
-        if (r.comanda_id)
-            receivableByComandaId.add(r.comanda_id);
+        const row = { id: r.id, status: String(r.status) };
+        pushReceivable(receivableRowsBySourceKey, `${r.source_type}:${r.source_id}`, row);
+        if (r.comanda_id) {
+            pushReceivable(receivableRowsByComandaId, r.comanda_id, row);
+        }
     }
     for (const { origin_type, origin_id } of originKeys) {
         const key = `${origin_type}:${origin_id}`;
         const comanda = comandaByKey.get(key) ?? null;
-        const has_receivable = receivableSourceKeys.has(key) ||
-            (comanda ? receivableByComandaId.has(comanda.id) : false);
+        const rowsById = new Map();
+        for (const row of receivableRowsBySourceKey.get(key) ?? [])
+            rowsById.set(row.id, row);
+        if (comanda) {
+            for (const row of receivableRowsByComandaId.get(comanda.id) ?? [])
+                rowsById.set(row.id, row);
+        }
+        const receivableRows = [...rowsById.values()];
+        const statuses = receivableRows.map((r) => r.status);
+        const receivable_status = aggregateReceivableStatus(statuses);
+        const has_receivable = statuses.length > 0;
         result.set(key, {
             comanda_id: comanda?.id ?? null,
             comanda_status: comanda?.status ?? null,
             has_receivable,
+            receivable_status,
+            finance_handoff_at: comanda?.finance_handoff_at ?? null,
+            active_receivable_id: pickActiveReceivableId(receivableRows),
         });
     }
     return result;
@@ -2015,6 +2085,7 @@ const dayBoardQuerySchema = zod_1.z
         .string()
         .regex(/^\d{4}-\d{2}-\d{2}$/)
         .optional(),
+    billing_scope: zod_1.z.enum(['financeiro']).optional(),
 })
     .strict();
 const getHubFinanceDayBoard = async (req, res) => {
@@ -2023,7 +2094,7 @@ const getHubFinanceDayBoard = async (req, res) => {
         if (!parsed.success) {
             return res.status(400).json({ error: 'clinic_id obrigatório (UUID)' });
         }
-        const { clinic_id, unit_id } = parsed.data;
+        const { clinic_id, unit_id, billing_scope } = parsed.data;
         const dateYmd = parsed.data.date ?? ymdTodayUtc();
         const dayStart = utcDayStartIso(dateYmd);
         const dayEnd = utcDayEndIso(dateYmd);
@@ -2043,7 +2114,7 @@ const getHubFinanceDayBoard = async (req, res) => {
             .lte('starts_at', dayEnd)
             .order('starts_at', { ascending: true });
         if (unit_id)
-            aq = aq.eq('unit_id', unit_id);
+            aq = aq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
         const { data: apptRows, error: aErr } = await aq;
         if (aErr)
             throw new Error(aErr.message);
@@ -2067,7 +2138,18 @@ const getHubFinanceDayBoard = async (req, res) => {
                 pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
                 operational_status: String(row.status),
                 estimated_amount: estimated,
-                billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+                services: services.map((sv) => ({
+                    name: String(sv.service_type?.name ?? 'Serviço'),
+                    amount: round2(Number(sv.sale_amount_applied ?? 0)),
+                })),
+                billing: {
+                    comanda_id: null,
+                    comanda_status: null,
+                    has_receivable: false,
+                    receivable_status: null,
+                    finance_handoff_at: null,
+                    active_receivable_id: null,
+                },
             });
         }
         // ── 2. Sessões B&T do dia (walk-ins sem appointment, ou com appointment fora do intervalo) ──
@@ -2084,7 +2166,7 @@ const getHubFinanceDayBoard = async (req, res) => {
             .lte('created_at', dayEnd)
             .order('created_at', { ascending: true });
         if (unit_id)
-            gq = gq.eq('unit_id', unit_id);
+            gq = gq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
         const { data: groomRows, error: gErr } = await gq;
         if (gErr)
             throw new Error(gErr.message);
@@ -2106,7 +2188,15 @@ const getHubFinanceDayBoard = async (req, res) => {
                 pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
                 operational_status: String(row.grooming_stage),
                 estimated_amount: 0,
-                billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+                services: [],
+                billing: {
+                    comanda_id: null,
+                    comanda_status: null,
+                    has_receivable: false,
+                    receivable_status: null,
+                    finance_handoff_at: null,
+                    active_receivable_id: null,
+                },
             });
         }
         // ── 3. Encounters walk-in do dia ──
@@ -2123,7 +2213,7 @@ const getHubFinanceDayBoard = async (req, res) => {
             .lte('created_at', dayEnd)
             .order('created_at', { ascending: true });
         if (unit_id)
-            eq = eq.eq('unit_id', unit_id);
+            eq = eq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
         const { data: encRows, error: eErr } = await eq;
         if (eErr)
             throw new Error(eErr.message);
@@ -2145,7 +2235,15 @@ const getHubFinanceDayBoard = async (req, res) => {
                 pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
                 operational_status: String(row.status),
                 estimated_amount: 0,
-                billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+                services: [],
+                billing: {
+                    comanda_id: null,
+                    comanda_status: null,
+                    has_receivable: false,
+                    receivable_status: null,
+                    finance_handoff_at: null,
+                    active_receivable_id: null,
+                },
             });
         }
         // ── 4. Boarding: reservas com expected_check_out no dia (independente do status) ──
@@ -2161,7 +2259,7 @@ const getHubFinanceDayBoard = async (req, res) => {
             .lte('expected_check_out', dayEnd)
             .order('expected_check_out', { ascending: true });
         if (unit_id)
-            bq = bq.eq('unit_id', unit_id);
+            bq = bq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
         const { data: boardingRows, error: bErr } = await bq;
         if (bErr)
             throw new Error(bErr.message);
@@ -2184,7 +2282,15 @@ const getHubFinanceDayBoard = async (req, res) => {
                 pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
                 operational_status: String(row.status),
                 estimated_amount: estimated,
-                billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+                services: [],
+                billing: {
+                    comanda_id: null,
+                    comanda_status: null,
+                    has_receivable: false,
+                    receivable_status: null,
+                    finance_handoff_at: null,
+                    active_receivable_id: null,
+                },
             });
         }
         // ── 5. Enriquecer billing em batch ──
@@ -2195,12 +2301,22 @@ const getHubFinanceDayBoard = async (req, res) => {
             if (billing)
                 item.billing = billing;
         }
-        items.sort((a, b) => {
+        let filteredItems = items;
+        if (billing_scope === 'financeiro') {
+            filteredItems = items.filter((item) => {
+                const { billing } = item;
+                if (isDayBoardPaidAndComplete(item.origin_type, item.operational_status, billing.receivable_status)) {
+                    return false;
+                }
+                return matchesFinanceiroDayBoardScope(billing);
+            });
+        }
+        filteredItems.sort((a, b) => {
             const ta = a.starts_at ? new Date(a.starts_at).getTime() : 0;
             const tb = b.starts_at ? new Date(b.starts_at).getTime() : 0;
             return ta - tb;
         });
-        return res.json({ items, date: dateYmd, count: items.length });
+        return res.json({ items: filteredItems, date: dateYmd, count: filteredItems.length });
     }
     catch (e) {
         console.error('getHubFinanceDayBoard', e);

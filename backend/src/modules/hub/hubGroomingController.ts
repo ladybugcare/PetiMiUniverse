@@ -15,6 +15,7 @@ import {
 import { buildGroomingDisplayTags } from './groomingPetTags';
 import {
   syncOpenComandasAfterGroomingClosed,
+  syncOpenComandasAfterAppointmentOperationalComplete,
   financialAdjustmentFlagsForAppointments,
 } from './hubComandasController';
 import {
@@ -187,6 +188,9 @@ async function syncAppointmentStatusForStage(
     .update({ status: nextStatus })
     .eq('id', appointmentId)
     .eq('clinic_id', clinicId);
+  if (nextStatus === 'done' || nextStatus === 'paid') {
+    void syncOpenComandasAfterAppointmentOperationalComplete(clinicId, appointmentId);
+  }
 }
 
 function buildServiceLinesForAppointment(

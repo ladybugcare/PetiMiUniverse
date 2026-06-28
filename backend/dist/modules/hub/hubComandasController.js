@@ -1,8 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.patchHubComanda = exports.postHubComandaCheckoutBulk = exports.postHubComandaSuggestItemPrice = exports.deleteHubComandaItem = exports.patchHubComandaItem = exports.postHubComandaAddItems = exports.postHubComandaResolveCancellation = exports.getHubComandaCancellationPendingCount = exports.listHubComandas = exports.getHubComandaByOrigin = exports.postHubComandaSyncFromOrigin = exports.postHubComandaCheckout = exports.getHubComandaDetail = exports.postHubComandaOpen = void 0;
+exports.patchHubComanda = exports.postHubComandaCheckoutBulk = exports.postHubComandaSuggestItemPrice = exports.deleteHubComandaItem = exports.patchHubComandaItem = exports.postHubComandaAddItems = exports.postHubComandaResolveCancellation = exports.getHubComandaCancellationPendingCount = exports.listHubComandas = exports.getHubComandaByOrigin = exports.postHubComandaSyncFromOrigin = exports.postHubComandaCheckout = exports.getHubComandaDetail = exports.getHubComandaPdf = exports.getPublicComanda = exports.ensureComandaPublicToken = exports.postHubComandaOpen = void 0;
+exports.tryAutoCloseComanda = tryAutoCloseComanda;
 exports.syncOpenComandasAfterGroomingClosed = syncOpenComandasAfterGroomingClosed;
 exports.syncOpenComandasAfterEncounterCompleted = syncOpenComandasAfterEncounterCompleted;
+exports.syncOpenComandasAfterAppointmentOperationalComplete = syncOpenComandasAfterAppointmentOperationalComplete;
 exports.maybeFlagComandaCancellationPending = maybeFlagComandaCancellationPending;
 exports.financialAdjustmentFlagsForAppointments = financialAdjustmentFlagsForAppointments;
 exports.financialAdjustmentFlagsForEncounters = financialAdjustmentFlagsForEncounters;
@@ -13,7 +15,55 @@ const supabase_1 = require("../../config/supabase");
 const hubFinancialController_1 = require("./hubFinancialController");
 const hubPricingResolve_1 = require("./hubPricingResolve");
 const auditLog_1 = require("../../utils/auditLog");
+const hubComandaPdf_1 = require("./hubComandaPdf");
 const uuidStr = zod_1.z.string().uuid();
+const comandaEditContextSchema = zod_1.z.enum(['caixa', 'financeiro']).optional().default('caixa');
+function computeComandaEditScopes(comandaRow, operationalComplete, balanceDue) {
+    const status = String(comandaRow.status ?? '');
+    const financeHandoffAt = comandaRow.finance_handoff_at;
+    const paidAndComplete = operationalComplete && balanceDue <= 0.02;
+    if (status !== 'aberta') {
+        return { caixa: false, financeiro: false, locked_reason: 'closed' };
+    }
+    if (paidAndComplete) {
+        return { caixa: false, financeiro: false, locked_reason: 'paid_and_complete' };
+    }
+    if (financeHandoffAt) {
+        return { caixa: false, financeiro: true, locked_reason: 'finance_handoff' };
+    }
+    return { caixa: true, financeiro: true, locked_reason: null };
+}
+function editScopeErrorMessage(scopes, context) {
+    if (scopes.locked_reason === 'paid_and_complete') {
+        return 'Comanda quitada e serviço concluído. Use estorno para ajustes financeiros.';
+    }
+    if (scopes.locked_reason === 'finance_handoff' && context === 'caixa') {
+        return 'Comanda enviada ao financeiro. Edite apenas pelo módulo Financeiro.';
+    }
+    if (scopes.locked_reason === 'closed') {
+        return 'Comanda não está aberta';
+    }
+    return 'Comanda não pode ser editada neste contexto';
+}
+async function assertComandaEditAllowed(comandaId, clinicId, context) {
+    const { data: comandaRow, error } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('*')
+        .eq('id', comandaId)
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (error)
+        throw new Error(error.message);
+    if (!comandaRow)
+        throw new Error('NOT_FOUND');
+    const { balance_due } = await computeComandaBalancePayload(comandaId, clinicId);
+    const operational_complete = await isOperationalCompleteForComanda(comandaRow);
+    const scopes = computeComandaEditScopes(comandaRow, operational_complete, balance_due);
+    if (!scopes[context]) {
+        throw new Error(editScopeErrorMessage(scopes, context));
+    }
+}
 function round2(n) {
     return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
@@ -266,6 +316,53 @@ async function refreshComandaFinancialStatus(comandaId, clinicId, comandaRow) {
     else
         financial = opDone ? 'balanced' : 'open';
     await supabase_1.supabaseAdmin.from('hub_comandas').update({ financial_status: financial }).eq('id', comandaId).eq('clinic_id', clinicId);
+}
+/** Fecha comanda aberta quando saldo quitado, sem itens em aberto e operação concluída. */
+async function tryAutoCloseComanda(comandaId, clinicId) {
+    const { data: comandaRow, error } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('*')
+        .eq('id', comandaId)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+    if (error || !comandaRow)
+        return false;
+    if (String(comandaRow.status) !== 'aberta')
+        return false;
+    const detail = await getHubComandaDetailPayload(comandaId, clinicId);
+    const stillOpenItems = detail.open_item_ids.length > 0;
+    const balAfter = Number(detail.balance_due ?? 0);
+    const opComplete = Boolean(detail.operational_complete);
+    if (stillOpenItems || balAfter > 0.02 || !opComplete)
+        return false;
+    const now = new Date().toISOString();
+    const { error: closeErr } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .update({ status: 'fechada', closed_at: now })
+        .eq('id', comandaId)
+        .eq('clinic_id', clinicId)
+        .eq('status', 'aberta');
+    if (closeErr)
+        throw new Error(closeErr.message);
+    const { data: comandaFresh } = await supabase_1.supabaseAdmin.from('hub_comandas').select('*').eq('id', comandaId).single();
+    if (comandaFresh) {
+        await refreshComandaFinancialStatus(comandaId, clinicId, comandaFresh);
+    }
+    return true;
+}
+async function syncAndTryAutoCloseComanda(clinicId, comandaId) {
+    try {
+        await applySyncComandaFromOrigin(clinicId, comandaId);
+    }
+    catch (e) {
+        console.error('syncAndTryAutoCloseComanda sync', comandaId, e);
+    }
+    try {
+        await tryAutoCloseComanda(comandaId, clinicId);
+    }
+    catch (e) {
+        console.error('syncAndTryAutoCloseComanda close', comandaId, e);
+    }
 }
 async function sumAppointmentServicesSaleForComanda(appointmentId, defaultPetId) {
     const { data: svcRows, error } = await supabase_1.supabaseAdmin
@@ -1007,9 +1104,6 @@ const openComandaBodySchema = zod_1.z
         if (!data.guardian_id) {
             ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'guardian_id obrigatório para comanda manual' });
         }
-        if (!data.manual_lines?.length) {
-            ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'manual_lines obrigatório para comanda manual' });
-        }
     }
     else if (!data.origin_id) {
         ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'origin_id obrigatório para esta origem' });
@@ -1256,6 +1350,45 @@ const postHubComandaOpen = async (req, res) => {
     }
 };
 exports.postHubComandaOpen = postHubComandaOpen;
+async function listAllowedGuardiansForPetIds(petIds) {
+    if (!petIds.length)
+        return [];
+    const { data: links, error } = await supabase_1.supabaseAdmin
+        .from('hub_pet_guardians')
+        .select('guardian_id, role, hub_guardians(id, full_name, phone, email, deleted_at)')
+        .in('pet_id', petIds);
+    if (error)
+        throw new Error(error.message);
+    const byId = new Map();
+    for (const row of links ?? []) {
+        const gRaw = row.hub_guardians;
+        const g = (Array.isArray(gRaw) ? gRaw[0] : gRaw);
+        if (!g || g.deleted_at)
+            continue;
+        const gid = g.id;
+        const role = String(row.role ?? '');
+        const existing = byId.get(gid);
+        if (existing) {
+            if (role === 'primary' && existing.role !== 'primary')
+                existing.role = 'primary';
+            continue;
+        }
+        byId.set(gid, {
+            id: gid,
+            full_name: String(g.full_name ?? ''),
+            phone: g.phone ?? null,
+            email: g.email ?? null,
+            role,
+        });
+    }
+    return [...byId.values()].sort((a, b) => {
+        if (a.role === 'primary' && b.role !== 'primary')
+            return -1;
+        if (b.role === 'primary' && a.role !== 'primary')
+            return 1;
+        return a.full_name.localeCompare(b.full_name, 'pt-BR');
+    });
+}
 async function getHubComandaDetailPayload(comandaId, clinicId) {
     const { data: comanda, error: cErr } = await supabase_1.supabaseAdmin
         .from('hub_comandas')
@@ -1291,16 +1424,19 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
             invoicedItemIds.add(cid);
     }
     const openItemIds = (items ?? []).map((it) => it.id).filter((id) => !invoicedItemIds.has(id));
+    const activeReceivableIds = recIds.filter((id) => activeRecById.get(id));
     const comandaRow = comanda;
     const { paid_total, balance_due } = await computeComandaBalancePayload(comandaId, clinicId);
     const operational_complete = await isOperationalCompleteForComanda(comandaRow);
+    const edit_scopes = computeComandaEditScopes(comandaRow, operational_complete, balance_due);
     // Enriquecer com nomes de tutor/pet
     const guardianId = comandaRow.guardian_id;
     const petId = comandaRow.pet_id;
     const petIds = [...new Set((items ?? []).map((it) => it.pet_id).filter(Boolean))];
+    const allowedGuardians = await listAllowedGuardiansForPetIds(petIds);
     const [guRes, petRes, itemPetsRes] = await Promise.all([
         guardianId
-            ? supabase_1.supabaseAdmin.from('hub_guardians').select('id, full_name').eq('id', guardianId).maybeSingle()
+            ? supabase_1.supabaseAdmin.from('hub_guardians').select('id, full_name, phone, email').eq('id', guardianId).maybeSingle()
             : Promise.resolve({ data: null }),
         petId
             ? supabase_1.supabaseAdmin.from('hub_pets').select('id, name').eq('id', petId).maybeSingle()
@@ -1309,7 +1445,14 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
             ? supabase_1.supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds)
             : Promise.resolve({ data: [] }),
     ]);
-    const guardian = guRes.data ? { id: guRes.data.id, full_name: guRes.data.full_name } : null;
+    const guardian = guRes.data
+        ? {
+            id: guRes.data.id,
+            full_name: guRes.data.full_name,
+            phone: guRes.data.phone ?? null,
+            email: guRes.data.email ?? null,
+        }
+        : null;
     const pet = petRes.data ? { id: petRes.data.id, name: petRes.data.name } : null;
     const petNameMap = new Map((itemPetsRes.data ?? []).map((p) => [p.id, p.name]));
     const enrichedItems = (items ?? []).map((it) => ({
@@ -1321,11 +1464,142 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
         items: enrichedItems,
         open_item_ids: openItemIds,
         invoiced_item_ids: [...invoicedItemIds],
+        active_receivable_ids: activeReceivableIds,
         paid_total,
         balance_due,
         operational_complete,
+        edit_scopes,
+        allowed_guardians: allowedGuardians,
     };
 }
+async function loadComandaPdfPayload(comandaId, clinicId) {
+    const detail = await getHubComandaDetailPayload(comandaId, clinicId);
+    const comanda = detail.comanda;
+    const { data: clinicRow } = await supabase_1.supabaseAdmin.from('clinics').select('name').eq('id', clinicId).maybeSingle();
+    const guardianRaw = comanda.guardian;
+    return {
+        id: comanda.id,
+        status: String(comanda.status ?? ''),
+        subtotal_amount: Number(comanda.subtotal_amount ?? 0),
+        discount_amount: Number(comanda.discount_amount ?? 0),
+        total_amount: Number(comanda.total_amount ?? 0),
+        opened_at: String(comanda.opened_at ?? comanda.created_at ?? new Date().toISOString()),
+        closed_at: comanda.closed_at ?? null,
+        guardian: guardianRaw
+            ? {
+                full_name: String(guardianRaw.full_name ?? ''),
+                phone: guardianRaw.phone ?? null,
+                email: guardianRaw.email ?? null,
+            }
+            : null,
+        clinic: clinicRow ? { name: clinicRow.name } : null,
+        items: detail.items.map((it) => ({
+            id: it.id,
+            description: String(it.description ?? ''),
+            quantity: Number(it.quantity ?? 1),
+            unit_amount: Number(it.unit_amount ?? 0),
+            discount_amount: Number(it.discount_amount ?? 0),
+            line_total: Number(it.line_total ?? 0),
+            sort_order: Number(it.sort_order ?? 0),
+            pet_name: it.pet_name,
+        })),
+        paid_total: detail.paid_total,
+        balance_due: detail.balance_due,
+    };
+}
+const ensureComandaPublicToken = async (req, res) => {
+    try {
+        const idParsed = uuidStr.safeParse(req.params.id);
+        const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+        if (!idParsed.success || !clinicParsed.success) {
+            return res.status(400).json({ error: 'id e clinic_id (UUID) obrigatórios' });
+        }
+        const { data: existing, error: fetchErr } = await supabase_1.supabaseAdmin
+            .from('hub_comandas')
+            .select('id, clinic_id, public_token, deleted_at')
+            .eq('id', idParsed.data)
+            .eq('clinic_id', clinicParsed.data)
+            .maybeSingle();
+        if (fetchErr)
+            return res.status(500).json({ error: fetchErr.message });
+        if (!existing || existing.deleted_at)
+            return res.status(404).json({ error: 'Comanda não encontrada' });
+        let token = existing.public_token;
+        if (!token) {
+            token = (0, node_crypto_1.randomBytes)(24).toString('base64url');
+            const { error } = await supabase_1.supabaseAdmin
+                .from('hub_comandas')
+                .update({ public_token: token })
+                .eq('id', idParsed.data);
+            if (error) {
+                console.error('ensureComandaPublicToken', error);
+                return res.status(500).json({ error: 'Erro ao gerar token público' });
+            }
+        }
+        return res.json({ public_token: token });
+    }
+    catch (e) {
+        console.error('ensureComandaPublicToken', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.ensureComandaPublicToken = ensureComandaPublicToken;
+const getPublicComanda = async (req, res) => {
+    try {
+        const token = String(req.params.token || '').trim();
+        if (!token)
+            return res.status(400).json({ error: 'Token inválido' });
+        const { data: comanda, error } = await supabase_1.supabaseAdmin
+            .from('hub_comandas')
+            .select('id, clinic_id, status, subtotal_amount, discount_amount, total_amount, opened_at, closed_at, guardian_id, public_token, deleted_at')
+            .eq('public_token', token)
+            .maybeSingle();
+        if (error) {
+            console.error('getPublicComanda', error);
+            return res.status(500).json({ error: 'Erro ao carregar comanda' });
+        }
+        if (!comanda || comanda.deleted_at)
+            return res.status(404).json({ error: 'Comanda não encontrada' });
+        const clinicId = comanda.clinic_id;
+        const detail = await getHubComandaDetailPayload(comanda.id, clinicId);
+        const comandaRow = detail.comanda;
+        const { notes: _notes, ...comandaPublic } = comandaRow;
+        const { data: clinicRow } = await supabase_1.supabaseAdmin.from('clinics').select('name').eq('id', clinicId).maybeSingle();
+        return res.json({
+            comanda: {
+                ...comandaPublic,
+                clinic: clinicRow ? { name: clinicRow.name } : null,
+            },
+            items: detail.items,
+            paid_total: detail.paid_total,
+            balance_due: detail.balance_due,
+        });
+    }
+    catch (e) {
+        console.error('getPublicComanda', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.getPublicComanda = getPublicComanda;
+const getHubComandaPdf = async (req, res) => {
+    try {
+        const idParsed = uuidStr.safeParse(req.params.id);
+        const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+        if (!idParsed.success || !clinicParsed.success) {
+            return res.status(400).json({ error: 'id e clinic_id (UUID) obrigatórios' });
+        }
+        const payload = await loadComandaPdfPayload(idParsed.data, clinicParsed.data);
+        (0, hubComandaPdf_1.streamComandaPdf)(res, payload);
+        return;
+    }
+    catch (e) {
+        if (e?.message === 'NOT_FOUND')
+            return res.status(404).json({ error: 'Comanda não encontrada' });
+        console.error('getHubComandaPdf', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.getHubComandaPdf = getHubComandaPdf;
 const getHubComandaDetail = async (req, res) => {
     try {
         const idParsed = uuidStr.safeParse(req.params.id);
@@ -1391,12 +1665,7 @@ const postHubComandaCheckout = async (req, res) => {
             const bal = Number(detail.balance_due ?? 0);
             const op = Boolean(detail.operational_complete);
             if (action === 'receive_now' && bal <= 0.02 && op) {
-                const now = new Date().toISOString();
-                await supabase_1.supabaseAdmin
-                    .from('hub_comandas')
-                    .update({ status: 'fechada', closed_at: now, financial_status: 'balanced' })
-                    .eq('id', comandaId)
-                    .eq('clinic_id', clinic_id);
+                await tryAutoCloseComanda(comandaId, clinic_id);
                 const { data: comandaFinal } = await supabase_1.supabaseAdmin.from('hub_comandas').select('*').eq('id', comandaId).single();
                 return res.status(201).json({
                     comanda: comandaFinal,
@@ -1585,6 +1854,13 @@ const postHubComandaCheckout = async (req, res) => {
         if (receivableIds.length === 0) {
             return res.status(400).json({ error: 'Nenhum recebível gerado (valores zerados)' });
         }
+        if (action === 'leave_pending') {
+            await supabase_1.supabaseAdmin
+                .from('hub_comandas')
+                .update({ finance_handoff_at: new Date().toISOString() })
+                .eq('id', comandaId)
+                .eq('clinic_id', clinic_id);
+        }
         const receivableIdForGroupIndex = (groupIndex) => {
             const pos = nonEmptyGroupIndices.indexOf(groupIndex);
             return pos >= 0 ? receivableIds[pos] : undefined;
@@ -1678,20 +1954,9 @@ const postHubComandaCheckout = async (req, res) => {
                 await supabase_1.supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', rid);
             }
         }
-        const after = await getHubComandaDetailPayload(comandaId, clinic_id);
-        const stillOpenItems = after.open_item_ids.length > 0;
-        const balAfter = Number(after.balance_due ?? 0);
-        const opComplete = Boolean(after.operational_complete);
-        const shouldClose = !stillOpenItems && balAfter <= 0.02 && opComplete;
-        if (shouldClose) {
-            await supabase_1.supabaseAdmin
-                .from('hub_comandas')
-                .update({ status: 'fechada', closed_at: new Date().toISOString() })
-                .eq('id', comandaId)
-                .eq('clinic_id', clinic_id);
-        }
+        await tryAutoCloseComanda(comandaId, clinic_id);
         const { data: comandaFresh } = await supabase_1.supabaseAdmin.from('hub_comandas').select('*').eq('id', comandaId).single();
-        if (comandaFresh) {
+        if (comandaFresh && String(comandaFresh.status) === 'aberta') {
             await refreshComandaFinancialStatus(comandaId, clinic_id, comandaFresh);
         }
         const { data: comandaFinal } = await supabase_1.supabaseAdmin.from('hub_comandas').select('*').eq('id', comandaId).single();
@@ -1805,11 +2070,24 @@ async function applySyncComandaFromOrigin(clinicId, comandaId) {
 const postHubComandaSyncFromOrigin = async (req, res) => {
     try {
         const idParsed = uuidStr.safeParse(req.params.id);
-        const bodyParsed = zod_1.z.object({ clinic_id: uuidStr }).strict().safeParse(req.body);
+        const bodyParsed = zod_1.z
+            .object({ clinic_id: uuidStr, edit_context: comandaEditContextSchema })
+            .strict()
+            .safeParse(req.body);
         const clinicFromQuery = uuidStr.safeParse(req.query.clinic_id);
         const clinicId = bodyParsed.success ? bodyParsed.data.clinic_id : clinicFromQuery.success ? clinicFromQuery.data : null;
+        const editContext = bodyParsed.success ? bodyParsed.data.edit_context : 'caixa';
         if (!idParsed.success || !clinicId) {
             return res.status(400).json({ error: 'id e clinic_id (UUID) obrigatórios' });
+        }
+        try {
+            await assertComandaEditAllowed(idParsed.data, clinicId, editContext);
+        }
+        catch (e) {
+            const msg = e.message;
+            if (msg === 'NOT_FOUND')
+                return res.status(404).json({ error: 'Comanda não encontrada' });
+            return res.status(409).json({ error: msg });
         }
         try {
             const detail = await applySyncComandaFromOrigin(clinicId, idParsed.data);
@@ -1858,12 +2136,7 @@ async function syncOpenComandasAfterGroomingClosed(clinicId, sessionId) {
             ids.add(idA);
     }
     for (const id of ids) {
-        try {
-            await applySyncComandaFromOrigin(clinicId, id);
-        }
-        catch (e) {
-            console.error('syncOpenComandasAfterGroomingClosed', id, e);
-        }
+        await syncAndTryAutoCloseComanda(clinicId, id);
     }
 }
 async function syncOpenComandasAfterEncounterCompleted(clinicId, encounterId) {
@@ -1884,13 +2157,15 @@ async function syncOpenComandasAfterEncounterCompleted(clinicId, encounterId) {
             ids.add(idA);
     }
     for (const id of ids) {
-        try {
-            await applySyncComandaFromOrigin(clinicId, id);
-        }
-        catch (e) {
-            console.error('syncOpenComandasAfterEncounterCompleted', id, e);
-        }
+        await syncAndTryAutoCloseComanda(clinicId, id);
     }
+}
+/** Sincroniza e tenta fechar comanda aberta vinculada ao agendamento quando o serviço conclui. */
+async function syncOpenComandasAfterAppointmentOperationalComplete(clinicId, appointmentId) {
+    const id = await findOpenComandaIdByOrigin(clinicId, 'appointment', appointmentId);
+    if (!id)
+        return;
+    await syncAndTryAutoCloseComanda(clinicId, id);
 }
 const listComandasQuerySchema = zod_1.z
     .object({
@@ -2154,7 +2429,7 @@ async function enrichCancellationQueueRows(clinicId, rows) {
     const guIds = [...new Set(rows.map((r) => r.guardian_id).filter(Boolean))];
     const petIds = [...new Set(rows.map((r) => r.pet_id).filter(Boolean))];
     const comandaIds = rows.map((r) => r.id);
-    const [guRes, petRes, paidByComanda] = await Promise.all([
+    const [guRes, petRes, enrichedByComanda] = await Promise.all([
         guIds.length
             ? supabase_1.supabaseAdmin.from('hub_guardians').select('id, full_name').in('id', guIds)
             : Promise.resolve({ data: [] }),
@@ -2162,21 +2437,32 @@ async function enrichCancellationQueueRows(clinicId, rows) {
             ? supabase_1.supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds)
             : Promise.resolve({ data: [] }),
         Promise.all(comandaIds.map(async (cid) => {
-            const { paid_total } = await computeComandaBalancePayload(cid, clinicId);
-            return [cid, paid_total];
+            const row = rows.find((r) => r.id === cid);
+            if (!row) {
+                const { paid_total, balance_due } = await computeComandaBalancePayload(cid, clinicId);
+                return [cid, { paid_total, balance_due, operational_complete: true, edit_scopes: null }];
+            }
+            const { paid_total, balance_due } = await computeComandaBalancePayload(cid, clinicId);
+            const operational_complete = await isOperationalCompleteForComanda(row);
+            const edit_scopes = computeComandaEditScopes(row, operational_complete, balance_due);
+            return [cid, { paid_total, balance_due, operational_complete, edit_scopes }];
         })),
     ]);
     const guMap = new Map((guRes.data ?? []).map((g) => [g.id, g]));
     const petMap = new Map((petRes.data ?? []).map((p) => [p.id, p]));
-    const paidMap = new Map(paidByComanda);
+    const enrichedMap = new Map(enrichedByComanda);
     return rows.map((r) => {
         const gu = r.guardian_id ? guMap.get(r.guardian_id) : null;
         const pet = r.pet_id ? petMap.get(r.pet_id) : null;
+        const extra = enrichedMap.get(r.id);
         return {
             ...r,
             guardian: gu ? { id: gu.id, full_name: gu.full_name } : null,
             pet: pet ? { id: pet.id, name: pet.name } : null,
-            paid_total: paidMap.get(r.id) ?? 0,
+            paid_total: extra?.paid_total ?? 0,
+            balance_due: extra?.balance_due ?? 0,
+            operational_complete: extra?.operational_complete ?? true,
+            edit_scopes: extra?.edit_scopes ?? null,
         };
     });
 }
@@ -2477,6 +2763,7 @@ async function recomputeComandaTotals(comandaId, clinicId) {
 const addComandaItemsBodySchema = zod_1.z
     .object({
     clinic_id: uuidStr,
+    edit_context: comandaEditContextSchema,
     items: zod_1.z
         .array(zod_1.z.object({
         pet_id: uuidStr.optional().nullable(),
@@ -2499,8 +2786,17 @@ const postHubComandaAddItems = async (req, res) => {
             return res.status(400).json({ error: 'Dados inválidos', details: parsed.success ? undefined : parsed.error.flatten() });
         }
         const comandaId = idParsed.data;
-        const { clinic_id, items } = parsed.data;
+        const { clinic_id, items, edit_context } = parsed.data;
         const userId = req.user?.id ?? null;
+        try {
+            await assertComandaEditAllowed(comandaId, clinic_id, edit_context);
+        }
+        catch (e) {
+            const msg = e.message;
+            if (msg === 'NOT_FOUND')
+                return res.status(404).json({ error: 'Comanda não encontrada' });
+            return res.status(409).json({ error: msg });
+        }
         const { data: comanda, error: cErr } = await supabase_1.supabaseAdmin
             .from('hub_comandas')
             .select('id, status, clinic_id')
@@ -2512,8 +2808,6 @@ const postHubComandaAddItems = async (req, res) => {
             return res.status(500).json({ error: cErr.message });
         if (!comanda)
             return res.status(404).json({ error: 'Comanda não encontrada' });
-        if (String(comanda.status) !== 'aberta')
-            return res.status(409).json({ error: 'Comanda não está aberta' });
         const { data: maxSortRow } = await supabase_1.supabaseAdmin
             .from('hub_comanda_items')
             .select('sort_order')
@@ -2564,6 +2858,7 @@ exports.postHubComandaAddItems = postHubComandaAddItems;
 const patchComandaItemBodySchema = zod_1.z
     .object({
     clinic_id: uuidStr,
+    edit_context: comandaEditContextSchema,
     description: zod_1.z.string().min(1).max(500).optional(),
     quantity: zod_1.z.number().positive().optional(),
     unit_amount: zod_1.z.number().min(0).optional(),
@@ -2580,7 +2875,16 @@ const patchHubComandaItem = async (req, res) => {
         }
         const comandaId = idParsed.data;
         const itemId = itemIdParsed.data;
-        const { clinic_id, ...updates } = parsed.data;
+        const { clinic_id, edit_context, ...updates } = parsed.data;
+        try {
+            await assertComandaEditAllowed(comandaId, clinic_id, edit_context);
+        }
+        catch (e) {
+            const msg = e.message;
+            if (msg === 'NOT_FOUND')
+                return res.status(404).json({ error: 'Comanda não encontrada' });
+            return res.status(409).json({ error: msg });
+        }
         const { data: item, error: iErr } = await supabase_1.supabaseAdmin
             .from('hub_comanda_items')
             .select('id, comanda_id, origin_type, quantity, unit_amount, discount_amount')
@@ -2596,16 +2900,6 @@ const patchHubComandaItem = async (req, res) => {
         if (item.origin_type !== 'manual' && updates.description !== undefined) {
             return res.status(409).json({ error: 'Descrição só pode ser editada em itens adicionados manualmente' });
         }
-        const { data: comanda } = await supabase_1.supabaseAdmin
-            .from('hub_comandas')
-            .select('status, clinic_id')
-            .eq('id', comandaId)
-            .eq('clinic_id', clinic_id)
-            .maybeSingle();
-        if (!comanda)
-            return res.status(404).json({ error: 'Comanda não encontrada' });
-        if (String(comanda.status) !== 'aberta')
-            return res.status(409).json({ error: 'Comanda não está aberta' });
         const { data: invoicedLine } = await supabase_1.supabaseAdmin
             .from('hub_receivable_lines')
             .select('id')
@@ -2646,6 +2940,17 @@ const deleteHubComandaItem = async (req, res) => {
         const itemId = itemIdParsed.data;
         const clinic_id = clinicParsed.data;
         const userId = req.user?.id ?? null;
+        const editContextParsed = comandaEditContextSchema.safeParse(req.query.edit_context ?? req.body?.edit_context);
+        const edit_context = editContextParsed.success ? editContextParsed.data : 'caixa';
+        try {
+            await assertComandaEditAllowed(comandaId, clinic_id, edit_context);
+        }
+        catch (e) {
+            const msg = e.message;
+            if (msg === 'NOT_FOUND')
+                return res.status(404).json({ error: 'Comanda não encontrada' });
+            return res.status(409).json({ error: msg });
+        }
         const { data: item } = await supabase_1.supabaseAdmin
             .from('hub_comanda_items')
             .select('id, comanda_id, origin_type')
@@ -2657,16 +2962,6 @@ const deleteHubComandaItem = async (req, res) => {
         if (item.origin_type !== 'manual') {
             return res.status(409).json({ error: 'Apenas itens adicionados manualmente podem ser removidos' });
         }
-        const { data: comanda } = await supabase_1.supabaseAdmin
-            .from('hub_comandas')
-            .select('status, clinic_id')
-            .eq('id', comandaId)
-            .eq('clinic_id', clinic_id)
-            .maybeSingle();
-        if (!comanda)
-            return res.status(404).json({ error: 'Comanda não encontrada' });
-        if (String(comanda.status) !== 'aberta')
-            return res.status(409).json({ error: 'Comanda não está aberta' });
         const { data: invoicedLine } = await supabase_1.supabaseAdmin
             .from('hub_receivable_lines')
             .select('id')
@@ -2913,18 +3208,14 @@ const postHubComandaCheckoutBulk = async (req, res) => {
                     });
                     await supabase_1.supabaseAdmin.from('hub_receivables').update({ status: 'paid' }).eq('id', receivableId);
                 }
-                // Fecha comanda se possível
-                const afterDetail = await getHubComandaDetailPayload(comandaId, clinic_id);
-                const stillOpenItems = afterDetail.open_item_ids.length > 0;
-                const balAfter = Number(afterDetail.balance_due ?? 0);
-                const opComplete = Boolean(afterDetail.operational_complete);
-                if (!stillOpenItems && balAfter <= 0.02 && opComplete) {
+                if (action === 'leave_pending') {
                     await supabase_1.supabaseAdmin
                         .from('hub_comandas')
-                        .update({ status: 'fechada', closed_at: new Date().toISOString() })
+                        .update({ finance_handoff_at: new Date().toISOString() })
                         .eq('id', comandaId)
                         .eq('clinic_id', clinic_id);
                 }
+                await tryAutoCloseComanda(comandaId, clinic_id);
                 results.push({ comanda_id: comandaId, receivable_ids: [receivableId] });
             }
             catch (itemErr) {
@@ -2954,8 +3245,10 @@ exports.postHubComandaCheckoutBulk = postHubComandaCheckoutBulk;
 const patchComandaBodySchema = zod_1.z
     .object({
     clinic_id: uuidStr,
+    edit_context: comandaEditContextSchema,
     discount_amount: zod_1.z.number().min(0).optional(),
     notes: zod_1.z.string().max(2000).optional().nullable(),
+    guardian_id: uuidStr.optional(),
 })
     .strict();
 const patchHubComanda = async (req, res) => {
@@ -2966,7 +3259,16 @@ const patchHubComanda = async (req, res) => {
             return res.status(400).json({ error: 'Dados inválidos', details: parsed.success ? undefined : parsed.error.flatten() });
         }
         const comandaId = idParsed.data;
-        const { clinic_id, discount_amount, notes } = parsed.data;
+        const { clinic_id, discount_amount, notes, guardian_id, edit_context } = parsed.data;
+        try {
+            await assertComandaEditAllowed(comandaId, clinic_id, edit_context);
+        }
+        catch (e) {
+            const msg = e.message;
+            if (msg === 'NOT_FOUND')
+                return res.status(404).json({ error: 'Comanda não encontrada' });
+            return res.status(409).json({ error: msg });
+        }
         const { data: comanda, error: cErr } = await supabase_1.supabaseAdmin
             .from('hub_comandas')
             .select('id, status, clinic_id')
@@ -2978,13 +3280,31 @@ const patchHubComanda = async (req, res) => {
             return res.status(500).json({ error: cErr.message });
         if (!comanda)
             return res.status(404).json({ error: 'Comanda não encontrada' });
-        if (String(comanda.status) !== 'aberta')
-            return res.status(409).json({ error: 'Comanda não está aberta' });
+        if (guardian_id !== undefined) {
+            const currentDetail = await getHubComandaDetailPayload(comandaId, clinic_id);
+            if ((currentDetail.invoiced_item_ids ?? []).length > 0) {
+                return res.status(409).json({ error: 'Não é possível trocar o tutor após faturar itens' });
+            }
+            const petIds = [
+                ...new Set((currentDetail.items ?? [])
+                    .map((it) => it.pet_id)
+                    .filter(Boolean)),
+            ];
+            if (petIds.length === 0) {
+                return res.status(400).json({ error: 'Comanda sem pets — tutor não pode ser alterado' });
+            }
+            const allowed = await listAllowedGuardiansForPetIds(petIds);
+            if (!allowed.some((g) => g.id === guardian_id)) {
+                return res.status(400).json({ error: 'Tutor não permitido para os pets desta comanda' });
+            }
+        }
         const patch = {};
         if (discount_amount !== undefined)
             patch.discount_amount = discount_amount;
         if (notes !== undefined)
             patch.notes = notes;
+        if (guardian_id !== undefined)
+            patch.guardian_id = guardian_id;
         if (Object.keys(patch).length > 0) {
             const { error: upErr } = await supabase_1.supabaseAdmin
                 .from('hub_comandas')

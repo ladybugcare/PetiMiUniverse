@@ -1,0 +1,146 @@
+/* Toolbar de data/vista — mesmo padrão visual da Agenda Hub */
+
+.hub-view-date-toolbar {
+  --hvt-border: var(--hc-border, #e5dcd6);
+  --hvt-brand: var(--hc-brand, #c86a4d);
+  --hvt-text: var(--hc-text, #4a3b3a);
+  --hvt-muted: var(--hc-text-muted, #8e6e67);
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hvt-border);
+}
+
+.hub-view-date-toolbar__view-switch {
+  display: inline-flex;
+  border-radius: 10px;
+  border: 1px solid var(--hvt-border);
+  overflow: hidden;
+  background: #fff;
+}
+
+.hub-view-date-toolbar__view-btn {
+  border: none;
+  background: transparent;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hvt-text);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.hub-view-date-toolbar__view-btn:hover:not(:disabled) {
+  background: #f6f1ee;
+}
+
+.hub-view-date-toolbar__view-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-view-date-toolbar__view-btn--active {
+  background: #fdf6f2;
+  color: var(--hvt-brand);
+  box-shadow: inset 0 -2px 0 var(--hvt-brand);
+}
+
+.hub-view-date-toolbar__nav-cluster {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.hub-view-date-toolbar__icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--hvt-border);
+  background: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hvt-text);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.hub-view-date-toolbar__icon-btn:hover:not(:disabled) {
+  background: #f6f1ee;
+  border-color: #dccbc4;
+}
+
+.hub-view-date-toolbar__icon-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-view-date-toolbar__date-field {
+  width: auto;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.hub-view-date-toolbar__date-field .hub-date-field__row {
+  align-items: center;
+}
+
+.hub-view-date-toolbar__date-field .hub-date-field__control {
+  min-width: 168px;
+}
+
+.hub-view-date-toolbar__search {
+  flex: 1;
+  min-width: 160px;
+  max-width: 320px;
+  position: relative;
+}
+
+.hub-view-date-toolbar__search input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--hvt-border);
+  border-radius: 8px;
+  padding: 8px 12px 8px 34px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.hub-view-date-toolbar__search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.hub-view-date-toolbar__search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--hvt-muted);
+  display: inline-flex;
+  padding: 2px;
+}
+
+.hub-view-date-toolbar__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

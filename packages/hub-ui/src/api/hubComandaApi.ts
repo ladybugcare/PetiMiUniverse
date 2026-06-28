@@ -1,6 +1,21 @@
-import { apiRequest } from '@petimi/web-core';
+import { apiRequest, getApiBaseUrl, getSupabase } from '@petimi/web-core';
 
 const base = '/api/hub/comandas';
+
+export type HubComandaAllowedGuardian = {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+  role: string;
+};
+
+export type HubComandaGuardianEmbed = {
+  id: string;
+  full_name: string;
+  phone?: string | null;
+  email?: string | null;
+};
 
 export type HubComandaOriginType = 'appointment' | 'grooming_session' | 'quote' | 'encounter' | 'manual' | 'boarding_reservation';
 
@@ -33,14 +48,32 @@ export type HubComandaItem = {
   sort_order: number;
 };
 
+export type HubComandaEditContext = 'caixa' | 'financeiro';
+
+export type HubComandaEditScopes = {
+  caixa: boolean;
+  financeiro: boolean;
+  locked_reason: 'closed' | 'paid_and_complete' | 'finance_handoff' | null;
+};
+
 export type HubComandaDetailResponse = {
   comanda: Record<string, unknown>;
   items: HubComandaItem[];
   open_item_ids: string[];
   invoiced_item_ids: string[];
+  active_receivable_ids?: string[];
   paid_total?: number;
   balance_due?: number;
   operational_complete?: boolean;
+  edit_scopes?: HubComandaEditScopes;
+  allowed_guardians?: HubComandaAllowedGuardian[];
+};
+
+export type HubPublicComandaResponse = {
+  comanda: Record<string, unknown> & { clinic?: { name: string | null } | null };
+  items: HubComandaItem[];
+  paid_total?: number;
+  balance_due?: number;
 };
 
 export type HubComandaOpenBody = {
@@ -74,10 +107,14 @@ export const hubComandaApi = {
     return apiRequest(`${base}/${encodeURIComponent(comandaId)}?${q}`) as Promise<HubComandaDetailResponse>;
   },
 
-  async syncComandaFromOrigin(comandaId: string, clinicId: string): Promise<HubComandaDetailResponse> {
+  async syncComandaFromOrigin(
+    comandaId: string,
+    clinicId: string,
+    editContext: HubComandaEditContext = 'caixa',
+  ): Promise<HubComandaDetailResponse> {
     return apiRequest(`${base}/${encodeURIComponent(comandaId)}/sync-from-origin`, {
       method: 'POST',
-      body: JSON.stringify({ clinic_id: clinicId }),
+      body: JSON.stringify({ clinic_id: clinicId, edit_context: editContext }),
     }) as Promise<HubComandaDetailResponse>;
   },
 
@@ -166,6 +203,7 @@ export const hubComandaApi = {
     comandaId: string,
     body: {
       clinic_id: string;
+      edit_context?: HubComandaEditContext;
       items: Array<{
         pet_id?: string | null;
         hub_service_type_id?: string | null;
@@ -189,6 +227,7 @@ export const hubComandaApi = {
     itemId: string,
     body: {
       clinic_id: string;
+      edit_context?: HubComandaEditContext;
       description?: string;
       quantity?: number;
       unit_amount?: number;
@@ -204,9 +243,10 @@ export const hubComandaApi = {
   async deleteItem(
     comandaId: string,
     itemId: string,
-    clinicId: string
+    clinicId: string,
+    editContext: HubComandaEditContext = 'caixa',
   ): Promise<HubComandaDetailResponse> {
-    const q = new URLSearchParams({ clinic_id: clinicId });
+    const q = new URLSearchParams({ clinic_id: clinicId, edit_context: editContext });
     return apiRequest(`${base}/${encodeURIComponent(comandaId)}/items/${encodeURIComponent(itemId)}?${q}`, {
       method: 'DELETE',
     }) as Promise<HubComandaDetailResponse>;
@@ -252,8 +292,10 @@ export const hubComandaApi = {
     comandaId: string,
     body: {
       clinic_id: string;
+      edit_context?: HubComandaEditContext;
       discount_amount?: number;
       notes?: string | null;
+      guardian_id?: string;
     },
   ): Promise<HubComandaDetailResponse> {
     return apiRequest(`${base}/${encodeURIComponent(comandaId)}`, {
@@ -261,4 +303,55 @@ export const hubComandaApi = {
       body: JSON.stringify(body),
     }) as Promise<HubComandaDetailResponse>;
   },
+
+  async ensurePublicToken(comandaId: string, clinicId: string): Promise<{ public_token: string }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${base}/${encodeURIComponent(comandaId)}/public-token?${q}`, {
+      method: 'POST',
+    }) as Promise<{ public_token: string }>;
+  },
+
+  publicLink(token: string): string {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${origin}/comanda/${token}`;
+  },
+
+  async fetchPublicComanda(token: string): Promise<HubPublicComandaResponse> {
+    const res = await fetch(`${getApiBaseUrl()}/api/public/comandas/${encodeURIComponent(token)}`);
+    const data = (await res.json().catch(() => ({}))) as HubPublicComandaResponse & { error?: string };
+    if (!res.ok) throw new Error(data.error || 'Não foi possível carregar a comanda');
+    return data;
+  },
 };
+
+async function fetchHubComandaPdfBlob(comandaId: string, clinicId: string): Promise<Blob> {
+  const token = (await getSupabase().auth.getSession()).data.session?.access_token;
+  if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+  const url = `${getApiBaseUrl()}${base}/${encodeURIComponent(comandaId)}/pdf?${new URLSearchParams({ clinic_id: clinicId })}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string })?.error || 'Falha ao gerar PDF');
+  }
+  return res.blob();
+}
+
+export async function openHubComandaPdf(comandaId: string, clinicId: string): Promise<void> {
+  const blob = await fetchHubComandaPdfBlob(comandaId, clinicId);
+  const objectUrl = URL.createObjectURL(blob);
+  window.open(objectUrl, '_blank', 'noopener,noreferrer');
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+}
+
+export async function downloadHubComandaPdf(comandaId: string, clinicId: string): Promise<void> {
+  const blob = await fetchHubComandaPdfBlob(comandaId, clinicId);
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = `comanda-${comandaId.slice(0, 8)}.pdf`;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+}

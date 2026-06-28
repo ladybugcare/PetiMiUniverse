@@ -4,6 +4,7 @@ exports.patchHubGroomingAppointmentServiceLine = exports.postHubGroomingSessionE
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const groomingChecklistDefaults_1 = require("./groomingChecklistDefaults");
+const hubServiceGroupChecklistController_1 = require("./hubServiceGroupChecklistController");
 const groomingPetTags_1 = require("./groomingPetTags");
 const hubDayBoardPets_1 = require("./hubDayBoardPets");
 const uuidStr = zod_1.z.string().uuid();
@@ -14,30 +15,8 @@ const SESSION_SELECT = `
   paused_at,
   tutor_notes_snapshot, operational_notes, checklist, created_at, updated_at
 `;
-async function loadChecklistTemplateItems(clinicId, unitId) {
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('hub_grooming_checklist_templates')
-        .select('items, unit_id, created_at')
-        .eq('clinic_id', clinicId)
-        .order('created_at', { ascending: true });
-    if (error || !data?.length)
-        return groomingChecklistDefaults_1.GROOMING_CHECKLIST_DEFAULT_ITEMS;
-    const unitRow = unitId ? data.find((r) => r.unit_id === unitId) : undefined;
-    const row = unitRow ??
-        data.find((r) => !r.unit_id) ??
-        data[0];
-    const items = row.items;
-    if (!Array.isArray(items) || items.length === 0)
-        return groomingChecklistDefaults_1.GROOMING_CHECKLIST_DEFAULT_ITEMS;
-    const parsed = items
-        .filter((x) => Boolean(x && typeof x === 'object'))
-        .map((x) => ({
-        key: String(x.key),
-        label: String(x.label || x.key),
-        default_checked: Boolean(x.default_checked),
-    }))
-        .filter((x) => x.key);
-    return parsed.length ? parsed : groomingChecklistDefaults_1.GROOMING_CHECKLIST_DEFAULT_ITEMS;
+async function loadChecklistTemplateItems(clinicId) {
+    return (0, hubServiceGroupChecklistController_1.loadServiceGroupChecklistTemplateItems)(clinicId, GROOMING_SERVICE_GROUP);
 }
 async function groomingParentTypeIdsForAppointment(clinicId, appointmentId, groomingTypeSet) {
     const { data: appt } = await supabase_1.supabaseAdmin
@@ -147,7 +126,7 @@ const getHubGroomingSessionDrawer = async (req, res) => {
         const petId = session.pet_id;
         const unitId = session.unit_id;
         const [templateItems, groomingSet, petRes, flagsRes, lastVisitRes, extrasRes] = await Promise.all([
-            loadChecklistTemplateItems(clinic_id.data, unitId),
+            loadChecklistTemplateItems(clinic_id.data),
             getGroomingTypeIdSet(clinic_id.data),
             supabase_1.supabaseAdmin
                 .from('hub_pets')

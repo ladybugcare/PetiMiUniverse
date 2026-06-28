@@ -9,6 +9,7 @@ const guardiansController_1 = require("../guardiansController");
 const hubPetsController_1 = require("../hubPetsController");
 const hubServiceTypesController_1 = require("../hubServiceTypesController");
 const hubServiceGroupsController_1 = require("../hubServiceGroupsController");
+const hubServiceGroupChecklistController_1 = require("../hubServiceGroupChecklistController");
 const hubServiceAddonsController_1 = require("../hubServiceAddonsController");
 const hubInventoryController_1 = require("../hubInventoryController");
 const hubStaffController_1 = require("../hubStaffController");
@@ -76,6 +77,10 @@ router.get('/service-types/:id/addon-availability', authMiddleware_1.authenticat
 router.put('/service-types/:id/addon-availability', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubServiceAddonsController_1.putHubServiceTypeAddonAvailability);
 router.get('/service-types/:id/addon-deployments', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.read'), hubServiceAddonsController_1.getHubAddonDeployments);
 router.put('/service-types/:id/addon-deployments', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubServiceAddonsController_1.putHubAddonDeployments);
+router.get('/service-groups/checklists', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.read'), hubServiceGroupChecklistController_1.listHubServiceGroupChecklists);
+router.get('/service-groups/checklists/:slug', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.read'), hubServiceGroupChecklistController_1.getHubServiceGroupChecklist);
+router.put('/service-groups/checklists/:slug', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubServiceGroupChecklistController_1.putHubServiceGroupChecklist);
+router.delete('/service-groups/checklists/:slug', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubServiceGroupChecklistController_1.deleteHubServiceGroupChecklist);
 router.get('/service-groups/:id/addons', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.read'), hubServiceAddonsController_1.getHubServiceGroupAddons);
 router.put('/service-groups/:id/addons', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubServiceAddonsController_1.putHubServiceGroupAddons);
 router.get('/service-groups/job-mappings', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.appointments.read'), hubServiceGroupsController_1.getHubServiceGroupJobMappings);
@@ -210,6 +215,8 @@ router.get('/comandas', authMiddleware_1.authenticateUser, (0, authMiddleware_1.
 router.get('/comandas/cancellation-pending-count', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaCancellationPendingCount);
 router.get('/comandas/by-origin', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaByOrigin);
 router.post('/comandas/open', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaOpen);
+router.get('/comandas/:id/pdf', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaPdf);
+router.post('/comandas/:id/public-token', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.ensureComandaPublicToken);
 router.get('/comandas/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaDetail);
 router.post('/comandas/:id/sync-from-origin', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaSyncFromOrigin);
 router.post('/comandas/:id/checkout', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaCheckout);

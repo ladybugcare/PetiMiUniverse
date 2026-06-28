@@ -1167,6 +1167,52 @@
   padding: 16px 8px 0;
 }
 
+.hub-quote-detail__inner--with-finance {
+  max-width: 1480px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  gap: 20px;
+  align-items: start;
+}
+
+.hub-quote-detail__inner--with-finance > .hub-quote-detail__crumb,
+.hub-quote-detail__inner--with-finance > .hub-quote-detail__banner,
+.hub-quote-detail__inner--with-finance > .hub-quote-detail__hero {
+  grid-column: 1 / -1;
+}
+
+.hub-quote-detail__inner--with-finance > .hub-quote-detail__grid {
+  grid-column: 1;
+}
+
+.hub-quote-detail__finance-panel {
+  grid-column: 2;
+  grid-row: 3 / span 10;
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+}
+
+.hub-quote-detail__banner {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fff8e6;
+  border: 1px solid #f0d78c;
+  font-size: 14px;
+  color: #6b4f00;
+}
+
+.hub-quote-detail__banner a {
+  color: var(--qd-brand, #2563eb);
+  font-weight: 600;
+}
+
+.hub-comanda-row--invoiced {
+  opacity: 0.72;
+}
+
 .hub-quote-detail__crumb {
   display: flex;
   align-items: center;

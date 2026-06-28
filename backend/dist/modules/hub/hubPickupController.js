@@ -4,6 +4,7 @@ exports.patchHubPickupStop = exports.getHubPickupRoute = exports.patchHubPickupR
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubDayBoardPets_1 = require("./hubDayBoardPets");
+const hubComandasController_1 = require("./hubComandasController");
 const uuidStr = zod_1.z.string().uuid();
 const UUID_RE = /^[0-9a-f-]{36}$/;
 // ─── Schemas compartilhados ────────────────────────────────────────────────
@@ -706,6 +707,7 @@ const patchHubPickupStop = async (req, res) => {
                 .update({ status: 'done' })
                 .eq('id', cur.hub_appointment_id)
                 .eq('clinic_id', clinic_id);
+            void (0, hubComandasController_1.syncOpenComandasAfterAppointmentOperationalComplete)(clinic_id, cur.hub_appointment_id);
         }
         // Auto-concluir rota se todas as paradas estiverem concluídas ou com falha
         if (newStatus && ['completed', 'failed'].includes(newStatus) && cur.hub_pickup_route_id) {

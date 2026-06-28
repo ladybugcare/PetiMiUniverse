@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { fetchHubPetsMapByIds, resolvePrimaryPetIdsByGuardians } from './hubDayBoardPets';
+import { syncOpenComandasAfterAppointmentOperationalComplete } from './hubComandasController';
 
 const uuidStr = z.string().uuid();
 const UUID_RE = /^[0-9a-f-]{36}$/;
@@ -857,6 +858,7 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
         .update({ status: 'done' })
         .eq('id', cur.hub_appointment_id)
         .eq('clinic_id', clinic_id);
+      void syncOpenComandasAfterAppointmentOperationalComplete(clinic_id, cur.hub_appointment_id as string);
     }
 
     // Auto-concluir rota se todas as paradas estiverem concluídas ou com falha
