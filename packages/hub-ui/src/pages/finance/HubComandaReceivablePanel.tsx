@@ -21,6 +21,11 @@ import {
 } from './hubComandaShareUtils';
 import { useAlert } from '../../components/AlertProvider';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
+import {
+  defaultPaymentMethod,
+  filterEnabledPaymentMethods,
+  HUB_PAYMENT_METHOD_LABELS,
+} from '../../utils/hubPaymentMethods';
 
 function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -53,16 +58,6 @@ const LINE_KIND_LABELS: Record<string, string> = {
   grooming_extra: 'Extra (banho/tosa)',
   manual: 'Manual',
   product: 'Produto (estoque)',
-};
-
-const PAYMENT_METHOD_LABELS: Record<HubPaymentMethod, string> = {
-  pix: 'Pix',
-  cash: 'Dinheiro',
-  credit_card: 'Cartão de crédito',
-  debit_card: 'Cartão de débito',
-  transfer: 'Transferência',
-  payment_link: 'Link de pagamento',
-  customer_credit: 'Crédito do tutor',
 };
 
 function statusLabel(status: string): string {
@@ -100,6 +95,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const [loading, setLoading] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<HubPaymentMethod>('pix');
+  const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<HubPaymentMethod[]>([]);
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [reversePaymentId, setReversePaymentId] = useState<string | null>(null);
@@ -134,6 +130,28 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+
+  useEffect(() => {
+    if (!clinicId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await hubFinancialApi.getPaymentMethodSettings(clinicId);
+        const methods = filterEnabledPaymentMethods(res.accepted_payment_methods ?? []);
+        if (!cancelled) {
+          setAcceptedPaymentMethods(methods);
+          setPaymentMethod((current) => (methods.includes(current) ? current : defaultPaymentMethod(methods)));
+        }
+      } catch {
+        if (!cancelled) {
+          setAcceptedPaymentMethods(filterEnabledPaymentMethods([]));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId]);
 
   useEffect(() => {
     if (!clinicId) return;
@@ -490,8 +508,11 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value as HubPaymentMethod)}
                   >
-                    {(Object.keys(PAYMENT_METHOD_LABELS) as HubPaymentMethod[]).map((method) => (
-                      <option key={method} value={method}>{PAYMENT_METHOD_LABELS[method]}</option>
+                    {(acceptedPaymentMethods.length > 0
+                      ? acceptedPaymentMethods
+                      : (Object.keys(HUB_PAYMENT_METHOD_LABELS) as HubPaymentMethod[])
+                    ).map((method) => (
+                      <option key={method} value={method}>{HUB_PAYMENT_METHOD_LABELS[method]}</option>
                     ))}
                   </select>
                 </div>
@@ -536,7 +557,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
                     {selectedPayments.map((payment) => (
                       <tr key={payment.id}>
                         <td>{formatDateTime(payment.payment_date)}</td>
-                        <td>{PAYMENT_METHOD_LABELS[payment.payment_method] ?? payment.payment_method}</td>
+                        <td>{HUB_PAYMENT_METHOD_LABELS[payment.payment_method as HubPaymentMethod] ?? payment.payment_method}</td>
                         <td className="hub-finance-page__td-num">{formatBrl(Number(payment.amount ?? 0))}</td>
                         <td className="hub-clientes__td-actions">
                           <button

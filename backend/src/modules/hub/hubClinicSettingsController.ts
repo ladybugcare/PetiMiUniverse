@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { HUB_PAYMENT_METHODS, normalizeAcceptedPaymentMethods, type HubPaymentMethod } from './hubPaymentMethods';
 
 const uuidStr = z.string().uuid();
 
@@ -19,34 +20,49 @@ const patchSchema = z
 export type HubClinicSettingsRow = {
   pet_puppy_max_months: number;
   message_templates: Record<string, string>;
+  accepted_payment_methods: HubPaymentMethod[];
 };
 
-/** Garante linha de settings por clínica (defaults: 8 meses, templates vazios). */
+/** Garante linha de settings por clínica (defaults: 8 meses, templates vazios, todos os métodos). */
 export async function getOrCreateHubClinicSettings(clinicId: string): Promise<HubClinicSettingsRow> {
   const { data: row, error: selErr } = await supabaseAdmin
     .from('hub_clinic_settings')
-    .select('pet_puppy_max_months, message_templates')
+    .select('pet_puppy_max_months, message_templates, accepted_payment_methods')
     .eq('clinic_id', clinicId)
     .maybeSingle();
   if (!selErr && row) {
-    const r = row as { pet_puppy_max_months: number; message_templates: Record<string, string> | null };
+    const r = row as {
+      pet_puppy_max_months: number;
+      message_templates: Record<string, string> | null;
+      accepted_payment_methods: string[] | null;
+    };
     return {
       pet_puppy_max_months: Number(r.pet_puppy_max_months) || 8,
       message_templates: r.message_templates ?? {},
+      accepted_payment_methods: normalizeAcceptedPaymentMethods(r.accepted_payment_methods),
     };
   }
   const { data: ins, error: insErr } = await supabaseAdmin
     .from('hub_clinic_settings')
-    .insert({ clinic_id: clinicId })
-    .select('pet_puppy_max_months, message_templates')
+    .insert({ clinic_id: clinicId, accepted_payment_methods: [...HUB_PAYMENT_METHODS] })
+    .select('pet_puppy_max_months, message_templates, accepted_payment_methods')
     .single();
   if (insErr || !ins) {
-    return { pet_puppy_max_months: 8, message_templates: {} };
+    return {
+      pet_puppy_max_months: 8,
+      message_templates: {},
+      accepted_payment_methods: [...HUB_PAYMENT_METHODS],
+    };
   }
-  const i = ins as { pet_puppy_max_months: number; message_templates: Record<string, string> | null };
+  const i = ins as {
+    pet_puppy_max_months: number;
+    message_templates: Record<string, string> | null;
+    accepted_payment_methods: string[] | null;
+  };
   return {
     pet_puppy_max_months: Number(i.pet_puppy_max_months) || 8,
     message_templates: i.message_templates ?? {},
+    accepted_payment_methods: normalizeAcceptedPaymentMethods(i.accepted_payment_methods),
   };
 }
 

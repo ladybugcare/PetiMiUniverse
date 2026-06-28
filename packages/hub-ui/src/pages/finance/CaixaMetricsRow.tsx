@@ -38,7 +38,10 @@ export type CaixaMetricsRowProps = {
   pending: number;
   cashOpen: boolean;
   cashOpenedAt: string | null | undefined;
-  cashPaymentsTotal: number;
+  /** Total recebido na sessão (todos os métodos). */
+  sessionReceivedTotal: number;
+  /** Soma em aberto no painel do dia + comandas extras. */
+  dayPendingTotal: number;
   expectedBalance: number;
   dayBoardCount: number;
 };
@@ -48,7 +51,8 @@ export const CaixaMetricsRow: React.FC<CaixaMetricsRowProps> = ({
   pending,
   cashOpen,
   cashOpenedAt,
-  cashPaymentsTotal,
+  sessionReceivedTotal,
+  dayPendingTotal,
   expectedBalance,
   dayBoardCount,
 }) => {
@@ -93,25 +97,25 @@ export const CaixaMetricsRow: React.FC<CaixaMetricsRowProps> = ({
         iconTone={cashOpen ? 'green' : 'brand'}
       />
       <MetricCard
-        label="Dinheiro recebido"
-        value={formatBrl(cashPaymentsTotal)}
-        sub="Entradas em dinheiro na sessão"
+        label="Total recebido"
+        value={formatBrl(sessionReceivedTotal)}
+        sub="Todos os métodos na sessão"
         icon={<TrendingUp size={20} strokeWidth={1.75} />}
         iconTone="green"
       />
       <MetricCard
-        label="Saldo esperado"
+        label="A receber no dia"
+        value={formatBrl(dayPendingTotal)}
+        sub={`${dayBoardCount} atendimento(s) no painel`}
+        icon={<Receipt size={20} strokeWidth={1.75} />}
+        iconTone="brand"
+      />
+      <MetricCard
+        label="Saldo da gaveta"
         value={formatBrl(expectedBalance)}
         sub="Inicial + dinheiro ± movimentos"
         icon={<ClipboardList size={20} strokeWidth={1.75} />}
         iconTone="brand"
-      />
-      <MetricCard
-        label="Atendimentos hoje"
-        value={String(dayBoardCount)}
-        sub="Listados no painel do dia"
-        icon={<Receipt size={20} strokeWidth={1.75} />}
-        iconTone="green"
       />
     </div>
   );

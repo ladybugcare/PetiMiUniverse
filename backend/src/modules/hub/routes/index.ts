@@ -205,6 +205,8 @@ import {
   postHubFinancePaymentReverse,
   postHubFinanceReceivableCancel,
   getHubFinanceDayBoard,
+  getHubFinancePaymentMethodSettings,
+  patchHubFinancePaymentMethodSettings,
 } from '../hubFinancialController';
 import {
   postHubComandaOpen,
@@ -959,6 +961,18 @@ router.patch(
 );
 
 /** Financeiro — Day board (Caixa: todos os atendimentos do dia) */
+router.get(
+  '/finance/payment-method-settings',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinancePaymentMethodSettings
+);
+router.patch(
+  '/finance/payment-method-settings',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  patchHubFinancePaymentMethodSettings
+);
 router.get(
   '/finance/day-board',
   authenticateUser,

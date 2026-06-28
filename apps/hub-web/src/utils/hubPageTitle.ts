@@ -10,6 +10,7 @@ const ROUTES: { path: string; title: string }[] = [
   { path: '/hub/estoque/alertas', title: 'Estoque — Alertas' },
   { path: '/hub/estoque/inventario', title: 'Estoque — Inventário' },
   { path: '/hub/configuracoes-sistema/checklists', title: 'Configurações — Checklists operacionais' },
+  { path: '/hub/configuracoes-sistema/formas-pagamento', title: 'Configurações — Formas de pagamento' },
   { path: '/hub/configuracoes-sistema/templates-mensagem', title: 'Configurações — Templates de Mensagem' },
   { path: '/hub/configuracoes-sistema/servicos-funcoes', title: 'Configurações — Serviços e Funções' },
   { path: '/hub/configuracoes-sistema', title: 'Configurações do Sistema' },

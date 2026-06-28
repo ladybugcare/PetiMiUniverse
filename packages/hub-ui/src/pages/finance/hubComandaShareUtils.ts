@@ -1,5 +1,6 @@
 /** Texto e links para envio de comanda / cobrança (WhatsApp, cópia). */
 import { buildWhatsappLink } from '../../utils/whatsappLink';
+import { paymentMethodLabel as paymentMethodLabelFromUtil } from '../../utils/hubPaymentMethods';
 
 export function guardianFirstName(fullName: string | undefined | null): string {
   const t = (fullName ?? '').trim();
@@ -97,16 +98,6 @@ export function waMeBaseUrl(phone: string | undefined | null): string | null {
   return buildWhatsappLink(phone, '');
 }
 
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  pix: 'Pix',
-  cash: 'Dinheiro',
-  credit_card: 'Cartão de crédito',
-  debit_card: 'Cartão de débito',
-  transfer: 'Transferência',
-  payment_link: 'Link de pagamento',
-  customer_credit: 'Crédito do tutor',
-};
-
 export function paymentMethodLabel(method: string): string {
-  return PAYMENT_METHOD_LABELS[method] ?? method;
+  return paymentMethodLabelFromUtil(method);
 }

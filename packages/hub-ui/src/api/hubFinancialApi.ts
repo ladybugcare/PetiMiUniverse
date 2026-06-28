@@ -633,6 +633,21 @@ export const hubFinancialApi = {
     return apiRequest(`${base}/credit-balance?${q}`) as Promise<{ balance: number; movements_count: number }>;
   },
 
+  async getPaymentMethodSettings(clinicId: string): Promise<{ accepted_payment_methods: HubPaymentMethod[] }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${base}/payment-method-settings?${q}`) as Promise<{ accepted_payment_methods: HubPaymentMethod[] }>;
+  },
+
+  async patchPaymentMethodSettings(
+    clinicId: string,
+    acceptedPaymentMethods: HubPaymentMethod[],
+  ): Promise<{ accepted_payment_methods: HubPaymentMethod[] }> {
+    return apiRequest(`${base}/payment-method-settings`, {
+      method: 'PATCH',
+      body: JSON.stringify({ clinic_id: clinicId, accepted_payment_methods: acceptedPaymentMethods }),
+    }) as Promise<{ accepted_payment_methods: HubPaymentMethod[] }>;
+  },
+
   async listPackages(clinicId: string): Promise<{ packages: Array<Record<string, unknown>> }> {
     const q = new URLSearchParams({ clinic_id: clinicId });
     return apiRequest(`${base}/packages?${q}`) as Promise<{ packages: Array<Record<string, unknown>> }>;

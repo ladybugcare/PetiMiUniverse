@@ -10,6 +10,7 @@ import {
 } from '../../api/hubFinancialApi';
 import { useAlert } from '../../components/AlertProvider';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
+import { paymentMethodLabel } from '../../utils/hubPaymentMethods';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './hub-finance-page.css';
@@ -17,16 +18,6 @@ import './hub-finance-page.css';
 function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 }
-
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  cash: 'Dinheiro',
-  pix: 'PIX',
-  debit_card: 'Débito',
-  credit_card: 'Crédito',
-  transfer: 'Transferência',
-  payment_link: 'Link de pagamento',
-  customer_credit: 'Crédito do tutor',
-};
 
 const AGING_LABELS: Record<string, string> = {
   no_due_date: 'Sem vencimento',
@@ -149,7 +140,7 @@ const HubRelatoriosPage: React.FC = () => {
             ) : (
               Object.entries(revenue?.by_method ?? {}).map(([method, total]) => (
                 <div key={method} className="hub-finance-page__report-row">
-                  <span>{PAYMENT_METHOD_LABELS[method] ?? method}</span>
+                  <span>{paymentMethodLabel(method)}</span>
                   <strong>{formatBrl(total)}</strong>
                 </div>
               ))
