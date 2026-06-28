@@ -53,6 +53,7 @@ import {
 import { mapHubAppointmentToAgenda } from './mapHubAgenda';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
+import { hubComandaApi as hubComandaApiAgenda } from '../../api/hubComandaApi';
 import StartEncounterModal from '../clinica/StartEncounterModal';
 import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import {
@@ -148,6 +149,7 @@ const HubAgendaPage: React.FC = () => {
   const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
   const [rawList, setRawList] = useState<AgendaAppointment[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
+  const [pollTick, setPollTick] = useState(0);
   const [staffOptions, setStaffOptions] = useState<{ id: string; name: string; role: string; hasLogin: boolean }[]>([]);
   const [fullStaff, setFullStaff] = useState<HubStaffMember[]>([]);
   const [serviceTypes, setServiceTypes] = useState<{ id: string; name: string }[]>([]);
@@ -196,6 +198,7 @@ const HubAgendaPage: React.FC = () => {
   }, [cursorDate, setSearchParams]);
 
   const bumpReload = useCallback(() => setReloadToken((t) => t + 1), []);
+  const bumpPoll = useCallback(() => setPollTick((t) => t + 1), []);
 
   const openCreateModal = useCallback(
     (initial?: NewAppointmentInitial | null, layout: 'default' | 'clinical_routine' = 'default') => {
@@ -498,15 +501,16 @@ const HubAgendaPage: React.FC = () => {
     resourceFilter,
     serviceTypeFilter,
     reloadToken,
+    pollTick,
   ]);
 
   useEffect(() => {
     if (!clinicId || permLoading || !accessAllowed) return;
     const id = window.setInterval(() => {
-      if (document.visibilityState === 'visible') bumpReload();
-    }, 60_000);
+      if (document.visibilityState === 'visible') bumpPoll();
+    }, 90_000);
     return () => window.clearInterval(id);
-  }, [clinicId, permLoading, accessAllowed, bumpReload]);
+  }, [clinicId, permLoading, accessAllowed, bumpPoll]);
 
   const unitOptions = useMemo(() => {
     const s = new Set<string>();
@@ -904,6 +908,30 @@ const HubAgendaPage: React.FC = () => {
       setCheckoutOpen(true);
     },
     [clinicId, canCreateReceivable, filtered, allAppointments, unitFilter, showError],
+  );
+
+  /** Abre (ou cria) a comanda para um agendamento — pagamento antecipado. Não faz checkout imediato. */
+  const handleOpenComanda = useCallback(
+    async (appointmentId: string) => {
+      if (!clinicId || !canCreateReceivable) return;
+      try {
+        await hubComandaApiAgenda.openComanda({
+          clinic_id: clinicId,
+          origin_type: 'appointment',
+          origin_id: appointmentId,
+        });
+        showSuccess('Comanda aberta. Acesse o Caixa para realizar o recebimento.');
+        bumpReload();
+      } catch (e: unknown) {
+        const msg = (e as Error)?.message ?? '';
+        if (msg.includes('Já existe comanda aberta')) {
+          showSuccess('Comanda já está aberta para este agendamento.');
+        } else {
+          showError(msg || 'Erro ao abrir comanda');
+        }
+      }
+    },
+    [clinicId, canCreateReceivable, showSuccess, showError, bumpReload],
   );
 
   const checkoutUnitId = useMemo(() => {
@@ -1628,6 +1656,7 @@ const HubAgendaPage: React.FC = () => {
             onDuplicate={duplicateSelectedAppointment}
             onCancel={requestCancelSelected}
             onOpenCheckout={canCreateReceivable ? handleOpenCheckout : undefined}
+            onOpenComanda={canCreateReceivable ? handleOpenComanda : undefined}
             onOpenInClinic={canClinicWrite ? handleOpenInClinic : undefined}
             canViewFinancial={canViewFinancial}
           />
@@ -1660,7 +1689,7 @@ const HubAgendaPage: React.FC = () => {
           originId={checkoutAppointmentId}
           onSuccess={() => {
             bumpReload();
-            showSuccess('Checkout concluído.');
+            showSuccess('Cobrança concluída.');
           }}
         />
       ) : null}

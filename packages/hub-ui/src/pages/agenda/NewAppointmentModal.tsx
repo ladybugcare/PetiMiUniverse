@@ -795,6 +795,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     return 'medio';
   }, [selectedPet]);
 
+  /** Adicionais não vêm em `serviceTypes` (lista exclui `is_addon`); incluir para precificar o resumo. */
+  const serviceTypesForPricing = useMemo(() => {
+    const merged = new Map(serviceTypes.map((st) => [st.id, st]));
+    for (const addon of availableAddons) merged.set(addon.id, addon);
+    return [...merged.values()];
+  }, [serviceTypes, availableAddons]);
+
   const pricingPreview = useMemo(
     () =>
       buildAgendaPricingPreview({
@@ -819,7 +826,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             pricing_variant: s.pricing_variant,
           })),
         ),
-        serviceTypes,
+        serviceTypes: serviceTypesForPricing,
         petSizeTier: petBodyTierForPricing,
         petBirthDate: selectedPet?.birth_date ?? null,
         petCoatType: selectedPet?.coat_type ?? null,
@@ -832,7 +839,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       services,
       selectedAddons,
       extraBlocks,
-      serviceTypes,
+      serviceTypesForPricing,
       petBodyTierForPricing,
       selectedPet?.birth_date,
       selectedPet?.coat_type,
@@ -947,34 +954,38 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setServices((prev) => prev.map((s, i) => (i === idx ? { ...s, pricing_variant: variant } : s)));
 
   useEffect(() => {
-    if (!open || !clinicId || services.length === 0) {
+    if (!open || !clinicId || !mainServiceIdsSignature) {
       setAvailableAddons([]);
       return;
     }
     let cancelled = false;
-    setAddonsLoading(true);
-    void (async () => {
-      try {
-        const results = await Promise.all(
-          services.map((chip) => hubServiceAddonsApi.getAvailableAddons(chip.hub_service_type_id, clinicId))
-        );
-        const byId = new Map<string, HubServiceType>();
-        for (const res of results) {
-          for (const a of res.addons ?? []) {
-            if (!byId.has(a.id)) byId.set(a.id, a);
+    const serviceIds = mainServiceIdsSignature.split('|').filter(Boolean);
+    const timer = window.setTimeout(() => {
+      setAddonsLoading(true);
+      void (async () => {
+        try {
+          const results = await Promise.all(
+            serviceIds.map((id) => hubServiceAddonsApi.getAvailableAddons(id, clinicId)),
+          );
+          const byId = new Map<string, HubServiceType>();
+          for (const res of results) {
+            for (const a of res.addons ?? []) {
+              if (!byId.has(a.id)) byId.set(a.id, a);
+            }
           }
+          if (!cancelled) setAvailableAddons([...byId.values()]);
+        } catch {
+          if (!cancelled) setAvailableAddons([]);
+        } finally {
+          if (!cancelled) setAddonsLoading(false);
         }
-        if (!cancelled) setAvailableAddons([...byId.values()]);
-      } catch {
-        if (!cancelled) setAvailableAddons([]);
-      } finally {
-        if (!cancelled) setAddonsLoading(false);
-      }
-    })();
+      })();
+    }, 350);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [open, clinicId, services]);
+  }, [open, clinicId, mainServiceIdsSignature]);
 
   useEffect(() => {
     const allowed = new Set(availableAddons.map((a) => a.id));
@@ -1057,6 +1068,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     }
     if (!dateYmd) {
       setSaveError('Informe a data do agendamento.');
+      return;
+    }
+    if (!guardianId) {
+      setSaveError('Selecione o tutor.');
+      return;
+    }
+    if (!petId) {
+      setSaveError('Selecione o pet.');
       return;
     }
     if (isClinicalRoutine) {
@@ -1280,6 +1299,19 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     onClose();
   };
 
+  const clinicalRoutinePrimaryId = services[0]?.hub_service_type_id ?? '';
+  const canSaveDefault =
+    Boolean(clinicId) &&
+    services.length > 0 &&
+    Boolean(guardianId) &&
+    Boolean(petId) &&
+    Boolean(dateYmd);
+  const canSaveClinicalRoutine =
+    canSaveDefault &&
+    Boolean(staffId) &&
+    !intakeCasesLoading &&
+    !(intakeCaseMode === 'existing' && intakeActiveCases.length > 0 && !intakeSelectedCaseId);
+
   // ── Aside summary ─────────────────────────────────────────────────────────
   const asideContent = (
     <div className="nam-aside">
@@ -1441,22 +1473,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         </span>
       )}
       <HubCancelButton onClick={handleClose} disabled={saving} />
-      <button className="hub-btn hub-btn--primary" type="button" onClick={handleSave} disabled={saving || !clinicId}>
+      <button className="hub-btn hub-btn--primary" type="button" onClick={handleSave} disabled={saving || !canSaveDefault}>
         {saving ? 'Salvando…' : withRecurrence ? 'Criar série' : 'Criar agendamento'}
       </button>
     </>
   );
-
-  const clinicalRoutinePrimaryId = services[0]?.hub_service_type_id ?? '';
-  const canSaveClinicalRoutine =
-    Boolean(clinicId) &&
-    services.length > 0 &&
-    Boolean(guardianId) &&
-    Boolean(petId) &&
-    Boolean(staffId) &&
-    Boolean(dateYmd) &&
-    !intakeCasesLoading &&
-    !(intakeCaseMode === 'existing' && intakeActiveCases.length > 0 && !intakeSelectedCaseId);
 
   if (isClinicalRoutine) {
     return (

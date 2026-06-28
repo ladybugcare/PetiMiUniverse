@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
-import { X, ExternalLink, Phone, Mail, MapPin, Info, Pencil } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { X, ExternalLink, Phone, Mail, MapPin, Info, Pencil, FilePlus2, Coins } from 'lucide-react';
 import type { HubGuardian, HubGuardianPet } from '../../api/hubGuardiansApi';
 import { formatGuardianAddress } from './formatters';
 import { GuardianDetailQuickActions } from './GuardianDetailQuickActions';
 import { HubTabs } from '../../components/HubTabs';
+import { hubComandaApi } from '../../api/hubComandaApi';
+import { hubFinancialApi, type HubFinanceReceivable } from '../../api/hubFinancialApi';
+import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 
 type DetailTab = 'resumo' | 'pets' | 'historico' | 'financeiro';
 
@@ -17,6 +20,13 @@ interface GuardianDetailPanelProps {
   onArchive?: () => void;
   /** Quando true, oculta o botão "Ver Perfil Completo" (ex.: já estamos na rota dedicada). */
   hideNewPageButton?: boolean;
+  clinicId?: string | null;
+  unitId?: string | null;
+  canCreateReceivable?: boolean;
+}
+
+function formatBrl(n: number): string {
+  return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
 function initials(name: string): string {
@@ -34,8 +44,17 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   onOpenInNewPage,
   onArchive,
   hideNewPageButton = false,
+  clinicId,
+  unitId,
+  canCreateReceivable = false,
 }) => {
   const [tab, setTab] = useState<DetailTab>('resumo');
+  const [comandas, setComandas] = useState<Array<Record<string, unknown>>>([]);
+  const [receivables, setReceivables] = useState<HubFinanceReceivable[]>([]);
+  const [finLoading, setFinLoading] = useState(false);
+  const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
+  const [openingComanda, setOpeningComanda] = useState(false);
+
   const addr = formatGuardianAddress(guardian);
   const since = guardian.created_at
     ? new Date(guardian.created_at).toLocaleDateString('pt-BR')
@@ -43,6 +62,48 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   const isCompany = guardian.client_kind === 'company';
   const hasSecondaryOnlyPet = pets.some((p) => p.role === 'secondary');
   const label = isCompany ? 'Cliente empresa' : 'Tutor Principal';
+
+  const loadFinanceiro = useCallback(async () => {
+    if (!clinicId) return;
+    setFinLoading(true);
+    try {
+      const [cmd, rec] = await Promise.all([
+        hubComandaApi.listComandas({ clinic_id: clinicId, enrich: true }).then((r) =>
+          r.comandas.filter((c) => (c.guardian_id as string) === guardian.id)
+        ).catch(() => [] as Array<Record<string, unknown>>),
+        hubFinancialApi.listReceivables(clinicId, { status: undefined }).then((r) =>
+          r.filter((rv) => rv.guardian_id === guardian.id)
+        ).catch(() => [] as HubFinanceReceivable[]),
+      ]);
+      setComandas(cmd);
+      setReceivables(rec);
+    } finally {
+      setFinLoading(false);
+    }
+  }, [clinicId, guardian.id]);
+
+  useEffect(() => {
+    if (tab === 'financeiro') void loadFinanceiro();
+  }, [tab, loadFinanceiro]);
+
+  const handleOpenComandaManual = async () => {
+    if (!clinicId) return;
+    setOpeningComanda(true);
+    try {
+      const detail = await hubComandaApi.openComanda({
+        clinic_id: clinicId,
+        origin_type: 'manual',
+        guardian_id: guardian.id,
+        unit_id: unitId ?? undefined,
+      });
+      setCheckoutComandaId((detail.comanda as Record<string, unknown>).id as string);
+      void loadFinanceiro();
+    } catch (e: unknown) {
+      alert((e as Error)?.message || 'Erro ao abrir comanda');
+    } finally {
+      setOpeningComanda(false);
+    }
+  };
 
   return (
     <div>
@@ -195,11 +256,98 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
       )}
 
       {tab === 'financeiro' && (
-        <div className="hub-clientes__empty-state">
-          Não há lançamentos financeiros para mostrar. Esta área será preenchida com faturas, pagamentos e saldo
-          quando o financeiro do Hub estiver ativo.
+        <div style={{ padding: '0 4px' }}>
+          {/* Ações */}
+          {canCreateReceivable && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                disabled={openingComanda}
+                onClick={() => void handleOpenComandaManual()}
+              >
+                <FilePlus2 size={14} strokeWidth={2} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                {openingComanda ? 'Abrindo…' : 'Abrir comanda'}
+              </button>
+            </div>
+          )}
+
+          {finLoading ? (
+            <p className="hub-clientes__muted">Carregando…</p>
+          ) : (
+            <>
+              {/* Comandas abertas */}
+              {comandas.filter((c) => c.status === 'aberta').length > 0 && (
+                <section style={{ marginBottom: 20 }}>
+                  <h4 className="hub-clientes__label" style={{ marginBottom: 8 }}>Comandas abertas</h4>
+                  {comandas
+                    .filter((c) => c.status === 'aberta')
+                    .map((c) => (
+                      <div key={String(c.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--hc-border,#e8ddd8)' }}>
+                        <span style={{ flex: 1, fontSize: 13 }}>
+                          {String(c.origin_type ?? '—')}
+                          <span className="hub-clientes__muted" style={{ marginLeft: 6, fontSize: 12 }}>
+                            {c.opened_at ? new Date(String(c.opened_at)).toLocaleDateString('pt-BR') : ''}
+                          </span>
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 500 }}>{formatBrl(Number(c.total_amount ?? 0))}</span>
+                        {canCreateReceivable && (
+                          <button
+                            type="button"
+                            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                            onClick={() => setCheckoutComandaId(String(c.id))}
+                            title="Receber"
+                          >
+                            <Coins size={13} strokeWidth={2} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                </section>
+              )}
+
+              {/* Recebíveis */}
+              {receivables.length > 0 ? (
+                <section>
+                  <h4 className="hub-clientes__label" style={{ marginBottom: 8 }}>Recebíveis</h4>
+                  {receivables.slice(0, 20).map((rv) => (
+                    <div key={rv.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--hc-border,#e8ddd8)', fontSize: 13 }}>
+                      <span style={{ flex: 1 }}>
+                        {rv.source_type}
+                        <span className="hub-clientes__muted" style={{ marginLeft: 6, fontSize: 12 }}>
+                          {rv.due_date ? `venc. ${new Date(rv.due_date).toLocaleDateString('pt-BR')}` : ''}
+                        </span>
+                      </span>
+                      <span className={`hub-dayboard__badge ${rv.status === 'paid' ? 'hub-dayboard__badge--received' : rv.status === 'pending' ? 'hub-dayboard__badge--pending' : 'hub-dayboard__badge--none'}`} style={{ textTransform: 'capitalize' }}>
+                        {rv.status === 'paid' ? 'Pago' : rv.status === 'pending' ? 'Pendente' : rv.status}
+                      </span>
+                      <span style={{ fontWeight: 500 }}>{formatBrl(rv.final_amount)}</span>
+                    </div>
+                  ))}
+                </section>
+              ) : comandas.length === 0 ? (
+                <p className="hub-clientes__muted">Nenhum lançamento financeiro encontrado para este tutor.</p>
+              ) : null}
+            </>
+          )}
         </div>
       )}
+
+      {/* Drawer de checkout de comanda */}
+      {clinicId && unitId && checkoutComandaId ? (
+        <ComandaCheckoutDrawer
+          key={checkoutComandaId}
+          open={!!checkoutComandaId}
+          onClose={() => setCheckoutComandaId(null)}
+          clinicId={clinicId}
+          unitId={unitId}
+          comandaId={checkoutComandaId}
+          onSuccess={() => {
+            setCheckoutComandaId(null);
+            void loadFinanceiro();
+          }}
+        />
+      ) : null}
 
       <div className="hub-clientes__footer-btns">
         <div className="hub-clientes__btn-row">

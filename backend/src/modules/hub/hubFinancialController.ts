@@ -134,7 +134,7 @@ async function enrichReceivableLines(lines: Record<string, unknown>[]): Promise<
       ? supabaseAdmin.from('hub_inventory_items').select('id, name, store_sku, sale_amount').in('id', itemIds)
       : Promise.resolve({ data: [], error: null }),
     lotIds.length
-      ? supabaseAdmin.from('hub_inventory_lots').select('id, lot_code, expires_at').in('id', lotIds)
+      ? supabaseAdmin.from('hub_inventory_lots').select('id, lot_code, expiry_date').in('id', lotIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -1976,6 +1976,290 @@ export const getHubFinancePendingBillingCount = async (req: Request, res: Respon
     return res.json({ pending_billing_count: items.length });
   } catch (e: unknown) {
     console.error('getHubFinancePendingBillingCount', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+// ─── DAY BOARD (Caixa: todos os atendimentos do dia) ────────────────────────
+
+type DayBoardBilling = {
+  comanda_id: string | null;
+  comanda_status: string | null;
+  has_receivable: boolean;
+};
+
+type DayBoardItem = {
+  origin_type: string;
+  origin_id: string;
+  origin_label: string;
+  starts_at: string | null;
+  guardian_id: string | null;
+  guardian: { id: string; full_name: string } | null;
+  pet_id: string | null;
+  pet: { id: string; name: string } | null;
+  operational_status: string;
+  estimated_amount: number;
+  billing: DayBoardBilling;
+};
+
+/** Carrega comanda e status de recebível para um conjunto de origens em batch. */
+async function fetchBillingStatusBatch(
+  clinicId: string,
+  originKeys: Array<{ origin_type: string; origin_id: string }>
+): Promise<Map<string, DayBoardBilling>> {
+  const result = new Map<string, DayBoardBilling>();
+  if (!originKeys.length) return result;
+
+  // Carrega todas as comandas não canceladas para as origens
+  const { data: comandas } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('id, origin_type, origin_id, status')
+    .eq('clinic_id', clinicId)
+    .neq('status', 'cancelada')
+    .is('deleted_at', null)
+    .not('origin_id', 'is', null);
+
+  const comandaByKey = new Map<string, { id: string; status: string }>();
+  for (const c of comandas ?? []) {
+    const key = `${c.origin_type as string}:${c.origin_id as string}`;
+    comandaByKey.set(key, { id: c.id as string, status: c.status as string });
+  }
+
+  // Carrega recebíveis ativos por source_key
+  const { data: receivables } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('source_type, source_id, comanda_id')
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .neq('status', 'cancelled');
+
+  const receivableSourceKeys = new Set<string>();
+  const receivableByComandaId = new Set<string>();
+  for (const r of receivables ?? []) {
+    receivableSourceKeys.add(`${r.source_type as string}:${r.source_id as string}`);
+    if (r.comanda_id) receivableByComandaId.add(r.comanda_id as string);
+  }
+
+  for (const { origin_type, origin_id } of originKeys) {
+    const key = `${origin_type}:${origin_id}`;
+    const comanda = comandaByKey.get(key) ?? null;
+    const has_receivable =
+      receivableSourceKeys.has(key) ||
+      (comanda ? receivableByComandaId.has(comanda.id) : false);
+    result.set(key, {
+      comanda_id: comanda?.id ?? null,
+      comanda_status: comanda?.status ?? null,
+      has_receivable,
+    });
+  }
+  return result;
+}
+
+const dayBoardQuerySchema = z
+  .object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr.optional(),
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+  })
+  .strict();
+
+export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
+  try {
+    const parsed = dayBoardQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'clinic_id obrigatório (UUID)' });
+    }
+    const { clinic_id, unit_id } = parsed.data;
+    const dateYmd = parsed.data.date ?? ymdTodayUtc();
+    const dayStart = utcDayStartIso(dateYmd);
+    const dayEnd = utcDayEndIso(dateYmd);
+
+    const items: DayBoardItem[] = [];
+    const originKeys: Array<{ origin_type: string; origin_id: string }> = [];
+
+    // ── 1. Agendamentos do dia (qualquer status exceto cancelled e waived) ──
+    let aq = supabaseAdmin
+      .from('hub_appointments')
+      .select(
+        `id, unit_id, starts_at, ends_at, status, guardian_id, pet_id, billing_waived_at, title,
+        pet:hub_pets(id, name),
+        guardian:hub_guardians(id, full_name),
+        appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, service_type:hub_service_types(name))`
+      )
+      .eq('clinic_id', clinic_id)
+      .not('status', 'in', '("cancelled","no_show")')
+      .is('deleted_at', null)
+      .gte('starts_at', dayStart)
+      .lte('starts_at', dayEnd)
+      .order('starts_at', { ascending: true });
+    if (unit_id) aq = aq.eq('unit_id', unit_id);
+    const { data: apptRows, error: aErr } = await aq;
+    if (aErr) throw new Error(aErr.message);
+
+    for (const row of apptRows ?? []) {
+      if (row.billing_waived_at) continue;
+      const id = row.id as string;
+      const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
+      const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
+      const services = (row.appointment_services as Array<{ sale_amount_applied?: number | null }>) ?? [];
+      const estimated = round2(services.reduce((s, sv) => s + Number(sv.sale_amount_applied ?? 0), 0));
+      originKeys.push({ origin_type: 'appointment', origin_id: id });
+      items.push({
+        origin_type: 'appointment',
+        origin_id: id,
+        origin_label: String(row.title || 'Agendamento'),
+        starts_at: (row.starts_at as string) ?? null,
+        guardian_id: (row.guardian_id as string) ?? null,
+        guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+        pet_id: (row.pet_id as string) ?? null,
+        pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
+        operational_status: String(row.status),
+        estimated_amount: estimated,
+        billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+      });
+    }
+
+    // ── 2. Sessões B&T do dia (walk-ins sem appointment, ou com appointment fora do intervalo) ──
+    let gq = supabaseAdmin
+      .from('hub_grooming_sessions')
+      .select(
+        `id, unit_id, created_at, grooming_stage, guardian_id, billing_waived_at, hub_appointment_id,
+        pet:hub_pets(id, name),
+        guardian:hub_guardians(id, full_name)`
+      )
+      .eq('clinic_id', clinic_id)
+      .is('deleted_at', null)
+      .is('hub_appointment_id', null)
+      .neq('grooming_stage', 'cancelled')
+      .gte('created_at', dayStart)
+      .lte('created_at', dayEnd)
+      .order('created_at', { ascending: true });
+    if (unit_id) gq = gq.eq('unit_id', unit_id);
+    const { data: groomRows, error: gErr } = await gq;
+    if (gErr) throw new Error(gErr.message);
+
+    for (const row of groomRows ?? []) {
+      if (row.billing_waived_at) continue;
+      const id = row.id as string;
+      const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
+      const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
+      originKeys.push({ origin_type: 'grooming_session', origin_id: id });
+      items.push({
+        origin_type: 'grooming_session',
+        origin_id: id,
+        origin_label: 'Banho & Tosa (walk-in)',
+        starts_at: (row.created_at as string) ?? null,
+        guardian_id: (row.guardian_id as string) ?? null,
+        guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+        pet_id: null,
+        pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
+        operational_status: String(row.grooming_stage),
+        estimated_amount: 0,
+        billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+      });
+    }
+
+    // ── 3. Encounters walk-in do dia ──
+    let eq = supabaseAdmin
+      .from('hub_encounters')
+      .select(
+        `id, unit_id, created_at, status, guardian_id, billing_waived_at, hub_appointment_id,
+        pet:hub_pets(id, name),
+        guardian:hub_guardians(id, full_name)`
+      )
+      .eq('clinic_id', clinic_id)
+      .is('deleted_at', null)
+      .is('hub_appointment_id', null)
+      .not('status', 'in', '("cancelled")')
+      .gte('created_at', dayStart)
+      .lte('created_at', dayEnd)
+      .order('created_at', { ascending: true });
+    if (unit_id) eq = eq.eq('unit_id', unit_id);
+    const { data: encRows, error: eErr } = await eq;
+    if (eErr) throw new Error(eErr.message);
+
+    for (const row of encRows ?? []) {
+      if (row.billing_waived_at) continue;
+      const id = row.id as string;
+      const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
+      const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
+      originKeys.push({ origin_type: 'encounter', origin_id: id });
+      items.push({
+        origin_type: 'encounter',
+        origin_id: id,
+        origin_label: 'Clínica (walk-in)',
+        starts_at: (row.created_at as string) ?? null,
+        guardian_id: (row.guardian_id as string) ?? null,
+        guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+        pet_id: null,
+        pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
+        operational_status: String(row.status),
+        estimated_amount: 0,
+        billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+      });
+    }
+
+    // ── 4. Boarding: reservas com expected_check_out no dia (independente do status) ──
+    let bq = supabaseAdmin
+      .from('hub_boarding_reservations')
+      .select(
+        `id, unit_id, expected_check_out, checked_out_at, status, guardian_id, pet_id, mode, daily_rate_cents,
+        pet:hub_pets(id, name),
+        guardian:hub_guardians(id, full_name)`
+      )
+      .eq('clinic_id', clinic_id)
+      .is('deleted_at', null)
+      .not('status', 'in', '("cancelled")')
+      .gte('expected_check_out', dayStart)
+      .lte('expected_check_out', dayEnd)
+      .order('expected_check_out', { ascending: true });
+    if (unit_id) bq = bq.eq('unit_id', unit_id);
+    const { data: boardingRows, error: bErr } = await bq;
+    if (bErr) throw new Error(bErr.message);
+
+    for (const row of boardingRows ?? []) {
+      const id = row.id as string;
+      const modeLabel = row.mode === 'hotel' ? 'Hotel' : 'Creche';
+      const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
+      const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
+      const dailyRateCents = (row.daily_rate_cents as number | null) ?? 0;
+      const estimated = Math.round(dailyRateCents) / 100; // estimativa simplificada
+      originKeys.push({ origin_type: 'boarding_reservation', origin_id: id });
+      items.push({
+        origin_type: 'boarding_reservation',
+        origin_id: id,
+        origin_label: `Hotel & Creche (${modeLabel})`,
+        starts_at: (row.expected_check_out as string) ?? null,
+        guardian_id: (row.guardian_id as string) ?? null,
+        guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+        pet_id: (row.pet_id as string) ?? null,
+        pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
+        operational_status: String(row.status),
+        estimated_amount: estimated,
+        billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+      });
+    }
+
+    // ── 5. Enriquecer billing em batch ──
+    const billingMap = await fetchBillingStatusBatch(clinic_id, originKeys);
+    for (const item of items) {
+      const key = `${item.origin_type}:${item.origin_id}`;
+      const billing = billingMap.get(key);
+      if (billing) item.billing = billing;
+    }
+
+    items.sort((a, b) => {
+      const ta = a.starts_at ? new Date(a.starts_at).getTime() : 0;
+      const tb = b.starts_at ? new Date(b.starts_at).getTime() : 0;
+      return ta - tb;
+    });
+
+    return res.json({ items, date: dateYmd, count: items.length });
+  } catch (e: unknown) {
+    console.error('getHubFinanceDayBoard', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };

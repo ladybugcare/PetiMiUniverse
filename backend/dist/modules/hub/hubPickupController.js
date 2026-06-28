@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.patchHubPickupStop = exports.getHubPickupRoute = exports.patchHubPickupRoute = exports.addHubPickupStops = exports.listHubPickupRoutes = exports.createHubPickupRoute = exports.getHubPickupDayBoard = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
+const hubDayBoardPets_1 = require("./hubDayBoardPets");
 const uuidStr = zod_1.z.string().uuid();
 const UUID_RE = /^[0-9a-f-]{36}$/;
 // ─── Schemas compartilhados ────────────────────────────────────────────────
@@ -190,16 +191,16 @@ const getHubPickupDayBoard = async (req, res) => {
         const looseAppts = pickupAppts.filter((a) => !stopByApptId.has(a.id));
         const heuristicMap = deriveDirections(looseAppts, standardAppts);
         // 4. Enriquecer com pet, tutor e tipo de serviço
-        const petIds = [...new Set(pickupAppts.map((a) => a.pet_id).filter(Boolean))];
+        const petIdSet = new Set(pickupAppts.map((a) => a.pet_id).filter(Boolean));
         const guIds = [...new Set(pickupAppts.map((a) => a.guardian_id).filter(Boolean))];
         const stIds = [...new Set(pickupAppts.map((a) => a.hub_service_type_id).filter(Boolean))];
-        const [petsRes, gusRes, stsRes] = await Promise.all([
-            petIds.length
-                ? supabase_1.supabaseAdmin
-                    .from('hub_pets')
-                    .select('id, name, species, breed, size_tier, birth_date, avatar_url')
-                    .in('id', petIds)
-                : Promise.resolve({ data: [] }),
+        const guardiansMissingPet = pickupAppts
+            .filter((a) => !a.pet_id && a.guardian_id)
+            .map((a) => a.guardian_id);
+        const petByGuardian = await (0, hubDayBoardPets_1.resolvePrimaryPetIdsByGuardians)(clinic_id, guardiansMissingPet);
+        for (const pid of petByGuardian.values())
+            petIdSet.add(pid);
+        const [gusRes, stsRes, petMap] = await Promise.all([
             guIds.length
                 ? supabase_1.supabaseAdmin
                     .from('hub_guardians')
@@ -212,8 +213,8 @@ const getHubPickupDayBoard = async (req, res) => {
                     .select('id, name, service_group')
                     .in('id', stIds)
                 : Promise.resolve({ data: [] }),
+            (0, hubDayBoardPets_1.fetchHubPetsMapByIds)(petIdSet),
         ]);
-        const petMap = new Map((petsRes.data ?? []).map((p) => [p.id, p]));
         const guMap = new Map((gusRes.data ?? []).map((g) => [g.id, g]));
         const stMap = new Map((stsRes.data ?? []).map((s) => [s.id, s]));
         // 5. Montar itens
@@ -223,7 +224,8 @@ const getHubPickupDayBoard = async (req, res) => {
             const itemDirection = stop
                 ? stop.direction
                 : (heuristicMap.get(a.id) ?? 'unknown');
-            const pet = a.pet_id ? petMap.get(a.pet_id) ?? null : null;
+            const effectivePetId = a.pet_id ?? (a.guardian_id ? petByGuardian.get(a.guardian_id) ?? null : null);
+            const pet = effectivePetId ? petMap.get(effectivePetId) ?? null : null;
             const gu = (a.guardian_id ? guMap.get(a.guardian_id) ?? null : null);
             const serviceType = a.hub_service_type_id
                 ? stMap.get(a.hub_service_type_id) ?? null
@@ -589,17 +591,20 @@ const getHubPickupRoute = async (req, res) => {
             return res.status(500).json({ error: stopsErr.message });
         const stops = (stopsRaw ?? []);
         // Enriquecer com pet e tutor
-        const petIds = [...new Set(stops.map((s) => s.pet_id).filter(Boolean))];
+        const petIdSet = new Set(stops.map((s) => s.pet_id).filter(Boolean));
         const guIds = [...new Set(stops.map((s) => s.guardian_id).filter(Boolean))];
-        const [petsRes, gusRes] = await Promise.all([
-            petIds.length
-                ? supabase_1.supabaseAdmin.from('hub_pets').select('id, name, species, breed, size_tier, avatar_url').in('id', petIds)
-                : Promise.resolve({ data: [] }),
+        const guardiansMissingPet = stops
+            .filter((s) => !s.pet_id && s.guardian_id)
+            .map((s) => s.guardian_id);
+        const petByGuardian = await (0, hubDayBoardPets_1.resolvePrimaryPetIdsByGuardians)(clinic_id, guardiansMissingPet);
+        for (const pid of petByGuardian.values())
+            petIdSet.add(pid);
+        const [gusRes, petMap] = await Promise.all([
             guIds.length
                 ? supabase_1.supabaseAdmin.from('hub_guardians').select('id, full_name, phone').in('id', guIds)
                 : Promise.resolve({ data: [] }),
+            (0, hubDayBoardPets_1.fetchHubPetsMapByIds)(petIdSet),
         ]);
-        const petMap = new Map((petsRes.data ?? []).map((p) => [p.id, p]));
         const guMap = new Map((gusRes.data ?? []).map((g) => [g.id, g]));
         // Motorista
         const routeRow = route;
@@ -612,13 +617,16 @@ const getHubPickupRoute = async (req, res) => {
                 .maybeSingle();
             driver = d;
         }
-        const enrichedStops = stops.map((s) => ({
-            ...s,
-            pet: s.pet_id ? petMap.get(s.pet_id) ?? null : null,
-            guardian: s.guardian_id
-                ? { ...guMap.get(s.guardian_id), phone: guMap.get(s.guardian_id)?.phone ?? null }
-                : null,
-        }));
+        const enrichedStops = stops.map((s) => {
+            const effectivePetId = s.pet_id ?? (s.guardian_id ? petByGuardian.get(s.guardian_id) ?? null : null);
+            return {
+                ...s,
+                pet: effectivePetId ? petMap.get(effectivePetId) ?? null : null,
+                guardian: s.guardian_id
+                    ? { ...guMap.get(s.guardian_id), phone: guMap.get(s.guardian_id)?.phone ?? null }
+                    : null,
+            };
+        });
         return res.json({ route: { ...route, driver }, stops: enrichedStops });
     }
     catch (e) {

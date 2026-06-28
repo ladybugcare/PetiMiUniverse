@@ -25,7 +25,12 @@ export default defineConfig(({ mode }) => ({
           ? 'cjs/react-jsx-runtime.development.js'
           : 'cjs/react-jsx-runtime.production.min.js',
       ),
-      'react/jsx-dev-runtime': path.join(reactRoot, 'cjs/react-jsx-runtime.development.js'),
+      'react/jsx-dev-runtime': path.join(
+        reactRoot,
+        mode === 'development'
+          ? 'cjs/react-jsx-dev-runtime.development.js'
+          : 'cjs/react-jsx-dev-runtime.production.min.js',
+      ),
     },
   },
 }));

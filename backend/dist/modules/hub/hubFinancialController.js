@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.postHubFinanceCashMovement = exports.postHubFinanceExpense = exports.listHubFinanceExpenses = exports.getHubFinanceAgingReport = exports.getHubFinanceTopServicesReport = exports.getHubFinanceTicketAverageReport = exports.getHubFinanceRevenueSeries = exports.getHubFinanceRevenueReport = exports.getHubFinanceCashFlow = exports.getHubFinanceDashboardSummary = exports.getHubFinancePendingBillingCount = exports.getHubFinanceUnbilledCompleted = exports.getHubFinanceCashSessionSummary = exports.getHubFinanceCashSessionOpen = exports.listHubFinanceCashSessionsClosed = exports.postHubFinanceCashSessionClose = exports.postHubFinanceCashSessionOpen = exports.listHubFinanceReceivables = exports.getHubFinancePaymentReceipt = exports.getHubFinanceReceivableDetail = exports.postHubFinanceReceivableCancel = exports.postHubFinancePaymentReverse = exports.deleteHubFinanceReceivableProductLine = exports.postHubFinanceReceivableProductLine = exports.postHubFinanceReceivablePayment = exports.postHubFinanceWaiveBilling = exports.postHubFinanceReceivable = exports.getHubFinancePreview = void 0;
+exports.postHubFinanceCashMovement = exports.postHubFinanceExpense = exports.listHubFinanceExpenses = exports.getHubFinanceAgingReport = exports.getHubFinanceTopServicesReport = exports.getHubFinanceTicketAverageReport = exports.getHubFinanceRevenueSeries = exports.getHubFinanceRevenueReport = exports.getHubFinanceCashFlow = exports.getHubFinanceDashboardSummary = exports.getHubFinanceDayBoard = exports.getHubFinancePendingBillingCount = exports.getHubFinanceUnbilledCompleted = exports.getHubFinanceCashSessionSummary = exports.getHubFinanceCashSessionOpen = exports.listHubFinanceCashSessionsClosed = exports.postHubFinanceCashSessionClose = exports.postHubFinanceCashSessionOpen = exports.listHubFinanceReceivables = exports.getHubFinancePaymentReceipt = exports.getHubFinanceReceivableDetail = exports.postHubFinanceReceivableCancel = exports.postHubFinancePaymentReverse = exports.deleteHubFinanceReceivableProductLine = exports.postHubFinanceReceivableProductLine = exports.postHubFinanceReceivablePayment = exports.postHubFinanceWaiveBilling = exports.postHubFinanceReceivable = exports.getHubFinancePreview = void 0;
 exports.resolveOpenCashSessionId = resolveOpenCashSessionId;
 const node_crypto_1 = require("node:crypto");
 const zod_1 = require("zod");
@@ -120,7 +120,7 @@ async function enrichReceivableLines(lines) {
             ? supabase_1.supabaseAdmin.from('hub_inventory_items').select('id, name, store_sku, sale_amount').in('id', itemIds)
             : Promise.resolve({ data: [], error: null }),
         lotIds.length
-            ? supabase_1.supabaseAdmin.from('hub_inventory_lots').select('id, lot_code, expires_at').in('id', lotIds)
+            ? supabase_1.supabaseAdmin.from('hub_inventory_lots').select('id, lot_code, expiry_date').in('id', lotIds)
             : Promise.resolve({ data: [], error: null }),
     ]);
     if (serviceRes.error)
@@ -1866,6 +1866,55 @@ async function collectUnbilledItems(clinicId, unitId, keys) {
             operational_status: String(row.status),
         });
     }
+    // Reservas de Hotel & Creche com check-out realizado e sem cobrança
+    let bq = supabase_1.supabaseAdmin
+        .from('hub_boarding_reservations')
+        .select(`
+      id, unit_id, checked_out_at, expected_check_out, guardian_id, pet_id, mode, daily_rate_cents,
+      pet:hub_pets(id, name),
+      guardian:hub_guardians(id, full_name)
+    `)
+        .eq('clinic_id', clinicId)
+        .eq('status', 'checked_out')
+        .order('checked_out_at', { ascending: false })
+        .limit(200);
+    if (unitId)
+        bq = bq.eq('unit_id', unitId);
+    const { data: boardingRows, error: bErr } = await bq;
+    if (bErr)
+        throw new Error(bErr.message);
+    for (const row of boardingRows ?? []) {
+        if (keys.has(`boarding_reservation:${row.id}`))
+            continue;
+        if (comandaOpenKeys.has(`boarding_reservation:${row.id}`))
+            continue;
+        const modeLabel = row.mode === 'hotel' ? 'Hotel' : 'Creche';
+        const pet = row.pet;
+        const g = row.guardian;
+        const dailyRateCents = row.daily_rate_cents ?? 0;
+        const checkIn = null;
+        const checkOut = row.checked_out_at ?? row.expected_check_out;
+        let nights = 0;
+        if (checkIn && checkOut) {
+            const d1 = new Date(checkIn);
+            const d2 = new Date(checkOut);
+            nights = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+        }
+        const qty = row.mode === 'hotel' ? Math.max(1, nights) : 1;
+        const estimated = Math.round(qty * dailyRateCents) / 100;
+        items.push({
+            source_type: 'boarding_reservation',
+            source_id: row.id,
+            origin_label: `Hotel & Creche (${modeLabel})`,
+            completed_at: checkOut,
+            unit_id: row.unit_id ?? null,
+            guardian: g ? (Array.isArray(g) ? g[0] : g) : null,
+            pet: pet ? (Array.isArray(pet) ? pet[0] : pet) : null,
+            staff: null,
+            estimated_amount: estimated,
+            operational_status: 'checked_out',
+        });
+    }
     items.sort((a, b) => {
         const ta = a.completed_at ? new Date(a.completed_at).getTime() : 0;
         const tb = b.completed_at ? new Date(b.completed_at).getTime() : 0;
@@ -1913,6 +1962,252 @@ const getHubFinancePendingBillingCount = async (req, res) => {
     }
 };
 exports.getHubFinancePendingBillingCount = getHubFinancePendingBillingCount;
+/** Carrega comanda e status de recebível para um conjunto de origens em batch. */
+async function fetchBillingStatusBatch(clinicId, originKeys) {
+    const result = new Map();
+    if (!originKeys.length)
+        return result;
+    // Carrega todas as comandas não canceladas para as origens
+    const { data: comandas } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('id, origin_type, origin_id, status')
+        .eq('clinic_id', clinicId)
+        .neq('status', 'cancelada')
+        .is('deleted_at', null)
+        .not('origin_id', 'is', null);
+    const comandaByKey = new Map();
+    for (const c of comandas ?? []) {
+        const key = `${c.origin_type}:${c.origin_id}`;
+        comandaByKey.set(key, { id: c.id, status: c.status });
+    }
+    // Carrega recebíveis ativos por source_key
+    const { data: receivables } = await supabase_1.supabaseAdmin
+        .from('hub_receivables')
+        .select('source_type, source_id, comanda_id')
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null)
+        .neq('status', 'cancelled');
+    const receivableSourceKeys = new Set();
+    const receivableByComandaId = new Set();
+    for (const r of receivables ?? []) {
+        receivableSourceKeys.add(`${r.source_type}:${r.source_id}`);
+        if (r.comanda_id)
+            receivableByComandaId.add(r.comanda_id);
+    }
+    for (const { origin_type, origin_id } of originKeys) {
+        const key = `${origin_type}:${origin_id}`;
+        const comanda = comandaByKey.get(key) ?? null;
+        const has_receivable = receivableSourceKeys.has(key) ||
+            (comanda ? receivableByComandaId.has(comanda.id) : false);
+        result.set(key, {
+            comanda_id: comanda?.id ?? null,
+            comanda_status: comanda?.status ?? null,
+            has_receivable,
+        });
+    }
+    return result;
+}
+const dayBoardQuerySchema = zod_1.z
+    .object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr.optional(),
+    date: zod_1.z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+})
+    .strict();
+const getHubFinanceDayBoard = async (req, res) => {
+    try {
+        const parsed = dayBoardQuerySchema.safeParse(req.query);
+        if (!parsed.success) {
+            return res.status(400).json({ error: 'clinic_id obrigatório (UUID)' });
+        }
+        const { clinic_id, unit_id } = parsed.data;
+        const dateYmd = parsed.data.date ?? ymdTodayUtc();
+        const dayStart = utcDayStartIso(dateYmd);
+        const dayEnd = utcDayEndIso(dateYmd);
+        const items = [];
+        const originKeys = [];
+        // ── 1. Agendamentos do dia (qualquer status exceto cancelled e waived) ──
+        let aq = supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select(`id, unit_id, starts_at, ends_at, status, guardian_id, pet_id, billing_waived_at, title,
+        pet:hub_pets(id, name),
+        guardian:hub_guardians(id, full_name),
+        appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, service_type:hub_service_types(name))`)
+            .eq('clinic_id', clinic_id)
+            .not('status', 'in', '("cancelled","no_show")')
+            .is('deleted_at', null)
+            .gte('starts_at', dayStart)
+            .lte('starts_at', dayEnd)
+            .order('starts_at', { ascending: true });
+        if (unit_id)
+            aq = aq.eq('unit_id', unit_id);
+        const { data: apptRows, error: aErr } = await aq;
+        if (aErr)
+            throw new Error(aErr.message);
+        for (const row of apptRows ?? []) {
+            if (row.billing_waived_at)
+                continue;
+            const id = row.id;
+            const pet = row.pet;
+            const g = row.guardian;
+            const services = row.appointment_services ?? [];
+            const estimated = round2(services.reduce((s, sv) => s + Number(sv.sale_amount_applied ?? 0), 0));
+            originKeys.push({ origin_type: 'appointment', origin_id: id });
+            items.push({
+                origin_type: 'appointment',
+                origin_id: id,
+                origin_label: String(row.title || 'Agendamento'),
+                starts_at: row.starts_at ?? null,
+                guardian_id: row.guardian_id ?? null,
+                guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+                pet_id: row.pet_id ?? null,
+                pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
+                operational_status: String(row.status),
+                estimated_amount: estimated,
+                billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+            });
+        }
+        // ── 2. Sessões B&T do dia (walk-ins sem appointment, ou com appointment fora do intervalo) ──
+        let gq = supabase_1.supabaseAdmin
+            .from('hub_grooming_sessions')
+            .select(`id, unit_id, created_at, grooming_stage, guardian_id, billing_waived_at, hub_appointment_id,
+        pet:hub_pets(id, name),
+        guardian:hub_guardians(id, full_name)`)
+            .eq('clinic_id', clinic_id)
+            .is('deleted_at', null)
+            .is('hub_appointment_id', null)
+            .neq('grooming_stage', 'cancelled')
+            .gte('created_at', dayStart)
+            .lte('created_at', dayEnd)
+            .order('created_at', { ascending: true });
+        if (unit_id)
+            gq = gq.eq('unit_id', unit_id);
+        const { data: groomRows, error: gErr } = await gq;
+        if (gErr)
+            throw new Error(gErr.message);
+        for (const row of groomRows ?? []) {
+            if (row.billing_waived_at)
+                continue;
+            const id = row.id;
+            const pet = row.pet;
+            const g = row.guardian;
+            originKeys.push({ origin_type: 'grooming_session', origin_id: id });
+            items.push({
+                origin_type: 'grooming_session',
+                origin_id: id,
+                origin_label: 'Banho & Tosa (walk-in)',
+                starts_at: row.created_at ?? null,
+                guardian_id: row.guardian_id ?? null,
+                guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+                pet_id: null,
+                pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
+                operational_status: String(row.grooming_stage),
+                estimated_amount: 0,
+                billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+            });
+        }
+        // ── 3. Encounters walk-in do dia ──
+        let eq = supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .select(`id, unit_id, created_at, status, guardian_id, billing_waived_at, hub_appointment_id,
+        pet:hub_pets(id, name),
+        guardian:hub_guardians(id, full_name)`)
+            .eq('clinic_id', clinic_id)
+            .is('deleted_at', null)
+            .is('hub_appointment_id', null)
+            .not('status', 'in', '("cancelled")')
+            .gte('created_at', dayStart)
+            .lte('created_at', dayEnd)
+            .order('created_at', { ascending: true });
+        if (unit_id)
+            eq = eq.eq('unit_id', unit_id);
+        const { data: encRows, error: eErr } = await eq;
+        if (eErr)
+            throw new Error(eErr.message);
+        for (const row of encRows ?? []) {
+            if (row.billing_waived_at)
+                continue;
+            const id = row.id;
+            const pet = row.pet;
+            const g = row.guardian;
+            originKeys.push({ origin_type: 'encounter', origin_id: id });
+            items.push({
+                origin_type: 'encounter',
+                origin_id: id,
+                origin_label: 'Clínica (walk-in)',
+                starts_at: row.created_at ?? null,
+                guardian_id: row.guardian_id ?? null,
+                guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+                pet_id: null,
+                pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
+                operational_status: String(row.status),
+                estimated_amount: 0,
+                billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+            });
+        }
+        // ── 4. Boarding: reservas com expected_check_out no dia (independente do status) ──
+        let bq = supabase_1.supabaseAdmin
+            .from('hub_boarding_reservations')
+            .select(`id, unit_id, expected_check_out, checked_out_at, status, guardian_id, pet_id, mode, daily_rate_cents,
+        pet:hub_pets(id, name),
+        guardian:hub_guardians(id, full_name)`)
+            .eq('clinic_id', clinic_id)
+            .is('deleted_at', null)
+            .not('status', 'in', '("cancelled")')
+            .gte('expected_check_out', dayStart)
+            .lte('expected_check_out', dayEnd)
+            .order('expected_check_out', { ascending: true });
+        if (unit_id)
+            bq = bq.eq('unit_id', unit_id);
+        const { data: boardingRows, error: bErr } = await bq;
+        if (bErr)
+            throw new Error(bErr.message);
+        for (const row of boardingRows ?? []) {
+            const id = row.id;
+            const modeLabel = row.mode === 'hotel' ? 'Hotel' : 'Creche';
+            const pet = row.pet;
+            const g = row.guardian;
+            const dailyRateCents = row.daily_rate_cents ?? 0;
+            const estimated = Math.round(dailyRateCents) / 100; // estimativa simplificada
+            originKeys.push({ origin_type: 'boarding_reservation', origin_id: id });
+            items.push({
+                origin_type: 'boarding_reservation',
+                origin_id: id,
+                origin_label: `Hotel & Creche (${modeLabel})`,
+                starts_at: row.expected_check_out ?? null,
+                guardian_id: row.guardian_id ?? null,
+                guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+                pet_id: row.pet_id ?? null,
+                pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
+                operational_status: String(row.status),
+                estimated_amount: estimated,
+                billing: { comanda_id: null, comanda_status: null, has_receivable: false },
+            });
+        }
+        // ── 5. Enriquecer billing em batch ──
+        const billingMap = await fetchBillingStatusBatch(clinic_id, originKeys);
+        for (const item of items) {
+            const key = `${item.origin_type}:${item.origin_id}`;
+            const billing = billingMap.get(key);
+            if (billing)
+                item.billing = billing;
+        }
+        items.sort((a, b) => {
+            const ta = a.starts_at ? new Date(a.starts_at).getTime() : 0;
+            const tb = b.starts_at ? new Date(b.starts_at).getTime() : 0;
+            return ta - tb;
+        });
+        return res.json({ items, date: dateYmd, count: items.length });
+    }
+    catch (e) {
+        console.error('getHubFinanceDayBoard', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.getHubFinanceDayBoard = getHubFinanceDayBoard;
 /** Início do dia UTC (YYYY-MM-DD) → ISO start */
 function utcDayStartIso(dateYmd) {
     return `${dateYmd}T00:00:00.000Z`;

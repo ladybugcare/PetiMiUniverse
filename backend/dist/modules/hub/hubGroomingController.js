@@ -3,9 +3,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.advanceHubGroomingSession = exports.listHubGroomingSessionEvents = exports.postHubGroomingSessionEvent = exports.patchHubGroomingSession = exports.createHubGroomingSession = exports.openHubGroomingSessionFromAppointment = exports.getHubGroomingDayBoard = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
+const notificationsController_1 = require("../../controllers/notificationsController");
 const groomingStages_1 = require("./groomingStages");
 const groomingPetTags_1 = require("./groomingPetTags");
 const hubComandasController_1 = require("./hubComandasController");
+const hubDayBoardPets_1 = require("./hubDayBoardPets");
 const uuidStr = zod_1.z.string().uuid();
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
 const groomingStageSchema = zod_1.z.enum(groomingStages_1.GROOMING_STAGES);
@@ -294,19 +296,24 @@ const getHubGroomingDayBoard = async (req, res) => {
                 staffIds.add(a.hub_staff_member_id);
         }
         for (const s of sessionsForDay) {
-            petIds.add(s.pet_id);
+            if (s.pet_id)
+                petIds.add(s.pet_id);
             if (s.guardian_id)
                 guIds.add(s.guardian_id);
             if (s.hub_staff_member_id)
                 staffIds.add(s.hub_staff_member_id);
         }
-        const [petsRes, gusRes, staffRes] = await Promise.all([
-            petIds.size
-                ? supabase_1.supabaseAdmin
-                    .from('hub_pets')
-                    .select('id, name, species, breed, size_tier, birth_date, coat_type, notes, avatar_url')
-                    .in('id', [...petIds])
-                : Promise.resolve({ data: [] }),
+        const guardiansMissingPet = new Set();
+        for (const a of appointments) {
+            if (!a.pet_id && a.guardian_id)
+                guardiansMissingPet.add(a.guardian_id);
+        }
+        for (const s of sessionsForDay) {
+            if (!s.pet_id && s.guardian_id)
+                guardiansMissingPet.add(s.guardian_id);
+        }
+        const [petByGuardian, gusRes, staffRes] = await Promise.all([
+            (0, hubDayBoardPets_1.resolvePrimaryPetIdsByGuardians)(clinic_id, guardiansMissingPet),
             guIds.size
                 ? supabase_1.supabaseAdmin.from('hub_guardians').select('id, full_name, phone').in('id', [...guIds])
                 : Promise.resolve({ data: [] }),
@@ -314,7 +321,9 @@ const getHubGroomingDayBoard = async (req, res) => {
                 ? supabase_1.supabaseAdmin.from('hub_staff_members').select('id, full_name').in('id', [...staffIds])
                 : Promise.resolve({ data: [] }),
         ]);
-        const petMap = new Map((petsRes.data ?? []).map((p) => [p.id, p]));
+        for (const pid of petByGuardian.values())
+            petIds.add(pid);
+        const petMap = await (0, hubDayBoardPets_1.fetchHubPetsMapByIds)(petIds);
         const guMap = new Map((gusRes.data ?? []).map((g) => [g.id, g]));
         const staffMap = new Map((staffRes.data ?? []).map((s) => [s.id, s]));
         const closedCountsByPet = new Map();
@@ -383,7 +392,10 @@ const getHubGroomingDayBoard = async (req, res) => {
                 ['pending_confirm', 'confirmed', 'checked_in', 'in_progress'].includes(appointment_status) &&
                 new Date(startsAt).getTime() < nowMs;
             const staffId = session?.hub_staff_member_id ?? a.hub_staff_member_id;
-            const petId = session?.pet_id ?? a.pet_id;
+            const guardianId = session?.guardian_id ?? a.guardian_id;
+            let petId = (0, hubDayBoardPets_1.coalesceAppointmentPetId)(a.pet_id, session?.pet_id);
+            if (!petId && guardianId)
+                petId = petByGuardian.get(guardianId) ?? null;
             if (session) {
                 seenSessionIds.add(session.id);
                 items.push({
@@ -409,12 +421,10 @@ const getHubGroomingDayBoard = async (req, res) => {
                     is_late,
                     operational_notes: session.operational_notes,
                     pet: enrichPet(petId),
-                    guardian: (session.guardian_id ?? a.guardian_id)
-                        ? guMap.get((session.guardian_id ?? a.guardian_id))
-                        : null,
+                    guardian: guardianId ? guMap.get(guardianId) : null,
                     staff_member: staffId ? staffMap.get(staffId) : null,
                     pet_id: petId,
-                    guardian_id: session.guardian_id ?? a.guardian_id,
+                    guardian_id: guardianId,
                     hub_staff_member_id: staffId,
                     clinical_tags: tagsForPet(petId),
                 });
@@ -441,10 +451,10 @@ const getHubGroomingDayBoard = async (req, res) => {
                     paused_at: null,
                     is_late,
                     pet: enrichPet(petId),
-                    guardian: a.guardian_id ? guMap.get(a.guardian_id) : null,
+                    guardian: guardianId ? guMap.get(guardianId) : null,
                     staff_member: staffId ? staffMap.get(staffId) : null,
                     pet_id: petId,
-                    guardian_id: a.guardian_id,
+                    guardian_id: guardianId,
                     hub_staff_member_id: staffId,
                     clinical_tags: tagsForPet(petId),
                 });
@@ -660,6 +670,55 @@ const patchSessionSchema = zod_1.z
 })
     .strict();
 /** PATCH /grooming/sessions/:id */
+async function notifyUnitStaffPetReady(opts) {
+    try {
+        let staffQuery = supabase_1.supabaseAdmin
+            .from('hub_staff_members')
+            .select('clinic_user_id')
+            .eq('clinic_id', opts.clinicId)
+            .eq('has_hub_access', true)
+            .not('clinic_user_id', 'is', null)
+            .is('deleted_at', null);
+        if (opts.unitId) {
+            staffQuery = staffQuery.eq('default_unit_id', opts.unitId);
+        }
+        const { data: staff } = await staffQuery;
+        if (!staff?.length)
+            return;
+        const clinicUserIds = staff.map((s) => s.clinic_user_id).filter(Boolean);
+        if (!clinicUserIds.length)
+            return;
+        const { data: clinicUsers } = await supabase_1.supabaseAdmin
+            .from('clinic_users')
+            .select('user_id')
+            .in('id', clinicUserIds);
+        if (!clinicUsers?.length)
+            return;
+        let petName = 'Pet';
+        if (opts.petId) {
+            const { data: petRow } = await supabase_1.supabaseAdmin
+                .from('hub_pets')
+                .select('name')
+                .eq('id', opts.petId)
+                .maybeSingle();
+            if (petRow?.name)
+                petName = String(petRow.name);
+        }
+        const pet = petName;
+        await Promise.all(clinicUsers.map((cu) => (0, notificationsController_1.createNotification)({
+            user_id: cu.user_id,
+            type: 'hub_pet_ready',
+            title: 'Pet pronto para retirada',
+            message: `${pet} já está pronto(a) para retirada.`,
+            link: `/hub/banho-tosa`,
+            entity_type: 'grooming_session',
+            entity_id: opts.sessionId,
+        })));
+    }
+    catch (e) {
+        console.error('notifyUnitStaffPetReady', e);
+    }
+}
 const patchHubGroomingSession = async (req, res) => {
     try {
         const id = uuidStr.safeParse(req.params.id);
@@ -761,6 +820,14 @@ const patchHubGroomingSession = async (req, res) => {
             await syncAppointmentStatusForStage(b.clinic_id, current.hub_appointment_id, b.grooming_stage);
             if (b.grooming_stage === 'closed') {
                 void (0, hubComandasController_1.syncOpenComandasAfterGroomingClosed)(b.clinic_id, id.data);
+            }
+            if (b.grooming_stage === 'ready') {
+                void notifyUnitStaffPetReady({
+                    clinicId: b.clinic_id,
+                    unitId: current.unit_id,
+                    petId: current.pet_id,
+                    sessionId: id.data,
+                });
             }
         }
         if (shouldLogPause) {

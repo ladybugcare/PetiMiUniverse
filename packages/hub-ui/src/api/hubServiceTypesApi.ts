@@ -44,12 +44,6 @@ function listUrl(
   return `${basePath}?${q.toString()}`;
 }
 
-function bootstrapUrl(clinicId: string, includeArchived: boolean): string {
-  const q = new URLSearchParams({ clinic_id: clinicId });
-  if (includeArchived) q.set('include_archived', 'true');
-  return `${basePath}/bootstrap?${q.toString()}`;
-}
-
 export const hubServiceTypesApi = {
   async list(
     clinicId: string,
@@ -58,18 +52,6 @@ export const hubServiceTypesApi = {
     addonsOnly = false
   ): Promise<{ service_types: HubServiceType[] }> {
     return apiRequest(listUrl(clinicId, bustCache, includeArchived, addonsOnly)) as Promise<{
-      service_types: HubServiceType[];
-    }>;
-  },
-
-  async bootstrap(
-    clinicId: string,
-    includeArchived = false
-  ): Promise<{ inserted: number; service_types: HubServiceType[] }> {
-    return apiRequest(bootstrapUrl(clinicId, includeArchived), {
-      method: 'POST',
-    }) as Promise<{
-      inserted: number;
       service_types: HubServiceType[];
     }>;
   },

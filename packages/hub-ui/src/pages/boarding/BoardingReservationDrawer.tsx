@@ -14,7 +14,6 @@ import { buildWhatsappLink } from '../../utils/whatsappLink';
 import { renderTemplate } from '../../utils/hubMessageTemplates';
 import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
-import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryApi';
 
 function formatDate(iso?: string | null): string {
@@ -69,7 +68,6 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
   const clinicId = getStoredClinicId();
   const templateOverrides = useMessageTemplates();
   const { showError, showSuccess } = useAlert();
-  const [checkoutDrawerOpen, setCheckoutDrawerOpen] = useState(false);
   const [stockItems, setStockItems] = useState<HubInventoryItem[]>([]);
   const [stockItemId, setStockItemId] = useState('');
   const [stockQty, setStockQty] = useState('1');
@@ -207,22 +205,9 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
     ? `${formatDate(reservation.expected_check_in as string)} → ${formatDate(reservation.expected_check_out as string)}`
     : `${formatDate(item.starts_at)} → ${formatDate(item.ends_at)}`;
 
-  const showBillingBtn =
-    canManageFinance &&
-    item?.reservation_id &&
-    stage === 'checked_out';
-
   const footer = (
     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-      {showBillingBtn && (
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-          onClick={() => setCheckoutDrawerOpen(true)}
-        >
-          Gerar cobrança
-        </button>
-      )}
+      {/* Checkout de fim de hospedagem removido — use o Caixa (Atendimentos do dia). */}
       <button type="button" className="hub-btn hub-btn--ghost" onClick={onClose}>
         Fechar
       </button>
@@ -508,20 +493,7 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
       )}
     </HubSidePanel>
 
-    {showBillingBtn && item?.reservation_id && clinicId && (
-      <ComandaCheckoutDrawer
-        open={checkoutDrawerOpen}
-        onClose={() => setCheckoutDrawerOpen(false)}
-        clinicId={clinicId}
-        unitId=""
-        originType="boarding_reservation"
-        originId={item.reservation_id}
-        onSuccess={() => {
-          setCheckoutDrawerOpen(false);
-          onUpdated?.();
-        }}
-      />
-    )}
+    {/* Checkout centralizado no Caixa — removido daqui */}
   </>
   );
 };

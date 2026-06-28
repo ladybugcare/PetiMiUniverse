@@ -20,6 +20,8 @@ import { mergeBreedComboboxOptions, mergeSpeciesComboboxOptions } from '../pets/
 import { wizardBreedOptionsForSpecies } from '../pets/wizard/petSpeciesBreedOptions';
 import { defaultBodyPorteForBreed } from '../../data/breedDefaultSizeTier';
 import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
+import { DiscountControl, resolveDiscountAmount, type DiscountKind } from '../../components/billing/DiscountControl';
+import { FinancialSummaryCard } from '../../components/billing/FinancialSummaryCard';
 
 const SIZE_TIERS = [
   { value: 'mini', label: 'Mini' },
@@ -37,12 +39,6 @@ const SIZE_TIER_COMBO_OPTIONS: HubComboboxOption[] = SIZE_TIERS.map((t) => ({
 const COAT_COMBO_OPTIONS: HubComboboxOption[] = [
   { value: '', label: '—' },
   ...COAT_TYPE_VALUES.map((c) => ({ value: c, label: COAT_TYPE_LABELS[c] })),
-];
-
-const DISCOUNT_KIND_COMBO_OPTIONS: HubComboboxOption[] = [
-  { value: '', label: 'Sem desconto' },
-  { value: 'percent', label: 'Percentual (%)' },
-  { value: 'fixed', label: 'Valor fixo (R$)' },
 ];
 
 const PERIOD_LABELS: Record<'full_day' | 'half_day', string> = {
@@ -401,7 +397,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
 
   const [notes, setNotes] = useState(quote?.notes ?? '');
   const [clientNotes, setClientNotes] = useState(quote?.client_notes ?? '');
-  const [discountKind, setDiscountKind] = useState<HubQuoteDiscountKind | ''>((quote?.discount_kind as HubQuoteDiscountKind) ?? '');
+  const [discountKind, setDiscountKind] = useState<DiscountKind>((quote?.discount_kind as DiscountKind) ?? '');
   const [discountValueStr, setDiscountValueStr] = useState(
     quote?.discount_value != null ? String(quote.discount_value) : '0',
   );
@@ -450,7 +446,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
     );
     setNotes(quote.notes ?? '');
     setClientNotes(quote.client_notes ?? '');
-    setDiscountKind((quote.discount_kind as HubQuoteDiscountKind) ?? '');
+    setDiscountKind((quote.discount_kind as DiscountKind) ?? '');
     setDiscountValueStr(quote.discount_value != null ? String(quote.discount_value) : '0');
     setValidDays(quote.valid_days ?? 7);
     if (quote.expires_at) setExpiresYmd(ymdLocal(new Date(quote.expires_at)));
@@ -665,14 +661,8 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       lines.reduce((sum, ln) => sum + parseMoney(ln.unitPricesByPetIndex[pi] ?? '0'), 0),
     );
     const subtotal = petSubtotals.reduce((a, b) => a + b, 0);
-    const dv = parseMoney(discountValueStr);
-    let discountAmt = 0;
-    if (discountKind === 'percent') {
-      discountAmt = round2((subtotal * Math.min(100, Math.max(0, dv))) / 100);
-    } else if (discountKind === 'fixed') {
-      discountAmt = Math.min(subtotal, dv);
-    }
-    const total = round2(subtotal - discountAmt);
+    const discountAmt = resolveDiscountAmount(discountKind, discountValueStr, subtotal);
+    const total = Math.round((subtotal - discountAmt) * 100) / 100;
     let estMin = 0;
     for (const ln of lines) {
       if (!ln.hub_service_type_id) continue;
@@ -727,7 +717,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
 
     const petPayload = buildPetPayload();
     const linePayload = buildPayloadLines();
-    const discount_kind = discountKind || null;
+    const discount_kind = (discountKind || null) as HubQuoteDiscountKind | null;
     const discount_value = parseMoney(discountValueStr);
     const expires_at = endOfLocalDayIso(expiresYmd);
 
@@ -1058,36 +1048,14 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         <div className="hub-orcamento-novo__footer-row">
           <div className="hub-orcamento-novo__card hub-orcamento-novo__footer-card">
             <h3 className="hub-orcamento-novo__footer-card-title">Desconto</h3>
-            <div className="hub-orcamento-novo__discount-fields">
-              <div className="hub-orcamento-novo__field">
-                <label className="hub-orcamento-novo__label" htmlFor="hub-quote-discount-kind">
-                  Tipo
-                </label>
-                <HubSearchableCombobox
-                  id="hub-quote-discount-kind"
-                  className="hub-orcamento-novo__combobox"
-                  options={DISCOUNT_KIND_COMBO_OPTIONS}
-                  value={discountKind}
-                  onChange={(v) => setDiscountKind((v || '') as HubQuoteDiscountKind | '')}
-                  placeholder="Sem desconto"
-                  searchPlaceholder="Buscar tipo…"
-                  clearable={false}
-                  ariaLabel="Tipo de desconto"
-                />
-              </div>
-              <div className="hub-orcamento-novo__field">
-                <label className="hub-orcamento-novo__label" htmlFor="hub-quote-discount-value">
-                  Valor
-                </label>
-                <input
-                  id="hub-quote-discount-value"
-                  className="hub-orcamento-novo__input"
-                  value={discountValueStr}
-                  onChange={(e) => setDiscountValueStr(e.target.value)}
-                  disabled={!discountKind}
-                />
-              </div>
-            </div>
+            <DiscountControl
+              idPrefix="hub-quote"
+              kind={discountKind}
+              valueStr={discountValueStr}
+              onKindChange={setDiscountKind}
+              onValueStrChange={setDiscountValueStr}
+              disabled={saving}
+            />
           </div>
           <div className="hub-orcamento-novo__card hub-orcamento-novo__footer-card">
             <h3 className="hub-orcamento-novo__footer-card-title">Observação para o cliente (opcional)</h3>
@@ -1122,32 +1090,16 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       </div>
 
       <aside className="hub-orcamento-novo__sidebar">
-        <div className="hub-orcamento-novo__card">
-          <h3 className="hub-orcamento-novo__card-title">Resumo do orçamento</h3>
-          <div className="hub-orcamento-novo__summary-section">
-            <p className="hub-orcamento-novo__summary-section-title">Por pet</p>
-            {pets.map((p, i) => (
-              <div key={i} className="hub-orcamento-novo__summary-row">
-                <span>{p.display_name?.trim() || `Pet ${i + 1}`}</span>
-                <span>{summary.petSubtotals[i].toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-              </div>
-            ))}
-          </div>
-          <div className="hub-orcamento-novo__summary-row">
-            <span>Subtotal geral</span>
-            <span>{summary.subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-          </div>
-          {summary.discountAmt > 0 ? (
-            <div className="hub-orcamento-novo__summary-row hub-orcamento-novo__summary-row--discount">
-              <span>Desconto</span>
-              <span>−{summary.discountAmt.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-            </div>
-          ) : null}
-          <div className="hub-orcamento-novo__summary-row hub-orcamento-novo__summary-row--total">
-            <span>Total geral</span>
-            <span>{summary.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-          </div>
-        </div>
+        <FinancialSummaryCard
+          title="Resumo do orçamento"
+          subtotal={summary.subtotal}
+          discountAmount={summary.discountAmt}
+          total={summary.total}
+          extraRows={pets.map((p, i) => ({
+            label: p.display_name?.trim() || `Pet ${i + 1}`,
+            value: summary.petSubtotals[i] ?? 0,
+          }))}
+        />
 
         <div className="hub-orcamento-novo__card">
           <h3 className="hub-orcamento-novo__card-title">Validade do orçamento</h3>

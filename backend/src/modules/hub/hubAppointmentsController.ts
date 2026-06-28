@@ -555,18 +555,36 @@ type EnrichedAppointment = Record<string, unknown>;
 
 async function enrichAppointments(rows: Record<string, unknown>[]): Promise<EnrichedAppointment[]> {
   if (rows.length === 0) return [];
-  const stIds = [...new Set(rows.map((r) => r.hub_service_type_id as string))];
   const staffIds = [...new Set(rows.map((r) => r.hub_staff_member_id).filter(Boolean))] as string[];
   const petIds = [...new Set(rows.map((r) => r.pet_id).filter(Boolean))] as string[];
   const guIds = [...new Set(rows.map((r) => r.guardian_id).filter(Boolean))] as string[];
   const unitIds = [...new Set(rows.map((r) => r.unit_id).filter(Boolean))] as string[];
   const apptIds = rows.map((r) => r.id as string);
 
-  const [stRes, staffRes, petsRes, guRes, unitsRes, svcLinesRes, encRes] = await Promise.all([
-    supabaseAdmin
-      .from('hub_service_types')
-      .select('id, name, code, service_group, agenda_color, default_duration_minutes')
-      .in('id', stIds),
+  const svcLinesRes = apptIds.length
+    ? await supabaseAdmin
+        .from('hub_appointment_services')
+        .select(
+          'id, appointment_id, hub_service_type_id, duration_minutes, order_index, pricing_porte_tier_applied, pricing_coat_type_applied, cost_amount_applied, sale_amount_applied, pricing_variant',
+        )
+        .in('appointment_id', apptIds)
+        .order('order_index')
+    : { data: [] as Record<string, unknown>[], error: null };
+
+  const stIds = [
+    ...new Set([
+      ...rows.map((r) => r.hub_service_type_id as string),
+      ...((svcLinesRes.data ?? []) as { hub_service_type_id: string }[]).map((l) => l.hub_service_type_id),
+    ]),
+  ];
+
+  const [stRes, staffRes, petsRes, guRes, unitsRes, encRes] = await Promise.all([
+    stIds.length
+      ? supabaseAdmin
+          .from('hub_service_types')
+          .select('id, name, code, service_group, agenda_color, default_duration_minutes, is_addon')
+          .in('id', stIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     staffIds.length
       ? supabaseAdmin.from('hub_staff_members').select('id, full_name, agenda_color').in('id', staffIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
@@ -578,15 +596,6 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     unitIds.length
       ? supabaseAdmin.from('units').select('id, name').in('id', unitIds)
-      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
-    apptIds.length
-      ? supabaseAdmin
-          .from('hub_appointment_services')
-          .select(
-            'id, appointment_id, hub_service_type_id, duration_minutes, order_index, pricing_porte_tier_applied, pricing_coat_type_applied, cost_amount_applied, sale_amount_applied, pricing_variant',
-          )
-          .in('appointment_id', apptIds)
-          .order('order_index')
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     apptIds.length
       ? supabaseAdmin

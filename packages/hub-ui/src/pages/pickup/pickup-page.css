@@ -438,6 +438,42 @@
   border-top: 1px solid var(--hub-border, #e2e8f0);
 }
 
+/* ─── Mapa do construtor ──────────────────────────────────────────────── */
+.hub-pickup-builder__map-wrapper {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--hub-border, #e2e8f0);
+}
+
+.hub-pickup-builder__map {
+  height: 320px;
+  width: 100%;
+}
+
+.hub-pickup-builder__map-missing {
+  padding: 0.375rem 1rem;
+  font-size: 0.75rem;
+  color: var(--hub-text-muted, #64748b);
+  background: var(--hub-bg-muted, #f8fafc);
+  border-top: 1px solid var(--hub-border, #e2e8f0);
+}
+
+.hub-pickup-builder__map-placeholder {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid var(--hub-border, #e2e8f0);
+  background: var(--hub-bg-muted, #f8fafc);
+  color: var(--hub-text-muted, #94a3b8);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
+@media (max-width: 600px) {
+  .hub-pickup-builder__map { height: 240px; }
+}
+
 /* ─── Stop Drawer ─────────────────────────────────────────────────────── */
 .hub-pickup-stop-drawer {
   display: flex;

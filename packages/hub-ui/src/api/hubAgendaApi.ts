@@ -26,6 +26,7 @@ export type HubAppointmentServiceTypeRef = {
   agenda_color: string | null;
   group_color?: string | null;
   default_duration_minutes: number | null;
+  is_addon?: boolean;
 };
 
 export type HubAppointmentStaffRef = {

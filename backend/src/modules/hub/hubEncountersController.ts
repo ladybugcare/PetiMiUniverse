@@ -9,6 +9,7 @@ import {
   financialAdjustmentFlagsForEncounters,
   financialAdjustmentFlagsForAppointments,
 } from './hubComandasController';
+import { fetchHubPetsMapByIds, resolvePrimaryPetIdsByGuardians } from './hubDayBoardPets';
 
 /** Grava um snapshot versionado do documento clínico em hub_clinical_document_versions. */
 async function saveEncounterSnapshot(opts: {
@@ -583,13 +584,13 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
       if (e.hub_staff_member_id) staffIds.add(e.hub_staff_member_id as string);
     }
 
-    const [petsRes, gusRes, staffRes] = await Promise.all([
-      petIds.size
-        ? supabaseAdmin
-            .from('hub_pets')
-            .select('id, name, species, breed, size_tier, birth_date')
-            .in('id', [...petIds])
-        : Promise.resolve({ data: [] }),
+    const guardiansMissingPet = new Set<string>();
+    for (const a of (appointments ?? []) as Record<string, unknown>[]) {
+      if (!a.pet_id && a.guardian_id) guardiansMissingPet.add(a.guardian_id as string);
+    }
+
+    const [petByGuardian, gusRes, staffRes] = await Promise.all([
+      resolvePrimaryPetIdsByGuardians(clinic_id, guardiansMissingPet),
       guIds.size
         ? supabaseAdmin.from('hub_guardians').select('id, full_name').in('id', [...guIds])
         : Promise.resolve({ data: [] }),
@@ -597,7 +598,10 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
         ? supabaseAdmin.from('hub_staff_members').select('id, full_name').in('id', [...staffIds])
         : Promise.resolve({ data: [] }),
     ]);
-    const petMap = new Map((petsRes.data ?? []).map((p: { id: string }) => [p.id, p]));
+
+    for (const pid of petByGuardian.values()) petIds.add(pid);
+
+    const petMap = await fetchHubPetsMapByIds(petIds);
     const guMap = new Map((gusRes.data ?? []).map((g: { id: string }) => [g.id, g]));
     const staffMap = new Map((staffRes.data ?? []).map((s: { id: string }) => [s.id, s]));
 
@@ -618,6 +622,9 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
           ...enriched,
         });
       } else {
+        const guardianId = a.guardian_id as string | null;
+        let petId = (a.pet_id as string | null) ?? null;
+        if (!petId && guardianId) petId = petByGuardian.get(guardianId) ?? null;
         items.push({
           kind: 'appointment_slot',
           appointment_id: apptId,
@@ -628,11 +635,11 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
           title: a.title,
           notes: a.notes,
           service_type: stMap.get(a.hub_service_type_id as string) ?? null,
-          pet: a.pet_id ? petMap.get(a.pet_id as string) : null,
-          guardian: a.guardian_id ? guMap.get(a.guardian_id as string) : null,
+          pet: petId ? petMap.get(petId) : null,
+          guardian: guardianId ? guMap.get(guardianId) : null,
           staff_member: a.hub_staff_member_id ? staffMap.get(a.hub_staff_member_id as string) : null,
-          pet_id: a.pet_id,
-          guardian_id: a.guardian_id,
+          pet_id: petId,
+          guardian_id: guardianId,
           hub_staff_member_id: a.hub_staff_member_id,
         });
       }

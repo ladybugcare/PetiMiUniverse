@@ -7,6 +7,7 @@ import {
   type GroomingChecklistTemplateItem,
 } from './groomingChecklistDefaults';
 import { buildGroomingDisplayTags } from './groomingPetTags';
+import { HUB_DAY_BOARD_PET_SELECT } from './hubDayBoardPets';
 
 const uuidStr = z.string().uuid();
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
@@ -164,7 +165,7 @@ export const getHubGroomingSessionDrawer = async (req: Request, res: Response) =
       getGroomingTypeIdSet(clinic_id.data),
       supabaseAdmin
         .from('hub_pets')
-        .select('id, name, species, breed, size_tier, birth_date, coat_type, notes, avatar_url')
+        .select(HUB_DAY_BOARD_PET_SELECT)
         .eq('id', petId)
         .maybeSingle(),
       supabaseAdmin

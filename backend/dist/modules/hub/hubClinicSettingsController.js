@@ -5,31 +5,43 @@ exports.getOrCreateHubClinicSettings = getOrCreateHubClinicSettings;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const uuidStr = zod_1.z.string().uuid();
+const messageTemplatesSchema = zod_1.z
+    .record(zod_1.z.string(), zod_1.z.string().max(500))
+    .optional();
 const patchSchema = zod_1.z
     .object({
     clinic_id: uuidStr,
-    pet_puppy_max_months: zod_1.z.number().int().min(1).max(24),
+    pet_puppy_max_months: zod_1.z.number().int().min(1).max(24).optional(),
+    message_templates: messageTemplatesSchema,
 })
     .strict();
-/** Garante linha de settings por clínica (default 8 meses). */
+/** Garante linha de settings por clínica (defaults: 8 meses, templates vazios). */
 async function getOrCreateHubClinicSettings(clinicId) {
     const { data: row, error: selErr } = await supabase_1.supabaseAdmin
         .from('hub_clinic_settings')
-        .select('pet_puppy_max_months')
+        .select('pet_puppy_max_months, message_templates')
         .eq('clinic_id', clinicId)
         .maybeSingle();
     if (!selErr && row) {
-        return { pet_puppy_max_months: Number(row.pet_puppy_max_months) || 8 };
+        const r = row;
+        return {
+            pet_puppy_max_months: Number(r.pet_puppy_max_months) || 8,
+            message_templates: r.message_templates ?? {},
+        };
     }
     const { data: ins, error: insErr } = await supabase_1.supabaseAdmin
         .from('hub_clinic_settings')
         .insert({ clinic_id: clinicId })
-        .select('pet_puppy_max_months')
+        .select('pet_puppy_max_months, message_templates')
         .single();
     if (insErr || !ins) {
-        return { pet_puppy_max_months: 8 };
+        return { pet_puppy_max_months: 8, message_templates: {} };
     }
-    return { pet_puppy_max_months: Number(ins.pet_puppy_max_months) || 8 };
+    const i = ins;
+    return {
+        pet_puppy_max_months: Number(i.pet_puppy_max_months) || 8,
+        message_templates: i.message_templates ?? {},
+    };
 }
 const getHubClinicSettings = async (req, res) => {
     try {
@@ -52,11 +64,19 @@ const patchHubClinicSettings = async (req, res) => {
         if (!body.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         }
-        const { clinic_id, pet_puppy_max_months } = body.data;
+        const { clinic_id, pet_puppy_max_months, message_templates } = body.data;
+        if (pet_puppy_max_months === undefined && message_templates === undefined) {
+            return res.status(400).json({ error: 'Nenhum campo para atualizar' });
+        }
         await getOrCreateHubClinicSettings(clinic_id);
+        const patch = {};
+        if (pet_puppy_max_months !== undefined)
+            patch.pet_puppy_max_months = pet_puppy_max_months;
+        if (message_templates !== undefined)
+            patch.message_templates = message_templates;
         const { error } = await supabase_1.supabaseAdmin
             .from('hub_clinic_settings')
-            .update({ pet_puppy_max_months })
+            .update(patch)
             .eq('clinic_id', clinic_id);
         if (error) {
             console.error('[hub_clinic_settings] patch', error);

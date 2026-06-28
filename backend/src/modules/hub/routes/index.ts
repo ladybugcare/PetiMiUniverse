@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateUser, requirePermission } from '../../../middleware/authMiddleware';
-import { authLimiter } from '../../../middleware/rateLimiter.js';
+import { authLimiter, hubApiLimiter } from '../../../middleware/rateLimiter.js';
 import { postHubSignup, postHubOnboardingClinic } from '../hubSignupController.js';
 import { postHubMessageLog } from '../hubMessageLogsController';
 import {
@@ -198,12 +198,19 @@ import {
   deleteHubFinanceReceivableProductLine,
   postHubFinancePaymentReverse,
   postHubFinanceReceivableCancel,
+  getHubFinanceDayBoard,
 } from '../hubFinancialController';
 import {
   postHubComandaOpen,
   getHubComandaDetail,
   getHubComandaByOrigin,
   postHubComandaCheckout,
+  postHubComandaAddItems,
+  patchHubComandaItem,
+  patchHubComanda,
+  deleteHubComandaItem,
+  postHubComandaSuggestItemPrice,
+  postHubComandaCheckoutBulk,
   postHubComandaSyncFromOrigin,
   listHubComandas,
   getHubComandaCancellationPendingCount,
@@ -249,6 +256,10 @@ router.get('/health', (_req, res) => {
 
 /** Cadastro Hub (público) e onboarding clínica+unidade */
 router.post('/signup', authLimiter, postHubSignup);
+
+/** Limite dedicado ao Hub autenticado (polling, modais com vários GETs). */
+router.use(hubApiLimiter);
+
 router.post('/onboarding/clinic', authenticateUser, postHubOnboardingClinic);
 router.get('/session/context', authenticateUser, getHubSessionContext);
 
@@ -863,6 +874,50 @@ router.post(
   authenticateUser,
   requirePermission('hub.financial.write'),
   postHubComandaResolveCancellation
+);
+router.post(
+  '/comandas/suggest-item-price',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  postHubComandaSuggestItemPrice
+);
+router.post(
+  '/comandas/checkout-bulk',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  postHubComandaCheckoutBulk
+);
+router.post(
+  '/comandas/:id/items',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  postHubComandaAddItems
+);
+router.patch(
+  '/comandas/:id/items/:itemId',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  patchHubComandaItem
+);
+router.delete(
+  '/comandas/:id/items/:itemId',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  deleteHubComandaItem
+);
+router.patch(
+  '/comandas/:id',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  patchHubComanda
+);
+
+/** Financeiro — Day board (Caixa: todos os atendimentos do dia) */
+router.get(
+  '/finance/day-board',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceDayBoard
 );
 
 /** Financeiro — Fase 1 (recebíveis, sem cobrança, caixa básico) */

@@ -21,6 +21,29 @@
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
 
+/* Caixa — cartões compactos como /hub/pets */
+.hub-caixa-page .hub-clientes__metric-card {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.hub-caixa-page__metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 1200px) {
+  .hub-caixa-page__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1400px) {
+  .hub-caixa-page__metrics {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
 .hub-finance-page__metric-span {
   grid-column: 1 / -1;
 }
@@ -706,4 +729,290 @@
 
 .hub-finance-page__item-list-row span:last-child {
   margin-left: auto;
+}
+
+/* ── ComandaEditorDrawer ─────────────────────────────────────────────────── */
+
+.hub-comanda-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-finance-page__subsection-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.hub-comanda-editor__items-table {
+  width: 100%;
+}
+
+.hub-comanda-editor__item--invoiced td {
+  opacity: 0.55;
+}
+
+.hub-comanda-editor__badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.hub-comanda-editor__badge--invoiced {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.hub-comanda-editor__badge--manual {
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.hub-comanda-editor__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--hc-text-muted, #a0856b);
+  transition: background 0.15s, color 0.15s;
+}
+
+.hub-comanda-editor__icon-btn:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.hub-comanda-editor__icon-btn--danger:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.hub-comanda-editor__search-row {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.hub-comanda-editor__search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--hc-text-muted, #a0856b);
+  pointer-events: none;
+}
+
+.hub-comanda-editor__search-input {
+  padding-left: 32px;
+}
+
+.hub-comanda-editor__new-line {
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--hc-surface-2, #fdfaf8);
+}
+
+.hub-comanda-editor__new-line-fields {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.hub-comanda-editor__add-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ── Day board: listagem e ícones de ação ─────────────────────────────────── */
+
+.hub-dayboard__group {
+  margin-bottom: 20px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.hub-dayboard__group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--hc-surface-2, #fdfaf8);
+  border-bottom: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.hub-dayboard__group-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hc-text, #4a3b3a);
+  flex: 1;
+}
+
+.hub-dayboard__group-amount {
+  font-size: 13px;
+  color: var(--hc-text-muted, #a0856b);
+}
+
+.hub-dayboard__group-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.hub-dayboard__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.hub-dayboard__item:last-child {
+  border-bottom: none;
+}
+
+.hub-dayboard__item-label {
+  flex: 1;
+  font-size: 13px;
+}
+
+.hub-dayboard__item-sub {
+  font-size: 12px;
+  color: var(--hc-text-muted, #a0856b);
+  margin-top: 1px;
+}
+
+.hub-dayboard__item-amount {
+  font-size: 13px;
+  color: var(--hc-text, #4a3b3a);
+  font-weight: 500;
+  min-width: 70px;
+  text-align: right;
+}
+
+.hub-dayboard__item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.hub-dayboard__action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 7px;
+  background: var(--hc-surface, #fff8f4);
+  cursor: pointer;
+  color: var(--hc-text-muted, #a0856b);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.hub-dayboard__action-btn:hover {
+  background: var(--hc-brand-light, #fff1e8);
+  color: var(--hc-brand, #f0642f);
+  border-color: var(--hc-brand, #f0642f);
+}
+
+.hub-dayboard__action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hub-dayboard__action-btn--primary {
+  background: var(--hc-brand, #f0642f);
+  color: #fff;
+  border-color: var(--hc-brand, #f0642f);
+}
+
+.hub-dayboard__action-btn--primary:hover {
+  background: #d9562a;
+  border-color: #d9562a;
+  color: #fff;
+}
+
+.hub-dayboard__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hub-dayboard__badge--open {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.hub-dayboard__badge--received {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.hub-dayboard__badge--pending {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.hub-dayboard__badge--none {
+  background: var(--hc-surface-2, #fdfaf8);
+  color: var(--hc-text-muted, #a0856b);
+  border: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.hub-dayboard__toggle {
+  display: inline-flex;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.hub-dayboard__toggle-btn {
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--hc-text-muted, #a0856b);
+  transition: background 0.12s, color 0.12s;
+}
+
+.hub-dayboard__toggle-btn--active {
+  background: var(--hc-brand, #f0642f);
+  color: #fff;
+}
+
+.hub-dayboard__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.hub-dayboard__empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--hc-text-muted, #a0856b);
+  font-size: 14px;
 }

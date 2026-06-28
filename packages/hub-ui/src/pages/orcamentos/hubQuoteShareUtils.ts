@@ -40,6 +40,11 @@ export function buildWhatsAppMessagePdfVariant(firstName: string, publicLink: st
   ].join('\n');
 }
 
+/** Link wa.me sem mensagem pré-preenchida; retorna null se telefone inválido. */
+export function waMeBaseUrl(phone: string | undefined | null): string | null {
+  return buildWhatsappLink(phone, '');
+}
+
 /** Abre conversa com mensagem pré-preenchida; retorna null se telefone inválido. */
 export function waMeUrlWithText(phone: string | undefined | null, message: string): string | null {
   return buildWhatsappLink(phone, message);

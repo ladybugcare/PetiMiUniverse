@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   X,
@@ -9,6 +9,8 @@ import {
   FileText,
   Syringe,
   MoreHorizontal,
+  FilePlus2,
+  Coins,
 } from 'lucide-react';
 import type { HubPet } from '../../api/hubPetsApi';
 import { HubTabs } from '../../components/HubTabs';
@@ -19,6 +21,9 @@ import {
   type CoatTypeValue,
   type PetBodyPorteValue,
 } from '../../utils/hubServiceTypesPricingMatrix';
+import { hubComandaApi } from '../../api/hubComandaApi';
+import { hubFinancialApi, type HubFinanceReceivable } from '../../api/hubFinancialApi';
+import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 
 interface PetDetailPanelProps {
   pet: HubPet;
@@ -26,6 +31,13 @@ interface PetDetailPanelProps {
   onStartEdit: () => void;
   onArchive?: () => void;
   canWrite: boolean;
+  clinicId?: string | null;
+  unitId?: string | null;
+  canCreateReceivable?: boolean;
+}
+
+function formatBrl(n: number): string {
+  return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
 type PetDetailTab = 'resumo' | 'historico_saude' | 'servicos' | 'financeiro';
@@ -65,10 +77,63 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   onStartEdit,
   onArchive,
   canWrite,
+  clinicId,
+  unitId,
+  canCreateReceivable = false,
 }) => {
   const [tab, setTab] = useState<PetDetailTab>('resumo');
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
+
+  const [comandas, setComandas] = useState<Array<Record<string, unknown>>>([]);
+  const [receivables, setReceivables] = useState<HubFinanceReceivable[]>([]);
+  const [finLoading, setFinLoading] = useState(false);
+  const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
+  const [openingComanda, setOpeningComanda] = useState(false);
+
+  const loadFinanceiro = useCallback(async () => {
+    if (!clinicId) return;
+    setFinLoading(true);
+    try {
+      const guardianId = pet.primary_guardian?.guardian_id ?? null;
+      const [cmd, rec] = await Promise.all([
+        hubComandaApi.listComandas({ clinic_id: clinicId, enrich: true })
+          .then((r) => r.comandas.filter((c) => (c.pet_id as string) === pet.id))
+          .catch(() => [] as Array<Record<string, unknown>>),
+        guardianId
+          ? hubFinancialApi.listReceivables(clinicId, { status: undefined })
+              .then((r) => r.filter((rv) => rv.guardian_id === guardianId))
+              .catch(() => [] as HubFinanceReceivable[])
+          : Promise.resolve([] as HubFinanceReceivable[]),
+      ]);
+      setComandas(cmd);
+      setReceivables(rec);
+    } finally {
+      setFinLoading(false);
+    }
+  }, [clinicId, pet.id, pet.primary_guardian?.guardian_id]);
+
+  useEffect(() => {
+    if (tab === 'financeiro') void loadFinanceiro();
+  }, [tab, loadFinanceiro]);
+
+  const handleOpenComandaManual = async () => {
+    if (!clinicId) return;
+    setOpeningComanda(true);
+    try {
+      const detail = await hubComandaApi.openComanda({
+        clinic_id: clinicId,
+        origin_type: 'manual',
+        unit_id: unitId ?? undefined,
+      });
+      setCheckoutComandaId((detail.comanda as Record<string, unknown>).id as string);
+      void loadFinanceiro();
+    } catch (e: unknown) {
+      alert((e as Error)?.message || 'Erro ao abrir comanda');
+    } finally {
+      setOpeningComanda(false);
+    }
+  };
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -339,9 +404,80 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
       )}
 
       {tab === 'financeiro' && (
-        <div className="hub-clientes__empty-state">
-          Não há lançamentos financeiros para mostrar. Esta área será preenchida quando o financeiro do Hub estiver
-          ativo.
+        <div className="hub-clientes__section">
+          <div className="hub-clientes__contact-card">
+            {canCreateReceivable && clinicId && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                  disabled={openingComanda}
+                  onClick={() => void handleOpenComandaManual()}
+                  title="Abrir comanda manual para este pet"
+                >
+                  <FilePlus2 size={13} strokeWidth={2} style={{ marginRight: 4 }} />
+                  {openingComanda ? 'Abrindo…' : 'Abrir comanda'}
+                </button>
+              </div>
+            )}
+
+            {finLoading ? (
+              <p className="hub-clientes__muted">Carregando…</p>
+            ) : (
+              <>
+                {comandas.filter((c) => c.status === 'aberta').length > 0 && (
+                  <section style={{ marginBottom: 20 }}>
+                    <h4 className="hub-clientes__label" style={{ marginBottom: 8 }}>Comandas abertas</h4>
+                    {comandas
+                      .filter((c) => c.status === 'aberta')
+                      .map((c) => (
+                        <div key={String(c.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--hc-border,#e8ddd8)' }}>
+                          <span style={{ flex: 1, fontSize: 13 }}>
+                            {String(c.origin_type ?? '—')}
+                            <span className="hub-clientes__muted" style={{ marginLeft: 6, fontSize: 12 }}>
+                              {c.opened_at ? new Date(String(c.opened_at)).toLocaleDateString('pt-BR') : ''}
+                            </span>
+                          </span>
+                          <span style={{ fontSize: 13, fontWeight: 500 }}>{formatBrl(Number(c.total_amount ?? 0))}</span>
+                          {canCreateReceivable && (
+                            <button
+                              type="button"
+                              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                              onClick={() => setCheckoutComandaId(String(c.id))}
+                              title="Receber"
+                            >
+                              <Coins size={13} strokeWidth={2} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                  </section>
+                )}
+
+                {receivables.length > 0 ? (
+                  <section>
+                    <h4 className="hub-clientes__label" style={{ marginBottom: 8 }}>Recebíveis</h4>
+                    {receivables.slice(0, 20).map((rv) => (
+                      <div key={rv.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--hc-border,#e8ddd8)', fontSize: 13 }}>
+                        <span style={{ flex: 1 }}>
+                          {rv.source_type}
+                          <span className="hub-clientes__muted" style={{ marginLeft: 6, fontSize: 12 }}>
+                            {rv.due_date ? `venc. ${new Date(rv.due_date).toLocaleDateString('pt-BR')}` : ''}
+                          </span>
+                        </span>
+                        <span className={`hub-dayboard__badge ${rv.status === 'paid' ? 'hub-dayboard__badge--received' : rv.status === 'pending' ? 'hub-dayboard__badge--pending' : 'hub-dayboard__badge--none'}`} style={{ textTransform: 'capitalize' }}>
+                          {rv.status === 'paid' ? 'Pago' : rv.status === 'pending' ? 'Pendente' : rv.status}
+                        </span>
+                        <span style={{ fontWeight: 500 }}>{formatBrl(rv.final_amount)}</span>
+                      </div>
+                    ))}
+                  </section>
+                ) : comandas.length === 0 ? (
+                  <p className="hub-clientes__muted">Nenhum lançamento financeiro encontrado para este pet.</p>
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -356,6 +492,21 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
             Ver perfil completo
           </button>
         </div>
+      ) : null}
+
+      {clinicId && unitId && checkoutComandaId ? (
+        <ComandaCheckoutDrawer
+          key={checkoutComandaId}
+          open={!!checkoutComandaId}
+          onClose={() => setCheckoutComandaId(null)}
+          clinicId={clinicId}
+          unitId={unitId}
+          comandaId={checkoutComandaId}
+          onSuccess={() => {
+            setCheckoutComandaId(null);
+            void loadFinanceiro();
+          }}
+        />
       ) : null}
     </div>
   );

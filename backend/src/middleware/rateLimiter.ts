@@ -38,13 +38,21 @@ export function isRateLimitDisabled(): boolean {
   );
 }
 
+function isHealthProbePath(path: string): boolean {
+  return path === '/' || path === '/health' || path === '/health/live';
+}
+
 function shouldSkipRateLimit(req: { path: string }): boolean {
   if (isRateLimitDisabled()) return true;
-  return (
-    req.path === '/' ||
-    req.path === '/health' ||
-    req.path === '/health/live'
-  );
+  return isHealthProbePath(req.path);
+}
+
+/** Hub autenticado usa `hubApiLimiter` (limite maior); não conta também no global. */
+function shouldSkipGeneralForAuthenticatedHub(req: Request): boolean {
+  if (shouldSkipRateLimit(req)) return true;
+  const hubPath = req.path.startsWith('/api/hub');
+  if (hubPath && parseJwtSub(req.headers.authorization)) return true;
+  return false;
 }
 
 /**
@@ -61,6 +69,8 @@ const isStaging = process.env.NODE_ENV === 'staging' || process.env.RENDER_SERVI
 const defaultMaxRequests = isDevelopment ? 1000 : isStaging ? 500 : 800;
 const maxRequests = parsePositiveInt(process.env.GENERAL_RATE_LIMIT_MAX, defaultMaxRequests);
 const generalWindowMs = parsePositiveInt(process.env.GENERAL_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
+const defaultHubMaxRequests = isDevelopment ? 3000 : isStaging ? 2000 : 2000;
+const hubMaxRequests = parsePositiveInt(process.env.HUB_RATE_LIMIT_MAX, defaultHubMaxRequests);
 
 export const generalLimiter = rateLimit({
   windowMs: generalWindowMs,
@@ -71,7 +81,25 @@ export const generalLimiter = rateLimit({
   },
   standardHeaders: true, // Retorna rate limit info nos headers `RateLimit-*`
   legacyHeaders: false, // Desabilita headers `X-RateLimit-*`
-  skip: (req) => shouldSkipRateLimit(req),
+  skip: (req) => shouldSkipGeneralForAuthenticatedHub(req),
+});
+
+/** SPA Hub (polling + vários GETs por ecrã) — só com Bearer JWT. */
+export const hubApiLimiter = rateLimit({
+  windowMs: generalWindowMs,
+  max: hubMaxRequests,
+  keyGenerator: rateLimitKey,
+  message: {
+    error: 'Muitas requisições. Tente novamente em alguns minutos.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    if (isRateLimitDisabled()) return true;
+    if (isHealthProbePath(req.path)) return true;
+    if (req.path === '/signup') return true;
+    return !parseJwtSub(req.headers.authorization);
+  },
 });
 
 /**

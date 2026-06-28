@@ -246,7 +246,7 @@ export function ComandaCheckoutDrawer({
   return (
     <HubSidePanel
       open={open}
-      title="Checkout — Comanda"
+      title="Cobrar — Comanda"
       subtitle="Confirme os itens e registre o pagamento ou envie ao financeiro."
       onClose={onClose}
       footer={

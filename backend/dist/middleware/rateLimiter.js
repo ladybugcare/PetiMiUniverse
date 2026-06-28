@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.uploadLimiter = exports.userRateLimiter = exports.statsLimiter = exports.createLimiter = exports.authLimiter = exports.generalLimiter = void 0;
+exports.uploadLimiter = exports.userRateLimiter = exports.statsLimiter = exports.createLimiter = exports.authLimiter = exports.hubApiLimiter = exports.generalLimiter = void 0;
 exports.isRateLimitDisabled = isRateLimitDisabled;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const logger_js_1 = require("../utils/logger.js");
@@ -40,12 +40,22 @@ function parsePositiveInt(raw, fallback) {
 function isRateLimitDisabled() {
     return (process.env.NODE_ENV === 'development' && process.env.DISABLE_RATE_LIMIT === 'true');
 }
+function isHealthProbePath(path) {
+    return path === '/' || path === '/health' || path === '/health/live';
+}
 function shouldSkipRateLimit(req) {
     if (isRateLimitDisabled())
         return true;
-    return (req.path === '/' ||
-        req.path === '/health' ||
-        req.path === '/health/live');
+    return isHealthProbePath(req.path);
+}
+/** Hub autenticado usa `hubApiLimiter` (limite maior); não conta também no global. */
+function shouldSkipGeneralForAuthenticatedHub(req) {
+    if (shouldSkipRateLimit(req))
+        return true;
+    const hubPath = req.path.startsWith('/api/hub');
+    if (hubPath && parseJwtSub(req.headers.authorization))
+        return true;
+    return false;
 }
 /**
  * Rate limiter geral para todas as rotas
@@ -61,6 +71,8 @@ const isStaging = process.env.NODE_ENV === 'staging' || process.env.RENDER_SERVI
 const defaultMaxRequests = isDevelopment ? 1000 : isStaging ? 500 : 800;
 const maxRequests = parsePositiveInt(process.env.GENERAL_RATE_LIMIT_MAX, defaultMaxRequests);
 const generalWindowMs = parsePositiveInt(process.env.GENERAL_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
+const defaultHubMaxRequests = isDevelopment ? 3000 : isStaging ? 2000 : 2000;
+const hubMaxRequests = parsePositiveInt(process.env.HUB_RATE_LIMIT_MAX, defaultHubMaxRequests);
 exports.generalLimiter = (0, express_rate_limit_1.default)({
     windowMs: generalWindowMs,
     max: maxRequests,
@@ -70,7 +82,27 @@ exports.generalLimiter = (0, express_rate_limit_1.default)({
     },
     standardHeaders: true, // Retorna rate limit info nos headers `RateLimit-*`
     legacyHeaders: false, // Desabilita headers `X-RateLimit-*`
-    skip: (req) => shouldSkipRateLimit(req),
+    skip: (req) => shouldSkipGeneralForAuthenticatedHub(req),
+});
+/** SPA Hub (polling + vários GETs por ecrã) — só com Bearer JWT. */
+exports.hubApiLimiter = (0, express_rate_limit_1.default)({
+    windowMs: generalWindowMs,
+    max: hubMaxRequests,
+    keyGenerator: rateLimitKey,
+    message: {
+        error: 'Muitas requisições. Tente novamente em alguns minutos.',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+        if (isRateLimitDisabled())
+            return true;
+        if (isHealthProbePath(req.path))
+            return true;
+        if (req.path === '/signup')
+            return true;
+        return !parseJwtSub(req.headers.authorization);
+    },
 });
 /**
  * Rate limiter mais restritivo para autenticação

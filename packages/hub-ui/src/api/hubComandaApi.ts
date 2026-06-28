@@ -159,4 +159,106 @@ export const hubComandaApi = {
       body: JSON.stringify(body),
     }) as Promise<{ comanda: unknown; detail: HubComandaDetailResponse }>;
   },
+
+  // ── Itens de comanda (adicionar/editar/remover manualmente) ─────────────
+
+  async addItems(
+    comandaId: string,
+    body: {
+      clinic_id: string;
+      items: Array<{
+        pet_id?: string | null;
+        hub_service_type_id?: string | null;
+        hub_inventory_item_id?: string | null;
+        description: string;
+        quantity?: number;
+        unit_amount: number;
+        discount_amount?: number;
+        item_kind?: 'service' | 'product' | 'fee';
+      }>;
+    }
+  ): Promise<HubComandaDetailResponse> {
+    return apiRequest(`${base}/${encodeURIComponent(comandaId)}/items`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<HubComandaDetailResponse>;
+  },
+
+  async patchItem(
+    comandaId: string,
+    itemId: string,
+    body: {
+      clinic_id: string;
+      description?: string;
+      quantity?: number;
+      unit_amount?: number;
+      discount_amount?: number;
+    }
+  ): Promise<HubComandaDetailResponse> {
+    return apiRequest(`${base}/${encodeURIComponent(comandaId)}/items/${encodeURIComponent(itemId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }) as Promise<HubComandaDetailResponse>;
+  },
+
+  async deleteItem(
+    comandaId: string,
+    itemId: string,
+    clinicId: string
+  ): Promise<HubComandaDetailResponse> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${base}/${encodeURIComponent(comandaId)}/items/${encodeURIComponent(itemId)}?${q}`, {
+      method: 'DELETE',
+    }) as Promise<HubComandaDetailResponse>;
+  },
+
+  async suggestItemPrice(body: {
+    clinic_id: string;
+    hub_service_type_id: string;
+    pet: { size_tier?: string; birth_date?: string | null; coat_type?: string | null };
+  }): Promise<{ unit_price: number; applied_porte: string | null; applied_coat_type: string | null }> {
+    return apiRequest(`${base}/suggest-item-price`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ unit_price: number; applied_porte: string | null; applied_coat_type: string | null }>;
+  },
+
+  // ── Checkout em conjunto (várias comandas do mesmo tutor) ────────────────
+
+  async checkoutBulk(body: {
+    clinic_id: string;
+    unit_id?: string | null;
+    comanda_ids: string[];
+    grouping?: 'all' | 'by_pet';
+    action: 'receive_now' | 'leave_pending' | 'cancel';
+    due_date?: string | null;
+    payment_timing?: 'on_checkout' | 'advance';
+    payment_method?: string | null;
+    cash_session_id?: string | null;
+  }): Promise<{
+    results: Array<{ comanda_id: string; receivable_ids: string[]; error?: string }>;
+    partial_errors: boolean;
+  }> {
+    return apiRequest(`${base}/checkout-bulk`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{
+      results: Array<{ comanda_id: string; receivable_ids: string[]; error?: string }>;
+      partial_errors: boolean;
+    }>;
+  },
+
+  async updateComanda(
+    comandaId: string,
+    body: {
+      clinic_id: string;
+      discount_amount?: number;
+      notes?: string | null;
+    },
+  ): Promise<HubComandaDetailResponse> {
+    return apiRequest(`${base}/${encodeURIComponent(comandaId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }) as Promise<HubComandaDetailResponse>;
+  },
 };

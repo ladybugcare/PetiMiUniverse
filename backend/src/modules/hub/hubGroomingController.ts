@@ -17,6 +17,11 @@ import {
   syncOpenComandasAfterGroomingClosed,
   financialAdjustmentFlagsForAppointments,
 } from './hubComandasController';
+import {
+  coalesceAppointmentPetId,
+  fetchHubPetsMapByIds,
+  resolvePrimaryPetIdsByGuardians,
+} from './hubDayBoardPets';
 
 const uuidStr = z.string().uuid();
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
@@ -366,18 +371,21 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
       if (a.hub_staff_member_id) staffIds.add(a.hub_staff_member_id as string);
     }
     for (const s of sessionsForDay) {
-      petIds.add(s.pet_id as string);
+      if (s.pet_id) petIds.add(s.pet_id as string);
       if (s.guardian_id) guIds.add(s.guardian_id as string);
       if (s.hub_staff_member_id) staffIds.add(s.hub_staff_member_id as string);
     }
 
-    const [petsRes, gusRes, staffRes] = await Promise.all([
-      petIds.size
-        ? supabaseAdmin
-            .from('hub_pets')
-            .select('id, name, species, breed, size_tier, birth_date, coat_type, notes, avatar_url')
-            .in('id', [...petIds])
-        : Promise.resolve({ data: [] }),
+    const guardiansMissingPet = new Set<string>();
+    for (const a of appointments) {
+      if (!a.pet_id && a.guardian_id) guardiansMissingPet.add(a.guardian_id as string);
+    }
+    for (const s of sessionsForDay) {
+      if (!s.pet_id && s.guardian_id) guardiansMissingPet.add(s.guardian_id as string);
+    }
+
+    const [petByGuardian, gusRes, staffRes] = await Promise.all([
+      resolvePrimaryPetIdsByGuardians(clinic_id, guardiansMissingPet),
       guIds.size
         ? supabaseAdmin.from('hub_guardians').select('id, full_name, phone').in('id', [...guIds])
         : Promise.resolve({ data: [] }),
@@ -386,7 +394,9 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
         : Promise.resolve({ data: [] }),
     ]);
 
-    const petMap = new Map((petsRes.data ?? []).map((p: { id: string }) => [p.id, p]));
+    for (const pid of petByGuardian.values()) petIds.add(pid);
+
+    const petMap = await fetchHubPetsMapByIds(petIds);
     const guMap = new Map((gusRes.data ?? []).map((g: { id: string }) => [g.id, g]));
     const staffMap = new Map((staffRes.data ?? []).map((s: { id: string }) => [s.id, s]));
 
@@ -465,7 +475,9 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
         new Date(startsAt).getTime() < nowMs;
 
       const staffId = (session?.hub_staff_member_id as string) ?? (a.hub_staff_member_id as string | null);
-      const petId = (session?.pet_id as string) ?? (a.pet_id as string | null);
+      const guardianId = (session?.guardian_id as string | null) ?? (a.guardian_id as string | null);
+      let petId = coalesceAppointmentPetId(a.pet_id as string | null, session?.pet_id as string | null);
+      if (!petId && guardianId) petId = petByGuardian.get(guardianId) ?? null;
 
       if (session) {
         seenSessionIds.add(session.id as string);
@@ -492,12 +504,10 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
           is_late,
           operational_notes: session.operational_notes,
           pet: enrichPet(petId),
-          guardian: (session.guardian_id ?? a.guardian_id)
-            ? guMap.get((session.guardian_id ?? a.guardian_id) as string)
-            : null,
+          guardian: guardianId ? guMap.get(guardianId) : null,
           staff_member: staffId ? staffMap.get(staffId) : null,
           pet_id: petId,
-          guardian_id: session.guardian_id ?? a.guardian_id,
+          guardian_id: guardianId,
           hub_staff_member_id: staffId,
           clinical_tags: tagsForPet(petId),
         });
@@ -523,10 +533,10 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
           paused_at: null,
           is_late,
           pet: enrichPet(petId),
-          guardian: a.guardian_id ? guMap.get(a.guardian_id as string) : null,
+          guardian: guardianId ? guMap.get(guardianId) : null,
           staff_member: staffId ? staffMap.get(staffId) : null,
           pet_id: petId,
-          guardian_id: a.guardian_id,
+          guardian_id: guardianId,
           hub_staff_member_id: staffId,
           clinical_tags: tagsForPet(petId),
         });

@@ -28,6 +28,7 @@ export function mapHubAppointmentToAgenda(row: HubAppointment): AgendaAppointmen
     name: s.service_type?.name ?? '',
     durationMin: s.duration_minutes,
     saleAmount: s.sale_amount_applied ?? null,
+    isAddon: Boolean(s.service_type?.is_addon),
   }));
 
   const saleParts = services

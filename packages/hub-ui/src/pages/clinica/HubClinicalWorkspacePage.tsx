@@ -13,7 +13,6 @@ import {
   Pill,
   Plus,
   Save,
-  ShoppingCart,
   Stethoscope,
   Syringe,
 } from 'lucide-react';
@@ -40,8 +39,6 @@ import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryAp
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
-import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
-import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import {
   formatEventAt,
   formatEventBody,
@@ -142,7 +139,6 @@ const HubClinicalWorkspacePage: React.FC = () => {
   const [saveHint, setSaveHint] = useState('');
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [encounterExams, setEncounterExams] = useState<HubClinicalExam[]>([]);
   const [encounterVaccinations, setEncounterVaccinations] = useState<HubVaccination[]>([]);
   const [rxItemsCount, setRxItemsCount] = useState(0);
@@ -404,7 +400,6 @@ const HubClinicalWorkspacePage: React.FC = () => {
   const dx = (encounter.diagnosis || {}) as Record<string, unknown>;
   const weight = pe.weight_kg != null && pe.weight_kg !== '' ? `${pe.weight_kg} kg` : '—';
   const readOnly = !canWrite || encounter.status === 'completed';
-  const clinicalCheckoutUnitId = encounter.unit_id ?? getSelectedUnitId();
   const needsIdentificationForCheckout = !hasBillingIdentity && encounter.status !== 'completed';
 
   const STEPPER_STEPS = [
@@ -413,7 +408,7 @@ const HubClinicalWorkspacePage: React.FC = () => {
     { id: 'sec-diagnostico', label: 'Diagnóstico' },
     { id: 'sec-prescricoes', label: 'Prescrição' },
     { id: 'sec-exames', label: 'Exames' },
-    { id: 'sec-footer-actions', label: 'Checkout' },
+    { id: 'sec-footer-actions', label: 'Cobrar' },
   ] as const;
 
   const NAV_ITEMS = [
@@ -912,29 +907,7 @@ const HubClinicalWorkspacePage: React.FC = () => {
                 <Save size={16} /> Salvar rascunho
               </button>
             ) : null}
-            {canCreateReceivable ? (
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--ghost hub-cws-footer__btn"
-                disabled={!clinicalCheckoutUnitId || needsIdentificationForCheckout}
-                title={
-                  needsIdentificationForCheckout
-                    ? 'Associe um tutor ao atendimento antes de abrir o checkout.'
-                    : clinicalCheckoutUnitId
-                      ? 'Conferir itens e registrar pagamento ou pendência'
-                      : 'Selecione uma unidade no cabeçalho para usar dinheiro no caixa.'
-                }
-                onClick={() => {
-                  if (!clinicalCheckoutUnitId) {
-                    showError('Selecione uma unidade no cabeçalho para abrir o checkout.');
-                    return;
-                  }
-                  setCheckoutOpen(true);
-                }}
-              >
-                <ShoppingCart size={16} /> Abrir checkout
-              </button>
-            ) : null}
+            {/* Checkout de fim de atendimento removido — use o Caixa (Atendimentos do dia). */}
             {canWrite && encounter.status !== 'completed' ? (
               <button
                 type="button"
@@ -1060,21 +1033,7 @@ const HubClinicalWorkspacePage: React.FC = () => {
         </div>
       )}
 
-      {clinicId && checkoutOpen && clinicalCheckoutUnitId ? (
-        <ComandaCheckoutDrawer
-          open={checkoutOpen}
-          onClose={() => setCheckoutOpen(false)}
-          clinicId={clinicId}
-          unitId={clinicalCheckoutUnitId}
-          originType="encounter"
-          originId={encounter.id}
-          onSuccess={() => {
-            showSuccess('Checkout concluído.');
-            setCheckoutOpen(false);
-            void load();
-          }}
-        />
-      ) : null}
+      {/* Checkout centralizado no Caixa — removido daqui */}
     </>
   );
 };

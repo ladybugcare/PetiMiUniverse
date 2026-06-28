@@ -366,7 +366,7 @@ const HubQuoteDetailPage: React.FC = () => {
         originType="quote"
         originId={id}
         onSuccess={async () => {
-          showSuccess('Checkout concluído.');
+          showSuccess('Cobrança concluída.');
           setCheckoutOpen(false);
           await load();
         }}

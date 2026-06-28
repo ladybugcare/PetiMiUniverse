@@ -139,6 +139,7 @@ export type {
   HubFinanceAgingReport,
 } from './api/hubFinancialApi';
 export { default as HubCaixaPage } from './pages/finance/HubCaixaPage';
+export { default as HubComandaPage } from './pages/finance/HubComandaPage';
 export { default as HubFinanceiroPage } from './pages/finance/HubFinanceiroPage';
 export { default as HubDashboardPage } from './pages/finance/HubDashboardPage';
 export { default as HubRelatoriosPage } from './pages/finance/HubRelatoriosPage';

@@ -2,6 +2,11 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { buildGroomingDisplayTags } from './groomingPetTags';
+import {
+  coalesceAppointmentPetId,
+  fetchHubPetsMapByIds,
+  resolvePrimaryPetIdsByGuardians,
+} from './hubDayBoardPets';
 
 const uuidStr = z.string().uuid();
 const BOARDING_SERVICE_GROUPS = ['hotel', 'creche'] as const;
@@ -208,27 +213,33 @@ export const getHubBoardingDayBoard = async (req: Request, res: Response) => {
       if (a.guardian_id) guIds.add(a.guardian_id as string);
     }
     for (const r of walkInReservations) {
-      petIds.add(r.pet_id as string);
+      if (r.pet_id) petIds.add(r.pet_id as string);
       if (r.guardian_id) guIds.add(r.guardian_id as string);
     }
-    // Adicionar de reservas vinculadas a agendamentos
     for (const r of reservationByApptId.values()) {
+      if (r.pet_id) petIds.add(r.pet_id as string);
       if (r.guardian_id) guIds.add(r.guardian_id as string);
     }
 
-    const [petsRes, gusRes] = await Promise.all([
-      petIds.size
-        ? supabaseAdmin
-            .from('hub_pets')
-            .select('id, name, species, breed, size_tier, birth_date, notes, avatar_url')
-            .in('id', [...petIds])
-        : Promise.resolve({ data: [] }),
+    const guardiansMissingPet = new Set<string>();
+    for (const a of boardingAppts) {
+      if (!a.pet_id && a.guardian_id) guardiansMissingPet.add(a.guardian_id as string);
+    }
+    for (const r of reservationByApptId.values()) {
+      const gid = r.guardian_id as string | null;
+      if (!r.pet_id && gid) guardiansMissingPet.add(gid);
+    }
+
+    const petByGuardian = await resolvePrimaryPetIdsByGuardians(clinic_id, guardiansMissingPet);
+    for (const pid of petByGuardian.values()) petIds.add(pid);
+
+    const [gusRes] = await Promise.all([
       guIds.size
         ? supabaseAdmin.from('hub_guardians').select('id, full_name, phone').in('id', [...guIds])
         : Promise.resolve({ data: [] }),
     ]);
 
-    const petMap = new Map((petsRes.data ?? []).map((p: { id: string }) => [p.id, p]));
+    const petMap = await fetchHubPetsMapByIds(petIds);
     const guMap = new Map((gusRes.data ?? []).map((g: { id: string }) => [g.id, g]));
 
     // Flags clínicas
@@ -264,7 +275,12 @@ export const getHubBoardingDayBoard = async (req: Request, res: Response) => {
     for (const a of boardingAppts) {
       const apptId = a.id as string;
       const reservation = reservationByApptId.get(apptId);
-      const petId = a.pet_id as string | null;
+      const guardianId = (reservation?.guardian_id as string | null) ?? (a.guardian_id as string | null);
+      let petId = coalesceAppointmentPetId(
+        a.pet_id as string | null,
+        reservation?.pet_id as string | null,
+      );
+      if (!petId && guardianId) petId = petByGuardian.get(guardianId) ?? null;
       const apptMode = modeFromAppointmentKind(a.appointment_kind as string | null);
       const apptStatus = a.status as string;
 
@@ -292,8 +308,6 @@ export const getHubBoardingDayBoard = async (req: Request, res: Response) => {
         checkedOutAt === null &&
         endsAt &&
         new Date(endsAt).getTime() < nowMs;
-
-      const guardianId = (reservation?.guardian_id as string | null) ?? (a.guardian_id as string | null);
 
       items.push({
         kind: reservation ? 'reservation' : 'appointment_slot',

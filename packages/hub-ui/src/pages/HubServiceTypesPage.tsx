@@ -463,19 +463,6 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
     setForm(emptyForm());
   };
 
-  const handleBootstrap = async () => {
-    if (!clinicId || !canWrite) return;
-    try {
-      const res = await hubServiceTypesApi.bootstrap(clinicId, includeArchived);
-      showSuccess(
-        res.inserted > 0 ? `Tipos padrão criados (${res.inserted}).` : 'Tipos padrão já existiam; lista atualizada.'
-      );
-      await load();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro no bootstrap');
-    }
-  };
-
   const parseDuration = (): number | null => {
     const s = form.default_duration_minutes.trim();
     if (!s) return null;
@@ -636,20 +623,9 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
     );
   }
 
-  const needsBootstrap = types.length === 0 && !includeArchived;
-
   return (
     <div className="hub-clientes hub-servicos-page hub-pets-page">
       <div className="hub-clientes__main">
-        {!isAddons && needsBootstrap && canWrite && (
-          <div className="hub-clientes__empty-state" style={{ marginBottom: 20, textAlign: 'left' }}>
-            <p style={{ margin: '0 0 12px' }}>Ainda não há serviços nesta clínica. Pode criar os tipos padrão (consulta, banho e tosa, hotel) com um clique.</p>
-            <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={() => void handleBootstrap()}>
-              Criar tipos padrão
-            </button>
-          </div>
-        )}
-
         <div className="hub-servicos__metrics" aria-live="polite">
           <div className="hub-servicos__metric-card">
             <div className="hub-servicos__metric-card__text">
@@ -770,11 +746,6 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
               </HubCheckbox>
             </div>
             <div style={{ flex: 1 }} />
-            {canWrite && (
-              <button type="button" className="hub-servicos__btn-ghost-sm" onClick={() => void handleBootstrap()}>
-                Garantir tipos padrão
-              </button>
-            )}
           </div>
         </div>
 

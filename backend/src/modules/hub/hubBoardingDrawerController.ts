@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { buildGroomingDisplayTags } from './groomingPetTags';
+import { HUB_DAY_BOARD_PET_SELECT } from './hubDayBoardPets';
 
 const uuidStr = z.string().uuid();
 
@@ -59,7 +60,7 @@ export const getHubBoardingReservationDrawer = async (req: Request, res: Respons
     const [petRes, guRes, flagsRes, logsRes] = await Promise.all([
       supabaseAdmin
         .from('hub_pets')
-        .select('id, name, species, breed, size_tier, birth_date, notes, avatar_url')
+        .select(HUB_DAY_BOARD_PET_SELECT)
         .eq('id', petId)
         .maybeSingle(),
       guardianId

@@ -4,6 +4,7 @@ exports.postHubBoardingDailyLog = exports.getHubBoardingReservationDrawer = void
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const groomingPetTags_1 = require("./groomingPetTags");
+const hubDayBoardPets_1 = require("./hubDayBoardPets");
 const uuidStr = zod_1.z.string().uuid();
 const RESERVATION_SELECT = `
   id, clinic_id, unit_id, pet_id, guardian_id, hub_appointment_id,
@@ -55,7 +56,7 @@ const getHubBoardingReservationDrawer = async (req, res) => {
         const [petRes, guRes, flagsRes, logsRes] = await Promise.all([
             supabase_1.supabaseAdmin
                 .from('hub_pets')
-                .select('id, name, species, breed, size_tier, birth_date, notes, avatar_url')
+                .select(hubDayBoardPets_1.HUB_DAY_BOARD_PET_SELECT)
                 .eq('id', petId)
                 .maybeSingle(),
             guardianId

@@ -5,6 +5,7 @@ const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const groomingChecklistDefaults_1 = require("./groomingChecklistDefaults");
 const groomingPetTags_1 = require("./groomingPetTags");
+const hubDayBoardPets_1 = require("./hubDayBoardPets");
 const uuidStr = zod_1.z.string().uuid();
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
 const SESSION_SELECT = `
@@ -150,7 +151,7 @@ const getHubGroomingSessionDrawer = async (req, res) => {
             getGroomingTypeIdSet(clinic_id.data),
             supabase_1.supabaseAdmin
                 .from('hub_pets')
-                .select('id, name, species, breed, size_tier, birth_date, coat_type, notes, avatar_url')
+                .select(hubDayBoardPets_1.HUB_DAY_BOARD_PET_SELECT)
                 .eq('id', petId)
                 .maybeSingle(),
             supabase_1.supabaseAdmin

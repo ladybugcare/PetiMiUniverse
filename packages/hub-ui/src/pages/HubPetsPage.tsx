@@ -401,6 +401,8 @@ const HubPetsPage: React.FC = () => {
               onStartEdit={startEditFromDetail}
               onArchive={canWrite ? () => handleArchive(selectedPet) : undefined}
               canWrite={canWrite}
+              clinicId={clinicId}
+              canCreateReceivable={hasPermission('hub.receivables.create')}
             />
           ) : panelMode === 'edit' && selectedPet ? (
             <>

@@ -35,26 +35,17 @@ interface LoginData {
 }
 
 const requestCache = new Map<string, { data: unknown; timestamp: number }>();
-const CACHE_TTL = 12000;
-const max429Retries = 1;
-const baseDelay = 1000;
+/** Evita rajadas de GET idênticos (StrictMode, vários mounts, polling). */
+const inFlightGets = new Map<string, Promise<unknown>>();
+const CACHE_TTL = 30_000;
 
-export const apiRequest = async (
+async function executeApiRequest(
   endpoint: string,
   options: RequestInit = {},
-  retryCount = 0
-): Promise<unknown> => {
+): Promise<unknown> {
   const API_BASE_URL = getApiBaseUrl();
   const url = `${API_BASE_URL}${endpoint}`;
   const supabase = getSupabase();
-
-  if (options.method === 'GET' || !options.method) {
-    const cacheKey = `${endpoint}_${JSON.stringify(options)}`;
-    const cached = requestCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return cached.data;
-    }
-  }
 
   let authToken: string | null = null;
 
@@ -169,13 +160,6 @@ export const apiRequest = async (
         errorText = 'Erro desconhecido';
       }
 
-      if (response.status === 429 && retryCount < max429Retries) {
-        const retryAfter = response.headers.get('Retry-After');
-        const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : baseDelay * 2;
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-        return apiRequest(endpoint, options, retryCount + 1);
-      }
-
       if (response.status === 401) {
         const errorMessage = errorData?.error || errorText;
         if (errorMessage?.includes('Supabase') || errorMessage?.includes('projeto')) {
@@ -236,6 +220,35 @@ export const apiRequest = async (
     }
     throw error;
   }
+}
+
+export const apiRequest = async (
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<unknown> => {
+  const isGet = options.method === 'GET' || !options.method;
+  const cacheKey = isGet ? `${endpoint}_${JSON.stringify(options)}` : null;
+
+  if (cacheKey) {
+    const cached = requestCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return cached.data;
+    }
+    const pending = inFlightGets.get(cacheKey);
+    if (pending) return pending;
+  }
+
+  const run = executeApiRequest(endpoint, options);
+
+  if (cacheKey) {
+    const shared = run.finally(() => {
+      inFlightGets.delete(cacheKey);
+    });
+    inFlightGets.set(cacheKey, shared);
+    return shared;
+  }
+
+  return run;
 };
 
 export const login = async (data: LoginData): Promise<unknown> => {

@@ -19,8 +19,6 @@ import { getItemBoardStage, type GroomingStage } from './groomingStages';
 import GroomingQueueBoard, { type GroomingQuickAction } from './GroomingQueueBoard';
 import GroomingAppointmentDrawer from './GroomingAppointmentDrawer';
 import GroomingWalkInPanel from './GroomingWalkInPanel';
-import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
-import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { PORTE_LABELS, PORTE_VALUES } from '../../utils/hubServiceTypesPricingMatrix';
 import '../clinica/clinica-page.css';
 import '../clientes/clientes.css';
@@ -45,7 +43,6 @@ const HubGroomingQueuePage: React.FC = () => {
   const showOperationalPricing = hasPermission('hub.service_types.write');
   const showWriteGateHint =
     accessAllowed && !canWrite && hasPermission('grooming.queue.manage');
-  const canCreateReceivable = hasPermission('hub.receivables.create');
   const canViewFinancial = hasPermission('hub.financial.read');
   const canDragQueue = hasPermission('grooming.queue.manage');
   const canPauseQueue = hasPermission('grooming.queue.manage');
@@ -67,7 +64,6 @@ const HubGroomingQueuePage: React.FC = () => {
   const [selected, setSelected] = useState<GroomingDayBoardItem | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [walkInBusy, setWalkInBusy] = useState(false);
-  const [groomCheckout, setGroomCheckout] = useState<{ sessionId: string; unitId: string } | null>(null);
   const [cursor, setCursor] = useState(() => new Date());
 
   const itemsFiltered = useMemo(() => {
@@ -101,7 +97,6 @@ const HubGroomingQueuePage: React.FC = () => {
     return match?.id;
   }, [unitFilter, units]);
 
-  const groomingCashUnitId = useMemo(() => unitIdParam ?? getSelectedUnitId(), [unitIdParam]);
 
   const load = useCallback(async () => {
     if (!clinicId) return;
@@ -466,32 +461,11 @@ const HubGroomingQueuePage: React.FC = () => {
         onClose={() => setSelected(null)}
         onQuickAction={handleQuickAction}
         onSessionUpdated={() => void load()}
-        checkoutEnabled={Boolean(canCreateReceivable && selected?.session_id && groomingCashUnitId)}
-        onOpenCheckout={() => {
-          if (!selected?.session_id || !groomingCashUnitId) {
-            showError('Selecione uma unidade no filtro ou no cabeçalho para abrir o checkout.');
-            return;
-          }
-          setGroomCheckout({ sessionId: selected.session_id, unitId: groomingCashUnitId });
-        }}
+        checkoutEnabled={false}
         canViewFinancial={canViewFinancial}
       />
 
-      {clinicId && groomCheckout ? (
-        <ComandaCheckoutDrawer
-          open={!!groomCheckout}
-          onClose={() => setGroomCheckout(null)}
-          clinicId={clinicId}
-          unitId={groomCheckout.unitId}
-          originType="grooming_session"
-          originId={groomCheckout.sessionId}
-          onSuccess={() => {
-            showSuccess('Checkout concluído.');
-            setGroomCheckout(null);
-            void load();
-          }}
-        />
-      ) : null}
+      {/* Checkout centralizado no Caixa — removido daqui */}
 
       <GroomingWalkInPanel
         open={walkInOpen}

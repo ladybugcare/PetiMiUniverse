@@ -20,8 +20,16 @@ export type AppointmentDetailPanelProps = {
   onStatusChange: (status: AgendaStatus) => void | Promise<void>;
   onDuplicate: () => void;
   onCancel: () => void;
-  /** Abre o drawer de checkout (comanda) para este agendamento. */
+  /**
+   * @deprecated Use onOpenComanda — o checkout de fim de atendimento foi centralizado no Caixa.
+   * Mantido para compatibilidade temporária.
+   */
   onOpenCheckout?: (appointmentId: string) => void | Promise<void>;
+  /**
+   * Abre (ou cria) a comanda para este agendamento — pagamento antecipado ou checkout via Caixa.
+   * Requer permissão `hub.receivables.create`.
+   */
+  onOpenComanda?: (appointmentId: string) => void | Promise<void>;
   /** Abre atendimento clínico (serviços do grupo clínica). */
   onOpenInClinic?: (appointmentId: string) => void | Promise<void>;
   /** Link «Ver no Caixa» no badge de ajuste financeiro. */
@@ -72,11 +80,13 @@ function buildPanelActions(
     onCheckIn: () => void;
     onComplete: () => void;
     onOpenCheckout: () => void;
+    onOpenComanda: () => void;
     onOpenInClinic: () => void;
     onDuplicate: () => void;
     onCancel: () => void;
   },
   onOpenInClinic?: (id: string) => void,
+  canOpenComanda?: boolean,
 ): { primary: PanelAction | null; secondary: PanelAction | null; menu: PanelAction[] } {
   const dup: PanelAction = {
     key: 'duplicate',
@@ -94,6 +104,15 @@ function buildPanelActions(
     onClick: handlers.onCancel,
     disabled: !canWrite,
   };
+  // Ação de abrir comanda antecipada — disponível em qualquer status ativo para quem tem permissão
+  const openComandaAction: PanelAction | null = canOpenComanda
+    ? {
+        key: 'open-comanda',
+        label: 'Abrir comanda (antecipado)',
+        variant: 'menu',
+        onClick: handlers.onOpenComanda,
+      }
+    : null;
 
   switch (status) {
     case 'pending_confirm':
@@ -102,7 +121,7 @@ function buildPanelActions(
           ? { key: 'confirm', label: 'Confirmar', variant: 'primary', onClick: handlers.onConfirm }
           : null,
         secondary: null,
-        menu: [dup, cancel],
+        menu: [dup, cancel, ...(openComandaAction ? [openComandaAction] : [])],
       };
     case 'confirmed':
       return {
@@ -110,7 +129,7 @@ function buildPanelActions(
           ? { key: 'checkin', label: 'Check-in', variant: 'primary', onClick: handlers.onCheckIn }
           : null,
         secondary: canWrite ? dup : null,
-        menu: [cancel],
+        menu: [cancel, ...(openComandaAction ? [openComandaAction] : [])],
       };
     case 'checked_in':
       return {
@@ -120,7 +139,7 @@ function buildPanelActions(
           ? { key: 'complete', label: 'Concluir', variant: 'primary', onClick: handlers.onComplete }
           : null,
         secondary: null,
-        menu: [cancel],
+        menu: [cancel, ...(openComandaAction ? [openComandaAction] : [])],
       };
     case 'in_progress':
       return {
@@ -130,14 +149,16 @@ function buildPanelActions(
           ? { key: 'complete', label: 'Concluir', variant: 'primary', onClick: handlers.onComplete }
           : null,
         secondary: null,
-        menu: [cancel],
+        menu: [cancel, ...(openComandaAction ? [openComandaAction] : [])],
       };
     case 'done':
+      // O checkout de fim de atendimento foi centralizado no Caixa (Atendimentos do dia).
+      // Mantemos apenas a opção de "Abrir comanda" no menu para uso pelo Caixa.
       return {
-        primary: canWrite
-          ? { key: 'open-checkout', label: 'Abrir checkout', variant: 'primary', onClick: handlers.onOpenCheckout }
-          : null,
-        secondary: canWrite ? dup : null,
+        primary: canOpenComanda
+          ? { key: 'open-comanda', label: 'Abrir comanda', variant: 'primary', onClick: handlers.onOpenComanda }
+          : canWrite ? dup : null,
+        secondary: canWrite && canOpenComanda ? dup : null,
         menu: [],
       };
     case 'paid':
@@ -165,6 +186,7 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
   onDuplicate,
   onCancel,
   onOpenCheckout,
+  onOpenComanda,
   onOpenInClinic,
   canViewFinancial = false,
 }) => {
@@ -186,28 +208,31 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
   );
 
   const durationMin = Math.round((appt.end.getTime() - appt.start.getTime()) / 60_000);
-  const serviceLines = appt.services?.filter((s) => s.name) ?? [];
+  const serviceLines =
+    appt.services?.filter((s) => s.name || s.saleAmount != null || s.isAddon) ?? [];
 
   const handlers = useMemo(
     () => ({
       onConfirm: () => void onStatusChange('confirmed'),
       onCheckIn: () => void onStatusChange('checked_in'),
       onComplete: () => void onStatusChange('done'),
+      // Legado: checkout via checkout drawer (deprecado, centralizado no Caixa)
       onOpenCheckout: () => void onOpenCheckout?.(appt.id),
+      // Novo: apenas abre/cria a comanda, sem checkout imediato
+      onOpenComanda: () => void onOpenComanda?.(appt.id),
       onOpenInClinic: () => void onOpenInClinic?.(appt.id),
       onDuplicate,
       onCancel,
     }),
-    [onStatusChange, onOpenCheckout, onOpenInClinic, appt.id, onDuplicate, onCancel],
+    [onStatusChange, onOpenCheckout, onOpenComanda, onOpenInClinic, appt.id, onDuplicate, onCancel],
   );
 
-  const { primary, secondary, menu } = useMemo(() => {
-    const base = buildPanelActions(appt.status, canWrite, handlers, onOpenInClinic);
-    if (appt.status === 'done' && !onOpenCheckout) {
-      return { ...base, primary: null };
-    }
-    return base;
-  }, [appt.status, canWrite, handlers, onOpenCheckout, onOpenInClinic]);
+  const canOpenComanda = !!onOpenComanda;
+
+  const { primary, secondary, menu } = useMemo(
+    () => buildPanelActions(appt.status, canWrite, handlers, onOpenInClinic, canOpenComanda),
+    [appt.status, canWrite, handlers, onOpenInClinic, canOpenComanda],
+  );
 
   const secondaryAsButton =
     secondary && secondary.key === 'duplicate'
@@ -257,7 +282,9 @@ export const AppointmentDetailPanel: React.FC<AppointmentDetailPanelProps> = ({
             <ul className="hub-agenda__service-list">
               {serviceLines.map((s) => (
                 <li key={s.id} className="hub-agenda__service-list-item">
-                  <span className="hub-agenda__service-list-name">{s.name}</span>
+                  <span className="hub-agenda__service-list-name">
+                    {s.isAddon ? `Adicional: ${s.name || '—'}` : s.name || 'Serviço'}
+                  </span>
                   <span className="hub-agenda__service-list-meta">
                     {s.durationMin} min
                     {s.saleAmount != null ? ` · ${formatBrl(s.saleAmount)}` : ''}

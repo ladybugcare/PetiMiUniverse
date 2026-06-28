@@ -21,7 +21,6 @@ import {
   type HubClinicalExam,
 } from '../../api/hubClinicalApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
-import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 import {
   attachmentPublicUrl,
   formatHubClinicalExamStatus,
@@ -96,9 +95,6 @@ const HubClinicCasePage: React.FC = () => {
   const [editingStatus, setEditingStatus] = useState(false);
   const [newStatus, setNewStatus] = useState<HubClinicalCaseStatus>('active');
   const [savingStatus, setSavingStatus] = useState(false);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [checkoutEncounterId, setCheckoutEncounterId] = useState<string | null>(null);
-  const [checkoutUnitId, setCheckoutUnitId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!clinicId || !caseId) return;
@@ -174,22 +170,6 @@ const HubClinicCasePage: React.FC = () => {
     void load();
   }, [load]);
 
-  const openComandaForCase = () => {
-    const latestEnc = [...encounters]
-      .sort((a, b) => new Date(b.started_at ?? 0).getTime() - new Date(a.started_at ?? 0).getTime())[0];
-    if (!latestEnc) {
-      showError('Nenhum atendimento encontrado neste caso para abrir o checkout.');
-      return;
-    }
-    const resolvedUnitId = latestEnc.unit_id ?? null;
-    if (!resolvedUnitId) {
-      showError('A unidade não pôde ser determinada para este atendimento. Verifique o cadastro da unidade.');
-      return;
-    }
-    setCheckoutEncounterId(latestEnc.id);
-    setCheckoutUnitId(resolvedUnitId);
-    setCheckoutOpen(true);
-  };
 
   const handleStatusSave = async () => {
     if (!clinicId || !caseId || !canWrite) return;
@@ -302,15 +282,7 @@ const HubClinicCasePage: React.FC = () => {
                       Alterar status
                     </button>
                   )}
-                  {canCreateReceivable && (
-                    <button
-                      type="button"
-                      className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                      onClick={openComandaForCase}
-                    >
-                      Abrir checkout
-                    </button>
-                  )}
+                  {/* Checkout de fim de atendimento removido — use o Caixa (Atendimentos do dia). */}
                 </>
               </>
             )}
@@ -622,21 +594,7 @@ const HubClinicCasePage: React.FC = () => {
         </div>
       )}
 
-      {checkoutOpen && checkoutEncounterId && checkoutUnitId && (
-        <ComandaCheckoutDrawer
-          open={checkoutOpen}
-          onClose={() => setCheckoutOpen(false)}
-          clinicId={clinicId}
-          unitId={checkoutUnitId}
-          originType="encounter"
-          originId={checkoutEncounterId}
-          onSuccess={() => {
-            showSuccess('Checkout concluído.');
-            setCheckoutOpen(false);
-            void load();
-          }}
-        />
-      )}
+      {/* Checkout centralizado no Caixa — removido daqui */}
     </div>
   );
 };

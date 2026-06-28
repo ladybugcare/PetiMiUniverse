@@ -71,6 +71,7 @@ export type AgendaAppointment = {
     name: string;
     durationMin: number;
     saleAmount?: number | null;
+    isAddon?: boolean;
   }>;
   description?: string;
   financial_notes?: string;

@@ -302,16 +302,7 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
           {primaryLabel}
         </button>
       ) : null}
-      {item.session_id && checkoutEnabled && onOpenCheckout ? (
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--ghost"
-          disabled={busy}
-          onClick={() => void onOpenCheckout()}
-        >
-          Abrir checkout
-        </button>
-      ) : null}
+      {/* Checkout de fim de atendimento removido — use o Caixa (Atendimentos do dia). */}
       {item.appointment_id ? (
         <Link
           to={`/hub/appointments?date=${encodeURIComponent(item.starts_at.slice(0, 10))}`}

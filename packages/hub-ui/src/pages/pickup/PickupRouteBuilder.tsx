@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowUpFromLine, GripVertical, Loader, X } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import {
@@ -20,6 +20,8 @@ import { hubPickupApi, type PickupDayBoardItem, type PickupRoute } from '../../a
 import { hubStaffApi, type HubStaffMember } from '../../api/hubStaffApi';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import { useAlert } from '../../components/AlertProvider';
+import PickupRouteMap from './PickupRouteMap';
+import type { MapStop, MapAvailableStop } from './PickupRouteMap';
 
 function formatTime(iso?: string): string {
   if (!iso) return '—';
@@ -117,10 +119,52 @@ const PickupRouteBuilder: React.FC<Props> = ({
   type StopCandidate = PickupDayBoardItem & { _direction: 'pickup' | 'delivery' };
   const [selected, setSelected] = useState<StopCandidate[]>([]);
 
+  // Cache de coordenadas geocodificadas para o preview do mapa
+  const [coordsCache, setCoordsCache] = useState<Map<string, { lat: number; lng: number }>>(new Map());
+  const geocodedIds = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!clinicId) return;
     void hubStaffApi.list(clinicId).then((r) => setStaff(r.staff ?? [])).catch(() => setStaff([]));
   }, [clinicId]);
+
+  // Geocodifica endereços de pernas soltas para o preview do mapa (Nominatim, 1 req/s)
+  useEffect(() => {
+    const toGeocode = looseItems.filter(
+      (i) => i.address && !geocodedIds.current.has(i.appointment_id),
+    );
+    if (toGeocode.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      for (let idx = 0; idx < toGeocode.length; idx++) {
+        if (cancelled) break;
+        const item = toGeocode[idx];
+        if (!item.address || geocodedIds.current.has(item.appointment_id)) continue;
+        geocodedIds.current.add(item.appointment_id);
+        try {
+          const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(item.address)}`;
+          const res = await fetch(url, {
+            headers: { 'User-Agent': 'PetiMiHub/1.0 (preview)' },
+            signal: AbortSignal.timeout(5000),
+          });
+          if (!res.ok) continue;
+          const data = (await res.json()) as Array<{ lat: string; lon: string }>;
+          if (data[0] && !cancelled) {
+            setCoordsCache((prev) => {
+              const next = new Map(prev);
+              next.set(item.appointment_id, { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+              return next;
+            });
+          }
+        } catch { /* ignora falhas individuais */ }
+        if (idx < toGeocode.length - 1) {
+          await new Promise<void>((r) => setTimeout(r, 1100));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [looseItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Itens soltos disponíveis (não já selecionados)
   const available = useMemo(
@@ -156,6 +200,45 @@ const PickupRouteBuilder: React.FC<Props> = ({
       return arrayMove(items, oldIdx, newIdx);
     });
   };
+
+  // Dados do mapa: paradas selecionadas (numeradas) e disponíveis (cinza)
+  const mapStops = useMemo<MapStop[]>(() => {
+    return selected
+      .map((s, idx) => {
+        const coords = coordsCache.get(s.appointment_id);
+        if (!coords) return null;
+        return {
+          id: s.appointment_id,
+          petName: s.pet?.name ?? '—',
+          guardianName: s.guardian?.full_name ?? null,
+          address: s.address ?? null,
+          direction: s._direction,
+          sequence: idx,
+          time: s.starts_at,
+          lat: coords.lat,
+          lng: coords.lng,
+        } satisfies MapStop;
+      })
+      .filter((s): s is MapStop => s !== null);
+  }, [selected, coordsCache]);
+
+  const mapAvailableStops = useMemo<MapAvailableStop[]>(() => {
+    return available
+      .map((item) => {
+        const coords = coordsCache.get(item.appointment_id);
+        if (!coords) return null;
+        return {
+          id: item.appointment_id,
+          petName: item.pet?.name ?? '—',
+          guardianName: item.guardian?.full_name ?? null,
+          address: item.address ?? null,
+          direction: item.direction === 'unknown' ? 'unknown' : (item.direction as 'pickup' | 'delivery'),
+          lat: coords.lat,
+          lng: coords.lng,
+        } satisfies MapAvailableStop;
+      })
+      .filter((s): s is MapAvailableStop => s !== null);
+  }, [available, coordsCache]);
 
   const staffOptions = useMemo(
     () => [
@@ -337,6 +420,15 @@ const PickupRouteBuilder: React.FC<Props> = ({
           )}
         </div>
       </div>
+
+      {/* Mapa de preview — mostra pontos à medida que os endereços são geocodificados */}
+      {(mapStops.length > 0 || mapAvailableStops.length > 0) ? (
+        <PickupRouteMap stops={mapStops} availableStops={mapAvailableStops} />
+      ) : (
+        <div className="hub-pickup-builder__map-placeholder">
+          <span>Mapa disponível após geocodificação dos endereços…</span>
+        </div>
+      )}
 
       <div className="hub-pickup-builder__footer">
         <button

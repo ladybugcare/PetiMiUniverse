@@ -18,6 +18,26 @@ export type HubFinanceUnbilledItem = {
   operational_status: string;
 };
 
+export type HubFinanceDayBoardBilling = {
+  comanda_id: string | null;
+  comanda_status: string | null;
+  has_receivable: boolean;
+};
+
+export type HubFinanceDayBoardItem = {
+  origin_type: string;
+  origin_id: string;
+  origin_label: string;
+  starts_at: string | null;
+  guardian_id: string | null;
+  guardian: { id: string; full_name: string } | null;
+  pet_id: string | null;
+  pet: { id: string; name: string } | null;
+  operational_status: string;
+  estimated_amount: number;
+  billing: HubFinanceDayBoardBilling;
+};
+
 export type HubFinanceReceivable = {
   id: string;
   clinic_id: string;
@@ -47,7 +67,7 @@ export type HubFinanceReceivable = {
     pet?: { name: string } | null;
     service_type?: { id: string; name: string; code?: string; service_group?: string } | null;
     inventory_item?: { id: string; name: string; store_sku?: string | null } | null;
-    inventory_lot?: { id: string; lot_code?: string | null; expires_at?: string | null } | null;
+    inventory_lot?: { id: string; lot_code?: string | null; expiry_date?: string | null } | null;
   }>;
 };
 
@@ -254,6 +274,16 @@ export const hubFinancialApi = {
     if (unitId) q.set('unit_id', unitId);
     const res = (await apiRequest(`${base}/unbilled-completed?${q.toString()}`)) as {
       items?: HubFinanceUnbilledItem[];
+    };
+    return res.items ?? [];
+  },
+
+  async getDayBoard(clinicId: string, unitId?: string | null, date?: string | null): Promise<HubFinanceDayBoardItem[]> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (unitId) q.set('unit_id', unitId);
+    if (date) q.set('date', date);
+    const res = (await apiRequest(`${base}/day-board?${q.toString()}`)) as {
+      items?: HubFinanceDayBoardItem[];
     };
     return res.items ?? [];
   },

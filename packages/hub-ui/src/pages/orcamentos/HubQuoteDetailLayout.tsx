@@ -254,7 +254,7 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
                 title="Conferir itens e registrar pagamento ou pendência"
               >
                 <Receipt size={18} strokeWidth={2} aria-hidden />
-                Abrir checkout
+                Cobrar
               </button>
             ) : null}
             {canWrite && isDraft ? (
@@ -698,7 +698,7 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
                       <Receipt size={22} strokeWidth={1.75} aria-hidden />
                       <span className="hub-quote-detail__convert-tile-title">Gerar venda</span>
                       <span className="hub-quote-detail__convert-tile-sub">
-                        {onOpenCheckout ? 'Abrir checkout' : 'Abrir financeiro'}
+                        {onOpenCheckout ? 'Cobrar' : 'Abrir financeiro'}
                       </span>
                     </button>
                   </div>
@@ -740,7 +740,7 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
                       <Receipt size={22} strokeWidth={1.75} aria-hidden />
                       <span className="hub-quote-detail__convert-tile-title">Gerar venda</span>
                       <span className="hub-quote-detail__convert-tile-sub">
-                        {onOpenCheckout ? 'Abrir checkout' : 'Abrir financeiro'}
+                        {onOpenCheckout ? 'Cobrar' : 'Abrir financeiro'}
                       </span>
                     </button>
                   </div>

@@ -1,9 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.patchHubBoardingReservation = exports.createHubBoardingReservation = exports.openHubBoardingReservationFromAppointment = exports.getHubBoardingDayBoard = void 0;
+exports.getHubBoardingCalendar = exports.getHubBoardingOccupancy = exports.patchHubBoardingUnitSettings = exports.getHubBoardingUnitSettings = exports.patchHubBoardingReservation = exports.createHubBoardingReservation = exports.openHubBoardingReservationFromAppointment = exports.getHubBoardingDayBoard = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const groomingPetTags_1 = require("./groomingPetTags");
+const hubDayBoardPets_1 = require("./hubDayBoardPets");
 const uuidStr = zod_1.z.string().uuid();
 const BOARDING_SERVICE_GROUPS = ['hotel', 'creche'];
 const BOARDING_APPOINTMENT_KINDS = ['hotel_stay', 'daycare_block'];
@@ -187,27 +188,36 @@ const getHubBoardingDayBoard = async (req, res) => {
                 guIds.add(a.guardian_id);
         }
         for (const r of walkInReservations) {
-            petIds.add(r.pet_id);
+            if (r.pet_id)
+                petIds.add(r.pet_id);
             if (r.guardian_id)
                 guIds.add(r.guardian_id);
         }
-        // Adicionar de reservas vinculadas a agendamentos
         for (const r of reservationByApptId.values()) {
+            if (r.pet_id)
+                petIds.add(r.pet_id);
             if (r.guardian_id)
                 guIds.add(r.guardian_id);
         }
-        const [petsRes, gusRes] = await Promise.all([
-            petIds.size
-                ? supabase_1.supabaseAdmin
-                    .from('hub_pets')
-                    .select('id, name, species, breed, size_tier, birth_date, notes, avatar_url')
-                    .in('id', [...petIds])
-                : Promise.resolve({ data: [] }),
+        const guardiansMissingPet = new Set();
+        for (const a of boardingAppts) {
+            if (!a.pet_id && a.guardian_id)
+                guardiansMissingPet.add(a.guardian_id);
+        }
+        for (const r of reservationByApptId.values()) {
+            const gid = r.guardian_id;
+            if (!r.pet_id && gid)
+                guardiansMissingPet.add(gid);
+        }
+        const petByGuardian = await (0, hubDayBoardPets_1.resolvePrimaryPetIdsByGuardians)(clinic_id, guardiansMissingPet);
+        for (const pid of petByGuardian.values())
+            petIds.add(pid);
+        const [gusRes] = await Promise.all([
             guIds.size
                 ? supabase_1.supabaseAdmin.from('hub_guardians').select('id, full_name, phone').in('id', [...guIds])
                 : Promise.resolve({ data: [] }),
         ]);
-        const petMap = new Map((petsRes.data ?? []).map((p) => [p.id, p]));
+        const petMap = await (0, hubDayBoardPets_1.fetchHubPetsMapByIds)(petIds);
         const guMap = new Map((gusRes.data ?? []).map((g) => [g.id, g]));
         // Flags clínicas
         const flagsByPet = new Map();
@@ -240,7 +250,10 @@ const getHubBoardingDayBoard = async (req, res) => {
         for (const a of boardingAppts) {
             const apptId = a.id;
             const reservation = reservationByApptId.get(apptId);
-            const petId = a.pet_id;
+            const guardianId = reservation?.guardian_id ?? a.guardian_id;
+            let petId = (0, hubDayBoardPets_1.coalesceAppointmentPetId)(a.pet_id, reservation?.pet_id);
+            if (!petId && guardianId)
+                petId = petByGuardian.get(guardianId) ?? null;
             const apptMode = modeFromAppointmentKind(a.appointment_kind);
             const apptStatus = a.status;
             // Filtro de aba (hotel / daycare)
@@ -262,7 +275,6 @@ const getHubBoardingDayBoard = async (req, res) => {
                 checkedOutAt === null &&
                 endsAt &&
                 new Date(endsAt).getTime() < nowMs;
-            const guardianId = reservation?.guardian_id ?? a.guardian_id;
             items.push({
                 kind: reservation ? 'reservation' : 'appointment_slot',
                 reservation_id: reservation?.id ?? null,
@@ -540,3 +552,186 @@ const patchHubBoardingReservation = async (req, res) => {
     }
 };
 exports.patchHubBoardingReservation = patchHubBoardingReservation;
+// ─── Configurações de capacidade por unidade ────────────────────────────────
+const unitSettingsQuerySchema = zod_1.z.object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr.optional(),
+});
+const unitSettingsPatchSchema = zod_1.z.object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr,
+    hotel_slots: zod_1.z.number().int().positive().nullable().optional(),
+    daycare_slots_per_shift: zod_1.z.number().int().positive().nullable().optional(),
+    checkout_cutoff_time: zod_1.z
+        .string()
+        .regex(/^\d{2}:\d{2}(:\d{2})?$/)
+        .nullable()
+        .optional(),
+});
+const getHubBoardingUnitSettings = async (req, res) => {
+    const parsed = unitSettingsQuerySchema.safeParse(req.query);
+    if (!parsed.success)
+        return res.status(400).json({ error: parsed.error.flatten() });
+    const { clinic_id, unit_id } = parsed.data;
+    try {
+        let q = supabase_1.supabaseAdmin
+            .from('hub_unit_boarding_settings')
+            .select('unit_id, clinic_id, hotel_slots, daycare_slots_per_shift, checkout_cutoff_time, updated_at')
+            .eq('clinic_id', clinic_id);
+        if (unit_id)
+            q = q.eq('unit_id', unit_id);
+        const { data, error } = await q;
+        if (error)
+            return res.status(500).json({ error: error.message });
+        return res.json({ settings: data ?? [] });
+    }
+    catch (e) {
+        console.error('getHubBoardingUnitSettings', e);
+        return res.status(500).json({ error: e?.message || 'Erro ao buscar configurações' });
+    }
+};
+exports.getHubBoardingUnitSettings = getHubBoardingUnitSettings;
+const patchHubBoardingUnitSettings = async (req, res) => {
+    const parsed = unitSettingsPatchSchema.safeParse(req.body);
+    if (!parsed.success)
+        return res.status(400).json({ error: parsed.error.flatten() });
+    const { clinic_id, unit_id, ...fields } = parsed.data;
+    try {
+        const { data, error } = await supabase_1.supabaseAdmin
+            .from('hub_unit_boarding_settings')
+            .upsert({ unit_id, clinic_id, ...fields }, { onConflict: 'unit_id' })
+            .select()
+            .single();
+        if (error)
+            return res.status(500).json({ error: error.message });
+        return res.json({ settings: data });
+    }
+    catch (e) {
+        console.error('patchHubBoardingUnitSettings', e);
+        return res.status(500).json({ error: e?.message || 'Erro ao salvar configurações' });
+    }
+};
+exports.patchHubBoardingUnitSettings = patchHubBoardingUnitSettings;
+// ─── Ocupação (sem bloqueio — só alerta) ────────────────────────────────────
+const occupancyQuerySchema = zod_1.z.object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr.optional(),
+    date: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    from: zod_1.z.string().datetime({ offset: true }).optional(),
+    to: zod_1.z.string().datetime({ offset: true }).optional(),
+    mode: zod_1.z.enum(BOARDING_MODES).optional(),
+});
+const getHubBoardingOccupancy = async (req, res) => {
+    const parsed = occupancyQuerySchema.safeParse(req.query);
+    if (!parsed.success)
+        return res.status(400).json({ error: parsed.error.flatten() });
+    const { clinic_id, unit_id, mode } = parsed.data;
+    try {
+        const dateYmd = parsed.data.date ?? parsed.data.from?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
+        const { from, to } = parsed.data.from && parsed.data.to
+            ? { from: parsed.data.from, to: parsed.data.to }
+            : dayBoundsFromYmdSaoPaulo(dateYmd);
+        // Reservas ativas no intervalo (overlap)
+        let rQ = supabase_1.supabaseAdmin
+            .from('hub_boarding_reservations')
+            .select('id, mode', { count: 'exact', head: false })
+            .eq('clinic_id', clinic_id)
+            .in('status', ['reserved', 'checked_in'])
+            .lt('expected_check_in', to)
+            .gt('expected_check_out', from);
+        if (unit_id)
+            rQ = rQ.eq('unit_id', unit_id);
+        if (mode && mode !== 'all')
+            rQ = rQ.eq('mode', mode);
+        const { data: reservations, error: rErr } = await rQ;
+        if (rErr)
+            return res.status(500).json({ error: rErr.message });
+        // Configuração de capacidade
+        let settingsQ = supabase_1.supabaseAdmin
+            .from('hub_unit_boarding_settings')
+            .select('hotel_slots, daycare_slots_per_shift')
+            .eq('clinic_id', clinic_id);
+        if (unit_id)
+            settingsQ = settingsQ.eq('unit_id', unit_id);
+        const { data: settingsRows } = await settingsQ;
+        const settings = settingsRows?.[0] ?? null;
+        const hotelMax = settings?.hotel_slots ?? null;
+        const daycareMax = settings?.daycare_slots_per_shift ?? null;
+        const hotelCount = (reservations ?? []).filter((r) => r.mode === 'hotel').length;
+        const daycareCount = (reservations ?? []).filter((r) => r.mode === 'daycare').length;
+        return res.json({
+            hotel: {
+                current: hotelCount,
+                max: hotelMax,
+                over_capacity: hotelMax != null ? hotelCount > hotelMax : false,
+            },
+            daycare: {
+                current: daycareCount,
+                max: daycareMax,
+                over_capacity: daycareMax != null ? daycareCount > daycareMax : false,
+            },
+        });
+    }
+    catch (e) {
+        console.error('getHubBoardingOccupancy', e);
+        return res.status(500).json({ error: e?.message || 'Erro ao calcular ocupação' });
+    }
+};
+exports.getHubBoardingOccupancy = getHubBoardingOccupancy;
+// ─── Calendário de reservas futuras ─────────────────────────────────────────
+const calendarQuerySchema = zod_1.z.object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr.optional(),
+    from: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    mode: zod_1.z.enum(BOARDING_MODES).optional(),
+});
+const getHubBoardingCalendar = async (req, res) => {
+    const parsed = calendarQuerySchema.safeParse(req.query);
+    if (!parsed.success)
+        return res.status(400).json({ error: parsed.error.flatten() });
+    const { clinic_id, unit_id, from, to, mode } = parsed.data;
+    try {
+        const fromTs = new Date(`${from}T00:00:00-03:00`).toISOString();
+        const toTs = new Date(`${to}T23:59:59.999-03:00`).toISOString();
+        // Reservas que se sobrepõem ao intervalo
+        let rQ = supabase_1.supabaseAdmin
+            .from('hub_boarding_reservations')
+            .select(`
+        id, mode, status, expected_check_in, expected_check_out,
+        checked_in_at, checked_out_at, pet_id, guardian_id,
+        hub_pets!hub_boarding_reservations_pet_id_fkey(id, name, size_tier),
+        hub_guardians!hub_boarding_reservations_guardian_id_fkey(id, full_name, phone)
+      `)
+            .eq('clinic_id', clinic_id)
+            .not('status', 'in', '("cancelled","no_show")')
+            .lt('expected_check_in', toTs)
+            .gt('expected_check_out', fromTs)
+            .order('expected_check_in');
+        if (unit_id)
+            rQ = rQ.eq('unit_id', unit_id);
+        if (mode && mode !== 'all')
+            rQ = rQ.eq('mode', mode);
+        const { data, error } = await rQ;
+        if (error)
+            return res.status(500).json({ error: error.message });
+        const events = (data ?? []).map((r) => ({
+            id: r.id,
+            mode: r.mode,
+            status: r.status,
+            expected_check_in: r.expected_check_in,
+            expected_check_out: r.expected_check_out,
+            checked_in_at: r.checked_in_at,
+            checked_out_at: r.checked_out_at,
+            pet: r.hub_pets ?? null,
+            guardian: r.hub_guardians ??
+                null,
+        }));
+        return res.json({ events });
+    }
+    catch (e) {
+        console.error('getHubBoardingCalendar', e);
+        return res.status(500).json({ error: e?.message || 'Erro ao buscar calendário' });
+    }
+};
+exports.getHubBoardingCalendar = getHubBoardingCalendar;

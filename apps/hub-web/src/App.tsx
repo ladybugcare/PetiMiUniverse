@@ -19,6 +19,7 @@ import {
   HubPickupPage,
   PickupDriverView,
   HubCaixaPage,
+  HubComandaPage,
   HubFinanceiroPage,
   HubDashboardPage,
   HubRelatoriosPage,
@@ -88,6 +89,7 @@ const App: React.FC = () => {
             <Route path="pets" element={<HubPetsPage />} />
             <Route path="financeiro" element={<HubFinanceiroPage />} />
             <Route path="caixa" element={<HubCaixaPage />} />
+            <Route path="caixa/comanda/:id" element={<HubComandaPage />} />
             <Route path="orcamentos/*" element={<HubOrcamentosRoutes />} />
             <Route path="servicos/*" element={<HubServicosRoutes />} />
             <Route path="clinica/*" element={<HubClinicRoutes />} />
