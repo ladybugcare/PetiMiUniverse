@@ -21,6 +21,8 @@ export type PetWizardState = {
   referralSource: string;
   visitsOther: '' | 'Y' | 'N';
   otherObservations: string;
+  /** Tags de comportamento (passo 4) — enviadas como behavior_tags na API. */
+  behaviorTags: string[];
 };
 
 export const initialPetWizardState = (): PetWizardState => ({
@@ -44,6 +46,7 @@ export const initialPetWizardState = (): PetWizardState => ({
   referralSource: '',
   visitsOther: '',
   otherObservations: '',
+  behaviorTags: [],
 });
 
 export const WIZARD_STEPS = [

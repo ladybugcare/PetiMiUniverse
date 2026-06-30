@@ -8,6 +8,7 @@ import {
 import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubDateField } from '../../components/HubDateField';
@@ -1141,7 +1142,7 @@ const HubAgendaPage: React.FC = () => {
   if (permLoading || !accessAllowed) {
     return (
       <div className="hub-clientes hub-agenda-page" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading variant="block" />
       </div>
     );
   }
@@ -1428,10 +1429,14 @@ const HubAgendaPage: React.FC = () => {
             <strong style={{ color: 'var(--hc-text, #4a3b3a)' }}>{navLabel}</strong>
             {' · '}
             {filtered.length} atendimento(s) no período filtrado
-            {remoteLoading ? ' · Atualizando…' : null}
             {appointmentsError ? ' · Erro ao carregar' : null}
           </p>
 
+          <div className="hub-agenda__calendar-wrap">
+            {remoteLoading && rawList.length === 0 && !appointmentsError ? (
+              <HubLoading variant="block" label="Carregando agenda…" />
+            ) : (
+              <>
           {view === 'day' ? (
             <div
               className="hub-agenda-day"
@@ -1645,6 +1650,12 @@ const HubAgendaPage: React.FC = () => {
               </div>
             </div>
           ) : null}
+                {remoteLoading ? (
+                  <HubLoading variant="overlay" label="Atualizando…" />
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
 
         {selected ? (

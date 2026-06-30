@@ -7,6 +7,7 @@ import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTyp
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import { ServicePricingMatrixEditor } from '../../components/ServicePricingMatrixEditor';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
@@ -343,7 +344,11 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
   if (!user) return <Navigate to="/login" replace />;
   if (!permLoading && !clinicId) return <Navigate to={basePath} replace />;
   if (permLoading || !accessAllowed || loading) {
-    return <div className="hub-clientes hub-servicos-page hub-pets-page" style={{ padding: 24 }}>Carregando…</div>;
+    return (
+      <div className="hub-clientes hub-servicos-page hub-pets-page" style={{ padding: 24 }}>
+        <HubLoading variant="block" label="Carregando serviço…" />
+      </div>
+    );
   }
   if (!canWrite) return <Navigate to={basePath} replace />;
 

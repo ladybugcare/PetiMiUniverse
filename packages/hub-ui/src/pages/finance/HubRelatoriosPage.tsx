@@ -9,6 +9,7 @@ import {
   type HubFinanceTopServicesReport,
 } from '../../api/hubFinancialApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { paymentMethodLabel } from '../../utils/hubPaymentMethods';
 import '../clientes/clientes.css';
@@ -111,7 +112,7 @@ const HubRelatoriosPage: React.FC = () => {
           </button>
         </div>
 
-        {loading ? <p className="hub-clientes__muted">Carregando relatórios…</p> : null}
+        {loading ? <HubLoading variant="block" label="Carregando relatórios…" /> : null}
 
         <div className="hub-servicos__metrics" style={{ marginBottom: 24 }}>
           <div className="hub-servicos__metric-card">

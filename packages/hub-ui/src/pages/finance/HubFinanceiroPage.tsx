@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import { AlertCircle, LayoutDashboard, Receipt, TrendingDown, TrendingUp } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubTabs } from '../../components/HubTabs';
 import {
   hubFinancialApi,
@@ -66,6 +67,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   appointment: 'Agendamento',
   encounter: 'Atendimento',
   grooming_session: 'Banho e tosa',
+  boarding_reservation: 'Hotel & Creche',
 };
 
 const RECEIVABLE_STATUS_LABELS: Record<string, string> = {
@@ -417,13 +419,6 @@ const HubFinanceiroPage: React.FC = () => {
 
   return shell(
     <>
-      <div className="hub-clientes__title-block">
-        <h1 className="hub-clientes__title">Financeiro</h1>
-        <p className="hub-clientes__subtitle">
-          Atendimentos, despesas, fluxo de caixa, comissões, estornos e ajustes por cancelamento (unidade selecionada).
-        </p>
-      </div>
-
       <HubTabs
         ariaLabel="Seções financeiras"
         items={[
@@ -624,7 +619,7 @@ const HubFinanceiroPage: React.FC = () => {
             </button>
           </div>
           {expLoading ? (
-            <p className="hub-clientes__muted">Carregando…</p>
+            <HubLoading variant="block" label="Carregando despesas…" />
           ) : expenses.length === 0 ? (
             <p className="hub-clientes__muted">Nenhuma despesa nesta unidade.</p>
           ) : (
@@ -662,7 +657,7 @@ const HubFinanceiroPage: React.FC = () => {
             Entradas: pagamentos de recebíveis desta unidade e suprimentos no caixa. Saídas: despesas e sangrias.
           </p>
           {flowLoading ? (
-            <p className="hub-clientes__muted">Carregando…</p>
+            <HubLoading variant="block" label="Carregando fluxo de caixa…" />
           ) : flowDays.length === 0 ? (
             <p className="hub-clientes__muted">Sem dados no intervalo.</p>
           ) : (
@@ -717,7 +712,7 @@ const HubFinanceiroPage: React.FC = () => {
             Salvar com o mesmo tipo de serviço atualiza a regra existente.
           </p>
           {commLoading ? (
-            <p className="hub-clientes__muted">Carregando…</p>
+            <HubLoading variant="block" label="Carregando comissões…" />
           ) : (
             <>
               {hasPermission('hub.financial.write') ? (

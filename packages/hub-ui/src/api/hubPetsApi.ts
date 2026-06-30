@@ -19,6 +19,7 @@ export interface HubPet {
   sex: string | null;
   birth_date: string | null;
   notes: string | null;
+  behavior_tags: string[] | null;
   size_tier: PetBodyPorteValue;
   coat_color: string | null;
   coat_type: CoatTypeValue | null;
@@ -48,6 +49,7 @@ export const hubPetsApi = {
     sex?: 'M' | 'F' | 'U' | null;
     birth_date?: string;
     notes?: string | null;
+    behavior_tags?: string[] | null;
     size_tier: PetBodyPorteValue;
     coat_color?: string | null;
     coat_type?: CoatTypeValue | null;
@@ -70,6 +72,7 @@ export const hubPetsApi = {
       sex?: 'M' | 'F' | 'U' | null;
       birth_date?: string | null;
       notes?: string | null;
+      behavior_tags?: string[] | null;
       size_tier?: PetBodyPorteValue;
       coat_color?: string | null;
       coat_type?: CoatTypeValue | null;

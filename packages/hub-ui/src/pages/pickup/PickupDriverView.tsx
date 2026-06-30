@@ -3,6 +3,7 @@ import { CheckCircle, Loader, MapPin, Phone } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { hubPickupApi, type PickupRouteDetailResponse, type PickupStop, type PickupStopStatus } from '../../api/hubPickupApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
 import './pickup-page.css';
 
@@ -115,7 +116,7 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
   if (loading) {
     return (
       <div className="hub-pickup-driver-view">
-        <p className="hub-clientes__muted">Carregando rota…</p>
+        <HubLoading variant="block" label="Carregando rota…" />
       </div>
     );
   }

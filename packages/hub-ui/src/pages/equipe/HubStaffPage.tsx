@@ -18,6 +18,7 @@ import { HubCheckbox } from '../../components/HubCheckbox';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import {
   SERVICE_GROUP_OPTIONS,
@@ -509,7 +510,7 @@ const HubStaffPage: React.FC = () => {
   if (permLoading || !accessAllowed) {
     return (
       <div className="hub-clientes hub-equipe-page" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading variant="block" />
       </div>
     );
   }
@@ -568,7 +569,7 @@ const HubStaffPage: React.FC = () => {
         </div>
 
         {loading ? (
-          <p className="hub-clientes__muted">Carregando…</p>
+          <HubLoading variant="block" label="Carregando equipe…" />
         ) : (
           <div className="hub-servicos__table-wrap">
             <table className="hub-clientes__table">

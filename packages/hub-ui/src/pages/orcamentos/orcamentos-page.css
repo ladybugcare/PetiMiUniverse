@@ -975,6 +975,16 @@
   color: var(--pub-brand);
 }
 
+.hub-public-quote__totals-row--warn {
+  color: #b45309;
+  font-weight: 700;
+}
+
+.hub-public-quote__totals-row--muted {
+  color: var(--pub-muted);
+  font-weight: 600;
+}
+
 .hub-public-quote__fineprint {
   margin: 20px 0 0;
   font-size: 12px;

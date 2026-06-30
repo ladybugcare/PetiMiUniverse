@@ -9,6 +9,7 @@ import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { mergeBreedComboboxOptions, mergeSpeciesComboboxOptions } from './wizard/petSpeciesComboboxData';
 import { wizardBreedOptionsForSpecies } from './wizard/petSpeciesBreedOptions';
 import { defaultBodyPorteForBreed } from '../../data/breedDefaultSizeTier';
+import { PetBehaviorTagsPicker } from './PetBehaviorTagsPicker';
 import {
   COAT_TYPE_LABELS,
   COAT_TYPE_VALUES,
@@ -343,6 +344,17 @@ export const PetForm: React.FC<PetFormProps> = ({
           searchPlaceholder="Buscar tutor…"
           allowCreate={false}
           ariaLabel="Tutor secundário"
+        />
+      </div>
+      <div className="hub-clientes__field">
+        <label className="hub-clientes__label">Comportamento e alertas</label>
+        <p className="hub-clientes__muted" style={{ margin: '0 0 10px', fontSize: 13 }}>
+          Selecione os comportamentos que se aplicam ao pet.
+        </p>
+        <PetBehaviorTagsPicker
+          value={value.behaviorTags}
+          onChange={(behaviorTags) => patch({ behaviorTags })}
+          variant="hub-pets-behavior"
         />
       </div>
       <div className="hub-clientes__field">

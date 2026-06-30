@@ -8,6 +8,7 @@ import {
   HubSearchableCombobox,
   HubCheckbox,
   hubStaffApi,
+  hubBoardingApi,
   type HubComboboxOption,
 } from '@petimi/hub-ui';
 import '@petimi/hub-ui/pages/clientes/clientes.css';
@@ -48,6 +49,8 @@ const HubUnitEditPanel: React.FC<HubUnitEditPanelProps> = ({
     state: 'SP',
     phone: '',
     is_main: false,
+    hotel_slots: '' as string,
+    daycare_slots_per_shift: '' as string,
   });
 
   const selfDisplayName = useMemo(() => getHubUserDisplayName(user), [user]);
@@ -62,7 +65,18 @@ const HubUnitEditPanel: React.FC<HubUnitEditPanelProps> = ({
         })),
       );
     });
-  }, [open, clinicId]);
+    void hubBoardingApi.getUnitSettings(clinicId, unit.id).then((res) => {
+      const settings = res.settings?.[0];
+      setForm((f) => ({
+        ...f,
+        hotel_slots: settings?.hotel_slots != null ? String(settings.hotel_slots) : '',
+        daycare_slots_per_shift:
+          settings?.daycare_slots_per_shift != null ? String(settings.daycare_slots_per_shift) : '',
+      }));
+    }).catch(() => {
+      /* capacidade opcional — ignora se API indisponível */
+    });
+  }, [open, clinicId, unit.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -79,6 +93,8 @@ const HubUnitEditPanel: React.FC<HubUnitEditPanelProps> = ({
       state: unit.state?.trim() || 'SP',
       phone: unit.phone?.trim() || '',
       is_main: unit.is_main === true,
+      hotel_slots: '',
+      daycare_slots_per_shift: '',
     });
     setTechnicalManagerSelf(isSelf);
     setTechnicalManagerName(isSelf ? '' : rt);
@@ -100,16 +116,30 @@ const HubUnitEditPanel: React.FC<HubUnitEditPanelProps> = ({
     if (!valid) return;
     setSaving(true);
     try {
-      const res = await hubClinicProfileApi.patchUnit(unit.id, clinicId, {
-        name: form.name.trim(),
-        nickname: form.nickname.trim(),
-        address: form.address.trim(),
-        city: form.city.trim(),
-        state: form.state,
-        phone: form.phone.trim() || null,
-        technical_manager: technicalManagerResolved,
-        is_main: form.is_main,
-      });
+      const parseOptionalInt = (raw: string): number | null => {
+        const t = raw.trim();
+        if (!t) return null;
+        const n = Number(t);
+        return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+      };
+      const [res] = await Promise.all([
+        hubClinicProfileApi.patchUnit(unit.id, clinicId, {
+          name: form.name.trim(),
+          nickname: form.nickname.trim(),
+          address: form.address.trim(),
+          city: form.city.trim(),
+          state: form.state,
+          phone: form.phone.trim() || null,
+          technical_manager: technicalManagerResolved,
+          is_main: form.is_main,
+        }),
+        hubBoardingApi.patchUnitSettings({
+          clinic_id: clinicId,
+          unit_id: unit.id,
+          hotel_slots: parseOptionalInt(form.hotel_slots),
+          daycare_slots_per_shift: parseOptionalInt(form.daycare_slots_per_shift),
+        }),
+      ]);
       onSaved(res.unit);
       onSuccess('Dados da unidade atualizados.');
       onClose();
@@ -223,6 +253,34 @@ const HubUnitEditPanel: React.FC<HubUnitEditPanelProps> = ({
           onNameChange={setTechnicalManagerName}
           staffOptions={staffOptions}
         />
+        <div className="hub-clientes__field">
+          <label className="hub-clientes__label" htmlFor="edit-un-hotel-slots">
+            Vagas hotel (opcional)
+          </label>
+          <input
+            id="edit-un-hotel-slots"
+            type="number"
+            min={0}
+            className="hub-clientes__input"
+            placeholder="Sem limite"
+            value={form.hotel_slots}
+            onChange={(e) => setForm((f) => ({ ...f, hotel_slots: e.target.value }))}
+          />
+        </div>
+        <div className="hub-clientes__field">
+          <label className="hub-clientes__label" htmlFor="edit-un-daycare-slots">
+            Cães por turno — creche (opcional)
+          </label>
+          <input
+            id="edit-un-daycare-slots"
+            type="number"
+            min={0}
+            className="hub-clientes__input"
+            placeholder="Sem limite"
+            value={form.daycare_slots_per_shift}
+            onChange={(e) => setForm((f) => ({ ...f, daycare_slots_per_shift: e.target.value }))}
+          />
+        </div>
         <HubCheckbox
           className="hub-onboarding-toggle-row"
           checked={form.is_main}

@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "design:lint": "npx --yes @google/design.md lint DESIGN.md"
+    "design:lint": "npx --yes @google/design.md lint DESIGN.md",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -20,7 +22,8 @@
     "@types/node": "^20.14.0",
     "@types/react": "~18.2.79",
     "@types/react-dom": "~18.2.25",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

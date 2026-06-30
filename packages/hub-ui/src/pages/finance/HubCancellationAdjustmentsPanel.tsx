@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { ComandaCancellationResolveDrawer } from './ComandaCancellationResolveDrawer';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 
@@ -72,7 +73,7 @@ export const HubCancellationAdjustmentsPanel: React.FC<HubCancellationAdjustment
           (reembolso, crédito ou manter cobrança).
         </p>
         {loading ? (
-          <p className="hub-clientes__muted">Carregando…</p>
+          <HubLoading variant="block" label="Carregando ajustes…" />
         ) : queue.length === 0 ? (
           <p className="hub-clientes__muted">Nenhuma pendência de cancelamento nesta unidade.</p>
         ) : (

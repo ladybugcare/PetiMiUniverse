@@ -227,6 +227,7 @@ const HubPetWizardPage: React.FC = () => {
         coat_type: state.coatType.trim() ? (state.coatType as CoatTypeValue) : null,
         primary_guardian_id: state.primary_guardian_id,
         secondary_guardian_id: sec,
+        behavior_tags: state.behaviorTags.length ? state.behaviorTags : null,
       });
 
       if (fromQuote && guardianIdParam) {

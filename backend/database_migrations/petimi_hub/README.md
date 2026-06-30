@@ -149,3 +149,5 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 55. **`create_hub_service_group_checklist_templates.sql`** — Templates de checklist operacional por grupo de serviço (`hub_service_group_checklist_templates`). Migra dados de `hub_grooming_checklist_templates` (nível clínica) para `banho_tosa`. Executar depois dos itens 17 e 32.
 
 56. **`alter_hub_clinic_settings_accepted_payment_methods.sql`** — Coluna `accepted_payment_methods text[]` em `hub_clinic_settings` (formas de pagamento aceitas no checkout e registro de pagamentos; default = todos os 7 métodos). Executar depois do item 54.
+
+57. **`alter_hub_boarding_reservations_billing.sql`** — Colunas `billing_waived_at` / `billing_waive_reason` em `hub_boarding_reservations` e atualização do CHECK `hub_comandas.origin_type` para incluir `boarding_reservation`. Executar depois dos itens 51–52.

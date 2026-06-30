@@ -6,6 +6,12 @@ import { resolvePaymentCashSessionId } from './hubFinancialController';
 import { resolveServiceLinePricing, type PetPricingFields } from './hubPricingResolve';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
 import { streamComandaPdf } from './hubComandaPdf';
+import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
+import {
+  assertPaymentMethodInList,
+  hubPaymentMethodSchema,
+  PaymentMethodNotAcceptedError,
+} from './hubPaymentMethods';
 
 const uuidStr = z.string().uuid();
 
@@ -81,7 +87,8 @@ function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
-const comandaOriginSchema = z.enum(['appointment', 'grooming_session', 'quote', 'encounter', 'manual', 'boarding_reservation']);
+import { buildBoardingComandaLine } from './boardingBilling';
+import { comandaOriginSchema } from './hubComandaSchemas';
 
 async function resolveClinicDefaultUnitId(clinicId: string): Promise<string | null> {
   const { data: main } = await supabaseAdmin
@@ -188,7 +195,7 @@ async function resolveExistingOpenComandaIdForOpen(
     const byEnc = await findOpenComandaIdByOrigin(clinicId, 'encounter', originId);
     if (byEnc) return byEnc;
   }
-  return null;
+  return findOpenComandaIdByOrigin(clinicId, originType, originId);
 }
 
 async function findLatestClosedGroomingSessionIdForAppointment(
@@ -1072,45 +1079,22 @@ async function buildComandaItemsFromBoardingReservation(
 
   const guardianId = res.guardian_id as string | null;
   if (!guardianId) throw new Error('NO_GUARDIAN');
+  if (res.status !== 'checked_out') throw new Error('NOT_READY');
 
-  const checkIn = res.checked_in_at as string | null ?? res.expected_check_in as string | null;
-  const checkOut = res.checked_out_at as string | null ?? res.expected_check_out as string | null;
-  const dailyRateCents = (res.daily_rate_cents as number | null) ?? 0;
-  const mode = res.mode as string;
-
-  let nights = 0;
-  if (checkIn && checkOut) {
-    const d1 = new Date(checkIn);
-    const d2 = new Date(checkOut);
-    nights = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
-  }
-  const quantity = mode === 'hotel' ? Math.max(1, nights) : 1;
-  const unitAmount = round2(dailyRateCents / 100);
-  const lineTotal = round2(quantity * unitAmount);
-  const label = mode === 'hotel' ? 'Hotel' : 'Creche';
-
-  const items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[] = [
-    {
-      pet_id: res.pet_id as string | null,
-      item_kind: 'service',
-      hub_service_type_id: null,
-      hub_inventory_item_id: null,
-      hub_inventory_lot_id: null,
-      description: `${label} — ${quantity} ${mode === 'hotel' ? (quantity === 1 ? 'diária' : 'diárias') : 'bloco(s)'}`,
-      quantity,
-      unit_amount: unitAmount,
-      discount_amount: 0,
-      line_total: lineTotal,
-      service_date: checkIn ? checkIn.slice(0, 10) : null,
-      origin_type: 'boarding_reservation',
-      origin_id: reservationId,
-      sort_order: 0,
-    },
-  ];
+  const { line, subtotal } = buildBoardingComandaLine({
+    id: reservationId,
+    mode: res.mode as string,
+    pet_id: res.pet_id as string | null,
+    expected_check_in: res.expected_check_in as string | null,
+    expected_check_out: res.expected_check_out as string | null,
+    checked_in_at: res.checked_in_at as string | null,
+    checked_out_at: res.checked_out_at as string | null,
+    daily_rate_cents: res.daily_rate_cents as number | null,
+  });
 
   return {
-    items,
-    subtotal: lineTotal,
+    items: [line],
+    subtotal,
     unit_id: (res.unit_id as string | null) ?? null,
     guardian_id: guardianId,
     pet_id: res.pet_id as string | null,
@@ -1241,7 +1225,7 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       }
     }
 
-    if (origin_type === 'grooming_session' || origin_type === 'encounter') {
+    if (origin_type === 'grooming_session' || origin_type === 'encounter' || origin_type === 'boarding_reservation') {
       const existingId = await resolveExistingOpenComandaIdForOpen(clinic_id, origin_type, effectiveOriginId);
       if (existingId) {
         const detail = await getHubComandaDetailPayload(existingId, clinic_id);
@@ -1368,11 +1352,6 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
     } else if (origin_type === 'quote') {
       built = await buildComandaItemsFromQuote(clinic_id, effectiveOriginId);
     } else if (origin_type === 'boarding_reservation') {
-      const existingId = await resolveExistingOpenComandaIdForOpen(clinic_id, 'boarding_reservation', effectiveOriginId);
-      if (existingId) {
-        const detail = await getHubComandaDetailPayload(existingId, clinic_id);
-        return res.status(200).json(detail);
-      }
       built = await buildComandaItemsFromBoardingReservation(clinic_id, effectiveOriginId);
     } else {
       // Encounter: permite comanda antecipada (allowIncomplete) para recebimento antes de concluir
@@ -1564,13 +1543,13 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
 
   const [guRes, petRes, itemPetsRes] = await Promise.all([
     guardianId
-      ? supabaseAdmin.from('hub_guardians').select('id, full_name, phone, email').eq('id', guardianId).maybeSingle()
+      ? supabaseAdmin.from('hub_guardians').select('id, full_name, phone, email, tax_id').eq('id', guardianId).maybeSingle()
       : Promise.resolve({ data: null }),
     petId
-      ? supabaseAdmin.from('hub_pets').select('id, name').eq('id', petId).maybeSingle()
+      ? supabaseAdmin.from('hub_pets').select('id, name, species, breed, size_tier, sex').eq('id', petId).maybeSingle()
       : Promise.resolve({ data: null }),
     petIds.length
-      ? supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds)
+      ? supabaseAdmin.from('hub_pets').select('id, name, species, breed, size_tier, sex').in('id', petIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ]);
   const guardian = guRes.data
@@ -1579,10 +1558,37 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
         full_name: (guRes.data as Record<string, unknown>).full_name,
         phone: (guRes.data as Record<string, unknown>).phone ?? null,
         email: (guRes.data as Record<string, unknown>).email ?? null,
+        tax_id: (guRes.data as Record<string, unknown>).tax_id ?? null,
       }
     : null;
-  const pet = petRes.data ? { id: (petRes.data as Record<string, unknown>).id, name: (petRes.data as Record<string, unknown>).name } : null;
+  const pet = petRes.data
+    ? {
+        id: (petRes.data as Record<string, unknown>).id,
+        name: (petRes.data as Record<string, unknown>).name,
+        species: (petRes.data as Record<string, unknown>).species,
+        breed: (petRes.data as Record<string, unknown>).breed ?? null,
+        size_tier: (petRes.data as Record<string, unknown>).size_tier,
+        sex: (petRes.data as Record<string, unknown>).sex ?? null,
+      }
+    : null;
   const petNameMap = new Map((itemPetsRes.data ?? []).map((p) => [p.id as string, p.name as string]));
+  const petsById = new Map<string, Record<string, unknown>>();
+  for (const p of itemPetsRes.data ?? []) {
+    petsById.set(p.id as string, p);
+  }
+  if (petRes.data) {
+    petsById.set(petRes.data.id as string, petRes.data as Record<string, unknown>);
+  }
+  const pets = [...petsById.values()]
+    .map((p) => ({
+      id: p.id as string,
+      name: String(p.name ?? ''),
+      species: String(p.species ?? ''),
+      breed: (p.breed as string | null) ?? null,
+      size_tier: String(p.size_tier ?? ''),
+      sex: (p.sex as string | null) ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 
   const enrichedItems = (items ?? []).map((it) => ({
     ...it,
@@ -1592,6 +1598,7 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
   return {
     comanda: { ...comanda, guardian, pet },
     items: enrichedItems,
+    pets,
     open_item_ids: openItemIds,
     invoiced_item_ids: [...invoicedItemIds],
     active_receivable_ids: activeReceivableIds,
@@ -1704,6 +1711,7 @@ export const getPublicComanda = async (req: Request, res: Response) => {
         clinic: clinicRow ? { name: (clinicRow as { name: string | null }).name } : null,
       },
       items: detail.items,
+      pets: detail.pets,
       paid_total: detail.paid_total,
       balance_due: detail.balance_due,
     });
@@ -1763,7 +1771,7 @@ const checkoutBodySchema = z
           .object({
             group_index: z.number().int().min(0),
             amount: z.number().positive(),
-            payment_method: z.enum(['pix', 'cash', 'credit_card', 'debit_card', 'transfer', 'payment_link', 'customer_credit']),
+            payment_method: hubPaymentMethodSchema,
             cash_session_id: uuidStr.optional().nullable(),
             installments: z.number().int().min(1).max(99).optional(),
           })
@@ -1866,6 +1874,12 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
           .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
           .eq('id', originId)
           .eq('clinic_id', clinic_id);
+      } else if (originType === 'boarding_reservation') {
+        await supabaseAdmin
+          .from('hub_boarding_reservations')
+          .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
+          .eq('id', originId)
+          .eq('clinic_id', clinic_id);
       } else if (originType === 'manual') {
         /* comanda manual: sem entidade operacional a dispensar */
       }
@@ -1923,7 +1937,8 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
 
     const receivableIds: string[] = [];
     const nonEmptyGroupIndices: number[] = [];
-    const unitId = (comanda.unit_id as string | null) ?? null;
+    let unitId = (comanda.unit_id as string | null) ?? null;
+    if (!unitId) unitId = await resolveClinicDefaultUnitId(clinic_id);
     const guardianId = comanda.guardian_id as string;
 
     const rollbackReceivables = async () => {
@@ -1972,7 +1987,10 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
 
       let sort = 0;
       for (const it of groupItems) {
-        const lineKind = mapItemToReceivableLineKind((it.origin_type as string | null) ?? null);
+        const lineKind =
+          String(it.item_kind ?? '') === 'product'
+            ? 'product'
+            : mapItemToReceivableLineKind((it.origin_type as string | null) ?? null);
         const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert({
           clinic_id,
           receivable_id: receivableId,
@@ -2028,6 +2046,19 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'payments obrigatório para receber agora' });
       }
 
+      const clinicSettings = await getOrCreateHubClinicSettings(clinic_id);
+      for (const pay of payments) {
+        try {
+          assertPaymentMethodInList(pay.payment_method, clinicSettings.accepted_payment_methods);
+        } catch (e) {
+          await rollbackReceivables();
+          if (e instanceof PaymentMethodNotAcceptedError) {
+            return res.status(400).json({ error: e.message });
+          }
+          throw e;
+        }
+      }
+
       const expectedByGroup = new Map<number, number>();
       for (let gi = 0; gi < groups.length; gi++) {
         const sub = round2(groups[gi].map((id) => itemById.get(id)!).reduce((s, it) => s + Number(it.line_total ?? 0), 0));
@@ -2043,10 +2074,10 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       }
       for (const [gi, expected] of expectedByGroup) {
         const got = paidByGroup.get(gi) ?? 0;
-        if (Math.abs(got - expected) > 0.02) {
+        if (got <= 0.009 || got > expected + 0.02) {
           await rollbackReceivables();
           return res.status(400).json({
-            error: `Valor pago do grupo ${gi} deve ser ${expected.toFixed(2)} (recebido ${got.toFixed(2)})`,
+            error: `Valor pago do grupo ${gi} deve ser entre 0,01 e ${expected.toFixed(2)} (recebido ${got.toFixed(2)})`,
           });
         }
       }
@@ -2058,6 +2089,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         const finalAmt = Number(recRow?.final_amount ?? 0);
 
         let validatedCashSessionId: string | null = null;
+        const recUnit = recRow?.unit_id as string | null;
         if (pay.payment_method === 'cash') {
           if (!pay.cash_session_id) {
             await rollbackReceivables();
@@ -2068,7 +2100,23 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
             .select('id, clinic_id, unit_id, status')
             .eq('id', pay.cash_session_id)
             .maybeSingle();
-          const recUnit = recRow?.unit_id as string | null;
+          if (
+            cashErr ||
+            !cashSession ||
+            cashSession.clinic_id !== clinic_id ||
+            cashSession.status !== 'open' ||
+            (recUnit && cashSession.unit_id !== recUnit)
+          ) {
+            await rollbackReceivables();
+            return res.status(409).json({ error: 'Sessão de caixa inválida ou fechada.' });
+          }
+          validatedCashSessionId = cashSession.id as string;
+        } else if (pay.cash_session_id) {
+          const { data: cashSession, error: cashErr } = await supabaseAdmin
+            .from('hub_cash_sessions')
+            .select('id, clinic_id, unit_id, status')
+            .eq('id', pay.cash_session_id)
+            .maybeSingle();
           if (
             cashErr ||
             !cashSession ||
@@ -2083,7 +2131,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         } else {
           validatedCashSessionId = await resolvePaymentCashSessionId(
             clinic_id,
-            recRow?.unit_id as string | null,
+            recUnit,
             unitId,
           );
         }
@@ -2963,6 +3011,7 @@ const addComandaItemsBodySchema = z
           pet_id: uuidStr.optional().nullable(),
           hub_service_type_id: uuidStr.optional().nullable(),
           hub_inventory_item_id: uuidStr.optional().nullable(),
+          hub_inventory_lot_id: uuidStr.optional().nullable(),
           description: z.string().min(1).max(500),
           quantity: z.number().positive().default(1),
           unit_amount: z.number().min(0),
@@ -3018,6 +3067,7 @@ export const postHubComandaAddItems = async (req: Request, res: Response) => {
       pet_id: it.pet_id ?? null,
       hub_service_type_id: it.hub_service_type_id ?? null,
       hub_inventory_item_id: it.hub_inventory_item_id ?? null,
+      hub_inventory_lot_id: it.hub_inventory_lot_id ?? null,
       description: it.description,
       quantity: it.quantity,
       unit_amount: it.unit_amount,
@@ -3288,6 +3338,18 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
     }
     const { clinic_id, comanda_ids, action, due_date, payment_timing, payment_method, cash_session_id } = parsed.data;
     const userId = req.user?.id ?? null;
+
+    if (action === 'receive_now' && payment_method) {
+      const clinicSettings = await getOrCreateHubClinicSettings(clinic_id);
+      try {
+        assertPaymentMethodInList(payment_method, clinicSettings.accepted_payment_methods);
+      } catch (e) {
+        if (e instanceof PaymentMethodNotAcceptedError) {
+          return res.status(400).json({ error: e.message });
+        }
+        throw e;
+      }
+    }
 
     // Valida que todas as comandas existem, pertencem à clínica e estão abertas
     const { data: comandas, error: cErr } = await supabaseAdmin

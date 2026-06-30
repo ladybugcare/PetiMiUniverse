@@ -9,6 +9,7 @@ import {
 } from '../../utils/hubServiceTypesPricingMatrix';
 import { formatMoneyCurrencyBrl } from './serviceTypeFormUtils';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubCheckbox } from '../../components/HubCheckbox';
 
 export type AddonAvailabilitySnapshot = {
@@ -221,9 +222,11 @@ const ServiceAddonAvailabilityPanel: React.FC<Props> = ({
 
   if (loading) {
     return (
-      <p className="hub-servicos__margin-info hub-service-addons-step__loading">
-        Carregando adicionais do grupo…
-      </p>
+      <HubLoading
+        variant="block"
+        label="Carregando adicionais do grupo…"
+        className="hub-servicos__margin-info hub-service-addons-step__loading"
+      />
     );
   }
 

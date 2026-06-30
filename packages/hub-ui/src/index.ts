@@ -8,6 +8,8 @@ export { HubToastRegion, HubToast } from './components/HubToast';
 export type { HubToastItemData, HubToastRegionProps } from './components/HubToast';
 export { HubCancelButton } from './components/HubCancelButton';
 export type { HubCancelButtonProps } from './components/HubCancelButton';
+export { HubLoading } from './components/HubLoading';
+export type { HubLoadingProps, HubLoadingVariant, HubLoadingSize } from './components/HubLoading';
 export { HubCheckbox } from './components/HubCheckbox';
 export type { HubCheckboxProps } from './components/HubCheckbox';
 export { HubTabs } from './components/HubTabs';
@@ -60,6 +62,7 @@ export type { HubServiceType, HubServiceGroup } from './api/hubServiceTypesApi';
 export { default as HubGuardiansPage } from './pages/HubGuardiansPage';
 export { default as HubGuardianDetailPage } from './pages/HubGuardianDetailPage';
 export { default as HubPetsPage } from './pages/HubPetsPage';
+export { default as HubPetDetailPage } from './pages/HubPetDetailPage';
 export { default as HubPetWizardPage } from './pages/HubPetWizardPage';
 export { default as HubServicosRoutes } from './pages/servicos/HubServicosRoutes';
 export { default as HubSystemSettingsRoutes } from './pages/configuracoes/HubSystemSettingsRoutes';
@@ -113,7 +116,7 @@ export type {
   HubQuotePetInput,
   HubQuoteLine,
 } from './api/hubQuotesApi';
-export type { HubComandaOriginType, HubComandaItem, HubComandaDetailResponse, HubComandaOpenBody, HubComandaManualLine, HubPublicComandaResponse, HubComandaAllowedGuardian, HubComandaGuardianEmbed, HubComandaEditContext, HubComandaEditScopes } from './api/hubComandaApi';
+export type { HubComandaOriginType, HubComandaItem, HubComandaDetailResponse, HubComandaOpenBody, HubComandaManualLine, HubPublicComandaResponse, HubPublicComandaPet, HubComandaAllowedGuardian, HubComandaGuardianEmbed, HubComandaEditContext, HubComandaEditScopes } from './api/hubComandaApi';
 export { hubComandaApi, openHubComandaPdf, downloadHubComandaPdf } from './api/hubComandaApi';
 export { ComandaCheckoutDrawer } from './pages/finance/ComandaCheckoutDrawer';
 export type { ComandaCheckoutDrawerProps } from './pages/finance/ComandaCheckoutDrawer';

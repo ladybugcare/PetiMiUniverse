@@ -9,6 +9,7 @@ import {
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubCancelButton } from '../../components/HubCancelButton';
+import { HubLoading } from '../../components/HubLoading';
 import { hubProspectsApi } from '../../api/hubProspectsApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import HubQuoteWorkspace, { type HubQuoteCreateContext } from './HubQuoteWorkspace';
@@ -110,7 +111,13 @@ const HubQuoteNewPage: React.FC = () => {
       </div>
     );
   }
-  if (permLoading || !accessAllowed) return <div style={{ padding: 24 }}>Carregando…</div>;
+  if (permLoading || !accessAllowed) {
+    return (
+      <div style={{ padding: 24 }}>
+        <HubLoading variant="block" />
+      </div>
+    );
+  }
   if (!canWrite) {
     return (
       <div style={{ padding: 24 }}>
@@ -146,7 +153,7 @@ const HubQuoteNewPage: React.FC = () => {
       </header>
 
       {loadingProspect ? (
-        <p className="hub-clientes__muted">Carregando contato…</p>
+        <HubLoading variant="block" label="Carregando contato…" />
       ) : (
         <>
           <section className="hub-orcamento-novo__card" style={{ marginBottom: 16 }}>

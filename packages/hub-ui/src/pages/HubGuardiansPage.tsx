@@ -9,6 +9,7 @@ import {
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import { useAlert } from '../components/AlertProvider';
 import { HubTabs } from '../components/HubTabs';
+import { HubLoading } from '../components/HubLoading';
 import { hubGuardiansApi, type HubGuardian, type HubGuardianStats } from '../api/hubGuardiansApi';
 import './clientes/clientes.css';
 import { ClientesMetricsRow } from './clientes/ClientesMetricsRow';
@@ -118,6 +119,11 @@ const HubGuardiansPage: React.FC = () => {
     if (!clinicId || !accessAllowed) return;
     void loadStats();
   }, [clinicId, accessAllowed, loadStats]);
+
+  useEffect(() => {
+    if (!clinicId || !accessAllowed) return;
+    void loadList();
+  }, [clinicId, accessAllowed, loadList]);
 
   useEffect(() => {
     if (fromQuoteId) setMainTab('tutores');
@@ -316,7 +322,7 @@ const HubGuardiansPage: React.FC = () => {
   if (permLoading || !accessAllowed) {
     return (
       <div className="hub-clientes" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading variant="block" />
       </div>
     );
   }
@@ -350,7 +356,7 @@ const HubGuardiansPage: React.FC = () => {
         />
 
         {loading ? (
-          <p className="hub-clientes__muted">Carregando lista…</p>
+          <HubLoading variant="block" label="Carregando lista…" />
         ) : (
           <ClientesTable
             rows={filteredRows}

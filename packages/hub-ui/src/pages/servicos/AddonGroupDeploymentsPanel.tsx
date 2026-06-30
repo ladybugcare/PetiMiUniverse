@@ -6,6 +6,7 @@ import {
   type AddonDeploymentItem,
 } from '../../api/hubServiceAddonsApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
 
@@ -130,7 +131,7 @@ const AddonGroupDeploymentsPanel: React.FC<Props> = ({ addonId, clinicId, canWri
   };
 
   if (loading) {
-    return <p className="hub-servicos__margin-info">Carregando grupos de serviço…</p>;
+    return <HubLoading variant="block" label="Carregando grupos de serviço…" className="hub-servicos__margin-info" />;
   }
 
   if (groups.length === 0) {

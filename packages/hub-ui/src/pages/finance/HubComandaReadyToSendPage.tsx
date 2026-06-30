@@ -9,6 +9,7 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubTabs } from '../../components/HubTabs';
 import {
   hubComandaApi,
@@ -16,10 +17,14 @@ import {
   type HubComandaDetailResponse,
   type HubComandaGuardianEmbed,
 } from '../../api/hubComandaApi';
+import { hubFinancialApi } from '../../api/hubFinancialApi';
 import {
+  buildWhatsAppMessageChargeLinkVariant,
+  buildWhatsAppMessageChargePdfVariant,
   buildWhatsAppMessageComandaLinkVariant,
   buildWhatsAppMessageComandaPdfVariant,
   formatBrlLabel,
+  formatDueDateLabel,
   guardianFirstName,
   waMeUrlWithText,
 } from './hubComandaShareUtils';
@@ -55,6 +60,7 @@ const HubComandaReadyToSendPage: React.FC = () => {
   const [messageVariant, setMessageVariant] = useState<MessageVariant>('link');
   const [pdfBusy, setPdfBusy] = useState(false);
   const [messageCopied, setMessageCopied] = useState(false);
+  const [dueDateLabel, setDueDateLabel] = useState('—');
 
   const accessAllowed =
     clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
@@ -68,14 +74,31 @@ const HubComandaReadyToSendPage: React.FC = () => {
       setDetail(d);
       const { public_token } = await hubComandaApi.ensurePublicToken(id, clinicId);
       setPublicUrl(hubComandaApi.publicLink(public_token));
+
+      if (financeMode) {
+        const receivableId = d.active_receivable_ids?.[0];
+        if (receivableId) {
+          try {
+            const receivable = await hubFinancialApi.getReceivableDetail(receivableId, clinicId);
+            setDueDateLabel(formatDueDateLabel(receivable.due_date ?? null));
+          } catch {
+            setDueDateLabel('—');
+          }
+        } else {
+          setDueDateLabel('—');
+        }
+      } else {
+        setDueDateLabel('—');
+      }
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar');
       setDetail(null);
       setPublicUrl('');
+      setDueDateLabel('—');
     } finally {
       setLoading(false);
     }
-  }, [clinicId, id, showError]);
+  }, [clinicId, financeMode, id, showError]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -91,18 +114,26 @@ const HubComandaReadyToSendPage: React.FC = () => {
     [detail],
   );
   const firstName = useMemo(() => guardianFirstName(guardian?.full_name), [guardian]);
-  const totalLabel = useMemo(() => {
+  const amountLabel = useMemo(() => {
     const c = detail?.comanda as Record<string, unknown> | undefined;
-    return formatBrlLabel(Number(c?.total_amount ?? 0));
-  }, [detail]);
+    const balanceDue = Number(detail?.balance_due ?? 0);
+    const totalAmount = Number(c?.total_amount ?? 0);
+    const amount = financeMode && balanceDue > 0.009 ? balanceDue : totalAmount;
+    return formatBrlLabel(amount);
+  }, [detail, financeMode]);
   const guardianPhone = guardian?.phone?.trim() ?? '';
 
   const messageText = useMemo(() => {
     if (!publicUrl) return '';
+    if (financeMode) {
+      return messageVariant === 'link'
+        ? buildWhatsAppMessageChargeLinkVariant(firstName, publicUrl, amountLabel, dueDateLabel)
+        : buildWhatsAppMessageChargePdfVariant(firstName, publicUrl, amountLabel, dueDateLabel);
+    }
     return messageVariant === 'link'
-      ? buildWhatsAppMessageComandaLinkVariant(firstName, publicUrl, totalLabel)
-      : buildWhatsAppMessageComandaPdfVariant(firstName, publicUrl, totalLabel);
-  }, [firstName, messageVariant, publicUrl, totalLabel]);
+      ? buildWhatsAppMessageComandaLinkVariant(firstName, publicUrl, amountLabel)
+      : buildWhatsAppMessageComandaPdfVariant(firstName, publicUrl, amountLabel);
+  }, [amountLabel, dueDateLabel, financeMode, firstName, messageVariant, publicUrl]);
 
   const whatsAppHref = useMemo(() => {
     if (!messageText) return null;
@@ -176,7 +207,13 @@ const HubComandaReadyToSendPage: React.FC = () => {
       </div>
     );
   }
-  if (permLoading || !accessAllowed) return <div style={{ padding: 24 }}>Carregando…</div>;
+  if (permLoading || !accessAllowed) {
+    return (
+      <div style={{ padding: 24 }}>
+        <HubLoading variant="block" />
+      </div>
+    );
+  }
   if (!id) return <Navigate to={moduleHomePath} replace />;
   if (!canWrite) {
     return (
@@ -186,10 +223,16 @@ const HubComandaReadyToSendPage: React.FC = () => {
     );
   }
 
+  const shareEyebrow = financeMode ? 'Cobrança pronta para envio' : 'Comanda pronta para envio';
+  const shareTitle = financeMode ? 'Cobrança pronta para compartilhar' : 'Comanda pronta para compartilhar';
+  const publicViewLabel = financeMode ? 'Ver cobrança pública' : 'Ver comanda pública';
+  const notFoundLabel = financeMode ? 'Cobrança não encontrada.' : 'Comanda não encontrada.';
+  const loadingLabel = financeMode ? 'Carregando cobrança…' : 'Carregando comanda…';
+
   if (!loading && !detail) {
     return (
       <div className="hub-orcamento-novo" style={{ padding: 24 }}>
-        <p>Comanda não encontrada.</p>
+        <p>{notFoundLabel}</p>
         <Link to={moduleHomePath} className="hub-clientes__link-btn">
           Voltar ao {moduleLabel.toLowerCase()}
         </Link>
@@ -200,7 +243,7 @@ const HubComandaReadyToSendPage: React.FC = () => {
   if (loading || !detail) {
     return (
       <div className="hub-orcamento-novo" style={{ padding: 24 }}>
-        <p className="hub-clientes__muted">Carregando…</p>
+        <HubLoading variant="block" label={loadingLabel} />
       </div>
     );
   }
@@ -209,9 +252,9 @@ const HubComandaReadyToSendPage: React.FC = () => {
     <div className="hub-orcamento-novo hub-quote-ready">
       <header className="hub-orcamento-novo__topbar">
         <div>
-          <p className="hub-quote-ready__eyebrow">Comanda pronta para envio</p>
+          <p className="hub-quote-ready__eyebrow">{shareEyebrow}</p>
           <h1 className="hub-orcamento-novo__topbar-title" style={{ marginTop: 4 }}>
-            Comanda pronta para compartilhar
+            {shareTitle}
           </h1>
           <p className="hub-orcamento-novo__topbar-subtitle">
             Copie a mensagem abaixo e envie para o cliente pelo WhatsApp.
@@ -305,7 +348,7 @@ const HubComandaReadyToSendPage: React.FC = () => {
             rel="noopener noreferrer"
           >
             <ExternalLink size={18} aria-hidden />
-            Ver comanda pública
+            {publicViewLabel}
           </a>
         </div>
       </section>

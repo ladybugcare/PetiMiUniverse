@@ -10,6 +10,7 @@ import {
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubTabs } from '../../components/HubTabs';
+import { HubLoading } from '../../components/HubLoading';
 import { hubQuotesApi, downloadHubQuotePdf, type HubQuote } from '../../api/hubQuotesApi';
 import { embedOne } from './hubQuoteViewUtils';
 import {
@@ -161,7 +162,13 @@ const HubQuoteReadyToSendPage: React.FC = () => {
       </div>
     );
   }
-  if (permLoading || !accessAllowed) return <div style={{ padding: 24 }}>Carregando…</div>;
+  if (permLoading || !accessAllowed) {
+    return (
+      <div style={{ padding: 24 }}>
+        <HubLoading variant="block" />
+      </div>
+    );
+  }
   if (!id) return <Navigate to="/hub/orcamentos" replace />;
   if (!canWrite) {
     return (
@@ -189,7 +196,7 @@ const HubQuoteReadyToSendPage: React.FC = () => {
   if (loading || !quote) {
     return (
       <div className="hub-orcamento-novo" style={{ padding: 24 }}>
-        <p className="hub-clientes__muted">Carregando…</p>
+        <HubLoading variant="block" label="Carregando orçamento…" />
       </div>
     );
   }

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubTabs } from '../../components/HubTabs';
 import {
   hubClinicalApi,
@@ -187,7 +188,7 @@ const HubClinicRecordsPage: React.FC = () => {
           {!selectedPet ? (
             <div className="hub-clientes__empty-state">Selecione um pet para ver o prontuário.</div>
           ) : loading ? (
-            <p className="hub-clientes__muted">Carregando prontuário…</p>
+            <HubLoading variant="block" label="Carregando prontuário…" />
           ) : (
             <>
               <header className="hub-clinic-records__header">

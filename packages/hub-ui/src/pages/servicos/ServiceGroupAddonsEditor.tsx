@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { hubServiceAddonsApi } from '../../api/hubServiceAddonsApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubCheckbox } from '../../components/HubCheckbox';
 
 type Props = {
@@ -64,7 +65,9 @@ const ServiceGroupAddonsEditor: React.FC<Props> = ({ groupId, clinicId, canWrite
     }
   };
 
-  if (loading) return <p className="hub-servicos__margin-info">Carregando catálogo de adicionais…</p>;
+  if (loading) {
+    return <HubLoading variant="block" label="Carregando catálogo de adicionais…" className="hub-servicos__margin-info" />;
+  }
 
   return (
     <div className="hub-servicos-config__addons-block">

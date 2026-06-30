@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
@@ -213,7 +214,11 @@ const HubClinicEncountersPage: React.FC = () => {
   }
 
   if (permLoading || !accessAllowed) {
-    return <p className="hub-clientes__muted hub-clinic-page__pad">Carregando…</p>;
+    return (
+      <div className="hub-clinic-page__pad">
+        <HubLoading variant="block" />
+      </div>
+    );
   }
 
   const dateLabel = cursor.toLocaleDateString('pt-BR', {
@@ -299,7 +304,7 @@ const HubClinicEncountersPage: React.FC = () => {
       {!loading ? <ClinicDayMetrics items={items} /> : null}
 
       {loading ? (
-        <p className="hub-clientes__muted hub-clinic-page__pad">Carregando fila clínica…</p>
+        <HubLoading variant="block" label="Carregando fila clínica…" className="hub-clinic-page__pad" />
       ) : items.length === 0 ? (
         <p className="hub-clientes__muted hub-clinic-page__pad">Nenhum atendimento clínico neste dia.</p>
       ) : (

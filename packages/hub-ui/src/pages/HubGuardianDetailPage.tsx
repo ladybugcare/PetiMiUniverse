@@ -9,6 +9,8 @@ import {
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import { useAlert } from '../components/AlertProvider';
 import { HubCancelButton } from '../components/HubCancelButton';
+import { HubLoading } from '../components/HubLoading';
+import { getSelectedUnitId } from '../utils/useSelectedUnitId';
 import { hubGuardiansApi, type HubGuardian, type HubGuardianPet } from '../api/hubGuardiansApi';
 import './clientes/clientes.css';
 import { GuardianDetailPanel } from './clientes/GuardianDetailPanel';
@@ -18,6 +20,7 @@ import {
   type GuardianFormValues,
 } from './clientes/GuardianCreateForm';
 import { formValuesToUpdatePayload } from './clientes/guardianFormPayload';
+import '../components/hub-profile.css';
 
 const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
 
@@ -28,6 +31,7 @@ const HubGuardianDetailPage: React.FC = () => {
   const { user, role: authRole } = useAuth();
   const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
+  const unitId = getSelectedUnitId();
   const canWrite = hasPermission('hub.guardians.write');
 
   const [loading, setLoading] = useState(true);
@@ -112,8 +116,8 @@ const HubGuardianDetailPage: React.FC = () => {
 
   if (permLoading || !accessAllowed || loading) {
     return (
-      <div className="hub-clientes" style={{ padding: 24 }}>
-        Carregando…
+      <div style={{ padding: 24 }}>
+        <HubLoading label="Carregando cliente…" />
       </div>
     );
   }
@@ -130,7 +134,7 @@ const HubGuardianDetailPage: React.FC = () => {
   }
 
   return (
-    <div className="hub-clientes" style={{ flexDirection: 'column', maxWidth: 720, margin: '0 auto' }}>
+    <div style={{ padding: '24px 20px' }}>
       <div className="hub-clientes__detail-page-back">
         <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => navigate('/hub/clientes')}>
           ← Voltar aos clientes
@@ -138,51 +142,39 @@ const HubGuardianDetailPage: React.FC = () => {
       </div>
 
       {editing ? (
-        <>
-          <div
-            style={{
-              background: 'var(--hc-card)',
-              border: '1px solid var(--hc-border)',
-              borderRadius: 'var(--hc-radius)',
-              padding: 24,
-            }}
-          >
-            <GuardianCreateForm
-              value={form}
-              onChange={setForm}
-              onSubmit={handleSubmit}
-              submitting={submitting}
-              canWrite={canWrite}
-              title=""
-            />
-            <div style={{ marginTop: 12 }}>
-              <HubCancelButton onClick={() => setEditing(false)} />
+        <div className="hub-meu-perfil__panel" style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <header className="hub-meu-perfil__panel-head">
+            <div>
+              <h2 className="hub-meu-perfil__panel-title">Editar cliente</h2>
+              <p className="hub-meu-perfil__panel-sub">Atualize os dados do tutor.</p>
             </div>
-          </div>
-        </>
-      ) : (
-        <div
-          className="hub-clientes__panel"
-          style={{
-            width: '100%',
-            maxWidth: 440,
-            position: 'static',
-            maxHeight: 'none',
-            margin: '0 auto',
-          }}
-        >
-          <div className="hub-clientes__panel-scroll">
-            <GuardianDetailPanel
-              guardian={guardian}
-              pets={pets}
-              onClose={() => navigate('/hub/clientes')}
-              onStartEdit={() => setEditing(true)}
-              onOpenInNewPage={() => {}}
-              hideNewPageButton
-              onArchive={canWrite ? handleArchiveGuardian : undefined}
-            />
+          </header>
+          <GuardianCreateForm
+            value={form}
+            onChange={setForm}
+            onSubmit={handleSubmit}
+            submitting={submitting}
+            canWrite={canWrite}
+            title=""
+          />
+          <div style={{ marginTop: 12 }}>
+            <HubCancelButton onClick={() => setEditing(false)} />
           </div>
         </div>
+      ) : (
+        <GuardianDetailPanel
+          layout="page"
+          guardian={guardian}
+          pets={pets}
+          onClose={() => navigate('/hub/clientes')}
+          onStartEdit={() => setEditing(true)}
+          onOpenInNewPage={() => {}}
+          hideNewPageButton
+          onArchive={canWrite ? handleArchiveGuardian : undefined}
+          clinicId={clinicId}
+          unitId={unitId}
+          canCreateReceivable={hasPermission('hub.receivables.create')}
+        />
       )}
     </div>
   );

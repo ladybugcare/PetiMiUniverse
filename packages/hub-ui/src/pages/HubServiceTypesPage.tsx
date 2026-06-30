@@ -4,6 +4,7 @@ import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petim
 import { hubServiceTypesApi, type HubServiceType } from '../api/hubServiceTypesApi';
 import { hubServiceGroupsApi, type HubServiceGroupRow } from '../api/hubServiceGroupsApi';
 import { useAlert } from '../components/AlertProvider';
+import { HubLoading } from '../components/HubLoading';
 import { HubSearchableCombobox } from '../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../components/HubSearchableCombobox';
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
@@ -618,7 +619,7 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
   if (permLoading || !accessAllowed) {
     return (
       <div className="hub-clientes hub-servicos-page hub-pets-page" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading variant="block" />
       </div>
     );
   }
@@ -750,7 +751,7 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
         </div>
 
           {loading ? (
-          <p className="hub-clientes__muted">Carregando…</p>
+          <HubLoading variant="block" label="Carregando serviços…" />
         ) : (
           <div className="hub-servicos__table-wrap">
             <table className="hub-clientes__table">

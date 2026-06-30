@@ -134,7 +134,9 @@ app.use((0, cors_1.default)({
     origin: (origin, callback) => {
         // Permite requisições sem origem apenas em desenvolvimento
         if (!origin) {
-            if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'staging') {
+            if (process.env.NODE_ENV === 'development' ||
+                process.env.NODE_ENV === 'staging' ||
+                process.env.NODE_ENV === 'test') {
                 return callback(null, true);
             }
             return callback(new Error('Not allowed by CORS'));

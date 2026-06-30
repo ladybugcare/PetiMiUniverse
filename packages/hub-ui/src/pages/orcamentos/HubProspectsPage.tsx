@@ -8,6 +8,7 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { hubProspectsApi, type HubProspect } from '../../api/hubProspectsApi';
 import { maskTaxIdForList } from '../../utils/maskTaxId';
 import '../clientes/clientes.css';
@@ -116,7 +117,7 @@ const HubProspectsPage: React.FC = () => {
   if (permLoading || !accessAllowed) {
     return (
       <div className="hub-servicos-page" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading variant="block" />
       </div>
     );
   }
@@ -249,7 +250,7 @@ const HubProspectsPage: React.FC = () => {
       ) : null}
 
       {loading ? (
-        <p className="hub-clientes__muted">Carregando…</p>
+        <HubLoading variant="block" label="Carregando lista…" />
       ) : (
         <div className="hub-servicos__table-wrap">
           <table className="hub-clientes__table">

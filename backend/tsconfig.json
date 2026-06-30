@@ -34,5 +34,13 @@
     "../frontend/context",
     "**/*.ts"
   ],
-  "exclude": ["node_modules", "dist", "src/__tests__"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/__tests__",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.integration.test.ts",
+    "jest.config.ts"
+  ]
 }

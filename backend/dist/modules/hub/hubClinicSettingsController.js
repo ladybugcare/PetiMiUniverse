@@ -4,6 +4,7 @@ exports.patchHubClinicSettings = exports.getHubClinicSettings = void 0;
 exports.getOrCreateHubClinicSettings = getOrCreateHubClinicSettings;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
+const hubPaymentMethods_1 = require("./hubPaymentMethods");
 const uuidStr = zod_1.z.string().uuid();
 const messageTemplatesSchema = zod_1.z
     .record(zod_1.z.string(), zod_1.z.string().max(500))
@@ -15,11 +16,11 @@ const patchSchema = zod_1.z
     message_templates: messageTemplatesSchema,
 })
     .strict();
-/** Garante linha de settings por clínica (defaults: 8 meses, templates vazios). */
+/** Garante linha de settings por clínica (defaults: 8 meses, templates vazios, todos os métodos). */
 async function getOrCreateHubClinicSettings(clinicId) {
     const { data: row, error: selErr } = await supabase_1.supabaseAdmin
         .from('hub_clinic_settings')
-        .select('pet_puppy_max_months, message_templates')
+        .select('pet_puppy_max_months, message_templates, accepted_payment_methods')
         .eq('clinic_id', clinicId)
         .maybeSingle();
     if (!selErr && row) {
@@ -27,20 +28,26 @@ async function getOrCreateHubClinicSettings(clinicId) {
         return {
             pet_puppy_max_months: Number(r.pet_puppy_max_months) || 8,
             message_templates: r.message_templates ?? {},
+            accepted_payment_methods: (0, hubPaymentMethods_1.normalizeAcceptedPaymentMethods)(r.accepted_payment_methods),
         };
     }
     const { data: ins, error: insErr } = await supabase_1.supabaseAdmin
         .from('hub_clinic_settings')
-        .insert({ clinic_id: clinicId })
-        .select('pet_puppy_max_months, message_templates')
+        .insert({ clinic_id: clinicId, accepted_payment_methods: [...hubPaymentMethods_1.HUB_PAYMENT_METHODS] })
+        .select('pet_puppy_max_months, message_templates, accepted_payment_methods')
         .single();
     if (insErr || !ins) {
-        return { pet_puppy_max_months: 8, message_templates: {} };
+        return {
+            pet_puppy_max_months: 8,
+            message_templates: {},
+            accepted_payment_methods: [...hubPaymentMethods_1.HUB_PAYMENT_METHODS],
+        };
     }
     const i = ins;
     return {
         pet_puppy_max_months: Number(i.pet_puppy_max_months) || 8,
         message_templates: i.message_templates ?? {},
+        accepted_payment_methods: (0, hubPaymentMethods_1.normalizeAcceptedPaymentMethods)(i.accepted_payment_methods),
     };
 }
 const getHubClinicSettings = async (req, res) => {

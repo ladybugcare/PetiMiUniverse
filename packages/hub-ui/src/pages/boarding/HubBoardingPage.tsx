@@ -4,6 +4,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, PlusCircle, RefreshCw, Search 
 import { apiRequest, getStoredClinicId, getSupabase, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { hubBoardingApi, type BoardingDayBoardItem, type BoardingOccupancyResponse } from '../../api/hubBoardingApi';
@@ -278,7 +279,11 @@ const HubBoardingPage: React.FC = () => {
   }
 
   if (permLoading || !accessAllowed) {
-    return <p className="hub-clientes__muted hub-clinic-page__pad">Carregando…</p>;
+    return (
+      <div className="hub-clinic-page__pad">
+        <HubLoading variant="block" />
+      </div>
+    );
   }
 
   const dateLabel = cursor.toLocaleDateString('pt-BR', {
@@ -451,7 +456,7 @@ const HubBoardingPage: React.FC = () => {
           }}
         />
       ) : loading ? (
-        <p className="hub-clientes__muted hub-clinic-page__pad">Carregando painel…</p>
+        <HubLoading variant="block" label="Carregando painel…" className="hub-clinic-page__pad" />
       ) : items.length === 0 ? (
         <p className="hub-clientes__muted hub-clinic-page__pad">
           Nenhum agendamento de Hotel & Creche neste dia. Os serviços agendados na Agenda com grupos{' '}
@@ -475,6 +480,7 @@ const HubBoardingPage: React.FC = () => {
         canDailyReport={canDailyReport}
         canManageFinance={canManageFinance}
         canWriteInventory={canWriteInventory}
+        unitId={unitIdParam}
         onClose={() => setSelected(null)}
         onUpdated={() => void load()}
       />

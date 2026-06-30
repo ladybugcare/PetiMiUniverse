@@ -6,6 +6,7 @@ import {
   HubGuardiansPage,
   HubGuardianDetailPage,
   HubPetsPage,
+  HubPetDetailPage,
   HubPetWizardPage,
   HubEstoqueRoutes,
   HubServicosRoutes,
@@ -90,6 +91,7 @@ const App: React.FC = () => {
             <Route path="clientes" element={<HubGuardiansPage />} />
             <Route path="clientes/:guardianId" element={<HubGuardianDetailPage />} />
             <Route path="pets/novo" element={<HubPetWizardPage />} />
+            <Route path="pets/:petId" element={<HubPetDetailPage />} />
             <Route path="pets" element={<HubPetsPage />} />
             <Route path="financeiro" element={<HubFinanceiroPage />} />
             <Route path="financeiro/comanda/:id" element={<HubComandaFinancePage />} />

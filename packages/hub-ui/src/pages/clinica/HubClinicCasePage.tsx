@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubTabs } from '../../components/HubTabs';
 import {
   hubClinicalCasesApi,
@@ -206,7 +207,11 @@ const HubClinicCasePage: React.FC = () => {
   }
 
   if (loading) {
-    return <p className="hub-clientes__muted hub-clinic-page__pad">Carregando caso clínico…</p>;
+    return (
+      <div className="hub-clinic-page__pad">
+        <HubLoading variant="block" label="Carregando caso clínico…" />
+      </div>
+    );
   }
 
   if (!clinicalCase || !caseId || !clinicId) {

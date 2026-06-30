@@ -12,6 +12,7 @@ import {
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { HubDateField } from '../../components/HubDateField';
 import { HubCancelButton } from '../../components/HubCancelButton';
@@ -478,7 +479,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
   if (permLoading || !accessAllowed) {
     return (
       <div className="hub-clientes hub-estoque-page" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading variant="block" />
       </div>
     );
   }
@@ -525,7 +526,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
         </div>
 
         {loading ? (
-          <p className="hub-clientes__muted">Carregando…</p>
+          <HubLoading variant="block" label="Carregando itens…" />
         ) : (
           <div className="hub-servicos__table-wrap">
             <table className="hub-clientes__table">

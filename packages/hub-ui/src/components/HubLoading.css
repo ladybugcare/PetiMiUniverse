@@ -1,0 +1,83 @@
+@keyframes hub-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hub-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-loading__icon {
+  flex-shrink: 0;
+  color: var(--hc-brand, #c86a4d);
+  animation: hub-loading-spin 0.75s linear infinite;
+}
+
+.hub-loading__label {
+  line-height: 1.35;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-loading--inline {
+  justify-content: flex-start;
+}
+
+.hub-loading--block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.hub-loading--overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(250, 247, 244, 0.78);
+  backdrop-filter: blur(1px);
+}
+
+.hub-loading--sm {
+  gap: 6px;
+}
+
+.hub-loading--sm .hub-loading__label {
+  font-size: 12px;
+}
+
+.hub-loading--md .hub-loading__label {
+  font-size: 13px;
+}
+
+.hub-loading--lg {
+  gap: 12px;
+}
+
+.hub-loading--lg .hub-loading__label {
+  font-size: 14px;
+}
+
+.hub-loading__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

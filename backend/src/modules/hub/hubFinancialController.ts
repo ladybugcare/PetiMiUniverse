@@ -5,10 +5,29 @@ import { supabaseAdmin } from '../../config/supabase';
 import { computeBalances } from './hubInventoryController';
 import { streamPaymentReceiptPdf } from './hubPaymentReceiptPdf';
 import { fetchOpenComandaOriginKeysExported } from './hubComandasController';
+import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
+import {
+  assertPaymentMethodInList,
+  hubPaymentMethodSchema,
+  patchPaymentMethodSettingsSchema,
+  PaymentMethodNotAcceptedError,
+} from './hubPaymentMethods';
+import {
+  buildBoardingComandaLine,
+  estimateBoardingUnbilledAmount,
+  shouldIncludeInUnbilledBoarding,
+  type DayBoardBilling,
+} from './boardingBilling';
+import {
+  aggregateReceivableStatus,
+  isDayBoardOperationallyComplete,
+  isDayBoardPaidAndComplete,
+  matchesFinanceiroDayBoardScope,
+  pickActiveReceivableId,
+} from './hubFinancialDayBoard';
+import { financeSourceTypeSchema, receivableSourceTypeSchema } from './hubFinanceSchemas';
 
 const uuidStr = z.string().uuid();
-const financeSourceTypeSchema = z.enum(['grooming_session', 'encounter', 'quote', 'appointment']);
-const receivableSourceTypeSchema = z.enum(['grooming_session', 'encounter', 'quote', 'appointment', 'manual']);
 
 function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -37,8 +56,11 @@ export async function resolvePaymentCashSessionId(
   return resolveOpenCashSessionId(clinicId, unitId);
 }
 
-function paymentYmd(iso: string): string {
-  return iso.slice(0, 10);
+/** Dia civil em America/Sao_Paulo (YYYY-MM-DD) para comparar pagamentos com sessão de caixa. */
+function paymentYmdSaoPaulo(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
 /**
@@ -49,7 +71,7 @@ export async function linkOrphanPaymentsToSession(
   clinicId: string,
   session: { id: string; unit_id: string; opened_at: string },
 ): Promise<void> {
-  const sessionDay = paymentYmd(session.opened_at);
+  const sessionDay = paymentYmdSaoPaulo(session.opened_at);
   const { data: orphans, error } = await supabaseAdmin
     .from('hub_payments')
     .select('id, payment_date, receivable_id')
@@ -86,7 +108,7 @@ export async function linkOrphanPaymentsToSession(
 
   const toLink: string[] = [];
   for (const p of orphans) {
-    if (paymentYmd(String(p.payment_date)) !== sessionDay) continue;
+    if (paymentYmdSaoPaulo(String(p.payment_date)) !== sessionDay) continue;
     const unit = unitByRecId.get(p.receivable_id as string);
     if (unit !== session.unit_id) continue;
     toLink.push(p.id as string);
@@ -292,6 +314,59 @@ async function sumGroomingExtras(sessionId: string, clinicId: string): Promise<{
     });
   }
   return { lines, subtotal: round2(subtotal) };
+}
+
+async function buildPreviewForBoardingReservation(
+  clinicId: string,
+  reservationId: string
+): Promise<{ lines: ReceivableLineInsert[]; subtotal: number; unit_id: string | null; guardian_id: string | null }> {
+  const { data: res, error } = await supabaseAdmin
+    .from('hub_boarding_reservations')
+    .select(
+      'id, clinic_id, pet_id, guardian_id, unit_id, mode, status, expected_check_in, expected_check_out, checked_in_at, checked_out_at, daily_rate_cents, billing_waived_at'
+    )
+    .eq('id', reservationId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!res) throw new Error('NOT_FOUND');
+  if (res.status !== 'checked_out') throw new Error('NOT_READY');
+  if (res.billing_waived_at) throw new Error('WAIVED');
+
+  const guardianId = res.guardian_id as string | null;
+  if (!guardianId) throw new Error('NO_GUARDIAN');
+
+  const { line, subtotal } = buildBoardingComandaLine({
+    id: res.id as string,
+    mode: res.mode as string,
+    pet_id: res.pet_id as string | null,
+    expected_check_in: res.expected_check_in as string | null,
+    expected_check_out: res.expected_check_out as string | null,
+    checked_in_at: res.checked_in_at as string | null,
+    checked_out_at: res.checked_out_at as string | null,
+    daily_rate_cents: res.daily_rate_cents as number | null,
+  });
+
+  return {
+    lines: [
+      {
+        clinic_id: '',
+        receivable_id: '',
+        line_kind: 'manual',
+        source_line_id: null,
+        hub_service_type_id: null,
+        description: line.description,
+        quantity: line.quantity,
+        unit_sale_amount: line.unit_amount,
+        line_total: line.line_total,
+        sort_order: 0,
+      },
+    ],
+    subtotal,
+    unit_id: (res.unit_id as string) ?? null,
+    guardian_id: guardianId,
+  };
 }
 
 async function buildPreviewForGroomingSession(
@@ -504,6 +579,47 @@ const previewQuerySchema = z
   })
   .strict();
 
+export const getHubFinancePaymentMethodSettings = async (req: Request, res: Response) => {
+  try {
+    const parsed = uuidStr.safeParse(req.query.clinic_id);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'clinic_id é obrigatório e deve ser UUID' });
+    }
+    const settings = await getOrCreateHubClinicSettings(parsed.data);
+    return res.json({ accepted_payment_methods: settings.accepted_payment_methods });
+  } catch (e) {
+    console.error('[hub_finance] getPaymentMethodSettings', e);
+    return res.status(500).json({ error: 'Erro ao carregar formas de pagamento' });
+  }
+};
+
+export const patchHubFinancePaymentMethodSettings = async (req: Request, res: Response) => {
+  try {
+    const body = patchPaymentMethodSettingsSchema.safeParse(req.body);
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
+    }
+    const { clinic_id, accepted_payment_methods } = body.data;
+
+    await getOrCreateHubClinicSettings(clinic_id);
+
+    const { error } = await supabaseAdmin
+      .from('hub_clinic_settings')
+      .update({ accepted_payment_methods })
+      .eq('clinic_id', clinic_id);
+    if (error) {
+      console.error('[hub_finance] patchPaymentMethodSettings', error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    const settings = await getOrCreateHubClinicSettings(clinic_id);
+    return res.json({ accepted_payment_methods: settings.accepted_payment_methods });
+  } catch (e) {
+    console.error('[hub_finance] patchPaymentMethodSettings', e);
+    return res.status(500).json({ error: 'Erro ao gravar formas de pagamento' });
+  }
+};
+
 export const getHubFinancePreview = async (req: Request, res: Response) => {
   try {
     const parsed = previewQuerySchema.safeParse(req.query);
@@ -518,6 +634,8 @@ export const getHubFinancePreview = async (req: Request, res: Response) => {
       built = await buildPreviewForEncounter(clinic_id, source_id);
     } else if (source_type === 'appointment') {
       built = await buildPreviewForAppointment(clinic_id, source_id);
+    } else if (source_type === 'boarding_reservation') {
+      built = await buildPreviewForBoardingReservation(clinic_id, source_id);
     } else {
       built = await buildPreviewForQuote(clinic_id, source_id);
     }
@@ -540,6 +658,8 @@ export const getHubFinancePreview = async (req: Request, res: Response) => {
   } catch (e: unknown) {
     const msg = (e as Error)?.message;
     if (msg === 'NOT_FOUND') return res.status(404).json({ error: 'Fonte não encontrada' });
+    if (msg === 'NOT_READY') return res.status(409).json({ error: 'Origem não está pronta para cobrança' });
+    if (msg === 'WAIVED') return res.status(409).json({ error: 'Origem marcada sem cobrança' });
     console.error('getHubFinancePreview', e);
     return res.status(500).json({ error: msg || 'Erro ao pré-visualizar' });
   }
@@ -694,6 +814,19 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
         });
       }
       if (a.billing_waived_at) return res.status(409).json({ error: 'Agendamento marcado sem cobrança' });
+    } else if (source_type === 'boarding_reservation') {
+      const { data: b, error: bErr } = await supabaseAdmin
+        .from('hub_boarding_reservations')
+        .select('id, clinic_id, status, billing_waived_at')
+        .eq('id', source_id!)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (bErr || !b) return res.status(404).json({ error: 'Reserva não encontrada' });
+      if (b.status !== 'checked_out') {
+        return res.status(409).json({ error: 'Só é possível gerar cobrança com reserva com check-out realizado' });
+      }
+      if (b.billing_waived_at) return res.status(409).json({ error: 'Reserva marcada sem cobrança' });
     } else {
       const { data: q, error: qErr } = await supabaseAdmin
         .from('hub_quotes')
@@ -715,6 +848,8 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
       built = await buildPreviewForEncounter(clinic_id, source_id!);
     } else if (source_type === 'appointment') {
       built = await buildPreviewForAppointment(clinic_id, source_id!);
+    } else if (source_type === 'boarding_reservation') {
+      built = await buildPreviewForBoardingReservation(clinic_id, source_id!);
     } else {
       built = await buildPreviewForQuote(clinic_id, source_id!);
     }
@@ -824,6 +959,13 @@ export const postHubFinanceWaiveBilling = async (req: Request, res: Response) =>
         .eq('id', source_id)
         .eq('clinic_id', clinic_id);
       if (error) return res.status(500).json({ error: error.message });
+    } else if (source_type === 'boarding_reservation') {
+      const { error } = await supabaseAdmin
+        .from('hub_boarding_reservations')
+        .update({ billing_waived_at: now, billing_waive_reason: reason })
+        .eq('id', source_id)
+        .eq('clinic_id', clinic_id);
+      if (error) return res.status(500).json({ error: error.message });
     } else {
       const { error } = await supabaseAdmin
         .from('hub_quotes')
@@ -843,15 +985,7 @@ const paymentBodySchema = z
   .object({
     clinic_id: uuidStr,
     amount: z.number().positive(),
-    payment_method: z.enum([
-      'pix',
-      'cash',
-      'credit_card',
-      'debit_card',
-      'transfer',
-      'payment_link',
-      'customer_credit',
-    ]),
+    payment_method: hubPaymentMethodSchema,
     installments: z.number().int().min(1).max(99).optional(),
     payment_date: z.string().datetime({ offset: true }).optional(),
     notes: z.string().trim().max(2000).optional().nullable(),
@@ -869,6 +1003,16 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
     const receivableId = idParsed.data;
     const { clinic_id, amount, payment_method, installments, payment_date, notes, cash_session_id } = parsed.data;
     const userId = req.user?.id ?? null;
+
+    const clinicSettings = await getOrCreateHubClinicSettings(clinic_id);
+    try {
+      assertPaymentMethodInList(payment_method, clinicSettings.accepted_payment_methods);
+    } catch (e) {
+      if (e instanceof PaymentMethodNotAcceptedError) {
+        return res.status(400).json({ error: e.message });
+      }
+      throw e;
+    }
 
     const { data: rec, error: rErr } = await supabaseAdmin
       .from('hub_receivables')
@@ -898,6 +1042,22 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
         (rec.unit_id && cashSession.unit_id !== rec.unit_id)
       ) {
         return res.status(409).json({ error: 'Sessão de caixa inválida ou fechada para este recebimento em dinheiro.' });
+      }
+      validatedCashSessionId = cashSession.id as string;
+    } else if (cash_session_id) {
+      const { data: cashSession, error: cashErr } = await supabaseAdmin
+        .from('hub_cash_sessions')
+        .select('id, clinic_id, unit_id, status')
+        .eq('id', cash_session_id)
+        .maybeSingle();
+      if (
+        cashErr ||
+        !cashSession ||
+        cashSession.clinic_id !== clinic_id ||
+        cashSession.status !== 'open' ||
+        (rec.unit_id && cashSession.unit_id !== rec.unit_id)
+      ) {
+        return res.status(409).json({ error: 'Sessão de caixa inválida ou fechada para este recebimento.' });
       }
       validatedCashSessionId = cashSession.id as string;
     } else {
@@ -1779,6 +1939,40 @@ type UnbilledItem = {
   operational_status: string;
 };
 
+async function fetchBilledOriginKeysFromComandas(clinicId: string): Promise<Set<string>> {
+  const keys = new Set<string>();
+  const { data: comandas, error: cErr } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('id, origin_type, origin_id')
+    .eq('clinic_id', clinicId)
+    .neq('status', 'cancelada')
+    .is('deleted_at', null)
+    .not('origin_id', 'is', null);
+  if (cErr) throw new Error(cErr.message);
+  if (!comandas?.length) return keys;
+
+  const comandaIds = comandas.map((c) => c.id as string);
+  const { data: receivables, error: rErr } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('comanda_id, status')
+    .eq('clinic_id', clinicId)
+    .in('comanda_id', comandaIds)
+    .is('deleted_at', null)
+    .neq('status', 'cancelled');
+  if (rErr) throw new Error(rErr.message);
+
+  const billedComandaIds = new Set(
+    (receivables ?? []).map((r) => r.comanda_id as string).filter(Boolean)
+  );
+
+  for (const c of comandas) {
+    if (billedComandaIds.has(c.id as string)) {
+      keys.add(`${c.origin_type as string}:${c.origin_id as string}`);
+    }
+  }
+  return keys;
+}
+
 async function collectUnbilledItems(
   clinicId: string,
   unitId: string | undefined,
@@ -1786,11 +1980,20 @@ async function collectUnbilledItems(
 ): Promise<UnbilledItem[]> {
   const items: UnbilledItem[] = [];
   let comandaOpenKeys: Set<string>;
+  let billedViaComandaKeys: Set<string>;
   try {
     comandaOpenKeys = await fetchOpenComandaOriginKeysExported(clinicId);
+    billedViaComandaKeys = await fetchBilledOriginKeysFromComandas(clinicId);
   } catch {
     comandaOpenKeys = new Set();
+    billedViaComandaKeys = new Set();
   }
+
+  const unbilledBoardingCtx = {
+    activeReceivableKeys: keys,
+    comandaOpenKeys,
+    billedViaComandaKeys,
+  };
 
   let gq = supabaseAdmin
     .from('hub_grooming_sessions')
@@ -1945,7 +2148,7 @@ async function collectUnbilledItems(
   const apptIds = (apptRows ?? []).map((row) => row.id as string);
   const apptIdsWithOperation = new Set<string>();
   if (apptIds.length > 0) {
-    const [{ data: encOps }, { data: groomOps }] = await Promise.all([
+    const [{ data: encOps }, { data: groomOps }, { data: boardingOps }] = await Promise.all([
       supabaseAdmin
         .from('hub_encounters')
         .select('hub_appointment_id')
@@ -1958,11 +2161,20 @@ async function collectUnbilledItems(
         .in('hub_appointment_id', apptIds)
         .eq('clinic_id', clinicId)
         .is('deleted_at', null),
+      supabaseAdmin
+        .from('hub_boarding_reservations')
+        .select('hub_appointment_id')
+        .in('hub_appointment_id', apptIds)
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null),
     ]);
     for (const row of encOps ?? []) {
       if (row.hub_appointment_id) apptIdsWithOperation.add(row.hub_appointment_id as string);
     }
     for (const row of groomOps ?? []) {
+      if (row.hub_appointment_id) apptIdsWithOperation.add(row.hub_appointment_id as string);
+    }
+    for (const row of boardingOps ?? []) {
       if (row.hub_appointment_id) apptIdsWithOperation.add(row.hub_appointment_id as string);
     }
   }
@@ -1988,42 +2200,47 @@ async function collectUnbilledItems(
     });
   }
 
-  // Reservas de Hotel & Creche com check-out realizado e sem cobrança
   let bq = supabaseAdmin
     .from('hub_boarding_reservations')
     .select(
       `
-      id, unit_id, checked_out_at, expected_check_out, guardian_id, pet_id, mode, daily_rate_cents,
+      id, unit_id, checked_out_at, expected_check_out, expected_check_in, checked_in_at,
+      guardian_id, pet_id, mode, status, daily_rate_cents, billing_waived_at, deleted_at,
       pet:hub_pets(id, name),
       guardian:hub_guardians(id, full_name)
     `
     )
     .eq('clinic_id', clinicId)
     .eq('status', 'checked_out')
+    .is('deleted_at', null)
+    .is('billing_waived_at', null)
     .order('checked_out_at', { ascending: false })
     .limit(200);
   if (unitId) bq = bq.eq('unit_id', unitId);
   const { data: boardingRows, error: bErr } = await bq;
   if (bErr) throw new Error(bErr.message);
   for (const row of boardingRows ?? []) {
-    if (keys.has(`boarding_reservation:${row.id}`)) continue;
-    if (comandaOpenKeys.has(`boarding_reservation:${row.id}`)) continue;
+    const reservation = {
+      id: row.id as string,
+      mode: row.mode as string,
+      status: row.status as string,
+      expected_check_in: row.expected_check_in as string | null,
+      expected_check_out: row.expected_check_out as string | null,
+      checked_in_at: row.checked_in_at as string | null,
+      checked_out_at: row.checked_out_at as string | null,
+      daily_rate_cents: row.daily_rate_cents as number | null,
+      billing_waived_at: row.billing_waived_at as string | null,
+      deleted_at: row.deleted_at as string | null,
+    };
+    if (!shouldIncludeInUnbilledBoarding(reservation, unbilledBoardingCtx)) continue;
+
     const modeLabel = row.mode === 'hotel' ? 'Hotel' : 'Creche';
     const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
     const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
-    const dailyRateCents = (row.daily_rate_cents as number | null) ?? 0;
-    const checkIn = null as string | null;
-    const checkOut = (row.checked_out_at as string | null) ?? (row.expected_check_out as string | null);
-    let nights = 0;
-    if (checkIn && checkOut) {
-      const d1 = new Date(checkIn);
-      const d2 = new Date(checkOut);
-      nights = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
-    }
-    const qty = row.mode === 'hotel' ? Math.max(1, nights) : 1;
-    const estimated = Math.round(qty * dailyRateCents) / 100;
+    const checkOut =
+      (row.checked_out_at as string | null) ?? (row.expected_check_out as string | null);
     items.push({
-      source_type: 'boarding_reservation' as string,
+      source_type: 'boarding_reservation',
       source_id: row.id as string,
       origin_label: `Hotel & Creche (${modeLabel})`,
       completed_at: checkOut,
@@ -2031,7 +2248,7 @@ async function collectUnbilledItems(
       guardian: g ? (Array.isArray(g) ? g[0] : g) : null,
       pet: pet ? (Array.isArray(pet) ? pet[0] : pet) : null,
       staff: null,
-      estimated_amount: estimated,
+      estimated_amount: estimateBoardingUnbilledAmount(reservation),
       operational_status: 'checked_out',
     });
   }
@@ -2084,63 +2301,6 @@ export const getHubFinancePendingBillingCount = async (req: Request, res: Respon
 };
 
 // ─── DAY BOARD (Caixa: todos os atendimentos do dia) ────────────────────────
-
-type DayBoardBilling = {
-  comanda_id: string | null;
-  comanda_status: string | null;
-  has_receivable: boolean;
-  receivable_status: 'pending' | 'partially_paid' | 'paid' | null;
-  finance_handoff_at: string | null;
-  active_receivable_id: string | null;
-};
-
-function isDayBoardOperationallyComplete(originType: string, operationalStatus: string): boolean {
-  switch (originType) {
-    case 'appointment':
-      return operationalStatus === 'done' || operationalStatus === 'paid';
-    case 'grooming_session':
-      return operationalStatus === 'closed';
-    case 'encounter':
-      return operationalStatus === 'completed';
-    case 'quote':
-    case 'manual':
-    case 'boarding_reservation':
-      return true;
-    default:
-      return true;
-  }
-}
-
-function isDayBoardPaidAndComplete(
-  originType: string,
-  operationalStatus: string,
-  receivableStatus: DayBoardBilling['receivable_status']
-): boolean {
-  return receivableStatus === 'paid' && isDayBoardOperationallyComplete(originType, operationalStatus);
-}
-
-function pickActiveReceivableId(statusesWithIds: Array<{ id: string; status: string }>): string | null {
-  const pending = statusesWithIds.find((r) => r.status === 'pending');
-  if (pending) return pending.id;
-  const partial = statusesWithIds.find((r) => r.status === 'partially_paid');
-  if (partial) return partial.id;
-  const paid = statusesWithIds.find((r) => r.status === 'paid');
-  return paid?.id ?? null;
-}
-
-function matchesFinanceiroDayBoardScope(billing: DayBoardBilling): boolean {
-  if (billing.finance_handoff_at) return true;
-  if (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid') return true;
-  return false;
-}
-
-function aggregateReceivableStatus(statuses: string[]): 'pending' | 'partially_paid' | 'paid' | null {
-  if (statuses.length === 0) return null;
-  if (statuses.some((s) => s === 'pending')) return 'pending';
-  if (statuses.some((s) => s === 'partially_paid')) return 'partially_paid';
-  if (statuses.every((s) => s === 'paid')) return 'paid';
-  return null;
-}
 
 /** Carrega comanda e status de recebível para um conjunto de origens em batch. */
 async function fetchBillingStatusBatch(

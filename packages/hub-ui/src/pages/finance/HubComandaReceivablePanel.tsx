@@ -7,7 +7,6 @@ import {
   type HubFinanceReceivableDetail,
   type HubPaymentMethod,
 } from '../../api/hubFinancialApi';
-import { hubInventoryApi, type HubInventoryItem, type HubInventoryLotRow } from '../../api/hubInventoryApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import {
@@ -20,6 +19,7 @@ import {
   waMeUrlWithText,
 } from './hubComandaShareUtils';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import {
   defaultPaymentMethod,
@@ -100,13 +100,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [reversePaymentId, setReversePaymentId] = useState<string | null>(null);
   const [reverseReason, setReverseReason] = useState('');
-  const [inventoryItems, setInventoryItems] = useState<HubInventoryItem[]>([]);
-  const [inventoryLots, setInventoryLots] = useState<HubInventoryLotRow[]>([]);
   const [lineServiceTypes, setLineServiceTypes] = useState<HubServiceType[]>([]);
-  const [productItemId, setProductItemId] = useState('');
-  const [productLotId, setProductLotId] = useState('');
-  const [productQty, setProductQty] = useState('1');
-  const [productPrice, setProductPrice] = useState('');
 
   const activeReceivableId = selectedReceivableId || receivableIds[0] || '';
 
@@ -157,17 +151,9 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     if (!clinicId) return;
     void (async () => {
       try {
-        const [inv, lots, types] = await Promise.all([
-          hubInventoryApi.items.list(clinicId, true),
-          hubInventoryApi.lots.list(clinicId),
-          hubServiceTypesApi.list(clinicId, false, true),
-        ]);
-        setInventoryItems(inv.items ?? []);
-        setInventoryLots(lots.lots ?? []);
+        const types = await hubServiceTypesApi.list(clinicId, false, true);
         setLineServiceTypes(types.service_types ?? []);
       } catch {
-        setInventoryItems([]);
-        setInventoryLots([]);
         setLineServiceTypes([]);
       }
     })();
@@ -178,8 +164,6 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     [lineServiceTypes],
   );
 
-  const selectedProductItem = inventoryItems.find((item) => item.id === productItemId) ?? null;
-  const lotsForSelectedItem = inventoryLots.filter((lot) => lot.item_id === productItemId);
   const selectedPayments = detail?.payments ?? [];
   const selectedAdjustments = detail?.adjustments ?? [];
   const selectedPaid = Number(detail?.paid_amount ?? 0);
@@ -261,36 +245,6 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       onRefreshComanda?.();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao estornar pagamento');
-    }
-  };
-
-  const onAddProductLine = async () => {
-    if (!clinicId || !detail) return;
-    if (!hasPermission('hub.inventory.write')) {
-      showError('Sem permissão para baixar estoque.');
-      return;
-    }
-    const qty = Number(productQty.replace(',', '.'));
-    const price = Number((productPrice || String(selectedProductItem?.sale_amount ?? '0')).replace(',', '.'));
-    if (!productItemId || !productLotId || Number.isNaN(qty) || qty <= 0 || Number.isNaN(price) || price < 0) {
-      showError('Escolha produto, lote, quantidade e preço válidos.');
-      return;
-    }
-    try {
-      await hubFinancialApi.addReceivableProductLine(detail.id, {
-        clinic_id: clinicId,
-        item_id: productItemId,
-        lot_id: productLotId,
-        quantity: qty,
-        unit_sale_amount: price,
-      });
-      showSuccess('Produto adicionado e estoque baixado.');
-      setProductQty('1');
-      setProductPrice('');
-      await loadDetail();
-      onRefreshComanda?.();
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao adicionar produto');
     }
   };
 
@@ -395,8 +349,10 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
         </div>
       ) : null}
 
-      {loading || !detail ? (
-        <p className="hub-clientes__muted">{loading ? 'Carregando…' : 'Recebível não encontrado.'}</p>
+      {loading ? (
+        <HubLoading variant="block" label="Carregando recebível…" />
+      ) : !detail ? (
+        <p className="hub-clientes__muted">Recebível não encontrado.</p>
       ) : (
         <>
           <div className="hub-finance-page__detail-hero">
@@ -618,63 +574,6 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
                   Confirmar estorno
                 </button>
               </div>
-            </section>
-          ) : null}
-
-          {hasPermission('hub.inventory.write') && detail.status !== 'cancelled' ? (
-            <section className="hub-finance-page__panel-section">
-              <h3 className="hub-finance-page__subsection-title">Adicionar produto de estoque</h3>
-              <div className="hub-finance-page__panel-form-grid">
-                <div className="hub-clientes__field hub-finance-page__panel-form-span">
-                  <label className="hub-clientes__label" htmlFor="comanda-fin-prod-item">Produto</label>
-                  <select
-                    id="comanda-fin-prod-item"
-                    className="hub-clientes__select-input"
-                    value={productItemId}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setProductItemId(next);
-                      setProductLotId('');
-                      const item = inventoryItems.find((x) => x.id === next);
-                      setProductPrice(item ? String(item.sale_amount ?? '') : '');
-                    }}
-                  >
-                    <option value="">—</option>
-                    {inventoryItems.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name} · estoque {Number(item.qty_on_hand ?? 0)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="hub-clientes__field">
-                  <label className="hub-clientes__label" htmlFor="comanda-fin-prod-lot">Lote</label>
-                  <select
-                    id="comanda-fin-prod-lot"
-                    className="hub-clientes__select-input"
-                    value={productLotId}
-                    onChange={(e) => setProductLotId(e.target.value)}
-                  >
-                    <option value="">—</option>
-                    {lotsForSelectedItem.map((lot) => (
-                      <option key={lot.id} value={lot.id}>
-                        {lot.lot_code || 'Sem lote'} · {Number(lot.qty_on_hand ?? 0)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="hub-clientes__field">
-                  <label className="hub-clientes__label" htmlFor="comanda-fin-prod-qty">Qtd.</label>
-                  <input id="comanda-fin-prod-qty" className="hub-clientes__input" value={productQty} onChange={(e) => setProductQty(e.target.value)} inputMode="decimal" />
-                </div>
-                <div className="hub-clientes__field">
-                  <label className="hub-clientes__label" htmlFor="comanda-fin-prod-price">Preço unit.</label>
-                  <input id="comanda-fin-prod-price" className="hub-clientes__input" value={productPrice} onChange={(e) => setProductPrice(e.target.value)} inputMode="decimal" />
-                </div>
-              </div>
-              <button type="button" className="hub-clientes__btn hub-clientes__btn--primary hub-finance-page__panel-primary" onClick={() => void onAddProductLine()}>
-                Adicionar produto de estoque
-              </button>
             </section>
           ) : null}
 

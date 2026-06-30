@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { HubLoading } from '../../components/HubLoading';
 import { hubBoardingApi, type BoardingCalendarEvent } from '../../api/hubBoardingApi';
 import { BOARDING_STAGE_LABELS } from './boardingStages';
 import type { BoardingMode } from './boardingStages';
@@ -121,9 +122,9 @@ const BoardingCalendarView: React.FC<Props> = ({ clinicId, unitId, mode, onSelec
         </button>
       </div>
 
-      {loading && <p className="hub-clientes__muted" style={{ padding: '12px 0' }}>Carregando calendário…</p>}
-
-      {!loading && (
+      {loading ? (
+        <HubLoading variant="block" label="Carregando calendário…" />
+      ) : (
         <div className="hub-boarding-calendar__grid" role="grid">
           {days.map((day) => {
             const ymd = toYmd(day);

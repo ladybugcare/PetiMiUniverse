@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import { hubFinancialApi, type HubCashSessionSummary } from '../../api/hubFinancialApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 
 function formatBrl(n: number): string {
@@ -88,7 +89,7 @@ export const HubPaymentReversalPanel: React.FC = () => {
       </p>
 
       {loading ? (
-        <p className="hub-clientes__muted">Carregando…</p>
+        <HubLoading variant="block" label="Carregando pagamentos…" />
       ) : cashSummary?.payments?.length ? (
         <div className="hub-finance-page__panel-section" style={{ marginBottom: 20 }}>
           <h3 className="hub-finance-page__subsection-title">Recebimentos em dinheiro (sessão aberta)</h3>

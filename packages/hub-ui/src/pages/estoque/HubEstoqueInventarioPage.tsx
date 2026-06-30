@@ -4,6 +4,7 @@ import { getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petim
 import { hubInventoryApi } from '../../api/hubInventoryApi';
 import type { HubInventoryLotRow } from '../../api/hubInventoryApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
@@ -55,7 +56,7 @@ const HubEstoqueInventarioPage: React.FC = () => {
   if (permLoading || !accessAllowed) {
     return (
       <div className="hub-clientes hub-estoque-page" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading variant="block" />
       </div>
     );
   }
@@ -64,7 +65,7 @@ const HubEstoqueInventarioPage: React.FC = () => {
     <div className="hub-clientes hub-servicos-page hub-estoque-page hub-pets-page">
       <div className="hub-clientes__main">
         {loading ? (
-          <p className="hub-clientes__muted">Carregando…</p>
+          <HubLoading variant="block" label="Carregando inventário…" />
         ) : (
           <div className="hub-servicos__table-wrap">
             <table className="hub-clientes__table">

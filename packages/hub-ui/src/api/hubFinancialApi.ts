@@ -2,7 +2,12 @@ import { apiRequest, getApiBaseUrl, getSupabase } from '@petimi/web-core';
 
 const base = '/api/hub/finance';
 
-export type HubFinanceUnbilledSourceType = 'grooming_session' | 'encounter' | 'quote' | 'appointment';
+export type HubFinanceUnbilledSourceType =
+  | 'grooming_session'
+  | 'encounter'
+  | 'quote'
+  | 'appointment'
+  | 'boarding_reservation';
 export type HubFinanceReceivableSourceType = HubFinanceUnbilledSourceType | 'manual';
 
 export type HubFinanceUnbilledItem = {

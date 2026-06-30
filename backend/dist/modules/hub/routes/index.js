@@ -228,6 +228,8 @@ router.patch('/comandas/:id/items/:itemId', authMiddleware_1.authenticateUser, (
 router.delete('/comandas/:id/items/:itemId', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.deleteHubComandaItem);
 router.patch('/comandas/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.patchHubComanda);
 /** Financeiro — Day board (Caixa: todos os atendimentos do dia) */
+router.get('/finance/payment-method-settings', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinancePaymentMethodSettings);
+router.patch('/finance/payment-method-settings', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.patchHubFinancePaymentMethodSettings);
 router.get('/finance/day-board', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinanceDayBoard);
 /** Financeiro — Fase 1 (recebíveis, sem cobrança, caixa básico) */
 router.get('/finance/preview', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinancePreview);

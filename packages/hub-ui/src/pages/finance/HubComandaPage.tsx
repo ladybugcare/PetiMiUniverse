@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { FilePlus2, Search, Trash2 } from 'lucide-react';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import {
   hubComandaApi,
@@ -9,11 +8,12 @@ import {
   type HubComandaDetailResponse,
   type HubComandaEditContext,
   type HubComandaGuardianEmbed,
-  type HubComandaItem,
+  type HubComandaPetEmbed,
 } from '../../api/hubComandaApi';
+import { hubInventoryApi, type HubInventoryItem, type HubInventoryLotRow } from '../../api/hubInventoryApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
+import { HubLoading } from '../../components/HubLoading';
 import {
   DiscountControl,
   resolveDiscountAmount,
@@ -22,7 +22,18 @@ import {
 } from '../../components/billing/DiscountControl';
 import { FinancialSummaryCard } from '../../components/billing/FinancialSummaryCard';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
+import { ComandaItemsSection } from './ComandaItemsSection';
 import HubComandaDetailLayout from './HubComandaDetailLayout';
+import {
+  apiItemToDraft,
+  computeLineTotal,
+  NEW_ITEM_KEY_PREFIX,
+  newProductDraft,
+  newServiceDraft,
+  parseMoney,
+  round2,
+  type ComandaItemDraft,
+} from './comandaItemDraft';
 import {
   buildWhatsAppMessageComandaLinkVariant,
   formatBrlLabel,
@@ -33,77 +44,17 @@ import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import './hub-finance-page.css';
 import '../orcamentos/orcamentos-page.css';
 
-function fmtBrl(n: number): string {
-  return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function parseMoney(s: string): number {
-  const n = parseFloat(String(s).trim().replace(',', '.'));
-  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-type ItemDraft = {
-  id: string | null;
-  description: string;
-  quantity: string;
-  unit_amount: string;
-  discount_amount: string;
-  line_total: number;
-  origin_type: string | null;
-  pet_name: string | null;
-  hub_service_type_id: string | null;
-  invoiced: boolean;
-  isNew?: boolean;
-};
-
-function apiItemToDraft(item: HubComandaItem, invoiced: boolean): ItemDraft {
-  return {
-    id: item.id,
-    description: item.description,
-    quantity: String(item.quantity),
-    unit_amount: String(item.unit_amount),
-    discount_amount: String(item.discount_amount),
-    line_total: item.line_total,
-    origin_type: item.origin_type ?? null,
-    pet_name: item.pet_name ?? null,
-    hub_service_type_id: item.hub_service_type_id ?? null,
-    invoiced,
-  };
-}
-
-function computeLineTotal(d: ItemDraft): number {
-  const qty = parseMoney(d.quantity);
-  const unit = parseMoney(d.unit_amount);
-  const disc = parseMoney(d.discount_amount);
-  return round2(Math.max(0, qty * unit - disc));
-}
-
-const NEW_ITEM_KEY_PREFIX = 'new-';
-
-function newItemDraft(): ItemDraft {
-  return {
-    id: null,
-    description: '',
-    quantity: '1',
-    unit_amount: '0',
-    discount_amount: '0',
-    line_total: 0,
-    origin_type: 'manual',
-    pet_name: null,
-    hub_service_type_id: null,
-    invoiced: false,
-    isNew: true,
-  };
-}
-
 function extractGuardian(comanda: Record<string, unknown>): HubComandaGuardianEmbed | null {
   const g = comanda.guardian as HubComandaGuardianEmbed | null | undefined;
   if (!g?.id) return null;
   return g;
+}
+
+function extractPets(detail: HubComandaDetailResponse): HubComandaPetEmbed[] {
+  if (detail.pets?.length) return detail.pets;
+  const p = (detail.comanda as Record<string, unknown>).pet as HubComandaPetEmbed | null | undefined;
+  if (p?.id && p.name) return [p];
+  return [];
 }
 
 export type HubComandaPageMode = 'caixa' | 'financeiro';
@@ -130,31 +81,38 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
   const [saving, setSaving] = useState(false);
   const [payload, setPayload] = useState<HubComandaDetailResponse | null>(null);
   const [serviceTypes, setServiceTypes] = useState<HubServiceType[]>([]);
-  const [items, setItems] = useState<ItemDraft[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<HubInventoryItem[]>([]);
+  const [inventoryLots, setInventoryLots] = useState<HubInventoryLotRow[]>([]);
+  const [items, setItems] = useState<ComandaItemDraft[]>([]);
   const [notes, setNotes] = useState('');
   const [discountKind, setDiscountKind] = useState<DiscountKind>('');
   const [discountValueStr, setDiscountValueStr] = useState('0');
   const [showCheckout, setShowCheckout] = useState(false);
-  const [serviceSearch, setServiceSearch] = useState('');
+  const [catalogSearch, setCatalogSearch] = useState('');
 
   const newItemCounterRef = useRef(0);
 
   const comandaRow = payload?.comanda as Record<string, unknown> | undefined;
   const status = String(comandaRow?.status ?? '');
   const guardian = comandaRow ? extractGuardian(comandaRow) : null;
+  const pets = payload ? extractPets(payload) : [];
   const allowedGuardians = (payload?.allowed_guardians ?? []) as HubComandaAllowedGuardian[];
 
   const load = useCallback(async () => {
     if (!comandaId || !clinicId) return;
     setLoading(true);
     try {
-      const [detail, stRes] = await Promise.all([
+      const [detail, stRes, invRes, lotsRes] = await Promise.all([
         hubComandaApi.getComandaDetail(comandaId, clinicId),
         hubServiceTypesApi.list(clinicId),
+        hubInventoryApi.items.list(clinicId).catch(() => ({ items: [] as HubInventoryItem[] })),
+        hubInventoryApi.lots.list(clinicId).catch(() => ({ lots: [] as HubInventoryLotRow[] })),
       ]);
       setPayload(detail);
       onDetailLoaded?.(detail);
       setServiceTypes(stRes.service_types);
+      setInventoryItems(invRes.items ?? []);
+      setInventoryLots(lotsRes.lots ?? []);
 
       const invoicedSet = new Set(detail.invoiced_item_ids ?? []);
       const drafts = (detail.items ?? [])
@@ -187,7 +145,7 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
     return { subtotal, discountAmount, total };
   }, [items, discountKind, discountValueStr]);
 
-  const updateItem = (idx: number, patch: Partial<ItemDraft>) => {
+  const updateItem = (idx: number, patch: Partial<ComandaItemDraft>) => {
     setItems((prev) =>
       prev.map((it, i) => {
         if (i !== idx) return it;
@@ -198,9 +156,14 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
     );
   };
 
-  const addNewItem = () => {
-    const key = `${NEW_ITEM_KEY_PREFIX}${newItemCounterRef.current++}`;
-    setItems((prev) => [...prev, { ...newItemDraft(), id: key }]);
+  const addNewService = () => {
+    const key = `${NEW_ITEM_KEY_PREFIX}svc-${newItemCounterRef.current++}`;
+    setItems((prev) => [...prev, { ...newServiceDraft(), id: key }]);
+  };
+
+  const addNewProduct = () => {
+    const key = `${NEW_ITEM_KEY_PREFIX}prd-${newItemCounterRef.current++}`;
+    setItems((prev) => [...prev, { ...newProductDraft(), id: key }]);
   };
 
   const removeItem = async (idx: number) => {
@@ -242,14 +205,24 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
       await hubComandaApi.addItems(comandaId, {
         clinic_id: clinicId,
         edit_context: editContext,
-        items: newItems.map((it) => ({
-          description: it.description || 'Serviço',
-          quantity: parseMoney(it.quantity) || 1,
-          unit_amount: parseMoney(it.unit_amount),
-          discount_amount: parseMoney(it.discount_amount),
-          hub_service_type_id: it.hub_service_type_id ?? undefined,
-          item_kind: 'service' as const,
-        })),
+        items: newItems.map((it) => {
+          const isProduct = it.item_kind === 'product';
+          const serviceName = it.hub_service_type_id
+            ? serviceTypes.find((s) => s.id === it.hub_service_type_id)?.name
+            : null;
+          return {
+            description: isProduct
+              ? it.description || inventoryItems.find((p) => p.id === it.hub_inventory_item_id)?.name || 'Produto'
+              : serviceName || it.description || 'Serviço',
+            quantity: parseMoney(it.quantity) || 1,
+            unit_amount: parseMoney(it.unit_amount),
+            discount_amount: parseMoney(it.discount_amount),
+            hub_service_type_id: isProduct ? undefined : it.hub_service_type_id ?? undefined,
+            hub_inventory_item_id: isProduct ? it.hub_inventory_item_id ?? undefined : undefined,
+            hub_inventory_lot_id: isProduct ? it.hub_inventory_lot_id ?? undefined : undefined,
+            item_kind: isProduct ? ('product' as const) : ('service' as const),
+          };
+        }),
       });
     }
 
@@ -390,24 +363,12 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
     }
   };
 
-  const serviceComboOptions = useMemo((): HubComboboxOption[] => {
-    const q = serviceSearch.trim().toLowerCase();
-    const active = serviceTypes.filter((s) => !s.deleted_at && s.active !== false && !s.is_addon);
-    const filtered = q ? active.filter((s) => s.name.toLowerCase().includes(q)) : active;
-    return [
-      { value: '', label: '— Selecionar serviço —' },
-      ...filtered.map((s) => ({ value: s.id, label: s.name })),
-    ];
-  }, [serviceTypes, serviceSearch]);
-
   const applyServiceToItem = useCallback(
     async (idx: number, serviceTypeId: string) => {
       if (!serviceTypeId || !clinicId) {
-        updateItem(idx, { hub_service_type_id: null });
+        updateItem(idx, { hub_service_type_id: null, description: '' });
         return;
       }
-      const st = serviceTypes.find((s) => s.id === serviceTypeId);
-      const desc = st?.name ?? '';
       try {
         const res = await hubComandaApi.suggestItemPrice({
           clinic_id: clinicId,
@@ -416,14 +377,36 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
         });
         updateItem(idx, {
           hub_service_type_id: serviceTypeId,
-          description: desc,
+          description: '',
           unit_amount: String(res.unit_price ?? 0),
         });
       } catch {
-        updateItem(idx, { hub_service_type_id: serviceTypeId, description: desc });
+        updateItem(idx, { hub_service_type_id: serviceTypeId, description: '' });
       }
     },
-    [clinicId, serviceTypes],
+    [clinicId],
+  );
+
+  const applyProductToItem = useCallback(
+    (idx: number, inventoryItemId: string) => {
+      if (!inventoryItemId) {
+        updateItem(idx, {
+          hub_inventory_item_id: null,
+          hub_inventory_lot_id: null,
+          description: '',
+          unit_amount: '0',
+        });
+        return;
+      }
+      const product = inventoryItems.find((p) => p.id === inventoryItemId);
+      updateItem(idx, {
+        hub_inventory_item_id: inventoryItemId,
+        hub_inventory_lot_id: null,
+        description: product?.name ?? '',
+        unit_amount: String(product?.sale_amount ?? 0),
+      });
+    },
+    [inventoryItems],
   );
 
   const isAberta = status === 'aberta';
@@ -462,7 +445,7 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
   if (loading) {
     return (
       <div className="hub-quote-detail" style={{ padding: 24 }}>
-        <p className="hub-clientes__muted">Carregando…</p>
+        <HubLoading variant="block" label="Carregando comanda…" />
       </div>
     );
   }
@@ -476,148 +459,22 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
   }
 
   const itemsSection = (
-    <>
-      {canEdit && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <div className="hub-orcamento-novo__services-search-wrap" style={{ minWidth: 180, flex: 1 }}>
-            <Search size={15} className="hub-orcamento-novo__services-search-icon" aria-hidden />
-            <input
-              type="search"
-              className="hub-orcamento-novo__input hub-orcamento-novo__services-search-input"
-              placeholder="Buscar serviço"
-              value={serviceSearch}
-              onChange={(e) => setServiceSearch(e.target.value)}
-              aria-label="Buscar serviço"
-            />
-          </div>
-          <button
-            type="button"
-            className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline"
-            onClick={addNewItem}
-          >
-            <FilePlus2 size={15} />
-            Adicionar item
-          </button>
-        </div>
-      )}
-      {items.length === 0 ? (
-        <p className="hub-quote-detail__muted">Nenhum item na comanda.</p>
-      ) : (
-        <div className="hub-quote-detail__table-scroll">
-          <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
-            <thead>
-              <tr>
-                <th>Descrição / Serviço</th>
-                <th>Pet</th>
-                <th className="right">Qtd</th>
-                <th className="right">Valor unit.</th>
-                <th className="right">Desconto</th>
-                <th className="right">Total linha</th>
-                {canEdit && <th aria-label="Ações" />}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, idx) => {
-                const editable = canEdit && !it.invoiced;
-                const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
-                return (
-                  <tr key={it.id ?? `new-${idx}`} className={it.invoiced ? 'hub-comanda-row--invoiced' : ''}>
-                    <td style={{ minWidth: 200 }}>
-                      {editable && it.isNew ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <HubSearchableCombobox
-                            id={`comanda-svc-${idx}`}
-                            className="hub-orcamento-novo__combobox hub-orcamento-novo__service-combobox"
-                            options={serviceComboOptions}
-                            value={it.hub_service_type_id ?? ''}
-                            onChange={(v) => void applyServiceToItem(idx, v)}
-                            placeholder="— Selecionar serviço —"
-                            searchPlaceholder="Buscar serviço…"
-                            ariaLabel="Serviço"
-                          />
-                          <input
-                            className="hub-orcamento-novo__input"
-                            placeholder="Ou digitar descrição livre"
-                            value={it.description}
-                            onChange={(e) => updateItem(idx, { description: e.target.value })}
-                          />
-                        </div>
-                      ) : editable && isManual ? (
-                        <input
-                          className="hub-orcamento-novo__input"
-                          value={it.description}
-                          onChange={(e) => updateItem(idx, { description: e.target.value })}
-                        />
-                      ) : (
-                        <span title={it.origin_type ?? undefined}>{it.description}</span>
-                      )}
-                    </td>
-                    <td className="hub-orcamento-novo__services-table-cell--muted">{it.pet_name ?? '—'}</td>
-                    <td className="right" style={{ minWidth: 64 }}>
-                      {editable ? (
-                        <input
-                          className="hub-orcamento-novo__input"
-                          style={{ textAlign: 'right', maxWidth: 64 }}
-                          value={it.quantity}
-                          onChange={(e) => updateItem(idx, { quantity: e.target.value })}
-                        />
-                      ) : (
-                        it.quantity
-                      )}
-                    </td>
-                    <td className="right" style={{ minWidth: 96 }}>
-                      {editable ? (
-                        <input
-                          className="hub-orcamento-novo__input"
-                          style={{ textAlign: 'right', maxWidth: 96 }}
-                          value={it.unit_amount}
-                          onChange={(e) => updateItem(idx, { unit_amount: e.target.value })}
-                        />
-                      ) : (
-                        fmtBrl(Number(it.unit_amount))
-                      )}
-                    </td>
-                    <td className="right" style={{ minWidth: 96 }}>
-                      {editable ? (
-                        <input
-                          className="hub-orcamento-novo__input"
-                          style={{ textAlign: 'right', maxWidth: 96 }}
-                          value={it.discount_amount}
-                          onChange={(e) => updateItem(idx, { discount_amount: e.target.value })}
-                        />
-                      ) : (
-                        fmtBrl(Number(it.discount_amount))
-                      )}
-                    </td>
-                    <td className="right" style={{ fontWeight: 500 }}>
-                      {fmtBrl(computeLineTotal(it))}
-                    </td>
-                    {canEdit && (
-                      <td>
-                        {it.invoiced ? (
-                          <span className="hub-orcamento-novo__services-table-cell--muted" style={{ fontSize: 11 }}>
-                            Faturado
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost hub-orcamento-novo__btn--icon"
-                            aria-label="Remover item"
-                            onClick={() => void removeItem(idx)}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
+    <ComandaItemsSection
+      items={items}
+      canEdit={canEdit}
+      catalogSearch={catalogSearch}
+      onCatalogSearchChange={setCatalogSearch}
+      serviceTypes={serviceTypes}
+      inventoryItems={inventoryItems}
+      inventoryLots={inventoryLots}
+      computeLineTotal={computeLineTotal}
+      onAddService={addNewService}
+      onAddProduct={addNewProduct}
+      onUpdateItem={updateItem}
+      onRemoveItem={removeItem}
+      onApplyService={applyServiceToItem}
+      onApplyProduct={applyProductToItem}
+    />
   );
 
   const notesSection = (
@@ -663,6 +520,7 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
         openedAt={comandaRow.opened_at as string | null}
         closedAt={comandaRow.closed_at as string | null}
         guardian={guardian}
+        pets={pets}
         allowedGuardians={allowedGuardians}
         subtotal={summary.subtotal}
         discountAmount={summary.discountAmount}

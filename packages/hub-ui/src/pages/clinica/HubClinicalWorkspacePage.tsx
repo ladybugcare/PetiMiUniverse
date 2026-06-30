@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
 import '../clientes/clientes.css';
 import {
@@ -390,8 +391,16 @@ const HubClinicalWorkspacePage: React.FC = () => {
     return HUB_CWS_STATUS_ENCOUNTER[encounter.status] ?? HUB_CWS_STATUS_ENCOUNTER.waiting;
   }, [encounter]);
 
-  if (loading || !encounter) {
-    return <p style={{ padding: 24 }}>{loading ? 'Carregando atendimento…' : 'Atendimento não encontrado.'}</p>;
+  if (loading) {
+    return (
+      <div style={{ padding: 24 }}>
+        <HubLoading variant="block" label="Carregando atendimento…" />
+      </div>
+    );
+  }
+
+  if (!encounter) {
+    return <p style={{ padding: 24 }}>Atendimento não encontrado.</p>;
   }
 
   const pet = encounter.pet;

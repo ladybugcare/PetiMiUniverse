@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { hubGroomingApi, type GroomingDayBoardItem } from '../../api/hubGroomingApi';
@@ -282,7 +283,11 @@ const HubGroomingQueuePage: React.FC = () => {
   }
 
   if (permLoading || !accessAllowed) {
-    return <p className="hub-clientes__muted hub-clinic-page__pad">Carregando…</p>;
+    return (
+      <div className="hub-clinic-page__pad">
+        <HubLoading variant="block" />
+      </div>
+    );
   }
 
   const dateLabel = cursor.toLocaleDateString('pt-BR', {
@@ -427,7 +432,7 @@ const HubGroomingQueuePage: React.FC = () => {
       ) : null}
 
       {loading ? (
-        <p className="hub-clientes__muted hub-clinic-page__pad">Carregando fila…</p>
+        <HubLoading variant="block" label="Carregando fila…" className="hub-clinic-page__pad" />
       ) : items.length === 0 ? (
         <p className="hub-clientes__muted hub-clinic-page__pad">
           Nenhum agendamento de Banho & Tosa neste dia. Os serviços agendados na Agenda com grupo Banho & Tosa

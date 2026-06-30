@@ -53,6 +53,53 @@ export function buildWhatsAppMessageComandaPdfVariant(
   ].join('\n');
 }
 
+function dueDateMessageLine(dueDateLabel: string): string | null {
+  return dueDateLabel !== '—' ? `Vencimento: ${dueDateLabel}.` : null;
+}
+
+/** Mensagem de cobrança (financeiro) — variante com link. */
+export function buildWhatsAppMessageChargeLinkVariant(
+  firstName: string,
+  publicLink: string,
+  amountLabel: string,
+  dueDateLabel: string,
+): string {
+  return [
+    `Olá, ${firstName}! 😊`,
+    '',
+    `Segue a cobrança de ${amountLabel} com os detalhes dos serviços:`,
+    publicLink,
+    '',
+    dueDateMessageLine(dueDateLabel),
+    'Qualquer dúvida, é só me chamar! 🧡',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** Mensagem de cobrança (financeiro) — variante com PDF. */
+export function buildWhatsAppMessageChargePdfVariant(
+  firstName: string,
+  publicLink: string,
+  amountLabel: string,
+  dueDateLabel: string,
+): string {
+  return [
+    `Olá, ${firstName}! 😊`,
+    '',
+    'Segue o PDF da cobrança com o resumo dos serviços.',
+    '',
+    'Você também pode visualizar os detalhes e pagar online:',
+    publicLink,
+    '',
+    `Valor em aberto: ${amountLabel}.`,
+    dueDateMessageLine(dueDateLabel),
+    'Qualquer dúvida, é só me chamar! 🧡',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function buildWhatsAppMessageChargePending(
   firstName: string,
   amountLabel: string,
@@ -63,9 +110,9 @@ export function buildWhatsAppMessageChargePending(
     `Olá, ${firstName}! 😊`,
     '',
     `Passando para lembrar da cobrança de ${amountLabel}.`,
-    dueDateLabel !== '—' ? `Vencimento: ${dueDateLabel}.` : '',
+    dueDateMessageLine(dueDateLabel),
     '',
-    'Detalhes da comanda:',
+    'Para ver os detalhes e pagar, acesse:',
     publicLink,
     '',
     'Qualquer dúvida, é só me chamar! 🧡',

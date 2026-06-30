@@ -8,6 +8,7 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { hubQuotesApi, openHubQuotePdf, type HubQuote } from '../../api/hubQuotesApi';
@@ -225,7 +226,13 @@ const HubQuoteDetailPage: React.FC = () => {
       </div>
     );
   }
-  if (permLoading || !accessAllowed) return <div style={{ padding: 24 }}>Carregando…</div>;
+  if (permLoading || !accessAllowed) {
+    return (
+      <div style={{ padding: 24 }}>
+        <HubLoading variant="block" />
+      </div>
+    );
+  }
   if (!id) return <Navigate to="/hub/orcamentos" replace />;
 
   if (!loading && !quote) {
@@ -237,7 +244,13 @@ const HubQuoteDetailPage: React.FC = () => {
     );
   }
 
-  if (loading || !quote) return <div style={{ padding: 24 }}>Carregando…</div>;
+  if (loading || !quote) {
+    return (
+      <div style={{ padding: 24 }}>
+        <HubLoading variant="block" label="Carregando orçamento…" />
+      </div>
+    );
+  }
 
   return (
     <>

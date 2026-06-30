@@ -4,6 +4,7 @@ import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petim
 import { hubGuardiansApi, type HubGuardian } from '../api/hubGuardiansApi';
 import { hubPetsApi, type HubPet } from '../api/hubPetsApi';
 import { useAlert } from '../components/AlertProvider';
+import { HubLoading } from '../components/HubLoading';
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import './clientes/clientes.css';
 import './pets/pets-page.css';
@@ -14,6 +15,7 @@ import { PetsPagination } from './pets/PetsPagination';
 import { PetForm } from './pets/PetForm';
 import { PetDetailPanel } from './pets/PetDetailPanel';
 import { emptyPetForm, type PetFormValues } from './pets/PetFormValues';
+import { getSelectedUnitId } from '../utils/useSelectedUnitId';
 import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
 import type { CoatTypeValue, PetBodyPorteValue } from '../utils/hubServiceTypesPricingMatrix';
 
@@ -41,6 +43,7 @@ function petToForm(p: HubPet): PetFormValues {
     sex: (p.sex as PetFormValues['sex']) || '',
     birth_date: p.birth_date || '',
     notes: p.notes || '',
+    behaviorTags: p.behavior_tags ?? [],
     size_tier: sizeOk ? (st as PetFormValues['size_tier']) : '',
     coat_color: p.coat_color || '',
     coat_type: p.coat_type ? (p.coat_type as CoatTypeValue) : '',
@@ -57,6 +60,7 @@ const HubPetsPage: React.FC = () => {
   const [searchParams] = useSearchParams();
 
   const clinicId = getStoredClinicId();
+  const unitId = getSelectedUnitId();
   const canWrite = hasPermission('hub.pets.write');
 
   const [loading, setLoading] = useState(true);
@@ -268,6 +272,7 @@ const HubPetsPage: React.FC = () => {
           sex: sexVal,
           birth_date: form.birth_date.trim() || null,
           notes: form.notes.trim() || null,
+          behavior_tags: form.behaviorTags.length ? form.behaviorTags : null,
           size_tier: sizeTier,
           coat_color: form.coat_color.trim() || null,
           coat_type: form.coat_type || null,
@@ -287,6 +292,7 @@ const HubPetsPage: React.FC = () => {
           sex: sexVal,
           birth_date: form.birth_date.trim() || undefined,
           notes: form.notes.trim() || null,
+          behavior_tags: form.behaviorTags.length ? form.behaviorTags : null,
           size_tier: sizeTier,
           coat_color: form.coat_color.trim() || null,
           coat_type: form.coat_type || null,
@@ -342,7 +348,7 @@ const HubPetsPage: React.FC = () => {
   if (permLoading || !accessAllowed) {
     return (
       <div className="hub-clientes" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading variant="block" />
       </div>
     );
   }
@@ -367,7 +373,7 @@ const HubPetsPage: React.FC = () => {
         />
 
         {loading ? (
-          <p className="hub-clientes__muted">Carregando lista…</p>
+          <HubLoading variant="block" label="Carregando lista…" />
         ) : (
           <>
             <PetsTable
@@ -399,9 +405,11 @@ const HubPetsPage: React.FC = () => {
               pet={selectedPet}
               onClose={closePanel}
               onStartEdit={startEditFromDetail}
+              onOpenInNewPage={() => navigate(`/hub/pets/${selectedPet.id}`)}
               onArchive={canWrite ? () => handleArchive(selectedPet) : undefined}
               canWrite={canWrite}
               clinicId={clinicId}
+              unitId={unitId}
               canCreateReceivable={hasPermission('hub.receivables.create')}
             />
           ) : panelMode === 'edit' && selectedPet ? (

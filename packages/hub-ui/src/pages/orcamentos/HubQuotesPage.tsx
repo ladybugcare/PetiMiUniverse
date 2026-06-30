@@ -8,6 +8,7 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { hubQuotesApi, openHubQuotePdf, type HubQuote, type HubQuotePet, type HubQuoteStatus } from '../../api/hubQuotesApi';
 import '../clientes/clientes.css';
 import '../pets/pets-page.css';
@@ -198,7 +199,7 @@ const HubQuotesPage: React.FC = () => {
   if (permLoading || !accessAllowed) {
     return (
       <div className="hub-servicos-page" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading variant="block" />
       </div>
     );
   }
@@ -302,7 +303,7 @@ const HubQuotesPage: React.FC = () => {
       </p>
 
       {loading ? (
-        <p className="hub-clientes__muted">Carregando…</p>
+        <HubLoading variant="block" label="Carregando lista…" />
       ) : (
         <div className="hub-servicos__table-wrap">
           <table className="hub-clientes__table">

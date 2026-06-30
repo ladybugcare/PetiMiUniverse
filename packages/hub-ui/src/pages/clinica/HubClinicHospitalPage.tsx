@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import {
@@ -366,7 +367,9 @@ const HubClinicHospitalPage: React.FC = () => {
           )}
 
           <h4 style={{ margin: '16px 0 8px' }}>Histórico</h4>
-          {eventsLoading && <p className="hub-clientes__muted">Carregando…</p>}
+          {eventsLoading ? (
+            <HubLoading variant="inline" size="sm" label="Carregando histórico…" />
+          ) : null}
           {!eventsLoading && events.length === 0 && (
             <p className="hub-clientes__muted">Nenhum evento registrado.</p>
           )}

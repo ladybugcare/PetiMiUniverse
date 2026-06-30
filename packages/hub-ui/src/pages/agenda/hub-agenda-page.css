@@ -78,6 +78,11 @@
   gap: 0;
 }
 
+.hub-agenda__calendar-wrap {
+  position: relative;
+  min-height: 240px;
+}
+
 .hub-agenda__panel {
   width: 340px;
   flex-shrink: 0;

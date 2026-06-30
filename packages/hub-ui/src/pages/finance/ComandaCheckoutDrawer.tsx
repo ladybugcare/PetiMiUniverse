@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, MessageCircle } from 'lucide-react';
+import { Download, MessageCircle, Phone, User } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
+import { HubLoading } from '../../components/HubLoading';
 import { HubDateField } from '../../components/HubDateField';
 import {
   hubComandaApi,
@@ -8,16 +9,25 @@ import {
   type HubComandaDetailResponse,
   type HubComandaOriginType,
 } from '../../api/hubComandaApi';
-import { hubFinancialApi, type HubPaymentMethod } from '../../api/hubFinancialApi';
+import {
+  hubFinancialApi,
+  type HubFinanceReceivableDetail,
+  type HubPaymentMethod,
+} from '../../api/hubFinancialApi';
 import {
   buildWhatsAppMessageChargePending,
   buildWhatsAppMessagePaymentReceipt,
   formatBrlLabel,
   formatDueDateLabel,
   guardianFirstName,
-  paymentMethodLabel,
   waMeUrlWithText,
 } from './hubComandaShareUtils';
+import {
+  defaultPaymentMethod,
+  filterEnabledPaymentMethods,
+  HUB_PAYMENT_METHOD_LABELS,
+  paymentMethodLabel,
+} from '../../utils/hubPaymentMethods';
 import '../clientes/clientes.css';
 import './hub-finance-page.css';
 import '../orcamentos/orcamentos-page.css';
@@ -26,12 +36,31 @@ function formatBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function round2(n: number): number {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+
+function parseAmount(raw: string): number {
+  const t = String(raw).trim().replace(/\./g, '').replace(',', '.');
+  return Number(t);
+}
+
+const ORIGIN_LABELS: Record<string, string> = {
+  appointment: 'Agenda',
+  grooming_session: 'Banho e Tosa',
+  encounter: 'Clínica',
+  quote: 'Orçamento',
+  boarding_reservation: 'Hotel/Creche',
+  manual: 'Manual',
+};
+
 export type ComandaCheckoutDrawerProps = {
   open: boolean;
   onClose: () => void;
   clinicId: string;
   unitId: string;
   mode?: 'caixa' | 'financeiro';
+  onDataChanged?: () => void;
   onSuccess?: (payload: {
     receivableIds: string[];
     comandaId: string;
@@ -48,10 +77,11 @@ export function ComandaCheckoutDrawer({
   clinicId,
   unitId,
   mode = 'caixa',
+  onDataChanged,
   onSuccess,
   ...rest
 }: ComandaCheckoutDrawerProps) {
-  const comandaId = 'comandaId' in rest ? rest.comandaId : undefined;
+  const comandaIdProp = 'comandaId' in rest ? rest.comandaId : undefined;
   const originType = 'originType' in rest ? rest.originType : undefined;
   const originId = 'originId' in rest ? rest.originId : undefined;
   const [loading, setLoading] = useState(false);
@@ -62,10 +92,12 @@ export function ComandaCheckoutDrawer({
   const [action, setAction] = useState<'receive_now' | 'leave_pending' | 'cancel'>('receive_now');
   const [dueDate, setDueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [paymentMethod, setPaymentMethod] = useState<HubPaymentMethod>('pix');
+  const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<HubPaymentMethod[]>([]);
   const [cashSessionId, setCashSessionId] = useState<string | null>(null);
-  /** advance = antecipado (comanda pode permanecer aberta até concluir o serviço). */
   const [paymentTiming, setPaymentTiming] = useState<'on_checkout' | 'advance'>('on_checkout');
   const [waiveReason, setWaiveReason] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [receivableDetail, setReceivableDetail] = useState<HubFinanceReceivableDetail | null>(null);
   const [successState, setSuccessState] = useState<{
     kind: 'leave_pending' | 'receive_now';
     comandaId: string;
@@ -79,19 +111,26 @@ export function ComandaCheckoutDrawer({
     setLoading(true);
     setError(null);
     try {
-      if (comandaId) {
-        // Abrir pelo ID da comanda diretamente (ex.: Caixa, comandas manuais)
-        const d = await hubComandaApi.getComandaDetail(comandaId, clinicId);
+      if (comandaIdProp) {
+        const d = await hubComandaApi.getComandaDetail(comandaIdProp, clinicId);
         setDetail(d);
       } else if (originType && originId) {
         try {
-          const d = await hubComandaApi.openComanda({ clinic_id: clinicId, origin_type: originType, origin_id: originId });
+          const d = await hubComandaApi.openComanda({
+            clinic_id: clinicId,
+            origin_type: originType,
+            origin_id: originId,
+            unit_id: unitId,
+          });
           setDetail(d);
         } catch (openErr: unknown) {
           const msg = (openErr as Error)?.message ?? '';
-          /** 409 «Já existe comanda aberta» — carregar detalhe existente; outros erros propagam. */
           if (msg.includes('Já existe comanda aberta')) {
-            const d = await hubComandaApi.getComandaByOrigin({ clinic_id: clinicId, origin_type: originType, origin_id: originId });
+            const d = await hubComandaApi.getComandaByOrigin({
+              clinic_id: clinicId,
+              origin_type: originType,
+              origin_id: originId,
+            });
             setDetail(d);
           } else {
             throw openErr;
@@ -106,7 +145,7 @@ export function ComandaCheckoutDrawer({
     } finally {
       setLoading(false);
     }
-  }, [clinicId, comandaId, originType, originId]);
+  }, [clinicId, comandaIdProp, originType, originId, unitId]);
 
   const syncFromOrigin = useCallback(async () => {
     const cid = detail?.comanda?.id as string | undefined;
@@ -128,13 +167,15 @@ export function ComandaCheckoutDrawer({
       setDetail(null);
       setError(null);
       setSuccessState(null);
+      setReceivableDetail(null);
+      setPaymentAmount('');
       return;
     }
     void loadComanda();
   }, [open, loadComanda]);
 
   useEffect(() => {
-    if (!open || paymentMethod !== 'cash') return;
+    if (!open) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -147,13 +188,80 @@ export function ComandaCheckoutDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, paymentMethod, clinicId, unitId]);
+  }, [open, clinicId, unitId]);
+
+  useEffect(() => {
+    if (!open || !clinicId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await hubFinancialApi.getPaymentMethodSettings(clinicId);
+        const methods = filterEnabledPaymentMethods(res.accepted_payment_methods ?? []);
+        if (!cancelled) {
+          setAcceptedPaymentMethods(methods);
+          setPaymentMethod((current) => (methods.includes(current) ? current : defaultPaymentMethod(methods)));
+        }
+      } catch {
+        if (!cancelled) {
+          setAcceptedPaymentMethods(filterEnabledPaymentMethods([]));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, clinicId]);
 
   const openItems = useMemo(() => {
     if (!detail) return [];
     const set = new Set(detail.open_item_ids);
     return detail.items.filter((it) => set.has(it.id));
   }, [detail]);
+
+  const openItemsTotal = useMemo(
+    () => round2(openItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0)),
+    [openItems],
+  );
+
+  const balanceDue = Number(detail?.balance_due ?? 0);
+  const paidTotal = Number(detail?.paid_total ?? 0);
+  const comandaTotal = Number((detail?.comanda as { total_amount?: number })?.total_amount ?? openItemsTotal + paidTotal);
+
+  const activeReceivableId = detail?.active_receivable_ids?.[0] ?? '';
+
+  const isReceivableOnlyMode =
+    openItems.length === 0 &&
+    balanceDue > 0.02 &&
+    (detail?.active_receivable_ids?.length ?? 0) > 0;
+
+  useEffect(() => {
+    if (!open || !isReceivableOnlyMode || !activeReceivableId) {
+      setReceivableDetail(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const d = await hubFinancialApi.getReceivableDetail(activeReceivableId, clinicId);
+        if (!cancelled) setReceivableDetail(d);
+      } catch {
+        if (!cancelled) setReceivableDetail(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isReceivableOnlyMode, activeReceivableId, clinicId]);
+
+  const receivableBalance = useMemo(() => {
+    if (receivableDetail) {
+      return Number(
+        receivableDetail.balance_amount ??
+          Math.max(0, Number(receivableDetail.final_amount ?? 0) - Number(receivableDetail.paid_amount ?? 0)),
+      );
+    }
+    return round2(Math.max(0, balanceDue - openItemsTotal));
+  }, [receivableDetail, balanceDue, openItemsTotal]);
 
   const checkoutLocked = Boolean(detail?.edit_scopes && !detail.edit_scopes[mode]);
 
@@ -194,11 +302,7 @@ export function ComandaCheckoutDrawer({
       const arr = byPet.get(pid)!;
       const t = arr.reduce((s, it) => s + Number(it.line_total ?? 0), 0);
       const petLabel = arr[0]?.pet_name ?? `Pet (${pid.slice(0, 8)}…)`;
-      rows.push({
-        groupIndex: gi++,
-        label: petLabel,
-        total: t,
-      });
+      rows.push({ groupIndex: gi++, label: petLabel, total: t });
     }
     if (nullItems.length) {
       const t = nullItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0);
@@ -215,6 +319,34 @@ export function ComandaCheckoutDrawer({
     }
     return rows;
   }, [openItems, grouping, tutorGroupIdx]);
+
+  const chargeableTotal = useMemo(() => {
+    if (isReceivableOnlyMode) return receivableBalance;
+    return round2(groupTotals.reduce((s, g) => s + g.total, 0));
+  }, [isReceivableOnlyMode, receivableBalance, groupTotals]);
+
+  const canPartialPay = isReceivableOnlyMode || (grouping === 'all' && groupTotals.length <= 1);
+
+  useEffect(() => {
+    if (!open || action !== 'receive_now' || chargeableTotal <= 0) return;
+    setPaymentAmount(chargeableTotal.toFixed(2).replace('.', ','));
+  }, [open, action, chargeableTotal, grouping]);
+
+  const petChips = useMemo(() => {
+    const names = new Set<string>();
+    const comandaPet = (detail?.comanda?.pet as { name?: string } | null)?.name;
+    if (comandaPet) names.add(comandaPet);
+    for (const it of openItems) {
+      if (it.pet_name) names.add(it.pet_name);
+    }
+    return [...names];
+  }, [detail, openItems]);
+
+  const priorBalance = round2(Math.max(0, balanceDue - openItemsTotal));
+
+  const notifyDataChanged = () => {
+    onDataChanged?.();
+  };
 
   const submit = async () => {
     if (!detail?.comanda?.id) return;
@@ -235,6 +367,7 @@ export function ComandaCheckoutDrawer({
           waive_reason: waiveReason.trim(),
           payment_timing: 'on_checkout',
         });
+        notifyDataChanged();
         onSuccess?.({ receivableIds: [], comandaId, kind: 'cancel' });
         onClose();
         return;
@@ -250,6 +383,7 @@ export function ComandaCheckoutDrawer({
           due_date: dueDate,
           payment_timing: paymentTiming,
         });
+        notifyDataChanged();
         setSuccessState({
           kind: 'leave_pending',
           comandaId,
@@ -259,13 +393,69 @@ export function ComandaCheckoutDrawer({
         return;
       }
 
+      if (isReceivableOnlyMode) {
+        if (!activeReceivableId) {
+          setError('Nenhum recebível ativo encontrado para pagamento.');
+          setLoading(false);
+          return;
+        }
+        const amount = parseAmount(paymentAmount);
+        if (Number.isNaN(amount) || amount <= 0) {
+          setError('Informe um valor de pagamento válido.');
+          setLoading(false);
+          return;
+        }
+        if (amount > receivableBalance + 0.02) {
+          setError(`Valor não pode ser maior que o saldo (${formatBrl(receivableBalance)}).`);
+          setLoading(false);
+          return;
+        }
+        if (paymentMethod === 'cash' && !cashSessionId) {
+          setError('Abra o caixa nesta unidade para receber em dinheiro.');
+          setLoading(false);
+          return;
+        }
+        await hubFinancialApi.createReceivablePayment(activeReceivableId, {
+          clinic_id: clinicId,
+          amount,
+          payment_method: paymentMethod,
+          cash_session_id: cashSessionId,
+        });
+        notifyDataChanged();
+        setSuccessState({
+          kind: 'receive_now',
+          comandaId,
+          amount,
+          paymentMethod,
+          receivableIds: [activeReceivableId],
+        });
+        return;
+      }
+
+      const amount = canPartialPay ? parseAmount(paymentAmount) : chargeableTotal;
+      if (Number.isNaN(amount) || amount <= 0) {
+        setError('Informe um valor de pagamento válido.');
+        setLoading(false);
+        return;
+      }
+      if (canPartialPay && amount > chargeableTotal + 0.02) {
+        setError(`Valor não pode ser maior que ${formatBrl(chargeableTotal)}.`);
+        setLoading(false);
+        return;
+      }
+      if (!canPartialPay && Math.abs(amount - chargeableTotal) > 0.02) {
+        setError('Com agrupamento por pet, receba o valor total de cada grupo.');
+        setLoading(false);
+        return;
+      }
+
       const payments = groupTotals
         .filter((g) => g.total > 0.009)
         .map((g) => ({
           group_index: g.groupIndex,
-          amount: g.total,
+          amount: canPartialPay && groupTotals.length === 1 ? amount : g.total,
           payment_method: paymentMethod,
-          cash_session_id: paymentMethod === 'cash' ? cashSessionId : null,
+          cash_session_id: cashSessionId,
         }));
 
       if (openItems.length > 0 && payments.length === 0) {
@@ -288,11 +478,11 @@ export function ComandaCheckoutDrawer({
         payments: payments.length ? payments : undefined,
         payment_timing: paymentTiming,
       });
-      const paidAmount = payments.reduce((s, p) => s + p.amount, 0);
+      notifyDataChanged();
       setSuccessState({
         kind: 'receive_now',
         comandaId,
-        amount: paidAmount,
+        amount,
         paymentMethod,
         receivableIds: res.receivable_ids,
       });
@@ -312,6 +502,9 @@ export function ComandaCheckoutDrawer({
     const g = detail?.comanda?.guardian as { full_name?: string } | null | undefined;
     return g?.full_name ?? '';
   }, [detail]);
+
+  const originLabel = ORIGIN_LABELS[String(detail?.comanda?.origin_type ?? originType ?? '')] ??
+    String(detail?.comanda?.origin_type ?? originType ?? '—');
 
   const openSuccessWhatsApp = async () => {
     if (!successState || !guardianPhone) return;
@@ -361,6 +554,12 @@ export function ComandaCheckoutDrawer({
     setSuccessState(null);
     onClose();
   };
+
+  const parsedPaymentAmount = parseAmount(paymentAmount);
+  const remainingAfterPay =
+    canPartialPay && parsedPaymentAmount > 0 && parsedPaymentAmount < chargeableTotal - 0.009
+      ? round2(chargeableTotal - parsedPaymentAmount)
+      : null;
 
   return (
     <HubSidePanel
@@ -431,252 +630,369 @@ export function ComandaCheckoutDrawer({
               </button>
             </div>
             {!guardianPhone ? (
-              <p className="hub-quote-ready__wa-hint">Sem telefone no tutor — use o PDF ou copie a mensagem na ficha da comanda.</p>
+              <p className="hub-quote-ready__wa-hint">
+                Sem telefone no tutor — use o PDF ou copie a mensagem na ficha da comanda.
+              </p>
             ) : null}
           </section>
         ) : (
           <>
-        {error && (
-          <p className="hub-clientes__error" role="alert">
-            {error}
-          </p>
-        )}
-
-        {loading && !detail && (
-          <p className="hub-clientes__muted">Carregando comanda…</p>
-        )}
-
-        {detail && checkoutLocked ? (
-          <p className="hub-clientes__muted" role="status">
-            {checkoutLockedMessage}
-          </p>
-        ) : detail ? (
-          <>
-          {(() => {
-            const gu = detail.comanda.guardian as { full_name?: string } | null;
-            const pet = detail.comanda.pet as { name?: string } | null;
-            const tutorPet = [gu?.full_name, pet?.name].filter(Boolean).join(' · ');
-            return tutorPet ? (
-              <p className="hub-clientes__muted">
-                <strong>{tutorPet}</strong>
+            {error && (
+              <p className="hub-clientes__error" role="alert">
+                {error}
               </p>
-            ) : null;
-          })()}
-          <p className="hub-clientes__muted">
-            Origem: <strong>{String(detail.comanda.origin_type ?? originType ?? '—')}</strong> · {openItems.length} item(ns) em aberto
-          </p>
+            )}
 
-            {typeof detail.paid_total === 'number' && (
-              <div className="hub-finance-page__summary-row">
-                <span>Já pago: <strong>{formatBrl(detail.paid_total)}</strong></span>
-                {typeof detail.balance_due === 'number' && (
-                  <span>Saldo a cobrar: <strong>{formatBrl(detail.balance_due)}</strong></span>
-                )}
+            {loading && !detail ? (
+              <HubLoading variant="block" label="Carregando comanda…" />
+            ) : null}
+
+            {detail && checkoutLocked ? (
+              <p className="hub-clientes__muted" role="status">
+                {checkoutLockedMessage}
+              </p>
+            ) : detail ? (
+              <>
+                <section className="hub-checkout-drawer__hero">
+                  <div className="hub-checkout-drawer__hero-main">
+                    <div className="hub-checkout-drawer__hero-row">
+                      <User size={16} aria-hidden />
+                      <strong>{guardianName || 'Tutor não informado'}</strong>
+                    </div>
+                    {guardianPhone ? (
+                      <div className="hub-checkout-drawer__hero-row hub-clientes__muted">
+                        <Phone size={14} aria-hidden />
+                        <span>{guardianPhone}</span>
+                      </div>
+                    ) : null}
+                    {petChips.length > 0 ? (
+                      <div className="hub-checkout-drawer__pet-chips">
+                        {petChips.map((name) => (
+                          <span key={name} className="hub-checkout-drawer__pet-chip">
+                            {name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="hub-checkout-drawer__hero-meta">
+                    <span className="hub-checkout-drawer__origin-badge">{originLabel}</span>
+                    {detail.operational_complete === false && (
+                      <span className="hub-clientes__pill hub-finance-page__pill--warning">Serviço em andamento</span>
+                    )}
+                    {paidTotal > 0.02 && balanceDue > 0.02 && (
+                      <span className="hub-clientes__pill hub-finance-page__pill--warning">Pagamento parcial</span>
+                    )}
+                  </div>
+                </section>
+
+                <section className="hub-checkout-drawer__summary-grid">
+                  <div className="hub-checkout-drawer__summary-cell">
+                    <span className="hub-checkout-drawer__summary-label">Total da comanda</span>
+                    <strong>{formatBrl(comandaTotal)}</strong>
+                  </div>
+                  <div className="hub-checkout-drawer__summary-cell">
+                    <span className="hub-checkout-drawer__summary-label">Já pago</span>
+                    <strong>{formatBrl(paidTotal)}</strong>
+                  </div>
+                  <div className="hub-checkout-drawer__summary-cell hub-checkout-drawer__summary-cell--highlight">
+                    <span className="hub-checkout-drawer__summary-label">Saldo a cobrar</span>
+                    <strong>{formatBrl(balanceDue)}</strong>
+                  </div>
+                </section>
+
                 {detail.operational_complete === false && (
-                  <p className="hub-clientes__muted">
+                  <p className="hub-clientes__muted hub-checkout-drawer__hint">
                     Serviço ainda não concluído — a comanda pode permanecer aberta após pagamento antecipado.
                   </p>
                 )}
-              </div>
-            )}
 
-            {originType && originType !== 'manual' && (
-              <div>
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                  disabled={loading}
-                  onClick={() => void syncFromOrigin()}
-                >
-                  Sincronizar itens com o serviço
-                </button>
-              </div>
-            )}
+                {(originType || detail.comanda.origin_type) &&
+                  String(detail.comanda.origin_type ?? originType) !== 'manual' && (
+                    <button
+                      type="button"
+                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                      disabled={loading}
+                      onClick={() => void syncFromOrigin()}
+                    >
+                      Sincronizar itens com o serviço
+                    </button>
+                  )}
 
-            <div>
-              <p className="hub-clientes__label">Itens em aberto</p>
-              <ul className="hub-finance-page__item-list">
-                {openItems.map((it) => (
-                  <li key={it.id} className="hub-finance-page__item-list-row">
-                    <span>{it.description}</span>
-                    <span>{formatBrl(Number(it.line_total ?? 0))}</span>
-                    {it.pet_id && <span className="hub-clientes__muted">(pet)</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <fieldset className="hub-finance-page__resolve-options">
-              <legend className="hub-clientes__label">Agrupamento</legend>
-              <label className="hub-finance-page__resolve-option">
-                <input
-                  type="radio"
-                  name="checkout-grp"
-                  checked={grouping === 'all'}
-                  onChange={() => setGrouping('all')}
-                />
-                Tudo em uma cobrança
-              </label>
-              <label className="hub-finance-page__resolve-option">
-                <input
-                  type="radio"
-                  name="checkout-grp"
-                  checked={grouping === 'by_pet'}
-                  onChange={() => setGrouping('by_pet')}
-                />
-                Separar por pet
-              </label>
-              {grouping === 'by_pet' && (
-                <div className="hub-clientes__field">
-                  <label className="hub-clientes__label" htmlFor="tutor-group-idx">
-                    Itens do tutor — anexar ao grupo índice
-                  </label>
-                  <input
-                    id="tutor-group-idx"
-                    type="number"
-                    min={0}
-                    className="hub-clientes__input"
-                    style={{ maxWidth: 80 }}
-                    value={tutorGroupIdx}
-                    onChange={(e) => setTutorGroupIdx(Number(e.target.value) || 0)}
-                  />
-                </div>
-              )}
-            </fieldset>
-
-            <fieldset className="hub-finance-page__resolve-options">
-              <legend className="hub-clientes__label">Ação</legend>
-              <label className="hub-finance-page__resolve-option">
-                <input
-                  type="radio"
-                  name="checkout-act"
-                  checked={action === 'receive_now'}
-                  onChange={() => setAction('receive_now')}
-                />
-                Receber agora
-              </label>
-              <label className="hub-finance-page__resolve-option">
-                <input
-                  type="radio"
-                  name="checkout-act"
-                  checked={action === 'leave_pending'}
-                  onChange={() => setAction('leave_pending')}
-                />
-                Deixar pendente (conta a receber)
-              </label>
-              <label className="hub-finance-page__resolve-option">
-                <input
-                  type="radio"
-                  name="checkout-act"
-                  checked={action === 'cancel'}
-                  onChange={() => setAction('cancel')}
-                />
-                Cancelar / sem cobrança
-              </label>
-            </fieldset>
-
-            {action === 'leave_pending' && (
-              <div className="hub-clientes__field">
-                <HubDateField
-                  id="checkout-due-date"
-                  label="Vencimento"
-                  valueIso={dueDate}
-                  onChangeIso={setDueDate}
-                />
-              </div>
-            )}
-
-            {action === 'receive_now' && (
-              <fieldset className="hub-finance-page__resolve-options">
-                <legend className="hub-clientes__label">Momento do pagamento</legend>
-                <label className="hub-finance-page__resolve-option">
-                  <input
-                    type="radio"
-                    name="checkout-pt"
-                    checked={paymentTiming === 'on_checkout'}
-                    onChange={() => setPaymentTiming('on_checkout')}
-                  />
-                  No fecho (após o serviço)
-                </label>
-                <label className="hub-finance-page__resolve-option">
-                  <input
-                    type="radio"
-                    name="checkout-pt"
-                    checked={paymentTiming === 'advance'}
-                    onChange={() => setPaymentTiming('advance')}
-                  />
-                  Antecipado (antes de concluir o serviço)
-                </label>
-              </fieldset>
-            )}
-
-            {action === 'receive_now' && (
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="checkout-payment-method">
-                  Forma de pagamento (aplicada a cada grupo)
-                </label>
-                <select
-                  id="checkout-payment-method"
-                  className="hub-clientes__select-input"
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value as HubPaymentMethod)}
-                >
-                  <option value="pix">Pix</option>
-                  <option value="cash">Dinheiro</option>
-                  <option value="credit_card">Cartão de crédito</option>
-                  <option value="debit_card">Cartão de débito</option>
-                  <option value="transfer">Transferência</option>
-                  <option value="payment_link">Link de pagamento</option>
-                  <option value="customer_credit">Crédito do tutor</option>
-                </select>
-                {paymentMethod === 'cash' && (
-                  <p className="hub-clientes__muted">
-                    {cashSessionId
-                      ? `Caixa aberto (sessão ${cashSessionId.slice(0, 8)}…)`
-                      : 'Não há caixa aberto — abra no módulo Caixa.'}
-                  </p>
+                {openItems.length > 0 && (
+                  <section className="hub-checkout-drawer__section">
+                    <h3 className="hub-checkout-drawer__section-title">
+                      Itens em aberto ({openItems.length})
+                    </h3>
+                    <div className="hub-checkout-drawer__items-table-wrap">
+                      <table className="hub-checkout-drawer__items-table">
+                        <thead>
+                          <tr>
+                            <th>Descrição</th>
+                            <th>Pet</th>
+                            <th>Qtd</th>
+                            <th>Unit.</th>
+                            <th>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {openItems.map((it) => (
+                            <tr key={it.id}>
+                              <td>{it.description}</td>
+                              <td className="hub-checkout-drawer__cell-muted">{it.pet_name ?? '—'}</td>
+                              <td className="hub-checkout-drawer__cell-muted">{Number(it.quantity ?? 1)}</td>
+                              <td className="hub-checkout-drawer__cell-muted">
+                                {formatBrl(Number(it.unit_amount ?? 0))}
+                              </td>
+                              <td>
+                                <strong>{formatBrl(Number(it.line_total ?? 0))}</strong>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
                 )}
-              </div>
-            )}
 
-            {action === 'cancel' && (
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="checkout-waive-reason">
-                  Motivo do cancelamento (obrigatório)
-                </label>
-                <textarea
-                  id="checkout-waive-reason"
-                  className="hub-clientes__input"
-                  rows={3}
-                  value={waiveReason}
-                  onChange={(e) => setWaiveReason(e.target.value)}
-                  placeholder="Informe o motivo (mín. 3 caracteres)"
-                />
-              </div>
-            )}
+                {priorBalance > 0.02 && openItems.length > 0 && (
+                  <section className="hub-checkout-drawer__section hub-checkout-drawer__prior-balance">
+                    <h3 className="hub-checkout-drawer__section-title">Saldo de cobranças anteriores</h3>
+                    <p className="hub-clientes__muted">
+                      Há <strong>{formatBrl(priorBalance)}</strong> pendente de recebíveis já faturados.
+                    </p>
+                  </section>
+                )}
 
-            {action === 'receive_now' && groupTotals.length > 0 && (
-              <div>
-                <p className="hub-clientes__label">Resumo por cobrança</p>
-                <ul className="hub-finance-page__item-list">
-                  {groupTotals.map((g) => (
-                    <li key={g.groupIndex} className="hub-finance-page__item-list-row">
-                      <span>{g.label}</span>
-                      <strong>{formatBrl(g.total)}</strong>
-                    </li>
+                {isReceivableOnlyMode && (
+                  <section className="hub-checkout-drawer__section">
+                    <h3 className="hub-checkout-drawer__section-title">Saldo pendente</h3>
+                    <p className="hub-clientes__muted">
+                      Todos os itens já foram faturados. Informe o valor a receber sobre o saldo de{' '}
+                      <strong>{formatBrl(receivableBalance)}</strong>.
+                    </p>
+                    {receivableDetail?.payments && receivableDetail.payments.length > 0 && (
+                      <ul className="hub-finance-page__item-list">
+                        {receivableDetail.payments.map((p) => (
+                          <li key={p.id} className="hub-finance-page__item-list-row">
+                            <span>
+                              {HUB_PAYMENT_METHOD_LABELS[p.payment_method as HubPaymentMethod] ?? p.payment_method}
+                            </span>
+                            <span>{formatBrl(Number(p.amount ?? 0))}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                )}
+
+                <div className="hub-checkout-drawer__action-tabs" role="tablist" aria-label="Ação de cobrança">
+                  {(
+                    [
+                      ['receive_now', 'Receber agora'],
+                      ...(openItems.length > 0 ? [['leave_pending', 'Deixar pendente'] as const] : []),
+                      ['cancel', 'Cancelar'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="tab"
+                      aria-selected={action === value}
+                      className={`hub-checkout-drawer__action-tab${action === value ? ' hub-checkout-drawer__action-tab--active' : ''}`}
+                      onClick={() => setAction(value)}
+                    >
+                      {label}
+                    </button>
                   ))}
-                </ul>
-              </div>
-            )}
-          </>
-        ) : null}
+                </div>
+
+                {action === 'receive_now' && (
+                  <section className="hub-checkout-drawer__payment-block">
+                    <div className="hub-clientes__field">
+                      <label className="hub-clientes__label" htmlFor="checkout-payment-amount">
+                        Valor a receber agora
+                      </label>
+                      <div className="hub-checkout-drawer__amount-row">
+                        <input
+                          id="checkout-payment-amount"
+                          type="text"
+                          inputMode="decimal"
+                          className="hub-clientes__input"
+                          value={paymentAmount}
+                          disabled={!canPartialPay}
+                          onChange={(e) => setPaymentAmount(e.target.value)}
+                        />
+                        {canPartialPay && (
+                          <button
+                            type="button"
+                            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                            onClick={() =>
+                              setPaymentAmount(chargeableTotal.toFixed(2).replace('.', ','))
+                            }
+                          >
+                            Receber total
+                          </button>
+                        )}
+                      </div>
+                      {!canPartialPay && groupTotals.length > 1 && (
+                        <p className="hub-clientes__muted">
+                          Com agrupamento por pet, o valor total de cada grupo será cobrado integralmente.
+                        </p>
+                      )}
+                      {remainingAfterPay != null && (
+                        <p className="hub-clientes__muted">
+                          Saldo restante após este pagamento: <strong>{formatBrl(remainingAfterPay)}</strong>
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="hub-clientes__field">
+                      <label className="hub-clientes__label" htmlFor="checkout-payment-method">
+                        Forma de pagamento
+                      </label>
+                      <select
+                        id="checkout-payment-method"
+                        className="hub-clientes__select-input"
+                        value={paymentMethod}
+                        onChange={(e) => setPaymentMethod(e.target.value as HubPaymentMethod)}
+                      >
+                        {acceptedPaymentMethods.map((value) => (
+                          <option key={value} value={value}>
+                            {HUB_PAYMENT_METHOD_LABELS[value]}
+                          </option>
+                        ))}
+                      </select>
+                      {paymentMethod === 'cash' && (
+                        <p className="hub-clientes__muted">
+                          {cashSessionId
+                            ? `Caixa aberto (sessão ${cashSessionId.slice(0, 8)}…)`
+                            : 'Não há caixa aberto — abra no módulo Caixa.'}
+                        </p>
+                      )}
+                      {paymentMethod !== 'cash' && cashSessionId && (
+                        <p className="hub-clientes__muted">
+                          Sessão de caixa aberta — recebimento será registrado no histórico do dia.
+                        </p>
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {action === 'leave_pending' && (
+                  <div className="hub-clientes__field">
+                    <HubDateField
+                      id="checkout-due-date"
+                      label="Vencimento"
+                      valueIso={dueDate}
+                      onChangeIso={setDueDate}
+                    />
+                  </div>
+                )}
+
+                {action === 'cancel' && (
+                  <div className="hub-clientes__field">
+                    <label className="hub-clientes__label" htmlFor="checkout-waive-reason">
+                      Motivo do cancelamento (obrigatório)
+                    </label>
+                    <textarea
+                      id="checkout-waive-reason"
+                      className="hub-clientes__input"
+                      rows={3}
+                      value={waiveReason}
+                      onChange={(e) => setWaiveReason(e.target.value)}
+                      placeholder="Informe o motivo (mín. 3 caracteres)"
+                    />
+                  </div>
+                )}
+
+                {(action === 'receive_now' || action === 'leave_pending') && !isReceivableOnlyMode && (
+                  <details className="hub-checkout-drawer__advanced">
+                    <summary className="hub-checkout-drawer__advanced-summary">Opções avançadas</summary>
+                    <div className="hub-checkout-drawer__advanced-body">
+                      <fieldset className="hub-finance-page__resolve-options">
+                        <legend className="hub-clientes__label">Agrupamento</legend>
+                        <label className="hub-finance-page__resolve-option">
+                          <input
+                            type="radio"
+                            name="checkout-grp"
+                            checked={grouping === 'all'}
+                            onChange={() => setGrouping('all')}
+                          />
+                          Tudo em uma cobrança
+                        </label>
+                        <label className="hub-finance-page__resolve-option">
+                          <input
+                            type="radio"
+                            name="checkout-grp"
+                            checked={grouping === 'by_pet'}
+                            onChange={() => setGrouping('by_pet')}
+                          />
+                          Separar por pet
+                        </label>
+                        {grouping === 'by_pet' && (
+                          <div className="hub-clientes__field">
+                            <label className="hub-clientes__label" htmlFor="tutor-group-idx">
+                              Itens do tutor — anexar ao grupo índice
+                            </label>
+                            <input
+                              id="tutor-group-idx"
+                              type="number"
+                              min={0}
+                              className="hub-clientes__input"
+                              style={{ maxWidth: 80 }}
+                              value={tutorGroupIdx}
+                              onChange={(e) => setTutorGroupIdx(Number(e.target.value) || 0)}
+                            />
+                          </div>
+                        )}
+                      </fieldset>
+
+                      {action === 'receive_now' && (
+                        <fieldset className="hub-finance-page__resolve-options">
+                          <legend className="hub-clientes__label">Momento do pagamento</legend>
+                          <label className="hub-finance-page__resolve-option">
+                            <input
+                              type="radio"
+                              name="checkout-pt"
+                              checked={paymentTiming === 'on_checkout'}
+                              onChange={() => setPaymentTiming('on_checkout')}
+                            />
+                            No fecho (após o serviço)
+                          </label>
+                          <label className="hub-finance-page__resolve-option">
+                            <input
+                              type="radio"
+                              name="checkout-pt"
+                              checked={paymentTiming === 'advance'}
+                              onChange={() => setPaymentTiming('advance')}
+                            />
+                            Antecipado (antes de concluir o serviço)
+                          </label>
+                        </fieldset>
+                      )}
+
+                      {groupTotals.length > 0 && (
+                        <div>
+                          <p className="hub-clientes__label">Resumo por cobrança</p>
+                          <ul className="hub-finance-page__item-list">
+                            {groupTotals.map((g) => (
+                              <li key={g.groupIndex} className="hub-finance-page__item-list-row">
+                                <span>{g.label}</span>
+                                <strong>{formatBrl(g.total)}</strong>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
+              </>
+            ) : null}
           </>
         )}
       </div>
     </HubSidePanel>
   );
-}
-
-function round2(n: number): number {
-  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }

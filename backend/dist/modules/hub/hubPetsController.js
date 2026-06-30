@@ -12,6 +12,7 @@ const optionalDate = zod_1.z
 const sexSchema = zod_1.z.enum(['M', 'F', 'U']).optional().nullable();
 const petSizeTierSchema = zod_1.z.enum(['mini', 'pequeno', 'medio', 'grande', 'gigante']);
 const petCoatTypeSchema = zod_1.z.enum(hubServiceTypesPricingMatrix_1.COAT_TYPE_VALUES).optional().nullable();
+const behaviorTagsSchema = zod_1.z.array(zod_1.z.string().trim().min(1).max(100)).max(20).optional().nullable();
 const createHubPetBodySchema = zod_1.z.object({
     clinic_id: uuidStr,
     name: zod_1.z.string().trim().min(1).max(200),
@@ -20,6 +21,7 @@ const createHubPetBodySchema = zod_1.z.object({
     sex: sexSchema,
     birth_date: optionalDate,
     notes: zod_1.z.string().trim().max(8000).optional().nullable(),
+    behavior_tags: behaviorTagsSchema,
     size_tier: petSizeTierSchema,
     coat_color: zod_1.z.string().trim().max(120).optional().nullable(),
     coat_type: petCoatTypeSchema,
@@ -34,6 +36,7 @@ const updateHubPetBodySchema = zod_1.z.object({
     sex: sexSchema,
     birth_date: optionalDate.nullable(),
     notes: zod_1.z.string().trim().max(8000).optional().nullable(),
+    behavior_tags: behaviorTagsSchema,
     size_tier: petSizeTierSchema.optional(),
     coat_color: zod_1.z.string().trim().max(120).optional().nullable(),
     coat_type: petCoatTypeSchema,
@@ -41,6 +44,7 @@ const updateHubPetBodySchema = zod_1.z.object({
     primary_guardian_id: uuidStr.optional(),
     secondary_guardian_id: uuidStr.optional().nullable(),
 });
+const HUB_PET_SELECT_COLUMNS = 'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, size_tier, coat_color, coat_type, created_at, updated_at';
 async function guardianActiveInClinic(guardianId, clinicId) {
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_guardians')
@@ -60,7 +64,7 @@ const listHubPets = async (req, res) => {
         const clinic_id = parsed.data;
         const { data: pets, error: petsErr } = await supabase_1.supabaseAdmin
             .from('hub_pets')
-            .select('id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, size_tier, coat_color, coat_type, created_at, updated_at')
+            .select(HUB_PET_SELECT_COLUMNS)
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
             .order('name', { ascending: true });
@@ -128,7 +132,7 @@ const createHubPet = async (req, res) => {
         if (!body.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         }
-        const { clinic_id, name, species, breed, sex, birth_date, notes, size_tier, coat_color, coat_type, primary_guardian_id, secondary_guardian_id, } = body.data;
+        const { clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, size_tier, coat_color, coat_type, primary_guardian_id, secondary_guardian_id, } = body.data;
         if (!(await guardianActiveInClinic(primary_guardian_id, clinic_id))) {
             return res.status(400).json({ error: 'Tutor principal inválido ou não pertence à clínica' });
         }
@@ -148,6 +152,7 @@ const createHubPet = async (req, res) => {
             sex: sex ?? null,
             birth_date: birth_date ?? null,
             notes: notes ?? null,
+            behavior_tags: behavior_tags ?? [],
             size_tier,
             coat_color: coat_color ?? null,
             coat_type: coat_type ?? null,
@@ -156,7 +161,7 @@ const createHubPet = async (req, res) => {
         const { data: pet, error: petErr } = await supabase_1.supabaseAdmin
             .from('hub_pets')
             .insert([petRow])
-            .select('id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, size_tier, coat_color, coat_type, created_at, updated_at')
+            .select(HUB_PET_SELECT_COLUMNS)
             .single();
         if (petErr || !pet) {
             console.error('[hub_pets] create pet', petErr);
@@ -201,13 +206,14 @@ const updateHubPet = async (req, res) => {
         if (!body.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         }
-        const { clinic_id, name, species, breed, sex, birth_date, notes, archived, primary_guardian_id, secondary_guardian_id, size_tier, coat_color, coat_type, } = body.data;
+        const { clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, archived, primary_guardian_id, secondary_guardian_id, size_tier, coat_color, coat_type, } = body.data;
         if (name === undefined &&
             species === undefined &&
             breed === undefined &&
             sex === undefined &&
             birth_date === undefined &&
             notes === undefined &&
+            behavior_tags === undefined &&
             size_tier === undefined &&
             coat_color === undefined &&
             coat_type === undefined &&
@@ -244,6 +250,8 @@ const updateHubPet = async (req, res) => {
             patch.birth_date = birth_date;
         if (notes !== undefined)
             patch.notes = notes;
+        if (behavior_tags !== undefined)
+            patch.behavior_tags = behavior_tags ?? [];
         if (size_tier !== undefined)
             patch.size_tier = size_tier;
         if (coat_color !== undefined)
@@ -297,7 +305,7 @@ const updateHubPet = async (req, res) => {
         }
         const { data: pet, error: finalErr } = await supabase_1.supabaseAdmin
             .from('hub_pets')
-            .select('id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, size_tier, coat_color, coat_type, created_at, updated_at, deleted_at')
+            .select(`${HUB_PET_SELECT_COLUMNS}, deleted_at`)
             .eq('id', id)
             .single();
         if (finalErr || !pet) {

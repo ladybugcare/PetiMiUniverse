@@ -333,7 +333,7 @@ export const PetWizardStepBasics: React.FC<Props> = ({ state, update, photoPrevi
         </span>
         <div>
           <h3 className="pet-wizard__block-title">Outras informações</h3>
-          <p className="pet-wizard__block-sub">Preferências e contexto para a equipa.</p>
+          <p className="pet-wizard__block-sub">Preferências e contexto para a equipe.</p>
         </div>
       </div>
 

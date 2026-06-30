@@ -15,6 +15,8 @@ const sexSchema = z.enum(['M', 'F', 'U']).optional().nullable();
 const petSizeTierSchema = z.enum(['mini', 'pequeno', 'medio', 'grande', 'gigante']);
 const petCoatTypeSchema = z.enum(COAT_TYPE_VALUES).optional().nullable();
 
+const behaviorTagsSchema = z.array(z.string().trim().min(1).max(100)).max(20).optional().nullable();
+
 const createHubPetBodySchema = z.object({
   clinic_id: uuidStr,
   name: z.string().trim().min(1).max(200),
@@ -23,6 +25,7 @@ const createHubPetBodySchema = z.object({
   sex: sexSchema,
   birth_date: optionalDate,
   notes: z.string().trim().max(8000).optional().nullable(),
+  behavior_tags: behaviorTagsSchema,
   size_tier: petSizeTierSchema,
   coat_color: z.string().trim().max(120).optional().nullable(),
   coat_type: petCoatTypeSchema,
@@ -38,6 +41,7 @@ const updateHubPetBodySchema = z.object({
   sex: sexSchema,
   birth_date: optionalDate.nullable(),
   notes: z.string().trim().max(8000).optional().nullable(),
+  behavior_tags: behaviorTagsSchema,
   size_tier: petSizeTierSchema.optional(),
   coat_color: z.string().trim().max(120).optional().nullable(),
   coat_type: petCoatTypeSchema,
@@ -45,6 +49,9 @@ const updateHubPetBodySchema = z.object({
   primary_guardian_id: uuidStr.optional(),
   secondary_guardian_id: uuidStr.optional().nullable(),
 });
+
+const HUB_PET_SELECT_COLUMNS =
+  'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, size_tier, coat_color, coat_type, created_at, updated_at';
 
 async function guardianActiveInClinic(
   guardianId: string,
@@ -70,9 +77,7 @@ export const listHubPets = async (req: Request, res: Response) => {
 
     const { data: pets, error: petsErr } = await supabaseAdmin
       .from('hub_pets')
-      .select(
-        'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, size_tier, coat_color, coat_type, created_at, updated_at'
-      )
+      .select(HUB_PET_SELECT_COLUMNS)
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
       .order('name', { ascending: true });
@@ -162,6 +167,7 @@ export const createHubPet = async (req: Request, res: Response) => {
       sex,
       birth_date,
       notes,
+      behavior_tags,
       size_tier,
       coat_color,
       coat_type,
@@ -191,6 +197,7 @@ export const createHubPet = async (req: Request, res: Response) => {
       sex: sex ?? null,
       birth_date: birth_date ?? null,
       notes: notes ?? null,
+      behavior_tags: behavior_tags ?? [],
       size_tier,
       coat_color: coat_color ?? null,
       coat_type: coat_type ?? null,
@@ -200,9 +207,7 @@ export const createHubPet = async (req: Request, res: Response) => {
     const { data: pet, error: petErr } = await supabaseAdmin
       .from('hub_pets')
       .insert([petRow])
-      .select(
-        'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, size_tier, coat_color, coat_type, created_at, updated_at'
-      )
+      .select(HUB_PET_SELECT_COLUMNS)
       .single();
 
     if (petErr || !pet) {
@@ -259,6 +264,7 @@ export const updateHubPet = async (req: Request, res: Response) => {
       sex,
       birth_date,
       notes,
+      behavior_tags,
       archived,
       primary_guardian_id,
       secondary_guardian_id,
@@ -274,6 +280,7 @@ export const updateHubPet = async (req: Request, res: Response) => {
       sex === undefined &&
       birth_date === undefined &&
       notes === undefined &&
+      behavior_tags === undefined &&
       size_tier === undefined &&
       coat_color === undefined &&
       coat_type === undefined &&
@@ -307,6 +314,7 @@ export const updateHubPet = async (req: Request, res: Response) => {
     if (sex !== undefined) patch.sex = sex;
     if (birth_date !== undefined) patch.birth_date = birth_date;
     if (notes !== undefined) patch.notes = notes;
+    if (behavior_tags !== undefined) patch.behavior_tags = behavior_tags ?? [];
     if (size_tier !== undefined) patch.size_tier = size_tier;
     if (coat_color !== undefined) patch.coat_color = coat_color;
     if (coat_type !== undefined) patch.coat_type = coat_type;
@@ -361,9 +369,7 @@ export const updateHubPet = async (req: Request, res: Response) => {
 
     const { data: pet, error: finalErr } = await supabaseAdmin
       .from('hub_pets')
-      .select(
-        'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, size_tier, coat_color, coat_type, created_at, updated_at, deleted_at'
-      )
+      .select(`${HUB_PET_SELECT_COLUMNS}, deleted_at`)
       .eq('id', id)
       .single();
 

@@ -3,6 +3,7 @@ import { MapPin, PlusCircle, Truck, User } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { hubPickupApi, type PickupRoute, type PickupRouteStatus } from '../../api/hubPickupApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 
 const STATUS_LABELS: Record<PickupRouteStatus, string> = {
   planned: 'Planejada',
@@ -82,9 +83,7 @@ const PickupRoutePanel: React.FC<Props> = ({
       </div>
 
       {loading ? (
-        <p className="hub-clientes__muted" style={{ fontSize: '0.8125rem', padding: '0.5rem 0' }}>
-          Carregando…
-        </p>
+        <HubLoading variant="inline" size="sm" label="Carregando rotas…" />
       ) : routes.length === 0 ? (
         <p className="hub-clientes__muted" style={{ fontSize: '0.8125rem', padding: '0.5rem 0' }}>
           Nenhuma rota montada para este dia.

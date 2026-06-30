@@ -9,6 +9,7 @@ import {
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubCancelButton } from '../../components/HubCancelButton';
+import { HubLoading } from '../../components/HubLoading';
 import { hubQuotesApi, type HubQuote } from '../../api/hubQuotesApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import HubQuoteWorkspace from './HubQuoteWorkspace';
@@ -71,7 +72,13 @@ const HubQuoteEditPage: React.FC = () => {
       </div>
     );
   }
-  if (permLoading || !accessAllowed) return <div style={{ padding: 24 }}>Carregando…</div>;
+  if (permLoading || !accessAllowed) {
+    return (
+      <div style={{ padding: 24 }}>
+        <HubLoading variant="block" />
+      </div>
+    );
+  }
   if (!canWrite) {
     return (
       <div style={{ padding: 24 }}>
@@ -93,7 +100,13 @@ const HubQuoteEditPage: React.FC = () => {
     );
   }
 
-  if (loading || !quote) return <div style={{ padding: 24 }}>Carregando…</div>;
+  if (loading || !quote) {
+    return (
+      <div style={{ padding: 24 }}>
+        <HubLoading variant="block" label="Carregando orçamento…" />
+      </div>
+    );
+  }
 
   if (quote.status !== 'draft') {
     return <Navigate to={`/hub/orcamentos/${quote.id}`} replace />;

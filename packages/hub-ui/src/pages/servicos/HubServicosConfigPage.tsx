@@ -4,6 +4,7 @@ import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petim
 import { hubServiceGroupsApi, type HubServiceGroupRow } from '../../api/hubServiceGroupsApi';
 import { hubClinicSettingsApi } from '../../api/hubClinicSettingsApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { Check, CheckCircle, Layers, LayoutGrid, Pencil, Plus, Search, Trash2, Archive, ArchiveRestore } from 'lucide-react';
@@ -284,7 +285,7 @@ const HubServicosConfigPage: React.FC = () => {
   if (permLoading || !accessAllowed) {
     return (
       <div className="hub-clientes hub-servicos-page hub-servicos-config hub-pets-page" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading variant="block" />
       </div>
     );
   }
@@ -508,7 +509,7 @@ const HubServicosConfigPage: React.FC = () => {
         ) : null}
 
         {loading ? (
-          <p className="hub-clientes__muted">Carregando grupos…</p>
+          <HubLoading variant="block" label="Carregando grupos…" />
         ) : (
           <div className="hub-servicos__table-wrap">
             <table className="hub-clientes__table">

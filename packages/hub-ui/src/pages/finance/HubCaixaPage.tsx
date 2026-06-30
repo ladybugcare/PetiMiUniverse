@@ -3,8 +3,10 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import {
   AlertCircle,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   HelpCircle,
   Coins,
   Lock,
@@ -14,19 +16,30 @@ import {
   X,
 } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
+import { HubLoading } from '../../components/HubLoading';
 import {
   hubFinancialApi,
   type HubFinanceDayBoardItem,
   type HubCashSession,
   type HubCashSessionSummary,
+  type HubPaymentMethod,
 } from '../../api/hubFinancialApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
 import { CaixaMetricsRow } from './CaixaMetricsRow';
+import { CaixaSessionMovementsCard } from './CaixaSessionMovementsCard';
 import { canCaixaEditOpenComanda } from './hubComandaEditUtils';
+import {
+  buildCaixaSessionHistoryItems,
+  sumDayBoardPendingAmount,
+  sumOpenComandasPendingAmount,
+  type CaixaSessionHistoryItem,
+} from './hubCaixaSessionHistory';
+import { CaixaSessionHistoryTimeline } from './CaixaSessionHistoryTimeline';
 import { FinanceDayBoardTable } from './FinanceDayBoardTable';
 import { HubDateField } from '../../components/HubDateField';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
+import { filterEnabledPaymentMethods } from '../../utils/hubPaymentMethods';
 import '../clientes/clientes.css';
 import '../pets/pets-page.css';
 import '../servicos/servicos-page.css';
@@ -54,15 +67,9 @@ function normalizeText(s: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-const METHOD_LABELS: Record<string, string> = {
-  cash: 'Dinheiro',
-  pix: 'Pix',
-  credit_card: 'Cartão de crédito',
-  debit_card: 'Cartão de débito',
-  transfer: 'Transferência',
-  payment_link: 'Link de pagamento',
-  customer_credit: 'Crédito do tutor',
-};
+function round2(n: number): number {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
 
 const HubCaixaPage: React.FC = () => {
   const navigate = useNavigate();
@@ -80,8 +87,10 @@ const HubCaixaPage: React.FC = () => {
   const [movType, setMovType] = useState<'withdrawal' | 'deposit'>('withdrawal');
   const [movAmount, setMovAmount] = useState('');
   const [movNotes, setMovNotes] = useState('');
-  const [selectedCashItem, setSelectedCashItem] = useState<Record<string, unknown> | null>(null);
+  const [selectedCashItem, setSelectedCashItem] = useState<CaixaSessionHistoryItem | null>(null);
   const [openComandas, setOpenComandas] = useState<Array<Record<string, unknown>>>([]);
+  const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<HubPaymentMethod[]>([]);
+  const [cashMovementExpanded, setCashMovementExpanded] = useState(false);
 
   // Day board
   const [dayBoardItems, setDayBoardItems] = useState<HubFinanceDayBoardItem[]>([]);
@@ -151,6 +160,26 @@ const HubCaixaPage: React.FC = () => {
   useEffect(() => {
     if (!permLoading && hasPermission('hub.financial.read')) void load();
   }, [permLoading, hasPermission, load]);
+
+  useEffect(() => {
+    if (!clinicId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await hubFinancialApi.getPaymentMethodSettings(clinicId);
+        if (!cancelled) {
+          setAcceptedPaymentMethods(filterEnabledPaymentMethods(res.accepted_payment_methods ?? []));
+        }
+      } catch {
+        if (!cancelled) {
+          setAcceptedPaymentMethods(filterEnabledPaymentMethods([]));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId]);
 
   if (!permLoading && !hasPermission('hub.financial.read')) {
     return <Navigate to="/hub/clientes" replace />;
@@ -399,38 +428,35 @@ const HubCaixaPage: React.FC = () => {
   const closeDiffPreview = closeInformedNum != null && cashOpen
     ? Math.round((closeInformedNum - expectedBalance + Number.EPSILON) * 100) / 100
     : null;
-  const cashRows = useMemo(() => {
-    const sessionPayments = cashSummary?.all_payments ?? cashSummary?.payments ?? [];
-    const payments = sessionPayments.map((payment) => {
-      const method = String(payment.payment_method ?? 'cash');
-      const methodLabel = METHOD_LABELS[method] ?? method;
-      return {
-        ...payment,
-        row_kind: 'payment' as const,
-        label: method === 'cash' ? 'Recebimento em dinheiro' : `Recebimento (${methodLabel})`,
-        signed_amount: Number(payment.amount ?? 0),
-        happened_at: payment.payment_date,
-      };
-    });
-    const movements = (cashSummary?.movements ?? []).map((movement) => ({
-      ...movement,
-      row_kind: 'movement' as const,
-      label: movement.movement_type === 'deposit' ? 'Suprimento' : 'Sangria',
-      signed_amount: movement.movement_type === 'deposit' ? Number(movement.amount ?? 0) : -Number(movement.amount ?? 0),
-      happened_at: movement.created_at,
-    }));
-    return [...payments, ...movements].sort((a, b) => String(b.happened_at).localeCompare(String(a.happened_at)));
-  }, [cashSummary]);
 
   const methodsEntries = useMemo(() => {
-    const totals = cashSummary?.summary.totals_by_method;
-    if (!totals) return [];
-    return Object.entries(totals).filter(([, total]) => Number(total) !== 0);
-  }, [cashSummary]);
+    const totals = cashSummary?.summary.totals_by_method ?? {};
+    return acceptedPaymentMethods.map(
+      (method) => [method, Number(totals[method] ?? 0)] as const,
+    );
+  }, [cashSummary, acceptedPaymentMethods]);
 
   const methodsTotal = useMemo(
     () => methodsEntries.reduce((sum, [, total]) => sum + Number(total), 0),
     [methodsEntries],
+  );
+
+  const dayBoardComandaIds = useMemo(
+    () => new Set(dayBoardItems.map((item) => item.billing.comanda_id).filter(Boolean).map(String)),
+    [dayBoardItems],
+  );
+
+  const dayPendingTotal = useMemo(
+    () => round2(
+      sumDayBoardPendingAmount(dayBoardItems)
+      + sumOpenComandasPendingAmount(openComandas, dayBoardComandaIds),
+    ),
+    [dayBoardItems, openComandas, dayBoardComandaIds],
+  );
+
+  const sessionHistoryItems = useMemo(
+    () => buildCaixaSessionHistoryItems(cashSummary, dayBoardItems, openComandas),
+    [cashSummary, dayBoardItems, openComandas],
   );
 
   const diffDisplay = closeDiffPreview;
@@ -449,7 +475,8 @@ const HubCaixaPage: React.FC = () => {
         pending={pending}
         cashOpen={!!cashOpen}
         cashOpenedAt={cashOpen?.opened_at}
-        cashPaymentsTotal={cashSummary?.summary.cash_payments_total ?? 0}
+        sessionReceivedTotal={methodsTotal}
+        dayPendingTotal={dayPendingTotal}
         expectedBalance={expectedBalance}
         dayBoardCount={dayBoardItems.length}
       />
@@ -482,15 +509,33 @@ const HubCaixaPage: React.FC = () => {
           ) : (
             <>
               <div className="hub-caixa-page__card">
-                <h3 className="hub-caixa-page__card-title">
-                  Sangria / Suprimento
-                  <span
-                    className="hub-caixa-page__card-title-help"
-                    title="Sangria: retirada de dinheiro da gaveta. Suprimento: entrada de dinheiro na gaveta."
-                  >
-                    <HelpCircle size={15} strokeWidth={2} />
+                <button
+                  type="button"
+                  className="hub-caixa-page__card-toggle"
+                  aria-expanded={cashMovementExpanded}
+                  onClick={() => setCashMovementExpanded((v) => !v)}
+                >
+                  <span className="hub-caixa-page__card-title">
+                    Sangria / Suprimento
+                    <span
+                      className="hub-caixa-page__card-title-help"
+                      title="Sangria: retirada de dinheiro da gaveta. Suprimento: entrada de dinheiro na gaveta."
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      role="img"
+                      aria-label="Ajuda sobre sangria e suprimento"
+                    >
+                      <HelpCircle size={15} strokeWidth={2} />
+                    </span>
                   </span>
-                </h3>
+                  {cashMovementExpanded ? (
+                    <ChevronUp size={18} strokeWidth={2} aria-hidden />
+                  ) : (
+                    <ChevronDown size={18} strokeWidth={2} aria-hidden />
+                  )}
+                </button>
+                {cashMovementExpanded && (
+                  <>
                 <div className="hub-caixa-page__form-row">
                   <div className="hub-clientes__field">
                     <span className="hub-clientes__label">Tipo</span>
@@ -538,6 +583,8 @@ const HubCaixaPage: React.FC = () => {
                 >
                   Registrar
                 </button>
+                  </>
+                )}
               </div>
 
               <div className="hub-caixa-page__card">
@@ -588,68 +635,38 @@ const HubCaixaPage: React.FC = () => {
           )}
         </div>
 
-        {/* Coluna 2 — Recebimentos por Método */}
+        {/* Coluna 2 — Movimentações da sessão */}
         <div className="hub-caixa-page__col">
-          <div className="hub-caixa-page__card">
-            <h3 className="hub-caixa-page__card-title">Recebimentos por Método</h3>
-            {!cashOpen ? (
-              <p className="hub-caixa-page__empty">Abra o caixa para ver os recebimentos da sessão.</p>
-            ) : methodsEntries.length === 0 ? (
-              <p className="hub-caixa-page__empty">Nenhum recebimento registrado nesta sessão.</p>
-            ) : (
-              <>
-                <ul className="hub-caixa-page__methods-list">
-                  {methodsEntries.map(([method, total]) => (
-                    <li key={method} className="hub-caixa-page__methods-row">
-                      <span>{METHOD_LABELS[method] ?? method}</span>
-                      <strong>{formatBrl(Number(total))}</strong>
-                    </li>
-                  ))}
-                  <li className="hub-caixa-page__methods-row hub-caixa-page__methods-total">
-                    <span>Total</span>
-                    <strong>{formatBrl(methodsTotal)}</strong>
-                  </li>
-                </ul>
-                <p className="hub-caixa-page__methods-note">
-                  O saldo da gaveta considera apenas dinheiro; demais métodos são informativos.
-                </p>
-              </>
-            )}
-          </div>
+          <CaixaSessionMovementsCard
+            cashOpen={!!cashOpen}
+            loadingMethods={loading && acceptedPaymentMethods.length === 0}
+            methodsEntries={methodsEntries}
+            methodsTotal={methodsTotal}
+            depositsTotal={cashSummary?.summary.deposits_total ?? 0}
+            withdrawalsTotal={cashSummary?.summary.withdrawals_total ?? 0}
+            dayPendingTotal={dayPendingTotal}
+          />
         </div>
 
         {/* Coluna 3 — Histórico da sessão */}
         <div className="hub-caixa-page__col">
-          <div className="hub-caixa-page__card">
-            <h3 className="hub-caixa-page__card-title">Histórico da sessão</h3>
+          <div className="hub-caixa-page__card hub-caixa-page__card--ops">
+            <h3
+              className="hub-caixa-page__card-title"
+              title="Pagamentos da sessão e cobranças do painel do dia"
+            >
+              Histórico da sessão
+            </h3>
             {!cashOpen ? (
               <p className="hub-caixa-page__empty">Abra o caixa para ver o histórico de movimentos.</p>
-            ) : cashRows.length === 0 ? (
-              <p className="hub-caixa-page__empty">Nenhum movimento nesta sessão.</p>
+            ) : sessionHistoryItems.length === 0 ? (
+              <p className="hub-caixa-page__empty">Nenhuma movimentação ou cobrança no painel do dia.</p>
             ) : (
-              <div className="hub-caixa-page__history-scroll">
-                <div className="hub-clientes__table-wrap">
-                  <table className="hub-clientes__table hub-finance-page__table hub-caixa-page__history-table">
-                    <thead>
-                      <tr>
-                        <th>Tipo</th>
-                        <th>Data</th>
-                        <th className="hub-finance-page__th-num">Valor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cashRows.map((row) => (
-                        <tr key={`${row.row_kind}:${row.id}`} onClick={() => setSelectedCashItem(row)}>
-                          <td>{row.label}</td>
-                          <td>{row.happened_at ? new Date(String(row.happened_at)).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                          <td className={`hub-finance-page__td-num ${Number(row.signed_amount) >= 0 ? 'hub-finance-page__td-num--pos' : 'hub-finance-page__td-num--neg'}`}>
-                            {formatBrl(Number(row.signed_amount))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              <div className="hub-caixa-page__card-scroll hub-caixa-page__history-scroll">
+                <CaixaSessionHistoryTimeline
+                  items={sessionHistoryItems}
+                  onSelect={setSelectedCashItem}
+                />
               </div>
             )}
           </div>
@@ -676,7 +693,6 @@ const HubCaixaPage: React.FC = () => {
             </button>
             <HubDateField
               id="dayboard-date"
-              label="Data"
               valueIso={dayBoardDate}
               onChangeIso={(d) => {
                 setDayBoardDate(d);
@@ -722,9 +738,27 @@ const HubCaixaPage: React.FC = () => {
               </button>
             )}
           </div>
+          <div className="hub-dayboard__filter-group" role="group" aria-label="Filtrar por status">
+            {([
+              { id: 'all', label: 'Tudo' },
+              { id: 'sem_comanda', label: 'Sem comanda' },
+              { id: 'comanda_aberta', label: 'Comanda aberta' },
+              { id: 'a_receber', label: 'Pendente' },
+              { id: 'recebido', label: 'Pago' },
+            ] as const).map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className={`hub-dayboard__filter-btn${atendimentosStatusFilter === f.id ? ' hub-dayboard__filter-btn--active' : ''}`}
+                onClick={() => setAtendimentosStatusFilter(f.id)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-dayboard__refresh-btn"
             disabled={dayBoardBusy}
             onClick={() => void loadDayBoard()}
           >
@@ -732,27 +766,8 @@ const HubCaixaPage: React.FC = () => {
           </button>
         </div>
 
-        <div className="hub-dayboard__status-filters" role="group" aria-label="Filtrar por status">
-          {([
-            { id: 'all', label: 'Tudo' },
-            { id: 'sem_comanda', label: 'Sem comanda' },
-            { id: 'comanda_aberta', label: 'Comanda aberta' },
-            { id: 'a_receber', label: 'Pendente' },
-            { id: 'recebido', label: 'Pago' },
-          ] as const).map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              className={`hub-dayboard__toggle-btn${atendimentosStatusFilter === f.id ? ' hub-dayboard__toggle-btn--active' : ''}`}
-              onClick={() => setAtendimentosStatusFilter(f.id)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
         {loading || dayBoardBusy ? (
-          <p className="hub-clientes__muted">Carregando…</p>
+          <HubLoading variant="block" label="Carregando ações pendentes…" />
         ) : dayBoardFiltered.length === 0 && openComandas.length === 0 ? (
           <div className="hub-dayboard__empty">
             Nenhuma ação pendente encontrada para esta data nesta unidade.
@@ -869,6 +884,10 @@ const HubCaixaPage: React.FC = () => {
           clinicId={clinicId}
           unitId={unitId}
           comandaId={checkoutComandaId}
+          onDataChanged={() => {
+            void load();
+            void loadDayBoard();
+          }}
           onSuccess={({ comandaId, kind, receivableIds }) => {
             showSuccess(kind === 'leave_pending' ? 'Comanda enviada ao financeiro.' : 'Cobrança concluída.');
             setCheckoutComandaId(null);
@@ -891,24 +910,34 @@ const HubCaixaPage: React.FC = () => {
           <div className="hub-clientes__panel-scroll">
             <div className="hub-clientes__panel-header">
               <div>
-                <h2 className="hub-clientes__panel-title">{String(selectedCashItem.label ?? 'Movimento')}</h2>
-                <p className="hub-clientes__muted">#{String(selectedCashItem.id ?? '').slice(0, 8)}</p>
+                <h2 className="hub-clientes__panel-title">{selectedCashItem.title}</h2>
+                <p className="hub-clientes__muted">{selectedCashItem.subtitle || `#${selectedCashItem.id.slice(0, 12)}`}</p>
               </div>
               <button type="button" className="hub-clientes__panel-close" aria-label="Fechar detalhe do movimento" onClick={() => setSelectedCashItem(null)}>
                 <X size={18} strokeWidth={2} />
               </button>
             </div>
             <div className="hub-finance-page__detail-hero">
-              <strong>{formatBrl(Number(selectedCashItem.signed_amount ?? selectedCashItem.amount ?? 0))}</strong>
+              <strong>{formatBrl(Number(selectedCashItem.signed_amount))}</strong>
               <span className="hub-clientes__muted">
                 {selectedCashItem.happened_at ? new Date(String(selectedCashItem.happened_at)).toLocaleString('pt-BR') : '—'}
               </span>
             </div>
             <section className="hub-finance-page__panel-section">
               <div className="hub-finance-page__detail-list">
-                <p><strong>Tipo:</strong> {String(selectedCashItem.label ?? '—')}</p>
-                <p><strong>Origem:</strong> {selectedCashItem.row_kind === 'payment' ? 'Financeiro' : 'Movimento manual do caixa'}</p>
-                <p><strong>Observações:</strong> {String(selectedCashItem.notes ?? '—')}</p>
+                <p><strong>Tipo:</strong> {selectedCashItem.title}</p>
+                <p><strong>Detalhe:</strong> {selectedCashItem.subtitle || '—'}</p>
+                <p><strong>Origem:</strong> {
+                  selectedCashItem.row_kind === 'payment'
+                    ? 'Pagamento recebido'
+                    : selectedCashItem.row_kind === 'billing'
+                      ? 'Cobrança do painel do dia'
+                      : 'Movimento manual do caixa'
+                }</p>
+                {selectedCashItem.is_pending ? (
+                  <p><strong>Status:</strong> Pendente / em aberto</p>
+                ) : null}
+                <p><strong>Observações:</strong> {selectedCashItem.notes ?? '—'}</p>
               </div>
             </section>
           </div>

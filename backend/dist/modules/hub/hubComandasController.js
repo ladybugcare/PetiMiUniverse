@@ -16,6 +16,8 @@ const hubFinancialController_1 = require("./hubFinancialController");
 const hubPricingResolve_1 = require("./hubPricingResolve");
 const auditLog_1 = require("../../utils/auditLog");
 const hubComandaPdf_1 = require("./hubComandaPdf");
+const hubClinicSettingsController_1 = require("./hubClinicSettingsController");
+const hubPaymentMethods_1 = require("./hubPaymentMethods");
 const uuidStr = zod_1.z.string().uuid();
 const comandaEditContextSchema = zod_1.z.enum(['caixa', 'financeiro']).optional().default('caixa');
 function computeComandaEditScopes(comandaRow, operationalComplete, balanceDue) {
@@ -67,7 +69,8 @@ async function assertComandaEditAllowed(comandaId, clinicId, context) {
 function round2(n) {
     return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
-const comandaOriginSchema = zod_1.z.enum(['appointment', 'grooming_session', 'quote', 'encounter', 'manual', 'boarding_reservation']);
+const boardingBilling_1 = require("./boardingBilling");
+const hubComandaSchemas_1 = require("./hubComandaSchemas");
 async function resolveClinicDefaultUnitId(clinicId) {
     const { data: main } = await supabase_1.supabaseAdmin
         .from('units')
@@ -169,7 +172,7 @@ async function resolveExistingOpenComandaIdForOpen(clinicId, originType, originI
         if (byEnc)
             return byEnc;
     }
-    return null;
+    return findOpenComandaIdByOrigin(clinicId, originType, originId);
 }
 async function findLatestClosedGroomingSessionIdForAppointment(clinicId, appointmentId) {
     const { data, error } = await supabase_1.supabaseAdmin
@@ -970,41 +973,21 @@ async function buildComandaItemsFromBoardingReservation(clinicId, reservationId)
     const guardianId = res.guardian_id;
     if (!guardianId)
         throw new Error('NO_GUARDIAN');
-    const checkIn = res.checked_in_at ?? res.expected_check_in;
-    const checkOut = res.checked_out_at ?? res.expected_check_out;
-    const dailyRateCents = res.daily_rate_cents ?? 0;
-    const mode = res.mode;
-    let nights = 0;
-    if (checkIn && checkOut) {
-        const d1 = new Date(checkIn);
-        const d2 = new Date(checkOut);
-        nights = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
-    }
-    const quantity = mode === 'hotel' ? Math.max(1, nights) : 1;
-    const unitAmount = round2(dailyRateCents / 100);
-    const lineTotal = round2(quantity * unitAmount);
-    const label = mode === 'hotel' ? 'Hotel' : 'Creche';
-    const items = [
-        {
-            pet_id: res.pet_id,
-            item_kind: 'service',
-            hub_service_type_id: null,
-            hub_inventory_item_id: null,
-            hub_inventory_lot_id: null,
-            description: `${label} — ${quantity} ${mode === 'hotel' ? (quantity === 1 ? 'diária' : 'diárias') : 'bloco(s)'}`,
-            quantity,
-            unit_amount: unitAmount,
-            discount_amount: 0,
-            line_total: lineTotal,
-            service_date: checkIn ? checkIn.slice(0, 10) : null,
-            origin_type: 'boarding_reservation',
-            origin_id: reservationId,
-            sort_order: 0,
-        },
-    ];
+    if (res.status !== 'checked_out')
+        throw new Error('NOT_READY');
+    const { line, subtotal } = (0, boardingBilling_1.buildBoardingComandaLine)({
+        id: reservationId,
+        mode: res.mode,
+        pet_id: res.pet_id,
+        expected_check_in: res.expected_check_in,
+        expected_check_out: res.expected_check_out,
+        checked_in_at: res.checked_in_at,
+        checked_out_at: res.checked_out_at,
+        daily_rate_cents: res.daily_rate_cents,
+    });
     return {
-        items,
-        subtotal: lineTotal,
+        items: [line],
+        subtotal,
         unit_id: res.unit_id ?? null,
         guardian_id: guardianId,
         pet_id: res.pet_id,
@@ -1124,7 +1107,7 @@ const postHubComandaOpen = async (req, res) => {
                 return res.status(409).json({ error: 'Já existe cobrança para esta origem' });
             }
         }
-        if (origin_type === 'grooming_session' || origin_type === 'encounter') {
+        if (origin_type === 'grooming_session' || origin_type === 'encounter' || origin_type === 'boarding_reservation') {
             const existingId = await resolveExistingOpenComandaIdForOpen(clinic_id, origin_type, effectiveOriginId);
             if (existingId) {
                 const detail = await getHubComandaDetailPayload(existingId, clinic_id);
@@ -1252,11 +1235,6 @@ const postHubComandaOpen = async (req, res) => {
             built = await buildComandaItemsFromQuote(clinic_id, effectiveOriginId);
         }
         else if (origin_type === 'boarding_reservation') {
-            const existingId = await resolveExistingOpenComandaIdForOpen(clinic_id, 'boarding_reservation', effectiveOriginId);
-            if (existingId) {
-                const detail = await getHubComandaDetailPayload(existingId, clinic_id);
-                return res.status(200).json(detail);
-            }
             built = await buildComandaItemsFromBoardingReservation(clinic_id, effectiveOriginId);
         }
         else {
@@ -1436,13 +1414,13 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
     const allowedGuardians = await listAllowedGuardiansForPetIds(petIds);
     const [guRes, petRes, itemPetsRes] = await Promise.all([
         guardianId
-            ? supabase_1.supabaseAdmin.from('hub_guardians').select('id, full_name, phone, email').eq('id', guardianId).maybeSingle()
+            ? supabase_1.supabaseAdmin.from('hub_guardians').select('id, full_name, phone, email, tax_id').eq('id', guardianId).maybeSingle()
             : Promise.resolve({ data: null }),
         petId
-            ? supabase_1.supabaseAdmin.from('hub_pets').select('id, name').eq('id', petId).maybeSingle()
+            ? supabase_1.supabaseAdmin.from('hub_pets').select('id, name, species, breed, size_tier, sex').eq('id', petId).maybeSingle()
             : Promise.resolve({ data: null }),
         petIds.length
-            ? supabase_1.supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds)
+            ? supabase_1.supabaseAdmin.from('hub_pets').select('id, name, species, breed, size_tier, sex').in('id', petIds)
             : Promise.resolve({ data: [] }),
     ]);
     const guardian = guRes.data
@@ -1451,10 +1429,37 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
             full_name: guRes.data.full_name,
             phone: guRes.data.phone ?? null,
             email: guRes.data.email ?? null,
+            tax_id: guRes.data.tax_id ?? null,
         }
         : null;
-    const pet = petRes.data ? { id: petRes.data.id, name: petRes.data.name } : null;
+    const pet = petRes.data
+        ? {
+            id: petRes.data.id,
+            name: petRes.data.name,
+            species: petRes.data.species,
+            breed: petRes.data.breed ?? null,
+            size_tier: petRes.data.size_tier,
+            sex: petRes.data.sex ?? null,
+        }
+        : null;
     const petNameMap = new Map((itemPetsRes.data ?? []).map((p) => [p.id, p.name]));
+    const petsById = new Map();
+    for (const p of itemPetsRes.data ?? []) {
+        petsById.set(p.id, p);
+    }
+    if (petRes.data) {
+        petsById.set(petRes.data.id, petRes.data);
+    }
+    const pets = [...petsById.values()]
+        .map((p) => ({
+        id: p.id,
+        name: String(p.name ?? ''),
+        species: String(p.species ?? ''),
+        breed: p.breed ?? null,
+        size_tier: String(p.size_tier ?? ''),
+        sex: p.sex ?? null,
+    }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
     const enrichedItems = (items ?? []).map((it) => ({
         ...it,
         pet_name: it.pet_id ? (petNameMap.get(it.pet_id) ?? null) : null,
@@ -1462,6 +1467,7 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
     return {
         comanda: { ...comanda, guardian, pet },
         items: enrichedItems,
+        pets,
         open_item_ids: openItemIds,
         invoiced_item_ids: [...invoicedItemIds],
         active_receivable_ids: activeReceivableIds,
@@ -1571,6 +1577,7 @@ const getPublicComanda = async (req, res) => {
                 clinic: clinicRow ? { name: clinicRow.name } : null,
             },
             items: detail.items,
+            pets: detail.pets,
             paid_total: detail.paid_total,
             balance_due: detail.balance_due,
         });
@@ -1634,7 +1641,7 @@ const checkoutBodySchema = zod_1.z
         .object({
         group_index: zod_1.z.number().int().min(0),
         amount: zod_1.z.number().positive(),
-        payment_method: zod_1.z.enum(['pix', 'cash', 'credit_card', 'debit_card', 'transfer', 'payment_link', 'customer_credit']),
+        payment_method: hubPaymentMethods_1.hubPaymentMethodSchema,
         cash_session_id: uuidStr.optional().nullable(),
         installments: zod_1.z.number().int().min(1).max(99).optional(),
     })
@@ -1722,6 +1729,13 @@ const postHubComandaCheckout = async (req, res) => {
                     .eq('id', originId)
                     .eq('clinic_id', clinic_id);
             }
+            else if (originType === 'boarding_reservation') {
+                await supabase_1.supabaseAdmin
+                    .from('hub_boarding_reservations')
+                    .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
+                    .eq('id', originId)
+                    .eq('clinic_id', clinic_id);
+            }
             else if (originType === 'manual') {
                 /* comanda manual: sem entidade operacional a dispensar */
             }
@@ -1781,7 +1795,9 @@ const postHubComandaCheckout = async (req, res) => {
         }
         const receivableIds = [];
         const nonEmptyGroupIndices = [];
-        const unitId = comanda.unit_id ?? null;
+        let unitId = comanda.unit_id ?? null;
+        if (!unitId)
+            unitId = await resolveClinicDefaultUnitId(clinic_id);
         const guardianId = comanda.guardian_id;
         const rollbackReceivables = async () => {
             for (const rid of receivableIds) {
@@ -1827,7 +1843,9 @@ const postHubComandaCheckout = async (req, res) => {
             nonEmptyGroupIndices.push(gi);
             let sort = 0;
             for (const it of groupItems) {
-                const lineKind = mapItemToReceivableLineKind(it.origin_type ?? null);
+                const lineKind = String(it.item_kind ?? '') === 'product'
+                    ? 'product'
+                    : mapItemToReceivableLineKind(it.origin_type ?? null);
                 const { error: lnErr } = await supabase_1.supabaseAdmin.from('hub_receivable_lines').insert({
                     clinic_id,
                     receivable_id: receivableId,
@@ -1877,6 +1895,19 @@ const postHubComandaCheckout = async (req, res) => {
                 await rollbackReceivables();
                 return res.status(400).json({ error: 'payments obrigatório para receber agora' });
             }
+            const clinicSettings = await (0, hubClinicSettingsController_1.getOrCreateHubClinicSettings)(clinic_id);
+            for (const pay of payments) {
+                try {
+                    (0, hubPaymentMethods_1.assertPaymentMethodInList)(pay.payment_method, clinicSettings.accepted_payment_methods);
+                }
+                catch (e) {
+                    await rollbackReceivables();
+                    if (e instanceof hubPaymentMethods_1.PaymentMethodNotAcceptedError) {
+                        return res.status(400).json({ error: e.message });
+                    }
+                    throw e;
+                }
+            }
             const expectedByGroup = new Map();
             for (let gi = 0; gi < groups.length; gi++) {
                 const sub = round2(groups[gi].map((id) => itemById.get(id)).reduce((s, it) => s + Number(it.line_total ?? 0), 0));
@@ -1893,10 +1924,10 @@ const postHubComandaCheckout = async (req, res) => {
             }
             for (const [gi, expected] of expectedByGroup) {
                 const got = paidByGroup.get(gi) ?? 0;
-                if (Math.abs(got - expected) > 0.02) {
+                if (got <= 0.009 || got > expected + 0.02) {
                     await rollbackReceivables();
                     return res.status(400).json({
-                        error: `Valor pago do grupo ${gi} deve ser ${expected.toFixed(2)} (recebido ${got.toFixed(2)})`,
+                        error: `Valor pago do grupo ${gi} deve ser entre 0,01 e ${expected.toFixed(2)} (recebido ${got.toFixed(2)})`,
                     });
                 }
             }
@@ -1905,6 +1936,7 @@ const postHubComandaCheckout = async (req, res) => {
                 const { data: recRow } = await supabase_1.supabaseAdmin.from('hub_receivables').select('final_amount, unit_id').eq('id', rid).single();
                 const finalAmt = Number(recRow?.final_amount ?? 0);
                 let validatedCashSessionId = null;
+                const recUnit = recRow?.unit_id;
                 if (pay.payment_method === 'cash') {
                     if (!pay.cash_session_id) {
                         await rollbackReceivables();
@@ -1915,7 +1947,22 @@ const postHubComandaCheckout = async (req, res) => {
                         .select('id, clinic_id, unit_id, status')
                         .eq('id', pay.cash_session_id)
                         .maybeSingle();
-                    const recUnit = recRow?.unit_id;
+                    if (cashErr ||
+                        !cashSession ||
+                        cashSession.clinic_id !== clinic_id ||
+                        cashSession.status !== 'open' ||
+                        (recUnit && cashSession.unit_id !== recUnit)) {
+                        await rollbackReceivables();
+                        return res.status(409).json({ error: 'Sessão de caixa inválida ou fechada.' });
+                    }
+                    validatedCashSessionId = cashSession.id;
+                }
+                else if (pay.cash_session_id) {
+                    const { data: cashSession, error: cashErr } = await supabase_1.supabaseAdmin
+                        .from('hub_cash_sessions')
+                        .select('id, clinic_id, unit_id, status')
+                        .eq('id', pay.cash_session_id)
+                        .maybeSingle();
                     if (cashErr ||
                         !cashSession ||
                         cashSession.clinic_id !== clinic_id ||
@@ -1927,8 +1974,7 @@ const postHubComandaCheckout = async (req, res) => {
                     validatedCashSessionId = cashSession.id;
                 }
                 else {
-                    // Pagamentos não-dinheiro: carimbar a sessão aberta da unidade para rastreamento do dia
-                    validatedCashSessionId = await (0, hubFinancialController_1.resolveOpenCashSessionId)(clinic_id, recRow?.unit_id);
+                    validatedCashSessionId = await (0, hubFinancialController_1.resolvePaymentCashSessionId)(clinic_id, recUnit, unitId);
                 }
                 const { error: pErr } = await supabase_1.supabaseAdmin.from('hub_payments').insert({
                     clinic_id,
@@ -2471,7 +2517,7 @@ const getHubComandaByOrigin = async (req, res) => {
         const q = zod_1.z
             .object({
             clinic_id: uuidStr,
-            origin_type: comandaOriginSchema,
+            origin_type: hubComandaSchemas_1.comandaOriginSchema,
             origin_id: uuidStr,
         })
             .strict()
@@ -2769,6 +2815,7 @@ const addComandaItemsBodySchema = zod_1.z
         pet_id: uuidStr.optional().nullable(),
         hub_service_type_id: uuidStr.optional().nullable(),
         hub_inventory_item_id: uuidStr.optional().nullable(),
+        hub_inventory_lot_id: uuidStr.optional().nullable(),
         description: zod_1.z.string().min(1).max(500),
         quantity: zod_1.z.number().positive().default(1),
         unit_amount: zod_1.z.number().min(0),
@@ -2822,6 +2869,7 @@ const postHubComandaAddItems = async (req, res) => {
             pet_id: it.pet_id ?? null,
             hub_service_type_id: it.hub_service_type_id ?? null,
             hub_inventory_item_id: it.hub_inventory_item_id ?? null,
+            hub_inventory_lot_id: it.hub_inventory_lot_id ?? null,
             description: it.description,
             quantity: it.quantity,
             unit_amount: it.unit_amount,
@@ -3085,6 +3133,18 @@ const postHubComandaCheckoutBulk = async (req, res) => {
         }
         const { clinic_id, comanda_ids, action, due_date, payment_timing, payment_method, cash_session_id } = parsed.data;
         const userId = req.user?.id ?? null;
+        if (action === 'receive_now' && payment_method) {
+            const clinicSettings = await (0, hubClinicSettingsController_1.getOrCreateHubClinicSettings)(clinic_id);
+            try {
+                (0, hubPaymentMethods_1.assertPaymentMethodInList)(payment_method, clinicSettings.accepted_payment_methods);
+            }
+            catch (e) {
+                if (e instanceof hubPaymentMethods_1.PaymentMethodNotAcceptedError) {
+                    return res.status(400).json({ error: e.message });
+                }
+                throw e;
+            }
+        }
         // Valida que todas as comandas existem, pertencem à clínica e estão abertas
         const { data: comandas, error: cErr } = await supabase_1.supabaseAdmin
             .from('hub_comandas')
@@ -3192,7 +3252,7 @@ const postHubComandaCheckoutBulk = async (req, res) => {
                         validatedCashSessionId = cash_session_id;
                     }
                     else {
-                        validatedCashSessionId = await (0, hubFinancialController_1.resolveOpenCashSessionId)(clinic_id, unitId);
+                        validatedCashSessionId = await (0, hubFinancialController_1.resolvePaymentCashSessionId)(clinic_id, unitId, unitId);
                     }
                     await supabase_1.supabaseAdmin.from('hub_payments').insert({
                         clinic_id,

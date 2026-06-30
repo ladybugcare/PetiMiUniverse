@@ -1,0 +1,234 @@
+/* Layout de perfil (Meu Perfil / Cliente / Pet) — compartilhado no hub-ui */
+.hub-meu-perfil {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(240px, 280px) 1fr;
+  gap: 24px;
+  align-items: start;
+  width: 100%;
+}
+
+.hub-meu-perfil__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hub-meu-perfil__card {
+  background: #fff;
+  border: 1px solid rgba(74, 59, 58, 0.12);
+  border-radius: 14px;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.hub-meu-perfil__summary {
+  text-align: center;
+}
+
+.hub-meu-perfil__avatar-initials {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: #fdf6f2;
+  border: 1px solid rgba(200, 106, 77, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #c86a4d;
+  margin: 0 auto 16px;
+  box-sizing: border-box;
+}
+
+.hub-meu-perfil__sidebar-name {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #4a3b3a;
+  line-height: 1.25;
+}
+
+.hub-meu-perfil__badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #c86a4d;
+  background: rgba(200, 106, 77, 0.14);
+  margin-bottom: 14px;
+}
+
+.hub-meu-perfil__badge--muted {
+  color: #6b5654;
+  background: rgba(74, 59, 58, 0.08);
+}
+
+.hub-meu-perfil__contact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #6b5654;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.hub-meu-perfil__aside-meta {
+  background: #f7f4f2;
+  text-align: left;
+}
+
+.hub-meu-perfil__meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+}
+
+.hub-meu-perfil__meta-row + .hub-meu-perfil__meta-row {
+  border-top: 1px solid rgba(74, 59, 58, 0.08);
+}
+
+.hub-meu-perfil__meta-label {
+  font-size: 12px;
+  color: #8e7a77;
+}
+
+.hub-meu-perfil__meta-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: #4a3b3a;
+}
+
+.hub-meu-perfil__main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.hub-meu-perfil__panel {
+  background: #fff;
+  border: 1px solid rgba(74, 59, 58, 0.12);
+  border-radius: 14px;
+  padding: 22px 24px 24px;
+  box-sizing: border-box;
+}
+
+.hub-meu-perfil__panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.hub-meu-perfil__panel-title {
+  margin: 0 0 6px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #4a3b3a;
+}
+
+.hub-meu-perfil__panel-sub {
+  margin: 0;
+  font-size: 14px;
+  color: #6b5654;
+  line-height: 1.45;
+}
+
+.hub-meu-perfil__btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 1px solid #c86a4d;
+  background: #fff;
+  color: #c86a4d;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.hub-meu-perfil__btn-outline:hover {
+  background: rgba(200, 106, 77, 0.08);
+}
+
+.hub-meu-perfil__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid rgba(74, 59, 58, 0.12);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.hub-meu-perfil__cell {
+  padding: 16px 18px;
+  border-right: 1px solid rgba(74, 59, 58, 0.1);
+  border-bottom: 1px solid rgba(74, 59, 58, 0.1);
+  min-width: 0;
+}
+
+.hub-meu-perfil__cell:nth-child(3n) {
+  border-right: none;
+}
+
+.hub-meu-perfil__cell:nth-last-child(-n + 3):nth-child(3n + 1),
+.hub-meu-perfil__cell:nth-last-child(-n + 2):nth-child(3n + 2),
+.hub-meu-perfil__cell:nth-last-child(-n + 1):nth-child(3n) {
+  border-bottom: none;
+}
+
+.hub-meu-perfil__cell-icon {
+  margin-bottom: 10px;
+}
+
+.hub-meu-perfil__cell-label {
+  font-size: 12px;
+  color: #8e7a77;
+  margin-bottom: 6px;
+}
+
+.hub-meu-perfil__cell-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #4a3b3a;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.hub-meu-perfil__sidebar-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .hub-meu-perfil {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-meu-perfil__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-meu-perfil__cell {
+    border-right: none;
+    border-bottom: 1px solid rgba(74, 59, 58, 0.1);
+  }
+
+  .hub-meu-perfil__cell:last-child {
+    border-bottom: none;
+  }
+}

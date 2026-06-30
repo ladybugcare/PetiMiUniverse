@@ -11,6 +11,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { HubPaymentMethod } from '../../api/hubFinancialApi';
+import { HubLoading } from '../../components/HubLoading';
 import { HUB_PAYMENT_METHOD_LABELS } from '../../utils/hubPaymentMethods';
 
 function formatBrl(n: number): string {
@@ -107,7 +108,7 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
       {!cashOpen ? (
         <p className="hub-caixa-page__empty">Abra o caixa para ver as movimentações da sessão.</p>
       ) : loadingMethods ? (
-        <p className="hub-caixa-page__empty">Carregando formas de pagamento…</p>
+        <HubLoading variant="block" label="Carregando formas de pagamento…" />
       ) : (
         <div className="hub-caixa-page__card-scroll">
           <MovementsSection title="Entradas" total={methodsTotal} variant="in">

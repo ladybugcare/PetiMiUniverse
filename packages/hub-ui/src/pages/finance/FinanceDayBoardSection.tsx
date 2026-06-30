@@ -6,6 +6,7 @@ import { formatYmd, parseIsoYmd, todayYmd } from '../../utils/hubCalendar';
 import { addDays, startOfWeekMonday } from '../agenda/agendaModel';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
 import { FinanceDayBoardTable } from './FinanceDayBoardTable';
+import { HubLoading } from '../../components/HubLoading';
 
 function normalizeText(s: string): string {
   return s
@@ -220,7 +221,7 @@ export function FinanceDayBoardSection({
       </div>
 
       {dayBoardBusy ? (
-        <p className="hub-clientes__muted">Carregando…</p>
+        <HubLoading variant="block" label="Carregando atendimentos…" />
       ) : dayBoardFiltered.length === 0 ? (
         <div className="hub-dayboard__empty">{emptyMessage}</div>
       ) : (

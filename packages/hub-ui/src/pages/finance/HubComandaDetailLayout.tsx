@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import type { HubComandaAllowedGuardian, HubComandaGuardianEmbed } from '../../api/hubComandaApi';
+import type { HubComandaAllowedGuardian, HubComandaGuardianEmbed, HubComandaPetEmbed } from '../../api/hubComandaApi';
+import { sexLabelPt, sizeTierLabelPt } from '../orcamentos/hubQuoteViewUtils';
 import { waMeBaseUrl } from './hubComandaShareUtils';
 import {
   ChevronRight,
@@ -15,6 +16,7 @@ import {
   Send,
   Share2,
   User,
+  Dog,
 } from 'lucide-react';
 
 function fmtBrl(n: number): string {
@@ -39,6 +41,7 @@ export interface HubComandaDetailLayoutProps {
   openedAt?: string | null;
   closedAt?: string | null;
   guardian: HubComandaGuardianEmbed | null;
+  pets: HubComandaPetEmbed[];
   allowedGuardians: HubComandaAllowedGuardian[];
   subtotal: number;
   discountAmount: number;
@@ -72,6 +75,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
   openedAt,
   closedAt,
   guardian,
+  pets,
   allowedGuardians,
   subtotal,
   discountAmount,
@@ -356,11 +360,88 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
               )}
             </section>
 
+            <section className="hub-quote-detail__card">
+              <div className="hub-quote-detail__card-head">
+                <Dog size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
+                <h2 className="hub-quote-detail__card-title">
+                  {pets.length === 1 ? 'Pet' : `Pets${pets.length > 0 ? ` (${pets.length})` : ''}`}
+                </h2>
+              </div>
+              {pets.length === 0 ? (
+                <p className="hub-quote-detail__muted">—</p>
+              ) : pets.length === 1 ? (
+                <div className="hub-quote-detail__contact-grid">
+                  <div className="hub-quote-detail__field">
+                    <span className="hub-quote-detail__field-label">Nome</span>
+                    <span className="hub-quote-detail__field-value">
+                      <Link to={`/hub/pets/${pets[0].id}`} className="hub-quote-detail__link">
+                        {pets[0].name}
+                      </Link>
+                    </span>
+                  </div>
+                  <div className="hub-quote-detail__field">
+                    <span className="hub-quote-detail__field-label">Espécie</span>
+                    <span className="hub-quote-detail__field-value">{pets[0].species?.trim() || '—'}</span>
+                  </div>
+                  <div className="hub-quote-detail__field">
+                    <span className="hub-quote-detail__field-label">Raça</span>
+                    <span className="hub-quote-detail__field-value">{pets[0].breed?.trim() || '—'}</span>
+                  </div>
+                  <div className="hub-quote-detail__field">
+                    <span className="hub-quote-detail__field-label">Porte</span>
+                    <span className="hub-quote-detail__field-value">
+                      {pets[0].size_tier ? sizeTierLabelPt(pets[0].size_tier) : '—'}
+                    </span>
+                  </div>
+                  <div className="hub-quote-detail__field">
+                    <span className="hub-quote-detail__field-label">Sexo</span>
+                    <span className="hub-quote-detail__field-value">{sexLabelPt(pets[0].sex ?? null)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="hub-quote-detail__table-scroll">
+                  <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
+                    <thead>
+                      <tr>
+                        <th>Nome</th>
+                        <th>Espécie</th>
+                        <th>Raça</th>
+                        <th>Porte</th>
+                        <th>Sexo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pets.map((p) => (
+                        <tr key={p.id}>
+                          <td>
+                            <Link to={`/hub/pets/${p.id}`} className="hub-quote-detail__link">
+                              {p.name}
+                            </Link>
+                          </td>
+                          <td className="hub-orcamento-novo__services-table-cell--muted">{p.species?.trim() || '—'}</td>
+                          <td className="hub-orcamento-novo__services-table-cell--muted">{p.breed?.trim() || '—'}</td>
+                          <td className="hub-orcamento-novo__services-table-cell--muted">
+                            {p.size_tier ? sizeTierLabelPt(p.size_tier) : '—'}
+                          </td>
+                          <td className="hub-orcamento-novo__services-table-cell--muted">{sexLabelPt(p.sex ?? null)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
             <section className="hub-quote-detail__card hub-quote-detail__card--flush">
               <div className="hub-quote-detail__card-head hub-quote-detail__card-head--spread">
                 <div className="hub-quote-detail__card-head-left">
                   <ClipboardList size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
-                  <h2 className="hub-quote-detail__card-title">Itens da comanda</h2>
+                  <div>
+                    <h2 className="hub-quote-detail__card-title">Serviços e produtos</h2>
+                    <p className="hub-orcamento-novo__card-subtitle" style={{ marginTop: 4, marginBottom: 0 }}>
+                      Serviços do atendimento e produtos de estoque vinculados a esta cobrança.
+                    </p>
+                  </div>
                 </div>
               </div>
               {itemsSection}

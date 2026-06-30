@@ -37,6 +37,8 @@ export type HubComandaItem = {
   pet_name?: string | null;
   item_kind: string;
   hub_service_type_id?: string | null;
+  hub_inventory_item_id?: string | null;
+  hub_inventory_lot_id?: string | null;
   description: string;
   quantity: number;
   unit_amount: number;
@@ -67,11 +69,24 @@ export type HubComandaDetailResponse = {
   operational_complete?: boolean;
   edit_scopes?: HubComandaEditScopes;
   allowed_guardians?: HubComandaAllowedGuardian[];
+  pets?: HubPublicComandaPet[];
+};
+
+export type HubComandaPetEmbed = HubPublicComandaPet;
+
+export type HubPublicComandaPet = {
+  id: string;
+  name: string;
+  species: string;
+  breed: string | null;
+  size_tier: string;
+  sex?: string | null;
 };
 
 export type HubPublicComandaResponse = {
   comanda: Record<string, unknown> & { clinic?: { name: string | null } | null };
   items: HubComandaItem[];
+  pets?: HubPublicComandaPet[];
   paid_total?: number;
   balance_due?: number;
 };
@@ -208,6 +223,7 @@ export const hubComandaApi = {
         pet_id?: string | null;
         hub_service_type_id?: string | null;
         hub_inventory_item_id?: string | null;
+        hub_inventory_lot_id?: string | null;
         description: string;
         quantity?: number;
         unit_amount: number;

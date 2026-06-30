@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { HubSidePanel } from '../../components/HubSidePanel';
+import { HubLoading } from '../../components/HubLoading';
 import {
   hubBoardingApi,
   type BoardingDayBoardItem,
@@ -15,6 +16,9 @@ import { renderTemplate } from '../../utils/hubMessageTemplates';
 import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryApi';
+import { hubComandaApi } from '../../api/hubComandaApi';
+import { useNavigate } from 'react-router-dom';
+import { shouldShowBoardingBillingButton } from './boardingBillingUi';
 
 function formatDate(iso?: string | null): string {
   if (!iso) return '—';
@@ -51,6 +55,7 @@ export type BoardingReservationDrawerProps = {
   canDailyReport: boolean;
   canManageFinance?: boolean;
   canWriteInventory?: boolean;
+  unitId?: string | null;
   onClose: () => void;
   onUpdated?: () => void;
 };
@@ -62,12 +67,15 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
   canDailyReport,
   canManageFinance,
   canWriteInventory,
+  unitId,
   onClose,
   onUpdated,
 }) => {
   const clinicId = getStoredClinicId();
   const templateOverrides = useMessageTemplates();
   const { showError, showSuccess } = useAlert();
+  const navigate = useNavigate();
+  const [billingBusy, setBillingBusy] = useState(false);
   const [stockItems, setStockItems] = useState<HubInventoryItem[]>([]);
   const [stockItemId, setStockItemId] = useState('');
   const [stockQty, setStockQty] = useState('1');
@@ -178,6 +186,27 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
     }
   };
 
+  const handleGenerateBilling = async () => {
+    if (!clinicId || !item?.reservation_id) return;
+    setBillingBusy(true);
+    try {
+      const detail = await hubComandaApi.openComanda({
+        clinic_id: clinicId,
+        origin_type: 'boarding_reservation',
+        origin_id: item.reservation_id,
+        unit_id: unitId ?? undefined,
+      });
+      const comandaId = (detail.comanda as Record<string, unknown>)?.id as string | undefined;
+      showSuccess('Comanda aberta.');
+      if (comandaId) navigate(`/hub/caixa/comanda/${comandaId}`);
+      onUpdated?.();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao gerar cobrança');
+    } finally {
+      setBillingBusy(false);
+    }
+  };
+
   if (!item) return null;
 
   const petName = item.pet?.name || 'Sem pet';
@@ -207,7 +236,20 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
 
   const footer = (
     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-      {/* Checkout de fim de hospedagem removido — use o Caixa (Atendimentos do dia). */}
+      {shouldShowBoardingBillingButton({
+        stage,
+        canManageFinance,
+        reservationId: item.reservation_id,
+      }) && (
+        <button
+          type="button"
+          className="hub-btn hub-btn--primary"
+          disabled={billingBusy}
+          onClick={() => void handleGenerateBilling()}
+        >
+          {billingBusy ? 'Abrindo…' : 'Gerar cobrança'}
+        </button>
+      )}
       <button type="button" className="hub-btn hub-btn--ghost" onClick={onClose}>
         Fechar
       </button>
@@ -334,7 +376,7 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
             )}
           </h4>
           {drawerLoading ? (
-            <p className="hub-clientes__muted">Carregando…</p>
+            <HubLoading variant="inline" size="sm" label="Carregando relatório…" />
           ) : (
             <>
               <div className="hub-drawer-checklist">
