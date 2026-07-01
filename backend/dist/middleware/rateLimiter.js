@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.uploadLimiter = exports.userRateLimiter = exports.statsLimiter = exports.createLimiter = exports.authLimiter = exports.hubApiLimiter = exports.generalLimiter = void 0;
+exports.parseJwtSub = parseJwtSub;
 exports.isRateLimitDisabled = isRateLimitDisabled;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const logger_js_1 = require("../utils/logger.js");
@@ -36,9 +37,9 @@ function parsePositiveInt(raw, fallback) {
     const n = Number.parseInt(raw, 10);
     return Number.isFinite(n) && n > 0 ? n : fallback;
 }
-/** Em .env.local: DISABLE_RATE_LIMIT=true (apenas NODE_ENV=development) */
+/** Em .env.local: DISABLE_RATE_LIMIT=true (development ou testes) */
 function isRateLimitDisabled() {
-    return (process.env.NODE_ENV === 'development' && process.env.DISABLE_RATE_LIMIT === 'true');
+    return process.env.DISABLE_RATE_LIMIT === 'true';
 }
 function isHealthProbePath(path) {
     return path === '/' || path === '/health' || path === '/health/live';

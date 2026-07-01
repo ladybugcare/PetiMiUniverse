@@ -57,13 +57,17 @@ class MockQueryBuilder {
   private limitN: number | null = null;
   private op: 'select' | 'insert' | 'update' = 'select';
   private payload: Row | Row[] | null = null;
+  private countOnly = false;
 
   constructor(
     private readonly table: string,
     private readonly state: MockSupabaseState
   ) {}
 
-  select(_cols?: string): this {
+  select(_cols?: string, opts?: { count?: 'exact' | 'planned' | 'estimated'; head?: boolean }): this {
+    if (opts?.count && opts?.head) {
+      this.countOnly = true;
+    }
     if (this.op === 'select') return this;
     return this;
   }
@@ -161,7 +165,12 @@ class MockQueryBuilder {
     return out;
   }
 
-  private run(): { data: Row | Row[] | null; error: null } {
+  private run(): { data: Row | Row[] | null; error: null; count?: number } {
+    if (this.countOnly) {
+      const filtered = this.finalize(this.applyFilters(this.rows()));
+      return { data: null, error: null, count: filtered.length };
+    }
+
     if (this.op === 'insert') {
       const rows = Array.isArray(this.payload) ? this.payload : [this.payload as Row];
       const withIds = rows.map((r) => ({
@@ -206,8 +215,13 @@ class MockQueryBuilder {
     return { data: rows[0], error: null };
   }
 
-  then<TResult1 = { data: Row[] | Row | null; error: null }, TResult2 = never>(
-    onfulfilled?: ((value: { data: Row[] | Row | null; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
+  then<
+    TResult1 = { data: Row[] | Row | null; error: null; count?: number },
+    TResult2 = never,
+  >(
+    onfulfilled?:
+      | ((value: { data: Row[] | Row | null; error: null; count?: number }) => TResult1 | PromiseLike<TResult1>)
+      | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
   ): Promise<TResult1 | TResult2> {
     return Promise.resolve(this.run()).then(onfulfilled, onrejected);
@@ -228,6 +242,16 @@ export function createMockSupabaseClient(initial: MockSupabaseState) {
         data: { user: { id: 'test-user', email: 'test@test.com', user_metadata: { role: 'CADMIN' } } },
         error: null,
       }),
+      signInWithPassword: async () => ({ data: { user: null, session: null }, error: null }),
+      signUp: async () => ({ data: { user: null, session: null }, error: null }),
+      admin: {
+        listUsers: async () => ({ data: { users: [] }, error: null }),
+        updateUserById: async () => ({ data: { user: null }, error: null }),
+        inviteUserByEmail: async () => ({ data: { user: null }, error: null }),
+        generateLink: async () => ({ data: null, error: null }),
+        createUser: async () => ({ data: { user: null }, error: null }),
+        deleteUser: async () => ({ data: null, error: null }),
+      },
     },
     _state: state,
   };

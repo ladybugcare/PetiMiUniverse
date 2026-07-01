@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
 import '../config/loadEnv.js';
 
-function parseJwtSub(authHeader: string | undefined): string | null {
+export function parseJwtSub(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) return null;
   const token = authHeader.slice(7);
   const parts = token.split('.');
@@ -31,11 +31,9 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/** Em .env.local: DISABLE_RATE_LIMIT=true (apenas NODE_ENV=development) */
+/** Em .env.local: DISABLE_RATE_LIMIT=true (development ou testes) */
 export function isRateLimitDisabled(): boolean {
-  return (
-    process.env.NODE_ENV === 'development' && process.env.DISABLE_RATE_LIMIT === 'true'
-  );
+  return process.env.DISABLE_RATE_LIMIT === 'true';
 }
 
 function isHealthProbePath(path: string): boolean {
