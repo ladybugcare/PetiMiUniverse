@@ -1,9 +1,27 @@
 import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-
-type PdfDoc = InstanceType<typeof PDFDocument>;
+import {
+  PDF_MARGIN,
+  PDF_MUTED,
+  PDF_TEXT,
+  PDF_BORDER,
+  brlPdf,
+  contentWidth,
+  drawDataTableHeader,
+  drawDefinitionRows,
+  drawFineprint,
+  drawNotesCard,
+  drawPageShell,
+  drawPublicDocumentHeader,
+  drawSectionCard,
+  drawTableDivider,
+  drawTotalsCard,
+  embedOnePdf,
+  ensurePdfSpace,
+  measureDefinitionRowsHeight,
+  clientNotesTitlePdf,
+  type PdfDoc,
+} from './hubPublicDocumentPdf';
 
 type ComandaItem = {
   id: string;
@@ -20,9 +38,18 @@ type GuardianEmbed = {
   full_name: string;
   phone?: string | null;
   email?: string | null;
+  tax_id?: string | null;
 };
 
-type ClinicEmbed = { name: string | null };
+type ComandaPet = {
+  id: string;
+  name: string;
+  species: string;
+  breed: string | null;
+  size_tier: string;
+};
+
+type ClinicEmbed = { name: string | null; photo_url?: string | null };
 
 export type ComandaPdfPayload = {
   id: string;
@@ -35,25 +62,11 @@ export type ComandaPdfPayload = {
   guardian: GuardianEmbed | null;
   clinic?: ClinicEmbed | ClinicEmbed[] | null;
   items: ComandaItem[];
+  pets?: ComandaPet[];
   paid_total?: number;
   balance_due?: number;
+  client_notes?: string | null;
 };
-
-const ORANGE = '#f0642f';
-const TEXT_DARK = '#4a3b3a';
-const TEXT_MUTED = '#8e6e67';
-const BEIGE = '#faf3ee';
-const BORDER = '#e5dcd6';
-const GREEN_DISC = '#2e7d32';
-
-function brl(n: number): string {
-  return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function embedOne<T>(x: T | T[] | null | undefined): T | null {
-  if (x == null) return null;
-  return Array.isArray(x) ? x[0] ?? null : x;
-}
 
 function statusLabelPt(status: string): string {
   const m: Record<string, string> = {
@@ -64,180 +77,196 @@ function statusLabelPt(status: string): string {
   return m[status] ?? status;
 }
 
-function resolvePetmiHubLogoPath(): string | null {
-  const candidates = [
-    path.join(__dirname, '../../../assets/petmi-hub-logo.png'),
-    path.join(__dirname, '../../assets/petmi-hub-logo.png'),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
+function sizeTierLabelPt(tier: string): string {
+  const m: Record<string, string> = {
+    mini: 'Mini',
+    pequeno: 'Pequeno',
+    medio: 'Médio',
+    grande: 'Grande',
+    gigante: 'Gigante',
+  };
+  return tier ? m[tier] ?? tier : '—';
 }
 
-function drawFootersOnAllPages(doc: PdfDoc, logoPath: string | null): void {
-  if (!logoPath) return;
-  const range = doc.bufferedPageRange();
-  const pageW = doc.page.width;
-  const margin = 40;
-  const logoW = 88;
-  const logoH = 28;
+function drawPetsTable(doc: PdfDoc, x: number, y: number, width: number, pets: ComandaPet[]): number {
+  const cols = [
+    { label: 'Nome', w: 0.28 },
+    { label: 'Espécie', w: 0.22 },
+    { label: 'Raça', w: 0.28 },
+    { label: 'Porte', w: 0.22 },
+  ];
+  let cy = y;
+  let tx = x;
+  doc.font('Helvetica-Bold').fontSize(8).fillColor(PDF_MUTED);
+  cols.forEach((col) => {
+    const w = width * col.w;
+    doc.text(col.label.toUpperCase(), tx, cy, { width: w });
+    tx += w;
+  });
+  cy = doc.y + 8;
+  doc.font('Helvetica').fontSize(9.5).fillColor(PDF_TEXT);
+  pets.forEach((p) => {
+    tx = x;
+    const row = [p.name, p.species || '—', p.breed?.trim() || '—', sizeTierLabelPt(p.size_tier)];
+    row.forEach((cell, j) => {
+      const w = width * cols[j]!.w;
+      doc.text(cell, tx, cy, { width: w });
+      tx += w;
+    });
+    cy = doc.y + 6;
+  });
+  return cy;
+}
 
-  for (let i = range.start; i < range.start + range.count; i++) {
-    doc.switchToPage(i);
-    const footerTop = doc.page.height - margin - logoH - 4;
-    const cx = pageW / 2;
-    try {
-      doc.image(logoPath, cx - logoW / 2, footerTop, { width: logoW, height: logoH, fit: [logoW, logoH] });
-    } catch {
-      /* ignore */
+function measurePetsTableHeight(pets: ComandaPet[]): number {
+  return 22 + pets.length * 16 + 4;
+}
+
+function derivePetsFromItems(items: ComandaItem[]): ComandaPet[] {
+  const byName = new Map<string, ComandaPet>();
+  for (const it of items) {
+    const name = it.pet_name?.trim();
+    if (!name) continue;
+    if (!byName.has(name)) {
+      byName.set(name, { id: name, name, species: '—', breed: null, size_tier: '' });
     }
   }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
-export function streamComandaPdf(res: Response, payload: ComandaPdfPayload): void {
-  const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
+export async function streamComandaPdf(res: Response, payload: ComandaPdfPayload): Promise<void> {
+  const doc = new PDFDocument({ size: 'A4', margin: PDF_MARGIN, bufferPages: true });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="comanda-${payload.id.slice(0, 8)}.pdf"`);
   doc.pipe(res);
 
-  const clinic = embedOne(payload.clinic);
+  drawPageShell(doc);
+
+  const clinic = embedOnePdf(payload.clinic);
   const clinicName = clinic?.name?.trim() || 'Clínica';
   const guardian = payload.guardian;
-  const logoPath = resolvePetmiHubLogoPath();
   const items = [...payload.items].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const pets = (payload.pets?.length ? payload.pets : derivePetsFromItems(items)).slice();
 
-  const margin = 40;
-  const contentW = doc.page.width - margin * 2;
-  const rightBoxW = 200;
-  const leftBlockW = contentW - rightBoxW - 16;
+  const margin = PDF_MARGIN;
+  const contentW = contentWidth(doc, margin);
 
-  let y = margin;
-
-  doc.font('Helvetica-Bold').fontSize(14).fillColor(TEXT_DARK).text('Comanda', margin, y, { width: leftBlockW });
-  y = doc.y + 2;
-  doc.font('Helvetica-Bold').fontSize(22).fillColor(ORANGE).text(clinicName, margin, y, { width: leftBlockW });
-  y = doc.y + 4;
-  doc.font('Helvetica').fontSize(10).fillColor(TEXT_MUTED).text('Resumo de serviços e valores.', margin, y, {
-    width: leftBlockW,
+  let y = await drawPublicDocumentHeader(doc, margin, margin, {
+    eyebrow: 'Comanda',
+    clinicName,
+    tagline: 'Resumo de serviços e valores.',
+    metaRows: [
+      { label: 'Referência', value: payload.id.slice(0, 8).toUpperCase(), accent: true },
+      { label: 'Aberta em', value: new Date(payload.opened_at).toLocaleString('pt-BR') },
+      { label: 'Status', value: statusLabelPt(payload.status) },
+    ],
+    clinicLogoUrl: clinic?.photo_url?.trim() || null,
   });
 
-  const boxTop = margin;
-  const boxX = doc.page.width - margin - rightBoxW;
-  const rightBoxH = 58;
-  doc.save();
-  doc.roundedRect(boxX, boxTop, rightBoxW, rightBoxH, 8).fill(BEIGE);
-  doc.restore();
+  const colGap = 14;
+  const colW = (contentW - colGap) / 2;
+  const contactRows = guardian
+    ? [
+        { label: 'Nome', value: guardian.full_name },
+        { label: 'Telefone', value: guardian.phone?.trim() || '—' },
+        ...(guardian.tax_id ? [{ label: 'CPF', value: guardian.tax_id }] : []),
+        ...(guardian.email ? [{ label: 'E-mail', value: guardian.email }] : []),
+      ]
+    : [];
+  const contactBodyH = guardian ? measureDefinitionRowsHeight(contactRows) : 14;
+  const petsBodyH = pets.length > 0 ? measurePetsTableHeight(pets) : 14;
+  const cardsH = Math.max(contactBodyH, petsBodyH) + 36;
 
-  let boxY = boxTop + 10;
-  doc.font('Helvetica').fontSize(9).fillColor(TEXT_MUTED).text('Nº ', boxX + 12, boxY, { continued: true });
-  doc.font('Helvetica-Bold').fillColor(ORANGE).text(payload.id.slice(0, 8).toUpperCase(), { continued: false });
-  boxY = doc.y + 4;
-  doc.font('Helvetica').fontSize(8.5).fillColor(TEXT_DARK);
-  doc.text(`Aberta em: ${new Date(payload.opened_at).toLocaleString('pt-BR')}`, boxX + 12, boxY, {
-    width: rightBoxW - 20,
-  });
-  boxY = doc.y + 2;
-  doc.text(`Status: ${statusLabelPt(payload.status)}`, boxX + 12, boxY, { width: rightBoxW - 20 });
+  y = ensurePdfSpace(doc, y, cardsH, margin);
 
-  y = Math.max(doc.y, boxTop + rightBoxH) + 14;
-  doc.moveTo(margin, y).lineTo(doc.page.width - margin, y).strokeColor(BORDER).lineWidth(0.5).stroke();
-  y += 14;
-
-  doc.font('Helvetica-Bold').fontSize(12).fillColor(TEXT_DARK).text('Cliente', margin, y);
-  y = doc.y + 6;
-  doc.save();
-  doc.roundedRect(margin, y, contentW, 56, 6).fill(BEIGE);
-  doc.restore();
-  const innerPad = 12;
-  let y1 = y + innerPad;
-  doc.font('Helvetica').fontSize(10).fillColor(TEXT_DARK);
+  const contactCard = drawSectionCard(doc, margin, y, colW, 'Dados do contato', contactBodyH);
   if (guardian) {
-    doc.text(`Nome: ${guardian.full_name}`, margin + innerPad, y1, { width: contentW - innerPad * 2 });
-    y1 = doc.y + 2;
-    if (guardian.phone) doc.text(`Telefone: ${guardian.phone}`, margin + innerPad, y1, { width: contentW - innerPad * 2 });
-    y1 = doc.y + 2;
-    if (guardian.email) doc.text(`E-mail: ${guardian.email}`, margin + innerPad, y1, { width: contentW - innerPad * 2 });
+    drawDefinitionRows(doc, contactCard.innerX, contactCard.innerY, colW - 32, contactRows);
   } else {
-    doc.text('—', margin + innerPad, y1, { width: contentW - innerPad * 2 });
+    doc.font('Helvetica').fontSize(10).fillColor(PDF_MUTED).text('—', contactCard.innerX, contactCard.innerY);
   }
 
-  y = y + 56 + 18;
-  doc.font('Helvetica-Bold').fontSize(12).fillColor(TEXT_DARK).text('Itens', margin, y);
-  y = doc.y + 8;
-
-  const wDesc = 220;
-  const wPet = 100;
-  const wQty = 44;
-  const wUnit = 80;
-  const wTot = contentW - wDesc - wPet - wQty - wUnit;
-
-  if (items.length === 0) {
-    doc.font('Helvetica').fontSize(11).text('—', margin, y);
-    y = doc.y + 16;
+  const petsX = margin + colW + colGap;
+  const petsCard = drawSectionCard(doc, petsX, y, colW, 'Pets', petsBodyH);
+  if (pets.length === 0) {
+    doc.font('Helvetica').fontSize(10).fillColor(PDF_MUTED).text('—', petsCard.innerX, petsCard.innerY);
   } else {
-    doc.save();
-    doc.rect(margin, y, contentW, 22).fill(BEIGE);
-    doc.restore();
-    doc.font('Helvetica-Bold').fontSize(9).fillColor(TEXT_MUTED);
-    let hx = margin + 8;
-    doc.text('DESCRIÇÃO', hx, y + 6, { width: wDesc - 8 });
-    hx += wDesc;
-    doc.text('PET', hx, y + 6, { width: wPet - 8 });
-    hx += wPet;
-    doc.text('QTD', hx, y + 6, { width: wQty - 8, align: 'right' });
-    hx += wQty;
-    doc.text('UNIT.', hx, y + 6, { width: wUnit - 8, align: 'right' });
-    hx += wUnit;
-    doc.text('TOTAL', hx, y + 6, { width: wTot - 8, align: 'right' });
-    y += 26;
+    drawPetsTable(doc, petsCard.innerX, petsCard.innerY, colW - 32, pets);
+  }
 
-    doc.font('Helvetica').fontSize(10).fillColor(TEXT_DARK);
+  y = Math.max(contactCard.bottom, petsCard.bottom) + 16;
+
+  const servicesRowH = 22;
+  const servicesH = 42 + (items.length > 0 ? 24 + items.length * servicesRowH : 36);
+  y = ensurePdfSpace(doc, y, servicesH, margin);
+
+  doc.save();
+  doc.roundedRect(margin, y, contentW, servicesH, 12).fill('#ffffff');
+  doc.roundedRect(margin, y, contentW, servicesH, 12).strokeColor(PDF_BORDER).lineWidth(1).stroke();
+  doc.restore();
+  doc.font('Helvetica-Bold').fontSize(11.5).fillColor(PDF_TEXT).text('Serviços e valores', margin + 16, y + 16);
+
+  let tableY = y + 40;
+  if (items.length === 0) {
+    doc.font('Helvetica').fontSize(10).fillColor(PDF_MUTED).text('Sem itens.', margin + 16, tableY);
+  } else {
+    const wDesc = contentW * 0.42;
+    const wPet = contentW * 0.2;
+    const wQty = 44;
+    const wTotal = contentW - wDesc - wPet - wQty - 32;
+    tableY = drawDataTableHeader(doc, margin + 8, tableY, contentW - 16, [
+      { label: 'Serviço', width: wDesc },
+      { label: 'Pet', width: wPet },
+      { label: 'Qtd', width: wQty, align: 'right' },
+      { label: 'Total linha', width: wTotal, align: 'right' },
+    ]);
+
     items.forEach((it) => {
-      const rowTop = y;
-      doc.font('Helvetica-Bold').text(it.description, margin + 4, rowTop, { width: wDesc - 8 });
-      doc.font('Helvetica').fontSize(9).text(it.pet_name ?? '—', margin + wDesc + 4, rowTop, { width: wPet - 8 });
-      doc.text(String(it.quantity), margin + wDesc + wPet + 4, rowTop, { width: wQty - 8, align: 'right' });
-      doc.text(brl(it.unit_amount), margin + wDesc + wPet + wQty + 4, rowTop, { width: wUnit - 8, align: 'right' });
-      doc.font('Helvetica-Bold').text(brl(it.line_total), margin + wDesc + wPet + wQty + wUnit + 4, rowTop, {
-        width: wTot - 8,
+      tableY = ensurePdfSpace(doc, tableY, servicesRowH + 8, margin);
+      const rowTop = tableY;
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(PDF_TEXT).text(it.description, margin + 18, rowTop, {
+        width: wDesc - 12,
+      });
+      doc.font('Helvetica').fontSize(9).fillColor(PDF_TEXT).text(it.pet_name ?? '—', margin + 18 + wDesc, rowTop, {
+        width: wPet - 8,
+      });
+      doc.text(String(it.quantity), margin + 18 + wDesc + wPet, rowTop, { width: wQty - 6, align: 'right' });
+      doc.font('Helvetica-Bold').fontSize(9.5).text(brlPdf(it.line_total), margin + 18 + wDesc + wPet + wQty, rowTop, {
+        width: wTotal - 8,
         align: 'right',
       });
-      y = rowTop + 20;
-      doc.moveTo(margin, y - 4).lineTo(margin + contentW, y - 4).strokeColor('#f5efea').lineWidth(0.5).stroke();
+      tableY = rowTop + servicesRowH;
+      drawTableDivider(doc, margin + 8, tableY, contentW - 16);
+      tableY += 4;
     });
   }
 
-  y += 12;
-  doc.font('Helvetica').fontSize(11).fillColor(TEXT_DARK);
-  doc.text(`Subtotal: ${brl(payload.subtotal_amount)}`, margin, y, { width: contentW, align: 'right' });
-  y = doc.y + 4;
-  if (payload.discount_amount > 0) {
-    doc.fillColor(GREEN_DISC).text(`Desconto: −${brl(payload.discount_amount)}`, margin, y, { width: contentW, align: 'right' });
-    y = doc.y + 4;
+  y = y + servicesH + 8;
+
+  if (payload.client_notes?.trim()) {
+    y = drawNotesCard(doc, margin, y, contentW, clientNotesTitlePdf(clinicName), payload.client_notes.trim());
   }
-  doc.font('Helvetica-Bold').fontSize(18).fillColor(ORANGE);
-  doc.text(`Total: ${brl(payload.total_amount)}`, margin, y, { width: contentW, align: 'right' });
-  y = doc.y + 12;
 
   const paid = Number(payload.paid_total ?? 0);
   const balance = Number(payload.balance_due ?? Math.max(0, payload.total_amount - paid));
-  if (paid > 0 || balance > 0) {
-    doc.font('Helvetica').fontSize(11).fillColor(TEXT_DARK);
-    if (paid > 0) {
-      doc.text(`Pago: ${brl(paid)}`, margin, y, { width: contentW, align: 'right' });
-      y = doc.y + 4;
-    }
-    if (balance > 0.009) {
-      doc.font('Helvetica-Bold').fillColor(ORANGE).text(`Saldo pendente: ${brl(balance)}`, margin, y, {
-        width: contentW,
-        align: 'right',
-      });
-      y = doc.y + 4;
-    }
-  }
+  const totalRows = [
+    { label: 'Subtotal', value: brlPdf(payload.subtotal_amount) },
+    ...(payload.discount_amount > 0
+      ? [{ label: 'Desconto', value: `−${brlPdf(payload.discount_amount)}`, kind: 'discount' as const }]
+      : []),
+    { label: 'Total', value: brlPdf(payload.total_amount), kind: 'grand' as const },
+    ...(paid > 0.009 ? [{ label: 'Pago', value: brlPdf(paid), kind: 'muted' as const }] : []),
+    ...(balance > 0.009 ? [{ label: 'Pendente', value: brlPdf(balance), kind: 'warn' as const }] : []),
+  ];
+  y = drawTotalsCard(doc, margin, y, contentW, totalRows);
 
-  doc.moveDown(1);
-  drawFootersOnAllPages(doc, logoPath);
+  y = drawFineprint(
+    doc,
+    margin,
+    y,
+    contentW,
+    'Este documento é um resumo de serviços e valores. Em caso de dúvidas, entre em contato com a clínica.',
+  );
+
   doc.end();
 }

@@ -1,11 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.postHubBoardingDailyLog = exports.getHubBoardingReservationDrawer = void 0;
-const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const groomingPetTags_1 = require("./groomingPetTags");
 const hubDayBoardPets_1 = require("./hubDayBoardPets");
-const uuidStr = zod_1.z.string().uuid();
+const boardingOperational_1 = require("./boardingOperational");
+const hubBoardingSchemas_1 = require("./hubBoardingSchemas");
 const RESERVATION_SELECT = `
   id, clinic_id, unit_id, pet_id, guardian_id, hub_appointment_id,
   mode, status, expected_check_in, expected_check_out,
@@ -16,15 +16,6 @@ const DAILY_LOG_SELECT = `
   id, clinic_id, hub_boarding_reservation_id, log_date,
   fed, medication, walks, mood, notes, created_by_staff_id, created_at
 `;
-function calcNights(checkedInAt, checkedOutAt) {
-    if (!checkedInAt)
-        return 0;
-    const inMs = new Date(checkedInAt).getTime();
-    const outMs = checkedOutAt ? new Date(checkedOutAt).getTime() : Date.now();
-    if (isNaN(inMs) || isNaN(outMs))
-        return 0;
-    return Math.max(0, Math.floor((outMs - inMs) / (1000 * 60 * 60 * 24)));
-}
 // ─── GET /boarding/reservations/:id/drawer ─────────────────────────────────
 const getHubBoardingReservationDrawer = async (req, res) => {
     try {
@@ -33,7 +24,7 @@ const getHubBoardingReservationDrawer = async (req, res) => {
         if (!id || !/^[0-9a-f-]{36}$/.test(id)) {
             return res.status(400).json({ error: 'ID de reserva inválido' });
         }
-        const clinicParsed = uuidStr.safeParse(clinic_id);
+        const clinicParsed = hubBoardingSchemas_1.uuidStr.safeParse(clinic_id);
         if (!clinicParsed.success)
             return res.status(400).json({ error: 'clinic_id inválido' });
         const { data: reservation, error: rsvErr } = await supabase_1.supabaseAdmin
@@ -52,7 +43,7 @@ const getHubBoardingReservationDrawer = async (req, res) => {
         const checkedInAt = reservation.checked_in_at;
         const checkedOutAt = reservation.checked_out_at;
         const mode = reservation.mode;
-        const nightsCount = mode === 'hotel' ? calcNights(checkedInAt, checkedOutAt) : checkedInAt ? 1 : 0;
+        const nightsCount = mode === 'hotel' ? (0, boardingOperational_1.calcBoardingNights)(checkedInAt, checkedOutAt) : checkedInAt ? 1 : 0;
         const [petRes, guRes, flagsRes, logsRes] = await Promise.all([
             supabase_1.supabaseAdmin
                 .from('hub_pets')
@@ -105,25 +96,13 @@ const getHubBoardingReservationDrawer = async (req, res) => {
 };
 exports.getHubBoardingReservationDrawer = getHubBoardingReservationDrawer;
 // ─── POST /boarding/reservations/:id/daily-logs ────────────────────────────
-const dailyLogSchema = zod_1.z
-    .object({
-    clinic_id: uuidStr,
-    log_date: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'log_date deve ser YYYY-MM-DD'),
-    fed: zod_1.z.unknown().optional(),
-    medication: zod_1.z.unknown().optional(),
-    walks: zod_1.z.unknown().optional(),
-    mood: zod_1.z.string().max(100).optional().nullable(),
-    notes: zod_1.z.string().max(2000).optional().nullable(),
-    created_by_staff_id: uuidStr.optional().nullable(),
-})
-    .strict();
 const postHubBoardingDailyLog = async (req, res) => {
     try {
         const { id } = req.params;
         if (!id || !/^[0-9a-f-]{36}$/.test(id)) {
             return res.status(400).json({ error: 'ID de reserva inválido' });
         }
-        const parsed = dailyLogSchema.safeParse(req.body);
+        const parsed = hubBoardingSchemas_1.dailyLogSchema.safeParse(req.body);
         if (!parsed.success)
             return res.status(400).json({ error: parsed.error.flatten() });
         const { clinic_id, log_date, ...rest } = parsed.data;

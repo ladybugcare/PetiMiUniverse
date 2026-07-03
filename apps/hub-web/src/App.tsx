@@ -39,6 +39,12 @@ import HubClinicaPerfilPage from './pages/HubClinicaPerfilPage';
 import HubDesignSystemPage from './pages/HubDesignSystemPage';
 import PublicQuotePage from './pages/PublicQuotePage';
 import PublicComandaPage from './pages/PublicComandaPage';
+import PublicPrescriptionPage from './pages/PublicPrescriptionPage';
+import ValidatePrescriptionPage from './pages/ValidatePrescriptionPage';
+import PublicExamOrderPage from './pages/PublicExamOrderPage';
+import PublicSpecialistReferralPage from './pages/PublicSpecialistReferralPage';
+import ValidateExamOrderPage from './pages/ValidateExamOrderPage';
+import ValidateSpecialistReferralPage from './pages/ValidateSpecialistReferralPage';
 import HubHomePage from './pages/HubHomePage';
 import { useParams } from 'react-router-dom';
 
@@ -59,6 +65,12 @@ const App: React.FC = () => {
           <Route path="/email-confirmed" element={<HubEmailConfirmedPage />} />
           <Route path="/orcamento/:token" element={<PublicQuotePage />} />
           <Route path="/comanda/:token" element={<PublicComandaPage />} />
+          <Route path="/receita/:token" element={<PublicPrescriptionPage />} />
+          <Route path="/validar-receita" element={<ValidatePrescriptionPage />} />
+          <Route path="/solicitacao-exame/:token" element={<PublicExamOrderPage />} />
+          <Route path="/validar-exame" element={<ValidateExamOrderPage />} />
+          <Route path="/encaminhamento/:token" element={<PublicSpecialistReferralPage />} />
+          <Route path="/validar-encaminhamento" element={<ValidateSpecialistReferralPage />} />
           <Route
             path="/hub/onboarding/clinica"
             element={

@@ -10,6 +10,7 @@ import { HubCheckbox } from '../../components/HubCheckbox';
 import {
   hubAgendaApi,
   type CreateHubAppointmentPayload,
+  type HubAppointment,
   type HubAppointmentStatus,
   type HubAppointmentRecurrenceRule,
 } from '../../api/hubAgendaApi';
@@ -70,9 +71,18 @@ export type NewAppointmentInitial = {
     duration_minutes?: number | null;
     pricing_variant?: HubQuotePricingVariant | null;
   }>;
+  addon_services?: Array<{
+    hub_service_type_id: string;
+    name?: string | null;
+    duration_minutes?: number | null;
+    pricing_variant?: HubQuotePricingVariant | null;
+  }>;
   title?: string | null;
   notes?: string | null;
   financial_notes?: string | null;
+  status?: AgendaStatus;
+  pricing_porte_tier?: string | null;
+  pricing_coat_type?: string | null;
   source_quote_id?: string | null;
 };
 
@@ -85,6 +95,10 @@ export type NewAppointmentModalProps = {
   serviceTypes: HubServiceType[];
   /** Fluxo Clínica → «Agendar na agenda»: formulário focado como nos prints de consulta de rotina. */
   layoutVariant?: 'default' | 'clinical_routine';
+  mode?: 'create' | 'edit';
+  appointmentId?: string | null;
+  seriesId?: string | null;
+  onUpdated?: (appointment: HubAppointment) => void;
 };
 
 type ServiceChip = {
@@ -233,9 +247,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   staffOptions,
   serviceTypes,
   layoutVariant = 'default',
+  mode = 'create',
+  appointmentId = null,
+  seriesId = null,
+  onUpdated,
 }) => {
   const clinicId = getStoredClinicId() ?? '';
-  const isClinicalRoutine = layoutVariant === 'clinical_routine';
+  const isEditMode = mode === 'edit';
+  const isClinicalRoutine = !isEditMode && layoutVariant === 'clinical_routine';
   const [jobMappings, setJobMappings] = useState<GroupJobMappings>({});
 
   useEffect(() => {
@@ -402,6 +421,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<Array<{ date: string; reason: string }>>([]);
+  const [seriesScopePickerOpen, setSeriesScopePickerOpen] = useState(false);
+  const pendingPatchPayloadRef = useRef<Parameters<typeof hubAgendaApi.patch>[1] | null>(null);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const servicesDurationMin = useMemo(
@@ -459,11 +480,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       if (initial.starts_at) setStartsHm(tsToHm(initial.starts_at));
       if (initial.ends_at) setEndsHm(tsToHm(initial.ends_at));
       if (initial.hub_staff_member_id) setStaffId(initial.hub_staff_member_id);
+      else if (isEditMode) setStaffId('');
       if (initial.resource_label) setResourceLabel(initial.resource_label);
+      else if (isEditMode) setResourceLabel('');
       if (initial.guardian_id) setGuardianId(initial.guardian_id);
       if (initial.guardian_name) setGuardianName(initial.guardian_name);
       if (initial.pet_id) setPetId(initial.pet_id);
       if (initial.pet_name) setPetName(initial.pet_name);
+      if (initial.status) setStatus(initial.status);
+      if (initial.pricing_porte_tier) setPricingApptPorteTier(initial.pricing_porte_tier);
+      if (initial.pricing_coat_type) setPricingApptCoatType(initial.pricing_coat_type);
       if (initial.title) {
         setTitle(initial.title);
         setTitleOverridden(true);
@@ -487,9 +513,28 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               };
             }),
         );
+      } else if (isEditMode) {
+        setServices([]);
+      }
+      if (initial.addon_services?.length) {
+        setSelectedAddons(
+          initial.addon_services
+            .filter((s) => s.hub_service_type_id)
+            .map((s) => {
+              const st = serviceTypes.find((t) => t.id === s.hub_service_type_id);
+              return {
+                hub_service_type_id: s.hub_service_type_id,
+                name: s.name || st?.name || 'Adicional',
+                duration_minutes: s.duration_minutes || st?.default_duration_minutes || 30,
+                pricing_variant: s.pricing_variant ?? null,
+              };
+            }),
+        );
+      } else if (isEditMode) {
+        setSelectedAddons([]);
       }
     }
-  }, [open, initial, serviceTypes]);
+  }, [open, initial, serviceTypes, isEditMode]);
 
   useEffect(() => {
     if (!open || !clinicId) return;
@@ -1060,6 +1105,27 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const removeExtraBlock = (key: string) => setExtraBlocks((prev) => prev.filter((b) => b.key !== key));
 
   // ── Submit ────────────────────────────────────────────────────────────────
+  const submitPatch = async (scope: 'this' | 'future' | 'all') => {
+    if (!clinicId || !appointmentId) return;
+    const payload = pendingPatchPayloadRef.current;
+    if (!payload) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const result = await hubAgendaApi.patch(appointmentId, payload, { scope });
+      pendingPatchPayloadRef.current = null;
+      setSeriesScopePickerOpen(false);
+      resetForm();
+      onClose();
+      onUpdated?.(result.appointment);
+    } catch (e: unknown) {
+      const msg = (e as { message?: string })?.message ?? 'Erro ao salvar agendamento';
+      setSaveError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!clinicId) return;
     if (services.length === 0) {
@@ -1134,6 +1200,37 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     try {
       const startsAt = toIsoTs(dateYmd, startsHm);
       const endsAt = toEndIsoTs(dateYmd, startsHm, endsHm);
+
+      if (isEditMode) {
+        const patchPayload = {
+          clinic_id: clinicId,
+          hub_staff_member_id: staffId || null,
+          pet_id: petId || null,
+          guardian_id: guardianId || null,
+          starts_at: startsAt,
+          ends_at: endsAt,
+          status: status as HubAppointmentStatus,
+          resource_label: resourceLabel || null,
+          title: title || null,
+          notes: mainBlockNotes.trim() || null,
+          financial_notes: financialNotes.trim() || null,
+          pricing_porte_tier: pricingApptPorteTier.trim() || null,
+          pricing_coat_type: pricingApptCoatType.trim() || null,
+          services: [...services, ...selectedAddons].map((s) => ({
+            hub_service_type_id: s.hub_service_type_id,
+            duration_minutes: s.duration_minutes,
+            pricing_variant: s.pricing_variant ?? undefined,
+          })),
+        };
+        pendingPatchPayloadRef.current = patchPayload;
+        if (seriesId) {
+          setSaving(false);
+          setSeriesScopePickerOpen(true);
+          return;
+        }
+        await submitPatch('this');
+        return;
+      }
 
       let lastServiceEndAt = endsAt;
       const resolvedExtraBlocks = extraBlocks
@@ -1437,7 +1534,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         </div>
       )}
 
-      {withRecurrence && (
+      {!isEditMode && withRecurrence && (
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Repetição</p>
           <p className="nam-aside__item">
@@ -1450,7 +1547,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         </div>
       )}
 
-      {withPickup && (
+      {!isEditMode && withPickup && (
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Leva e Traz</p>
           {pickupPricingPreview ? (
@@ -1473,11 +1570,52 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         </span>
       )}
       <HubCancelButton onClick={handleClose} disabled={saving} />
-      <button className="hub-btn hub-btn--primary" type="button" onClick={handleSave} disabled={saving || !canSaveDefault}>
-        {saving ? 'Salvando…' : withRecurrence ? 'Criar série' : 'Criar agendamento'}
+      <button
+        className="hub-btn hub-btn--primary"
+        type="button"
+        onClick={handleSave}
+        disabled={saving || !canSaveDefault}
+      >
+        {saving
+          ? 'Salvando…'
+          : isEditMode
+            ? 'Salvar alterações'
+            : withRecurrence
+              ? 'Criar série'
+              : 'Criar agendamento'}
       </button>
     </>
   );
+
+  const seriesScopeOverlay = seriesScopePickerOpen ? (
+    <div className="hub-agenda-series-scope" role="dialog" aria-modal="true" aria-label="Escopo da série">
+      <div className="hub-agenda-series-scope__card">
+        <h3 className="hub-agenda-series-scope__title">Aplicar alterações em</h3>
+        <p className="hub-agenda-series-scope__hint">Este agendamento faz parte de uma série recorrente.</p>
+        <div className="hub-agenda-series-scope__actions">
+          <button type="button" className="hub-btn hub-btn--secondary" onClick={() => void submitPatch('this')} disabled={saving}>
+            Só este agendamento
+          </button>
+          <button type="button" className="hub-btn hub-btn--secondary" onClick={() => void submitPatch('future')} disabled={saving}>
+            Este e os futuros
+          </button>
+          <button type="button" className="hub-btn hub-btn--primary" onClick={() => void submitPatch('all')} disabled={saving}>
+            Toda a série
+          </button>
+        </div>
+        <button
+          type="button"
+          className="hub-agenda-series-scope__cancel"
+          onClick={() => {
+            setSeriesScopePickerOpen(false);
+            pendingPatchPayloadRef.current = null;
+          }}
+        >
+          Voltar
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   if (isClinicalRoutine) {
     return (
@@ -1777,10 +1915,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   }
 
   return (
+    <>
     <HubSidePanel
       open={open}
       onClose={handleClose}
-      title="Novo agendamento"
+      title={isEditMode ? 'Editar agendamento' : 'Novo agendamento'}
       titleIcon={<Calendar size={22} strokeWidth={2} aria-hidden />}
       subtitle={title || autoTitle || undefined}
       footer={footer}
@@ -2093,6 +2232,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           )}
         </div>
 
+        {!isEditMode ? (
+          <>
         {extraBlocks.length > 0 ? (
           <div className="nam-section nam-extra-blocks">
             {extraBlocks.map((block, bIdx) => (
@@ -2366,6 +2507,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             </div>
           )}
         </div>
+          </>
+        ) : null}
 
         {/* ── Conflict feedback ─────────────────────────────────────────── */}
         {conflicts.length > 0 && (
@@ -2383,6 +2526,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         )}
       </div>
     </HubSidePanel>
+    {seriesScopeOverlay}
+    </>
   );
 };
 

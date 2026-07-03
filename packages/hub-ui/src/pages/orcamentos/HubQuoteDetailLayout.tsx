@@ -5,7 +5,6 @@ import type { HubGuardian } from '../../api/hubGuardiansApi';
 import { useAlert } from '../../components/AlertProvider';
 import { maskTaxIdForList } from '../../utils/maskTaxId';
 import {
-  ageLabelPt,
   discountAmount,
   embedOne,
   petLabel,
@@ -16,6 +15,7 @@ import {
   staffStatusClass,
   staffStatusLabel,
 } from './hubQuoteViewUtils';
+import { DocumentContactStrip, DocumentPetStrip, DocumentPetStripList } from './hubDocumentPartyCards';
 import { waMeBaseUrl } from './hubQuoteShareUtils';
 import {
   Calendar,
@@ -27,12 +27,9 @@ import {
   FileDown,
   Info,
   Lock,
-  Mail,
-  MessageCircle,
   MoreVertical,
   Dog,
   Pencil,
-  Phone,
   Receipt,
   Send,
   Share2,
@@ -414,62 +411,37 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
           <div className="hub-quote-detail__main">
             <section className="hub-quote-detail__card">
               <div className="hub-quote-detail__card-head">
-                <User size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
+                <span className="hub-quote-detail__card-ic-wrap" aria-hidden>
+                  <User size={18} strokeWidth={1.75} className="hub-quote-detail__card-ic" />
+                </span>
                 <h2 className="hub-quote-detail__card-title">Contato</h2>
               </div>
               {prospect ? (
-                <div className="hub-quote-detail__contact-grid">
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">Nome</span>
-                    <span className="hub-quote-detail__field-value">{prospect.full_name}</span>
-                  </div>
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">Telefone</span>
-                    <span className="hub-quote-detail__field-value hub-quote-detail__field-value--row">
-                      <Phone size={16} aria-hidden />
-                      {telHref ? (
-                        <a href={telHref} className="hub-quote-detail__link">
-                          {prospect.phone}
-                        </a>
-                      ) : (
-                        prospect.phone
-                      )}
-                      {wa ? (
-                        <a href={wa} target="_blank" rel="noopener noreferrer" className="hub-quote-detail__ic-link" title="WhatsApp">
-                          <MessageCircle size={18} />
-                        </a>
-                      ) : null}
-                    </span>
-                  </div>
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">CPF</span>
-                    <span className="hub-quote-detail__field-value hub-quote-detail__field-value--row">
-                      {maskTaxIdForList(prospect.tax_id)}
-                      {prospect.tax_id ? (
-                        <button type="button" className="hub-quote-detail__ic-btn" title="Copiar CPF" onClick={() => void copyTax()}>
+                <DocumentContactStrip
+                  name={prospect.full_name}
+                  phone={prospect.phone}
+                  email={prospect.email}
+                  telHref={telHref}
+                  waHref={wa}
+                  extraLines={
+                    prospect.tax_id ? (
+                      <p className="hub-doc-party__contact-extra">
+                        <span className="hub-doc-party__col-label" style={{ marginBottom: 0, marginRight: 4 }}>
+                          CPF
+                        </span>
+                        {maskTaxIdForList(prospect.tax_id)}
+                        <button
+                          type="button"
+                          className="hub-quote-detail__ic-btn"
+                          title="Copiar CPF"
+                          onClick={() => void copyTax()}
+                        >
                           <Copy size={16} />
                         </button>
-                      ) : null}
-                    </span>
-                  </div>
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">E-mail</span>
-                    <span className="hub-quote-detail__field-value hub-quote-detail__field-value--row">
-                      <Mail size={16} aria-hidden />
-                      {prospect.email ? (
-                        <a href={`mailto:${prospect.email}`} className="hub-quote-detail__link">
-                          {prospect.email}
-                        </a>
-                      ) : (
-                        '—'
-                      )}
-                    </span>
-                  </div>
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">Origem</span>
-                    <span className="hub-quote-detail__field-value">Orçamento Hub</span>
-                  </div>
-                </div>
+                      </p>
+                    ) : null
+                  }
+                />
               ) : (
                 <p className="hub-quote-detail__muted">—</p>
               )}
@@ -478,8 +450,12 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
             <section className="hub-quote-detail__card">
               <div className="hub-quote-detail__card-head hub-quote-detail__card-head--spread">
                 <div className="hub-quote-detail__card-head-left">
-                  <Dog size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
-                  <h2 className="hub-quote-detail__card-title">Pets do orçamento ({pets.length})</h2>
+                  <span className="hub-quote-detail__card-ic-wrap" aria-hidden>
+                    <Dog size={18} strokeWidth={1.75} className="hub-quote-detail__card-ic" />
+                  </span>
+                  <h2 className="hub-quote-detail__card-title">
+                    {pets.length === 1 ? 'Pet' : `Pets (${pets.length})`}
+                  </h2>
                 </div>
                 {canWrite && isDraft ? (
                   <Link to={`/hub/orcamentos/${quoteId}/editar`} className="hub-quote-detail__text-btn">
@@ -490,34 +466,18 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
               {pets.length === 0 ? (
                 <p className="hub-quote-detail__muted">Sem pets neste orçamento.</p>
               ) : (
-                <div className="hub-quote-detail__pet-cards">
+                <DocumentPetStripList>
                   {pets.map((p, i) => (
-                    <div key={p.id} className="hub-quote-detail__pet-card">
-                      <div className="hub-quote-detail__pet-card-top">
-                        <span className="hub-quote-detail__pet-badge">P{i + 1}</span>
-                        <span className="hub-quote-detail__pet-breed">{p.breed?.trim() || p.species || '—'}</span>
-                      </div>
-                      <dl className="hub-quote-detail__pet-dl">
-                        <div>
-                          <dt>Porte</dt>
-                          <dd>{sizeTierLabelPt(p.size_tier)}</dd>
-                        </div>
-                        <div>
-                          <dt>Pelagem</dt>
-                          <dd>{p.coat_type?.trim() || '—'}</dd>
-                        </div>
-                        <div>
-                          <dt>Idade</dt>
-                          <dd>{ageLabelPt(p.age_months)}</dd>
-                        </div>
-                        <div>
-                          <dt>Sexo</dt>
-                          <dd>{sexLabelPt(p.sex)}</dd>
-                        </div>
-                      </dl>
-                    </div>
+                    <DocumentPetStrip
+                      key={p.id}
+                      name={petLabel(p, i)}
+                      species={p.species?.trim() || '—'}
+                      breed={p.breed?.trim() || '—'}
+                      sizeTier={sizeTierLabelPt(p.size_tier)}
+                      sex={sexLabelPt(p.sex)}
+                    />
                   ))}
-                </div>
+                </DocumentPetStripList>
               )}
             </section>
 

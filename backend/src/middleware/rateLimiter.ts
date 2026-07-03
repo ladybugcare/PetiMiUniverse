@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
 import '../config/loadEnv.js';
@@ -22,7 +22,7 @@ export function parseJwtSub(authHeader: string | undefined): string | null {
 function rateLimitKey(req: Request): string {
   const sub = parseJwtSub(req.headers.authorization);
   if (sub) return `user:${sub}`;
-  return req.ip ?? 'unknown';
+  return ipKeyGenerator(req.ip ?? 'unknown');
 }
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -228,3 +228,19 @@ export const userRateLimiter = (maxRequests: number = 200, windowMs: number = 15
  * Limita uploads por usuário para prevenir abuso
  */
 export const uploadLimiter = userRateLimiter(20, 60 * 60 * 1000); // 20 uploads por hora por usuário
+
+/**
+ * Rate limiter para rotas públicas de validação de receita (token/código/PDF).
+ * 60 requisições por IP a cada 15 minutos.
+ */
+export const publicPrescriptionLimiter = rateLimit({
+  windowMs: parsePositiveInt(process.env.PUBLIC_PRESCRIPTION_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+  max: parsePositiveInt(process.env.PUBLIC_PRESCRIPTION_RATE_LIMIT_MAX, 60),
+  keyGenerator: rateLimitKey,
+  message: {
+    error: 'Muitas tentativas de validação. Tente novamente em alguns minutos.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isRateLimitDisabled(),
+});

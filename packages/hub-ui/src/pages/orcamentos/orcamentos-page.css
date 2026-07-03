@@ -729,6 +729,101 @@
   margin-bottom: 24px;
 }
 
+.hub-public-quote__header-main {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.hub-public-quote__header-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(240, 100, 47, 0.12);
+  color: var(--pub-brand);
+  flex-shrink: 0;
+}
+
+.hub-public-quote__header-logo--img {
+  background: #fff;
+  border: 1px solid var(--pub-border, #e5dcd6);
+  padding: 0;
+  overflow: hidden;
+}
+
+.hub-public-quote__header-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.hub-public-quote__ic {
+  color: var(--pub-brand);
+  flex-shrink: 0;
+}
+
+.hub-public-quote__ic--inline {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+
+.hub-public-quote__card-title--with-ic {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-public-quote__meta-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 10px;
+}
+
+.hub-public-quote__meta-row:first-child {
+  margin-top: 0;
+}
+
+.hub-public-quote__meta-row-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.hub-public-quote__meta-row .hub-public-quote__meta-label {
+  margin: 0 0 2px;
+}
+
+.hub-public-quote__meta-value-wrap .hub-public-quote__meta-value {
+  margin: 0;
+}
+
+.hub-public-quote__dl dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hub-public-quote__fineprint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 20px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pub-muted);
+  max-width: 62ch;
+}
+
+.hub-public-quote__fineprint .hub-public-quote__ic {
+  margin-top: 2px;
+}
+
 .hub-public-quote__eyebrow {
   margin: 0 0 4px;
   font-size: 13px;
@@ -985,14 +1080,6 @@
   font-weight: 600;
 }
 
-.hub-public-quote__fineprint {
-  margin: 20px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--pub-muted);
-  max-width: 62ch;
-}
-
 /* Estados: carregamento / erro (PublicQuotePage) */
 .hub-public-quote__state {
   max-width: 440px;
@@ -1158,14 +1245,19 @@
 
 /* === Vista detalhe orçamento (equipa) — layout tipo mock PetMi Hub === */
 .hub-quote-detail {
-  --qd-bg: #f3f0ed;
   --qd-card: #fff;
   --qd-border: var(--hc-border, #e5dcd6);
   --qd-text: var(--hc-text, #4a3b3a);
   --qd-muted: var(--hc-text-muted, #8e6e67);
   --qd-brand: var(--hc-brand, #c86a4d);
   --qd-brand-h: var(--hc-brand-hover, #a85a40);
-  background: var(--qd-bg);
+  /* Tokens do formulário de orçamento reutilizados em comandas */
+  --hub-brand: var(--qd-brand);
+  --hub-brand-hover: var(--qd-brand-h);
+  --hub-text: var(--qd-text);
+  --hub-text-muted: var(--qd-muted);
+  --hub-border: var(--qd-border);
+  --hub-card-bg: var(--qd-card);
   min-height: 100%;
   margin: 0 -4px;
   padding: 0 0 32px;
@@ -1175,33 +1267,6 @@
   max-width: 1180px;
   margin: 0 auto;
   padding: 16px 8px 0;
-}
-
-.hub-quote-detail__inner--with-finance {
-  max-width: 1480px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
-  gap: 20px;
-  align-items: start;
-}
-
-.hub-quote-detail__inner--with-finance > .hub-quote-detail__crumb,
-.hub-quote-detail__inner--with-finance > .hub-quote-detail__banner,
-.hub-quote-detail__inner--with-finance > .hub-quote-detail__hero {
-  grid-column: 1 / -1;
-}
-
-.hub-quote-detail__inner--with-finance > .hub-quote-detail__grid {
-  grid-column: 1;
-}
-
-.hub-quote-detail__finance-panel {
-  grid-column: 2;
-  grid-row: 3 / span 10;
-  position: sticky;
-  top: 12px;
-  max-height: calc(100vh - 24px);
-  overflow: auto;
 }
 
 .hub-quote-detail__banner {
@@ -1480,6 +1545,20 @@ a.hub-quote-detail__more-item {
   margin-bottom: 16px;
 }
 
+.hub-quote-detail__card-head--with-sub {
+  align-items: flex-start;
+}
+
+.hub-quote-detail .hub-orcamento-novo__combobox.hub-combobox {
+  --hc-combo-border: var(--hub-border);
+  --hc-combo-text: var(--hub-text);
+  --hc-combo-muted: var(--hub-text-muted);
+}
+
+.hub-quote-detail__card .hub-orcamento-novo__discount-fields {
+  margin-top: 0;
+}
+
 .hub-quote-detail__card-head--spread {
   justify-content: space-between;
   align-items: flex-start;
@@ -1495,6 +1574,197 @@ a.hub-quote-detail__more-item {
 .hub-quote-detail__card-ic {
   color: var(--qd-brand);
   flex-shrink: 0;
+}
+
+.hub-quote-detail__card-ic-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(200, 106, 77, 0.12);
+  flex-shrink: 0;
+}
+
+/* Cliente / pet — faixa compacta (comanda e orçamento) */
+.hub-doc-party__contact-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px 28px;
+}
+
+.hub-doc-party__contact-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.hub-doc-party__contact-name {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--qd-text);
+}
+
+.hub-doc-party__contact-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--qd-muted);
+}
+
+.hub-doc-party__contact-meta svg {
+  flex-shrink: 0;
+  color: var(--qd-muted);
+}
+
+.hub-doc-party__meta-text {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.hub-doc-party__meta-link {
+  color: var(--qd-text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.hub-doc-party__meta-link:hover {
+  color: var(--qd-brand);
+  text-decoration: underline;
+}
+
+.hub-doc-party__meta-muted {
+  color: var(--qd-muted);
+}
+
+.hub-doc-party__contact-extra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--qd-text);
+}
+
+.hub-doc-party__contact-phone {
+  flex-shrink: 0;
+  min-width: 160px;
+  text-align: left;
+}
+
+.hub-doc-party__col-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--qd-muted);
+  margin-bottom: 6px;
+}
+
+.hub-doc-party__phone-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hub-doc-party__phone-ic {
+  color: var(--qd-muted);
+  flex-shrink: 0;
+}
+
+.hub-doc-party__phone-link {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--qd-brand);
+  text-decoration: none;
+}
+
+a.hub-doc-party__phone-link:hover {
+  text-decoration: underline;
+}
+
+.hub-doc-party__pet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hub-doc-party__pet-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.hub-doc-party__pet-strip + .hub-doc-party__pet-strip {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--qd-border);
+}
+
+.hub-doc-party__pet-col {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 16px;
+}
+
+.hub-doc-party__pet-col:first-child {
+  padding-left: 0;
+}
+
+.hub-doc-party__pet-col--divider {
+  border-right: 1px solid var(--qd-border);
+}
+
+.hub-doc-party__pet-col .hub-doc-party__col-value {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--qd-text);
+  word-break: break-word;
+}
+
+.hub-doc-party__pet-col--accent .hub-doc-party__col-value,
+.hub-doc-party__pet-col--accent .hub-quote-detail__link {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--qd-brand);
+}
+
+@media (max-width: 720px) {
+  .hub-doc-party__contact-row {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .hub-doc-party__contact-phone {
+    min-width: 0;
+  }
+
+  .hub-doc-party__pet-strip {
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+
+  .hub-doc-party__pet-col {
+    flex: 1 1 40%;
+    padding: 0 12px 0 0;
+    border-right: none !important;
+  }
+
+  .hub-doc-party__pet-col:first-child {
+    flex-basis: 100%;
+    padding-right: 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--qd-border);
+  }
 }
 
 .hub-quote-detail__card-title {

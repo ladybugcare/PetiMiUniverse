@@ -12,12 +12,20 @@ import { useAlert } from '../../components/AlertProvider';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 
-const TEMPLATE_KEYS: MessageTemplateKey[] = ['pet_ready', 'pet_on_the_way', 'appointment_reminder'];
+const TEMPLATE_KEYS: MessageTemplateKey[] = [
+  'pet_ready',
+  'pet_on_the_way',
+  'appointment_reminder',
+  'exam_order_share',
+  'specialist_referral_share',
+];
 
 const PREVIEW_VARS: Record<MessageTemplateKey, Record<string, string>> = {
   pet_ready: { tutor: 'Maria', pet: 'Rex', clinica: 'PetMi Clínica' },
   pet_on_the_way: { tutor: 'João', pet: 'Bolinha' },
   appointment_reminder: { tutor: 'Ana', pet: 'Mel', data: '28/06/2026', hora: '14h30' },
+  exam_order_share: { tutor: 'Maria', pet: 'Thor', link: 'https://hub.petimi.app/solicitacao-exame/abc123' },
+  specialist_referral_share: { tutor: 'Maria', pet: 'Thor', link: 'https://hub.petimi.app/encaminhamento/abc123' },
 };
 
 const HubMessageTemplatesPage: React.FC = () => {

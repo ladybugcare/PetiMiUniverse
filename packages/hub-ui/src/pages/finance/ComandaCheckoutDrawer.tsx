@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, MessageCircle, Phone, User } from 'lucide-react';
+import { Download, MessageCircle } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubLoading } from '../../components/HubLoading';
 import { HubDateField } from '../../components/HubDateField';
@@ -28,6 +28,15 @@ import {
   HUB_PAYMENT_METHOD_LABELS,
   paymentMethodLabel,
 } from '../../utils/hubPaymentMethods';
+import {
+  CheckoutDrawerActionTabs,
+  CheckoutDrawerBillingShell,
+  CheckoutDrawerCancelReasonField,
+  CheckoutDrawerHero,
+  CheckoutDrawerSummaryCell,
+  CheckoutDrawerSummaryGrid,
+  type CheckoutDrawerBillingAction,
+} from './checkoutDrawerParts';
 import '../clientes/clientes.css';
 import './hub-finance-page.css';
 import '../orcamentos/orcamentos-page.css';
@@ -89,7 +98,7 @@ export function ComandaCheckoutDrawer({
   const [detail, setDetail] = useState<HubComandaDetailResponse | null>(null);
   const [grouping, setGrouping] = useState<'all' | 'by_pet'>('all');
   const [tutorGroupIdx, setTutorGroupIdx] = useState(0);
-  const [action, setAction] = useState<'receive_now' | 'leave_pending' | 'cancel'>('receive_now');
+  const [action, setAction] = useState<CheckoutDrawerBillingAction>('receive_now');
   const [dueDate, setDueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [paymentMethod, setPaymentMethod] = useState<HubPaymentMethod>('pix');
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<HubPaymentMethod[]>([]);
@@ -233,6 +242,8 @@ export function ComandaCheckoutDrawer({
     openItems.length === 0 &&
     balanceDue > 0.02 &&
     (detail?.active_receivable_ids?.length ?? 0) > 0;
+
+  const financeReceivableOnlyBlocked = mode === 'financeiro' && isReceivableOnlyMode;
 
   useEffect(() => {
     if (!open || !isReceivableOnlyMode || !activeReceivableId) {
@@ -592,7 +603,7 @@ export function ComandaCheckoutDrawer({
               type="button"
               className="hub-clientes__btn hub-clientes__btn--primary"
               onClick={() => void submit()}
-              disabled={loading || !detail || checkoutLocked}
+              disabled={loading || !detail || checkoutLocked || financeReceivableOnlyBlocked}
             >
               {loading ? 'Processando…' : 'Confirmar'}
             </button>
@@ -651,55 +662,36 @@ export function ComandaCheckoutDrawer({
               <p className="hub-clientes__muted" role="status">
                 {checkoutLockedMessage}
               </p>
+            ) : detail && financeReceivableOnlyBlocked ? (
+              <section className="hub-checkout-drawer__section">
+                <p className="hub-clientes__muted" role="status">
+                  Itens já faturados. Registre o pagamento no painel à direita.
+                </p>
+              </section>
             ) : detail ? (
               <>
-                <section className="hub-checkout-drawer__hero">
-                  <div className="hub-checkout-drawer__hero-main">
-                    <div className="hub-checkout-drawer__hero-row">
-                      <User size={16} aria-hidden />
-                      <strong>{guardianName || 'Tutor não informado'}</strong>
-                    </div>
-                    {guardianPhone ? (
-                      <div className="hub-checkout-drawer__hero-row hub-clientes__muted">
-                        <Phone size={14} aria-hidden />
-                        <span>{guardianPhone}</span>
-                      </div>
-                    ) : null}
-                    {petChips.length > 0 ? (
-                      <div className="hub-checkout-drawer__pet-chips">
-                        {petChips.map((name) => (
-                          <span key={name} className="hub-checkout-drawer__pet-chip">
-                            {name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="hub-checkout-drawer__hero-meta">
-                    <span className="hub-checkout-drawer__origin-badge">{originLabel}</span>
-                    {detail.operational_complete === false && (
-                      <span className="hub-clientes__pill hub-finance-page__pill--warning">Serviço em andamento</span>
-                    )}
-                    {paidTotal > 0.02 && balanceDue > 0.02 && (
-                      <span className="hub-clientes__pill hub-finance-page__pill--warning">Pagamento parcial</span>
-                    )}
-                  </div>
-                </section>
+                <CheckoutDrawerHero
+                  guardianName={guardianName}
+                  guardianPhone={guardianPhone}
+                  petNames={petChips}
+                  badges={
+                    <>
+                      <span className="hub-checkout-drawer__origin-badge">{originLabel}</span>
+                      {detail.operational_complete === false && (
+                        <span className="hub-clientes__pill hub-finance-page__pill--warning">Serviço em andamento</span>
+                      )}
+                      {paidTotal > 0.02 && balanceDue > 0.02 && (
+                        <span className="hub-clientes__pill hub-finance-page__pill--warning">Pagamento parcial</span>
+                      )}
+                    </>
+                  }
+                />
 
-                <section className="hub-checkout-drawer__summary-grid">
-                  <div className="hub-checkout-drawer__summary-cell">
-                    <span className="hub-checkout-drawer__summary-label">Total da comanda</span>
-                    <strong>{formatBrl(comandaTotal)}</strong>
-                  </div>
-                  <div className="hub-checkout-drawer__summary-cell">
-                    <span className="hub-checkout-drawer__summary-label">Já pago</span>
-                    <strong>{formatBrl(paidTotal)}</strong>
-                  </div>
-                  <div className="hub-checkout-drawer__summary-cell hub-checkout-drawer__summary-cell--highlight">
-                    <span className="hub-checkout-drawer__summary-label">Saldo a cobrar</span>
-                    <strong>{formatBrl(balanceDue)}</strong>
-                  </div>
-                </section>
+                <CheckoutDrawerSummaryGrid>
+                  <CheckoutDrawerSummaryCell label="Total da comanda" value={formatBrl(comandaTotal)} />
+                  <CheckoutDrawerSummaryCell label="Já pago" value={formatBrl(paidTotal)} />
+                  <CheckoutDrawerSummaryCell label="Saldo a cobrar" value={formatBrl(balanceDue)} highlight />
+                </CheckoutDrawerSummaryGrid>
 
                 {detail.operational_complete === false && (
                   <p className="hub-clientes__muted hub-checkout-drawer__hint">
@@ -786,26 +778,16 @@ export function ComandaCheckoutDrawer({
                   </section>
                 )}
 
-                <div className="hub-checkout-drawer__action-tabs" role="tablist" aria-label="Ação de cobrança">
-                  {(
-                    [
-                      ['receive_now', 'Receber agora'],
-                      ...(openItems.length > 0 ? [['leave_pending', 'Deixar pendente'] as const] : []),
-                      ['cancel', 'Cancelar'],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      role="tab"
-                      aria-selected={action === value}
-                      className={`hub-checkout-drawer__action-tab${action === value ? ' hub-checkout-drawer__action-tab--active' : ''}`}
-                      onClick={() => setAction(value)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <CheckoutDrawerBillingShell>
+                  <CheckoutDrawerActionTabs
+                    action={action}
+                    onActionChange={setAction}
+                    tabs={[
+                      { value: 'receive_now', label: 'Receber agora' },
+                      ...(openItems.length > 0 ? [{ value: 'leave_pending' as const, label: 'Deixar pendente' }] : []),
+                      { value: 'cancel', label: 'Cancelar' },
+                    ]}
+                  />
 
                 {action === 'receive_now' && (
                   <section className="hub-checkout-drawer__payment-block">
@@ -891,19 +873,11 @@ export function ComandaCheckoutDrawer({
                 )}
 
                 {action === 'cancel' && (
-                  <div className="hub-clientes__field">
-                    <label className="hub-clientes__label" htmlFor="checkout-waive-reason">
-                      Motivo do cancelamento (obrigatório)
-                    </label>
-                    <textarea
-                      id="checkout-waive-reason"
-                      className="hub-clientes__input"
-                      rows={3}
-                      value={waiveReason}
-                      onChange={(e) => setWaiveReason(e.target.value)}
-                      placeholder="Informe o motivo (mín. 3 caracteres)"
-                    />
-                  </div>
+                  <CheckoutDrawerCancelReasonField
+                    id="checkout-waive-reason"
+                    value={waiveReason}
+                    onChange={setWaiveReason}
+                  />
                 )}
 
                 {(action === 'receive_now' || action === 'leave_pending') && !isReceivableOnlyMode && (
@@ -988,6 +962,7 @@ export function ComandaCheckoutDrawer({
                     </div>
                   </details>
                 )}
+                </CheckoutDrawerBillingShell>
               </>
             ) : null}
           </>

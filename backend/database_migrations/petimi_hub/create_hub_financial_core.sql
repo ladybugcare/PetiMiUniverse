@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.hub_receivables (
     'encounter',
     'quote',
     'appointment',
+    'boarding_reservation',
     'manual'
   )),
   source_id uuid NOT NULL,

@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS public.hub_comandas (
     'grooming_session',
     'encounter',
     'quote',
+    'boarding_reservation',
     'hotel_stay',
     'daycare',
     'transport',

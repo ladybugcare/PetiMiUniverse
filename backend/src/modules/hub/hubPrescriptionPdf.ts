@@ -1,10 +1,15 @@
 import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 
 type PdfDoc = InstanceType<typeof PDFDocument>;
 
 type PrescriptionItem = {
   medication_name: string;
+  presentation?: string | null;
+  concentration?: string | null;
+  quantity?: string | null;
+  posology?: string | null;
   dosage?: string | null;
   frequency?: string | null;
   duration?: string | null;
@@ -24,6 +29,15 @@ type PrescriptionFull = {
   staff?: { full_name?: string | null; crmv?: string | null; crmv_uf?: string | null } | { full_name?: string | null; crmv?: string | null; crmv_uf?: string | null }[] | null;
 };
 
+export type PrescriptionValidationMeta = {
+  validation_code: string;
+  public_url: string;
+  content_hash: string;
+  issued_at: string;
+  expires_at?: string | null;
+  disclaimers: string[];
+};
+
 const ORANGE = '#f0642f';
 const TEXT_DARK = '#4a3b3a';
 const TEXT_MUTED = '#8e6e67';
@@ -41,19 +55,17 @@ function drawField(doc: PdfDoc, label: string, value: string, x: number, y: numb
   return doc.y;
 }
 
-export function streamPrescriptionPdf(res: Response, prescription: PrescriptionFull): void {
-  const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="receita-${prescription.id.slice(0, 8)}.pdf"`);
-  doc.pipe(res);
+function truncateHash(hash: string, edge = 8): string {
+  if (hash.length <= edge * 2 + 1) return hash;
+  return `${hash.slice(0, edge)}…${hash.slice(-edge)}`;
+}
 
+function drawPrescriptionBody(doc: PdfDoc, prescription: PrescriptionFull, margin: number, pageW: number): number {
   const clinic = embedOne(prescription.clinic);
   const pet = embedOne(prescription.pet);
   const guardian = embedOne(prescription.guardian);
   const staff = embedOne(prescription.staff);
   const items = [...(prescription.items ?? [])].sort((a, b) => Number(a.order_index ?? 0) - Number(b.order_index ?? 0));
-  const margin = 40;
-  const pageW = doc.page.width - margin * 2;
 
   let y = margin;
   doc.font('Helvetica-Bold').fontSize(14).fillColor(TEXT_DARK).text('Receita veterinária', margin, y);
@@ -91,15 +103,17 @@ export function streamPrescriptionPdf(res: Response, prescription: PrescriptionF
   doc.font('Helvetica-Bold').fontSize(13).fillColor(TEXT_DARK).text('Medicamentos e orientações', margin, y);
   y = doc.y + 10;
   for (const [idx, item] of items.entries()) {
-    if (y > doc.page.height - 150) {
+    if (y > doc.page.height - 180) {
       doc.addPage();
       y = margin;
     }
     doc.font('Helvetica-Bold').fontSize(11).fillColor(TEXT_DARK).text(`${idx + 1}. ${item.medication_name}`, margin, y);
     y = doc.y + 4;
     const parts = [
-      item.dosage ? `Dose: ${item.dosage}` : null,
-      item.frequency ? `Frequência: ${item.frequency}` : null,
+      item.presentation ? `Apresentação: ${item.presentation}` : null,
+      item.concentration ? `Concentração: ${item.concentration}` : item.dosage ? `Dose: ${item.dosage}` : null,
+      item.quantity ? `Quantidade: ${item.quantity}` : null,
+      item.posology ? `Posologia: ${item.posology}` : item.frequency ? `Frequência: ${item.frequency}` : null,
       item.duration ? `Duração: ${item.duration}` : null,
     ].filter(Boolean);
     if (parts.length) {
@@ -122,8 +136,8 @@ export function streamPrescriptionPdf(res: Response, prescription: PrescriptionF
     y = doc.y + 16;
   }
 
-  const signY = Math.max(y + 36, doc.page.height - 150);
-  doc.moveTo(margin + 120, signY,).lineTo(doc.page.width - margin - 120, signY).strokeColor(BORDER).stroke();
+  const signY = Math.max(y + 36, doc.page.height - 180);
+  doc.moveTo(margin + 120, signY).lineTo(doc.page.width - margin - 120, signY).strokeColor(BORDER).stroke();
   doc
     .font('Helvetica-Bold')
     .fontSize(10)
@@ -131,6 +145,79 @@ export function streamPrescriptionPdf(res: Response, prescription: PrescriptionF
     .text(staff?.full_name || 'Veterinário responsável', margin, signY + 8, { width: pageW, align: 'center' });
   const crmv = [staff?.crmv ? `CRMV ${staff.crmv}` : null, staff?.crmv_uf || null].filter(Boolean).join(' / ');
   doc.font('Helvetica').fontSize(9).fillColor(TEXT_MUTED).text(crmv || 'CRMV não informado', margin, doc.y + 2, { width: pageW, align: 'center' });
+
+  return doc.y;
+}
+
+export function streamPrescriptionPdf(res: Response, prescription: PrescriptionFull): void {
+  const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="receita-${prescription.id.slice(0, 8)}.pdf"`);
+  doc.pipe(res);
+  drawPrescriptionBody(doc, prescription, 40, doc.page.width - 80);
+  doc.end();
+}
+
+export async function streamValidatablePrescriptionPdf(
+  res: Response,
+  prescription: PrescriptionFull,
+  validation: PrescriptionValidationMeta,
+): Promise<void> {
+  const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="receita-${validation.validation_code}.pdf"`);
+  doc.pipe(res);
+
+  const margin = 40;
+  const pageW = doc.page.width - margin * 2;
+  let y = drawPrescriptionBody(doc, prescription, margin, pageW);
+
+  if (y > doc.page.height - 220) {
+    doc.addPage();
+    y = margin;
+  } else {
+    y += 24;
+  }
+
+  doc.moveTo(margin, y).lineTo(doc.page.width - margin, y).strokeColor(BORDER).lineWidth(0.5).stroke();
+  y += 14;
+
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(TEXT_DARK).text('Validação PetMi Hub', margin, y);
+  y = doc.y + 8;
+
+  const qrSize = 88;
+  let qrBuffer: Buffer | null = null;
+  try {
+    qrBuffer = await QRCode.toBuffer(validation.public_url, { type: 'png', margin: 1, width: qrSize });
+  } catch {
+    qrBuffer = null;
+  }
+
+  const metaX = margin + (qrBuffer ? qrSize + 16 : 0);
+  const metaW = pageW - (qrBuffer ? qrSize + 16 : 0);
+
+  if (qrBuffer) {
+    doc.image(qrBuffer, margin, y, { width: qrSize, height: qrSize });
+  }
+
+  drawField(doc, 'Código de validação', validation.validation_code, metaX, y, metaW);
+  y = Math.max(doc.y, y + (qrBuffer ? qrSize : 0)) + 6;
+  drawField(doc, 'Identificador de integridade', truncateHash(validation.content_hash), metaX, y, metaW);
+  y = doc.y + 6;
+  const validity = validation.expires_at
+    ? `Válida até ${new Date(validation.expires_at).toLocaleDateString('pt-BR')}`
+    : `Emitida em ${new Date(validation.issued_at).toLocaleString('pt-BR')}`;
+  drawField(doc, 'Validade', validity, metaX, y, metaW);
+  y = doc.y + 6;
+  doc.font('Helvetica').fontSize(8).fillColor(TEXT_MUTED).text(validation.public_url, metaX, y, { width: metaW });
+  y = doc.y + 14;
+
+  doc.font('Helvetica-Bold').fontSize(10).fillColor(TEXT_DARK).text('Avisos legais', margin, y);
+  y = doc.y + 6;
+  for (const line of validation.disclaimers) {
+    doc.font('Helvetica').fontSize(8).fillColor(TEXT_MUTED).text(`• ${line}`, margin, y, { width: pageW });
+    y = doc.y + 4;
+  }
 
   doc.end();
 }

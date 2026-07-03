@@ -150,4 +150,30 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 
 56. **`alter_hub_clinic_settings_accepted_payment_methods.sql`** — Coluna `accepted_payment_methods text[]` em `hub_clinic_settings` (formas de pagamento aceitas no checkout e registro de pagamentos; default = todos os 7 métodos). Executar depois do item 54.
 
-57. **`alter_hub_boarding_reservations_billing.sql`** — Colunas `billing_waived_at` / `billing_waive_reason` em `hub_boarding_reservations` e atualização do CHECK `hub_comandas.origin_type` para incluir `boarding_reservation`. Executar depois dos itens 51–52.
+57. **`alter_hub_boarding_reservations_billing.sql`** — Colunas `billing_waived_at` / `billing_waive_reason` em `hub_boarding_reservations`; CHECK `hub_comandas.origin_type` e `hub_receivables.source_type` passam a incluir `boarding_reservation`. Executar depois dos itens 51–52 e do núcleo financeiro (itens 35–39).
+
+58. **`alter_hub_prescription_items_mvp_fields.sql`** — Campos MVP de medicamento (`presentation`, `concentration`, `quantity`, `posology`) e `administration` em `hub_prescription_items`. Executar depois do item 10 (`create_hub_prescriptions_vaccinations.sql`).
+
+59. **`alter_hub_prescriptions_guardian_status.sql`** — `guardian_id` e status `issued` em `hub_prescriptions`. Executar depois do item 58.
+
+60. **`alter_hub_prescription_documents_validation.sql`** — Colunas de validação pública (`validation_code`, `public_token`, `snapshot`, `content_hash`, `document_status`, revogação) em `hub_prescription_documents`. Executar depois do item 59 e de `create_hub_prescription_documents.sql`.
+
+61. **`create_hub_prescription_document_events.sql`** — Tabela `hub_prescription_document_events` (auditoria created/viewed/pdf_downloaded/revoked). Executar depois do item 60.
+
+62. **`alter_hub_clinic_settings_prescription_defaults.sql`** — Coluna `prescription_defaults jsonb` em `hub_clinic_settings` (validade padrão da receita). Executar depois do item 54.
+
+63. **`alter_hub_clinical_exams_referral.sql`** — Campos de solicitação de exame (`guardian_id`, `urgency`, `clinical_indication`, `fasting_required`, `collection_instructions`, `document_status`). Executar depois de `create_hub_clinical_exams.sql`.
+
+64. **`create_hub_clinical_exam_order_documents.sql`** — Documentos validáveis de solicitação de exame (`EX-XXXX-XXXX`) + eventos de auditoria. Executar depois do item 63.
+
+65. **`create_hub_clinical_specialist_referrals.sql`** — Encaminhamentos a especialista. Executar depois do núcleo clínico (exames/atendimentos).
+
+66. **`create_hub_clinical_specialist_referral_documents.sql`** — Documentos validáveis de encaminhamento (`RF-XXXX-XXXX`) + eventos. Executar depois do item 65.
+
+67. **`alter_hub_clinic_settings_exam_referral_templates.sql`** — `exam_order_defaults` e `specialist_referral_defaults` em `hub_clinic_settings`. Executar depois do item 54.
+
+68. **`alter_hub_comandas_client_notes.sql`** — Coluna `client_notes` em `hub_comandas` (mensagem ao tutor no PDF/link público; distinta de `notes` interno). Executar depois do item 39.
+
+69. **`alter_hub_comandas_finance_notes.sql`** — Coluna `finance_notes` em `hub_comandas` (observação interna do financeiro, separada de `notes` do caixa). Executar depois do item 39.
+
+70. **`create_hub_comanda_events.sql`** — Tabela `hub_comanda_events` (timeline de itens adicionados, removidos e alterados na comanda). Executar depois do item 39.

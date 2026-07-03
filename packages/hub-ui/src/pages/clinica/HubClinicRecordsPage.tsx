@@ -19,6 +19,7 @@ import {
 } from '../../api/hubClinicalApi';
 import { hubPetsApi, type HubPet } from '../../api/hubPetsApi';
 import { formatPrescriptionLine } from './clinicalDisplay';
+import { HubPrescriptionHistoryList } from '../../components/clinical/HubPrescriptionHistoryList';
 import { petAgeDetailedLabel } from '../pets/petAge';
 
 type TabId = 'casos' | 'timeline' | 'prescricoes' | 'vacinas' | 'exames' | 'flags';
@@ -305,15 +306,23 @@ const HubClinicRecordsPage: React.FC = () => {
               )}
 
               {tab === 'prescricoes' && (
-                <ul className="hub-clinic-records__list">
+                <>
                   {prescriptions.length === 0 ? (
-                    <li className="hub-clientes__muted">Nenhuma prescrição.</li>
+                    <p className="hub-clientes__muted">Nenhuma prescrição.</p>
+                  ) : clinicId ? (
+                    <HubPrescriptionHistoryList
+                      prescriptions={prescriptions}
+                      clinicId={clinicId}
+                      canWrite={canWrite}
+                    />
                   ) : (
-                    prescriptions.map((p) => (
-                      <li key={p.id}>{formatPrescriptionLine(p)}</li>
-                    ))
+                    <ul className="hub-clinic-records__list">
+                      {prescriptions.map((p) => (
+                        <li key={p.id}>{formatPrescriptionLine(p)}</li>
+                      ))}
+                    </ul>
                   )}
-                </ul>
+                </>
               )}
 
               {tab === 'vacinas' && (

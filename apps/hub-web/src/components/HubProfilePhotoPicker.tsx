@@ -40,6 +40,15 @@ const HubProfilePhotoPicker: React.FC<Props> = ({
   const { setAuthFromLogin } = useAuth();
 
   const displaySrc = preview || photoUrl;
+  const isClinic = mode.kind === 'clinic';
+  const hasImage = Boolean(displaySrc);
+  const changeActionLabel = isClinic
+    ? hasImage
+      ? 'Alterar logo'
+      : 'Adicionar logo'
+    : hasImage
+      ? 'Alterar foto'
+      : 'Adicionar foto';
 
   const validateFile = (file: File): boolean => {
     if (!ALLOWED.includes(file.type)) {
@@ -72,10 +81,10 @@ const HubProfilePhotoPicker: React.FC<Props> = ({
         const res = await hubProfileApi.uploadClinicPhoto(mode.clinicId, file);
         mode.onClinicUpdated?.(res.clinic);
         window.dispatchEvent(new Event(CLINIC_STORAGE_UPDATED_EVENT));
-        showSuccess('Foto da clínica atualizada.');
+        showSuccess('Logo da clínica atualizado.');
       }
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao enviar foto');
+      showError((e as Error)?.message || (isClinic ? 'Erro ao enviar logo' : 'Erro ao enviar foto'));
     } finally {
       URL.revokeObjectURL(blobUrl);
       setPreview(null);
@@ -105,8 +114,16 @@ const HubProfilePhotoPicker: React.FC<Props> = ({
           type="button"
           className="hub-meu-perfil__camera-btn"
           disabled={disabled || uploading}
-          aria-label={mode.kind === 'user' ? 'Alterar foto de perfil' : 'Alterar logótipo da clínica'}
-          title={uploading ? 'A enviar…' : 'Alterar foto'}
+          aria-label={
+            isClinic
+              ? hasImage
+                ? 'Alterar logo da clínica'
+                : 'Adicionar logo da clínica'
+              : hasImage
+                ? 'Alterar foto de perfil'
+                : 'Adicionar foto de perfil'
+          }
+          title={uploading ? 'Enviando…' : changeActionLabel}
           onClick={() => inputRef.current?.click()}
         >
           <Camera size={16} strokeWidth={2} />
@@ -126,7 +143,7 @@ const HubProfilePhotoPicker: React.FC<Props> = ({
       />
       {uploading ? (
         <p className="hub-profile-photo-picker__hint" aria-live="polite">
-          A enviar foto…
+          {isClinic ? 'Enviando logo…' : 'Enviando foto…'}
         </p>
       ) : null}
     </div>

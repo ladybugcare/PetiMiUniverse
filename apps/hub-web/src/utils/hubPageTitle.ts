@@ -60,6 +60,8 @@ export function hubPageTitleFromPath(pathname: string): string {
   if (/^\/hub\/caixa\/comanda\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Comanda — Pronto para envio';
   if (/^\/hub\/caixa\/comanda\/[^/]+$/.test(pathname)) return 'Comanda';
   if (/^\/comanda\//.test(pathname)) return 'Comanda (público)';
+  if (/^\/receita\//.test(pathname)) return 'Receita (público)';
+  if (pathname === '/validar-receita') return 'Validar receita';
   const hit = ROUTES_BY_SPECIFICITY.find((r) => pathname === r.path || pathname.startsWith(`${r.path}/`));
   return hit?.title ?? 'PetMi Hub';
 }

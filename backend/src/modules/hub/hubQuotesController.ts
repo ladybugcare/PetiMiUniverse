@@ -394,7 +394,7 @@ const QUOTE_FULL_SELECT = `
   discount_kind, discount_value, currency, sent_at, expires_at, valid_days, public_token,
   guardian_id, converted_at, created_at, updated_at,
   billing_state, billing_waived_at, billing_waive_reason,
-  clinic:clinics(name),
+  clinic:clinics(name, photo_url),
   prospect:hub_prospects(id, clinic_id, full_name, tax_id, phone, email, created_at, updated_at, deleted_at),
   pets:hub_quote_pets(id, quote_id, display_name, species, breed, size_tier, coat_type, age_months, sex, sort_order, created_at),
   lines:hub_quote_lines(id, quote_id, hub_service_type_id, description, quantity, unit_price, discount_amount, line_total, sort_order, pricing_variant, created_at,
@@ -1196,7 +1196,7 @@ export const getHubQuotePdf = async (req: Request, res: Response) => {
     if (error || !data) {
       return res.status(404).json({ error: 'Orçamento não encontrado' });
     }
-    streamQuotePdf(res, data as never);
+    await streamQuotePdf(res, data as never);
     return;
   } catch (e) {
     console.error('[hub_quotes] pdf', e);

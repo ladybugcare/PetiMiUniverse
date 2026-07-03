@@ -1,7 +1,23 @@
 import React, { useMemo } from 'react';
+import {
+  Calendar,
+  ClipboardList,
+  CreditCard,
+  FileText,
+  Info,
+  Lock,
+  Mail,
+  MapPin,
+  MessageSquare,
+  Dog,
+  Phone,
+  User,
+} from 'lucide-react';
 import type { HubQuote, HubQuoteLine } from '../../api/hubQuotesApi';
 import {
+  clinicDisplayLogoUrl,
   clinicDisplayName,
+  clientNotesSectionTitle,
   discountAmount,
   embedOne,
   petLabel,
@@ -11,6 +27,12 @@ import {
   staffStatusClass,
   staffStatusLabel,
 } from './hubQuoteViewUtils';
+import {
+  PublicDocCardTitle,
+  PublicDocFieldLabel,
+  PublicDocHeaderLogo,
+  PublicDocMetaRow,
+} from './hubPublicDocumentUi';
 
 export type HubQuotePublicAudience = 'public' | 'staff';
 
@@ -33,6 +55,7 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
   const isStaff = audience === 'staff';
   const prospect = embedOne(quote.prospect);
   const clinicName = clinicDisplayName(quote);
+  const clinicLogoUrl = clinicDisplayLogoUrl(quote.clinic);
   const pets = useMemo(
     () => [...(quote.pets ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
     [quote.pets],
@@ -58,44 +81,50 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
       <div className="hub-public-quote__shell">
         <header className="hub-public-quote__header">
           <div className="hub-public-quote__header-main">
-            {clinicName ? (
-              <>
-                <p className="hub-public-quote__eyebrow">Orçamento</p>
-                <h1 className="hub-public-quote__clinic">{clinicName}</h1>
-              </>
-            ) : (
-              <h1 className="hub-public-quote__clinic hub-public-quote__clinic--solo">Orçamento</h1>
-            )}
-            <p className="hub-public-quote__tagline">Proposta personalizada para o seu pet.</p>
+            <PublicDocHeaderLogo logoUrl={clinicLogoUrl} clinicName={clinicName} />
+            <div>
+              {clinicName ? (
+                <>
+                  <p className="hub-public-quote__eyebrow">Orçamento</p>
+                  <h1 className="hub-public-quote__clinic">{clinicName}</h1>
+                </>
+              ) : (
+                <h1 className="hub-public-quote__clinic hub-public-quote__clinic--solo">Orçamento</h1>
+              )}
+              <p className="hub-public-quote__tagline">Proposta personalizada para o seu pet.</p>
+            </div>
           </div>
           <aside className="hub-public-quote__meta-card" aria-label="Resumo do documento">
-            <p className="hub-public-quote__meta-label">Referência</p>
-            <p className="hub-public-quote__meta-value hub-public-quote__meta-value--accent">{quote.id.slice(0, 8).toUpperCase()}</p>
-            <p className="hub-public-quote__meta-label">Criado em</p>
-            <p className="hub-public-quote__meta-value">
-              {quote.created_at ? new Date(quote.created_at).toLocaleString('pt-BR') : '—'}
-            </p>
+            <PublicDocMetaRow icon={FileText} label="Referência">
+              <p className="hub-public-quote__meta-value hub-public-quote__meta-value--accent">
+                {quote.id.slice(0, 8).toUpperCase()}
+              </p>
+            </PublicDocMetaRow>
+            <PublicDocMetaRow icon={Calendar} label="Criado em">
+              <p className="hub-public-quote__meta-value">
+                {quote.created_at ? new Date(quote.created_at).toLocaleString('pt-BR') : '—'}
+              </p>
+            </PublicDocMetaRow>
             {isStaff ? (
               <>
-                <p className="hub-public-quote__meta-label">Estado (interno)</p>
-                <p className="hub-public-quote__meta-value">
-                  <span className={staffStatusClass(quote.status)}>{staffStatusLabel(quote.status)}</span>
-                </p>
+                <PublicDocMetaRow icon={MapPin} label="Estado (interno)">
+                  <p className="hub-public-quote__meta-value">
+                    <span className={staffStatusClass(quote.status)}>{staffStatusLabel(quote.status)}</span>
+                  </p>
+                </PublicDocMetaRow>
                 {quote.sent_at ? (
-                  <>
-                    <p className="hub-public-quote__meta-label">Enviado em</p>
+                  <PublicDocMetaRow icon={Calendar} label="Enviado em">
                     <p className="hub-public-quote__meta-value">{new Date(quote.sent_at).toLocaleString('pt-BR')}</p>
-                  </>
+                  </PublicDocMetaRow>
                 ) : null}
               </>
             ) : null}
             {quote.expires_at ? (
-              <>
-                <p className="hub-public-quote__meta-label">Válido até</p>
+              <PublicDocMetaRow icon={Calendar} label="Válido até">
                 <p className={`hub-public-quote__meta-value${expired ? ' hub-public-quote__meta-value--warn' : ''}`}>
                   {new Date(quote.expires_at).toLocaleDateString('pt-BR', { dateStyle: 'long' })}
                 </p>
-              </>
+              </PublicDocMetaRow>
             ) : null}
           </aside>
         </header>
@@ -115,22 +144,22 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
 
         <div className="hub-public-quote__grid-2">
           <section className="hub-public-quote__card">
-            <h2 className="hub-public-quote__card-title">Dados do contato</h2>
+            <PublicDocCardTitle icon={User}>Dados do contato</PublicDocCardTitle>
             {prospect ? (
               <dl className="hub-public-quote__dl">
-                <dt>Nome</dt>
+                <PublicDocFieldLabel icon={User}>Nome</PublicDocFieldLabel>
                 <dd>{prospect.full_name}</dd>
-                <dt>Telefone</dt>
+                <PublicDocFieldLabel icon={Phone}>Telefone</PublicDocFieldLabel>
                 <dd>{prospect.phone}</dd>
                 {prospect.tax_id ? (
                   <>
-                    <dt>CPF</dt>
+                    <PublicDocFieldLabel icon={CreditCard}>CPF</PublicDocFieldLabel>
                     <dd>{prospect.tax_id}</dd>
                   </>
                 ) : null}
                 {prospect.email ? (
                   <>
-                    <dt>E-mail</dt>
+                    <PublicDocFieldLabel icon={Mail}>E-mail</PublicDocFieldLabel>
                     <dd>{prospect.email}</dd>
                   </>
                 ) : null}
@@ -141,7 +170,7 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
           </section>
 
           <section className="hub-public-quote__card">
-            <h2 className="hub-public-quote__card-title">Pets</h2>
+            <PublicDocCardTitle icon={Dog}>Pets</PublicDocCardTitle>
             {pets.length === 0 ? (
               <p className="hub-public-quote__muted">—</p>
             ) : (
@@ -172,7 +201,7 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
         </div>
 
         <section className="hub-public-quote__card hub-public-quote__card--flush">
-          <h2 className="hub-public-quote__card-title">Serviços e valores</h2>
+          <PublicDocCardTitle icon={ClipboardList}>Serviços e valores</PublicDocCardTitle>
           <div className="hub-public-quote__table-scroll">
             <table className="hub-orcamento-novo__services-table hub-public-quote__services-table">
               <thead>
@@ -228,14 +257,14 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
 
         {quote.client_notes ? (
           <section className="hub-public-quote__card hub-public-quote__card--notes">
-            <h2 className="hub-public-quote__card-title">Mensagem da clínica</h2>
+            <PublicDocCardTitle icon={MessageSquare}>{clientNotesSectionTitle(clinicName)}</PublicDocCardTitle>
             <p className="hub-public-quote__notes-body">{quote.client_notes}</p>
           </section>
         ) : null}
 
         {isStaff && quote.notes?.trim() ? (
           <section className="hub-public-quote__card hub-public-quote__card--notes hub-public-quote__card--internal">
-            <h2 className="hub-public-quote__card-title">Notas internas</h2>
+            <PublicDocCardTitle icon={Lock}>Notas internas</PublicDocCardTitle>
             <p className="hub-public-quote__notes-body hub-public-quote__notes-body--pre">{quote.notes.trim()}</p>
           </section>
         ) : null}
@@ -263,11 +292,17 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
 
         {isStaff ? (
           <p className="hub-public-quote__fineprint hub-public-quote__fineprint--staff">
-            Vista da equipa: o link público segue o mesmo layout de proposta, sem as notas internas acima.
+            <Info size={16} strokeWidth={2} className="hub-public-quote__ic" aria-hidden />
+            <span>
+              Vista da equipa: o link público segue o mesmo layout de proposta, sem as notas internas acima.
+            </span>
           </p>
         ) : (
           <p className="hub-public-quote__fineprint">
-            Valores e horários dependem da disponibilidade da clínica. Este documento é uma proposta; não cria reserva nem cadastro automático.
+            <Info size={16} strokeWidth={2} className="hub-public-quote__ic" aria-hidden />
+            <span>
+              Valores e horários dependem da disponibilidade da clínica. Este documento é uma proposta; não cria reserva nem cadastro automático.
+            </span>
           </p>
         )}
         {trailing}

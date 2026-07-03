@@ -1,4 +1,16 @@
-import type { HubClinicalExamStatus, HubEncounterEvent, HubPrescription } from '../../api/hubClinicalApi';
+import type { HubClinicalExamStatus, HubEncounterEvent, HubPrescription, HubPrescriptionItem } from '../../api/hubClinicalApi';
+
+export function formatPrescriptionItemMeta(it: HubPrescriptionItem): string {
+  const parts = [
+    it.presentation ? `Apresentação: ${it.presentation}` : null,
+    it.concentration ? `Concentração: ${it.concentration}` : it.dosage ? `Dose: ${it.dosage}` : null,
+    it.quantity ? `Qtd: ${it.quantity}` : null,
+    it.posology ? `Posologia: ${it.posology}` : it.frequency ? `Freq: ${it.frequency}` : null,
+    it.duration ? `Duração: ${it.duration}` : null,
+    it.administration === 'administered_in_clinic' ? 'Clínica' : null,
+  ].filter(Boolean);
+  return parts.join(' · ') || '—';
+}
 
 export function formatPrescriptionLine(rx: HubPrescription): string {
   const items = rx.items ?? [];
@@ -6,9 +18,8 @@ export function formatPrescriptionLine(rx: HubPrescription): string {
   return items
     .map((it) => {
       const parts = [it.medication_name];
-      if (it.dosage) parts.push(it.dosage);
-      if (it.frequency) parts.push(it.frequency);
-      if (it.duration) parts.push(it.duration);
+      const meta = formatPrescriptionItemMeta(it);
+      if (meta !== '—') parts.push(meta);
       return parts.join(' · ');
     })
     .join('; ');

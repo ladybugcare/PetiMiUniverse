@@ -1,12 +1,14 @@
 import React from 'react';
 import { Ban, Coins, FilePlus2, MessageCircle, Pencil, Receipt, SendHorizonal } from 'lucide-react';
 import type { HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
+import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
 import {
   canCaixaCheckoutDayBoardItem,
   canCaixaEditDayBoardItem,
   canFinanceiroCheckoutDayBoardItem,
   canFinanceiroEditDayBoardItem,
   isDayBoardViewOnly,
+  resolveDayBoardCheckoutLabel,
 } from './hubComandaEditUtils';
 
 export const STATUS_OP_LABEL: Record<string, string> = {
@@ -62,7 +64,9 @@ export type FinanceDayBoardTableProps = {
   onCheckout: (item: HubFinanceDayBoardItem) => void;
   onSendToFinanceiro?: (item: HubFinanceDayBoardItem) => void;
   onWaive?: (item: HubFinanceDayBoardItem) => void;
+  onCancelReceivable?: (item: HubFinanceDayBoardItem) => void;
   onShareComanda: (item: HubFinanceDayBoardItem) => void;
+  onRowClick?: (item: HubFinanceDayBoardItem) => void;
   busy: boolean;
 };
 
@@ -77,11 +81,12 @@ export function FinanceDayBoardTable({
   onCheckout,
   onSendToFinanceiro,
   onWaive,
+  onCancelReceivable,
   onShareComanda,
+  onRowClick,
   busy,
 }: FinanceDayBoardTableProps) {
   const isCaixa = mode === 'caixa';
-  const checkoutLabel = isCaixa ? 'Receber' : 'Cobrar';
 
   return (
     <div className="hub-clientes__table-wrap">
@@ -103,6 +108,7 @@ export function FinanceDayBoardTable({
             const hasReceivable = item.billing.has_receivable;
             const canEdit = isCaixa ? canCaixaEditDayBoardItem(item) : canFinanceiroEditDayBoardItem(item);
             const canCheckout = isCaixa ? canCaixaCheckoutDayBoardItem(item) : canFinanceiroCheckoutDayBoardItem(item);
+            const checkoutLabel = resolveDayBoardCheckoutLabel(mode, item);
             const isViewOnly = isDayBoardViewOnly(item);
             const opLabel = STATUS_OP_LABEL[item.operational_status] ?? item.operational_status;
             const timeStr = item.starts_at
@@ -112,9 +118,26 @@ export function FinanceDayBoardTable({
               item.services && item.services.length > 0
                 ? item.services.map((s) => s.name).join(', ')
                 : item.origin_label;
+            const groupLabel = item.service_group ? serviceGroupLabel(item.service_group) : null;
+
+            const canCancelReceivable =
+              !isCaixa &&
+              hasReceivable &&
+              canFinancialWrite &&
+              canEdit &&
+              !isViewOnly &&
+              Boolean(item.billing.active_receivable_id) &&
+              (item.billing.receivable_status === 'pending' ||
+                item.billing.receivable_status === 'partially_paid');
+
+            const rowClickable = hasComanda && Boolean(onRowClick);
 
             return (
-              <tr key={`${item.origin_type}:${item.origin_id}`}>
+              <tr
+                key={`${item.origin_type}:${item.origin_id}`}
+                className={rowClickable ? 'hub-dayboard__row-click' : undefined}
+                onClick={rowClickable ? () => onRowClick!(item) : undefined}
+              >
                 <td>
                   {item.pet?.name ? (
                     <div className="hub-clientes__tutor-cell">
@@ -126,9 +149,14 @@ export function FinanceDayBoardTable({
                   )}
                 </td>
                 <td>
-                  <span className="hub-dayboard__services-cell" title={serviceNames}>
-                    {serviceNames}
-                  </span>
+                  <div className="hub-dayboard__services-wrap">
+                    {groupLabel ? (
+                      <span className="hub-clientes__pill hub-dayboard__group-pill">{groupLabel}</span>
+                    ) : null}
+                    <span className="hub-dayboard__services-cell" title={serviceNames}>
+                      {serviceNames}
+                    </span>
+                  </div>
                 </td>
                 <td>{item.guardian?.full_name ?? <span className="hub-clientes__muted">—</span>}</td>
                 <td className="hub-dayboard__time-cell">{timeStr}</td>
@@ -138,7 +166,7 @@ export function FinanceDayBoardTable({
                   </span>
                 </td>
                 <td><ComandaStatusBadge billing={item.billing} /></td>
-                <td className="hub-clientes__td-actions">
+                <td className="hub-clientes__td-actions" onClick={(e) => e.stopPropagation()}>
                   <div className="hub-clientes__td-actions-inner hub-dayboard__actions">
                     {isCaixa && !hasComanda && canCreateReceivable && onOpenComanda && (
                       <button
@@ -176,7 +204,7 @@ export function FinanceDayBoardTable({
                         <SendHorizonal size={15} strokeWidth={2} />
                       </button>
                     )}
-                    {hasComanda && !hasReceivable && canCreateReceivable && canCheckout && (
+                    {hasComanda && !hasReceivable && canCreateReceivable && canCheckout && checkoutLabel && (
                       <button
                         type="button"
                         className="hub-dayboard__action-btn"
@@ -200,7 +228,7 @@ export function FinanceDayBoardTable({
                         <Receipt size={15} strokeWidth={2} />
                       </button>
                     )}
-                    {hasComanda && hasReceivable && !isViewOnly && canCheckout && (
+                    {hasComanda && hasReceivable && !isViewOnly && canCheckout && checkoutLabel && (
                       <button
                         type="button"
                         className="hub-dayboard__action-btn"
@@ -232,6 +260,18 @@ export function FinanceDayBoardTable({
                         aria-label="Marcar sem cobrança"
                         disabled={busy}
                         onClick={() => onWaive(item)}
+                      >
+                        <Ban size={15} strokeWidth={2} />
+                      </button>
+                    )}
+                    {canCancelReceivable && onCancelReceivable && (
+                      <button
+                        type="button"
+                        className="hub-dayboard__action-btn"
+                        title="Cancelar recebível"
+                        aria-label="Cancelar recebível"
+                        disabled={busy}
+                        onClick={() => onCancelReceivable(item)}
                       >
                         <Ban size={15} strokeWidth={2} />
                       </button>

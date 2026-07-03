@@ -36,6 +36,7 @@ export type HubFinanceDayBoardItem = {
   origin_type: string;
   origin_id: string;
   origin_label: string;
+  service_group?: string | null;
   starts_at: string | null;
   guardian_id: string | null;
   guardian: { id: string; full_name: string } | null;

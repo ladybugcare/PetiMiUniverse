@@ -211,6 +211,34 @@
   padding-top: 0;
 }
 
+.hub-finance-page__panel-section--primary {
+  padding-top: 18px;
+}
+
+.hub-finance-page__panel-section--highlight {
+  border-radius: 12px;
+  margin: 0 -4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  animation: hub-finance-panel-highlight 4s ease-out;
+}
+
+.hub-finance-page__panel-cta-hint {
+  margin: 0 0 12px;
+}
+
+@keyframes hub-finance-panel-highlight {
+  0%,
+  15% {
+    background: rgba(196, 106, 58, 0.12);
+    box-shadow: inset 0 0 0 2px rgba(196, 106, 58, 0.35);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
 .hub-finance-page__panel-table-wrap {
   border-radius: 12px;
 }
@@ -1207,6 +1235,19 @@
   gap: 4px;
 }
 
+.hub-dayboard__table .hub-dayboard__row-click {
+  cursor: pointer;
+}
+
+.hub-dayboard__table .hub-dayboard__row-click:hover td {
+  background: var(--hub-surface-muted, #f8f6f4);
+}
+
+.hub-dayboard__table .hub-dayboard__row-click:focus-visible {
+  outline: 2px solid var(--hub-brand, #c45c26);
+  outline-offset: -2px;
+}
+
 .hub-dayboard__pet-name {
   cursor: default;
   text-decoration: none;
@@ -1242,6 +1283,19 @@
   color: var(--hc-text-muted, #a0856b);
   border: 1px solid var(--hc-border, #e8ddd8);
   font-weight: 500;
+}
+
+.hub-dayboard__services-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 220px;
+}
+
+.hub-dayboard__group-pill {
+  font-size: 11px;
+  padding: 1px 8px;
 }
 
 .hub-dayboard__services-cell {
@@ -1970,6 +2024,21 @@ h3.hub-caixa-page__card-title {
 
 /* ── ComandaCheckoutDrawer ───────────────────────────────────────────────── */
 
+.hub-checkout-drawer__content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.hub-side-panel__main > .hub-finance-page__card-panel--stack {
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  gap: 16px;
+}
+
 .hub-checkout-drawer__hero {
   display: flex;
   flex-wrap: wrap;
@@ -2037,6 +2106,10 @@ h3.hub-caixa-page__card-title {
   gap: 10px;
 }
 
+.hub-checkout-drawer__summary-grid--quad {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 @media (max-width: 520px) {
   .hub-checkout-drawer__summary-grid {
     grid-template-columns: 1fr;
@@ -2070,7 +2143,7 @@ h3.hub-caixa-page__card-title {
 }
 
 .hub-checkout-drawer__section {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .hub-checkout-drawer__section-title {
@@ -2119,6 +2192,24 @@ h3.hub-caixa-page__card-title {
   text-align: right;
 }
 
+.hub-checkout-drawer__items-table .hub-clientes__td-actions {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.hub-checkout-drawer__row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.hub-checkout-drawer__row-actions .hub-dayboard__action-btn--danger:hover {
+  background: #ffebee;
+  color: #c62828;
+  border-color: #ef9a9a;
+}
+
 .hub-checkout-drawer__cell-muted {
   color: var(--hub-text-secondary, #6b6560);
 }
@@ -2132,11 +2223,17 @@ h3.hub-caixa-page__card-title {
 
 .hub-checkout-drawer__action-tabs {
   display: flex;
-  gap: 4px;
+  gap: 8px;
   padding: 4px;
   border-radius: 10px;
   background: var(--hub-surface-muted, #f8f6f4);
   border: 1px solid var(--hub-border-subtle, #ebe6e1);
+}
+
+.hub-checkout-drawer__billing {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .hub-checkout-drawer__action-tab {

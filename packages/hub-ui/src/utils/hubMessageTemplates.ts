@@ -7,7 +7,12 @@
  * Templates de Mensagem (persistidos em hub_clinic_settings.message_templates).
  */
 
-export type MessageTemplateKey = 'pet_ready' | 'pet_on_the_way' | 'appointment_reminder';
+export type MessageTemplateKey =
+  | 'pet_ready'
+  | 'pet_on_the_way'
+  | 'appointment_reminder'
+  | 'exam_order_share'
+  | 'specialist_referral_share';
 
 type TemplateVars = Partial<{
   tutor: string | null;
@@ -15,24 +20,31 @@ type TemplateVars = Partial<{
   clinica: string | null;
   data: string | null;
   hora: string | null;
+  link: string | null;
 }>;
 
 export const DEFAULT_TEMPLATES: Record<MessageTemplateKey, string> = {
   pet_ready: 'Olá {tutor}! O {pet} já está pronto para retirada{clinicaFrag}.',
   pet_on_the_way: 'Olá {tutor}! Estamos a caminho para levar o {pet} até você.',
   appointment_reminder: 'Olá {tutor}! Lembrete do horário do {pet} em {data} às {hora}.',
+  exam_order_share: 'Olá {tutor}! Segue a solicitação de exames do {pet}: {link}',
+  specialist_referral_share: 'Olá {tutor}! Segue o encaminhamento do {pet} para especialista: {link}',
 };
 
 export const TEMPLATE_LABELS: Record<MessageTemplateKey, string> = {
   pet_ready: 'Pet pronto para retirada',
   pet_on_the_way: 'A caminho do tutor',
   appointment_reminder: 'Lembrete de consulta',
+  exam_order_share: 'Solicitação de exames (WhatsApp)',
+  specialist_referral_share: 'Encaminhamento a especialista (WhatsApp)',
 };
 
 export const TEMPLATE_PLACEHOLDER_HINTS: Record<MessageTemplateKey, string> = {
   pet_ready: 'Variáveis disponíveis: {tutor}, {pet}, {clinica}',
   pet_on_the_way: 'Variáveis disponíveis: {tutor}, {pet}',
   appointment_reminder: 'Variáveis disponíveis: {tutor}, {pet}, {data}, {hora}',
+  exam_order_share: 'Variáveis: {tutor}, {pet}, {link}',
+  specialist_referral_share: 'Variáveis: {tutor}, {pet}, {link}',
 };
 
 /**
@@ -59,6 +71,7 @@ export function renderTemplate(
     pet: vars.pet,
     data: vars.data,
     hora: vars.hora,
+    link: vars.link,
   };
   for (const [k, v] of Object.entries(plain)) {
     text = text.replace(new RegExp(`\\{${k}\\}`, 'g'), v?.trim() ?? '');
@@ -66,4 +79,13 @@ export function renderTemplate(
 
   // Limpa espaços duplos e placeholders não resolvidos
   return text.replace(/\{[^}]+\}/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+/** Templates clínicos de compartilhamento (exames / encaminhamentos). */
+export function renderClinicalShareTemplate(
+  key: 'exam_order_share' | 'specialist_referral_share',
+  vars: Pick<TemplateVars, 'tutor' | 'pet' | 'link'>,
+  overrides?: Record<string, string>,
+): string {
+  return renderTemplate(key, vars, overrides);
 }

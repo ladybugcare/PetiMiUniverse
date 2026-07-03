@@ -1,10 +1,18 @@
 import React, { useMemo } from 'react';
+import { Calendar, ClipboardList, CreditCard, Dog, FileText, Mail, MapPin, MessageSquare, Phone, User } from 'lucide-react';
 import type { HubComandaItem, HubPublicComandaPet } from '../../api/hubComandaApi';
-import { sizeTierLabelPt } from '../orcamentos/hubQuoteViewUtils';
+import { sizeTierLabelPt, clientNotesSectionTitle } from '../orcamentos/hubQuoteViewUtils';
+import {
+  PublicDocCardTitle,
+  PublicDocFieldLabel,
+  PublicDocHeaderLogo,
+  PublicDocMetaRow,
+} from '../orcamentos/hubPublicDocumentUi';
 
 export type HubComandaPublicPayload = {
   comanda: Record<string, unknown> & {
-    clinic?: { name: string | null } | null;
+    client_notes?: string | null;
+    clinic?: { name: string | null; photo_url?: string | null } | null;
     guardian?: {
       full_name?: string;
       phone?: string | null;
@@ -48,6 +56,7 @@ export const HubComandaPublicView: React.FC<HubComandaPublicViewProps> = ({ payl
   const comanda = payload.comanda;
   const guardian = comanda.guardian;
   const clinicName = comanda.clinic?.name?.trim() || 'Clínica';
+  const clinicLogoUrl = comanda.clinic?.photo_url?.trim() || null;
   const items = useMemo(
     () => [...(payload.items ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
     [payload.items],
@@ -69,40 +78,46 @@ export const HubComandaPublicView: React.FC<HubComandaPublicViewProps> = ({ payl
       <div className="hub-public-quote__shell">
         <header className="hub-public-quote__header">
           <div className="hub-public-quote__header-main">
-            <p className="hub-public-quote__eyebrow">Comanda</p>
-            <h1 className="hub-public-quote__clinic">{clinicName}</h1>
-            <p className="hub-public-quote__tagline">Resumo de serviços e valores.</p>
+            <PublicDocHeaderLogo logoUrl={clinicLogoUrl} clinicName={clinicName} />
+            <div>
+              <p className="hub-public-quote__eyebrow">Comanda</p>
+              <h1 className="hub-public-quote__clinic">{clinicName}</h1>
+              <p className="hub-public-quote__tagline">Resumo de serviços e valores.</p>
+            </div>
           </div>
           <aside className="hub-public-quote__meta-card" aria-label="Resumo do documento">
-            <p className="hub-public-quote__meta-label">Referência</p>
-            <p className="hub-public-quote__meta-value hub-public-quote__meta-value--accent">{refShort}</p>
-            <p className="hub-public-quote__meta-label">Aberta em</p>
-            <p className="hub-public-quote__meta-value">
-              {comanda.opened_at ? new Date(String(comanda.opened_at)).toLocaleString('pt-BR') : '—'}
-            </p>
-            <p className="hub-public-quote__meta-label">Status</p>
-            <p className="hub-public-quote__meta-value">{statusLabelPt(String(comanda.status ?? ''))}</p>
+            <PublicDocMetaRow icon={FileText} label="Referência">
+              <p className="hub-public-quote__meta-value hub-public-quote__meta-value--accent">{refShort}</p>
+            </PublicDocMetaRow>
+            <PublicDocMetaRow icon={Calendar} label="Aberta em">
+              <p className="hub-public-quote__meta-value">
+                {comanda.opened_at ? new Date(String(comanda.opened_at)).toLocaleString('pt-BR') : '—'}
+              </p>
+            </PublicDocMetaRow>
+            <PublicDocMetaRow icon={MapPin} label="Status">
+              <p className="hub-public-quote__meta-value">{statusLabelPt(String(comanda.status ?? ''))}</p>
+            </PublicDocMetaRow>
           </aside>
         </header>
 
         <div className="hub-public-quote__grid-2">
           <section className="hub-public-quote__card">
-            <h2 className="hub-public-quote__card-title">Dados do contato</h2>
+            <PublicDocCardTitle icon={User}>Dados do contato</PublicDocCardTitle>
             {guardian?.full_name ? (
               <dl className="hub-public-quote__dl">
-                <dt>Nome</dt>
+                <PublicDocFieldLabel icon={User}>Nome</PublicDocFieldLabel>
                 <dd>{guardian.full_name}</dd>
-                <dt>Telefone</dt>
+                <PublicDocFieldLabel icon={Phone}>Telefone</PublicDocFieldLabel>
                 <dd>{guardian.phone?.trim() || '—'}</dd>
                 {guardian.tax_id ? (
                   <>
-                    <dt>CPF</dt>
+                    <PublicDocFieldLabel icon={CreditCard}>CPF</PublicDocFieldLabel>
                     <dd>{guardian.tax_id}</dd>
                   </>
                 ) : null}
                 {guardian.email ? (
                   <>
-                    <dt>E-mail</dt>
+                    <PublicDocFieldLabel icon={Mail}>E-mail</PublicDocFieldLabel>
                     <dd>{guardian.email}</dd>
                   </>
                 ) : null}
@@ -113,7 +128,7 @@ export const HubComandaPublicView: React.FC<HubComandaPublicViewProps> = ({ payl
           </section>
 
           <section className="hub-public-quote__card">
-            <h2 className="hub-public-quote__card-title">Pets</h2>
+            <PublicDocCardTitle icon={Dog}>Pets</PublicDocCardTitle>
             {pets.length === 0 ? (
               <p className="hub-public-quote__muted">—</p>
             ) : (
@@ -144,7 +159,7 @@ export const HubComandaPublicView: React.FC<HubComandaPublicViewProps> = ({ payl
         </div>
 
         <section className="hub-public-quote__card hub-public-quote__card--flush">
-          <h2 className="hub-public-quote__card-title">Serviços e valores</h2>
+          <PublicDocCardTitle icon={ClipboardList}>Serviços e valores</PublicDocCardTitle>
           <div className="hub-public-quote__table-scroll">
             <table className="hub-orcamento-novo__services-table hub-public-quote__services-table">
               <thead>
@@ -180,6 +195,13 @@ export const HubComandaPublicView: React.FC<HubComandaPublicViewProps> = ({ payl
             </table>
           </div>
         </section>
+
+        {comanda.client_notes ? (
+          <section className="hub-public-quote__card hub-public-quote__card--notes">
+            <PublicDocCardTitle icon={MessageSquare}>{clientNotesSectionTitle(clinicName)}</PublicDocCardTitle>
+            <p className="hub-public-quote__notes-body">{String(comanda.client_notes)}</p>
+          </section>
+        ) : null}
 
         <footer className="hub-public-quote__totals">
           <div className="hub-public-quote__totals-row">

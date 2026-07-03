@@ -12,8 +12,10 @@ export interface AlertProps {
   type?: AlertType;
   confirmText?: string;
   cancelText?: string;
+  secondaryText?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
+  onSecondary?: () => void;
   showCancel?: boolean;
 }
 
@@ -25,8 +27,10 @@ const Alert: React.FC<AlertProps> = ({
   type = 'info',
   confirmText = 'OK',
   cancelText = 'Cancelar',
+  secondaryText,
   onConfirm,
   onCancel,
+  onSecondary,
   showCancel = false,
 }) => {
   if (!isOpen) return null;
@@ -95,7 +99,7 @@ const Alert: React.FC<AlertProps> = ({
           {title && <h3 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600 }}>{title}</h3>}
           <p style={{ margin: 0, fontSize: 15, color: '#525252', lineHeight: 1.6 }}>{message}</p>
         </div>
-        <div style={{ display: 'flex', gap: 12, width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
           {showCancel && (
             <HubCancelButton
               className="hub-cancel-btn--block"
@@ -107,11 +111,32 @@ const Alert: React.FC<AlertProps> = ({
               {cancelText}
             </HubCancelButton>
           )}
+          {secondaryText ? (
+            <button
+              type="button"
+              onClick={() => {
+                onSecondary?.();
+                onClose();
+              }}
+              style={{
+                width: '100%',
+                padding: '12px 24px',
+                borderRadius: 8,
+                border: `1px solid ${color}`,
+                background: '#fff',
+                color,
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
+            >
+              {secondaryText}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={handleConfirm}
             style={{
-              flex: 1,
+              width: '100%',
               padding: '12px 24px',
               borderRadius: 8,
               border: 'none',

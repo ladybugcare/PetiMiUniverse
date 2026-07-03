@@ -72,7 +72,16 @@ export type AgendaAppointment = {
     durationMin: number;
     saleAmount?: number | null;
     isAddon?: boolean;
+    serviceGroup?: HubServiceGroupValue;
   }>;
+  /** Grupos únicos presentes nas linhas de serviço (para ícones múltiplos). */
+  serviceGroups?: HubServiceGroupValue[];
+  /** Rótulo de serviço para o card (sem repetir o pet). */
+  displayServiceLabel?: string;
+  /** Parte de série recorrente. */
+  isRecurring?: boolean;
+  /** L&T via checkbox: busca/retorno na mesma série (badges no card principal). */
+  pickupPackage?: { hasBefore: boolean; hasAfter: boolean } | null;
   description?: string;
   financial_notes?: string;
   /** Soma de sale_amount_applied das linhas (quando existir snapshot). */
@@ -83,7 +92,88 @@ export type AgendaAppointment = {
   hubEncounterStatus?: string | null;
   financial_adjustment_pending?: boolean;
   comanda_id?: string | null;
+  pricing_porte_tier?: string | null;
+  pricing_coat_type?: string | null;
 };
+
+const EDITABLE_AGENDA_STATUSES: AgendaStatus[] = ['pending_confirm', 'confirmed'];
+
+/** Agendamento editável antes do horário marcado e antes de iniciar atendimento. */
+export function canEditAgendaAppointment(
+  appt: Pick<AgendaAppointment, 'status' | 'start'>,
+  opts: { canWrite: boolean; now?: Date },
+): boolean {
+  if (!opts.canWrite) return false;
+  if (!EDITABLE_AGENDA_STATUSES.includes(appt.status)) return false;
+  const now = opts.now ?? new Date();
+  return now.getTime() < appt.start.getTime();
+}
+
+export const DEFAULT_AGENDA_START_HOUR = 7;
+export const DEFAULT_AGENDA_END_HOUR = 20;
+
+export type AgendaHourRange = { startHour: number; endHour: number };
+
+function parseHmToMinutes(hm: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hm.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** Extrai janela padrão de trabalho do JSON `work_hours` do profissional. */
+export function parseStaffWorkHours(raw: unknown): { start: string; end: string } {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    const start = typeof o.default_start === 'string' ? o.default_start : '09:00';
+    const end = typeof o.default_end === 'string' ? o.default_end : '18:00';
+    return { start, end };
+  }
+  return { start: '09:00', end: '18:00' };
+}
+
+/**
+ * Faixa visível da grade diária: padrão 7h–20h, estendida quando há atendimentos
+ * ou jornada de profissionais fora desse intervalo (ex.: clínica noturna).
+ */
+export function computeAgendaHourRange(
+  appointments: AgendaAppointment[],
+  options?: {
+    staffWorkHours?: Array<{ start?: string; end?: string }>;
+    slotMin?: number;
+  },
+): AgendaHourRange {
+  const slotMin = options?.slotMin ?? 30;
+  let startHour = DEFAULT_AGENDA_START_HOUR;
+  let endHour = DEFAULT_AGENDA_END_HOUR;
+
+  const extendForMinutes = (startMinutes: number, endMinutes: number) => {
+    if (startMinutes < startHour * 60) {
+      startHour = Math.max(0, Math.floor((startMinutes - 60) / 60));
+    }
+    if (endMinutes > endHour * 60) {
+      endHour = Math.min(24, Math.ceil((endMinutes + slotMin) / 60));
+    }
+  };
+
+  for (const a of appointments) {
+    if (a.status === 'cancelled') continue;
+    extendForMinutes(
+      a.start.getHours() * 60 + a.start.getMinutes(),
+      a.end.getHours() * 60 + a.end.getMinutes(),
+    );
+  }
+
+  for (const wh of options?.staffWorkHours ?? []) {
+    const startM = wh.start ? parseHmToMinutes(wh.start) : null;
+    const endM = wh.end ? parseHmToMinutes(wh.end) : null;
+    if (startM != null && endM != null) extendForMinutes(startM, endM);
+  }
+
+  return { startHour, endHour };
+}
 
 export function startOfDay(d: Date): Date {
   const x = new Date(d);
@@ -185,3 +275,130 @@ export function computeOverlapConflictIds(list: AgendaAppointment[], groupMode: 
 }
 
 export { serviceGroupLabel };
+
+export type AgendaCardSize = 'compact' | 'medium' | 'tall';
+
+export function agendaCardSizeFromHeight(heightPx: number): AgendaCardSize {
+  if (heightPx < 40) return 'compact';
+  if (heightPx <= 64) return 'medium';
+  return 'tall';
+}
+
+/** Primeiro nome do tutor para cards compactos. */
+export function guardianFirstName(fullName: string): string {
+  const trimmed = fullName.trim();
+  if (!trimmed || trimmed === '—') return trimmed;
+  return trimmed.split(/\s+/)[0] ?? trimmed;
+}
+
+function stripPetSuffixFromLabel(label: string, petName: string): string {
+  const pet = petName.trim();
+  if (!pet || pet === '—') return label;
+  const suffix = ` — ${pet}`;
+  if (label.endsWith(suffix)) return label.slice(0, -suffix.length).trim();
+  const suffix2 = ` - ${pet}`;
+  if (label.endsWith(suffix2)) return label.slice(0, -suffix2.length).trim();
+  return label;
+}
+
+/** Monta rótulo de serviço sem repetir o nome do pet. */
+export function computeDisplayServiceLabel(appt: Pick<AgendaAppointment, 'title' | 'serviceName' | 'petName' | 'services'>): string {
+  const services = appt.services ?? [];
+  const mainLines = services.filter((s) => !s.isAddon && s.name);
+  const addonLines = services.filter((s) => s.isAddon && s.name);
+
+  if (appt.title?.trim()) {
+    return stripPetSuffixFromLabel(appt.title.trim(), appt.petName);
+  }
+
+  if (mainLines.length > 0) {
+    const first = mainLines[0]!.name;
+    const extraMain = mainLines.length - 1;
+    const addonCount = addonLines.length;
+    let label = first;
+    if (extraMain > 0) label += ` +${extraMain}`;
+    else if (addonCount > 0) label += ` +${addonCount} adic.`;
+    return label;
+  }
+
+  if (addonLines.length > 0) {
+    return addonLines.length === 1 ? `Adicional: ${addonLines[0]!.name}` : `${addonLines.length} adicionais`;
+  }
+
+  return stripPetSuffixFromLabel(appt.serviceName || 'Serviço', appt.petName);
+}
+
+function isMainAppointmentKind(kind: string | undefined): boolean {
+  return kind !== 'pickup_route';
+}
+
+/** Oculta perna L&T criada pelo checkbox quando há card principal na mesma série/dia. */
+export function isPickupLegHiddenFromGrid(
+  appt: Pick<AgendaAppointment, 'id' | 'appointment_kind' | 'series_id' | 'start'>,
+  allAppts: Array<Pick<AgendaAppointment, 'id' | 'appointment_kind' | 'series_id' | 'start'>>,
+): boolean {
+  if (appt.appointment_kind !== 'pickup_route' || !appt.series_id) return false;
+  return allAppts.some(
+    (sibling) =>
+      sibling.id !== appt.id &&
+      sibling.series_id === appt.series_id &&
+      isMainAppointmentKind(sibling.appointment_kind) &&
+      isSameDay(sibling.start, appt.start),
+  );
+}
+
+function computePickupPackage(
+  appt: AgendaAppointment,
+  allAppts: AgendaAppointment[],
+): { hasBefore: boolean; hasAfter: boolean } | null {
+  if (!isMainAppointmentKind(appt.appointment_kind) || !appt.series_id) return null;
+  if (appt.group === 'leva_traz') return null;
+
+  const legs = allAppts.filter(
+    (s) =>
+      s.series_id === appt.series_id &&
+      s.appointment_kind === 'pickup_route' &&
+      isSameDay(s.start, appt.start),
+  );
+  if (legs.length === 0) return null;
+
+  const hasBefore = legs.some((leg) => leg.end.getTime() <= appt.start.getTime());
+  const hasAfter = legs.some((leg) => leg.start.getTime() >= appt.end.getTime());
+  if (!hasBefore && !hasAfter) return null;
+  return { hasBefore, hasAfter };
+}
+
+function uniqueServiceGroups(services: AgendaAppointment['services'], fallback: HubServiceGroupValue): HubServiceGroupValue[] {
+  const groups: HubServiceGroupValue[] = [];
+  const seen = new Set<string>();
+  for (const s of services ?? []) {
+    const g = s.serviceGroup ?? fallback;
+    if (seen.has(g)) continue;
+    seen.add(g);
+    groups.push(g);
+  }
+  if (groups.length === 0) groups.push(fallback);
+  return groups.slice(0, 3);
+}
+
+/** Enriquece agendamentos com metadados de card e filtra pernas L&T ocultas. */
+export function enrichAgendaCardsForGrid(list: AgendaAppointment[]): AgendaAppointment[] {
+  const enriched = list.map((appt) => {
+    const serviceGroups = uniqueServiceGroups(appt.services, appt.group);
+    const displayServiceLabel = computeDisplayServiceLabel(appt);
+    const pickupPackage = computePickupPackage(appt, list);
+    return {
+      ...appt,
+      serviceGroups,
+      displayServiceLabel,
+      isRecurring: Boolean(appt.series_id),
+      pickupPackage,
+    };
+  });
+  return enriched.filter((appt) => !isPickupLegHiddenFromGrid(appt, enriched));
+}
+
+/** Filtra lista já enriquecida para exibição na grade (alias de enrich). */
+export function filterAppointmentsForGrid(list: AgendaAppointment[]): AgendaAppointment[] {
+  return enrichAgendaCardsForGrid(list);
+}

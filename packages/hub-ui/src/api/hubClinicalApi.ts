@@ -1,4 +1,4 @@
-import { apiRequest } from '@petimi/web-core';
+import { apiRequest, getApiBaseUrl, getSupabase } from '@petimi/web-core';
 
 const encBase = '/api/hub/encounters';
 const clinicalBase = '/api/hub/clinical';
@@ -114,6 +114,10 @@ export type HubPrescriptionAdministration = 'home_use' | 'administered_in_clinic
 export type HubPrescriptionItem = {
   id?: string;
   medication_name: string;
+  presentation?: string | null;
+  concentration?: string | null;
+  quantity?: string | null;
+  posology?: string | null;
   dosage?: string | null;
   frequency?: string | null;
   duration?: string | null;
@@ -121,6 +125,8 @@ export type HubPrescriptionItem = {
   hub_inventory_item_id?: string | null;
   administration?: HubPrescriptionAdministration | string | null;
 };
+
+export type HubPrescriptionDocumentStatus = 'valid' | 'revoked' | 'expired';
 
 export type HubPrescriptionDocumentRow = {
   id: string;
@@ -132,6 +138,21 @@ export type HubPrescriptionDocumentRow = {
   signature_status?: string | null;
   created_at?: string | null;
   issued_by_member?: { id: string; full_name: string } | null;
+  validation_code?: string | null;
+  public_token_masked?: string | null;
+  document_status?: HubPrescriptionDocumentStatus;
+  content_hash_short?: string | null;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  validation_url?: string | null;
+  public_url?: string | null;
+};
+
+export type HubPrescriptionIssueResponse = {
+  document: HubPrescriptionDocumentRow;
+  snapshot?: Record<string, unknown>;
+  public_url?: string;
+  content_hash_short?: string;
 };
 
 export type HubPrescription = {
@@ -419,6 +440,10 @@ export const hubClinicalApi = {
     notes?: string | null;
     items: Array<{
       medication_name: string;
+      presentation?: string | null;
+      concentration?: string | null;
+      quantity?: string | null;
+      posology?: string | null;
       dosage?: string | null;
       frequency?: string | null;
       duration?: string | null;
@@ -440,6 +465,10 @@ export const hubClinicalApi = {
       hub_staff_member_id?: string | null;
       items?: Array<{
         medication_name: string;
+        presentation?: string | null;
+        concentration?: string | null;
+        quantity?: string | null;
+        posology?: string | null;
         dosage?: string | null;
         frequency?: string | null;
         duration?: string | null;
@@ -467,11 +496,31 @@ export const hubClinicalApi = {
     return apiRequest(`${clinicalBase}/prescriptions/${encodeURIComponent(prescriptionId)}/documents`, {
       method: 'POST',
       body: JSON.stringify(payload),
-    }) as Promise<{ document: HubPrescriptionDocumentRow }>;
+    }) as Promise<HubPrescriptionIssueResponse>;
   },
-  openPrescriptionPdf(prescriptionId: string, clinicId: string) {
+  revokePrescriptionDocument(
+    prescriptionId: string,
+    documentId: string,
+    payload: { clinic_id: string; reason: string; revoked_by?: string | null },
+  ) {
+    return apiRequest(
+      `${clinicalBase}/prescriptions/${encodeURIComponent(prescriptionId)}/documents/${encodeURIComponent(documentId)}/revoke`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ) as Promise<{ document: HubPrescriptionDocumentRow }>;
+  },
+  publicPrescriptionLink(tokenOrUrl: string): string {
+    if (tokenOrUrl.startsWith('http://') || tokenOrUrl.startsWith('https://')) return tokenOrUrl;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${origin}/receita/${tokenOrUrl}`;
+  },
+  prescriptionPdfUrl(prescriptionId: string, clinicId: string, documentId?: string): string {
     const q = new URLSearchParams({ clinic_id: clinicId });
-    window.open(`${clinicalBase}/prescriptions/${encodeURIComponent(prescriptionId)}/pdf?${q}`, '_blank', 'noopener,noreferrer');
+    if (documentId) q.set('document_id', documentId);
+    return `${clinicalBase}/prescriptions/${encodeURIComponent(prescriptionId)}/pdf?${q}`;
+  },
+  /** @deprecated Use openHubPrescriptionPdf — window.open na API não envia Bearer. */
+  openPrescriptionPdf(prescriptionId: string, clinicId: string, documentId?: string) {
+    void openHubPrescriptionPdf(prescriptionId, clinicId, documentId);
   },
   listVaccinations(clinicId: string, petId?: string, hubCaseId?: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
@@ -592,18 +641,26 @@ export const hubClinicalApi = {
 export type HubClinicalExamStatus = 'requested' | 'collected' | 'sent' | 'result_received' | 'completed' | 'cancelled';
 export type HubClinicalExamLabKind = 'internal' | 'external';
 
+export type HubClinicalExamDocumentStatus = 'draft' | 'active' | 'issued' | 'cancelled';
+
 export type HubClinicalExam = {
   id: string;
   clinic_id: string;
   pet_id: string;
   hub_case_id: string | null;
   hub_encounter_id: string | null;
+  guardian_id?: string | null;
   exam_type: string;
   lab_kind: HubClinicalExamLabKind;
   lab_name: string | null;
   external_lab_name: string | null;
   external_order_code: string | null;
   external_result_url: string | null;
+  urgency?: 'routine' | 'urgent' | null;
+  clinical_indication?: string | null;
+  fasting_required?: boolean;
+  collection_instructions?: string | null;
+  document_status?: HubClinicalExamDocumentStatus;
   status: HubClinicalExamStatus;
   requested_at: string;
   collected_at: string | null;
@@ -612,6 +669,58 @@ export type HubClinicalExam = {
   requested_by: string | null;
   notes: string | null;
   metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  requested_by_member?: { id: string; full_name: string } | null;
+};
+
+export type HubClinicalDocumentStatus = 'valid' | 'revoked' | 'expired';
+export type HubClinicalDocumentScope = 'single' | 'encounter_bundle';
+
+export type HubClinicalDocumentRow = {
+  id: string;
+  hub_encounter_id: string;
+  scope?: HubClinicalDocumentScope;
+  version_no: number;
+  issued_by?: string | null;
+  issued_at: string;
+  validation_code?: string | null;
+  public_token_masked?: string | null;
+  document_status?: HubClinicalDocumentStatus;
+  content_hash?: string | null;
+  content_hash_short?: string | null;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  validation_url?: string | null;
+  public_url?: string | null;
+  issued_by_member?: { id: string; full_name: string } | null;
+};
+
+export type HubClinicalDocumentIssueResponse = {
+  document: HubClinicalDocumentRow;
+  public_url: string;
+  content_hash_short: string;
+};
+
+export type HubSpecialistReferralStatus = 'draft' | 'active' | 'issued' | 'cancelled';
+
+export type HubSpecialistReferral = {
+  id: string;
+  clinic_id: string;
+  pet_id: string;
+  hub_case_id: string | null;
+  hub_encounter_id: string | null;
+  guardian_id: string | null;
+  specialty: string;
+  specialist_name: string | null;
+  specialist_contact: string | null;
+  referral_reason: string;
+  clinical_summary: string | null;
+  priority: 'routine' | 'urgent';
+  status: HubSpecialistReferralStatus;
+  notes: string | null;
+  metadata: Record<string, unknown>;
+  requested_by: string | null;
   created_at: string;
   updated_at: string;
   requested_by_member?: { id: string; full_name: string } | null;
@@ -637,12 +746,17 @@ export const hubClinicalExamsApi = {
     exam_type: string;
     hub_case_id?: string | null;
     hub_encounter_id?: string | null;
+    guardian_id?: string | null;
     lab_kind?: HubClinicalExamLabKind;
     lab_name?: string | null;
     external_lab_name?: string | null;
     external_order_code?: string | null;
     external_result_url?: string | null;
     requested_by?: string | null;
+    urgency?: 'routine' | 'urgent' | null;
+    clinical_indication?: string | null;
+    fasting_required?: boolean;
+    collection_instructions?: string | null;
     notes?: string | null;
   }) {
     return apiRequest(`${clinicalBase}/exams`, {
@@ -661,6 +775,10 @@ export const hubClinicalExamsApi = {
       external_result_url?: string | null;
       notes?: string | null;
       exam_type?: string;
+      urgency?: 'routine' | 'urgent' | null;
+      clinical_indication?: string | null;
+      fasting_required?: boolean;
+      collection_instructions?: string | null;
       metadata?: Record<string, unknown>;
     },
   ) {
@@ -674,6 +792,134 @@ export const hubClinicalExamsApi = {
       method: 'DELETE',
     }) as Promise<void>;
   },
+  issueOrderDocument(payload: {
+    clinic_id: string;
+    hub_encounter_id: string;
+    scope?: HubClinicalDocumentScope;
+    exam_id?: string | null;
+    issued_by?: string | null;
+  }) {
+    return apiRequest(`${clinicalBase}/exams/orders/issue`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<HubClinicalDocumentIssueResponse>;
+  },
+  listOrderDocumentsByEncounter(encounterId: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${clinicalBase}/exams/encounter/${encodeURIComponent(encounterId)}/order-documents?${q}`) as Promise<{
+      documents: HubClinicalDocumentRow[];
+    }>;
+  },
+  revokeOrderDocument(docId: string, payload: { clinic_id: string; reason: string; revoked_by?: string | null }) {
+    return apiRequest(`${clinicalBase}/exams/order-documents/${encodeURIComponent(docId)}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ ok: boolean }>;
+  },
+  examOrderPdfUrl(clinicId: string, documentId: string): string {
+    const q = new URLSearchParams({ clinic_id: clinicId, document_id: documentId });
+    return `${clinicalBase}/exams/pdf?${q}`;
+  },
+};
+
+export const hubSpecialistReferralsApi = {
+  list(clinicId: string, opts?: { petId?: string; caseId?: string; encounterId?: string }) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.petId) q.set('pet_id', opts.petId);
+    if (opts?.caseId) q.set('hub_case_id', opts.caseId);
+    if (opts?.encounterId) q.set('hub_encounter_id', opts.encounterId);
+    return apiRequest(`${clinicalBase}/specialist-referrals?${q}`) as Promise<{ referrals: HubSpecialistReferral[] }>;
+  },
+  create(payload: {
+    clinic_id: string;
+    pet_id: string;
+    hub_encounter_id?: string | null;
+    hub_case_id?: string | null;
+    guardian_id?: string | null;
+    requested_by?: string | null;
+    specialty: string;
+    specialist_name?: string | null;
+    specialist_contact?: string | null;
+    referral_reason: string;
+    clinical_summary?: string | null;
+    priority?: 'routine' | 'urgent';
+    notes?: string | null;
+  }) {
+    return apiRequest(`${clinicalBase}/specialist-referrals`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ referral: HubSpecialistReferral }>;
+  },
+  patch(
+    id: string,
+    payload: {
+      clinic_id: string;
+      specialty?: string;
+      specialist_name?: string | null;
+      specialist_contact?: string | null;
+      referral_reason?: string;
+      clinical_summary?: string | null;
+      priority?: 'routine' | 'urgent';
+      status?: HubSpecialistReferralStatus;
+      notes?: string | null;
+      requested_by?: string | null;
+    },
+  ) {
+    return apiRequest(`${clinicalBase}/specialist-referrals/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ referral: HubSpecialistReferral }>;
+  },
+  remove(id: string, clinicId: string) {
+    return apiRequest(`${clinicalBase}/specialist-referrals/${id}?clinic_id=${encodeURIComponent(clinicId)}`, {
+      method: 'DELETE',
+    }) as Promise<void>;
+  },
+  issueDocument(
+    referralId: string,
+    payload: {
+      clinic_id: string;
+      hub_encounter_id: string;
+      scope?: HubClinicalDocumentScope;
+      issued_by?: string | null;
+    },
+  ) {
+    return apiRequest(`${clinicalBase}/specialist-referrals/${encodeURIComponent(referralId)}/documents`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<HubClinicalDocumentIssueResponse>;
+  },
+  issueBundle(payload: {
+    clinic_id: string;
+    hub_encounter_id: string;
+    scope?: HubClinicalDocumentScope;
+    issued_by?: string | null;
+  }) {
+    return apiRequest(`${clinicalBase}/specialist-referrals/orders/issue`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<HubClinicalDocumentIssueResponse>;
+  },
+  listDocumentsByEncounter(encounterId: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(
+      `${clinicalBase}/specialist-referrals/encounter/${encodeURIComponent(encounterId)}/documents?${q}`,
+    ) as Promise<{ documents: HubClinicalDocumentRow[] }>;
+  },
+  revokeDocument(
+    referralId: string,
+    docId: string,
+    payload: { clinic_id: string; reason: string; revoked_by?: string | null },
+  ) {
+    return apiRequest(
+      `${clinicalBase}/specialist-referrals/${encodeURIComponent(referralId)}/documents/${encodeURIComponent(docId)}/revoke`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ) as Promise<{ ok: boolean }>;
+  },
+  referralPdfUrl(clinicId: string, documentId: string, referralId: string): string {
+    const q = new URLSearchParams({ clinic_id: clinicId, document_id: documentId });
+    return `${clinicalBase}/specialist-referrals/${encodeURIComponent(referralId)}/pdf?${q}`;
+  },
 };
 
 export type HubClinicalTimelineEventType =
@@ -682,6 +928,10 @@ export type HubClinicalTimelineEventType =
   | 'encounter_amended'
   | 'exam_requested'
   | 'exam_result_received'
+  | 'exam_order_issued'
+  | 'exam_order_revoked'
+  | 'specialist_referral_requested'
+  | 'specialist_referral_issued'
   | 'prescription_issued'
   | 'vaccination_applied'
   | 'hospitalization_started'
@@ -784,3 +1034,164 @@ export const hubClinicalCasesApi = {
     }) as Promise<void>;
   },
 };
+
+async function fetchHubPrescriptionPdfBlob(
+  prescriptionId: string,
+  clinicId: string,
+  documentId?: string,
+): Promise<Blob> {
+  const token = (await getSupabase().auth.getSession()).data.session?.access_token;
+  if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+  const url = `${getApiBaseUrl()}${clinicalBase}/prescriptions/${encodeURIComponent(prescriptionId)}/pdf?${new URLSearchParams({
+    clinic_id: clinicId,
+    ...(documentId ? { document_id: documentId } : {}),
+  })}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string })?.error || 'Falha ao gerar PDF');
+  }
+  return res.blob();
+}
+
+/** Abre aba em branco no gesto do usuário (sem noopener — senão a referência é null). */
+export function openBlankPdfPreviewTab(): Window | null {
+  const w = window.open('about:blank', '_blank');
+  if (w) {
+    try {
+      w.opener = null;
+    } catch {
+      /* ignore */
+    }
+  }
+  return w;
+}
+
+export type PrescriptionPdfOpenResult = 'tab' | 'download';
+
+export async function openHubPrescriptionPdf(
+  prescriptionId: string,
+  clinicId: string,
+  documentId?: string,
+  previewWindow?: Window | null,
+): Promise<PrescriptionPdfOpenResult> {
+  const blob = await fetchHubPrescriptionPdfBlob(prescriptionId, clinicId, documentId);
+  const objectUrl = URL.createObjectURL(blob);
+  const filename = documentId
+    ? `receita-${(documentId || prescriptionId).slice(0, 8)}.pdf`
+    : `receita-${prescriptionId.slice(0, 8)}.pdf`;
+
+  const assignToPreview = (): boolean => {
+    if (!previewWindow || previewWindow.closed) return false;
+    try {
+      previewWindow.location.href = objectUrl;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+      return true;
+    } catch {
+      try {
+        previewWindow.close();
+      } catch {
+        /* ignore */
+      }
+      return false;
+    }
+  };
+
+  if (assignToPreview()) return 'tab';
+
+  const opened = window.open(objectUrl, '_blank');
+  if (opened) {
+    try {
+      opened.opener = null;
+    } catch {
+      /* ignore */
+    }
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+    return 'tab';
+  }
+
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5_000);
+  return 'download';
+}
+
+export async function downloadHubPrescriptionPdf(
+  prescriptionId: string,
+  clinicId: string,
+  documentId?: string,
+  filename?: string,
+): Promise<void> {
+  const blob = await fetchHubPrescriptionPdfBlob(prescriptionId, clinicId, documentId);
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename ?? `receita-${prescriptionId.slice(0, 8)}.pdf`;
+  a.click();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5_000);
+}
+
+async function fetchHubClinicalDocumentPdfBlob(path: string): Promise<Blob> {
+  const token = (await getSupabase().auth.getSession()).data.session?.access_token;
+  if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+  const url = path.startsWith('http') ? path : `${getApiBaseUrl()}${path}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string })?.error || 'Falha ao gerar PDF');
+  }
+  return res.blob();
+}
+
+export async function openHubClinicalDocumentPdf(
+  path: string,
+  filename: string,
+  previewWindow?: Window | null,
+): Promise<PrescriptionPdfOpenResult> {
+  const blob = await fetchHubClinicalDocumentPdfBlob(path);
+  const objectUrl = URL.createObjectURL(blob);
+
+  const assignToPreview = (): boolean => {
+    if (!previewWindow || previewWindow.closed) return false;
+    try {
+      previewWindow.location.href = objectUrl;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+      return true;
+    } catch {
+      try {
+        previewWindow.close();
+      } catch {
+        /* ignore */
+      }
+      return false;
+    }
+  };
+
+  if (assignToPreview()) return 'tab';
+
+  const opened = window.open(objectUrl, '_blank');
+  if (opened) {
+    try {
+      opened.opener = null;
+    } catch {
+      /* ignore */
+    }
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+    return 'tab';
+  }
+
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5_000);
+  return 'download';
+}

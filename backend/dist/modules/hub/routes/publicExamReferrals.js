@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const rateLimiter_1 = require("../../../middleware/rateLimiter");
+const publicExamOrdersController_1 = require("../publicExamOrdersController");
+const publicSpecialistReferralsController_1 = require("../publicSpecialistReferralsController");
+const router = (0, express_1.Router)();
+router.use(rateLimiter_1.publicPrescriptionLimiter);
+router.get('/exam-orders/validate', publicExamOrdersController_1.validatePublicExamOrderByCode);
+router.get('/exam-orders/:token/pdf', publicExamOrdersController_1.getPublicExamOrderPdf);
+router.get('/exam-orders/:token', publicExamOrdersController_1.getPublicExamOrderByToken);
+router.get('/encaminhamentos/validate', publicSpecialistReferralsController_1.validatePublicSpecialistReferralByCode);
+router.get('/encaminhamentos/:token/pdf', publicSpecialistReferralsController_1.getPublicSpecialistReferralPdf);
+router.get('/encaminhamentos/:token', publicSpecialistReferralsController_1.getPublicSpecialistReferralByToken);
+exports.default = router;

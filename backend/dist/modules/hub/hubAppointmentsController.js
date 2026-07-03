@@ -715,6 +715,7 @@ const patchAppointmentSchema = zod_1.z
     status: appointmentStatusSchema.optional(),
     resource_label: optionalTrim(120).optional().nullable(),
     notes: optionalTrim(8000).optional().nullable(),
+    financial_notes: optionalTrim(8000).optional().nullable(),
     appointment_kind: appointmentKindSchema.optional(),
     deleted: zod_1.z.boolean().optional(),
     title: optionalTrim(200).optional().nullable(),
@@ -727,6 +728,39 @@ const patchAppointmentSchema = zod_1.z
     intake_new_case_title: optionalTrim(200).optional().nullable(),
 })
     .strict();
+const EDITABLE_APPOINTMENT_STATUSES = new Set(['pending_confirm', 'confirmed']);
+function isAppointmentStructurallyEditable(row) {
+    const status = String(row.status ?? '');
+    if (!EDITABLE_APPOINTMENT_STATUSES.has(status))
+        return false;
+    const startsAt = row.starts_at;
+    if (!startsAt)
+        return false;
+    return new Date().getTime() < new Date(startsAt).getTime();
+}
+function isStructuralAppointmentPatch(body) {
+    if (body.deleted === true)
+        return false;
+    return (body.unit_id !== undefined ||
+        body.hub_service_type_id !== undefined ||
+        body.hub_staff_member_id !== undefined ||
+        body.pet_id !== undefined ||
+        body.guardian_id !== undefined ||
+        body.starts_at !== undefined ||
+        body.ends_at !== undefined ||
+        body.resource_label !== undefined ||
+        body.notes !== undefined ||
+        body.financial_notes !== undefined ||
+        body.appointment_kind !== undefined ||
+        body.title !== undefined ||
+        body.description !== undefined ||
+        body.pricing_porte_tier !== undefined ||
+        body.pricing_coat_type !== undefined ||
+        body.intake_hub_case_id !== undefined ||
+        body.intake_create_new_case !== undefined ||
+        body.intake_new_case_title !== undefined ||
+        (body.services !== undefined && body.services.length > 0));
+}
 // ── Handlers ─────────────────────────────────────────────────────────────────
 const listHubAppointments = async (req, res) => {
     try {
@@ -1372,6 +1406,11 @@ const patchHubAppointment = async (req, res) => {
             return res.status(500).json({ error: exErr.message });
         if (!existing)
             return res.status(404).json({ error: 'Agendamento não encontrado' });
+        if (isStructuralAppointmentPatch(b) && !isAppointmentStructurallyEditable(existing)) {
+            return res.status(409).json({
+                error: 'Agendamento não pode ser editado após iniciado ou após o horário agendado.',
+            });
+        }
         // soft-delete scoped
         if (b.deleted === true) {
             const now = new Date().toISOString();
@@ -1456,6 +1495,8 @@ const patchHubAppointment = async (req, res) => {
             patch.resource_label = b.resource_label;
         if (b.notes !== undefined)
             patch.notes = b.notes;
+        if (b.financial_notes !== undefined)
+            patch.financial_notes = b.financial_notes;
         if (b.appointment_kind !== undefined)
             patch.appointment_kind = b.appointment_kind;
         if (b.title !== undefined)

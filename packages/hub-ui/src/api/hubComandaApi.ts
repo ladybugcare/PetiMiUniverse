@@ -58,6 +58,17 @@ export type HubComandaEditScopes = {
   locked_reason: 'closed' | 'paid_and_complete' | 'finance_handoff' | null;
 };
 
+export type HubComandaEventType = 'item_added' | 'item_removed' | 'item_updated' | 'items_synced';
+
+export type HubComandaEvent = {
+  id: string;
+  event_type: HubComandaEventType;
+  title: string;
+  body?: string | null;
+  created_at: string;
+  edit_context?: 'caixa' | 'financeiro' | null;
+};
+
 export type HubComandaDetailResponse = {
   comanda: Record<string, unknown>;
   items: HubComandaItem[];
@@ -70,6 +81,7 @@ export type HubComandaDetailResponse = {
   edit_scopes?: HubComandaEditScopes;
   allowed_guardians?: HubComandaAllowedGuardian[];
   pets?: HubPublicComandaPet[];
+  events?: HubComandaEvent[];
 };
 
 export type HubComandaPetEmbed = HubPublicComandaPet;
@@ -84,7 +96,7 @@ export type HubPublicComandaPet = {
 };
 
 export type HubPublicComandaResponse = {
-  comanda: Record<string, unknown> & { clinic?: { name: string | null } | null };
+  comanda: Record<string, unknown> & { clinic?: { name: string | null; photo_url?: string | null } | null };
   items: HubComandaItem[];
   pets?: HubPublicComandaPet[];
   paid_total?: number;
@@ -311,6 +323,8 @@ export const hubComandaApi = {
       edit_context?: HubComandaEditContext;
       discount_amount?: number;
       notes?: string | null;
+      finance_notes?: string | null;
+      client_notes?: string | null;
       guardian_id?: string;
     },
   ): Promise<HubComandaDetailResponse> {

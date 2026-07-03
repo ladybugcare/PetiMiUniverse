@@ -130,6 +130,24 @@ import {
   deleteHubClinicalExam,
 } from '../hubClinicalExamsController';
 import {
+  issueExamOrderDocumentHandler,
+  listExamOrderDocuments,
+  listExamOrderDocumentsByEncounter,
+  revokeExamOrderDocument,
+  getHubExamOrderPdf,
+} from '../hubExamOrderDocumentsController';
+import {
+  listHubSpecialistReferrals,
+  createHubSpecialistReferral,
+  patchHubSpecialistReferral,
+  deleteHubSpecialistReferral,
+  issueSpecialistReferralDocumentHandler,
+  issueSpecialistReferralBundleHandler,
+  listSpecialistReferralDocumentsByEncounter,
+  revokeSpecialistReferralDocument,
+  getHubSpecialistReferralPdf,
+} from '../hubSpecialistReferralsController';
+import {
   listHubPetClinicalFlags,
   upsertHubPetClinicalFlag,
   listHubEncounterEvents,
@@ -139,6 +157,7 @@ import {
   patchHubPrescription,
   issuePrescriptionDocument,
   listPrescriptionDocuments,
+  revokePrescriptionDocument,
   getHubPrescriptionPdf,
   listHubVaccinations,
   createHubVaccination,
@@ -704,6 +723,21 @@ router.get('/clinical/exams/:id', authenticateUser, requirePermission('hub.clini
 router.post('/clinical/exams', authenticateUser, requirePermission('hub.clinic.write'), createHubClinicalExam);
 router.patch('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubClinicalExam);
 router.delete('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.write'), deleteHubClinicalExam);
+router.post('/clinical/exams/orders/issue', authenticateUser, requirePermission('hub.clinic.write'), issueExamOrderDocumentHandler);
+router.get('/clinical/exams/encounter/:encounterId/order-documents', authenticateUser, requirePermission('hub.clinic.read'), listExamOrderDocumentsByEncounter);
+router.get('/clinical/exams/:id/order-documents', authenticateUser, requirePermission('hub.clinic.read'), listExamOrderDocuments);
+router.post('/clinical/exams/order-documents/:docId/revoke', authenticateUser, requirePermission('hub.clinic.write'), revokeExamOrderDocument);
+router.get('/clinical/exams/:id/pdf', authenticateUser, requirePermission('hub.clinic.read'), getHubExamOrderPdf);
+
+router.get('/clinical/specialist-referrals', authenticateUser, requirePermission('hub.clinic.read'), listHubSpecialistReferrals);
+router.post('/clinical/specialist-referrals', authenticateUser, requirePermission('hub.clinic.write'), createHubSpecialistReferral);
+router.patch('/clinical/specialist-referrals/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubSpecialistReferral);
+router.delete('/clinical/specialist-referrals/:id', authenticateUser, requirePermission('hub.clinic.write'), deleteHubSpecialistReferral);
+router.post('/clinical/specialist-referrals/orders/issue', authenticateUser, requirePermission('hub.clinic.write'), issueSpecialistReferralBundleHandler);
+router.get('/clinical/specialist-referrals/encounter/:encounterId/documents', authenticateUser, requirePermission('hub.clinic.read'), listSpecialistReferralDocumentsByEncounter);
+router.post('/clinical/specialist-referrals/:id/documents', authenticateUser, requirePermission('hub.clinic.write'), issueSpecialistReferralDocumentHandler);
+router.post('/clinical/specialist-referrals/:id/documents/:docId/revoke', authenticateUser, requirePermission('hub.clinic.write'), revokeSpecialistReferralDocument);
+router.get('/clinical/specialist-referrals/:id/pdf', authenticateUser, requirePermission('hub.clinic.read'), getHubSpecialistReferralPdf);
 
 router.get('/clinical/cases', authenticateUser, requirePermission('hub.clinic.read'), listHubClinicalCases);
 router.get('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubClinicalCase);
@@ -765,6 +799,12 @@ router.post(
   authenticateUser,
   requirePermission('hub.clinic.write'),
   issuePrescriptionDocument
+);
+router.post(
+  '/clinical/prescriptions/:id/documents/:docId/revoke',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  revokePrescriptionDocument
 );
 router.post(
   '/clinical/prescriptions',

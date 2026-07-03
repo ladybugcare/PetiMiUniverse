@@ -109,7 +109,7 @@ export interface HubQuote {
   pets?: HubQuotePet[];
   lines?: HubQuoteLine[];
   /** Presente quando o backend inclui embed (ex.: mesmo select do PDF). */
-  clinic?: { name: string | null } | { name: string | null }[] | null;
+  clinic?: { name: string | null; photo_url?: string | null } | { name: string | null; photo_url?: string | null }[] | null;
 }
 
 export interface HubQuotePetInput {

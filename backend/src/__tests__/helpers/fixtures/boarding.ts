@@ -14,6 +14,126 @@ export {
   TEST_UNIT_ID,
 };
 
+export const TEST_APPOINTMENT_ID = '77777777-7777-4777-8777-777777777777';
+export const TEST_HOTEL_SERVICE_TYPE_ID = '88888888-8888-4888-8888-888888888888';
+export const TEST_DAYCARE_SERVICE_TYPE_ID = '99999999-9999-4999-8999-999999999999';
+
+export function reservedHotelReservation(overrides: Record<string, unknown> = {}) {
+  return {
+    ...hotelReservationCheckedOut({ status: 'reserved', checked_in_at: null, checked_out_at: null }),
+    ...overrides,
+  };
+}
+
+export function checkedInHotelReservation(overrides: Record<string, unknown> = {}) {
+  return {
+    ...hotelReservationCheckedOut({
+      status: 'checked_in',
+      checked_out_at: null,
+    }),
+    ...overrides,
+  };
+}
+
+export function walkInReservation(overrides: Record<string, unknown> = {}) {
+  return {
+    ...checkedInHotelReservation({
+      hub_appointment_id: null,
+      created_at: '2026-06-01T10:00:00.000Z',
+    }),
+    ...overrides,
+  };
+}
+
+export function boardingAppointment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: TEST_APPOINTMENT_ID,
+    clinic_id: TEST_CLINIC_ID,
+    unit_id: TEST_UNIT_ID,
+    pet_id: TEST_PET_ID,
+    guardian_id: TEST_GUARDIAN_ID,
+    starts_at: '2026-06-01T14:00:00.000Z',
+    ends_at: '2026-06-04T10:00:00.000Z',
+    status: 'scheduled',
+    title: 'Hotel Rex',
+    hub_service_type_id: TEST_HOTEL_SERVICE_TYPE_ID,
+    appointment_kind: 'hotel_stay',
+    notes: null,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
+export function hotelServiceType() {
+  return {
+    id: TEST_HOTEL_SERVICE_TYPE_ID,
+    clinic_id: TEST_CLINIC_ID,
+    service_group: 'hotel',
+    name: 'Hotel',
+    deleted_at: null,
+  };
+}
+
+export function daycareServiceType() {
+  return {
+    id: TEST_DAYCARE_SERVICE_TYPE_ID,
+    clinic_id: TEST_CLINIC_ID,
+    service_group: 'creche',
+    name: 'Creche',
+    deleted_at: null,
+  };
+}
+
+export function unitBoardingSettings(overrides: Record<string, unknown> = {}) {
+  return {
+    unit_id: TEST_UNIT_ID,
+    clinic_id: TEST_CLINIC_ID,
+    hotel_slots: 10,
+    daycare_slots_per_shift: 15,
+    checkout_cutoff_time: '12:00',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+export function boardingDailyLog(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    clinic_id: TEST_CLINIC_ID,
+    hub_boarding_reservation_id: TEST_RESERVATION_ID,
+    log_date: '2026-06-02',
+    fed: { breakfast: true },
+    medication: null,
+    walks: null,
+    mood: 'feliz',
+    notes: 'Comeu bem',
+    created_by_staff_id: null,
+    created_at: '2026-06-02T18:00:00.000Z',
+    ...overrides,
+  };
+}
+
+export function baseOperationalBoardingFixture() {
+  const appt = boardingAppointment();
+  return {
+    tables: {
+      ...emptyBoardingTables(),
+      hub_service_types: [hotelServiceType(), daycareServiceType()],
+      hub_appointments: [appt],
+      hub_appointment_services: [],
+      hub_boarding_reservations: [
+        reservedHotelReservation({
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          hub_appointment_id: TEST_APPOINTMENT_ID,
+        }),
+      ],
+      hub_unit_boarding_settings: [unitBoardingSettings()],
+      hub_boarding_daily_logs: [],
+      hub_pet_clinical_flags: [],
+    },
+  };
+}
+
 export function hotelReservationCheckedOut(overrides: Record<string, unknown> = {}) {
   return {
     id: TEST_RESERVATION_ID,
@@ -60,6 +180,11 @@ export function emptyBoardingTables() {
     hub_receivable_lines: [] as Record<string, unknown>[],
     hub_payments: [] as Record<string, unknown>[],
     hub_appointments: [] as Record<string, unknown>[],
+    hub_appointment_services: [] as Record<string, unknown>[],
+    hub_service_types: [] as Record<string, unknown>[],
+    hub_unit_boarding_settings: [] as Record<string, unknown>[],
+    hub_boarding_daily_logs: [] as Record<string, unknown>[],
+    hub_pet_clinical_flags: [] as Record<string, unknown>[],
     hub_grooming_sessions: [] as Record<string, unknown>[],
     hub_encounters: [] as Record<string, unknown>[],
     hub_quotes: [] as Record<string, unknown>[],

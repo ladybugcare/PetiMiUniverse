@@ -15,6 +15,7 @@ import { HubDateField } from '../../components/HubDateField';
 import {
   hubAgendaApi,
   type HubAgendaCalendarBlock,
+  type HubAppointment,
   type HubAppointmentStatus,
   type ListHubAppointmentsParams,
 } from '../../api/hubAgendaApi';
@@ -22,12 +23,14 @@ import { hubStaffApi } from '../../api/hubStaffApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
 import { hubServiceTypesApi } from '../../api/hubServiceTypesApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
+import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { hubQuotesApi, type HubQuoteLine, type HubQuoteLineServiceEmbed } from '../../api/hubQuotesApi';
-import { AppointmentDetailPanel } from './AppointmentDetailPanel';
+import { AppointmentSidePanel } from './AppointmentSidePanel';
 import { NewAppointmentModal } from './NewAppointmentModal';
 import type { CreateHubAppointmentResult, NewAppointmentInitial } from './NewAppointmentModal';
 import { SERVICE_GROUP_OPTIONS, resolveServiceAccentColor } from '../../utils/serviceTypeSlug';
+import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './hub-agenda-page.css';
@@ -50,8 +53,13 @@ import {
   serviceGroupLabel,
   laneKeyForAppointment,
   computeOverlapConflictIds,
+  computeAgendaHourRange,
+  parseStaffWorkHours,
+  canEditAgendaAppointment,
+  enrichAgendaCardsForGrid,
 } from './agendaModel';
 import { mapHubAppointmentToAgenda } from './mapHubAgenda';
+import { AgendaAppointmentCard } from './AgendaAppointmentCard';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 import { hubComandaApi as hubComandaApiAgenda } from '../../api/hubComandaApi';
@@ -66,8 +74,6 @@ import {
 
 const FILTERS_STORAGE_KEY = AGENDA_FILTERS_STORAGE_KEY;
 
-const START_HOUR = 7;
-const END_HOUR = 20;
 const SLOT_MIN = 30;
 const SLOT_H = 26;
 const HEADER_H = 44;
@@ -145,6 +151,8 @@ const HubAgendaPage: React.FC = () => {
   );
   const [searchQ, setSearchQ] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailMode, setDetailMode] = useState<'view' | 'edit'>('view');
 
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
@@ -155,6 +163,7 @@ const HubAgendaPage: React.FC = () => {
   const [fullStaff, setFullStaff] = useState<HubStaffMember[]>([]);
   const [serviceTypes, setServiceTypes] = useState<{ id: string; name: string }[]>([]);
   const [fullSvcTypes, setFullSvcTypes] = useState<HubServiceType[]>([]);
+  const [serviceGroupColors, setServiceGroupColors] = useState<Map<string, string>>(() => new Map());
   const [calendarBlocks, setCalendarBlocks] = useState<HubAgendaCalendarBlock[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -199,6 +208,23 @@ const HubAgendaPage: React.FC = () => {
   }, [cursorDate, setSearchParams]);
 
   const bumpReload = useCallback(() => setReloadToken((t) => t + 1), []);
+  const openAppointmentDetail = useCallback((appointmentId: string) => {
+    setSelectedId(appointmentId);
+    setDetailOpen(true);
+    setDetailMode('view');
+  }, []);
+
+  const closeAppointmentDetail = useCallback(() => {
+    setDetailOpen(false);
+    setSelectedId(null);
+    setDetailMode('view');
+  }, []);
+
+  const handleAppointmentUpdated = useCallback((_appointment: HubAppointment) => {
+    bumpReload();
+    setDetailMode('view');
+    showSuccess('Agendamento atualizado.');
+  }, [bumpReload, showSuccess]);
   const bumpPoll = useCallback(() => setPollTick((t) => t + 1), []);
 
   const openCreateModal = useCallback(
@@ -251,16 +277,16 @@ const HubAgendaPage: React.FC = () => {
         setCursorDate(startOfDay(start));
       }
       setPendingFocusId(appointmentId);
-      setSelectedId(appointmentId);
+      openAppointmentDetail(appointmentId);
       bumpReload();
     },
-    [bumpReload],
+    [bumpReload, openAppointmentDetail],
   );
 
   const handleAppointmentCreated = useCallback(
     (result: CreateHubAppointmentResult) => {
       const { appointment, created_count, conflicts } = result;
-      let message = 'Deseja criar outro agendamento ou voltar à agenda com este agendamento em foco?';
+      let message = 'Deseja criar outro agendamento, ir ao Caixa ou voltar à agenda com este agendamento em foco?';
       if (created_count > 1) {
         message = `${created_count} ocorrências foram criadas na série. ${message}`;
       }
@@ -268,21 +294,28 @@ const HubAgendaPage: React.FC = () => {
         message = `${conflicts.length} data(s) da série entraram em conflito e não foram criadas. ${message}`;
       }
 
+      const appointmentDate = appointment.starts_at?.slice(0, 10) ?? '';
+
       showAlert({
         type: 'success',
         title: 'Agendamento criado!',
         message,
         showCancel: true,
-        cancelText: 'Fechar',
+        cancelText: 'Voltar à agenda',
+        secondaryText: 'Ir ao Caixa',
         confirmText: 'Novo agendamento',
         onConfirm: () => {
           bumpReload();
           openCreateModal(null);
         },
         onCancel: () => focusAppointmentOnAgenda(appointment.id, appointment.starts_at),
+        onSecondary: () => {
+          const qs = appointmentDate ? `?date=${encodeURIComponent(appointmentDate)}` : '';
+          navigate(`/hub/caixa${qs}`);
+        },
       });
     },
-    [showAlert, openCreateModal, focusAppointmentOnAgenda, bumpReload],
+    [showAlert, openCreateModal, focusAppointmentOnAgenda, bumpReload, navigate],
   );
 
   const fromQuoteParam = searchParams.get('fromQuote');
@@ -364,10 +397,10 @@ const HubAgendaPage: React.FC = () => {
     if (!pendingFocusId) return;
     const found = allAppointments.some((a) => a.id === pendingFocusId);
     if (found) {
-      setSelectedId(pendingFocusId);
+      openAppointmentDetail(pendingFocusId);
       setPendingFocusId(null);
     }
-  }, [allAppointments, pendingFocusId]);
+  }, [allAppointments, pendingFocusId, openAppointmentDetail]);
 
   const rangeIso = useMemo(() => {
     if (view === 'day') {
@@ -425,6 +458,29 @@ const HubAgendaPage: React.FC = () => {
         setServiceTypes(active.map((st) => ({ id: st.id, name: st.name })));
       } catch {
         if (!cancelled) setServiceTypes([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, permLoading, accessAllowed]);
+
+  useEffect(() => {
+    if (!clinicId || permLoading || !accessAllowed) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { service_groups } = await hubServiceGroupsApi.list(clinicId);
+        if (cancelled) return;
+        const colors = new Map<string, string>();
+        for (const g of service_groups ?? []) {
+          if (g.slug && g.color && /^#[0-9A-Fa-f]{6}$/.test(g.color)) {
+            colors.set(g.slug, g.color);
+          }
+        }
+        setServiceGroupColors(colors);
+      } catch {
+        if (!cancelled) setServiceGroupColors(new Map());
       }
     })();
     return () => {
@@ -643,6 +699,8 @@ const HubAgendaPage: React.FC = () => {
     searchQ,
   ]);
 
+  const gridAppointments = useMemo(() => enrichAgendaCardsForGrid(filtered), [filtered]);
+
   const selected = useMemo(
     () => filtered.find((x) => x.id === selectedId) ?? allAppointments.find((x) => x.id === selectedId) ?? null,
     [filtered, allAppointments, selectedId],
@@ -675,8 +733,8 @@ const HubAgendaPage: React.FC = () => {
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
   const dayAppointments = useMemo(() => {
-    return filtered.filter((a) => isSameDay(a.start, cursorDate));
-  }, [filtered, cursorDate]);
+    return gridAppointments.filter((a) => isSameDay(a.start, cursorDate));
+  }, [gridAppointments, cursorDate]);
 
   const overlapIdsDay = useMemo(
     () => computeOverlapConflictIds(dayAppointments, groupMode),
@@ -690,8 +748,8 @@ const HubAgendaPage: React.FC = () => {
 
   const weekAppointments = useMemo(() => {
     const end = addDays(weekStart, 7);
-    return filtered.filter((a) => a.start >= weekStart && a.start < end);
-  }, [filtered, weekStart]);
+    return gridAppointments.filter((a) => a.start >= weekStart && a.start < end);
+  }, [gridAppointments, weekStart]);
 
   const monthAppointments = useMemo(() => {
     const sm = startOfMonth(cursorDate);
@@ -699,23 +757,31 @@ const HubAgendaPage: React.FC = () => {
     return filtered.filter((a) => a.start >= sm && a.start <= em);
   }, [filtered, cursorDate]);
 
+  const { startHour, endHour } = useMemo(() => {
+    const staffWorkHours = fullStaff
+      .filter((s) => s.active && s.accepts_appointments)
+      .map((s) => parseStaffWorkHours(s.work_hours));
+    const appts = view === 'day' ? dayAppointments : weekAppointments;
+    return computeAgendaHourRange(appts, { staffWorkHours, slotMin: SLOT_MIN });
+  }, [view, dayAppointments, weekAppointments, fullStaff]);
+
   const slots = useMemo(() => {
-    const n = ((END_HOUR - START_HOUR) * 60) / SLOT_MIN;
+    const n = ((endHour - startHour) * 60) / SLOT_MIN;
     const arr: Date[] = [];
     const base = startOfDay(cursorDate);
-    base.setHours(START_HOUR, 0, 0, 0);
+    base.setHours(startHour, 0, 0, 0);
     for (let i = 0; i < n; i++) {
       arr.push(new Date(base.getTime() + i * SLOT_MIN * 60_000));
     }
     return arr;
-  }, [cursorDate]);
+  }, [cursorDate, startHour, endHour]);
 
   const laneH = slots.length * SLOT_H;
   const dayStart = useMemo(() => {
     const b = startOfDay(cursorDate);
-    b.setHours(START_HOUR, 0, 0, 0);
+    b.setHours(startHour, 0, 0, 0);
     return b;
-  }, [cursorDate]);
+  }, [cursorDate, startHour]);
 
   const pxPerMin = SLOT_H / SLOT_MIN;
 
@@ -723,10 +789,10 @@ const HubAgendaPage: React.FC = () => {
     if (!isSameDay(cursorDate, new Date())) return null;
     const now = new Date();
     const mins = minutesSinceDayStart(now, dayStart);
-    const maxM = (END_HOUR - START_HOUR) * 60;
+    const maxM = (endHour - startHour) * 60;
     if (mins < 0 || mins > maxM) return null;
     return mins * pxPerMin;
-  }, [cursorDate, dayStart, pxPerMin]);
+  }, [cursorDate, dayStart, pxPerMin, startHour, endHour]);
 
   const dayColumns = useMemo(() => {
     if (groupMode === 'professional') {
@@ -946,6 +1012,7 @@ const HubAgendaPage: React.FC = () => {
 
   const duplicateSelectedAppointment = useCallback(() => {
     if (!selected) return;
+    closeAppointmentDetail();
     openCreateModal({
       date: toYmd(startOfDay(selected.start)),
       starts_at: selected.start.toISOString(),
@@ -953,7 +1020,7 @@ const HubAgendaPage: React.FC = () => {
       hub_staff_member_id: selected.professionalId,
       resource_label: selected.resourceLabel !== '—' ? selected.resourceLabel : null,
     });
-  }, [selected, openCreateModal]);
+  }, [selected, openCreateModal, closeAppointmentDetail]);
 
   const requestCancelSelected = useCallback(() => {
     if (!canWrite) return;
@@ -970,11 +1037,11 @@ const HubAgendaPage: React.FC = () => {
     const id = e.dataTransfer.getData('text/appt-id');
     if (!id) return;
     const ap = allAppointments.find((x) => x.id === id);
-    if (!ap) return;
+    if (!ap || !canEditAgendaAppointment(ap, { canWrite })) return;
     const lane = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
     const y = e.clientY - lane.top;
     let minutesFromStart = y / pxPerMin;
-    minutesFromStart = Math.max(0, Math.min(minutesFromStart, (END_HOUR - START_HOUR) * 60 - 15));
+    minutesFromStart = Math.max(0, Math.min(minutesFromStart, (endHour - startHour) * 60 - 15));
     const snapped = Math.round(minutesFromStart / 15) * 15;
     const newStart = new Date(dayStart.getTime() + snapped * 60_000);
     const durMs = ap.end.getTime() - ap.start.getTime();
@@ -1043,7 +1110,7 @@ const HubAgendaPage: React.FC = () => {
       const lane = e.currentTarget.getBoundingClientRect();
       const y = e.clientY - lane.top;
       let minutesFromStart = y / pxPerMin;
-      minutesFromStart = Math.max(0, Math.min(minutesFromStart, (END_HOUR - START_HOUR) * 60 - 30));
+      minutesFromStart = Math.max(0, Math.min(minutesFromStart, (endHour - startHour) * 60 - 30));
       const snapped = Math.round(minutesFromStart / 15) * 15;
       const startsDate = new Date(dayStart.getTime() + snapped * 60_000);
       const endsDate = new Date(startsDate.getTime() + 60 * 60_000);
@@ -1060,14 +1127,14 @@ const HubAgendaPage: React.FC = () => {
       }
       openCreateModal(initial);
     },
-    [canWrite, pxPerMin, dayStart, cursorDate, groupMode, openCreateModal],
+    [canWrite, pxPerMin, dayStart, cursorDate, groupMode, openCreateModal, startHour, endHour],
   );
 
   const renderDayLane = (colKey: string) => {
     const list = apptsForDayColumn(colKey);
     const lines: React.ReactNode[] = [];
-    for (let h = START_HOUR; h <= END_HOUR; h++) {
-      const top = ((h - START_HOUR) * 60) * pxPerMin;
+    for (let h = startHour; h <= endHour; h++) {
+      const top = ((h - startHour) * 60) * pxPerMin;
       lines.push(<div key={h} className="hub-agenda-day__hour-line" style={{ top }} />);
     }
     return (
@@ -1085,46 +1152,28 @@ const HubAgendaPage: React.FC = () => {
         {list.map((a) => {
           const top = minutesSinceDayStart(a.start, dayStart) * pxPerMin;
           const h = Math.max(((a.end.getTime() - a.start.getTime()) / 60_000) * pxPerMin, 22);
-          const color = resolveServiceAccentColor(a.agendaColor, a.group);
-          const st = STATUS_META[a.status];
           return (
-            <button
+            <div
               key={a.id}
-              type="button"
-              draggable={canWrite}
-              onDragStart={(e) => {
-                e.dataTransfer.setData('text/appt-id', a.id);
-                e.dataTransfer.effectAllowed = 'move';
-              }}
-              className={`hub-agenda-day__card ${selectedId === a.id ? 'hub-agenda-day__card--selected' : ''} ${a.conflict ? 'hub-agenda-day__card--conflict' : ''}`}
-              style={{
-                top,
-                height: h,
-                backgroundColor: `${color}24`,
-                borderLeft: `4px solid ${color}`,
-                color: '#2d2424',
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedId(a.id);
-              }}
+              className="hub-agenda-day__card-wrap"
+              style={{ top, height: h }}
             >
-              <div className="hub-agenda-day__card-time">
-                {formatHm(a.start)} – {formatHm(a.end)}
-              </div>
-              <div className="hub-agenda-day__card-pet">{a.petName}</div>
-              <div className="hub-agenda-day__card-meta">
-                {a.serviceName} · {a.guardianName}
-              </div>
-              <div style={{ marginTop: 2 }}>
-                <span className={`hub-agenda__pill ${st.pillClass}`}>{st.label}</span>
-              </div>
-              {a.conflict ? (
-                <div className="hub-agenda-day__card-meta" style={{ color: '#b71c1c', fontWeight: 700 }}>
-                  Possível conflito
-                </div>
-              ) : null}
-            </button>
+              <AgendaAppointmentCard
+                appointment={a}
+                heightPx={h}
+                selected={selectedId === a.id}
+                draggable={canWrite && canEditAgendaAppointment(a, { canWrite })}
+                showProfessional={groupMode !== 'professional'}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/appt-id', a.id);
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openAppointmentDetail(a.id);
+                }}
+              />
+            </div>
           );
         })}
       </div>
@@ -1149,7 +1198,7 @@ const HubAgendaPage: React.FC = () => {
 
   return (
     <div className="hub-clientes hub-servicos-page hub-agenda-page">
-      <div className={`hub-agenda ${selected ? 'hub-agenda--with-panel' : ''}`}>
+      <div className="hub-agenda">
         <div className="hub-agenda__main">
           {appointmentsError ? (
             <div
@@ -1413,12 +1462,13 @@ const HubAgendaPage: React.FC = () => {
           </div>
 
           <div className="hub-agenda__legend">
-            <span className="hub-agenda__legend-title">Cores</span>
+            <span className="hub-agenda__legend-title">Grupos</span>
             {SERVICE_GROUP_OPTIONS.map((g) => {
-              const hex = resolveServiceAccentColor(null, g.value);
+              const hex = serviceGroupColors.get(g.value) ?? resolveServiceAccentColor(null, g.value);
               return (
                 <span key={g.value} className="hub-agenda__legend-item">
                   <span className="hub-agenda__legend-dot" style={{ background: hex }} />
+                  <ServiceGroupIcon group={g.value} color={hex} size={14} strokeWidth={2.1} />
                   {g.label}
                 </span>
               );
@@ -1502,36 +1552,19 @@ const HubAgendaPage: React.FC = () => {
                         return (
                           <td key={toYmd(d)}>
                             <div className="hub-agenda-week__cell-stack">
-                              {show.map((a) => {
-                                const color = resolveServiceAccentColor(a.agendaColor, a.group);
-                                const st = STATUS_META[a.status];
-                                return (
-                                  <button
-                                    key={a.id}
-                                    type="button"
-                                    className={`hub-agenda-week__mini ${selectedId === a.id ? 'hub-agenda-week__mini--selected' : ''}`}
-                                    style={{
-                                      background: `${color}18`,
-                                      borderLeft: `3px solid ${color}`,
-                                      textAlign: 'left',
-                                    }}
-                                    onClick={() => {
-                                      setSelectedId(a.id);
-                                      setCursorDate(startOfDay(d));
-                                      setView('day');
-                                    }}
-                                  >
-                                    <div style={{ fontWeight: 700 }}>{formatHm(a.start)}</div>
-                                    <div>{a.petName}</div>
-                                    <div className="hub-clientes__muted" style={{ fontSize: 10 }}>
-                                      {a.serviceName}
-                                    </div>
-                                    <span className={`hub-agenda__pill ${st.pillClass}`} style={{ marginTop: 4 }}>
-                                      {st.short}
-                                    </span>
-                                  </button>
-                                );
-                              })}
+                              {show.map((a) => (
+                                <AgendaAppointmentCard
+                                  key={a.id}
+                                  appointment={a}
+                                  variant="week"
+                                  selected={selectedId === a.id}
+                                  onClick={() => {
+                                    openAppointmentDetail(a.id);
+                                    setCursorDate(startOfDay(d));
+                                    setView('day');
+                                  }}
+                                />
+                              ))}
                               {more > 0 ? (
                                 <button
                                   type="button"
@@ -1658,18 +1691,24 @@ const HubAgendaPage: React.FC = () => {
           </div>
         </div>
 
-        {selected ? (
-          <AppointmentDetailPanel
+        {selected && detailOpen ? (
+          <AppointmentSidePanel
+            open={detailOpen}
+            mode={detailMode}
             appointment={selected}
             canWrite={canWrite}
-            onClose={() => setSelectedId(null)}
+            onClose={closeAppointmentDetail}
+            onEdit={() => setDetailMode('edit')}
+            onBackToView={() => setDetailMode('view')}
             onStatusChange={handleAppointmentStatusChange}
             onDuplicate={duplicateSelectedAppointment}
             onCancel={requestCancelSelected}
-            onOpenCheckout={canCreateReceivable ? handleOpenCheckout : undefined}
             onOpenComanda={canCreateReceivable ? handleOpenComanda : undefined}
             onOpenInClinic={canClinicWrite ? handleOpenInClinic : undefined}
             canViewFinancial={canViewFinancial}
+            staffOptions={fullStaff}
+            serviceTypes={fullSvcTypes}
+            onUpdated={handleAppointmentUpdated}
           />
         ) : null}
       </div>

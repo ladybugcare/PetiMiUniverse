@@ -28,16 +28,14 @@ import {
   type HubEncounter,
   type HubEncounterEvent,
   type HubPrescription,
-  type HubPrescriptionDocumentRow,
-  type HubPrescriptionAdministration,
-  type HubPrescriptionItem,
   type HubClinicalAttachment,
   type HubClinicalExam,
-  type HubClinicalExamLabKind,
   type HubVaccination,
 } from '../../api/hubClinicalApi';
-import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryApi';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
+import { HubWorkspacePrescriptions } from './HubWorkspacePrescriptions';
+import { HubWorkspaceExamOrders } from './HubWorkspaceExamOrders';
+import { HubWorkspaceSpecialistReferrals } from './HubWorkspaceSpecialistReferrals';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import {
@@ -45,7 +43,6 @@ import {
   formatEventBody,
   formatEventTitle,
   formatHubClinicalExamStatus,
-  formatPrescriptionLine,
   attachmentPublicUrl,
   todayYmd,
 } from './clinicalDisplay';
@@ -103,7 +100,7 @@ function canonicalEncounterPrescription(enc: HubEncounter, prescriptions: HubPre
   const sameEncounter = prescriptions.filter(
     (p) =>
       p.hub_encounter_id === enc.id &&
-      (p.status === undefined || p.status === 'active' || p.status === 'draft'),
+      (p.status === undefined || p.status === 'active' || p.status === 'draft' || p.status === 'issued'),
   );
   sameEncounter.sort((a, b) => {
     const ta = new Date(a.prescribed_at || 0).getTime();
@@ -429,6 +426,7 @@ const HubClinicalWorkspacePage: React.FC = () => {
     { id: 'sec-prescricoes', label: 'Prescrições', Icon: Pill },
     { id: 'sec-vacinas', label: 'Vacinas', Icon: Syringe },
     { id: 'sec-exames', label: 'Exames solicitados', Icon: FlaskConical },
+    { id: 'sec-encaminhamentos', label: 'Encaminhamentos', Icon: Stethoscope },
     { id: 'sec-anexos', label: 'Anexos', Icon: Paperclip },
   ] as const;
 
@@ -813,7 +811,17 @@ const HubClinicalWorkspacePage: React.FC = () => {
                   <strong>{examStats.concluidos}</strong>
                 </div>
               </div>
-              <HubWorkspaceClinicalExams
+              <HubWorkspaceExamOrders
+                encounter={encounter}
+                clinicId={clinicId!}
+                readOnly={readOnly}
+                onClinicalRefresh={() => void load()}
+              />
+            </section>
+
+            <section id="sec-encaminhamentos" className="hub-cws-section hub-cws-card">
+              <h2 className="hub-cws-card__title">Encaminhamentos a especialista</h2>
+              <HubWorkspaceSpecialistReferrals
                 encounter={encounter}
                 clinicId={clinicId!}
                 readOnly={readOnly}
@@ -1113,348 +1121,6 @@ function HubEncounterGuardianPicker({
   );
 }
 
-function prescriptionItemToPayload(it: HubPrescriptionItem): {
-  medication_name: string;
-  dosage: string | null;
-  frequency: string | null;
-  duration: string | null;
-  instructions: string | null;
-  hub_inventory_item_id: string | null;
-  administration: HubPrescriptionAdministration;
-} {
-  const administration: HubPrescriptionAdministration =
-    it.administration === 'administered_in_clinic' ? 'administered_in_clinic' : 'home_use';
-  return {
-    medication_name: it.medication_name,
-    dosage: it.dosage ?? null,
-    frequency: it.frequency ?? null,
-    duration: it.duration ?? null,
-    instructions: it.instructions ?? null,
-    hub_inventory_item_id: it.hub_inventory_item_id ?? null,
-    administration,
-  };
-}
-
-function HubWorkspacePrescriptions({
-  encounter,
-  clinicId,
-  readOnly,
-  onClinicalRefresh,
-}: {
-  encounter: HubEncounter;
-  clinicId: string;
-  readOnly: boolean;
-  onClinicalRefresh?: () => void;
-}) {
-  const { showError, showSuccess } = useAlert();
-  const [items, setItems] = useState<HubPrescription[]>([]);
-  const [documents, setDocuments] = useState<HubPrescriptionDocumentRow[]>([]);
-  const [issuing, setIssuing] = useState(false);
-  const [med, setMed] = useState('');
-  const [dosage, setDosage] = useState('');
-  const [frequency, setFrequency] = useState('');
-  const [duration, setDuration] = useState('');
-  const [inventoryId, setInventoryId] = useState('');
-  const [administration, setAdministration] = useState<HubPrescriptionAdministration>('home_use');
-  const [medicationItems, setMedicationItems] = useState<HubInventoryItem[]>([]);
-  const [notesDraft, setNotesDraft] = useState('');
-
-  const reloadList = useCallback(async () => {
-    const r = await hubClinicalApi.listPrescriptions(clinicId, encounter.pet_id ?? undefined);
-    setItems(r.prescriptions ?? []);
-  }, [clinicId, encounter.pet_id]);
-
-  const canonicalRx = useMemo(() => {
-    const sameEncounter = items.filter(
-      (p) => p.hub_encounter_id === encounter.id && (p.status === undefined || p.status === 'active' || p.status === 'draft'),
-    );
-    sameEncounter.sort((a, b) => {
-      const ta = new Date(a.prescribed_at || 0).getTime();
-      const tb = new Date(b.prescribed_at || 0).getTime();
-      return tb - ta;
-    });
-    return sameEncounter[0] ?? null;
-  }, [items, encounter.id]);
-
-  const caseLinkedOthers = useMemo(() => {
-    if (!encounter.hub_case_id) return [];
-    return items.filter(
-      (p) =>
-        p.hub_case_id === encounter.hub_case_id &&
-        p.hub_encounter_id !== encounter.id &&
-        p.id !== canonicalRx?.id &&
-        (p.status === undefined || p.status === 'active' || p.status === 'draft'),
-    );
-  }, [items, encounter.hub_case_id, encounter.id, canonicalRx?.id]);
-
-  useEffect(() => {
-    void reloadList();
-    void hubInventoryApi.items
-      .list(clinicId, false, 'medication')
-      .then((r) => setMedicationItems(r.items ?? []))
-      .catch(() => setMedicationItems([]));
-  }, [clinicId, encounter.pet_id, reloadList]);
-
-  useEffect(() => {
-    setNotesDraft(canonicalRx?.notes?.trim() ? String(canonicalRx.notes) : '');
-  }, [canonicalRx?.id, canonicalRx?.notes]);
-
-  useEffect(() => {
-    if (!canonicalRx?.id) {
-      setDocuments([]);
-      return;
-    }
-    void hubClinicalApi
-      .listPrescriptionDocuments(canonicalRx.id, clinicId)
-      .then((r) => setDocuments(r.documents ?? []))
-      .catch(() => setDocuments([]));
-  }, [canonicalRx?.id, clinicId]);
-
-  const add = async () => {
-    if (!med.trim()) return;
-    try {
-      await hubClinicalApi.createPrescription({
-        clinic_id: clinicId,
-        hub_encounter_id: encounter.id,
-        hub_case_id: encounter.hub_case_id ?? undefined,
-        pet_id: encounter.pet_id ?? '',
-        hub_staff_member_id: encounter.hub_staff_member_id,
-        items: [
-          {
-            medication_name: med.trim(),
-            dosage: dosage.trim() || null,
-            frequency: frequency.trim() || null,
-            duration: duration.trim() || null,
-            instructions: null,
-            hub_inventory_item_id: inventoryId || null,
-            administration,
-          },
-        ],
-      });
-      setMed('');
-      setDosage('');
-      setFrequency('');
-      setDuration('');
-      setInventoryId('');
-      setAdministration('home_use');
-      await reloadList();
-      showSuccess('Medicamento incluído na prescrição do atendimento');
-      onClinicalRefresh?.();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao atualizar prescrição');
-    }
-  };
-
-  const saveNotes = async () => {
-    if (!canonicalRx) return;
-    try {
-      await hubClinicalApi.patchPrescription(canonicalRx.id, {
-        clinic_id: clinicId,
-        notes: notesDraft.trim() ? notesDraft.trim() : null,
-      });
-      await reloadList();
-      showSuccess('Observações da prescrição salvas');
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao salvar observações');
-    }
-  };
-
-  const removeItemAt = async (index: number) => {
-    if (!canonicalRx || readOnly) return;
-    const list = [...(canonicalRx.items ?? [])];
-    if (index < 0 || index >= list.length) return;
-    if (list.length <= 1) {
-      showError('A prescrição precisa ter pelo menos um medicamento. Remova itens só quando houver mais de um.');
-      return;
-    }
-    list.splice(index, 1);
-    try {
-      await hubClinicalApi.patchPrescription(canonicalRx.id, {
-        clinic_id: clinicId,
-        items: list.map(prescriptionItemToPayload),
-      });
-      await reloadList();
-      showSuccess('Item removido');
-      onClinicalRefresh?.();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao remover item');
-    }
-  };
-
-  const issueDoc = async () => {
-    if (!canonicalRx || readOnly) return;
-    setIssuing(true);
-    try {
-      await hubClinicalApi.issuePrescriptionDocument(canonicalRx.id, {
-        clinic_id: clinicId,
-        issued_by: encounter.hub_staff_member_id,
-      });
-      hubClinicalApi.openPrescriptionPdf(canonicalRx.id, clinicId);
-      const r = await hubClinicalApi.listPrescriptionDocuments(canonicalRx.id, clinicId);
-      setDocuments(r.documents ?? []);
-      showSuccess('Receita emitida (nova versão no histórico)');
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao emitir receita');
-    } finally {
-      setIssuing(false);
-    }
-  };
-
-  return (
-    <>
-      <p className="hub-clientes__muted" style={{ marginTop: 0, marginBottom: 12 }}>
-        Uma prescrição por atendimento: os medicamentos adicionados entram na mesma receita até você emitir ou alterar os itens.
-      </p>
-      {!readOnly && (
-        <div className="hub-cws-rx-form">
-          <input className="hub-clientes__input" placeholder="Medicamento" value={med} onChange={(e) => setMed(e.target.value)} />
-          <input className="hub-clientes__input" placeholder="Dosagem" value={dosage} onChange={(e) => setDosage(e.target.value)} />
-          <input className="hub-clientes__input" placeholder="Frequência" value={frequency} onChange={(e) => setFrequency(e.target.value)} />
-          <input className="hub-clientes__input" placeholder="Duração" value={duration} onChange={(e) => setDuration(e.target.value)} />
-          <select
-            className="hub-clientes__input"
-            value={administration}
-            onChange={(e) => setAdministration(e.target.value as HubPrescriptionAdministration)}
-          >
-            <option value="home_use">Uso em casa (retirada / posologia domiciliar)</option>
-            <option value="administered_in_clinic">Administrado na clínica</option>
-          </select>
-          {medicationItems.length > 0 ? (
-            <select className="hub-clientes__input" value={inventoryId} onChange={(e) => setInventoryId(e.target.value)}>
-              <option value="">Item de estoque (opcional)</option>
-              {medicationItems.map((it) => (
-                <option key={it.id} value={it.id}>
-                  {it.name}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <button type="button" className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm" onClick={() => void add()}>
-            Adicionar à prescrição
-          </button>
-        </div>
-      )}
-
-      {canonicalRx ? (
-        <div className="hub-clinic-records__panel" style={{ marginBottom: 16, padding: 12, border: '1px solid var(--hub-border, #e5dcd6)', borderRadius: 8 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-            <strong>Prescrição deste atendimento</strong>
-            {!readOnly ? (
-              <>
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                  disabled={issuing || !(canonicalRx.items?.length)}
-                  onClick={() => void issueDoc()}
-                >
-                  {issuing ? 'Emitindo…' : documents.length ? 'Reemitir receita (nova versão)' : 'Emitir receita'}
-                </button>
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--sm"
-                  disabled={issuing}
-                  onClick={() => hubClinicalApi.openPrescriptionPdf(canonicalRx.id, clinicId)}
-                >
-                  Abrir PDF
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--sm"
-                onClick={() => hubClinicalApi.openPrescriptionPdf(canonicalRx.id, clinicId)}
-              >
-                Abrir PDF
-              </button>
-            )}
-          </div>
-          <ul className="hub-cws-rx-list">
-            {(canonicalRx.items ?? []).map((it, idx) => (
-              <li key={it.id ?? `${canonicalRx.id}-${idx}`} className="hub-cws-rx-item">
-                <div className="hub-cws-rx-item__name">{it.medication_name}</div>
-                <div className="hub-cws-rx-item__meta">
-                  {[it.dosage, it.frequency, it.duration].filter(Boolean).join(' · ') || '—'}
-                  {it.administration === 'administered_in_clinic' ? ' · Clínica' : ''}
-                </div>
-                {!readOnly ? (
-                  <button type="button" className="hub-clientes__btn hub-clientes__btn--sm" onClick={() => void removeItemAt(idx)}>
-                    Remover
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-          {!readOnly ? (
-            <div className="hub-clientes__form-stack" style={{ marginBottom: 0 }}>
-              <label className="hub-clientes__muted" style={{ fontSize: 12 }}>
-                Observações da prescrição
-                <textarea
-                  className="hub-clientes__input"
-                  rows={2}
-                  value={notesDraft}
-                  onChange={(e) => setNotesDraft(e.target.value)}
-                  placeholder="Orientações gerais, alertas de administração…"
-                />
-              </label>
-              <button type="button" className="hub-clientes__btn hub-clientes__btn--sm" onClick={() => void saveNotes()}>
-                Salvar observações
-              </button>
-            </div>
-          ) : canonicalRx.notes ? (
-            <p className="hub-clientes__muted" style={{ marginBottom: 0 }}>
-              {String(canonicalRx.notes)}
-            </p>
-          ) : null}
-
-          {documents.length > 0 ? (
-            <div style={{ marginTop: 12 }}>
-              <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
-                Histórico de emissões (versões)
-              </span>
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
-                {documents.map((d) => (
-                  <li key={d.id}>
-                    Versão {d.version_no}
-                    {d.issued_at ? ` — ${new Date(d.issued_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}` : ''}
-                    {d.issued_by_member?.full_name ? ` — ${d.issued_by_member.full_name}` : ''}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>
-          Nenhuma prescrição neste atendimento ainda. Use o formulário acima para adicionar o primeiro medicamento.
-        </p>
-      )}
-
-      {caseLinkedOthers.length > 0 ? (
-        <div style={{ marginTop: 8 }}>
-          <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
-            Outras prescrições do mesmo caso (outros atendimentos)
-          </span>
-          <ul className="hub-clinic-records__list">
-            {caseLinkedOthers.map((p) => (
-              <li key={p.id}>
-                {formatPrescriptionLine(p)}
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--sm"
-                  style={{ marginLeft: 8 }}
-                  onClick={() => hubClinicalApi.openPrescriptionPdf(p.id, clinicId)}
-                >
-                  PDF
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
 function HubWorkspaceVaccinations({
   encounter,
   clinicId,
@@ -1533,186 +1199,6 @@ function HubWorkspaceVaccinations({
                   <td>{String(v.vaccine_name)}</td>
                   <td>{String(v.batch_number ?? '—')}</td>
                   <td>{String(v.administered_at || '').slice(0, 10)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
-  );
-}
-
-function HubWorkspaceClinicalExams({
-  encounter,
-  clinicId,
-  readOnly,
-  onClinicalRefresh,
-}: {
-  encounter: HubEncounter;
-  clinicId: string;
-  readOnly: boolean;
-  onClinicalRefresh?: () => void;
-}) {
-  const { showError, showSuccess } = useAlert();
-  const [exams, setExams] = useState<HubClinicalExam[]>([]);
-  const [examType, setExamType] = useState('');
-  const [labKind, setLabKind] = useState<HubClinicalExamLabKind>('internal');
-  const [labName, setLabName] = useState('');
-  const [uploadingId, setUploadingId] = useState<string | null>(null);
-
-  const reload = useCallback(() => {
-    return hubClinicalExamsApi.list(clinicId, { encounterId: encounter.id }).then((r) => {
-      setExams(r.exams ?? []);
-    });
-  }, [clinicId, encounter.id]);
-
-  useEffect(() => {
-    void reload().catch(() => setExams([]));
-  }, [reload]);
-
-  const requestExam = async () => {
-    if (!examType.trim()) return;
-    try {
-      await hubClinicalExamsApi.create({
-        clinic_id: clinicId,
-        pet_id: encounter.pet_id ?? '',
-        hub_encounter_id: encounter.id,
-        hub_case_id: encounter.hub_case_id ?? null,
-        exam_type: examType.trim(),
-        lab_kind: labKind,
-        lab_name: labKind === 'internal' ? (labName.trim() || null) : null,
-        external_lab_name: labKind === 'external' ? (labName.trim() || null) : null,
-        requested_by: encounter.hub_staff_member_id ?? null,
-      });
-      setExamType('');
-      setLabName('');
-      await reload();
-      showSuccess('Exame solicitado');
-      onClinicalRefresh?.();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao solicitar exame');
-    }
-  };
-
-  const attachResultFile = async (exam: HubClinicalExam, file: File | null) => {
-    if (!file || readOnly) return;
-    setUploadingId(exam.id);
-    try {
-      const { attachment } = await hubClinicalApi.uploadAttachmentFile({
-        clinicId,
-        petId: encounter.pet_id ?? '',
-        encounterId: encounter.id,
-        examId: exam.id,
-        file,
-        title: `Resultado: ${exam.exam_type}`,
-      });
-      const url = attachment.storage_path;
-      const isHttp = /^https?:\/\//i.test(url);
-      const prevMeta = (exam.metadata && typeof exam.metadata === 'object' ? exam.metadata : {}) as Record<
-        string,
-        unknown
-      >;
-      await hubClinicalExamsApi.patch(exam.id, {
-        clinic_id: clinicId,
-        status: 'result_received',
-        result_at: new Date().toISOString(),
-        result_text: exam.result_text ?? 'Resultado anexado.',
-        ...(isHttp ? { external_result_url: url } : {}),
-        metadata: {
-          ...prevMeta,
-          result_attachment_id: attachment.id,
-          result_storage_path: url,
-        },
-      });
-      await reload();
-      showSuccess('Resultado anexado ao exame');
-      onClinicalRefresh?.();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao anexar resultado');
-    } finally {
-      setUploadingId(null);
-    }
-  };
-
-  return (
-    <>
-      {!readOnly && (
-        <div className="hub-clientes__form-stack" style={{ marginBottom: 16, maxWidth: 520 }}>
-          <input
-            className="hub-clientes__input"
-            placeholder="Tipo de exame (ex.: hemograma, bioquímica)"
-            value={examType}
-            onChange={(e) => setExamType(e.target.value)}
-          />
-          <select className="hub-clientes__input" value={labKind} onChange={(e) => setLabKind(e.target.value as HubClinicalExamLabKind)}>
-            <option value="internal">Laboratório interno</option>
-            <option value="external">Laboratório externo</option>
-          </select>
-          <input
-            className="hub-clientes__input"
-            placeholder={labKind === 'internal' ? 'Nome do lab interno (opcional)' : 'Nome do laboratório externo'}
-            value={labName}
-            onChange={(e) => setLabName(e.target.value)}
-          />
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-            disabled={!examType.trim()}
-            onClick={() => void requestExam()}
-          >
-            Solicitar exame
-          </button>
-        </div>
-      )}
-      {exams.length === 0 ? (
-        <p className="hub-clientes__muted">Nenhum exame estruturado neste atendimento.</p>
-      ) : (
-        <div className="hub-cws-exam-table-wrap">
-          <table className="hub-cws-exam-table">
-            <thead>
-              <tr>
-                <th>Exame</th>
-                <th>Status</th>
-                <th>Solicitado em</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {exams.map((ex) => (
-                <tr key={ex.id}>
-                  <td>
-                    <strong>{ex.exam_type}</strong>
-                  </td>
-                  <td>{formatHubClinicalExamStatus(ex.status)}</td>
-                  <td className="hub-clientes__muted">{new Date(ex.requested_at).toLocaleString('pt-BR')}</td>
-                  <td>
-                    {ex.external_result_url ? (
-                      <a href={ex.external_result_url} target="_blank" rel="noreferrer" className="hub-clientes__link">
-                        Resultado
-                      </a>
-                    ) : null}
-                    {!readOnly &&
-                    (ex.status === 'requested' ||
-                      ex.status === 'collected' ||
-                      ex.status === 'sent' ||
-                      ex.status === 'result_received') ? (
-                      <label className="hub-cws-exam-file">
-                        <span className="hub-clientes__link" style={{ cursor: 'pointer' }}>
-                          Anexar
-                        </span>
-                        <input
-                          id={`exam-file-${ex.id}`}
-                          type="file"
-                          accept="image/*,application/pdf"
-                          className="hub-cws-exam-file__input"
-                          disabled={uploadingId === ex.id}
-                          onChange={(e) => void attachResultFile(ex, e.target.files?.[0] ?? null)}
-                        />
-                        {uploadingId === ex.id ? <span className="hub-clientes__muted"> …</span> : null}
-                      </label>
-                    ) : null}
-                  </td>
                 </tr>
               ))}
             </tbody>

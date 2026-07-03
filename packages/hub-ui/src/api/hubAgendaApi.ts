@@ -204,6 +204,7 @@ export type PatchHubAppointmentPayload = {
   status?: HubAppointmentStatus;
   resource_label?: string | null;
   notes?: string | null;
+  financial_notes?: string | null;
   appointment_kind?: HubAppointmentKind;
   deleted?: boolean;
   title?: string | null;

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import {
   AlertCircle,
@@ -73,6 +73,7 @@ function round2(n: number): number {
 
 const HubCaixaPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { hasPermission, loading: permLoading } = usePermissions();
   const { showError, showSuccess, showConfirm } = useAlert();
   const clinicId = getStoredClinicId();
@@ -160,6 +161,16 @@ const HubCaixaPage: React.FC = () => {
   useEffect(() => {
     if (!permLoading && hasPermission('hub.financial.read')) void load();
   }, [permLoading, hasPermission, load]);
+
+  useEffect(() => {
+    const dateParam = searchParams.get('date');
+    if (!dateParam || !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) return;
+    if (dateParam === dayBoardDate) return;
+    setDayBoardDate(dateParam);
+    if (clinicId && unitId) {
+      void loadDayBoard(dateParam);
+    }
+  }, [searchParams, clinicId, unitId, dayBoardDate, loadDayBoard]);
 
   useEffect(() => {
     if (!clinicId) return;
@@ -787,6 +798,7 @@ const HubCaixaPage: React.FC = () => {
                 onSendToFinanceiro={onSendToFinanceiro}
                 onWaive={onWaiveFromBoard}
                 onShareComanda={onShareComanda}
+                onRowClick={onEditComanda}
                 busy={dayBoardBusy}
               />
             )}

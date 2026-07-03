@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS public.hub_boarding_reservations (
   checked_in_at timestamptz,
   checked_out_at timestamptz,
   daily_rate_cents integer CHECK (daily_rate_cents IS NULL OR daily_rate_cents >= 0),
+  billing_waived_at timestamptz,
+  billing_waive_reason text,
   notes text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),

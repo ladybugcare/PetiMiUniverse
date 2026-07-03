@@ -1,10 +1,9 @@
 import type { Request, Response } from 'express';
-import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { buildGroomingDisplayTags } from './groomingPetTags';
 import { HUB_DAY_BOARD_PET_SELECT } from './hubDayBoardPets';
-
-const uuidStr = z.string().uuid();
+import { calcBoardingNights } from './boardingOperational';
+import { dailyLogSchema, uuidStr } from './hubBoardingSchemas';
 
 const RESERVATION_SELECT = `
   id, clinic_id, unit_id, pet_id, guardian_id, hub_appointment_id,
@@ -17,14 +16,6 @@ const DAILY_LOG_SELECT = `
   id, clinic_id, hub_boarding_reservation_id, log_date,
   fed, medication, walks, mood, notes, created_by_staff_id, created_at
 `;
-
-function calcNights(checkedInAt: string | null, checkedOutAt: string | null): number {
-  if (!checkedInAt) return 0;
-  const inMs = new Date(checkedInAt).getTime();
-  const outMs = checkedOutAt ? new Date(checkedOutAt).getTime() : Date.now();
-  if (isNaN(inMs) || isNaN(outMs)) return 0;
-  return Math.max(0, Math.floor((outMs - inMs) / (1000 * 60 * 60 * 24)));
-}
 
 // ─── GET /boarding/reservations/:id/drawer ─────────────────────────────────
 
@@ -55,7 +46,8 @@ export const getHubBoardingReservationDrawer = async (req: Request, res: Respons
     const checkedOutAt = (reservation as { checked_out_at: string | null }).checked_out_at;
     const mode = (reservation as { mode: string }).mode;
 
-    const nightsCount = mode === 'hotel' ? calcNights(checkedInAt, checkedOutAt) : checkedInAt ? 1 : 0;
+    const nightsCount =
+      mode === 'hotel' ? calcBoardingNights(checkedInAt, checkedOutAt) : checkedInAt ? 1 : 0;
 
     const [petRes, guRes, flagsRes, logsRes] = await Promise.all([
       supabaseAdmin
@@ -110,19 +102,6 @@ export const getHubBoardingReservationDrawer = async (req: Request, res: Respons
 };
 
 // ─── POST /boarding/reservations/:id/daily-logs ────────────────────────────
-
-const dailyLogSchema = z
-  .object({
-    clinic_id: uuidStr,
-    log_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'log_date deve ser YYYY-MM-DD'),
-    fed: z.unknown().optional(),
-    medication: z.unknown().optional(),
-    walks: z.unknown().optional(),
-    mood: z.string().max(100).optional().nullable(),
-    notes: z.string().max(2000).optional().nullable(),
-    created_by_staff_id: uuidStr.optional().nullable(),
-  })
-  .strict();
 
 export const postHubBoardingDailyLog = async (req: Request, res: Response) => {
   try {

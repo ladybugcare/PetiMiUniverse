@@ -10,6 +10,7 @@ import {
   hubEncountersApi,
   hubClinicalApi,
   hubClinicalExamsApi,
+  hubSpecialistReferralsApi,
   type HubClinicalCase,
   type HubClinicalCaseStatus,
   type HubClinicalTimelineEvent,
@@ -20,6 +21,7 @@ import {
   type HubSurgery,
   type HubClinicalAttachment,
   type HubClinicalExam,
+  type HubSpecialistReferral,
 } from '../../api/hubClinicalApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import {
@@ -28,6 +30,8 @@ import {
   formatHubComandaStatus,
   formatPrescriptionLine,
 } from './clinicalDisplay';
+import { HubPrescriptionHistoryList } from '../../components/clinical/HubPrescriptionHistoryList';
+import { HubEncounterClinicalDocumentsList } from '../../components/clinical/HubEncounterClinicalDocumentsList';
 
 type TabId =
   | 'resumo'
@@ -38,6 +42,7 @@ type TabId =
   | 'internacoes'
   | 'cirurgias'
   | 'exames'
+  | 'encaminhamentos'
   | 'anexos'
   | 'financeiro';
 
@@ -90,6 +95,7 @@ const HubClinicCasePage: React.FC = () => {
   const [hospitalizations, setHospitalizations] = useState<HubHospitalization[]>([]);
   const [surgeries, setSurgeries] = useState<HubSurgery[]>([]);
   const [exams, setExams] = useState<HubClinicalExam[]>([]);
+  const [referrals, setReferrals] = useState<HubSpecialistReferral[]>([]);
   const [attachments, setAttachments] = useState<HubClinicalAttachment[]>([]);
   const [comandas, setComandas] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
@@ -119,18 +125,20 @@ const HubClinicCasePage: React.FC = () => {
         const hospP = hubClinicalApi.listHospitalizations(clinicId, undefined, caseId);
         const surgP = hubClinicalApi.listSurgeries(clinicId, undefined, caseId);
         const examP = hubClinicalExamsApi.list(clinicId, { caseId, petId: theCase.pet_id });
+        const refP = hubSpecialistReferralsApi.list(clinicId, { caseId, petId: theCase.pet_id });
         const attP = hubClinicalApi.listAttachments(clinicId, { petId: theCase.pet_id });
         const comP = canFinancial
           ? hubComandaApi.listComandas({ clinic_id: clinicId, hub_case_id: caseId }).catch(() => ({ comandas: [] }))
           : Promise.resolve({ comandas: [] });
 
-        const [encFull, rxFull, vaxFull, hospFull, surgFull, examFull, attFull, comFull] = await Promise.allSettled([
+        const [encFull, rxFull, vaxFull, hospFull, surgFull, examFull, refFull, attFull, comFull] = await Promise.allSettled([
           encP,
           rxP,
           vaxP,
           hospP,
           surgP,
           examP,
+          refP,
           attP,
           comP,
         ]);
@@ -141,6 +149,7 @@ const HubClinicCasePage: React.FC = () => {
 
         const examList = examFull.status === 'fulfilled' ? examFull.value.exams : [];
         setExams(examList);
+        setReferrals(refFull.status === 'fulfilled' ? refFull.value.referrals : []);
 
         setPrescriptions(rxFull.status === 'fulfilled' ? rxFull.value.prescriptions : []);
         setVaccinations(vaxFull.status === 'fulfilled' ? vaxFull.value.vaccinations : []);
@@ -331,6 +340,7 @@ const HubClinicCasePage: React.FC = () => {
           { id: 'internacoes', label: `Internações (${hospitalizations.length})` },
           { id: 'cirurgias', label: `Cirurgias (${surgeries.length})` },
           { id: 'exames', label: `Exames (${exams.length})` },
+          { id: 'encaminhamentos', label: `Encaminhamentos (${referrals.length})` },
           { id: 'anexos', label: `Anexos (${attachments.length})` },
           { id: 'financeiro', label: `Financeiro (${comandas.length})` },
         ]}
@@ -436,13 +446,23 @@ const HubClinicCasePage: React.FC = () => {
       )}
 
       {tab === 'prescricoes' && (
-        <ul className="hub-clinic-records__list">
+        <>
           {prescriptions.length === 0 ? (
-            <li className="hub-clientes__muted">Nenhuma prescrição vinculada a este caso.</li>
+            <p className="hub-clientes__muted">Nenhuma prescrição vinculada a este caso.</p>
+          ) : clinicId ? (
+            <HubPrescriptionHistoryList
+              prescriptions={prescriptions}
+              clinicId={clinicId}
+              canWrite={canWrite}
+            />
           ) : (
-            prescriptions.map((p) => <li key={p.id}>{formatPrescriptionLine(p)}</li>)
+            <ul className="hub-clinic-records__list">
+              {prescriptions.map((p) => (
+                <li key={p.id}>{formatPrescriptionLine(p)}</li>
+              ))}
+            </ul>
           )}
-        </ul>
+        </>
       )}
 
       {tab === 'vacinas' && (
@@ -516,13 +536,6 @@ const HubClinicCasePage: React.FC = () => {
                     ) : null}
                   </div>
                   {ex.result_text ? <p>{ex.result_text}</p> : null}
-                  {ex.external_result_url ? (
-                    <p>
-                      <a href={ex.external_result_url} target="_blank" rel="noreferrer" className="hub-clientes__link">
-                        Abrir resultado (link)
-                      </a>
-                    </p>
-                  ) : null}
                   {canWrite && ex.status !== 'cancelled' && ex.status !== 'completed' ? (
                     <button
                       type="button"
@@ -536,6 +549,40 @@ const HubClinicCasePage: React.FC = () => {
               ))}
             </ul>
           )}
+          <HubEncounterClinicalDocumentsList
+            kind="exam_order"
+            clinicId={clinicId!}
+            encounters={encounters}
+            canWrite={canWrite}
+          />
+        </div>
+      )}
+
+      {tab === 'encaminhamentos' && (
+        <div className="hub-clinic-records__list">
+          {referrals.length === 0 ? (
+            <p className="hub-clientes__muted">Nenhum encaminhamento neste caso. Registre no atendimento.</p>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              {referrals.map((ref) => (
+                <li key={ref.id} className="hub-clinic-timeline__item" style={{ marginBottom: 12 }}>
+                  <strong>{ref.specialty}</strong>
+                  <p className="hub-clientes__muted">{ref.referral_reason}</p>
+                  {ref.hub_encounter_id ? (
+                    <Link to={`/hub/clinica/atendimentos/${ref.hub_encounter_id}`} className="hub-clientes__link">
+                      Ver atendimento
+                    </Link>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          <HubEncounterClinicalDocumentsList
+            kind="specialist_referral"
+            clinicId={clinicId!}
+            encounters={encounters}
+            canWrite={canWrite}
+          />
         </div>
       )}
 

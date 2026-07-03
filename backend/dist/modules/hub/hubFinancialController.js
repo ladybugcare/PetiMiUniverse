@@ -2319,6 +2319,47 @@ async function fetchBillingStatusBatch(clinicId, originKeys) {
     }
     return result;
 }
+const SERVICE_GROUP_LABELS = {
+    clinica: 'Clínica',
+    banho_tosa: 'Banho & Tosa',
+    hotel: 'Hotel',
+    creche: 'Creche',
+    leva_traz: 'Leva e Traz',
+    cirurgia: 'Cirurgia',
+    internacao: 'Internação',
+    outros: 'Outros',
+};
+function resolveServiceGroupLabel(group) {
+    return SERVICE_GROUP_LABELS[group] ?? group.replace(/_/g, ' ');
+}
+function timestampInUtcDayRange(iso, dayStart, dayEnd) {
+    if (!iso)
+        return false;
+    return iso >= dayStart && iso <= dayEnd;
+}
+function resolveAppointmentDayBoardMeta(row, serviceTypeMetaById) {
+    const services = row.appointment_services ?? [];
+    const primarySvc = row.hub_service_type_id != null
+        ? services.find((s) => s.hub_service_type_id === row.hub_service_type_id) ?? services[0]
+        : services[0];
+    const primaryTypeId = (primarySvc?.hub_service_type_id ?? row.hub_service_type_id);
+    const metaFromMap = primaryTypeId ? serviceTypeMetaById?.get(primaryTypeId) : undefined;
+    const group = String(primarySvc?.service_type?.service_group ?? metaFromMap?.service_group ?? 'outros').trim() || 'outros';
+    const groupLabel = resolveServiceGroupLabel(group);
+    const title = String(row.title ?? '').trim();
+    const primaryName = String(primarySvc?.service_type?.name ?? metaFromMap?.name ?? '').trim();
+    let origin_label;
+    if (title && title !== 'Agendamento') {
+        origin_label = `${groupLabel} — ${title}`;
+    }
+    else if (primaryName) {
+        origin_label = `${groupLabel} — ${primaryName}`;
+    }
+    else {
+        origin_label = groupLabel;
+    }
+    return { service_group: group, origin_label };
+}
 const dayBoardQuerySchema = zod_1.z
     .object({
     clinic_id: uuidStr,
@@ -2345,10 +2386,10 @@ const getHubFinanceDayBoard = async (req, res) => {
         // ── 1. Agendamentos do dia (qualquer status exceto cancelled e waived) ──
         let aq = supabase_1.supabaseAdmin
             .from('hub_appointments')
-            .select(`id, unit_id, starts_at, ends_at, status, guardian_id, pet_id, billing_waived_at, title,
+            .select(`id, unit_id, starts_at, ends_at, status, guardian_id, pet_id, billing_waived_at, title, hub_service_type_id,
         pet:hub_pets(id, name),
         guardian:hub_guardians(id, full_name),
-        appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, service_type:hub_service_types(name))`)
+        appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, service_type:hub_service_types(name, service_group))`)
             .eq('clinic_id', clinic_id)
             .not('status', 'in', '("cancelled","no_show")')
             .is('deleted_at', null)
@@ -2360,6 +2401,32 @@ const getHubFinanceDayBoard = async (req, res) => {
         const { data: apptRows, error: aErr } = await aq;
         if (aErr)
             throw new Error(aErr.message);
+        const appointmentServiceTypeIds = new Set();
+        for (const row of apptRows ?? []) {
+            const primaryTypeId = row.hub_service_type_id;
+            if (primaryTypeId)
+                appointmentServiceTypeIds.add(primaryTypeId);
+            const svcRows = row.appointment_services ?? [];
+            for (const svc of svcRows) {
+                if (svc.hub_service_type_id)
+                    appointmentServiceTypeIds.add(svc.hub_service_type_id);
+            }
+        }
+        const serviceTypeMetaById = new Map();
+        if (appointmentServiceTypeIds.size > 0) {
+            const { data: serviceTypeRows, error: stErr } = await supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .select('id, name, service_group')
+                .in('id', [...appointmentServiceTypeIds]);
+            if (stErr)
+                throw new Error(stErr.message);
+            for (const st of serviceTypeRows ?? []) {
+                serviceTypeMetaById.set(String(st.id), {
+                    name: String(st.name ?? 'Serviço'),
+                    service_group: String(st.service_group ?? 'outros').trim() || 'outros',
+                });
+            }
+        }
         for (const row of apptRows ?? []) {
             if (row.billing_waived_at)
                 continue;
@@ -2367,12 +2434,34 @@ const getHubFinanceDayBoard = async (req, res) => {
             const pet = row.pet;
             const g = row.guardian;
             const services = row.appointment_services ?? [];
-            const estimated = round2(services.reduce((s, sv) => s + Number(sv.sale_amount_applied ?? 0), 0));
+            const servicesEnriched = services.map((sv) => {
+                const embedded = sv.service_type;
+                if (embedded?.service_group)
+                    return sv;
+                const typeId = sv.hub_service_type_id;
+                const meta = typeId ? serviceTypeMetaById.get(typeId) : undefined;
+                if (!meta)
+                    return sv;
+                return {
+                    ...sv,
+                    service_type: {
+                        name: embedded?.name ?? meta.name,
+                        service_group: embedded?.service_group ?? meta.service_group,
+                    },
+                };
+            });
+            const estimated = round2(servicesEnriched.reduce((s, sv) => s + Number(sv.sale_amount_applied ?? 0), 0));
+            const { service_group, origin_label } = resolveAppointmentDayBoardMeta({
+                title: row.title,
+                hub_service_type_id: row.hub_service_type_id,
+                appointment_services: servicesEnriched,
+            }, serviceTypeMetaById);
             originKeys.push({ origin_type: 'appointment', origin_id: id });
             items.push({
                 origin_type: 'appointment',
                 origin_id: id,
-                origin_label: String(row.title || 'Agendamento'),
+                origin_label,
+                service_group,
                 starts_at: row.starts_at ?? null,
                 guardian_id: row.guardian_id ?? null,
                 guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
@@ -2380,7 +2469,7 @@ const getHubFinanceDayBoard = async (req, res) => {
                 pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
                 operational_status: String(row.status),
                 estimated_amount: estimated,
-                services: services.map((sv) => ({
+                services: servicesEnriched.map((sv) => ({
                     name: String(sv.service_type?.name ?? 'Serviço'),
                     amount: round2(Number(sv.sale_amount_applied ?? 0)),
                 })),
@@ -2423,6 +2512,7 @@ const getHubFinanceDayBoard = async (req, res) => {
                 origin_type: 'grooming_session',
                 origin_id: id,
                 origin_label: 'Banho & Tosa (walk-in)',
+                service_group: 'banho_tosa',
                 starts_at: row.created_at ?? null,
                 guardian_id: row.guardian_id ?? null,
                 guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
@@ -2470,6 +2560,7 @@ const getHubFinanceDayBoard = async (req, res) => {
                 origin_type: 'encounter',
                 origin_id: id,
                 origin_label: 'Clínica (walk-in)',
+                service_group: 'clinica',
                 starts_at: row.created_at ?? null,
                 guardian_id: row.guardian_id ?? null,
                 guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
@@ -2488,36 +2579,51 @@ const getHubFinanceDayBoard = async (req, res) => {
                 },
             });
         }
-        // ── 4. Boarding: reservas com expected_check_out no dia (independente do status) ──
+        // ── 4. Boarding: reservas com check-in ou check-out no dia ──
+        const appointmentIdsInBoard = new Set(items.filter((i) => i.origin_type === 'appointment').map((i) => i.origin_id));
+        const boardingIdsInBoard = new Set();
         let bq = supabase_1.supabaseAdmin
             .from('hub_boarding_reservations')
-            .select(`id, unit_id, expected_check_out, checked_out_at, status, guardian_id, pet_id, mode, daily_rate_cents,
+            .select(`id, unit_id, hub_appointment_id, expected_check_in, expected_check_out, checked_out_at, status, guardian_id, pet_id, mode, daily_rate_cents,
         pet:hub_pets(id, name),
         guardian:hub_guardians(id, full_name)`)
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
             .not('status', 'in', '("cancelled")')
-            .gte('expected_check_out', dayStart)
-            .lte('expected_check_out', dayEnd)
             .order('expected_check_out', { ascending: true });
         if (unit_id)
             bq = bq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-        const { data: boardingRows, error: bErr } = await bq;
+        const { data: boardingRowsAll, error: bErr } = await bq;
         if (bErr)
             throw new Error(bErr.message);
-        for (const row of boardingRows ?? []) {
+        for (const row of boardingRowsAll ?? []) {
             const id = row.id;
+            const expectedCheckIn = row.expected_check_in ?? null;
+            const expectedCheckOut = row.expected_check_out ?? null;
+            const isCheckInDay = timestampInUtcDayRange(expectedCheckIn, dayStart, dayEnd);
+            const isCheckOutDay = timestampInUtcDayRange(expectedCheckOut, dayStart, dayEnd);
+            if (!isCheckInDay && !isCheckOutDay)
+                continue;
+            const apptId = row.hub_appointment_id ?? null;
+            if (isCheckInDay && !isCheckOutDay && apptId && appointmentIdsInBoard.has(apptId)) {
+                continue;
+            }
+            if (boardingIdsInBoard.has(id))
+                continue;
+            boardingIdsInBoard.add(id);
             const modeLabel = row.mode === 'hotel' ? 'Hotel' : 'Creche';
+            const serviceGroup = row.mode === 'hotel' ? 'hotel' : 'creche';
             const pet = row.pet;
             const g = row.guardian;
             const dailyRateCents = row.daily_rate_cents ?? 0;
-            const estimated = Math.round(dailyRateCents) / 100; // estimativa simplificada
+            const estimated = Math.round(dailyRateCents) / 100;
             originKeys.push({ origin_type: 'boarding_reservation', origin_id: id });
             items.push({
                 origin_type: 'boarding_reservation',
                 origin_id: id,
                 origin_label: `Hotel & Creche (${modeLabel})`,
-                starts_at: row.expected_check_out ?? null,
+                service_group: serviceGroup,
+                starts_at: isCheckOutDay ? expectedCheckOut : expectedCheckIn,
                 guardian_id: row.guardian_id ?? null,
                 guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
                 pet_id: row.pet_id ?? null,

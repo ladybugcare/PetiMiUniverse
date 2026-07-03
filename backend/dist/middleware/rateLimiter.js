@@ -1,12 +1,42 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.uploadLimiter = exports.userRateLimiter = exports.statsLimiter = exports.createLimiter = exports.authLimiter = exports.hubApiLimiter = exports.generalLimiter = void 0;
+exports.publicPrescriptionLimiter = exports.uploadLimiter = exports.userRateLimiter = exports.statsLimiter = exports.createLimiter = exports.authLimiter = exports.hubApiLimiter = exports.generalLimiter = void 0;
 exports.parseJwtSub = parseJwtSub;
 exports.isRateLimitDisabled = isRateLimitDisabled;
-const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
+const express_rate_limit_1 = __importStar(require("express-rate-limit"));
 const logger_js_1 = require("../utils/logger.js");
 require("../config/loadEnv.js");
 function parseJwtSub(authHeader) {
@@ -29,7 +59,7 @@ function rateLimitKey(req) {
     const sub = parseJwtSub(req.headers.authorization);
     if (sub)
         return `user:${sub}`;
-    return req.ip ?? 'unknown';
+    return (0, express_rate_limit_1.ipKeyGenerator)(req.ip ?? 'unknown');
 }
 function parsePositiveInt(raw, fallback) {
     if (!raw)
@@ -218,3 +248,18 @@ exports.userRateLimiter = userRateLimiter;
  * Limita uploads por usuário para prevenir abuso
  */
 exports.uploadLimiter = (0, exports.userRateLimiter)(20, 60 * 60 * 1000); // 20 uploads por hora por usuário
+/**
+ * Rate limiter para rotas públicas de validação de receita (token/código/PDF).
+ * 60 requisições por IP a cada 15 minutos.
+ */
+exports.publicPrescriptionLimiter = (0, express_rate_limit_1.default)({
+    windowMs: parsePositiveInt(process.env.PUBLIC_PRESCRIPTION_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+    max: parsePositiveInt(process.env.PUBLIC_PRESCRIPTION_RATE_LIMIT_MAX, 60),
+    keyGenerator: rateLimitKey,
+    message: {
+        error: 'Muitas tentativas de validação. Tente novamente em alguns minutos.',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => isRateLimitDisabled(),
+});

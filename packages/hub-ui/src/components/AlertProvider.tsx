@@ -8,8 +8,10 @@ interface AlertOptions {
   type?: AlertType;
   confirmText?: string;
   cancelText?: string;
+  secondaryText?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
+  onSecondary?: () => void;
   showCancel?: boolean;
 }
 
@@ -184,8 +186,10 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         type={alertState.type}
         confirmText={alertState.confirmText}
         cancelText={alertState.cancelText}
+        secondaryText={alertState.secondaryText}
         onConfirm={alertState.onConfirm}
         onCancel={alertState.onCancel}
+        onSecondary={alertState.onSecondary}
         showCancel={alertState.showCancel}
       />
     </AlertContext.Provider>

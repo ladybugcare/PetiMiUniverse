@@ -16,7 +16,14 @@ npm run test:coverage # com cobertura
 - `src/__tests__/authRateLimit.integration.test.ts` — rate limit de auth
 - `src/__tests__/adminAuth.integration.test.ts` — guards de rotas `/admin`
 - `src/middleware/__tests__/` — authMiddleware, requireActiveClinic, rateLimiter, privacyGuard
-- `src/utils/__tests__/permissions.test.ts` — RBAC
+- `src/modules/hub/boardingOperational.ts` — helpers puros (transições, noites, day-board)
+- `src/modules/hub/hubBoardingSchemas.ts` — schemas Zod de boarding
+- `src/modules/hub/__tests__/boardingOperational.test.ts` — unitários operacionais
+- `src/modules/hub/__tests__/hubBoardingSchemas.test.ts` — validação Zod
+- `src/modules/hub/__tests__/hubBoardingReservations.integration.test.ts` — open/create/patch
+- `src/modules/hub/__tests__/hubBoardingDrawer.integration.test.ts` — drawer + daily logs
+- `src/modules/hub/__tests__/hubBoardingUnitSettings.integration.test.ts` — capacidade por unidade
+- `src/modules/hub/__tests__/hubBoardingViews.integration.test.ts` — day-board, occupancy, calendar
 
 ## Stack
 

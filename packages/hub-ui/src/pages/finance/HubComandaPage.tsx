@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Lock, MessageSquare } from 'lucide-react';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import {
   hubComandaApi,
@@ -15,13 +16,13 @@ import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTyp
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
 import {
-  DiscountControl,
   resolveDiscountAmount,
   inferDiscountKindAndValue,
   type DiscountKind,
 } from '../../components/billing/DiscountControl';
-import { FinancialSummaryCard } from '../../components/billing/FinancialSummaryCard';
+import { DiscountCard } from '../../components/billing/DiscountCard';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
+import { HubComandaReceivableDrawer } from './HubComandaReceivableDrawer';
 import { ComandaItemsSection } from './ComandaItemsSection';
 import HubComandaDetailLayout from './HubComandaDetailLayout';
 import {
@@ -40,6 +41,7 @@ import {
   guardianFirstName,
   waMeUrlWithText,
 } from './hubComandaShareUtils';
+import { resolveComandaCheckoutCTA } from './hubComandaEditUtils';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import './hub-finance-page.css';
 import '../orcamentos/orcamentos-page.css';
@@ -61,14 +63,13 @@ export type HubComandaPageMode = 'caixa' | 'financeiro';
 
 export type HubComandaPageProps = {
   mode?: HubComandaPageMode;
-  financePanel?: React.ReactNode;
-  onDetailLoaded?: (detail: HubComandaDetailResponse) => void;
   refreshKey?: number;
 };
 
-export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailLoaded, refreshKey = 0 }: HubComandaPageProps) {
+export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubComandaPageProps) {
   const { id: comandaId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const editContext: HubComandaEditContext = mode;
   const { hasPermission } = usePermissions();
   const { showError, showSuccess, showConfirm } = useAlert();
@@ -85,9 +86,12 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
   const [inventoryLots, setInventoryLots] = useState<HubInventoryLotRow[]>([]);
   const [items, setItems] = useState<ComandaItemDraft[]>([]);
   const [notes, setNotes] = useState('');
+  const [financeNotes, setFinanceNotes] = useState('');
+  const [clientNotes, setClientNotes] = useState('');
   const [discountKind, setDiscountKind] = useState<DiscountKind>('');
   const [discountValueStr, setDiscountValueStr] = useState('0');
   const [showCheckout, setShowCheckout] = useState(false);
+  const [showReceivableDrawer, setShowReceivableDrawer] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState('');
 
   const newItemCounterRef = useRef(0);
@@ -97,6 +101,19 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
   const guardian = comandaRow ? extractGuardian(comandaRow) : null;
   const pets = payload ? extractPets(payload) : [];
   const allowedGuardians = (payload?.allowed_guardians ?? []) as HubComandaAllowedGuardian[];
+  const receivableIds = mode === 'financeiro' ? (payload?.active_receivable_ids ?? []) : [];
+  const selectedReceivableId = mode === 'financeiro' ? (searchParams.get('receivable_id') ?? '') : '';
+
+  const onSelectReceivable = useCallback(
+    (id: string) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('receivable_id', id);
+        return next;
+      });
+    },
+    [setSearchParams],
+  );
 
   const load = useCallback(async () => {
     if (!comandaId || !clinicId) return;
@@ -109,7 +126,6 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
         hubInventoryApi.lots.list(clinicId).catch(() => ({ lots: [] as HubInventoryLotRow[] })),
       ]);
       setPayload(detail);
-      onDetailLoaded?.(detail);
       setServiceTypes(stRes.service_types);
       setInventoryItems(invRes.items ?? []);
       setInventoryLots(lotsRes.lots ?? []);
@@ -122,6 +138,8 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
 
       const info = detail.comanda as Record<string, unknown>;
       setNotes(String(info.notes ?? ''));
+      setFinanceNotes(String(info.finance_notes ?? ''));
+      setClientNotes(String(info.client_notes ?? ''));
       const discAmt = Number(info.discount_amount ?? 0);
       const subtotalEst = (detail.items ?? []).reduce((s, it) => s + Number(it.line_total ?? 0), 0);
       const { kind, valueStr } = inferDiscountKindAndValue(discAmt, subtotalEst);
@@ -132,11 +150,19 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
     } finally {
       setLoading(false);
     }
-  }, [comandaId, clinicId, showError, onDetailLoaded]);
+  }, [comandaId, clinicId, showError]);
 
   useEffect(() => {
     void load();
   }, [load, refreshKey]);
+
+  useEffect(() => {
+    if (mode !== 'financeiro' || !payload) return;
+    const ids = payload.active_receivable_ids ?? [];
+    if (ids.length && !searchParams.get('receivable_id')) {
+      onSelectReceivable(ids[0]!);
+    }
+  }, [mode, payload, searchParams, onSelectReceivable]);
 
   const summary = useMemo(() => {
     const subtotal = items.reduce((s, it) => s + computeLineTotal(it), 0);
@@ -245,7 +271,9 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
       clinic_id: clinicId,
       edit_context: editContext,
       discount_amount: discountAmount,
-      notes: notes.trim() || null,
+      ...(editContext === 'caixa' ? { notes: notes.trim() || null } : {}),
+      ...(editContext === 'financeiro' ? { finance_notes: financeNotes.trim() || null } : {}),
+      client_notes: clientNotes.trim() || null,
     });
   };
 
@@ -412,6 +440,35 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
   const isAberta = status === 'aberta';
   const canEdit = Boolean(payload?.edit_scopes?.[editContext] ?? (isAberta && canWrite));
   const lockedReason = payload?.edit_scopes?.locked_reason ?? null;
+  const financeHandoffAt = comandaRow?.finance_handoff_at as string | null | undefined;
+  const canEditCaixaNotes = canEdit && mode === 'caixa' && !financeHandoffAt;
+  const canEditFinanceNotes = canEdit && mode === 'financeiro' && Boolean(financeHandoffAt);
+  const showFinanceNotesSection = Boolean(financeHandoffAt) || financeNotes.trim().length > 0;
+
+  const checkoutCta = useMemo(
+    () => (payload ? resolveComandaCheckoutCTA(mode, payload) : { kind: 'none' as const }),
+    [mode, payload],
+  );
+
+  const checkoutLabel =
+    checkoutCta.kind === 'checkout_drawer' || checkoutCta.kind === 'receivable_drawer'
+      ? checkoutCta.label
+      : undefined;
+
+  const handleCheckout = useCallback(() => {
+    if (checkoutCta.kind === 'checkout_drawer') {
+      setShowCheckout(true);
+      return;
+    }
+    if (checkoutCta.kind === 'receivable_drawer') {
+      setShowReceivableDrawer(true);
+    }
+  }, [checkoutCta.kind]);
+
+  const highlightReceivablePayment =
+    showReceivableDrawer &&
+    checkoutCta.kind === 'receivable_drawer' &&
+    checkoutCta.label === 'Registrar pagamento';
 
   const readOnlyBanner = useMemo(() => {
     if (canEdit || !lockedReason) return null;
@@ -478,37 +535,92 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
   );
 
   const notesSection = (
-    <section className="hub-quote-detail__card hub-quote-detail__card--internal">
-      <h2 className="hub-quote-detail__card-title">Observação interna</h2>
-      <textarea
-        className="hub-orcamento-novo__textarea"
-        rows={3}
-        maxLength={2000}
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        placeholder="Apenas a equipe vê"
-        disabled={!canEdit}
-      />
-      <p className="hub-orcamento-novo__char-count">{notes.length}/2000</p>
-    </section>
+    <>
+      <section className="hub-quote-detail__card">
+        <div className="hub-quote-detail__card-head hub-quote-detail__card-head--with-sub">
+          <MessageSquare size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
+          <div>
+            <h2 className="hub-quote-detail__card-title">Observação para o cliente</h2>
+            <p className="hub-orcamento-novo__card-subtitle" style={{ marginTop: 4, marginBottom: 0 }}>
+              Visível no PDF e no link público da comanda.
+            </p>
+          </div>
+        </div>
+        <textarea
+          className="hub-orcamento-novo__textarea hub-orcamento-novo__textarea--client"
+          rows={4}
+          maxLength={200}
+          value={clientNotes}
+          onChange={(e) => setClientNotes(e.target.value)}
+          placeholder="Ex.: intercorrência no banho, orientação de retirada, item substituído…"
+          disabled={!canEdit}
+        />
+        <p className="hub-orcamento-novo__char-count">{clientNotes.length}/200</p>
+      </section>
+
+      <section className="hub-quote-detail__card">
+        <div className="hub-quote-detail__card-head hub-quote-detail__card-head--with-sub">
+          <Lock size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
+          <div>
+            <h2 className="hub-quote-detail__card-title">Observação interna do caixa</h2>
+            <p className="hub-orcamento-novo__card-subtitle" style={{ marginTop: 4, marginBottom: 0 }}>
+              {financeHandoffAt
+                ? 'Histórico — não pode mais ser alterada após o envio ao financeiro.'
+                : 'Apenas a equipe vê. Fica registrada ao enviar ao financeiro.'}
+            </p>
+          </div>
+        </div>
+        <textarea
+          className="hub-orcamento-novo__textarea"
+          rows={3}
+          maxLength={2000}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Ex.: combinar desconto na retirada, orientações para a recepção…"
+          disabled={!canEditCaixaNotes}
+          readOnly={!canEditCaixaNotes}
+        />
+        <p className="hub-orcamento-novo__char-count">{notes.length}/2000</p>
+      </section>
+
+      {showFinanceNotesSection ? (
+        <section className="hub-quote-detail__card">
+          <div className="hub-quote-detail__card-head hub-quote-detail__card-head--with-sub">
+            <Lock size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
+            <div>
+              <h2 className="hub-quote-detail__card-title">Observação interna do financeiro</h2>
+              <p className="hub-orcamento-novo__card-subtitle" style={{ marginTop: 4, marginBottom: 0 }}>
+                {mode === 'financeiro'
+                  ? 'Anotações da cobrança e do acompanhamento financeiro.'
+                  : 'Registrada pelo financeiro após o recebimento da comanda.'}
+              </p>
+            </div>
+          </div>
+          <textarea
+            className="hub-orcamento-novo__textarea"
+            rows={3}
+            maxLength={2000}
+            value={financeNotes}
+            onChange={(e) => setFinanceNotes(e.target.value)}
+            placeholder="Ex.: acordo de parcelamento, follow-up de cobrança…"
+            disabled={!canEditFinanceNotes}
+            readOnly={!canEditFinanceNotes}
+          />
+          <p className="hub-orcamento-novo__char-count">{financeNotes.length}/2000</p>
+        </section>
+      ) : null}
+    </>
   );
 
   const sidebarActions =
     canEdit ? (
-      <FinancialSummaryCard
-        subtotal={summary.subtotal}
-        discountAmount={summary.discountAmount}
-        total={summary.total}
-        discountControl={
-          <DiscountControl
-            idPrefix="comanda"
-            kind={discountKind}
-            valueStr={discountValueStr}
-            onKindChange={setDiscountKind}
-            onValueStrChange={setDiscountValueStr}
-            disabled={saving}
-          />
-        }
+      <DiscountCard
+        idPrefix="comanda"
+        kind={discountKind}
+        valueStr={discountValueStr}
+        onKindChange={setDiscountKind}
+        onValueStrChange={setDiscountValueStr}
+        disabled={saving}
       />
     ) : null;
 
@@ -527,6 +639,7 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
         total={summary.total}
         paidTotal={payload.paid_total}
         balanceDue={payload.balance_due}
+        events={payload.events ?? []}
         canWrite={canWrite}
         canEdit={canEdit}
         saving={saving}
@@ -536,7 +649,13 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
         selectedGuardianId={guardian?.id ?? null}
         onGuardianChange={allowedGuardians.length > 1 ? (id) => void handleGuardianChange(id) : undefined}
         onSave={() => void handleSave()}
-        onCheckout={canEdit && (payload?.balance_due ?? 0) > 0.009 ? () => setShowCheckout(true) : undefined}
+        onCheckout={
+          canEdit &&
+          (checkoutCta.kind === 'checkout_drawer' || checkoutCta.kind === 'receivable_drawer')
+            ? handleCheckout
+            : undefined
+        }
+        checkoutLabel={checkoutLabel}
         onSendToFinancial={mode === 'caixa' ? handleSendToFinancial : undefined}
         onOpenPdf={() => void openPdf()}
         onCopyPublic={() => void copyPublicLink()}
@@ -545,8 +664,20 @@ export default function HubComandaPage({ mode = 'caixa', financePanel, onDetailL
         itemsSection={itemsSection}
         notesSection={notesSection}
         sidebarActions={sidebarActions}
-        financePanel={financePanel}
       />
+
+      {showReceivableDrawer && mode === 'financeiro' && comandaId && (
+        <HubComandaReceivableDrawer
+          open={showReceivableDrawer}
+          onClose={() => setShowReceivableDrawer(false)}
+          comandaId={comandaId}
+          receivableIds={receivableIds}
+          selectedReceivableId={selectedReceivableId}
+          onSelectReceivable={onSelectReceivable}
+          onRefreshComanda={() => void load()}
+          highlightPayment={highlightReceivablePayment}
+        />
+      )}
 
       {showCheckout && clinicId && unitId && (
         <ComandaCheckoutDrawer

@@ -7,8 +7,11 @@ import request from 'supertest';
 import app from '../../../app';
 import { configureSupabaseMock } from '../../../__tests__/helpers/supabaseTestDouble';
 import {
+  boardingAppointment,
   emptyBoardingTables,
   hotelReservationCheckedOut,
+  hotelServiceType,
+  TEST_APPOINTMENT_ID,
   TEST_CLINIC_ID,
   TEST_RESERVATION_ID,
   TEST_UNIT_ID,
@@ -82,5 +85,85 @@ describe('GET /api/hub/finance/day-board (boarding)', () => {
     );
     expect(boarding).toBeDefined();
     expect(boarding.billing.finance_handoff_at).toBeTruthy();
+  });
+
+  it('inclui reserva no dia de check-in quando não há agendamento duplicado', async () => {
+    configureSupabaseMock({
+      tables: {
+        ...emptyBoardingTables(),
+        hub_boarding_reservations: [
+          hotelReservationCheckedOut({
+            hub_appointment_id: null,
+            status: 'reserved',
+            expected_check_in: '2026-06-01T14:00:00.000Z',
+            expected_check_out: '2026-06-04T10:00:00.000Z',
+            checked_in_at: null,
+            checked_out_at: null,
+          }),
+        ],
+      },
+    });
+
+    const res = await request(app)
+      .get('/api/hub/finance/day-board')
+      .query({ clinic_id: TEST_CLINIC_ID, unit_id: TEST_UNIT_ID, date: '2026-06-01' });
+
+    expect(res.status).toBe(200);
+    const boarding = res.body.items.find(
+      (it: { origin_type: string; origin_id: string }) =>
+        it.origin_type === 'boarding_reservation' && it.origin_id === TEST_RESERVATION_ID
+    );
+    expect(boarding).toBeDefined();
+    expect(boarding.service_group).toBe('hotel');
+  });
+
+  it('omite reserva no check-in quando agendamento já está no day board', async () => {
+    configureSupabaseMock({
+      tables: {
+        ...emptyBoardingTables(),
+        hub_service_types: [hotelServiceType()],
+        hub_appointments: [
+          boardingAppointment({
+            starts_at: '2026-06-01T14:00:00.000Z',
+            ends_at: '2026-06-04T10:00:00.000Z',
+          }),
+        ],
+        hub_appointment_services: [
+          {
+            id: 'svc-hotel-1',
+            appointment_id: TEST_APPOINTMENT_ID,
+            hub_service_type_id: '88888888-8888-4888-8888-888888888888',
+            sale_amount_applied: 150,
+            order_index: 0,
+          },
+        ],
+        hub_boarding_reservations: [
+          hotelReservationCheckedOut({
+            hub_appointment_id: TEST_APPOINTMENT_ID,
+            status: 'checked_in',
+            expected_check_in: '2026-06-01T14:00:00.000Z',
+            expected_check_out: '2026-06-04T10:00:00.000Z',
+            checked_in_at: '2026-06-01T14:00:00.000Z',
+            checked_out_at: null,
+          }),
+        ],
+      },
+    });
+
+    const res = await request(app)
+      .get('/api/hub/finance/day-board')
+      .query({ clinic_id: TEST_CLINIC_ID, unit_id: TEST_UNIT_ID, date: '2026-06-01' });
+
+    expect(res.status).toBe(200);
+    const appointmentItem = res.body.items.find(
+      (it: { origin_type: string; origin_id: string }) =>
+        it.origin_type === 'appointment' && it.origin_id === TEST_APPOINTMENT_ID
+    );
+    const boardingItem = res.body.items.find(
+      (it: { origin_type: string; origin_id: string }) =>
+        it.origin_type === 'boarding_reservation' && it.origin_id === TEST_RESERVATION_ID
+    );
+    expect(appointmentItem).toBeDefined();
+    expect(boardingItem).toBeUndefined();
   });
 });

@@ -327,3 +327,11 @@ Detalhe, decisões em aberto e critérios de aceite rascunho: [HUB_SIGNUP_FIRST_
 ## Backlog — orçamentos e contatos (sem “falso cliente”)
 
 **Implementado no código (MVP):** migração `create_hub_prospects_and_quotes.sql`, rotas Hub e UI em `/hub/orcamentos`. PDF, notificações e PJ permanecem backlog — ver [HUB_QUOTES_AND_PROSPECTS.md](./HUB_QUOTES_AND_PROSPECTS.md).
+
+---
+
+## Backlog — notas internas e handoff (orçamento / agenda → comanda)
+
+**Não priorizado para o MVP.** A comanda já separa observação do caixa (`notes`) e do financeiro (`finance_notes`). Melhorias pós-MVP: herdar contexto ao abrir comanda, congelar nota interna do orçamento após envio, etc.
+
+Detalhe e priorização: [HUB_NOTES_AND_HANDOFF_BACKLOG.md](./HUB_NOTES_AND_HANDOFF_BACKLOG.md).

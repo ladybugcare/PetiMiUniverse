@@ -12,6 +12,8 @@ type Filter =
   | { kind: 'not'; col: string; op: 'in' | 'is'; vals?: unknown[]; val?: unknown }
   | { kind: 'gte'; col: string; val: unknown }
   | { kind: 'lte'; col: string; val: unknown }
+  | { kind: 'lt'; col: string; val: unknown }
+  | { kind: 'gt'; col: string; val: unknown }
   | { kind: 'or'; expr: string };
 
 function matchesFilter(row: Row, filter: Filter): boolean {
@@ -33,6 +35,10 @@ function matchesFilter(row: Row, filter: Filter): boolean {
       return String(row[filter.col] ?? '') >= String(filter.val ?? '');
     case 'lte':
       return String(row[filter.col] ?? '') <= String(filter.val ?? '');
+    case 'lt':
+      return String(row[filter.col] ?? '') < String(filter.val ?? '');
+    case 'gt':
+      return String(row[filter.col] ?? '') > String(filter.val ?? '');
     case 'or': {
       const parts = filter.expr.split(',');
       return parts.some((part) => {
@@ -55,9 +61,10 @@ class MockQueryBuilder {
   private filters: Filter[] = [];
   private orderSpec: { col: string; ascending: boolean } | null = null;
   private limitN: number | null = null;
-  private op: 'select' | 'insert' | 'update' = 'select';
+  private op: 'select' | 'insert' | 'update' | 'upsert' = 'select';
   private payload: Row | Row[] | null = null;
   private countOnly = false;
+  private upsertConflict: string | null = null;
 
   constructor(
     private readonly table: string,
@@ -81,6 +88,13 @@ class MockQueryBuilder {
   update(payload: Row): this {
     this.op = 'update';
     this.payload = payload;
+    return this;
+  }
+
+  upsert(payload: Row | Row[], opts?: { onConflict?: string }): this {
+    this.op = 'upsert';
+    this.payload = payload;
+    this.upsertConflict = opts?.onConflict ?? null;
     return this;
   }
 
@@ -121,6 +135,16 @@ class MockQueryBuilder {
 
   lte(col: string, val: unknown): this {
     this.filters.push({ kind: 'lte', col, val });
+    return this;
+  }
+
+  lt(col: string, val: unknown): this {
+    this.filters.push({ kind: 'lt', col, val });
+    return this;
+  }
+
+  gt(col: string, val: unknown): this {
+    this.filters.push({ kind: 'gt', col, val });
     return this;
   }
 
@@ -176,11 +200,46 @@ class MockQueryBuilder {
       const withIds = rows.map((r) => ({
         id: r.id ?? crypto.randomUUID(),
         created_at: r.created_at ?? new Date().toISOString(),
+        updated_at: r.updated_at ?? new Date().toISOString(),
         ...r,
       }));
       const table = this.state.tables[this.table] ?? [];
       this.state.tables[this.table] = [...table, ...withIds];
       return { data: withIds.length === 1 ? withIds[0] : withIds, error: null };
+    }
+
+    if (this.op === 'upsert') {
+      const rows = Array.isArray(this.payload) ? this.payload : [this.payload as Row];
+      const table = this.state.tables[this.table] ?? [];
+      const conflictCols = (this.upsertConflict ?? 'id').split(',').map((c) => c.trim());
+      const upserted: Row[] = [];
+
+      for (const row of rows) {
+        const existingIdx = table.findIndex((t) =>
+          conflictCols.every((col) => t[col] === row[col]),
+        );
+        const now = new Date().toISOString();
+        if (existingIdx >= 0) {
+          const next = {
+            ...table[existingIdx],
+            ...row,
+            updated_at: now,
+          };
+          table[existingIdx] = next;
+          upserted.push(next);
+        } else {
+          const next = {
+            id: row.id ?? crypto.randomUUID(),
+            created_at: row.created_at ?? now,
+            updated_at: now,
+            ...row,
+          };
+          table.push(next);
+          upserted.push(next);
+        }
+      }
+      this.state.tables[this.table] = table;
+      return { data: upserted.length === 1 ? upserted[0] : upserted, error: null };
     }
 
     if (this.op === 'update') {

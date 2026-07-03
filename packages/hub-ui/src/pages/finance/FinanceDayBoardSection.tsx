@@ -5,8 +5,10 @@ import { HubViewDateToolbar, type HubViewMode } from '../../components/HubViewDa
 import { formatYmd, parseIsoYmd, todayYmd } from '../../utils/hubCalendar';
 import { addDays, startOfWeekMonday } from '../agenda/agendaModel';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
+import { HubComandaReceivableDrawer } from './HubComandaReceivableDrawer';
 import { FinanceDayBoardTable } from './FinanceDayBoardTable';
 import { HubLoading } from '../../components/HubLoading';
+import { useAlert } from '../../components/AlertProvider';
 
 function normalizeText(s: string): string {
   return s
@@ -72,6 +74,12 @@ export type FinanceDayBoardSectionProps = {
   onLoaded?: () => void;
 };
 
+type ReceivableDrawerState = {
+  comandaId: string;
+  receivableIds: string[];
+  selectedReceivableId: string;
+};
+
 export function FinanceDayBoardSection({
   clinicId,
   unitId,
@@ -80,6 +88,7 @@ export function FinanceDayBoardSection({
   onLoaded,
 }: FinanceDayBoardSectionProps) {
   const navigate = useNavigate();
+  const { showError, showSuccess } = useAlert();
   const [dayBoardItems, setDayBoardItems] = useState<HubFinanceDayBoardItem[]>([]);
   const [dayBoardDate, setDayBoardDate] = useState(() => todayYmd());
   const [view, setView] = useState<HubViewMode>('day');
@@ -87,6 +96,7 @@ export function FinanceDayBoardSection({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [dayBoardSearch, setDayBoardSearch] = useState('');
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
+  const [receivableDrawer, setReceivableDrawer] = useState<ReceivableDrawerState | null>(null);
 
   const loadDayBoard = useCallback(
     async (dateOverride?: string, viewOverride?: HubViewMode) => {
@@ -148,20 +158,49 @@ export function FinanceDayBoardSection({
   };
 
   const onCheckout = (item: HubFinanceDayBoardItem) => {
-    if (!item.billing.comanda_id) return;
+    const comandaId = item.billing.comanda_id;
+    if (!comandaId) return;
     const { billing } = item;
     if (billing.has_receivable && (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid')) {
       const rid = billing.active_receivable_id;
-      const q = rid ? `?receivable_id=${encodeURIComponent(rid)}` : '';
-      navigate(`/hub/financeiro/comanda/${billing.comanda_id}${q}`);
+      if (!rid) return;
+      setReceivableDrawer({
+        comandaId,
+        receivableIds: [rid],
+        selectedReceivableId: rid,
+      });
       return;
     }
-    setCheckoutComandaId(billing.comanda_id);
+    setCheckoutComandaId(comandaId);
   };
 
   const onShareComanda = (item: HubFinanceDayBoardItem) => {
     if (item.billing.comanda_id) {
       navigate(`/hub/financeiro/comanda/${item.billing.comanda_id}/pronto-para-envio`);
+    }
+  };
+
+  const onCancelReceivableFromBoard = async (item: HubFinanceDayBoardItem) => {
+    if (!canFinancialWrite) {
+      showError('Sem permissão para cancelar recebíveis.');
+      return;
+    }
+    const receivableId = item.billing.active_receivable_id;
+    if (!receivableId) return;
+    const reason = window.prompt('Motivo do cancelamento do recebível:');
+    if (!reason?.trim()) return;
+    setDayBoardBusy(true);
+    try {
+      await hubFinancialApi.cancelReceivable(receivableId, { clinic_id: clinicId, reason: reason.trim() });
+      showSuccess('Recebível cancelado.');
+      setReceivableDrawer((prev) =>
+        prev?.selectedReceivableId === receivableId || prev?.comandaId === item.billing.comanda_id ? null : prev,
+      );
+      await loadDayBoard();
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro ao cancelar recebível');
+    } finally {
+      setDayBoardBusy(false);
     }
   };
 
@@ -234,9 +273,26 @@ export function FinanceDayBoardSection({
           onViewComanda={onViewComanda}
           onCheckout={onCheckout}
           onShareComanda={onShareComanda}
+          onCancelReceivable={onCancelReceivableFromBoard}
+          onRowClick={onViewComanda}
           busy={dayBoardBusy}
         />
       )}
+
+      {receivableDrawer ? (
+        <HubComandaReceivableDrawer
+          open
+          onClose={() => setReceivableDrawer(null)}
+          comandaId={receivableDrawer.comandaId}
+          receivableIds={receivableDrawer.receivableIds}
+          selectedReceivableId={receivableDrawer.selectedReceivableId}
+          onSelectReceivable={(id) =>
+            setReceivableDrawer((prev) => (prev ? { ...prev, selectedReceivableId: id } : null))
+          }
+          onRefreshComanda={() => void loadDayBoard()}
+          highlightPayment
+        />
+      ) : null}
 
       {checkoutComandaId && (
         <ComandaCheckoutDrawer

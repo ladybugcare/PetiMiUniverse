@@ -102,8 +102,47 @@ export type {
   BoardingCalendarEvent,
   BoardingCalendarResponse,
 } from './api/hubBoardingApi';
-export { hubEncountersApi, hubClinicalApi } from './api/hubClinicalApi';
-export type { HubEncounter, HubEncounterStatus, DayBoardItem } from './api/hubClinicalApi';
+export { hubEncountersApi, hubClinicalApi, hubClinicalExamsApi, hubSpecialistReferralsApi, openHubPrescriptionPdf, openHubClinicalDocumentPdf, openBlankPdfPreviewTab, downloadHubPrescriptionPdf } from './api/hubClinicalApi';
+export type { PrescriptionPdfOpenResult, HubClinicalDocumentRow, HubSpecialistReferral } from './api/hubClinicalApi';
+export type { HubEncounter, HubEncounterStatus, DayBoardItem, HubPrescriptionDocumentRow, HubPrescriptionDocumentStatus } from './api/hubClinicalApi';
+export {
+  fetchPublicPrescriptionByToken,
+  fetchPublicPrescriptionByCode,
+  normalizeValidationCodeInput,
+  publicPrescriptionPdfUrl,
+  VALIDATION_CODE_REGEX,
+} from './api/hubPrescriptionPublicApi';
+export {
+  fetchPublicExamOrderByToken,
+  fetchPublicExamOrderByCode,
+  normalizeExamOrderCodeInput,
+  publicExamOrderPdfUrl,
+  EXAM_ORDER_CODE_REGEX,
+} from './api/hubExamOrderPublicApi';
+export type { HubPublicExamOrderPayload, HubPublicExamOrderItem } from './api/hubExamOrderPublicApi';
+export {
+  fetchPublicSpecialistReferralByToken,
+  fetchPublicSpecialistReferralByCode,
+  normalizeSpecialistReferralCodeInput,
+  publicSpecialistReferralPdfUrl,
+  SPECIALIST_REFERRAL_CODE_REGEX,
+} from './api/hubSpecialistReferralPublicApi';
+export type { HubPublicSpecialistReferralPayload, HubPublicSpecialistReferralItem } from './api/hubSpecialistReferralPublicApi';
+export type {
+  HubPublicPrescriptionPayload,
+  HubPublicPrescriptionMedication,
+  HubPublicPrescriptionStatus,
+  HubPublicPrescriptionResponse,
+} from './api/hubPrescriptionPublicApi';
+export { default as HubPrescriptionPublicView } from './pages/clinica/HubPrescriptionPublicView';
+export type { HubPrescriptionPublicViewProps } from './pages/clinica/HubPrescriptionPublicView';
+export { HubPrescriptionHistoryList } from './components/clinical/HubPrescriptionHistoryList';
+export type { HubPrescriptionHistoryListProps } from './components/clinical/HubPrescriptionHistoryList';
+export { HubEncounterClinicalDocumentsList } from './components/clinical/HubEncounterClinicalDocumentsList';
+export { default as HubExamOrderPublicView } from './pages/clinica/HubExamOrderPublicView';
+export type { HubExamOrderPublicViewProps } from './pages/clinica/HubExamOrderPublicView';
+export { default as HubSpecialistReferralPublicView } from './pages/clinica/HubSpecialistReferralPublicView';
+export type { HubSpecialistReferralPublicViewProps } from './pages/clinica/HubSpecialistReferralPublicView';
 export { default as HubOrcamentosRoutes } from './pages/orcamentos/HubOrcamentosRoutes';
 export { default as HubQuotePublicView } from './pages/orcamentos/HubQuotePublicView';
 export { hubProspectsApi } from './api/hubProspectsApi';

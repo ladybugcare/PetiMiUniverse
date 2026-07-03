@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import type { HubComandaAllowedGuardian, HubComandaGuardianEmbed, HubComandaPetEmbed } from '../../api/hubComandaApi';
+import type { HubComandaAllowedGuardian, HubComandaEvent, HubComandaGuardianEmbed, HubComandaPetEmbed } from '../../api/hubComandaApi';
+import { buildComandaTimelineSteps } from './hubComandaTimeline';
 import { sexLabelPt, sizeTierLabelPt } from '../orcamentos/hubQuoteViewUtils';
+import { DocumentContactStrip, DocumentPetStrip, DocumentPetStripList } from '../orcamentos/hubDocumentPartyCards';
 import { waMeBaseUrl } from './hubComandaShareUtils';
 import {
   ChevronRight,
@@ -10,9 +12,6 @@ import {
   Coins,
   DollarSign,
   FileDown,
-  Mail,
-  MessageCircle,
-  Phone,
   Send,
   Share2,
   User,
@@ -48,6 +47,7 @@ export interface HubComandaDetailLayoutProps {
   total: number;
   paidTotal?: number;
   balanceDue?: number;
+  events?: HubComandaEvent[];
   canWrite: boolean;
   canEdit?: boolean;
   saving: boolean;
@@ -58,6 +58,7 @@ export interface HubComandaDetailLayoutProps {
   onGuardianChange?: (guardianId: string) => void;
   onSave?: () => void;
   onCheckout?: () => void;
+  checkoutLabel?: string;
   onSendToFinancial?: () => void;
   onOpenPdf: () => void;
   onCopyPublic: () => void;
@@ -66,7 +67,6 @@ export interface HubComandaDetailLayoutProps {
   itemsSection: React.ReactNode;
   notesSection: React.ReactNode;
   sidebarActions?: React.ReactNode;
-  financePanel?: React.ReactNode;
 }
 
 export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
@@ -82,6 +82,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
   total,
   paidTotal = 0,
   balanceDue = 0,
+  events = [],
   canWrite,
   canEdit: canEditProp,
   saving,
@@ -92,6 +93,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
   onGuardianChange,
   onSave,
   onCheckout,
+  checkoutLabel = 'Cobrar',
   onSendToFinancial,
   onOpenPdf,
   onCopyPublic,
@@ -100,7 +102,6 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
   itemsSection,
   notesSection,
   sidebarActions,
-  financePanel,
 }) => {
   const canEdit = canEditProp ?? (isAberta && canWrite);
   const refShort = comandaId.slice(0, 8).toUpperCase();
@@ -112,37 +113,18 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
     e.currentTarget.closest('details')?.removeAttribute('open');
   };
 
-  const timeline = useMemo(() => {
-    type V = 'done' | 'active' | 'todo';
-    const items: { title: string; sub?: string; variant: V }[] = [
-      {
-        title: 'Comanda aberta',
-        sub: openedAt ? new Date(openedAt).toLocaleString('pt-BR') : undefined,
-        variant: 'done',
-      },
-    ];
-    if (paidTotal > 0) {
-      items.push({
-        title: 'Pagamento registrado',
-        sub: fmtBrl(paidTotal),
-        variant: 'done',
-      });
-    }
-    if (balanceDue > 0.009 && status !== 'cancelada') {
-      items.push({
-        title: 'Saldo pendente',
-        sub: fmtBrl(balanceDue),
-        variant: status === 'aberta' ? 'active' : 'todo',
-      });
-    }
-    if (status === 'fechada' && closedAt) {
-      items.push({ title: 'Comanda fechada', sub: new Date(closedAt).toLocaleString('pt-BR'), variant: 'done' });
-    }
-    if (status === 'cancelada') {
-      items.push({ title: 'Comanda cancelada', variant: 'active' });
-    }
-    return items;
-  }, [openedAt, closedAt, paidTotal, balanceDue, status]);
+  const timeline = useMemo(
+    () =>
+      buildComandaTimelineSteps({
+        openedAt,
+        closedAt,
+        status,
+        paidTotal,
+        balanceDue,
+        events,
+      }),
+    [openedAt, closedAt, status, paidTotal, balanceDue, events],
+  );
 
   const metaParts: string[] = [];
   if (openedAt) metaParts.push(`Aberta em ${new Date(openedAt).toLocaleString('pt-BR')}`);
@@ -161,7 +143,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
 
   return (
     <div className="hub-quote-detail">
-      <div className={`hub-quote-detail__inner${financePanel ? ' hub-quote-detail__inner--with-finance' : ''}`}>
+      <div className="hub-quote-detail__inner">
         <nav className="hub-quote-detail__crumb" aria-label="Navegação">
           <Link to={crumbBase.to}>{crumbBase.label}</Link>
           <ChevronRight size={14} aria-hidden />
@@ -183,7 +165,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
             {metaParts.length > 0 ? <p className="hub-quote-detail__meta-line">{metaParts.join(' · ')}</p> : null}
           </div>
           <div className="hub-quote-detail__hero-actions">
-            {mode === 'caixa' && canEdit && onCheckout ? (
+            {canEdit && onCheckout ? (
               <button
                 type="button"
                 className="hub-quote-detail__btn hub-quote-detail__btn--primary"
@@ -191,18 +173,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
                 onClick={onCheckout}
               >
                 <Coins size={18} strokeWidth={2} aria-hidden />
-                Cobrar
-              </button>
-            ) : null}
-            {mode === 'financeiro' && canEdit && onCheckout && balanceDue > 0.009 ? (
-              <button
-                type="button"
-                className="hub-quote-detail__btn hub-quote-detail__btn--primary"
-                disabled={saving}
-                onClick={onCheckout}
-              >
-                <Coins size={18} strokeWidth={2} aria-hidden />
-                Cobrar
+                {checkoutLabel}
               </button>
             ) : null}
             {canEdit && onSave ? (
@@ -295,66 +266,39 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
           <div className="hub-quote-detail__main">
             <section className="hub-quote-detail__card">
               <div className="hub-quote-detail__card-head">
-                <User size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
+                <span className="hub-quote-detail__card-ic-wrap" aria-hidden>
+                  <User size={18} strokeWidth={1.75} className="hub-quote-detail__card-ic" />
+                </span>
                 <h2 className="hub-quote-detail__card-title">Cliente</h2>
               </div>
               {guardian ? (
-                <div className="hub-quote-detail__contact-grid">
-                  {canChangeGuardian ? (
-                    <div className="hub-quote-detail__field hub-quote-detail__field--wide">
-                      <span className="hub-quote-detail__field-label">Cobrança para</span>
-                      <select
-                        className="hub-orcamento-novo__input"
-                        value={selectedGuardianId ?? guardian.id}
-                        disabled={saving}
-                        onChange={(e) => onGuardianChange!(e.target.value)}
-                      >
-                        {allowedGuardians.map((g) => (
-                          <option key={g.id} value={g.id}>
-                            {g.full_name}
-                            {g.role === 'secondary' ? ' (co-tutor)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : (
-                    <div className="hub-quote-detail__field">
-                      <span className="hub-quote-detail__field-label">Nome</span>
-                      <span className="hub-quote-detail__field-value">{guardian.full_name}</span>
-                    </div>
-                  )}
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">Telefone</span>
-                    <span className="hub-quote-detail__field-value hub-quote-detail__field-value--row">
-                      <Phone size={16} aria-hidden />
-                      {telHref && guardian.phone ? (
-                        <a href={telHref} className="hub-quote-detail__link">
-                          {guardian.phone}
-                        </a>
-                      ) : (
-                        guardian.phone ?? '—'
-                      )}
-                      {wa ? (
-                        <a href={wa} target="_blank" rel="noopener noreferrer" className="hub-quote-detail__ic-link" title="WhatsApp">
-                          <MessageCircle size={18} />
-                        </a>
-                      ) : null}
-                    </span>
-                  </div>
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">E-mail</span>
-                    <span className="hub-quote-detail__field-value hub-quote-detail__field-value--row">
-                      <Mail size={16} aria-hidden />
-                      {guardian.email ? (
-                        <a href={`mailto:${guardian.email}`} className="hub-quote-detail__link">
-                          {guardian.email}
-                        </a>
-                      ) : (
-                        '—'
-                      )}
-                    </span>
-                  </div>
-                </div>
+                <DocumentContactStrip
+                  name={guardian.full_name}
+                  phone={guardian.phone}
+                  email={guardian.email}
+                  telHref={telHref}
+                  waHref={wa}
+                  leading={
+                    canChangeGuardian ? (
+                      <div className="hub-quote-detail__field hub-quote-detail__field--wide" style={{ marginBottom: 12 }}>
+                        <span className="hub-quote-detail__field-label">Cobrança para</span>
+                        <select
+                          className="hub-orcamento-novo__input"
+                          value={selectedGuardianId ?? guardian.id}
+                          disabled={saving}
+                          onChange={(e) => onGuardianChange!(e.target.value)}
+                        >
+                          {allowedGuardians.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.full_name}
+                              {g.role === 'secondary' ? ' (co-tutor)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null
+                  }
+                />
               ) : (
                 <p className="hub-quote-detail__muted">—</p>
               )}
@@ -362,73 +306,32 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
 
             <section className="hub-quote-detail__card">
               <div className="hub-quote-detail__card-head">
-                <Dog size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
+                <span className="hub-quote-detail__card-ic-wrap" aria-hidden>
+                  <Dog size={18} strokeWidth={1.75} className="hub-quote-detail__card-ic" />
+                </span>
                 <h2 className="hub-quote-detail__card-title">
                   {pets.length === 1 ? 'Pet' : `Pets${pets.length > 0 ? ` (${pets.length})` : ''}`}
                 </h2>
               </div>
               {pets.length === 0 ? (
                 <p className="hub-quote-detail__muted">—</p>
-              ) : pets.length === 1 ? (
-                <div className="hub-quote-detail__contact-grid">
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">Nome</span>
-                    <span className="hub-quote-detail__field-value">
-                      <Link to={`/hub/pets/${pets[0].id}`} className="hub-quote-detail__link">
-                        {pets[0].name}
-                      </Link>
-                    </span>
-                  </div>
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">Espécie</span>
-                    <span className="hub-quote-detail__field-value">{pets[0].species?.trim() || '—'}</span>
-                  </div>
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">Raça</span>
-                    <span className="hub-quote-detail__field-value">{pets[0].breed?.trim() || '—'}</span>
-                  </div>
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">Porte</span>
-                    <span className="hub-quote-detail__field-value">
-                      {pets[0].size_tier ? sizeTierLabelPt(pets[0].size_tier) : '—'}
-                    </span>
-                  </div>
-                  <div className="hub-quote-detail__field">
-                    <span className="hub-quote-detail__field-label">Sexo</span>
-                    <span className="hub-quote-detail__field-value">{sexLabelPt(pets[0].sex ?? null)}</span>
-                  </div>
-                </div>
               ) : (
-                <div className="hub-quote-detail__table-scroll">
-                  <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
-                    <thead>
-                      <tr>
-                        <th>Nome</th>
-                        <th>Espécie</th>
-                        <th>Raça</th>
-                        <th>Porte</th>
-                        <th>Sexo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pets.map((p) => (
-                        <tr key={p.id}>
-                          <td>
-                            <Link to={`/hub/pets/${p.id}`} className="hub-quote-detail__link">
-                              {p.name}
-                            </Link>
-                          </td>
-                          <td className="hub-orcamento-novo__services-table-cell--muted">{p.species?.trim() || '—'}</td>
-                          <td className="hub-orcamento-novo__services-table-cell--muted">{p.breed?.trim() || '—'}</td>
-                          <td className="hub-orcamento-novo__services-table-cell--muted">
-                            {p.size_tier ? sizeTierLabelPt(p.size_tier) : '—'}
-                          </td>
-                          <td className="hub-orcamento-novo__services-table-cell--muted">{sexLabelPt(p.sex ?? null)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DocumentPetStripList>
+                  {pets.map((p) => (
+                    <DocumentPetStrip
+                      key={p.id}
+                      name={
+                        <Link to={`/hub/pets/${p.id}`} className="hub-quote-detail__link">
+                          {p.name}
+                        </Link>
+                      }
+                      species={p.species?.trim() || '—'}
+                      breed={p.breed?.trim() || '—'}
+                      sizeTier={p.size_tier ? sizeTierLabelPt(p.size_tier) : '—'}
+                      sex={sexLabelPt(p.sex ?? null)}
+                    />
+                  ))}
+                </DocumentPetStripList>
               )}
             </section>
 
@@ -494,9 +397,9 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
                 <h2 className="hub-quote-detail__card-title">Timeline</h2>
               </div>
               <ol className="hub-quote-detail__timeline">
-                {timeline.map((step, idx) => (
+                {timeline.map((step) => (
                   <li
-                    key={`${step.title}-${idx}`}
+                    key={step.id}
                     className={`hub-quote-detail__timeline-item hub-quote-detail__timeline-item--${step.variant}`}
                   >
                     <span className="hub-quote-detail__timeline-dot" aria-hidden />
@@ -524,11 +427,6 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
             ) : null}
           </aside>
         </div>
-        {financePanel ? (
-          <aside className="hub-quote-detail__finance-panel hub-clientes__panel hub-finance-page__panel" aria-label="Cobrança">
-            {financePanel}
-          </aside>
-        ) : null}
       </div>
     </div>
   );

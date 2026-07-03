@@ -14,6 +14,7 @@ const createExamSchema = z
     pet_id: uuidStr,
     hub_case_id: uuidStr.optional().nullable(),
     hub_encounter_id: uuidStr.optional().nullable(),
+    guardian_id: uuidStr.optional().nullable(),
     exam_type: z.string().trim().min(1).max(300),
     lab_kind: labKindSchema.optional().default('internal'),
     lab_name: z.string().trim().max(300).optional().nullable(),
@@ -21,6 +22,10 @@ const createExamSchema = z
     external_order_code: z.string().trim().max(200).optional().nullable(),
     external_result_url: z.string().url().optional().nullable(),
     requested_by: uuidStr.optional().nullable(),
+    urgency: z.enum(['routine', 'urgent']).optional().nullable(),
+    clinical_indication: z.string().trim().max(4000).optional().nullable(),
+    fasting_required: z.boolean().optional().default(false),
+    collection_instructions: z.string().trim().max(4000).optional().nullable(),
     notes: z.string().trim().max(4000).optional().nullable(),
     metadata: z.record(z.string(), z.unknown()).optional().default({}),
   })
@@ -36,6 +41,10 @@ const patchExamSchema = z
     external_order_code: z.string().trim().max(200).optional().nullable(),
     external_result_url: z.string().url().optional().nullable(),
     status: examStatusSchema.optional(),
+    urgency: z.enum(['routine', 'urgent']).optional().nullable(),
+    clinical_indication: z.string().trim().max(4000).optional().nullable(),
+    fasting_required: z.boolean().optional(),
+    collection_instructions: z.string().trim().max(4000).optional().nullable(),
     collected_at: z.string().datetime({ offset: true }).optional().nullable(),
     result_at: z.string().datetime({ offset: true }).optional().nullable(),
     result_text: z.string().trim().max(8000).optional().nullable(),
@@ -46,9 +55,10 @@ const patchExamSchema = z
   .strict();
 
 const EXAM_SELECT = `
-  id, clinic_id, pet_id, hub_case_id, hub_encounter_id,
+  id, clinic_id, pet_id, hub_case_id, hub_encounter_id, guardian_id,
   exam_type, lab_kind, lab_name,
   external_lab_name, external_order_code, external_result_url,
+  urgency, clinical_indication, fasting_required, collection_instructions, document_status,
   status, requested_at, collected_at, result_at, result_text,
   requested_by, notes, metadata, created_at, updated_at
 `;
@@ -150,9 +160,15 @@ export const createHubClinicalExam = async (req: Request, res: Response) => {
         external_order_code: b.external_order_code ?? null,
         external_result_url: b.external_result_url ?? null,
         requested_by: b.requested_by ?? null,
+        guardian_id: b.guardian_id ?? null,
+        urgency: b.urgency ?? null,
+        clinical_indication: b.clinical_indication ?? null,
+        fasting_required: b.fasting_required ?? false,
+        collection_instructions: b.collection_instructions ?? null,
         notes: b.notes ?? null,
         metadata: b.metadata,
         status: 'requested',
+        document_status: 'active',
       })
       .select(EXAM_SELECT)
       .single();
@@ -191,7 +207,7 @@ export const patchHubClinicalExam = async (req: Request, res: Response) => {
 
     const { data: current } = await supabaseAdmin
       .from('hub_clinical_exams')
-      .select('status, pet_id, hub_case_id, hub_encounter_id, exam_type, clinic_id')
+      .select('status, document_status, pet_id, hub_case_id, hub_encounter_id, exam_type, clinic_id')
       .eq('id', id.data)
       .eq('clinic_id', b.clinic_id)
       .is('deleted_at', null)
@@ -199,6 +215,23 @@ export const patchHubClinicalExam = async (req: Request, res: Response) => {
     if (!current) return res.status(404).json({ error: 'Exame não encontrado' });
 
     const c = current as Record<string, unknown>;
+    const contentFields = [
+      'exam_type',
+      'lab_kind',
+      'lab_name',
+      'external_lab_name',
+      'urgency',
+      'clinical_indication',
+      'fasting_required',
+      'collection_instructions',
+      'notes',
+    ] as const;
+    const touchesContent = contentFields.some((f) => b[f] !== undefined);
+    if (touchesContent && c.document_status === 'issued') {
+      return res.status(409).json({
+        error: 'Exame emitido não pode ser editado. Revogue o documento ou adicione um novo item.',
+      });
+    }
     const patch: Record<string, unknown> = {};
     if (b.exam_type !== undefined) patch.exam_type = b.exam_type;
     if (b.lab_kind !== undefined) patch.lab_kind = b.lab_kind;
@@ -206,6 +239,10 @@ export const patchHubClinicalExam = async (req: Request, res: Response) => {
     if (b.external_lab_name !== undefined) patch.external_lab_name = b.external_lab_name;
     if (b.external_order_code !== undefined) patch.external_order_code = b.external_order_code;
     if (b.external_result_url !== undefined) patch.external_result_url = b.external_result_url;
+    if (b.urgency !== undefined) patch.urgency = b.urgency;
+    if (b.clinical_indication !== undefined) patch.clinical_indication = b.clinical_indication;
+    if (b.fasting_required !== undefined) patch.fasting_required = b.fasting_required;
+    if (b.collection_instructions !== undefined) patch.collection_instructions = b.collection_instructions;
     if (b.status !== undefined) patch.status = b.status;
     if (b.collected_at !== undefined) patch.collected_at = b.collected_at;
     if (b.result_at !== undefined) patch.result_at = b.result_at;

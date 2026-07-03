@@ -668,15 +668,22 @@
 
 /* Hub button styles (if not globally defined) */
 .hub-btn {
-  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
   padding: 0 18px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 14px;
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   border: none;
   font-family: inherit;
-  transition: all 0.15s;
+  box-sizing: border-box;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  text-decoration: none;
 }
 
 .hub-btn:disabled {
@@ -691,6 +698,16 @@
 
 .hub-btn--primary:not(:disabled):hover {
   background: #d9541f;
+}
+
+.hub-btn--secondary {
+  background: #fff;
+  color: var(--hc-text, #4a3b3a);
+  border: 1px solid #e8e4e0;
+}
+
+.hub-btn--secondary:not(:disabled):hover {
+  background: #f5f0eb;
 }
 
 .hub-btn--ghost {

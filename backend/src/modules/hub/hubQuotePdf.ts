@@ -1,9 +1,28 @@
 import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-
-type PdfDoc = InstanceType<typeof PDFDocument>;
+import {
+  PDF_MARGIN,
+  PDF_MUTED,
+  PDF_TEXT,
+  PDF_WHITE,
+  PDF_BORDER,
+  brlPdf,
+  contentWidth,
+  drawDataTableHeader,
+  drawDefinitionRows,
+  drawFineprint,
+  drawNotesCard,
+  drawPageShell,
+  drawPublicDocumentHeader,
+  drawSectionCard,
+  drawTableDivider,
+  drawTotalsCard,
+  embedOnePdf,
+  ensurePdfSpace,
+  measureDefinitionRowsHeight,
+  clientNotesTitlePdf,
+  type PdfDoc,
+} from './hubPublicDocumentPdf';
 
 type QuotePet = {
   id: string;
@@ -42,7 +61,6 @@ type QuoteLine = {
   sort_order: number;
   pricing_variant?: unknown;
   line_pets?: LinePet[];
-  /** PostgREST embed a partir de `hub_service_type_id` */
   hub_service_types?: HubServiceTypeEmbed | HubServiceTypeEmbed[] | null;
 };
 
@@ -53,7 +71,7 @@ type Prospect = {
   email: string | null;
 };
 
-type ClinicEmbed = { name: string | null };
+type ClinicEmbed = { name: string | null; photo_url?: string | null };
 
 type QuoteFull = {
   id: string;
@@ -75,26 +93,14 @@ type QuoteFull = {
   clinic?: ClinicEmbed | ClinicEmbed[] | null;
 };
 
-const ORANGE = '#f0642f';
-const TEXT_DARK = '#4a3b3a';
-const TEXT_MUTED = '#8e6e67';
-const BEIGE = '#faf3ee';
-const BORDER = '#e5dcd6';
-const GREEN_DISC = '#2e7d32';
-
-function brl(n: number): string {
-  return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function embedOne<T>(x: T | T[] | null | undefined): T | null {
-  if (x == null) return null;
-  return Array.isArray(x) ? x[0] ?? null : x;
-}
-
 function clinicDisplayName(quote: QuoteFull): string {
-  const c = embedOne(quote.clinic);
-  const n = c?.name?.trim();
-  return n || 'Clínica';
+  const c = embedOnePdf(quote.clinic);
+  return c?.name?.trim() || 'Clínica';
+}
+
+function clinicLogoUrl(quote: QuoteFull): string | null {
+  const c = embedOnePdf(quote.clinic);
+  return c?.photo_url?.trim() || null;
 }
 
 function pricingVariantPdfSuffix(raw: unknown): string {
@@ -114,10 +120,9 @@ function pricingVariantPdfSuffix(raw: unknown): string {
 function lineServiceEmbed(ln: QuoteLine): HubServiceTypeEmbed | null {
   const raw = ln.hub_service_types;
   if (!raw) return null;
-  return embedOne(raw);
+  return embedOnePdf(raw);
 }
 
-/** Título em destaque + subtítulo (descrição do catálogo ou da linha). */
 function lineServiceTitleAndSubtitle(ln: QuoteLine): { title: string; subtitle: string } {
   const st = lineServiceEmbed(ln);
   const variant = pricingVariantPdfSuffix(ln.pricing_variant);
@@ -134,8 +139,7 @@ function lineServiceTitleAndSubtitle(ln: QuoteLine): { title: string; subtitle: 
 }
 
 function petLabel(p: QuotePet, idx: number): string {
-  const name = (p.display_name && p.display_name.trim()) || `Pet ${idx + 1}`;
-  return `${name} (${p.species})`;
+  return (p.display_name && p.display_name.trim()) || `Pet ${idx + 1}`;
 }
 
 function sizeTierLabelPt(tier: string): string {
@@ -149,280 +153,207 @@ function sizeTierLabelPt(tier: string): string {
   return m[tier] ?? tier.charAt(0).toUpperCase() + tier.slice(1);
 }
 
-function resolvePetmiHubLogoPath(): string | null {
-  const candidates = [
-    path.join(__dirname, '../../../assets/petmi-hub-logo.png'),
-    path.join(__dirname, '../../assets/petmi-hub-logo.png'),
+function discountAmount(quote: QuoteFull): number {
+  if (!quote.discount_kind || quote.discount_value <= 0) return 0;
+  if (quote.discount_kind === 'percent') return quote.subtotal_amount * (quote.discount_value / 100);
+  return quote.discount_value;
+}
+
+function drawPetsTable(doc: PdfDoc, x: number, y: number, width: number, pets: QuotePet[]): number {
+  const cols = [
+    { label: 'Nome', w: 0.28 },
+    { label: 'Espécie', w: 0.22 },
+    { label: 'Raça', w: 0.28 },
+    { label: 'Porte', w: 0.22 },
   ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
-}
-
-function lineUnitPriceColumn(ln: QuoteLine): string {
-  const lps = [...(ln.line_pets ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-  if (lps.length === 0) return brl(ln.unit_price);
-  const prices = lps.map((p) => Math.round(Number(p.unit_price || 0) * 100) / 100);
-  const first = prices[0];
-  if (prices.every((x) => x === first)) return brl(first ?? 0);
-  return '—';
-}
-
-function drawFootersOnAllPages(doc: PdfDoc, logoPath: string | null): void {
-  if (!logoPath) return;
-  const range = doc.bufferedPageRange();
-  const pageW = doc.page.width;
-  const margin = 40;
-  const logoW = 88;
-  const logoH = 28;
-
-  for (let i = range.start; i < range.start + range.count; i++) {
-    doc.switchToPage(i);
-    const footerTop = doc.page.height - margin - logoH - 4;
-    const cx = pageW / 2;
-    try {
-      doc.image(logoPath, cx - logoW / 2, footerTop, { width: logoW, height: logoH, fit: [logoW, logoH] });
-    } catch {
-      /* ignore missing/corrupt image */
-    }
-  }
-}
-
-export function streamQuotePdf(res: Response, quote: QuoteFull): void {
-  const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader(
-    'Content-Disposition',
-    `inline; filename="orcamento-${quote.id.slice(0, 8)}.pdf"`,
-  );
-  doc.pipe(res);
-
-  const prospect = embedOne(quote.prospect);
-  const pets = (quote.pets ?? []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-  const clinicName = clinicDisplayName(quote);
-  const logoPath = resolvePetmiHubLogoPath();
-
-  const margin = 40;
-  const contentW = doc.page.width - margin * 2;
-  const rightBoxW = 200;
-  const leftBlockW = contentW - rightBoxW - 16;
-
-  let y = margin;
-
-  doc.font('Helvetica-Bold').fontSize(14).fillColor(TEXT_DARK).text('Orçamento', margin, y, { width: leftBlockW });
-  y = doc.y + 2;
-  doc.font('Helvetica-Bold').fontSize(22).fillColor(ORANGE).text(clinicName, margin, y, { width: leftBlockW });
-  y = doc.y + 4;
-  doc.font('Helvetica').fontSize(10).fillColor(TEXT_MUTED).text('Proposta personalizada para o seu pet.', margin, y, {
-    width: leftBlockW,
+  const tw = width;
+  let cy = y;
+  let tx = x;
+  doc.font('Helvetica-Bold').fontSize(8).fillColor(PDF_MUTED);
+  cols.forEach((col) => {
+    const w = tw * col.w;
+    doc.text(col.label.toUpperCase(), tx, cy, { width: w });
+    tx += w;
   });
-
-  const boxTop = margin;
-  const boxX = doc.page.width - margin - rightBoxW;
-  const rightBoxH = quote.expires_at ? 58 : 44;
-  doc.save();
-  doc.roundedRect(boxX, boxTop, rightBoxW, rightBoxH, 8).fill(BEIGE);
-  doc.restore();
-
-  let boxY = boxTop + 10;
-  doc.font('Helvetica').fontSize(9).fillColor(TEXT_MUTED).text('Nº ', boxX + 12, boxY, { continued: true });
-  doc.font('Helvetica-Bold').fillColor(ORANGE).text(quote.id.slice(0, 8).toUpperCase(), { continued: false });
-  boxY = doc.y + 4;
-  doc.font('Helvetica').fontSize(8.5).fillColor(TEXT_DARK);
-  doc.text(`Criado em: ${new Date(quote.created_at).toLocaleString('pt-BR')}`, boxX + 12, boxY, { width: rightBoxW - 20 });
-  boxY = doc.y + 2;
-  if (quote.expires_at) {
-    doc.text(`Válido até: ${new Date(quote.expires_at).toLocaleDateString('pt-BR')}`, boxX + 12, boxY, {
-      width: rightBoxW - 20,
-    });
-    boxY = doc.y + 2;
-  }
-
-  y = Math.max(doc.y, boxTop + rightBoxH) + 14;
-
-  doc.moveTo(margin, y).lineTo(doc.page.width - margin, y).strokeColor(BORDER).lineWidth(0.5).stroke();
-  y += 14;
-
-  const colGap = 16;
-  const colW = (contentW - colGap) / 2;
-  const x2 = margin + colW + colGap;
-
-  doc.font('Helvetica-Bold').fontSize(12).fillColor(TEXT_DARK).text('Dados do contato', margin, y);
-  doc.font('Helvetica-Bold').fontSize(12).text('Pets do orçamento', x2, y);
-  y = doc.y + 6;
-
-  doc.save();
-  doc.roundedRect(margin, y, colW, 72, 6).fill(BEIGE);
-  doc.roundedRect(x2, y, colW, Math.max(72, 22 + pets.length * 18), 6).fill(BEIGE);
-  doc.restore();
-
-  const innerPad = 12;
-  let y1 = y + innerPad;
-  doc.font('Helvetica').fontSize(10).fillColor(TEXT_DARK);
-  if (prospect) {
-    doc.text(`Nome: ${prospect.full_name}`, margin + innerPad, y1, { width: colW - innerPad * 2 });
-    y1 = doc.y + 2;
-    doc.text(`Telefone: ${prospect.phone}`, margin + innerPad, y1, { width: colW - innerPad * 2 });
-    y1 = doc.y + 2;
-    if (prospect.tax_id) {
-      doc.text(`CPF: ${prospect.tax_id}`, margin + innerPad, y1, { width: colW - innerPad * 2 });
-      y1 = doc.y + 2;
-    }
-    if (prospect.email) doc.text(`E-mail: ${prospect.email}`, margin + innerPad, y1, { width: colW - innerPad * 2 });
-  } else {
-    doc.text('—', margin + innerPad, y1, { width: colW - innerPad * 2 });
-  }
-
-  let y2 = y + innerPad;
-  if (pets.length === 0) {
-    doc.font('Helvetica').fontSize(10).text('—', x2 + innerPad, y2, { width: colW - innerPad * 2 });
-  } else {
-    const th = ['Nome do pet', 'Espécie', 'Raça', 'Porte'];
-    const cw = [0.28, 0.22, 0.28, 0.22];
-    const tw = colW - innerPad * 2;
-    let tx = x2 + innerPad;
-    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(TEXT_MUTED);
-    th.forEach((h, i) => {
-      const w = tw * cw[i]!;
-      doc.text(h, tx, y2, { width: w });
+  cy = doc.y + 8;
+  doc.font('Helvetica').fontSize(9.5).fillColor(PDF_TEXT);
+  pets.forEach((p, i) => {
+    tx = x;
+    const row = [
+      petLabel(p, i),
+      p.species,
+      p.breed?.trim() || '—',
+      sizeTierLabelPt(p.size_tier || ''),
+    ];
+    row.forEach((cell, j) => {
+      const w = tw * cols[j]!.w;
+      doc.text(cell, tx, cy, { width: w });
       tx += w;
     });
-    y2 = doc.y + 4;
-    doc.font('Helvetica').fontSize(9).fillColor(TEXT_DARK);
-    pets.forEach((p, i) => {
-      tx = x2 + innerPad;
-      const row = [
-        (p.display_name && p.display_name.trim()) || `Pet ${i + 1}`,
-        p.species,
-        p.breed || '—',
-        sizeTierLabelPt(p.size_tier || ''),
-      ];
-      row.forEach((cell, j) => {
-        const w = tw * cw[j]!;
-        doc.text(cell, tx, y2, { width: w });
-        tx += w;
-      });
-      y2 = doc.y + 2;
+    cy = doc.y + 6;
+  });
+  return cy;
+}
+
+function measurePetsTableHeight(pets: QuotePet[]): number {
+  return 22 + pets.length * 16 + 4;
+}
+
+export async function streamQuotePdf(res: Response, quote: QuoteFull): Promise<void> {
+  const doc = new PDFDocument({ size: 'A4', margin: PDF_MARGIN, bufferPages: true });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="orcamento-${quote.id.slice(0, 8)}.pdf"`);
+  doc.pipe(res);
+
+  drawPageShell(doc);
+
+  const prospect = embedOnePdf(quote.prospect);
+  const pets = (quote.pets ?? []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const lines = (quote.lines ?? []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const clinicName = clinicDisplayName(quote);
+  const margin = PDF_MARGIN;
+  const contentW = contentWidth(doc, margin);
+
+  const metaRows = [
+    { label: 'Referência', value: quote.id.slice(0, 8).toUpperCase(), accent: true },
+    { label: 'Criado em', value: new Date(quote.created_at).toLocaleString('pt-BR') },
+  ];
+  if (quote.expires_at) {
+    metaRows.push({
+      label: 'Válido até',
+      value: new Date(quote.expires_at).toLocaleDateString('pt-BR', { dateStyle: 'long' }),
     });
   }
 
-  y = y + Math.max(72, 22 + pets.length * 18) + 18;
+  let y = await drawPublicDocumentHeader(doc, margin, margin, {
+    eyebrow: 'Orçamento',
+    clinicName,
+    tagline: 'Proposta personalizada para o seu pet.',
+    metaRows,
+    clinicLogoUrl: clinicLogoUrl(quote),
+  });
 
-  doc.font('Helvetica-Bold').fontSize(12).fillColor(TEXT_DARK).text('Serviços e valores', margin, y);
-  y = doc.y + 8;
+  const colGap = 14;
+  const colW = (contentW - colGap) / 2;
+  const contactRows = prospect
+    ? [
+        { label: 'Nome', value: prospect.full_name },
+        { label: 'Telefone', value: prospect.phone },
+        ...(prospect.tax_id ? [{ label: 'CPF', value: prospect.tax_id }] : []),
+        ...(prospect.email ? [{ label: 'E-mail', value: prospect.email }] : []),
+      ]
+    : [];
+  const contactBodyH = prospect ? measureDefinitionRowsHeight(contactRows) : 14;
+  const petsBodyH = pets.length > 0 ? measurePetsTableHeight(pets) : 14;
+  const cardsH = Math.max(contactBodyH, petsBodyH) + 36;
 
-  const lines = (quote.lines ?? []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-  const wDesc = 168;
-  const wPets = 168;
-  const wUnit = 86;
-  const wTot = contentW - wDesc - wPets - wUnit;
+  y = ensurePdfSpace(doc, y, cardsH, margin);
 
-  if (lines.length === 0) {
-    doc.font('Helvetica').fontSize(11).text('—', margin, y);
-    y = doc.y + 16;
+  const contactCard = drawSectionCard(doc, margin, y, colW, 'Dados do contato', contactBodyH);
+  if (prospect) {
+    drawDefinitionRows(doc, contactCard.innerX, contactCard.innerY, colW - 32, contactRows);
   } else {
-    doc.save();
-    doc.rect(margin, y, contentW, 22).fill(BEIGE);
-    doc.restore();
-    doc.font('Helvetica-Bold').fontSize(9).fillColor(TEXT_MUTED);
-    let hx = margin + 8;
-    doc.text('SERVIÇO', hx, y + 6, { width: wDesc - 8 });
-    hx += wDesc;
-    doc.text('DETALHES POR PET', hx, y + 6, { width: wPets - 8 });
-    hx += wPets;
-    doc.text('VALOR UNIT.', hx, y + 6, { width: wUnit - 8, align: 'right' });
-    hx += wUnit;
-    doc.text('TOTAL', hx, y + 6, { width: wTot - 8, align: 'right' });
-    y += 26;
+    doc.font('Helvetica').fontSize(10).fillColor(PDF_MUTED).text('—', contactCard.innerX, contactCard.innerY);
+  }
 
-    doc.font('Helvetica').fontSize(10).fillColor(TEXT_DARK);
+  const petsX = margin + colW + colGap;
+  const petsCard = drawSectionCard(doc, petsX, y, colW, 'Pets', petsBodyH);
+  if (pets.length === 0) {
+    doc.font('Helvetica').fontSize(10).fillColor(PDF_MUTED).text('—', petsCard.innerX, petsCard.innerY);
+  } else {
+    drawPetsTable(doc, petsCard.innerX, petsCard.innerY, colW - 32, pets);
+  }
+
+  y = Math.max(contactCard.bottom, petsCard.bottom) + 16;
+
+  const servicesTitleH = 42;
+  const servicesRowH = 26;
+  const servicesH = servicesTitleH + (lines.length > 0 ? 24 + lines.length * servicesRowH : 40);
+  y = ensurePdfSpace(doc, y, servicesH, margin);
+
+  doc.save();
+  doc.roundedRect(margin, y, contentW, servicesH, 12).fill(PDF_WHITE);
+  doc.roundedRect(margin, y, contentW, servicesH, 12).strokeColor(PDF_BORDER).lineWidth(1).stroke();
+  doc.restore();
+  doc.font('Helvetica-Bold').fontSize(11.5).fillColor(PDF_TEXT).text('Serviços e valores', margin + 16, y + 16);
+
+  let tableY = y + 40;
+  if (lines.length === 0) {
+    doc.font('Helvetica').fontSize(10).fillColor(PDF_MUTED).text('Sem linhas de serviço.', margin + 16, tableY);
+    tableY += 24;
+  } else {
+    const petColW = pets.length > 0 ? Math.min(72, (contentW - 200) / pets.length) : 0;
+    const wDesc = contentW - 90 - petColW * pets.length - 32;
+    const columns = [
+      { label: 'Serviço', width: wDesc, align: 'left' as const },
+      ...pets.map((p, i) => ({ label: petLabel(p, i), width: petColW, align: 'right' as const })),
+      { label: 'Total linha', width: 90, align: 'right' as const },
+    ];
+    tableY = drawDataTableHeader(doc, margin + 8, tableY, contentW - 16, columns);
+
     lines.forEach((ln) => {
-      const rowTop = y;
+      tableY = ensurePdfSpace(doc, tableY, servicesRowH + 8, margin);
+      const rowTop = tableY;
       const { title, subtitle } = lineServiceTitleAndSubtitle(ln);
-      doc.font('Helvetica-Bold').fontSize(10).fillColor(TEXT_DARK).text(title, margin + 4, y, { width: wDesc - 8 });
-      const titleBottom = doc.y;
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(PDF_TEXT).text(title, margin + 18, rowTop, {
+        width: wDesc - 12,
+      });
       if (subtitle) {
-        doc.font('Helvetica').fontSize(8.5).fillColor(TEXT_MUTED).text(subtitle, margin + 4, doc.y + 1, {
-          width: wDesc - 8,
+        doc.font('Helvetica').fontSize(8.5).fillColor(PDF_MUTED).text(subtitle, margin + 18, doc.y + 1, {
+          width: wDesc - 12,
         });
       }
-      const lpBreakdown = (ln.line_pets ?? [])
-        .map((lp) => {
-          const pet = pets.find((p) => p.id === lp.quote_pet_id);
-          if (!pet) return null;
-          const idx = pets.indexOf(pet);
-          return `${petLabel(pet, idx)}: ${brl(lp.unit_price)}`;
-        })
-        .filter(Boolean)
-        .join('\n');
-      const breakdownText = lpBreakdown || `Qtd ${ln.quantity} × ${brl(ln.unit_price)}`;
-      doc.font('Helvetica').fontSize(9).fillColor(TEXT_DARK).text(breakdownText, margin + wDesc + 4, rowTop, {
-        width: wPets - 8,
-      });
-      const midY = Math.max(doc.y, titleBottom + (subtitle ? 12 : 0));
-
-      doc
-        .font('Helvetica')
-        .fontSize(9)
-        .fillColor(TEXT_MUTED)
-        .text(lineUnitPriceColumn(ln), margin + wDesc + wPets + 4, rowTop, {
-          width: wUnit - 8,
+      let px = margin + 18 + wDesc;
+      pets.forEach((p) => {
+        const lp = (ln.line_pets ?? []).find((x) => x.quote_pet_id === p.id);
+        doc.font('Helvetica').fontSize(9).fillColor(PDF_TEXT).text(lp ? brlPdf(Number(lp.unit_price)) : '—', px, rowTop, {
+          width: petColW - 6,
           align: 'right',
         });
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(10)
-        .fillColor(TEXT_DARK)
-        .text(brl(ln.line_total), margin + wDesc + wPets + wUnit + 4, rowTop, { width: wTot - 8, align: 'right' });
-
-      y = Math.max(midY, rowTop + 18) + 8;
-      doc.moveTo(margin, y - 4).lineTo(margin + contentW, y - 4).strokeColor('#f5efea').lineWidth(0.5).stroke();
+        px += petColW;
+      });
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(PDF_TEXT).text(brlPdf(ln.line_total), px, rowTop, {
+        width: 82,
+        align: 'right',
+      });
+      tableY = Math.max(doc.y, rowTop + 18) + 6;
+      drawTableDivider(doc, margin + 8, tableY, contentW - 16);
+      tableY += 4;
     });
   }
 
-  y += 12;
-  doc.font('Helvetica').fontSize(11).fillColor(TEXT_DARK);
-  doc.text(`Subtotal: ${brl(quote.subtotal_amount)}`, margin, y, { width: contentW, align: 'right' });
-  y = doc.y + 4;
-  if (quote.discount_kind && quote.discount_value > 0) {
-    const label = quote.discount_kind === 'percent' ? `Desconto (${quote.discount_value}%)` : 'Desconto';
-    const amount =
-      quote.discount_kind === 'percent'
-        ? quote.subtotal_amount * (quote.discount_value / 100)
-        : quote.discount_value;
-    doc.fillColor(GREEN_DISC).text(`${label}: −${brl(amount)}`, margin, y, { width: contentW, align: 'right' });
-    y = doc.y + 4;
-  }
-  doc.font('Helvetica-Bold').fontSize(18).fillColor(ORANGE);
-  doc.text(`Total: ${brl(quote.total_amount)}`, margin, y, { width: contentW, align: 'right' });
-  y = doc.y + 20;
+  y = y + servicesH + 8;
 
-  doc.font('Helvetica-Bold').fontSize(12).fillColor(TEXT_DARK).text('Observações', margin, y);
-  y = doc.y + 6;
-  doc.font('Helvetica').fontSize(9).fillColor(TEXT_MUTED);
-  const bullets: string[] = [];
-  if (quote.expires_at) {
-    bullets.push(
-      `Esta proposta é válida até ${new Date(quote.expires_at).toLocaleDateString('pt-BR', { dateStyle: 'long' })}.`,
-    );
-  }
-  bullets.push('Valores e horários estão sujeitos à disponibilidade da unidade.');
-  bullets.push('Este orçamento é temporário e não cria cadastros no sistema até ser aprovado.');
-  bullets.forEach((b) => {
-    doc.text(`• ${b}`, margin, y, { width: contentW });
-    y = doc.y + 3;
-  });
-  y += 8;
-
-  if (quote.client_notes) {
-    doc.font('Helvetica-Bold').fontSize(11).fillColor(TEXT_DARK).text('Mensagem para o cliente', margin, y);
-    y = doc.y + 4;
-    doc.font('Helvetica').fontSize(10).fillColor(TEXT_DARK).text(quote.client_notes, margin, y, { width: contentW });
-    y = doc.y + 12;
+  if (quote.client_notes?.trim()) {
+    y = drawNotesCard(doc, margin, y, contentW, clientNotesTitlePdf(clinicName), quote.client_notes.trim());
   }
 
-  doc.moveDown(1);
-  drawFootersOnAllPages(doc, logoPath);
+  const disc = discountAmount(quote);
+  const totalRows = [
+    { label: 'Subtotal', value: brlPdf(quote.subtotal_amount) },
+    ...(disc > 0
+      ? [
+          {
+            label:
+              quote.discount_kind === 'percent'
+                ? `Desconto (${Math.min(100, Math.max(0, quote.discount_value))}%)`
+                : 'Desconto',
+            value: `−${brlPdf(disc)}`,
+            kind: 'discount' as const,
+          },
+        ]
+      : []),
+    { label: 'Total', value: brlPdf(quote.total_amount), kind: 'grand' as const },
+  ];
+  y = drawTotalsCard(doc, margin, y, contentW, totalRows);
+
+  y = drawFineprint(
+    doc,
+    margin,
+    y,
+    contentW,
+    'Valores e horários dependem da disponibilidade da clínica. Este documento é uma proposta; não cria reserva nem cadastro automático.',
+  );
+
   doc.end();
 }

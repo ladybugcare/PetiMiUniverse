@@ -21,6 +21,19 @@ export function clinicDisplayName(quote: HubQuote): string | null {
   return n || null;
 }
 
+export function clinicDisplayLogoUrl(
+  clinic: HubQuote['clinic'],
+): string | null {
+  const c = embedOne(clinic);
+  const url = c?.photo_url?.trim();
+  return url || null;
+}
+
+export function clientNotesSectionTitle(clinicName: string | null | undefined): string {
+  const name = clinicName?.trim() || 'A clínica';
+  return `${name} adicionou a observação abaixo`;
+}
+
 export function sizeTierLabelPt(tier: string): string {
   const m: Record<string, string> = {
     mini: 'Mini',
