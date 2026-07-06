@@ -11,6 +11,9 @@ export type PanelAction = {
   disabled?: boolean;
 };
 
+import type { OperationalModule } from './walkInUtils';
+import { operationalOpenLabel } from './walkInUtils';
+
 export function buildPanelActions(
   status: AgendaStatus,
   canWrite: boolean,
@@ -21,10 +24,12 @@ export function buildPanelActions(
     onOpenCheckout: () => void;
     onOpenComanda: () => void;
     onOpenInClinic: () => void;
+    onOpenInGrooming: () => void;
+    onOpenInBoarding: () => void;
     onDuplicate: () => void;
     onCancel: () => void;
   },
-  onOpenInClinic?: (id: string) => void,
+  operationalModule?: OperationalModule | null,
   canOpenComanda?: boolean,
 ): { primary: PanelAction | null; secondary: PanelAction | null; menu: PanelAction[] } {
   const dup: PanelAction = {
@@ -52,6 +57,15 @@ export function buildPanelActions(
       }
     : null;
 
+  const operationalPrimary: PanelAction | null =
+    operationalModule === 'clinical'
+      ? { key: 'open-clinic', label: operationalOpenLabel('clinical'), variant: 'primary', onClick: handlers.onOpenInClinic }
+      : operationalModule === 'grooming'
+        ? { key: 'open-grooming', label: operationalOpenLabel('grooming'), variant: 'primary', onClick: handlers.onOpenInGrooming }
+        : operationalModule === 'boarding'
+          ? { key: 'open-boarding', label: operationalOpenLabel('boarding'), variant: 'primary', onClick: handlers.onOpenInBoarding }
+          : null;
+
   switch (status) {
     case 'pending_confirm':
       return {
@@ -71,8 +85,8 @@ export function buildPanelActions(
       };
     case 'checked_in':
       return {
-        primary: canWrite && onOpenInClinic
-          ? { key: 'open-clinic', label: 'Iniciar atendimento', variant: 'primary', onClick: handlers.onOpenInClinic }
+        primary: canWrite && operationalPrimary
+          ? operationalPrimary
           : canWrite
             ? { key: 'complete', label: 'Concluir', variant: 'primary', onClick: handlers.onComplete }
             : null,
@@ -81,8 +95,8 @@ export function buildPanelActions(
       };
     case 'in_progress':
       return {
-        primary: canWrite && onOpenInClinic
-          ? { key: 'open-clinic', label: 'Continuar atendimento', variant: 'primary', onClick: handlers.onOpenInClinic }
+        primary: canWrite && operationalPrimary
+          ? { ...operationalPrimary, label: operationalModule === 'clinical' ? 'Continuar atendimento' : operationalPrimary.label }
           : canWrite
             ? { key: 'complete', label: 'Concluir', variant: 'primary', onClick: handlers.onComplete }
             : null,
@@ -122,6 +136,7 @@ export function appointmentKindLabel(kind: string | undefined): string {
   if (kind === 'pickup_route') return 'Leva e traz';
   if (kind === 'clinical_walk_in') return 'Encaixe clínico (atendimento imediato)';
   if (kind === 'clinical_emergency') return 'Emergência na agenda';
+  if (kind === 'walk_in') return 'Encaixe / walk-in';
   if (kind === 'standard') return 'Agendamento';
   return 'Atendimento';
 }

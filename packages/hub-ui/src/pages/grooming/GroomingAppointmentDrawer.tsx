@@ -19,6 +19,7 @@ import {
 import type { GroomingQuickAction } from './GroomingQueueBoard';
 import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
+import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { renderTemplate } from '../../utils/hubMessageTemplates';
 import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
@@ -358,7 +359,7 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
         <section className="hub-grooming-drawer__section">
           <h4 className="hub-grooming-drawer__heading">Tutor</h4>
           <p>{tutor}</p>
-          {phone ? <p className="hub-clientes__muted">Tel.: {phone}</p> : null}
+          {phone ? <p className="hub-clientes__muted">Tel.: {formatBrPhoneDisplay(phone)}</p> : null}
           {notifyTutorHref ? (
             <a
               className="hub-clientes__btn hub-clientes__btn--primary"

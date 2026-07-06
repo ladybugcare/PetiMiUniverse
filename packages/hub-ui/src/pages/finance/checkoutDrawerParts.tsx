@@ -1,5 +1,6 @@
 import React, { forwardRef } from 'react';
 import { Phone, User } from 'lucide-react';
+import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 
 export type CheckoutDrawerHeroProps = {
   guardianName: string;
@@ -24,7 +25,7 @@ export function CheckoutDrawerHero({
         {guardianPhone ? (
           <div className="hub-checkout-drawer__hero-row hub-clientes__muted">
             <Phone size={14} aria-hidden />
-            <span>{guardianPhone}</span>
+            <span>{formatBrPhoneDisplay(guardianPhone)}</span>
           </div>
         ) : null}
         {petNames.length > 0 ? (

@@ -8,6 +8,8 @@ const auditLog_1 = require("../../utils/auditLog");
 const emailService_1 = require("../../utils/emailService");
 const permissions_1 = require("../../utils/permissions");
 const notificationsController_1 = require("../../controllers/notificationsController");
+const hubInvitationUtils_1 = require("./hubInvitationUtils");
+const hubStaffSpecialties_1 = require("./hubStaffSpecialties");
 const uuidStr = zod_1.z.string().uuid();
 const STAFF_SELECT = 'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, has_hub_access, hub_access_email, hub_access_role, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
 const professionalKindSchema = zod_1.z.enum([
@@ -20,7 +22,14 @@ const professionalKindSchema = zod_1.z.enum([
     'assistant',
     'other',
 ]);
-const hubAccessRoleSchema = zod_1.z.enum(['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL']);
+const hubAccessRoleSchema = zod_1.z.enum([
+    'CADMIN',
+    'CMANAGER',
+    'CASSISTANT',
+    'CVET_INTERNAL',
+    'CGROOMER',
+    'CFINANCE',
+]);
 const optionalTrim = (max) => zod_1.z
     .union([zod_1.z.string(), zod_1.z.null(), zod_1.z.undefined()])
     .transform((v) => (v === undefined || v === null ? undefined : String(v).trim()))
@@ -39,6 +48,19 @@ const optionalBirthDate = zod_1.z
     .refine((v) => v === undefined || v === null || /^\d{4}-\d{2}-\d{2}$/.test(v), {
     message: 'Data de nascimento inválida (AAAA-MM-DD)',
 });
+const staffSpecialtiesSchema = zod_1.z
+    .union([zod_1.z.array(zod_1.z.string()), zod_1.z.null(), zod_1.z.undefined()])
+    .optional()
+    .transform((v) => {
+    if (v === undefined)
+        return undefined;
+    if (v === null)
+        return [];
+    return (0, hubStaffSpecialties_1.sanitizeStaffSpecialtiesInput)(v);
+})
+    .refine((v) => v === undefined || v.length <= hubStaffSpecialties_1.STAFF_SPECIALTIES_MAX_ITEMS, {
+    message: `Máximo de ${hubStaffSpecialties_1.STAFF_SPECIALTIES_MAX_ITEMS} especialidades`,
+});
 const createStaffSchema = zod_1.z
     .object({
     clinic_id: uuidStr,
@@ -51,7 +73,7 @@ const createStaffSchema = zod_1.z
     birth_date: optionalBirthDate,
     job_title: zod_1.z.string().trim().min(1, 'Função/cargo é obrigatório').max(200),
     professional_kind: professionalKindSchema,
-    specialties: optionalTrim(4000).optional(),
+    specialties: staffSpecialtiesSchema,
     crmv: optionalTrim(64).optional(),
     crmv_uf: optionalTrim(4).optional(),
     internal_notes: optionalTrim(8000).optional(),
@@ -245,6 +267,7 @@ const createHubStaff = async (req, res) => {
                 error: 'Nenhum dos tipos de serviço indicados está ativo nesta clínica (podem estar arquivados).',
             });
         }
+        const specialties = d.specialties === undefined ? [] : await (0, hubStaffSpecialties_1.normalizeStaffSpecialtiesForStorage)(d.specialties);
         const insertRow = {
             clinic_id: d.clinic_id,
             full_name: d.full_name,
@@ -256,7 +279,7 @@ const createHubStaff = async (req, res) => {
             birth_date: d.birth_date ?? null,
             job_title: d.job_title,
             professional_kind: d.professional_kind,
-            specialties: d.specialties ?? null,
+            specialties,
             crmv: d.crmv ?? null,
             crmv_uf: d.crmv_uf ?? null,
             internal_notes: d.internal_notes ?? null,
@@ -319,8 +342,9 @@ const patchHubStaff = async (req, res) => {
             patch.job_title = d.job_title;
         if (d.professional_kind !== undefined)
             patch.professional_kind = d.professional_kind;
-        if (d.specialties !== undefined)
-            patch.specialties = d.specialties;
+        if (d.specialties !== undefined) {
+            patch.specialties = await (0, hubStaffSpecialties_1.normalizeStaffSpecialtiesForStorage)(d.specialties);
+        }
         if (d.crmv !== undefined)
             patch.crmv = d.crmv;
         if (d.crmv_uf !== undefined)
@@ -423,6 +447,11 @@ const inviteHubStaff = async (req, res) => {
         const { data: unitCheck } = await supabase_1.supabaseAdmin.from('units').select('id, clinic_id').eq('id', unit_id).maybeSingle();
         if (!unitCheck || unitCheck.clinic_id !== clinic_id)
             return res.status(400).json({ error: 'Unidade inválida' });
+        if (await (0, hubInvitationUtils_1.authUserExistsForEmail)(email)) {
+            return res.status(409).json({
+                error: 'Este e-mail já possui conta. No MVP, use um e-mail novo para convites.',
+            });
+        }
         const { data: existingUnitUsers } = await supabase_1.supabaseAdmin
             .from('clinic_users')
             .select('user_id')
@@ -459,6 +488,7 @@ const inviteHubStaff = async (req, res) => {
                 invited_by,
                 token,
                 expires_at,
+                staff_member_id: staffId,
             },
         ])
             .select();
@@ -466,9 +496,17 @@ const inviteHubStaff = async (req, res) => {
             console.error('[hub_staff] invite insert', invErr);
             return res.status(400).json({ error: invErr?.message || 'Erro ao criar convite' });
         }
-        await (0, emailService_1.sendInvitationEmail)(email, token, clinic_id, unit_id, (0, permissions_1.getRoleDisplayName)(role));
+        const invitation_url = (0, hubInvitationUtils_1.buildInvitationUrl)(token);
         const { data: clinic } = await supabase_1.supabaseAdmin.from('clinics').select('name').eq('id', clinic_id).single();
         const { data: unit } = await supabase_1.supabaseAdmin.from('units').select('name').eq('id', unit_id).single();
+        const share_message = (0, hubInvitationUtils_1.buildInvitationShareMessage)({
+            clinicName: clinic?.name || 'sua clínica',
+            unitName: unit?.name || 'unidade',
+            role,
+            invitationUrl: invitation_url,
+            inviteeName: row.full_name,
+        });
+        await (0, emailService_1.sendInvitationEmail)(email, token, clinic_id, unit_id, (0, permissions_1.getRoleDisplayName)(role), invitation_url);
         try {
             const { data: usersData } = await supabase_1.supabaseAdmin.auth.admin.listUsers();
             const existingAuthUser = usersData?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
@@ -498,7 +536,11 @@ const inviteHubStaff = async (req, res) => {
             new_values: { email, role, staff_id: staffId },
             ...metadata,
         });
-        return res.status(201).json({ invitation: invRows[0] });
+        return res.status(201).json({
+            invitation: invRows[0],
+            invitation_url,
+            share_message,
+        });
     }
     catch (error) {
         console.error('[hub_staff] invite', error);

@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Calendar } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
@@ -84,6 +86,11 @@ const BoardingWalkInPanel: React.FC<Props> = ({ open, clinicId, unitId: _unitId,
       }
     >
       <div className="hub-clientes__form-stack">
+        <p className="nam-muted" style={{ marginBottom: 8 }}>
+          <Link to="/hub/appointments?openWalkIn=1" className="hub-btn hub-btn--link" onClick={onClose}>
+            <Calendar size={14} aria-hidden /> Registrar pela Agenda (recepção)
+          </Link>
+        </p>
         <div className="hub-servicos__filter-field">
           <span className="hub-clientes__label">Pet</span>
           <HubSearchableCombobox

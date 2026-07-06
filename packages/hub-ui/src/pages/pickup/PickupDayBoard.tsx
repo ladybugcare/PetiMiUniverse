@@ -4,6 +4,7 @@ import { ArrowDownToLine, ArrowUpFromLine, HelpCircle } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import type { PickupDayBoardItem, PickupDirection } from '../../api/hubPickupApi';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
+import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { renderTemplate } from '../../utils/hubMessageTemplates';
 import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
@@ -106,7 +107,7 @@ function PickupCard({
 
       <div className="hub-pickup-card__meta">
         {item.guardian?.full_name ?? '—'}
-        {item.guardian?.phone ? ` · ${item.guardian.phone}` : ''}
+        {item.guardian?.phone ? ` · ${formatBrPhoneDisplay(item.guardian.phone)}` : ''}
       </div>
 
       {item.address ? (

@@ -4,6 +4,7 @@ const express_1 = require("express");
 const authMiddleware_1 = require("../../../middleware/authMiddleware");
 const rateLimiter_js_1 = require("../../../middleware/rateLimiter.js");
 const hubSignupController_js_1 = require("../hubSignupController.js");
+const hubInvitationsController_js_1 = require("../hubInvitationsController.js");
 const hubMessageLogsController_1 = require("../hubMessageLogsController");
 const guardiansController_1 = require("../guardiansController");
 const hubPetsController_1 = require("../hubPetsController");
@@ -30,6 +31,7 @@ const hubClinicalExamsController_1 = require("../hubClinicalExamsController");
 const hubExamOrderDocumentsController_1 = require("../hubExamOrderDocumentsController");
 const hubSpecialistReferralsController_1 = require("../hubSpecialistReferralsController");
 const hubClinicalModulesController_1 = require("../hubClinicalModulesController");
+const hubVetCockpitController_js_1 = require("../hubVetCockpitController.js");
 const hubQuotesController_1 = require("../hubQuotesController");
 const hubFinancialController_1 = require("../hubFinancialController");
 const hubComandasController_1 = require("../hubComandasController");
@@ -52,8 +54,12 @@ router.get('/health', (_req, res) => {
 });
 /** Cadastro Hub (público) e onboarding clínica+unidade */
 router.post('/signup', rateLimiter_js_1.authLimiter, hubSignupController_js_1.postHubSignup);
+/** Convites Hub (público) */
+router.get('/invitations/preview', rateLimiter_js_1.authLimiter, hubInvitationsController_js_1.previewHubInvitation);
+router.post('/invitations/signup', rateLimiter_js_1.authLimiter, hubInvitationsController_js_1.signupFromHubInvitation);
 /** Limite dedicado ao Hub autenticado (polling, modais com vários GETs). */
 router.use(rateLimiter_js_1.hubApiLimiter);
+router.get('/invitations/check-email', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.staff.invite'), hubInvitationsController_js_1.checkHubInviteEmail);
 router.post('/onboarding/clinic', authMiddleware_1.authenticateUser, hubSignupController_js_1.postHubOnboardingClinic);
 router.get('/session/context', authMiddleware_1.authenticateUser, hubSessionController_js_1.getHubSessionContext);
 router.post('/profile/me/photo', authMiddleware_1.authenticateUser, hubProfilePhotoController_js_1.postHubUserProfilePhoto);
@@ -199,6 +205,7 @@ router.get('/clinical/cases/:id', authMiddleware_1.authenticateUser, (0, authMid
 router.post('/clinical/cases', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalCasesController_1.createHubClinicalCase);
 router.patch('/clinical/cases/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalCasesController_1.patchHubClinicalCase);
 router.delete('/clinical/cases/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalCasesController_1.deleteHubClinicalCase);
+router.get('/clinical/cockpit/patient-context', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubVetCockpitController_js_1.getHubVetCockpitPatientContext);
 router.get('/clinical/pet-flags', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubPetClinicalFlags);
 router.post('/clinical/pet-flags', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.upsertHubPetClinicalFlag);
 router.get('/clinical/encounter-events', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubEncounterEvents);

@@ -11,7 +11,7 @@ const HUB_INTERNAL_LANDING: Partial<Record<AppRole, string>> = {
   CADMIN: '/hub/dashboard',
   CMANAGER: '/hub/dashboard',
   CASSISTANT: '/hub/appointments',
-  CVET_INTERNAL: '/hub/clinica/atendimentos',
+  CVET_INTERNAL: '/hub/clinica',
   CGROOMER: '/hub/banho-tosa',
   CFINANCE: '/hub/financeiro',
 };

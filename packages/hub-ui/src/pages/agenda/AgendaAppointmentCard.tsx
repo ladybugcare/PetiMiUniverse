@@ -79,7 +79,11 @@ function CardBadges({
     );
   }
 
-  if (appt.appointment_kind === 'clinical_walk_in' || appt.appointment_kind === 'clinical_emergency') {
+  if (
+    appt.appointment_kind === 'walk_in' ||
+    appt.appointment_kind === 'clinical_walk_in' ||
+    appt.appointment_kind === 'clinical_emergency'
+  ) {
     const isEmergency = appt.appointment_kind === 'clinical_emergency';
     badges.push(
       <span

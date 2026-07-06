@@ -2,7 +2,14 @@ import type { Request, Response } from 'express';
 import { supabaseAdmin } from '../../config/supabase.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 
-const ALLOWED_CLINIC_ROLES = new Set(['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL']);
+const ALLOWED_CLINIC_ROLES = new Set([
+  'CADMIN',
+  'CMANAGER',
+  'CASSISTANT',
+  'CVET_INTERNAL',
+  'CGROOMER',
+  'CFINANCE',
+]);
 
 function pickClinicUserRow(rows: Array<Record<string, unknown>>) {
   const withClinic = (r: Record<string, unknown>) =>

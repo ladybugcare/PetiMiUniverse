@@ -2,6 +2,11 @@ import { Router } from 'express';
 import { authenticateUser, requirePermission } from '../../../middleware/authMiddleware';
 import { authLimiter, hubApiLimiter } from '../../../middleware/rateLimiter.js';
 import { postHubSignup, postHubOnboardingClinic } from '../hubSignupController.js';
+import {
+  previewHubInvitation,
+  signupFromHubInvitation,
+  checkHubInviteEmail,
+} from '../hubInvitationsController.js';
 import { postHubMessageLog } from '../hubMessageLogsController';
 import {
   listHubGuardians,
@@ -177,6 +182,7 @@ import {
   patchHubSurgery,
   getHubClinicalAlerts,
 } from '../hubClinicalModulesController';
+import { getHubVetCockpitPatientContext } from '../hubVetCockpitController.js';
 import {
   listHubQuotes,
   getHubQuote,
@@ -287,8 +293,19 @@ router.get('/health', (_req, res) => {
 /** Cadastro Hub (público) e onboarding clínica+unidade */
 router.post('/signup', authLimiter, postHubSignup);
 
+/** Convites Hub (público) */
+router.get('/invitations/preview', authLimiter, previewHubInvitation);
+router.post('/invitations/signup', authLimiter, signupFromHubInvitation);
+
 /** Limite dedicado ao Hub autenticado (polling, modais com vários GETs). */
 router.use(hubApiLimiter);
+
+router.get(
+  '/invitations/check-email',
+  authenticateUser,
+  requirePermission('hub.staff.invite'),
+  checkHubInviteEmail,
+);
 
 router.post('/onboarding/clinic', authenticateUser, postHubOnboardingClinic);
 router.get('/session/context', authenticateUser, getHubSessionContext);
@@ -744,6 +761,13 @@ router.get('/clinical/cases/:id', authenticateUser, requirePermission('hub.clini
 router.post('/clinical/cases', authenticateUser, requirePermission('hub.clinic.write'), createHubClinicalCase);
 router.patch('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubClinicalCase);
 router.delete('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.write'), deleteHubClinicalCase);
+
+router.get(
+  '/clinical/cockpit/patient-context',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  getHubVetCockpitPatientContext,
+);
 
 router.get(
   '/clinical/pet-flags',

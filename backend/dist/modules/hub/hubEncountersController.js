@@ -144,6 +144,7 @@ const createEncounterSchema = zod_1.z
     message: 'pet_id é obrigatório para atendimentos não-emergência',
     path: ['pet_id'],
 });
+const operationalPhaseSchema = zod_1.z.union([zod_1.z.enum(['awaiting_exams', 'exams_returned']), zod_1.z.null()]);
 const patchEncounterSchema = zod_1.z
     .object({
     clinic_id: uuidStr,
@@ -158,6 +159,7 @@ const patchEncounterSchema = zod_1.z
     // Campos de identificação posterior (urgência sem pet/tutor).
     pet_id: uuidStr.optional().nullable(),
     hub_case_id: uuidStr.optional().nullable(),
+    operational_phase: operationalPhaseSchema.optional(),
 })
     .strict();
 const amendEncounterSchema = zod_1.z
@@ -176,7 +178,7 @@ const amendEncounterSchema = zod_1.z
 const ENCOUNTER_SELECT = `
   id, clinic_id, unit_id, pet_id, guardian_id, hub_appointment_id, hub_staff_member_id,
   hub_case_id, encounter_type,
-  status, chief_complaint, summary_notes, anamnesis, physical_exam, diagnosis,
+  status, operational_phase, chief_complaint, summary_notes, anamnesis, physical_exam, diagnosis,
   started_at, completed_at, created_at, updated_at
 `;
 async function getOperationalClinicalServiceTypeIds(clinicId) {
@@ -972,7 +974,7 @@ const patchHubEncounter = async (req, res) => {
         const b = parsed.data;
         const { data: existingRow, error: exErr } = await supabase_1.supabaseAdmin
             .from('hub_encounters')
-            .select('id, pet_id, guardian_id, clinic_id, status, hub_case_id')
+            .select('id, pet_id, guardian_id, clinic_id, status, hub_case_id, operational_phase')
             .eq('id', id.data)
             .eq('clinic_id', b.clinic_id)
             .is('deleted_at', null)
@@ -984,6 +986,13 @@ const patchHubEncounter = async (req, res) => {
         const existing = existingRow;
         if (existing.status === 'completed') {
             return res.status(400).json({ error: 'Use o endpoint de emenda para editar atendimentos já finalizados.' });
+        }
+        if (b.operational_phase !== undefined) {
+            if (existing.status !== 'in_progress') {
+                return res.status(400).json({
+                    error: 'Fase operacional só pode ser alterada em atendimentos em andamento.',
+                });
+            }
         }
         // Validação de guardian_id: não remover, mas permitir primeira atribuição a partir de null.
         if (b.guardian_id !== undefined) {
@@ -1069,6 +1078,8 @@ const patchHubEncounter = async (req, res) => {
             patch.pet_id = b.pet_id;
         if (b.hub_case_id !== undefined)
             patch.hub_case_id = b.hub_case_id;
+        if (b.operational_phase !== undefined)
+            patch.operational_phase = b.operational_phase;
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_encounters')
             .update(patch)

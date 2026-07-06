@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS public.hub_staff_members (
   professional_kind text NOT NULL CHECK (professional_kind IN (
     'vet', 'groomer', 'bather', 'reception', 'driver', 'caretaker', 'assistant', 'other'
   )),
-  specialties text,
+  specialties text[] NOT NULL DEFAULT '{}'::text[],
   crmv text,
   crmv_uf text,
   internal_notes text,

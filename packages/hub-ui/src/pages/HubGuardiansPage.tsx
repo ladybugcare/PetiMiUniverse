@@ -25,6 +25,7 @@ import { GuardianDetailPanel } from './clientes/GuardianDetailPanel';
 import { formValuesToCreatePayload, formValuesToUpdatePayload } from './clientes/guardianFormPayload';
 import { hubQuotesApi, type HubQuote } from '../api/hubQuotesApi';
 import { quoteProspectToGuardianFormValues, prospectFromQuote } from './orcamentos/quoteToGuardianForm';
+import { formatBrPhoneDisplay } from '../utils/formatBrPhone';
 import { clearManualQuoteConversion } from './orcamentos/quoteManualConversionStorage';
 
 const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
@@ -427,7 +428,7 @@ const HubGuardiansPage: React.FC = () => {
                 </div>
                 <div>
                   <dt style={{ fontWeight: 600, color: 'var(--hub-text, #333)' }}>Telefone</dt>
-                  <dd style={{ margin: 0 }}>{form.phone || '—'}</dd>
+                  <dd style={{ margin: 0 }}>{formatBrPhoneDisplay(form.phone)}</dd>
                 </div>
                 <div>
                   <dt style={{ fontWeight: 600, color: 'var(--hub-text, #333)' }}>CPF / CNPJ</dt>

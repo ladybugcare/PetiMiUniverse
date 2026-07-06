@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Building2 } from 'lucide-react';
-import { HubCancelButton, HubSidePanel, HubSearchableCombobox } from '@petimi/hub-ui';
+import { HubCancelButton, HubSidePanel, HubSearchableCombobox, HubBrPhoneInput, formatBrPhoneFromApi } from '@petimi/hub-ui';
 import '@petimi/hub-ui/pages/clientes/clientes.css';
 import { hubClinicProfileApi } from '../../services/hubClinicProfileApi';
 import { BRAZILIAN_UF_COMBO_OPTIONS } from '../../utils/brValidators';
@@ -39,7 +39,7 @@ const HubClinicEditPanel: React.FC<HubClinicEditPanelProps> = ({
     if (!open) return;
     setForm({
       name: clinic.name?.trim() || '',
-      phone: clinic.phone?.trim() || '',
+      phone: formatBrPhoneFromApi(clinic.phone?.trim() || ''),
       address: clinic.address?.trim() || '',
       city: clinic.city?.trim() || '',
       state: clinic.state?.trim() || 'SP',
@@ -112,11 +112,11 @@ const HubClinicEditPanel: React.FC<HubClinicEditPanelProps> = ({
           <label className="hub-clientes__label" htmlFor="edit-cl-phone">
             Telefone comercial
           </label>
-          <input
+          <HubBrPhoneInput
             id="edit-cl-phone"
             className="hub-clientes__input"
             value={form.phone}
-            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            onChange={(phone) => setForm((f) => ({ ...f, phone }))}
           />
         </div>
         <div className="hub-clientes__field">

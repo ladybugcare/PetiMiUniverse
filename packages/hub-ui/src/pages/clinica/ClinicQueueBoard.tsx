@@ -7,6 +7,8 @@ const STATUS_LABEL: Record<string, string> = {
   waiting: 'Aguardando',
   checked_in: 'Aguardando',
   in_progress: 'Em atendimento',
+  awaiting_exams: 'Em exames',
+  exams_returned: 'Retornou dos exames',
   completed: 'Finalizado',
   cancelled: 'Cancelado',
   confirmed: 'Confirmado',
@@ -57,7 +59,14 @@ const ClinicQueueBoard: React.FC<Props> = ({ items, canWrite, onOpen, searchQ })
       {COLUMNS.map((col) => {
         const colItems = filtered.filter((i) => {
           const st = (i.status as string) || i.appointment_status || 'waiting';
-          return col.statuses.includes(st);
+          const phase = (i as { operational_phase?: string | null }).operational_phase;
+          let effective = st;
+          if (st === 'in_progress' && phase === 'awaiting_exams') effective = 'awaiting_exams';
+          if (st === 'in_progress' && phase === 'exams_returned') effective = 'exams_returned';
+          if (col.id === 'progress') {
+            return ['in_progress', 'awaiting_exams', 'exams_returned'].includes(effective);
+          }
+          return col.statuses.includes(effective);
         });
         return (
           <section key={col.id} className="hub-clinic-queue__col">
@@ -74,7 +83,11 @@ const ClinicQueueBoard: React.FC<Props> = ({ items, canWrite, onOpen, searchQ })
                   const tutor = item.guardian?.full_name || (isUnidentified ? 'A identificar' : '—');
                   const prof = item.staff_member?.full_name || 'Sem profissional';
                   const svc = item.service_type?.name || item.title || 'Consulta';
-                  const st = (item.status as string) || item.appointment_status || 'waiting';
+                  const stRaw = (item.status as string) || item.appointment_status || 'waiting';
+                  const phase = (item as { operational_phase?: string | null }).operational_phase;
+                  let st = stRaw;
+                  if (stRaw === 'in_progress' && phase === 'awaiting_exams') st = 'awaiting_exams';
+                  if (stRaw === 'in_progress' && phase === 'exams_returned') st = 'exams_returned';
                   const time = formatTime(
                     item.starts_at || item.started_at || (item.appointment as { starts_at?: string })?.starts_at,
                   );

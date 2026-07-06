@@ -6,6 +6,16 @@ import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
 import { generateInvitationToken, sendInvitationEmail } from '../../utils/emailService';
 import { getRoleDisplayName, type Role } from '../../utils/permissions';
 import { createNotification } from '../../controllers/notificationsController';
+import {
+  authUserExistsForEmail,
+  buildInvitationShareMessage,
+  buildInvitationUrl,
+} from './hubInvitationUtils';
+import {
+  normalizeStaffSpecialtiesForStorage,
+  sanitizeStaffSpecialtiesInput,
+  STAFF_SPECIALTIES_MAX_ITEMS,
+} from './hubStaffSpecialties';
 
 const uuidStr = z.string().uuid();
 
@@ -23,7 +33,14 @@ const professionalKindSchema = z.enum([
   'other',
 ]);
 
-const hubAccessRoleSchema = z.enum(['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL']);
+const hubAccessRoleSchema = z.enum([
+  'CADMIN',
+  'CMANAGER',
+  'CASSISTANT',
+  'CVET_INTERNAL',
+  'CGROOMER',
+  'CFINANCE',
+]);
 
 const optionalTrim = (max: number) =>
   z
@@ -45,6 +62,18 @@ const optionalBirthDate = z
     message: 'Data de nascimento inválida (AAAA-MM-DD)',
   });
 
+const staffSpecialtiesSchema = z
+  .union([z.array(z.string()), z.null(), z.undefined()])
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return undefined;
+    if (v === null) return [];
+    return sanitizeStaffSpecialtiesInput(v);
+  })
+  .refine((v) => v === undefined || v.length <= STAFF_SPECIALTIES_MAX_ITEMS, {
+    message: `Máximo de ${STAFF_SPECIALTIES_MAX_ITEMS} especialidades`,
+  });
+
 const createStaffSchema = z
   .object({
     clinic_id: uuidStr,
@@ -57,7 +86,7 @@ const createStaffSchema = z
     birth_date: optionalBirthDate,
     job_title: z.string().trim().min(1, 'Função/cargo é obrigatório').max(200),
     professional_kind: professionalKindSchema,
-    specialties: optionalTrim(4000).optional(),
+    specialties: staffSpecialtiesSchema,
     crmv: optionalTrim(64).optional(),
     crmv_uf: optionalTrim(4).optional(),
     internal_notes: optionalTrim(8000).optional(),
@@ -250,6 +279,8 @@ export const createHubStaff = async (req: Request, res: Response) => {
         error: 'Nenhum dos tipos de serviço indicados está ativo nesta clínica (podem estar arquivados).',
       });
     }
+    const specialties =
+      d.specialties === undefined ? [] : await normalizeStaffSpecialtiesForStorage(d.specialties);
     const insertRow = {
       clinic_id: d.clinic_id,
       full_name: d.full_name,
@@ -261,7 +292,7 @@ export const createHubStaff = async (req: Request, res: Response) => {
       birth_date: d.birth_date ?? null,
       job_title: d.job_title,
       professional_kind: d.professional_kind,
-      specialties: d.specialties ?? null,
+      specialties,
       crmv: d.crmv ?? null,
       crmv_uf: d.crmv_uf ?? null,
       internal_notes: d.internal_notes ?? null,
@@ -313,7 +344,9 @@ export const patchHubStaff = async (req: Request, res: Response) => {
     if (d.birth_date !== undefined) patch.birth_date = d.birth_date;
     if (d.job_title !== undefined) patch.job_title = d.job_title;
     if (d.professional_kind !== undefined) patch.professional_kind = d.professional_kind;
-    if (d.specialties !== undefined) patch.specialties = d.specialties;
+    if (d.specialties !== undefined) {
+      patch.specialties = await normalizeStaffSpecialtiesForStorage(d.specialties);
+    }
     if (d.crmv !== undefined) patch.crmv = d.crmv;
     if (d.crmv_uf !== undefined) patch.crmv_uf = d.crmv_uf;
     if (d.internal_notes !== undefined) patch.internal_notes = d.internal_notes;
@@ -403,6 +436,12 @@ export const inviteHubStaff = async (req: Request, res: Response) => {
     const { data: unitCheck } = await supabaseAdmin.from('units').select('id, clinic_id').eq('id', unit_id).maybeSingle();
     if (!unitCheck || unitCheck.clinic_id !== clinic_id) return res.status(400).json({ error: 'Unidade inválida' });
 
+    if (await authUserExistsForEmail(email)) {
+      return res.status(409).json({
+        error: 'Este e-mail já possui conta. No MVP, use um e-mail novo para convites.',
+      });
+    }
+
     const { data: existingUnitUsers } = await supabaseAdmin
       .from('clinic_users')
       .select('user_id')
@@ -442,6 +481,7 @@ export const inviteHubStaff = async (req: Request, res: Response) => {
           invited_by,
           token,
           expires_at,
+          staff_member_id: staffId,
         },
       ])
       .select();
@@ -451,10 +491,20 @@ export const inviteHubStaff = async (req: Request, res: Response) => {
       return res.status(400).json({ error: invErr?.message || 'Erro ao criar convite' });
     }
 
-    await sendInvitationEmail(email, token, clinic_id, unit_id, getRoleDisplayName(role));
+    const invitation_url = buildInvitationUrl(token);
 
     const { data: clinic } = await supabaseAdmin.from('clinics').select('name').eq('id', clinic_id).single();
     const { data: unit } = await supabaseAdmin.from('units').select('name').eq('id', unit_id).single();
+
+    const share_message = buildInvitationShareMessage({
+      clinicName: (clinic?.name as string) || 'sua clínica',
+      unitName: (unit?.name as string) || 'unidade',
+      role,
+      invitationUrl: invitation_url,
+      inviteeName: row.full_name as string | null,
+    });
+
+    await sendInvitationEmail(email, token, clinic_id, unit_id, getRoleDisplayName(role), invitation_url);
 
     try {
       const { data: usersData } = await supabaseAdmin.auth.admin.listUsers();
@@ -486,7 +536,11 @@ export const inviteHubStaff = async (req: Request, res: Response) => {
       ...metadata,
     });
 
-    return res.status(201).json({ invitation: invRows[0] });
+    return res.status(201).json({
+      invitation: invRows[0],
+      invitation_url,
+      share_message,
+    });
   } catch (error: unknown) {
     console.error('[hub_staff] invite', error);
     return res.status(500).json({ error: 'Erro ao convidar' });

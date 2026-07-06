@@ -47,54 +47,11 @@ import {
   todayYmd,
 } from './clinicalDisplay';
 import { petAgeDetailedLabel } from '../pets/petAge';
+import { useDebouncedSave } from '../../hooks/useDebouncedSave';
 import './clinica-page.css';
 
 // ── Debounced auto-save ──────────────────────────────────────────────────────
-
-function useDebouncedSave(
-  encounterId: string | undefined,
-  clinicId: string | null,
-  canWrite: boolean,
-  onSaved: () => void,
-) {
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pending = useRef<Record<string, unknown>>({});
-
-  const flush = useCallback(async (): Promise<'saved' | 'empty'> => {
-    if (!encounterId || !clinicId || !canWrite) return 'empty';
-    if (timer.current) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-    const keys = Object.keys(pending.current);
-    if (keys.length === 0) return 'empty';
-    const body = { ...pending.current, clinic_id: clinicId };
-    pending.current = {};
-    await hubEncountersApi.patch(encounterId, body);
-    onSaved();
-    return 'saved';
-  }, [encounterId, clinicId, canWrite, onSaved]);
-
-  const queue = useCallback(
-    (patch: Record<string, unknown>) => {
-      if (!canWrite) return;
-      pending.current = { ...pending.current, ...patch };
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => {
-        void flush().catch(() => {});
-      }, 700);
-    },
-    [canWrite, flush],
-  );
-
-  useEffect(() => {
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, []);
-
-  return { queue, flush };
-}
+// (hook em ../../hooks/useDebouncedSave.ts)
 
 function canonicalEncounterPrescription(enc: HubEncounter, prescriptions: HubPrescription[]): HubPrescription | null {
   const sameEncounter = prescriptions.filter(
@@ -119,8 +76,23 @@ const HUB_CWS_STATUS_ENCOUNTER: Record<string, { label: string; className: strin
 
 // ── Workspace principal ───────────────────────────────────────────────────────
 
-const HubClinicalWorkspacePage: React.FC = () => {
-  const { encounterId } = useParams<{ encounterId: string }>();
+export type HubClinicalWorkspaceProps = {
+  encounterId: string;
+  mode?: 'page' | 'drawer';
+  onClose?: () => void;
+  onCompleted?: () => void;
+  initialSection?: string;
+  hideFinancial?: boolean;
+};
+
+export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
+  encounterId,
+  mode = 'page',
+  onClose,
+  onCompleted,
+  initialSection,
+  hideFinancial = false,
+}) => {
   const navigate = useNavigate();
   const clinicId = getStoredClinicId();
   const { showError, showSuccess } = useAlert();
@@ -141,7 +113,15 @@ const HubClinicalWorkspacePage: React.FC = () => {
   const [encounterVaccinations, setEncounterVaccinations] = useState<HubVaccination[]>([]);
   const [rxItemsCount, setRxItemsCount] = useState(0);
   const [evolutionDrawerOpen, setEvolutionDrawerOpen] = useState(false);
-  const [activeNav, setActiveNav] = useState('sec-resumo');
+  const [activeNav, setActiveNav] = useState(initialSection || 'sec-resumo');
+
+  useEffect(() => {
+    if (initialSection) {
+      setActiveNav(initialSection);
+      const el = document.getElementById(initialSection);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [initialSection, encounterId]);
 
   // Amend (edição pós-finalização)
   const [amendOpen, setAmendOpen] = useState(false);
@@ -247,7 +227,8 @@ const HubClinicalWorkspacePage: React.FC = () => {
       const { encounter: enc } = await hubEncountersApi.complete(encounterId, clinicId);
       setEncounter(enc);
       showSuccess('Atendimento finalizado');
-      navigate('/hub/clinica/atendimentos');
+      if (mode === 'drawer') onCompleted?.();
+      else navigate('/hub/clinica/atendimentos');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao finalizar');
     } finally {
@@ -432,13 +413,25 @@ const HubClinicalWorkspacePage: React.FC = () => {
 
   return (
     <>
-      <div className="hub-clientes hub-clinic-workspace hub-clinic-workspace--prontuario">
-        <Link
-          to="/hub/clinica/atendimentos"
-          className="hub-clientes__btn hub-clientes__btn--ghost hub-clinic-workspace__back hub-cws-back"
-        >
-          <ArrowLeft size={16} /> Voltar à fila
-        </Link>
+      <div className={`hub-clientes hub-clinic-workspace hub-clinic-workspace--prontuario${mode === 'drawer' ? ' hub-clinic-workspace--drawer' : ''}`}>
+        {mode === 'drawer' ? (
+          onClose ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost hub-clinic-workspace__back hub-cws-back"
+              onClick={onClose}
+            >
+              <ArrowLeft size={16} /> Fechar prontuário
+            </button>
+          ) : null
+        ) : (
+          <Link
+            to="/hub/clinica/atendimentos"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clinic-workspace__back hub-cws-back"
+          >
+            <ArrowLeft size={16} /> Voltar à fila
+          </Link>
+        )}
 
         <header className="hub-cws-header">
           <div className="hub-cws-header__primary">
@@ -451,10 +444,12 @@ const HubClinicalWorkspacePage: React.FC = () => {
                   <h1 className="hub-cws-header__pet-name">{pet?.name || 'Pet'}</h1>
                   <span className={`hub-cws-status ${statusUi.className}`}>{statusUi.label}</span>
                 </div>
-                <FinancialAdjustmentPendingBadge
-                  pending={Boolean(encounter.financial_adjustment_pending)}
-                  showCaixaLink={canViewFinancial}
-                />
+                {!hideFinancial ? (
+                  <FinancialAdjustmentPendingBadge
+                    pending={Boolean(encounter.financial_adjustment_pending)}
+                    showCaixaLink={canViewFinancial}
+                  />
+                ) : null}
                 <p className="hub-cws-header__pet-line">
                   {[pet?.species || '—', pet?.breed || '—', `Porte ${pet?.size_tier || '—'}`, petAgeDetailedLabel(pet?.birth_date ?? null), weight !== '—' ? weight : null]
                     .filter(Boolean)
@@ -1287,5 +1282,11 @@ function HubWorkspaceAttachments({
     </>
   );
 }
+
+const HubClinicalWorkspacePage: React.FC = () => {
+  const { encounterId } = useParams<{ encounterId: string }>();
+  if (!encounterId) return <p style={{ padding: 24 }}>Atendimento não encontrado.</p>;
+  return <HubClinicalWorkspace encounterId={encounterId} mode="page" />;
+};
 
 export default HubClinicalWorkspacePage;

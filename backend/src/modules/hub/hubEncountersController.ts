@@ -166,6 +166,8 @@ const createEncounterSchema = z
     path: ['pet_id'],
   });
 
+const operationalPhaseSchema = z.union([z.enum(['awaiting_exams', 'exams_returned']), z.null()]);
+
 const patchEncounterSchema = z
   .object({
     clinic_id: uuidStr,
@@ -180,6 +182,7 @@ const patchEncounterSchema = z
     // Campos de identificação posterior (urgência sem pet/tutor).
     pet_id: uuidStr.optional().nullable(),
     hub_case_id: uuidStr.optional().nullable(),
+    operational_phase: operationalPhaseSchema.optional(),
   })
   .strict();
 
@@ -200,7 +203,7 @@ const amendEncounterSchema = z
 const ENCOUNTER_SELECT = `
   id, clinic_id, unit_id, pet_id, guardian_id, hub_appointment_id, hub_staff_member_id,
   hub_case_id, encounter_type,
-  status, chief_complaint, summary_notes, anamnesis, physical_exam, diagnosis,
+  status, operational_phase, chief_complaint, summary_notes, anamnesis, physical_exam, diagnosis,
   started_at, completed_at, created_at, updated_at
 `;
 
@@ -1062,7 +1065,7 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
 
     const { data: existingRow, error: exErr } = await supabaseAdmin
       .from('hub_encounters')
-      .select('id, pet_id, guardian_id, clinic_id, status, hub_case_id')
+      .select('id, pet_id, guardian_id, clinic_id, status, hub_case_id, operational_phase')
       .eq('id', id.data)
       .eq('clinic_id', b.clinic_id)
       .is('deleted_at', null)
@@ -1070,10 +1073,26 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
     if (exErr) return res.status(500).json({ error: exErr.message });
     if (!existingRow) return res.status(404).json({ error: 'Atendimento não encontrado' });
 
-    const existing = existingRow as { id: string; pet_id: string | null; guardian_id: string | null; clinic_id: string; status: string; hub_case_id: string | null };
+    const existing = existingRow as {
+      id: string;
+      pet_id: string | null;
+      guardian_id: string | null;
+      clinic_id: string;
+      status: string;
+      hub_case_id: string | null;
+      operational_phase: string | null;
+    };
 
     if (existing.status === 'completed') {
       return res.status(400).json({ error: 'Use o endpoint de emenda para editar atendimentos já finalizados.' });
+    }
+
+    if (b.operational_phase !== undefined) {
+      if (existing.status !== 'in_progress') {
+        return res.status(400).json({
+          error: 'Fase operacional só pode ser alterada em atendimentos em andamento.',
+        });
+      }
     }
 
     // Validação de guardian_id: não remover, mas permitir primeira atribuição a partir de null.
@@ -1153,6 +1172,7 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
     if (b.guardian_id !== undefined) patch.guardian_id = b.guardian_id;
     if (b.pet_id !== undefined) patch.pet_id = b.pet_id;
     if (b.hub_case_id !== undefined) patch.hub_case_id = b.hub_case_id;
+    if (b.operational_phase !== undefined) patch.operational_phase = b.operational_phase;
 
     const { data, error } = await supabaseAdmin
       .from('hub_encounters')

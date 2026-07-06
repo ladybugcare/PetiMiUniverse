@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import HubClinicShell from './HubClinicShell';
+import HubVetCockpitPage from './vet-cockpit/HubVetCockpitPage';
 import HubClinicEncountersPage from './HubClinicEncountersPage';
 import HubClinicalWorkspacePage from './HubClinicalWorkspacePage';
 import HubClinicRecordsPage from './HubClinicRecordsPage';
@@ -17,7 +18,8 @@ const HubClinicRoutes: React.FC = () => {
   return (
     <Routes>
       <Route element={<HubClinicShell />}>
-        <Route index element={<Navigate to="atendimentos" replace />} />
+        <Route index element={<HubVetCockpitPage />} />
+        <Route path="consultorio" element={<HubVetCockpitPage />} />
         <Route path="atendimentos" element={<HubClinicEncountersPage />} />
         <Route path="atendimentos/:encounterId" element={<HubClinicalWorkspacePage />} />
         <Route path="prontuarios" element={<HubClinicRecordsPage />} />

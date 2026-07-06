@@ -31,6 +31,8 @@ import HubProtectedRoute from './routes/HubProtectedRoute';
 import HubLoginPage from './pages/HubLoginPage';
 import HubSignUpPage from './pages/HubSignUpPage';
 import HubEmailConfirmedPage from './pages/HubEmailConfirmedPage';
+import HubAcceptInvitationPage from './pages/HubAcceptInvitationPage';
+import HubInviteSignUpPage from './pages/HubInviteSignUpPage';
 import HubClinicOnboardingPage from './pages/HubClinicOnboardingPage';
 import HubAppShell from './components/HubAppShell';
 import HubOnboardingGuard from './routes/HubOnboardingGuard';
@@ -62,6 +64,8 @@ const App: React.FC = () => {
           <Route path="/meu-perfil" element={<Navigate to="/hub/meu-perfil" replace />} />
           <Route path="/login" element={<HubLoginPage />} />
           <Route path="/signup" element={<HubSignUpPage />} />
+          <Route path="/accept-invitation" element={<HubAcceptInvitationPage />} />
+          <Route path="/signup-convite" element={<HubInviteSignUpPage />} />
           <Route path="/email-confirmed" element={<HubEmailConfirmedPage />} />
           <Route path="/orcamento/:token" element={<PublicQuotePage />} />
           <Route path="/comanda/:token" element={<PublicComandaPage />} />

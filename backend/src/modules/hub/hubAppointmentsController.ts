@@ -85,7 +85,18 @@ const appointmentKindSchema = z.enum([
   'pickup_route',
   'clinical_walk_in',
   'clinical_emergency',
+  'walk_in',
 ]);
+
+const WALK_IN_APPOINTMENT_KINDS = new Set([
+  'walk_in',
+  'clinical_walk_in',
+  'clinical_emergency',
+]);
+
+function isWalkInAppointmentKind(kind: string | null | undefined): boolean {
+  return !!kind && WALK_IN_APPOINTMENT_KINDS.has(kind);
+}
 
 type OverlapRow = {
   id: string;
@@ -825,6 +836,8 @@ const createAppointmentSchema = z
     intake_hub_case_id: uuidStr.optional().nullable(),
     intake_create_new_case: z.boolean().optional(),
     intake_new_case_title: optionalTrim(500).optional().nullable(),
+    /** Permite sobrepor outro slot (somente kinds walk-in). */
+    allow_schedule_overlap: z.boolean().optional(),
   })
   .strict();
 
@@ -1027,6 +1040,12 @@ export const createHubAppointment = async (req: Request, res: Response) => {
     if (new Date(b.ends_at) <= new Date(b.starts_at)) {
       return res.status(400).json({ error: 'ends_at deve ser posterior a starts_at' });
     }
+    const resolvedAppointmentKind = b.appointment_kind ?? 'standard';
+    if (b.allow_schedule_overlap === true && !isWalkInAppointmentKind(resolvedAppointmentKind)) {
+      return res.status(400).json({ error: 'allow_schedule_overlap só é permitido para encaixes (walk-in).' });
+    }
+    const skipScheduleConflictCheck =
+      isWalkInAppointmentKind(resolvedAppointmentKind) || b.allow_schedule_overlap === true;
 
     // validations
     if (!(await assertServiceTypeInClinic(b.clinic_id, b.hub_service_type_id))) {
@@ -1271,24 +1290,26 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       }
 
       let skipOcc = false;
-      for (const w of conflictWindows) {
-        const chk = await assertNoScheduleConflict(
-          b.clinic_id,
-          [],
-          w.staff,
-          w.resource,
-          resolvedUnitId,
-          w.starts,
-          w.ends,
-        );
-        if (chk.conflict) {
-          conflicts.push({
-            date: occDate,
-            reason: `${w.label}: ${chk.reason}`,
-            conflictingId: chk.conflictingId,
-          });
-          skipOcc = true;
-          break;
+      if (!skipScheduleConflictCheck) {
+        for (const w of conflictWindows) {
+          const chk = await assertNoScheduleConflict(
+            b.clinic_id,
+            [],
+            w.staff,
+            w.resource,
+            resolvedUnitId,
+            w.starts,
+            w.ends,
+          );
+          if (chk.conflict) {
+            conflicts.push({
+              date: occDate,
+              reason: `${w.label}: ${chk.reason}`,
+              conflictingId: chk.conflictingId,
+            });
+            skipOcc = true;
+            break;
+          }
         }
       }
       if (skipOcc) continue;

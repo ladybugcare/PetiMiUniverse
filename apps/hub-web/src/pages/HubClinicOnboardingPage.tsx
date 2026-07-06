@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Building2, Store } from 'lucide-react';
 import { useAuth } from '@petimi/web-core';
-import { useAlert, HubSearchableCombobox, HubCheckbox } from '@petimi/hub-ui';
+import { useAlert, HubSearchableCombobox, HubCheckbox, HubBrPhoneInput } from '@petimi/hub-ui';
 import '@petimi/hub-ui/pages/clientes/clientes.css';
 import '@petimi/hub-ui/pages/pets/wizard/pet-wizard.css';
 import './hub-onboarding-page.css';
@@ -199,10 +199,10 @@ const HubClinicOnboardingPage: React.FC = () => {
               </div>
               <div className="hub-onboarding-field">
                 <label htmlFor="cl-phone">Telefone comercial</label>
-                <input
+                <HubBrPhoneInput
                   id="cl-phone"
                   value={clinic.phone}
-                  onChange={(e) => setClinic((c) => ({ ...c, phone: e.target.value }))}
+                  onChange={(phone) => setClinic((c) => ({ ...c, phone }))}
                 />
               </div>
               <div className="hub-onboarding-field hub-onboarding-field--full">

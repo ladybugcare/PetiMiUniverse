@@ -27,6 +27,7 @@ import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { hubQuotesApi, type HubQuoteLine, type HubQuoteLineServiceEmbed } from '../../api/hubQuotesApi';
 import { AppointmentSidePanel } from './AppointmentSidePanel';
+import { AgendaNewEntryMenu } from './AgendaNewEntryMenu';
 import { NewAppointmentModal } from './NewAppointmentModal';
 import type { CreateHubAppointmentResult, NewAppointmentInitial } from './NewAppointmentModal';
 import { SERVICE_GROUP_OPTIONS, resolveServiceAccentColor } from '../../utils/serviceTypeSlug';
@@ -61,6 +62,9 @@ import {
 import { mapHubAppointmentToAgenda } from './mapHubAgenda';
 import { AgendaAppointmentCard } from './AgendaAppointmentCard';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
+import { hubGroomingApi } from '../../api/hubGroomingApi';
+import { hubBoardingApi } from '../../api/hubBoardingApi';
+import { isWalkInAppointmentKind } from './walkInUtils';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 import { hubComandaApi as hubComandaApiAgenda } from '../../api/hubComandaApi';
 import StartEncounterModal from '../clinica/StartEncounterModal';
@@ -129,6 +133,10 @@ const HubAgendaPage: React.FC = () => {
   const accessAllowed = hasPermission('hub.appointments.read');
   const canWrite = hasPermission('hub.appointments.write');
   const canClinicWrite = hasPermission('hub.clinic.write');
+  const canGroomingWrite =
+    hasPermission('grooming.queue.manage') && hasPermission('hub.appointments.write');
+  const canBoardingWrite =
+    hasPermission('boarding.reservations.manage') && hasPermission('hub.appointments.write');
   const canCreateReceivable = hasPermission('hub.receivables.create');
   const canViewFinancial = hasPermission('hub.financial.read');
 
@@ -168,7 +176,7 @@ const HubAgendaPage: React.FC = () => {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createInitial, setCreateInitial] = useState<NewAppointmentInitial | null>(null);
-  const [createModalLayout, setCreateModalLayout] = useState<'default' | 'clinical_routine'>('default');
+  const [createModalLayout, setCreateModalLayout] = useState<'default' | 'clinical_routine' | 'walk_in'>('default');
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutAppointmentId, setCheckoutAppointmentId] = useState<string | null>(null);
@@ -228,7 +236,7 @@ const HubAgendaPage: React.FC = () => {
   const bumpPoll = useCallback(() => setPollTick((t) => t + 1), []);
 
   const openCreateModal = useCallback(
-    (initial?: NewAppointmentInitial | null, layout: 'default' | 'clinical_routine' = 'default') => {
+    (initial?: NewAppointmentInitial | null, layout: 'default' | 'clinical_routine' | 'walk_in' = 'default') => {
       setCreateInitial(initial ?? null);
       setCreateModalLayout(layout);
       setCreateOpen(true);
@@ -286,6 +294,14 @@ const HubAgendaPage: React.FC = () => {
   const handleAppointmentCreated = useCallback(
     (result: CreateHubAppointmentResult) => {
       const { appointment, created_count, conflicts } = result;
+
+      if (isWalkInAppointmentKind(appointment.appointment_kind)) {
+        showSuccess('Encaixe registrado com check-in.');
+        bumpReload();
+        focusAppointmentOnAgenda(appointment.id, appointment.starts_at);
+        return;
+      }
+
       let message = 'Deseja criar outro agendamento, ir ao Caixa ou voltar à agenda com este agendamento em foco?';
       if (created_count > 1) {
         message = `${created_count} ocorrências foram criadas na série. ${message}`;
@@ -315,8 +331,27 @@ const HubAgendaPage: React.FC = () => {
         },
       });
     },
-    [showAlert, openCreateModal, focusAppointmentOnAgenda, bumpReload, navigate],
+    [showAlert, showSuccess, openCreateModal, focusAppointmentOnAgenda, bumpReload, navigate],
   );
+
+  const openWalkInParam = searchParams.get('openWalkIn') === '1';
+  const consumedWalkInRef = useRef(false);
+
+  useEffect(() => {
+    if (!openWalkInParam) consumedWalkInRef.current = false;
+  }, [openWalkInParam]);
+
+  useEffect(() => {
+    if (!clinicId || !openWalkInParam || !canWrite) return;
+    if (consumedWalkInRef.current) return;
+    consumedWalkInRef.current = true;
+    const st = location.state as { walkInInitial?: NewAppointmentInitial } | null;
+    openCreateModal(st?.walkInInitial ?? { date: toYmd(new Date()) }, 'walk_in');
+    const next = new URLSearchParams(searchParams);
+    next.delete('openWalkIn');
+    setSearchParams(next, { replace: true });
+    navigate(`${location.pathname}${next.toString() ? `?${next.toString()}` : ''}`, { replace: true, state: null });
+  }, [clinicId, openWalkInParam, canWrite, openCreateModal, searchParams, setSearchParams, location.pathname, location.state, navigate]);
 
   const fromQuoteParam = searchParams.get('fromQuote');
   const shouldOpenFromQuote = searchParams.get('openCreate') === '1';
@@ -961,6 +996,34 @@ const HubAgendaPage: React.FC = () => {
     }
   };
 
+  const handleOpenInGrooming = useCallback(
+    async (appointmentId: string) => {
+      if (!clinicId || !canGroomingWrite) return;
+      try {
+        await hubGroomingApi.openFromAppointment(clinicId, appointmentId, 'checked_in');
+        showSuccess('Pet adicionado à fila de Banho & Tosa.');
+        navigate('/hub/banho-tosa');
+      } catch (e: unknown) {
+        showError((e as Error)?.message || 'Erro ao abrir na fila B&T');
+      }
+    },
+    [clinicId, canGroomingWrite, navigate, showSuccess, showError],
+  );
+
+  const handleOpenInBoarding = useCallback(
+    async (appointmentId: string) => {
+      if (!clinicId || !canBoardingWrite) return;
+      try {
+        await hubBoardingApi.openFromAppointment(clinicId, appointmentId);
+        showSuccess('Reserva aberta no Hotel & Creche.');
+        navigate('/hub/hotel-creche');
+      } catch (e: unknown) {
+        showError((e as Error)?.message || 'Erro ao abrir reserva');
+      }
+    },
+    [clinicId, canBoardingWrite, navigate, showSuccess, showError],
+  );
+
   const handleOpenCheckout = useCallback(
     (appointmentId: string) => {
       if (!clinicId || !canCreateReceivable) return;
@@ -1277,13 +1340,12 @@ const HubAgendaPage: React.FC = () => {
             </div>
 
             {canWrite && (
-              <button
-                type="button"
-                className="hub-agenda__new-btn"
-                onClick={() => openCreateModal({ date: toYmd(cursorDate) })}
-              >
-                + Novo agendamento
-              </button>
+              <div className="hub-agenda__new-btn-group">
+                <AgendaNewEntryMenu
+                  onNewAppointment={() => openCreateModal({ date: toYmd(cursorDate) })}
+                  onWalkIn={() => openCreateModal({ date: toYmd(new Date()) }, 'walk_in')}
+                />
+              </div>
             )}
 
             <div className="hub-agenda__search">
@@ -1705,6 +1767,8 @@ const HubAgendaPage: React.FC = () => {
             onCancel={requestCancelSelected}
             onOpenComanda={canCreateReceivable ? handleOpenComanda : undefined}
             onOpenInClinic={canClinicWrite ? handleOpenInClinic : undefined}
+            onOpenInGrooming={canGroomingWrite ? handleOpenInGrooming : undefined}
+            onOpenInBoarding={canBoardingWrite ? handleOpenInBoarding : undefined}
             canViewFinancial={canViewFinancial}
             staffOptions={fullStaff}
             serviceTypes={fullSvcTypes}

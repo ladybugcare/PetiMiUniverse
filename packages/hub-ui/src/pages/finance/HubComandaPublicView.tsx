@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Calendar, ClipboardList, CreditCard, Dog, FileText, Mail, MapPin, MessageSquare, Phone, User } from 'lucide-react';
 import type { HubComandaItem, HubPublicComandaPet } from '../../api/hubComandaApi';
 import { sizeTierLabelPt, clientNotesSectionTitle } from '../orcamentos/hubQuoteViewUtils';
+import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import {
   PublicDocCardTitle,
   PublicDocFieldLabel,
@@ -108,7 +109,7 @@ export const HubComandaPublicView: React.FC<HubComandaPublicViewProps> = ({ payl
                 <PublicDocFieldLabel icon={User}>Nome</PublicDocFieldLabel>
                 <dd>{guardian.full_name}</dd>
                 <PublicDocFieldLabel icon={Phone}>Telefone</PublicDocFieldLabel>
-                <dd>{guardian.phone?.trim() || '—'}</dd>
+                <dd>{formatBrPhoneDisplay(guardian.phone)}</dd>
                 {guardian.tax_id ? (
                   <>
                     <PublicDocFieldLabel icon={CreditCard}>CPF</PublicDocFieldLabel>

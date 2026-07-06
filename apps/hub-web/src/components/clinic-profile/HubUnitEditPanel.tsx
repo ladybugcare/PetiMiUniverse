@@ -7,6 +7,8 @@ import {
   HubSidePanel,
   HubSearchableCombobox,
   HubCheckbox,
+  HubBrPhoneInput,
+  formatBrPhoneFromApi,
   hubStaffApi,
   hubBoardingApi,
   type HubComboboxOption,
@@ -91,7 +93,7 @@ const HubUnitEditPanel: React.FC<HubUnitEditPanelProps> = ({
       address: unit.address?.trim() || '',
       city: unit.city?.trim() || '',
       state: unit.state?.trim() || 'SP',
-      phone: unit.phone?.trim() || '',
+      phone: formatBrPhoneFromApi(unit.phone?.trim() || ''),
       is_main: unit.is_main === true,
       hotel_slots: '',
       daycare_slots_per_shift: '',
@@ -198,11 +200,11 @@ const HubUnitEditPanel: React.FC<HubUnitEditPanelProps> = ({
           <label className="hub-clientes__label" htmlFor="edit-un-phone">
             Telefone da unidade
           </label>
-          <input
+          <HubBrPhoneInput
             id="edit-un-phone"
             className="hub-clientes__input"
             value={form.phone}
-            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            onChange={(phone) => setForm((f) => ({ ...f, phone }))}
           />
         </div>
         <div className="hub-clientes__field">

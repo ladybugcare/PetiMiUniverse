@@ -17,7 +17,8 @@ export type HubAppointmentKind =
   | 'daycare_block'
   | 'pickup_route'
   | 'clinical_walk_in'
-  | 'clinical_emergency';
+  | 'clinical_emergency'
+  | 'walk_in';
 
 export type HubAppointmentServiceTypeRef = {
   name: string;
@@ -190,6 +191,8 @@ export type CreateHubAppointmentPayload = {
   intake_hub_case_id?: string | null;
   intake_create_new_case?: boolean;
   intake_new_case_title?: string | null;
+  /** Permite sobrepor outro slot (somente kinds walk-in). */
+  allow_schedule_overlap?: boolean;
 };
 
 export type PatchHubAppointmentPayload = {

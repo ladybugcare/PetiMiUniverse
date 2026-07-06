@@ -11,6 +11,8 @@ import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
 import { hubProspectsApi, type HubProspect } from '../../api/hubProspectsApi';
 import { maskTaxIdForList } from '../../utils/maskTaxId';
+import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
+import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
 import '../clientes/clientes.css';
 import '../pets/pets-page.css';
 import '../servicos/servicos-page.css';
@@ -227,10 +229,10 @@ const HubProspectsPage: React.FC = () => {
             </div>
             <div className="hub-clientes__field">
               <label className="hub-clientes__label">Telefone *</label>
-              <input
+              <HubBrPhoneInput
                 className="hub-clientes__input"
                 value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                onChange={(phone) => setForm((f) => ({ ...f, phone }))}
               />
             </div>
             <div className="hub-clientes__field">
@@ -278,7 +280,7 @@ const HubProspectsPage: React.FC = () => {
                       </div>
                     </td>
                     <td className="hub-servicos__code-mono">{maskTaxIdForList(p.tax_id)}</td>
-                    <td>{p.phone}</td>
+                    <td>{formatBrPhoneDisplay(p.phone)}</td>
                     <td className="hub-clientes__td-actions">
                       <Link
                         to={`/hub/orcamentos/novo?prospect_id=${encodeURIComponent(p.id)}`}

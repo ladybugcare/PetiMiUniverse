@@ -9,7 +9,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { useAuth, usePermissions } from '@petimi/web-core';
-import { useAlert } from '@petimi/hub-ui';
+import { useAlert, formatBrPhoneDisplay } from '@petimi/hub-ui';
 import HubProfilePhotoPicker from '../components/HubProfilePhotoPicker';
 import {
   getHubUserDisplayName,
@@ -73,7 +73,7 @@ const HubMeuPerfilPage: React.FC = () => {
   const displayName = getHubUserDisplayName(user);
   const photoUrl = getHubUserPhotoUrl(user);
   const email = u?.email?.trim() || '—';
-  const phone = getHubUserPhone(user) || '—';
+  const phone = formatBrPhoneDisplay(getHubUserPhone(user));
   const fullName = u?.user_metadata?.full_name || u?.user_metadata?.name || displayName;
   const badge = hubProfileAccessBadge(clinicRole, authRole);
   const cargo = hubAccessTypeLabel(clinicRole, authRole);

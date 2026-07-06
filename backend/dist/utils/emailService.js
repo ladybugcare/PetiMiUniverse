@@ -15,15 +15,20 @@ exports.generateInvitationToken = generateInvitationToken;
 // ===========================================================
 // 🔹 ENVIA E-MAIL DE CONVITE (placeholder)
 // ===========================================================
-const sendInvitationEmail = async (email, token, clinicId, unitId, role) => {
-    const invitationLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/accept-invitation?token=${token}`;
+const sendInvitationEmail = async (email, token, clinicId, unitId, role, invitationLink) => {
+    const hubWebUrl = process.env.HUB_WEB_URL?.trim() ||
+        process.env.VITE_HUB_WEB_URL?.trim() ||
+        process.env.FRONTEND_URL?.trim() ||
+        'http://localhost:5173';
+    const link = invitationLink ||
+        `${hubWebUrl.replace(/\/$/, '')}/accept-invitation?token=${encodeURIComponent(token)}`;
     console.log('========================================');
-    console.log('📧 INVITATION EMAIL');
+    console.log('📧 INVITATION EMAIL (placeholder)');
     console.log('========================================');
     console.log(`To: ${email}`);
-    console.log(`Subject: Convite para se juntar à equipe PetMi Vet`);
+    console.log(`Subject: Convite para a equipe PetMi Hub`);
     console.log(`\nVocê foi convidado para se juntar como ${role}`);
-    console.log(`Link de convite: ${invitationLink}`);
+    console.log(`Link de convite: ${link}`);
     console.log(`Clinic ID: ${clinicId}`);
     console.log(`Unit ID: ${unitId}`);
     console.log(`Token: ${token}`);

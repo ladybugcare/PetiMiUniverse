@@ -3,7 +3,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getHubSessionContext = void 0;
 const supabase_js_1 = require("../../config/supabase.js");
 const errorHandler_js_1 = require("../../middleware/errorHandler.js");
-const ALLOWED_CLINIC_ROLES = new Set(['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL']);
+const ALLOWED_CLINIC_ROLES = new Set([
+    'CADMIN',
+    'CMANAGER',
+    'CASSISTANT',
+    'CVET_INTERNAL',
+    'CGROOMER',
+    'CFINANCE',
+]);
 function pickClinicUserRow(rows) {
     const withClinic = (r) => r.clinic_id != null && String(r.clinic_id).trim() !== '';
     return (rows.find((r) => ALLOWED_CLINIC_ROLES.has(String(r.role || '').toUpperCase()) && withClinic(r)) ||

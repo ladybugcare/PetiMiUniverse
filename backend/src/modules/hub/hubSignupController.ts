@@ -294,6 +294,39 @@ export const postHubOnboardingClinic = asyncHandler(async (req: Request, res: Re
     console.warn('[hub_onboarding] ensureDefaultGroupJobFunctions', bootstrapErr);
   }
 
+  const adminFullName =
+    (req.user as { user_metadata?: { full_name?: string; name?: string } })?.user_metadata?.full_name ||
+    (req.user as { user_metadata?: { name?: string } })?.user_metadata?.name ||
+    clinicInput.name;
+
+  try {
+    const { data: existingStaff } = await supabaseAdmin
+      .from('hub_staff_members')
+      .select('id')
+      .eq('clinic_id', finalClinicId)
+      .eq('clinic_user_id', clinicUser.id)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (!existingStaff) {
+      await supabaseAdmin.from('hub_staff_members').insert({
+        clinic_id: finalClinicId,
+        full_name: adminFullName,
+        job_title: 'Administrador',
+        professional_kind: 'reception',
+        active: true,
+        has_hub_access: true,
+        hub_access_email: userEmail,
+        hub_access_role: 'CADMIN',
+        default_unit_id: unit.id,
+        clinic_user_id: clinicUser.id,
+        accepts_appointments: false,
+      });
+    }
+  } catch (staffErr) {
+    console.warn('[hub_onboarding] ensure admin staff member', staffErr);
+  }
+
   const metadata = extractRequestMetadata(req);
   await createAuditLog({
     user_id: userId,

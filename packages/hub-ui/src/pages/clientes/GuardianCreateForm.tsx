@@ -2,6 +2,8 @@ import React, { FormEvent, useCallback, useMemo } from 'react';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubDateField } from '../../components/HubDateField';
+import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
+import { formatBrPhoneFromApi } from '../../utils/formatBrPhone';
 import { brDateToIso, isoDateToBr } from './formatters';
 
 export type GuardianFormValues = {
@@ -151,12 +153,11 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
 
       <div className="hub-clientes__field">
         <label className="hub-clientes__label">Telefone *</label>
-        <input
+        <HubBrPhoneInput
           className="hub-clientes__input"
           value={value.phone}
-          onChange={(e) => patch({ phone: e.target.value })}
+          onChange={(phone) => patch({ phone })}
           required
-          placeholder="(00) 00000-0000"
         />
       </div>
 
@@ -404,7 +405,7 @@ export function guardianToFormValues(g: {
 }): GuardianFormValues {
   return {
     full_name: g.full_name,
-    phone: g.phone || '',
+    phone: formatBrPhoneFromApi(g.phone),
     client_kind: (g.client_kind as 'individual' | 'company') || 'individual',
     legal_name: g.legal_name || '',
     email: g.email || '',

@@ -12,6 +12,7 @@ import { PORTE_LABELS, type PetBodyPorteValue } from '../../utils/hubServiceType
 import { BOARDING_STAGE_LABELS, getBoardingItemStage } from './boardingStages';
 import { useAlert } from '../../components/AlertProvider';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
+import { digitsOnlyBrPhone, formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { renderTemplate } from '../../utils/hubMessageTemplates';
 import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
@@ -286,11 +287,11 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
             <span>{guardian.full_name}</span>
             {guardian.phone && (
               <a
-                href={`tel:${guardian.phone}`}
+                href={`tel:${digitsOnlyBrPhone(guardian.phone)}`}
                 className="hub-clientes__muted"
                 style={{ marginLeft: 4 }}
               >
-                {guardian.phone}
+                {formatBrPhoneDisplay(guardian.phone)}
               </a>
             )}
           </div>

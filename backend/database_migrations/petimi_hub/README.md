@@ -23,6 +23,10 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 
 9. **`create_hub_staff.sql`** — `hub_staff_members` (cadastro de equipe, CRMV, agenda, acesso Hub opcional) + `hub_staff_service_types` (N:N com `hub_service_types`). Executar depois de `create_hub_service_types.sql` e com `units` / `clinic_users` existentes.
 
+   - **`alter_user_invitations_staff_member_id.sql`** — coluna `staff_member_id` em `user_invitations` para vincular convite Hub ao registro em `hub_staff_members`. Executar após `create_hub_staff.sql` e com `user_invitations` (petimi_vet) existente.
+
+   - **`alter_hub_staff_specialties_array.sql`** — converte `hub_staff_members.specialties` de `text` para `text[]` (IDs do catálogo `public.specialties` + nomes livres, alinhado a `vets.specialties`). Executar em bases que já tinham a coluna como `text`.
+
 10. **`alter_hub_staff_birth_date.sql`** — coluna opcional `birth_date` em `hub_staff_members`. Executar em bases criadas antes desta coluna existir em `create_hub_staff.sql`.
 
 11. **`create_hub_staff_photos_bucket.sql`** — bucket Storage `hub-staff-photos` (upload de foto via `POST /api/hub/staff/photo`). Executar no projeto Supabase onde corre o Hub.
@@ -30,6 +34,8 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 12. **`create_hub_appointments.sql`** — `hub_appointments` (agenda: horários, staff opcional, tipo de serviço, pet/tutor, `appointment_kind` para hotel/L&T) + `hub_agenda_calendar_blocks` (feriados/fechamentos na vista mês). Executar depois de `create_hub_staff.sql`, `create_hub_pets_and_pet_guardians.sql` e `create_hub_service_types.sql`.
 
     - **`alter_hub_appointments_clinical_kinds.sql`** — amplia `appointment_kind` com `clinical_walk_in` (encaixe clínico imediato) e `clinical_emergency` (urgência registrada na agenda no momento da abertura). Executar depois de `create_hub_appointments.sql` (e antes ou depois de `alter_hub_encounters_hub_service_type.sql`, conforme a ordem no projeto).
+
+    - **`alter_hub_appointments_walk_in_kind.sql`** — adiciona `walk_in` (encaixe genérico para B&T, Hotel, etc. via agenda). Executar depois de `alter_hub_appointments_clinical_kinds.sql`.
 
 13. **`alter_hub_appointments_multi_service_and_recurrence.sql`** — Suporte a múltiplos serviços por agendamento e recorrência: cria `hub_appointment_series` (regras de recorrência) e `hub_appointment_services` (N:M serviço↔agendamento); adiciona colunas `title`, `description`, `series_id`, `series_occurrence_date` em `hub_appointments`. Executar depois de `create_hub_appointments.sql`.
 
@@ -177,3 +183,5 @@ Migrations do **PetMi Hub** (tutores, pets, tipos de serviço por clínica). Exe
 69. **`alter_hub_comandas_finance_notes.sql`** — Coluna `finance_notes` em `hub_comandas` (observação interna do financeiro, separada de `notes` do caixa). Executar depois do item 39.
 
 70. **`create_hub_comanda_events.sql`** — Tabela `hub_comanda_events` (timeline de itens adicionados, removidos e alterados na comanda). Executar depois do item 39.
+
+71. **`alter_hub_encounters_operational_phase.sql`** — Coluna `operational_phase` em `hub_encounters` (fluxo Em exames / Retornou dos exames no consultório). Executar depois de `create_hub_encounters.sql`.

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, GripVertical, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, ChevronUp, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock } from 'lucide-react';
+import { Plus, Trash2, GripVertical, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, ChevronUp, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock, Zap } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
@@ -51,6 +51,8 @@ import {
 } from './agendaPortePricingPreview';
 import { isOperationalClinicalGroup, normalizeServiceGroupSlug, serviceGroupLabel } from '../../utils/serviceTypeSlug';
 import { STATUS_META, type AgendaStatus } from './agendaModel';
+import { ReceptionQuickRegisterPanel, type QuickRegisterSaveResult } from './ReceptionQuickRegisterPanel';
+import { resolveWalkInAppointmentKind } from './walkInUtils';
 import './new-appointment-modal.css';
 
 export type CreateHubAppointmentResult = Awaited<ReturnType<typeof hubAgendaApi.create>>;
@@ -84,6 +86,8 @@ export type NewAppointmentInitial = {
   pricing_porte_tier?: string | null;
   pricing_coat_type?: string | null;
   source_quote_id?: string | null;
+  /** Pré-marca urgência no modo encaixe (fluxo operacional → agenda). */
+  walk_in_emergency?: boolean;
 };
 
 export type NewAppointmentModalProps = {
@@ -94,7 +98,7 @@ export type NewAppointmentModalProps = {
   staffOptions: HubStaffMember[];
   serviceTypes: HubServiceType[];
   /** Fluxo Clínica → «Agendar na agenda»: formulário focado como nos prints de consulta de rotina. */
-  layoutVariant?: 'default' | 'clinical_routine';
+  layoutVariant?: 'default' | 'clinical_routine' | 'walk_in';
   mode?: 'create' | 'edit';
   appointmentId?: string | null;
   seriesId?: string | null;
@@ -255,6 +259,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const clinicId = getStoredClinicId() ?? '';
   const isEditMode = mode === 'edit';
   const isClinicalRoutine = !isEditMode && layoutVariant === 'clinical_routine';
+  const isWalkIn = !isEditMode && layoutVariant === 'walk_in';
   const [jobMappings, setJobMappings] = useState<GroupJobMappings>({});
 
   useEffect(() => {
@@ -292,6 +297,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [guardianPets, setGuardianPets] = useState<GuardianPetOption[]>([]);
   const [guardianOptions, setGuardianOptions] = useState<HubComboboxOption[]>([]);
   const [guardiansLoading, setGuardiansLoading] = useState(false);
+  const [quickRegisterOpen, setQuickRegisterOpen] = useState(false);
+  const [quickRegisterPetsOnly, setQuickRegisterPetsOnly] = useState(false);
+  const [walkInEmergency, setWalkInEmergency] = useState(false);
 
   const [intakeActiveCases, setIntakeActiveCases] = useState<HubClinicalCase[]>([]);
   const [intakeCasesLoading, setIntakeCasesLoading] = useState(false);
@@ -474,7 +482,22 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setTitleOverridden(false);
     setPricingApptPorteTier('');
     setPricingApptCoatType('');
+    setWalkInEmergency(false);
+    setQuickRegisterOpen(false);
+    setQuickRegisterPetsOnly(false);
     initialPetIdRef.current = initial?.pet_id ?? null;
+    if (isWalkIn) {
+      const now = new Date();
+      setDateYmd(todayYmd());
+      const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      setStartsHm(hm);
+      setEndsHm(addMinutes(hm, 60));
+      setStatus('checked_in');
+      setWalkInEmergency(initial?.walk_in_emergency === true);
+      setWithRecurrence(false);
+      setWithPickup(false);
+      setExtraBlocks([]);
+    }
     if (initial) {
       if (initial.date) setDateYmd(initial.date);
       if (initial.starts_at) setStartsHm(tsToHm(initial.starts_at));
@@ -534,7 +557,89 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         setSelectedAddons([]);
       }
     }
-  }, [open, initial, serviceTypes, isEditMode]);
+  }, [open, initial, serviceTypes, isEditMode, isWalkIn]);
+
+  const reloadGuardianOptions = useCallback(async () => {
+    if (!clinicId) return;
+    setGuardiansLoading(true);
+    try {
+      const { guardians } = await hubGuardiansApi.list(clinicId, false, { status: 'active' });
+      setGuardianOptions(
+        guardians.map((g) => ({
+          value: g.id,
+          label: g.full_name,
+          icon: <User size={18} strokeWidth={2} aria-hidden />,
+        })),
+      );
+    } catch {
+      setGuardianOptions([]);
+    } finally {
+      setGuardiansLoading(false);
+    }
+  }, [clinicId]);
+
+  const applyQuickRegisterResult = useCallback(
+    async (result: QuickRegisterSaveResult) => {
+      await reloadGuardianOptions();
+      setGuardianName(result.guardian.full_name);
+
+      const mapPets = (pets: Awaited<ReturnType<typeof hubGuardiansApi.getById>>['pets']): GuardianPetOption[] =>
+        pets.map((p) => ({
+          id: p.id,
+          name: p.name,
+          size_tier: p.size_tier || 'medio',
+          coat_type: p.coat_type ?? null,
+          birth_date: p.birth_date,
+        }));
+
+      const applyPetsSelection = (mapped: GuardianPetOption[]) => {
+        setGuardianPets(mapped);
+        if (result.pets.length === 1) {
+          const target = mapped.find((p) => p.id === result.pets[0]!.id);
+          if (target) {
+            setPetId(target.id);
+            setPetName(target.name);
+            return;
+          }
+        }
+        setPetId('');
+        setPetName('');
+      };
+
+      if (!clinicId) {
+        if (result.guardian.id !== guardianId) setGuardianId(result.guardian.id);
+        return;
+      }
+
+      if (result.guardian.id === guardianId) {
+        const { pets } = await hubGuardiansApi.getById(result.guardian.id, clinicId);
+        applyPetsSelection(mapPets(pets));
+        return;
+      }
+
+      initialPetIdRef.current = result.pets.length === 1 ? result.pets[0]!.id : null;
+      setGuardianId(result.guardian.id);
+    },
+    [clinicId, guardianId, reloadGuardianOptions],
+  );
+
+  const openQuickRegisterFull = useCallback(() => {
+    setQuickRegisterPetsOnly(false);
+    setQuickRegisterOpen(true);
+  }, []);
+
+  const openQuickRegisterPetsOnly = useCallback(() => {
+    setQuickRegisterPetsOnly(true);
+    setQuickRegisterOpen(true);
+  }, []);
+
+  const walkInIsClinical = useMemo(() => {
+    if (!isWalkIn || services.length === 0) return false;
+    return services.some((s) => {
+      const st = serviceTypes.find((t) => t.id === s.hub_service_type_id);
+      return isOperationalClinicalGroup(normalizeServiceGroupSlug(st?.service_group));
+    });
+  }, [isWalkIn, services, serviceTypes]);
 
   useEffect(() => {
     if (!open || !clinicId) return;
@@ -1182,7 +1287,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       setSaveError(addonVariantErr);
       return;
     }
-    if (!isClinicalRoutine && withPickup) {
+    if (!isClinicalRoutine && !isWalkIn && withPickup) {
       if (!pickupLtServiceTypeId.trim()) {
         setSaveError('Leva e Traz: selecione o tipo de serviço de transporte.');
         return;
@@ -1198,8 +1303,15 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setConflicts([]);
 
     try {
-      const startsAt = toIsoTs(dateYmd, startsHm);
-      const endsAt = toEndIsoTs(dateYmd, startsHm, endsHm);
+      let startsAt = toIsoTs(dateYmd, startsHm);
+      let endsAt = toEndIsoTs(dateYmd, startsHm, endsHm);
+
+      if (isWalkIn) {
+        const now = new Date();
+        startsAt = now.toISOString();
+        const durationMs = Math.max(totalDurationMin, 30) * 60_000;
+        endsAt = new Date(now.getTime() + durationMs).toISOString();
+      }
 
       if (isEditMode) {
         const patchPayload = {
@@ -1233,21 +1345,23 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
 
       let lastServiceEndAt = endsAt;
-      const resolvedExtraBlocks = extraBlocks
-        .filter((b) => b.services.length > 0)
-        .map((b) => {
-          const blockStart = toIsoTsOnOrAfter(dateYmd, b.starts_hm, lastServiceEndAt);
-          const blockEnd = toEndIsoTs(blockStart.slice(0, 10), b.starts_hm, b.ends_hm);
-          lastServiceEndAt = blockEnd;
-          return { block: b, blockStart, blockEnd };
-        });
+      const resolvedExtraBlocks = isWalkIn
+        ? []
+        : extraBlocks
+            .filter((b) => b.services.length > 0)
+            .map((b) => {
+              const blockStart = toIsoTsOnOrAfter(dateYmd, b.starts_hm, lastServiceEndAt);
+              const blockEnd = toEndIsoTs(blockStart.slice(0, 10), b.starts_hm, b.ends_hm);
+              lastServiceEndAt = blockEnd;
+              return { block: b, blockStart, blockEnd };
+            });
 
       const payload: CreateHubAppointmentPayload = {
         clinic_id: clinicId,
         hub_service_type_id: services[0]!.hub_service_type_id,
         starts_at: startsAt,
         ends_at: endsAt,
-        status: status as HubAppointmentStatus,
+        status: (isWalkIn ? 'checked_in' : status) as HubAppointmentStatus,
         hub_staff_member_id: staffId || null,
         pet_id: petId || null,
         guardian_id: guardianId || null,
@@ -1258,12 +1372,20 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         financial_notes: financialNotes.trim() || null,
         pricing_porte_tier: pricingApptPorteTier.trim() || null,
         pricing_coat_type: pricingApptCoatType.trim() || null,
-        services: [...services, ...selectedAddons].map((s) => ({
+        services: [...services, ...(isWalkIn ? [] : selectedAddons)].map((s) => ({
           hub_service_type_id: s.hub_service_type_id,
           duration_minutes: s.duration_minutes,
           pricing_variant: s.pricing_variant ?? undefined,
         })),
       };
+
+      if (isWalkIn) {
+        payload.appointment_kind = resolveWalkInAppointmentKind(
+          serviceTypes,
+          services.map((s) => s.hub_service_type_id),
+          walkInEmergency,
+        );
+      }
 
       if (isClinicalRoutine) {
         if (intakeCaseMode === 'existing' && intakeSelectedCaseId) {
@@ -1275,7 +1397,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         }
       }
 
-      if (withPickup) {
+      if (!isWalkIn && withPickup) {
         payload.with_pickup_route_before = {
           starts_at: toIsoTs(dateYmd, pickupBefore.starts_hm),
           ends_at: toEndIsoTs(dateYmd, pickupBefore.starts_hm, pickupBefore.ends_hm),
@@ -1311,7 +1433,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         }));
       }
 
-      if (withRecurrence) {
+      if (!isWalkIn && withRecurrence) {
         const rule: HubAppointmentRecurrenceRule = {
           kind: recurrence.kind,
           interval_value: recurrence.interval_value,
@@ -1378,6 +1500,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setSaveError(null);
     setConflicts([]);
     setResourceLabel('');
+    setWalkInEmergency(false);
+    setQuickRegisterOpen(false);
+    setQuickRegisterPetsOnly(false);
     setStatus('confirmed');
     setPricingApptPorteTier('');
     setPricingApptCoatType('');
@@ -1580,9 +1705,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           ? 'Salvando…'
           : isEditMode
             ? 'Salvar alterações'
-            : withRecurrence
-              ? 'Criar série'
-              : 'Criar agendamento'}
+            : isWalkIn
+              ? 'Registrar encaixe'
+              : withRecurrence
+                ? 'Criar série'
+                : 'Criar agendamento'}
       </button>
     </>
   );
@@ -1701,11 +1828,15 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                         ariaLabel="Selecionar pet"
                       />
                     ) : (
-                      <div className="nam-field-shell nam-field-shell--empty" role="status">
+                      <div className="nam-field-shell nam-field-shell--empty nam-field-shell--stacked" role="status">
                         <span className="nam-field-shell__icon" aria-hidden>
                           <Dog size={18} strokeWidth={2} />
                         </span>
                         <span className="nam-field-shell__text">Nenhum pet cadastrado</span>
+                        <button type="button" className="nam-quick-register-btn" onClick={openQuickRegisterPetsOnly}>
+                          <Plus size={16} strokeWidth={2} aria-hidden />
+                          Cadastrar pet
+                        </button>
                       </div>
                     )
                   ) : (
@@ -1717,6 +1848,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div className="nam-row">
+                <button type="button" className="nam-quick-register-btn" onClick={openQuickRegisterFull}>
+                  <Plus size={16} strokeWidth={2} aria-hidden />
+                  Cadastrar tutor e pets
+                </button>
               </div>
 
               <div className="nam-row nam-row--cols2">
@@ -1919,15 +2057,30 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     <HubSidePanel
       open={open}
       onClose={handleClose}
-      title={isEditMode ? 'Editar agendamento' : 'Novo agendamento'}
-      titleIcon={<Calendar size={22} strokeWidth={2} aria-hidden />}
-      subtitle={title || autoTitle || undefined}
+      title={isEditMode ? 'Editar agendamento' : isWalkIn ? 'Encaixe / walk-in' : 'Novo agendamento'}
+      titleIcon={isWalkIn ? <Zap size={22} strokeWidth={2} aria-hidden /> : <Calendar size={22} strokeWidth={2} aria-hidden />}
+      subtitle={isWalkIn ? 'Check-in imediato com horário atual.' : title || autoTitle || undefined}
       footer={footer}
       aside={asideContent}
     >
       <div className="nam-form">
         <div className="nam-section nam-section--quick">
           <div className="nam-quick-card">
+            {isWalkIn ? (
+              <div className="nam-row">
+                <div className="nam-field">
+                  <label className="nam-label">Horário</label>
+                  <div className="nam-field-shell" role="status">
+                    <span className="nam-field-shell__icon" aria-hidden>
+                      <Clock size={18} strokeWidth={2} />
+                    </span>
+                    <span className="nam-field-shell__text">
+                      Agora, {startsHm} — check-in imediato
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="nam-row nam-row--cols2">
               <div className="nam-field">
                 <HubDateField id="nam-date" label="Data" valueIso={dateYmd} onChangeIso={setDateYmd} />
@@ -1945,6 +2098,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 />
               </div>
             </div>
+            )}
             <div className="nam-row nam-row--cols2">
               <div className="nam-field">
                 <label className="nam-label" htmlFor="nam-guardian">
@@ -1991,15 +2145,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                       triggerIcon={<Dog size={18} strokeWidth={2} aria-hidden />}
                       ariaLabel="Selecionar pet"
                     />
-                  ) : (
-                    <div className="nam-field-shell nam-field-shell--empty" role="status">
-                      <span className="nam-field-shell__icon" aria-hidden>
-                        <Dog size={18} strokeWidth={2} />
-                      </span>
-                      <span className="nam-field-shell__text">Nenhum pet cadastrado</span>
-                      <ChevronDown size={18} strokeWidth={2} className="nam-field-shell__chevron" aria-hidden />
-                    </div>
-                  )
+                    ) : (
+                      <div className="nam-field-shell nam-field-shell--empty nam-field-shell--stacked" role="status">
+                        <span className="nam-field-shell__icon" aria-hidden>
+                          <Dog size={18} strokeWidth={2} />
+                        </span>
+                        <span className="nam-field-shell__text">Nenhum pet cadastrado</span>
+                        <button type="button" className="nam-quick-register-btn" onClick={openQuickRegisterPetsOnly}>
+                          <Plus size={16} strokeWidth={2} aria-hidden />
+                          Cadastrar pet
+                        </button>
+                      </div>
+                    )
                 ) : (
                   <div className="nam-field-shell nam-field-shell--blocked" role="status">
                     <span className="nam-field-shell__icon" aria-hidden>
@@ -2011,6 +2168,22 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 )}
               </div>
             </div>
+            <div className="nam-row">
+              <button type="button" className="nam-quick-register-btn" onClick={openQuickRegisterFull}>
+                <Plus size={16} strokeWidth={2} aria-hidden />
+                Cadastrar tutor e pets
+              </button>
+            </div>
+            {isWalkIn && walkInIsClinical ? (
+              <div className="nam-row" style={{ marginTop: 8 }}>
+                <HubCheckbox checked={walkInEmergency} onChange={setWalkInEmergency}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <Siren size={15} aria-hidden />
+                    Urgência / emergência
+                  </span>
+                </HubCheckbox>
+              </div>
+            ) : null}
             {petId && selectedPet ? (
               <div className="nam-quick-card__pet-info">
                 <label className="nam-label">Dados do pet (cadastro)</label>
@@ -2097,6 +2270,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               </div>
             </div>
           )}
+          {!isWalkIn ? (
           <AppointmentAddonsSection
             hasMainServices={services.length > 0}
             addonsLoading={addonsLoading}
@@ -2105,6 +2279,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             onToggle={toggleAddon}
             onVariantChange={updateAddonPricingVariant}
           />
+          ) : null}
           {servicesNeedingVariant.length > 0 && (
             <div className="nam-section nam-section--pricing-variants" style={{ marginTop: 12 }}>
               <p className="nam-label">Opção de preço por serviço</p>
@@ -2179,6 +2354,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         </div>
 
         {/* ── Horário do bloco principal ─────────────────────────────────── */}
+        {!isWalkIn ? (
         <div className="nam-section">
           <div className="nam-row nam-row--cols2">
             <div className="nam-field">
@@ -2201,6 +2377,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             </div>
           </div>
         </div>
+        ) : null}
 
         {/* ── 3 + 4. Profissional / Recurso ────────────────────────────── */}
         <div className="nam-section">
@@ -2232,7 +2409,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           )}
         </div>
 
-        {!isEditMode ? (
+        {!isEditMode && !isWalkIn ? (
           <>
         {extraBlocks.length > 0 ? (
           <div className="nam-section nam-extra-blocks">
@@ -2526,6 +2703,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         )}
       </div>
     </HubSidePanel>
+    <ReceptionQuickRegisterPanel
+      open={quickRegisterOpen}
+      clinicId={clinicId}
+      petsOnly={quickRegisterPetsOnly}
+      existingGuardianId={guardianId || undefined}
+      existingGuardianName={guardianName || undefined}
+      onClose={() => {
+        setQuickRegisterOpen(false);
+        setQuickRegisterPetsOnly(false);
+      }}
+      onSaved={applyQuickRegisterResult}
+    />
     {seriesScopeOverlay}
     </>
   );

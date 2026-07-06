@@ -34,6 +34,7 @@ import {
   formatBrl,
   formatPanelDate,
 } from './appointmentPanelActions';
+import { resolveOperationalModuleForAppointment } from './walkInUtils';
 import { mapAgendaToAppointmentInitial } from './mapHubAgenda';
 import { NewAppointmentModal } from './NewAppointmentModal';
 import './new-appointment-modal.css';
@@ -51,6 +52,8 @@ export type AppointmentSidePanelProps = {
   onCancel: () => void;
   onOpenComanda?: (appointmentId: string) => void | Promise<void>;
   onOpenInClinic?: (appointmentId: string) => void | Promise<void>;
+  onOpenInGrooming?: (appointmentId: string) => void | Promise<void>;
+  onOpenInBoarding?: (appointmentId: string) => void | Promise<void>;
   canViewFinancial?: boolean;
   staffOptions: HubStaffMember[];
   serviceTypes: HubServiceType[];
@@ -70,6 +73,8 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
   onCancel,
   onOpenComanda,
   onOpenInClinic,
+  onOpenInGrooming,
+  onOpenInBoarding,
   canViewFinancial = false,
   staffOptions,
   serviceTypes,
@@ -98,6 +103,14 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
     [],
   );
 
+  const operationalModule = useMemo(() => {
+    const mod = resolveOperationalModuleForAppointment(appt);
+    if (mod === 'clinical' && !onOpenInClinic) return null;
+    if (mod === 'grooming' && !onOpenInGrooming) return null;
+    if (mod === 'boarding' && !onOpenInBoarding) return null;
+    return mod;
+  }, [appt, onOpenInClinic, onOpenInGrooming, onOpenInBoarding]);
+
   const handlers = useMemo(
     () => ({
       onConfirm: () => void onStatusChange('confirmed'),
@@ -106,16 +119,18 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
       onOpenCheckout: () => undefined,
       onOpenComanda: () => void onOpenComanda?.(appt.id),
       onOpenInClinic: () => void onOpenInClinic?.(appt.id),
+      onOpenInGrooming: () => void onOpenInGrooming?.(appt.id),
+      onOpenInBoarding: () => void onOpenInBoarding?.(appt.id),
       onDuplicate,
       onCancel,
     }),
-    [onStatusChange, onOpenComanda, onOpenInClinic, appt.id, onDuplicate, onCancel],
+    [onStatusChange, onOpenComanda, onOpenInClinic, onOpenInGrooming, onOpenInBoarding, appt.id, onDuplicate, onCancel],
   );
 
   const canOpenComanda = !!onOpenComanda;
   const { primary, secondary, menu } = useMemo(
-    () => buildPanelActions(appt.status, canWrite, handlers, onOpenInClinic, canOpenComanda),
-    [appt.status, canWrite, handlers, onOpenInClinic, canOpenComanda],
+    () => buildPanelActions(appt.status, canWrite, handlers, operationalModule, canOpenComanda),
+    [appt.status, canWrite, handlers, operationalModule, canOpenComanda],
   );
 
   const secondaryAsButton =

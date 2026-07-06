@@ -1,5 +1,6 @@
 import React from 'react';
 import type { HubGuardian } from '../../api/hubGuardiansApi';
+import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { AddPetAndOverflowMenu } from './AddPetAndOverflowMenu';
 
 interface ClientesTableProps {
@@ -85,7 +86,7 @@ export const ClientesTable: React.FC<ClientesTableProps> = ({
                     </div>
                   </td>
                   <td>
-                    <div style={{ fontSize: 13 }}>{g.phone || '—'}</div>
+                    <div style={{ fontSize: 13 }}>{formatBrPhoneDisplay(g.phone)}</div>
                     <div className="hub-clientes__muted" style={{ fontSize: 12 }}>
                       {g.email || '—'}
                     </div>

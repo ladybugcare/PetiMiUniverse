@@ -193,8 +193,124 @@
   min-width: 168px;
 }
 
-.hub-agenda__new-btn {
+.hub-agenda__new-btn-group {
   margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.hub-agenda__new-split {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.hub-agenda__new-split-main {
+  background: #f0642f;
+  color: #fff;
+  border: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.28);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.hub-agenda__new-split-main:hover {
+  background: #d9541f;
+}
+
+.hub-agenda__new-split-toggle {
+  background: #f0642f;
+  color: #fff;
+  border: none;
+  padding: 8px 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.hub-agenda__new-split-toggle:hover {
+  background: #d9541f;
+}
+
+.hub-agenda__new-menu {
+  background: #fff;
+  border: 1px solid var(--ag-border, #e8ddd8);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 6px;
+  z-index: 10000;
+}
+
+.hub-agenda__new-menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--hc-text, #4a3b3a);
+  transition: background 0.12s ease;
+}
+
+.hub-agenda__new-menu-item:hover {
+  background: #fdf6f2;
+}
+
+.hub-agenda__new-menu-item-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fdf6f2;
+  color: #f0642f;
+}
+
+.hub-agenda__new-menu-item-icon--walk-in {
+  background: #f3e8f8;
+  color: #7b1fa2;
+}
+
+.hub-agenda__new-menu-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hub-agenda__new-menu-item-text strong {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.hub-agenda__new-menu-item-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--hc-muted, #7a6b68);
+  line-height: 1.35;
+}
+
+/* legado — outros usos possíveis */
+.hub-agenda__new-btn {
   background: #f0642f;
   color: #fff;
   border: none;

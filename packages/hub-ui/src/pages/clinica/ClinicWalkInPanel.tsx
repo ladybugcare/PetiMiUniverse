@@ -16,7 +16,9 @@ type Props = {
   open: boolean;
   clinicId: string;
   onClose: () => void;
-  /** Abre a agenda principal com o formulário de novo agendamento pré-preenchido (rotina → «agendar»). */
+  /** Abre a agenda principal em modo encaixe (recepção unificada). */
+  onWalkInAgenda?: (initial: NewAppointmentInitial) => void;
+  /** Abre a agenda para agendamento futuro (consulta de rotina). */
   onScheduleAgenda?: (initial: NewAppointmentInitial) => void;
   /**
    * Chamado ao confirmar a entrada. Cria apenas um `hub_appointments` com status `checked_in`.
@@ -34,7 +36,15 @@ type Props = {
   submitting: boolean;
 };
 
-const ClinicWalkInPanel: React.FC<Props> = ({ open, clinicId, onClose, onSubmit, onScheduleAgenda, submitting }) => {
+const ClinicWalkInPanel: React.FC<Props> = ({
+  open,
+  clinicId,
+  onClose,
+  onSubmit,
+  onScheduleAgenda,
+  onWalkInAgenda,
+  submitting,
+}) => {
   const [staff, setStaff] = useState<HubStaffMember[]>([]);
   const [guardianOptions, setGuardianOptions] = useState<HubComboboxOption[]>([]);
   const [guardiansLoading, setGuardiansLoading] = useState(false);
@@ -146,8 +156,45 @@ const ClinicWalkInPanel: React.FC<Props> = ({ open, clinicId, onClose, onSubmit,
     entryKind === 'routine' &&
     routineAgendaMode === 'schedule';
 
+  const buildAgendaInitial = (): NewAppointmentInitial | null => {
+    const st = clinicalServiceRows.find((x) => x.id === serviceTypeId);
+    if (!st) return null;
+    const petName = guardianPets.find((p) => p.id === petId)?.name ?? '';
+    const guardianName = guardianOptions.find((g) => g.value === guardianId)?.label ?? '';
+    const dur =
+      typeof st.default_duration_minutes === 'number' && st.default_duration_minutes > 0
+        ? st.default_duration_minutes
+        : 30;
+    const q = complaint.trim();
+    return {
+      date: todayYmd(),
+      guardian_id: guardianId,
+      guardian_name: guardianName,
+      pet_id: petId,
+      pet_name: petName,
+      hub_staff_member_id: staffId || null,
+      walk_in_emergency: entryKind === 'emergency',
+      services: [
+        {
+          hub_service_type_id: serviceTypeId,
+          name: st.name,
+          duration_minutes: dur,
+        },
+      ],
+      notes: q || null,
+      title: q ? q.slice(0, 200) : `${st.name} — ${petName}`,
+    };
+  };
+
   const handleStartNow = () => {
     if (!canStartNow) return;
+    if (onWalkInAgenda) {
+      const initial = buildAgendaInitial();
+      if (!initial) return;
+      onWalkInAgenda(initial);
+      onClose();
+      return;
+    }
     const st = clinicalServiceRows.find((x) => x.id === serviceTypeId);
     const dur =
       typeof st?.default_duration_minutes === 'number' && st.default_duration_minutes > 0
@@ -179,32 +226,9 @@ const ClinicWalkInPanel: React.FC<Props> = ({ open, clinicId, onClose, onSubmit,
 
   const goScheduleOnMainAgenda = () => {
     if (!canScheduleAgenda || !onScheduleAgenda) return;
-    const st = clinicalServiceRows.find((x) => x.id === serviceTypeId);
-    if (!st) return;
-    const petName = guardianPets.find((p) => p.id === petId)?.name ?? '';
-    const guardianName = guardianOptions.find((g) => g.value === guardianId)?.label ?? '';
-    const dur =
-      typeof st.default_duration_minutes === 'number' && st.default_duration_minutes > 0
-        ? st.default_duration_minutes
-        : 30;
-    const q = complaint.trim();
-    onScheduleAgenda({
-      date: todayYmd(),
-      guardian_id: guardianId,
-      guardian_name: guardianName,
-      pet_id: petId,
-      pet_name: petName,
-      hub_staff_member_id: staffId || null,
-      services: [
-        {
-          hub_service_type_id: serviceTypeId,
-          name: st.name,
-          duration_minutes: dur,
-        },
-      ],
-      notes: q || null,
-      title: q ? q.slice(0, 200) : `${st.name} — ${petName}`,
-    });
+    const initial = buildAgendaInitial();
+    if (!initial) return;
+    onScheduleAgenda(initial);
   };
 
 
@@ -220,6 +244,11 @@ const ClinicWalkInPanel: React.FC<Props> = ({ open, clinicId, onClose, onSubmit,
         <button type="button" className="hub-btn hub-btn--primary nam-intake-footer-primary" disabled={!canStartNow} onClick={handleStartNow}>
           {submitting ? (
             'Registrando…'
+          ) : onWalkInAgenda ? (
+            <>
+              <Zap size={18} strokeWidth={2} aria-hidden />
+              Registrar encaixe na agenda
+            </>
           ) : entryKind === 'emergency' ? (
             <>
               <Zap size={18} strokeWidth={2} aria-hidden />

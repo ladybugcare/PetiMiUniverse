@@ -24,7 +24,7 @@ import StartEncounterModal from './StartEncounterModal';
 import type { NewAppointmentInitial } from '../agenda/NewAppointmentModal';
 import '../agenda/new-appointment-modal.css';
 
-const HubClinicEncountersPage: React.FC = () => {
+const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const navigate = useNavigate();
   const { showError } = useAlert();
   const { role: authRole } = useAuth();
@@ -126,11 +126,21 @@ const HubClinicEncountersPage: React.FC = () => {
   const openAgendaForScheduling = useCallback(
     (initial: NewAppointmentInitial) => {
       setWalkInOpen(false);
-      navigate('/hub/agenda', {
+      navigate('/hub/appointments', {
         state: {
           openClinicalCreate: true,
           clinicalIntakeInitial: initial,
         },
+      });
+    },
+    [navigate],
+  );
+
+  const openAgendaForWalkIn = useCallback(
+    (initial: NewAppointmentInitial) => {
+      setWalkInOpen(false);
+      navigate('/hub/appointments?openWalkIn=1', {
+        state: { walkInInitial: initial },
       });
     },
     [navigate],
@@ -228,7 +238,7 @@ const HubClinicEncountersPage: React.FC = () => {
   });
 
   return (
-    <div className="hub-clinic-atendimentos">
+    <div className={`hub-clinic-atendimentos${embedded ? ' hub-clinic-atendimentos--embedded' : ''}`}>
       <ClinicAlertsBanner clinicId={clinicId!} />
 
       {!clinicalTypesConfigured && !loading ? (
@@ -317,6 +327,7 @@ const HubClinicEncountersPage: React.FC = () => {
         onClose={() => setWalkInOpen(false)}
         onSubmit={createWalkIn}
         onScheduleAgenda={openAgendaForScheduling}
+        onWalkInAgenda={openAgendaForWalkIn}
         submitting={creatingWalkIn}
       />
 

@@ -14,6 +14,7 @@ import {
   Building2,
 } from 'lucide-react';
 import type { HubGuardian, HubGuardianPet } from '../../api/hubGuardiansApi';
+import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { formatGuardianAddress } from './formatters';
 import { GuardianDetailQuickActions } from './GuardianDetailQuickActions';
 import { HubTabs } from '../../components/HubTabs';
@@ -140,7 +141,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
           </button>
         </header>
         <div className="hub-meu-perfil__grid">
-          <HubProfileInfoCell icon={Phone} label="Telefone" value={guardian.phone || '—'} />
+          <HubProfileInfoCell icon={Phone} label="Telefone" value={formatBrPhoneDisplay(guardian.phone)} />
           <HubProfileInfoCell icon={Mail} label="E-mail" value={guardian.email || '—'} />
           <HubProfileInfoCell icon={MapPin} label="Endereço" value={addr} />
           <HubProfileInfoCell icon={Info} label="Origem" value={guardian.lead_source || '—'} />
@@ -196,7 +197,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
                 <Phone size={18} strokeWidth={1.75} />
               </span>
               <div className="hub-clientes__contact-row-text">
-                <strong>Telefone:</strong> {guardian.phone || '—'}
+                <strong>Telefone:</strong> {formatBrPhoneDisplay(guardian.phone)}
               </div>
             </li>
             <li className="hub-clientes__contact-row">
@@ -495,7 +496,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
                 <span className="hub-meu-perfil__badge hub-meu-perfil__badge--muted">Co-tutor em alguns pets</span>
               ) : null}
               <div className="hub-meu-perfil__contact">
-                {guardian.phone ? <span>{guardian.phone}</span> : null}
+                {guardian.phone ? <span>{formatBrPhoneDisplay(guardian.phone)}</span> : null}
                 {guardian.email ? <span>{guardian.email}</span> : null}
                 {!guardian.phone && !guardian.email ? <span>—</span> : null}
               </div>

@@ -39,6 +39,8 @@ export type HubEncounterPet = {
   coat_type?: string | null;
 };
 
+export type HubEncounterOperationalPhase = 'awaiting_exams' | 'exams_returned';
+
 export type HubEncounter = {
   id: string;
   clinic_id: string;
@@ -53,6 +55,7 @@ export type HubEncounter = {
   /** Walk-in: tipo de serviço principal (Clínica / Internação / Cirurgia). */
   hub_service_type_id?: string | null;
   status: HubEncounterStatus;
+  operational_phase?: HubEncounterOperationalPhase | null;
   chief_complaint: string | null;
   summary_notes: string | null;
   anamnesis: Record<string, unknown>;
@@ -88,6 +91,7 @@ export type DayBoardItem = {
   pet_id?: string | null;
   guardian_id?: string | null;
   hub_staff_member_id?: string | null;
+  operational_phase?: HubEncounterOperationalPhase | null;
 } & Partial<HubEncounter>;
 
 export type HubPetClinicalFlag = {
@@ -320,6 +324,7 @@ export const hubEncountersApi = {
     payload: {
       clinic_id: string;
       status?: string;
+      operational_phase?: HubEncounterOperationalPhase | null;
       chief_complaint?: string | null;
       summary_notes?: string | null;
       anamnesis?: Record<string, unknown>;
@@ -380,6 +385,66 @@ export const hubEncountersApi = {
     return apiRequest(
       `${encBase}?clinic_id=${encodeURIComponent(clinicId)}&pet_id=${encodeURIComponent(petId)}`,
     ) as Promise<{ encounters: HubEncounter[] }>;
+  },
+};
+
+export type VetCockpitPatientContext = {
+  pet: {
+    id: string;
+    name: string;
+    species?: string;
+    breed?: string | null;
+    sex?: string | null;
+    birth_date?: string | null;
+    size_tier?: string;
+  };
+  guardian: { id: string; full_name: string; phone?: string | null } | null;
+  chief_complaint: string | null;
+  weight_kg: unknown;
+  flags: HubPetClinicalFlag[];
+  active_case: HubClinicalCase | null;
+  cases: HubClinicalCase[];
+  recent_encounters: Array<{
+    id: string;
+    chief_complaint: string | null;
+    status: string;
+    started_at: string | null;
+    completed_at: string | null;
+  }>;
+  recent_exams: HubClinicalExam[];
+  exams_grouped: {
+    requested: HubClinicalExam[];
+    awaiting: HubClinicalExam[];
+    available: HubClinicalExam[];
+  };
+  active_prescriptions: HubPrescription[];
+  draft_prescriptions_count: number;
+  recent_vaccinations: HubVaccination[];
+  active_hospitalization: HubHospitalization | null;
+  encounter: {
+    id: string;
+    status: string;
+    operational_phase: HubEncounterOperationalPhase | null;
+    hub_case_id: string | null;
+  } | null;
+  appointment: {
+    id: string;
+    status: string;
+    appointment_kind: string | null;
+    starts_at: string;
+  } | null;
+};
+
+export const hubVetCockpitApi = {
+  patientContext(
+    clinicId: string,
+    opts: { petId?: string; encounterId?: string; appointmentId?: string },
+  ) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts.petId) q.set('pet_id', opts.petId);
+    if (opts.encounterId) q.set('encounter_id', opts.encounterId);
+    if (opts.appointmentId) q.set('appointment_id', opts.appointmentId);
+    return apiRequest(`${clinicalBase}/cockpit/patient-context?${q}`) as Promise<VetCockpitPatientContext>;
   },
 };
 

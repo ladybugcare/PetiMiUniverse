@@ -1,7 +1,14 @@
 import { getUserRole, type AppRole } from '@petimi/web-core';
 
 /** Roles that belong to Hub. Any other role is redirected out. */
-export const HUB_VALID_ROLES: AppRole[] = ['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL'];
+export const HUB_VALID_ROLES: AppRole[] = [
+  'CADMIN',
+  'CMANAGER',
+  'CASSISTANT',
+  'CVET_INTERNAL',
+  'CGROOMER',
+  'CFINANCE',
+];
 
 /** Internal-path landing per role (all Hub-valid roles). */
 function hubLandingForRole(role: AppRole): string {
@@ -13,6 +20,10 @@ function hubLandingForRole(role: AppRole): string {
       return '/hub/appointments';
     case 'CVET_INTERNAL':
       return '/hub/clinica/atendimentos';
+    case 'CGROOMER':
+      return '/hub/grooming';
+    case 'CFINANCE':
+      return '/hub/financeiro';
     default:
       return '/hub/clientes';
   }

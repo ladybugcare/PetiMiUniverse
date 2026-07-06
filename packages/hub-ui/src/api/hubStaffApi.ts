@@ -32,7 +32,7 @@ export interface HubStaffMember {
   birth_date?: string | null;
   job_title: string;
   professional_kind: HubProfessionalKind;
-  specialties: string | null;
+  specialties: string[] | null;
   crmv: string | null;
   crmv_uf: string | null;
   internal_notes: string | null;
@@ -96,11 +96,22 @@ export const hubStaffApi = {
     }) as Promise<{ staff: HubStaffMember }>;
   },
 
-  async sendInvite(id: string, clinicId: string): Promise<{ invitation: Record<string, unknown> }> {
+  async sendInvite(
+    id: string,
+    clinicId: string,
+  ): Promise<{
+    invitation: Record<string, unknown>;
+    invitation_url: string;
+    share_message: string;
+  }> {
     return apiRequest(`${basePath}/${encodeURIComponent(id)}/invite`, {
       method: 'POST',
       body: JSON.stringify({ clinic_id: clinicId }),
-    }) as Promise<{ invitation: Record<string, unknown> }>;
+    }) as Promise<{
+      invitation: Record<string, unknown>;
+      invitation_url: string;
+      share_message: string;
+    }>;
   },
 
   /** Upload de foto (PNG/JPG/WEBP, máx. 5 MB). Devolve URL pública para `photo_url`. */

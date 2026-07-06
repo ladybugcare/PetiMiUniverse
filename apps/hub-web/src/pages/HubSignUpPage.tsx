@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User, Mail, Lock, Phone, ArrowRight, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { HubBrPhoneInput } from '@petimi/hub-ui';
 import '@petimi/hub-ui/pages/pets/wizard/pet-wizard.css';
 import './hub-onboarding-page.css';
 import HubOnboardingStepper from '../components/HubOnboardingStepper';
@@ -120,13 +121,11 @@ const HubSignUpPage: React.FC = () => {
                 <span className="hub-login-page-field-icon" aria-hidden>
                   <Phone size={20} color="#c86a4d" />
                 </span>
-                <input
+                <HubBrPhoneInput
                   id="su-phone"
                   className="hub-login-page-text-input"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="(11) 99999-9999"
-                  autoComplete="tel"
+                  onChange={setPhone}
                 />
               </div>
             </div>

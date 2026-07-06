@@ -19,6 +19,7 @@ const auditLog_1 = require("../../utils/auditLog");
 const hubComandaPdf_1 = require("./hubComandaPdf");
 const hubClinicSettingsController_1 = require("./hubClinicSettingsController");
 const hubPaymentMethods_1 = require("./hubPaymentMethods");
+const comandaEvents_1 = require("./comandaEvents");
 const uuidStr = zod_1.z.string().uuid();
 const comandaEditContextSchema = zod_1.z.enum(['caixa', 'financeiro']).optional().default('caixa');
 function computeComandaEditScopes(comandaRow, operationalComplete, balanceDue) {
@@ -1353,6 +1354,22 @@ const postHubComandaOpen = async (req, res) => {
             await supabase_1.supabaseAdmin.from('hub_comandas').delete().eq('id', comandaId);
             return res.status(500).json({ error: iErr.message });
         }
+        const userId = req.user?.id ?? null;
+        for (const row of rows) {
+            void (0, comandaEvents_1.recordComandaItemAddedEvent)({
+                clinic_id,
+                comanda_id: comandaId,
+                item: {
+                    description: String(row.description),
+                    item_kind: String(row.item_kind),
+                    quantity: Number(row.quantity),
+                    unit_amount: Number(row.unit_amount),
+                    line_total: Number(row.line_total),
+                },
+                actor_user_id: userId,
+                source: origin_type === 'manual' ? 'manual_open' : 'origin_open',
+            });
+        }
         const detail = await getHubComandaDetailPayload(comandaId, clinic_id);
         return res.status(201).json(detail);
     }
@@ -1517,6 +1534,7 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
         ...it,
         pet_name: it.pet_id ? (petNameMap.get(it.pet_id) ?? null) : null,
     }));
+    const events = await (0, comandaEvents_1.listComandaEvents)(comandaId, clinicId);
     return {
         comanda: { ...comanda, guardian, pet },
         items: enrichedItems,
@@ -1529,6 +1547,7 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
         operational_complete,
         edit_scopes,
         allowed_guardians: allowedGuardians,
+        events,
     };
 }
 async function loadComandaPdfPayload(comandaId, clinicId) {
@@ -2099,7 +2118,7 @@ const postHubComandaCheckout = async (req, res) => {
     }
 };
 exports.postHubComandaCheckout = postHubComandaCheckout;
-async function applySyncComandaFromOrigin(clinicId, comandaId) {
+async function applySyncComandaFromOrigin(clinicId, comandaId, opts) {
     const detail = await getHubComandaDetailPayload(comandaId, clinicId);
     const comanda = detail.comanda;
     if (String(comanda.status) !== 'aberta') {
@@ -2139,6 +2158,7 @@ async function applySyncComandaFromOrigin(clinicId, comandaId) {
         .filter((it) => openIdsSet.has(it.id) && it.origin_type === 'manual')
         .map((it) => it.id));
     const openIds = [...openIdsSet].filter((id) => !manualOpenIds.has(id));
+    const removedItems = allItems.filter((it) => openIds.includes(it.id));
     if (openIds.length) {
         const { error: delErr } = await supabase_1.supabaseAdmin.from('hub_comanda_items').delete().in('id', openIds);
         if (delErr)
@@ -2175,6 +2195,47 @@ async function applySyncComandaFromOrigin(clinicId, comandaId) {
         const { error: insErr } = await supabase_1.supabaseAdmin.from('hub_comanda_items').insert(insertRows);
         if (insErr)
             throw new Error(insErr.message);
+    }
+    for (const it of removedItems) {
+        const snap = (0, comandaEvents_1.itemSnapshotFromRow)(it);
+        void (0, comandaEvents_1.recordComandaItemRemovedEvent)({
+            clinic_id: clinicId,
+            comanda_id: comandaId,
+            item: snap,
+            actor_user_id: opts?.actor_user_id ?? null,
+            edit_context: opts?.edit_context ?? null,
+            source: 'sync_origin',
+        });
+    }
+    for (const row of insertRows) {
+        void (0, comandaEvents_1.recordComandaItemAddedEvent)({
+            clinic_id: clinicId,
+            comanda_id: comandaId,
+            item: {
+                description: String(row.description),
+                item_kind: String(row.item_kind),
+                quantity: Number(row.quantity),
+                unit_amount: Number(row.unit_amount),
+                line_total: Number(row.line_total),
+            },
+            actor_user_id: opts?.actor_user_id ?? null,
+            edit_context: opts?.edit_context ?? null,
+            source: 'sync_origin',
+        });
+    }
+    if (removedItems.length > 0 || insertRows.length > 0) {
+        void (0, comandaEvents_1.recordComandaEvent)({
+            clinic_id: clinicId,
+            comanda_id: comandaId,
+            event_type: 'items_synced',
+            title: 'Itens sincronizados com a origem',
+            body: removedItems.length || insertRows.length
+                ? `${removedItems.length} removido(s), ${insertRows.length} adicionado(s)`
+                : null,
+            actor_user_id: opts?.actor_user_id ?? null,
+            edit_context: opts?.edit_context ?? null,
+            metadata: { removed_count: removedItems.length, added_count: insertRows.length },
+        });
     }
     const { data: remaining } = await supabase_1.supabaseAdmin.from('hub_comanda_items').select('line_total').eq('comanda_id', comandaId);
     const sumAll = round2((remaining ?? []).reduce((s, r) => s + Number(r.line_total ?? 0), 0));
@@ -2217,7 +2278,10 @@ const postHubComandaSyncFromOrigin = async (req, res) => {
             return res.status(409).json({ error: msg });
         }
         try {
-            const detail = await applySyncComandaFromOrigin(clinicId, idParsed.data);
+            const detail = await applySyncComandaFromOrigin(clinicId, idParsed.data, {
+                actor_user_id: req.user?.id ?? null,
+                edit_context: editContext,
+            });
             return res.json(detail);
         }
         catch (e) {
@@ -2986,6 +3050,22 @@ const postHubComandaAddItems = async (req, res) => {
         if (insErr)
             return res.status(500).json({ error: insErr.message });
         await recomputeComandaTotals(comandaId, clinic_id);
+        for (const row of insertRows) {
+            void (0, comandaEvents_1.recordComandaItemAddedEvent)({
+                clinic_id,
+                comanda_id: comandaId,
+                item: {
+                    description: String(row.description),
+                    item_kind: String(row.item_kind),
+                    quantity: Number(row.quantity),
+                    unit_amount: Number(row.unit_amount),
+                    line_total: Number(row.line_total),
+                },
+                actor_user_id: userId,
+                edit_context,
+                source: 'manual',
+            });
+        }
         const meta = (0, auditLog_1.extractRequestMetadata)(req);
         void (0, auditLog_1.createAuditLog)({
             user_id: userId ?? '',
@@ -3037,7 +3117,7 @@ const patchHubComandaItem = async (req, res) => {
         }
         const { data: item, error: iErr } = await supabase_1.supabaseAdmin
             .from('hub_comanda_items')
-            .select('id, comanda_id, origin_type, quantity, unit_amount, discount_amount')
+            .select('id, comanda_id, origin_type, description, item_kind, quantity, unit_amount, discount_amount, line_total')
             .eq('id', itemId)
             .eq('comanda_id', comandaId)
             .maybeSingle();
@@ -3068,6 +3148,40 @@ const patchHubComandaItem = async (req, res) => {
             .eq('id', itemId);
         if (upErr)
             return res.status(500).json({ error: upErr.message });
+        const changes = [];
+        if (updates.description !== undefined && updates.description !== String(item.description ?? '')) {
+            changes.push(`descrição alterada`);
+        }
+        if (updates.quantity !== undefined && updates.quantity !== Number(item.quantity ?? 1)) {
+            changes.push(`quantidade ${Number(item.quantity ?? 1)} → ${updates.quantity}`);
+        }
+        if (updates.unit_amount !== undefined && updates.unit_amount !== Number(item.unit_amount ?? 0)) {
+            const before = Number(item.unit_amount ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            const after = updates.unit_amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            changes.push(`valor unitário ${before} → ${after}`);
+        }
+        if (updates.discount_amount !== undefined && updates.discount_amount !== Number(item.discount_amount ?? 0)) {
+            const before = Number(item.discount_amount ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            const after = updates.discount_amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            changes.push(`desconto ${before} → ${after}`);
+        }
+        if (changes.length > 0) {
+            void (0, comandaEvents_1.recordComandaEvent)({
+                clinic_id,
+                comanda_id: comandaId,
+                event_type: 'item_updated',
+                title: (0, comandaEvents_1.comandaItemEventTitle)('updated', String(item.item_kind ?? 'service')),
+                body: (0, comandaEvents_1.comandaItemUpdateBody)(String(item.description ?? 'Item'), changes),
+                metadata: {
+                    item_id: itemId,
+                    changes,
+                    line_total_before: Number(item.line_total ?? 0),
+                    line_total_after: line_total,
+                },
+                actor_user_id: req.user?.id ?? null,
+                edit_context,
+            });
+        }
         await recomputeComandaTotals(comandaId, clinic_id);
         const detail = await getHubComandaDetailPayload(comandaId, clinic_id);
         return res.json(detail);
@@ -3103,7 +3217,7 @@ const deleteHubComandaItem = async (req, res) => {
         }
         const { data: item } = await supabase_1.supabaseAdmin
             .from('hub_comanda_items')
-            .select('id, comanda_id, origin_type')
+            .select('id, comanda_id, origin_type, description, item_kind, quantity, unit_amount, line_total')
             .eq('id', itemId)
             .eq('comanda_id', comandaId)
             .maybeSingle();
@@ -3120,10 +3234,19 @@ const deleteHubComandaItem = async (req, res) => {
             .maybeSingle();
         if (invoicedLine)
             return res.status(409).json({ error: 'Item já faturado e não pode ser removido' });
+        const itemSnap = (0, comandaEvents_1.itemSnapshotFromRow)(item);
         const { error: delErr } = await supabase_1.supabaseAdmin.from('hub_comanda_items').delete().eq('id', itemId);
         if (delErr)
             return res.status(500).json({ error: delErr.message });
         await recomputeComandaTotals(comandaId, clinic_id);
+        void (0, comandaEvents_1.recordComandaItemRemovedEvent)({
+            clinic_id,
+            comanda_id: comandaId,
+            item: itemSnap,
+            actor_user_id: userId,
+            edit_context,
+            source: 'manual',
+        });
         const meta = (0, auditLog_1.extractRequestMetadata)(req);
         void (0, auditLog_1.createAuditLog)({
             user_id: userId ?? '',

@@ -13,6 +13,8 @@ import { HubLoading } from '../../components/HubLoading';
 import { hubProspectsApi } from '../../api/hubProspectsApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import HubQuoteWorkspace, { type HubQuoteCreateContext } from './HubQuoteWorkspace';
+import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
+import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import type { HubQuote } from '../../api/hubQuotesApi';
 import '../clientes/clientes.css';
 import './orcamentos-page.css';
@@ -56,7 +58,7 @@ const HubQuoteNewPage: React.FC = () => {
     try {
       const { prospect } = await hubProspectsApi.get(prospectIdParam, clinicId);
       setResolvedProspectId(prospect.id);
-      setProspectLabel(`${prospect.full_name} · ${prospect.phone}`);
+      setProspectLabel(`${prospect.full_name} · ${formatBrPhoneDisplay(prospect.phone)}`);
     } catch {
       setProspectLabel(null);
       setResolvedProspectId(null);
@@ -179,10 +181,10 @@ const HubQuoteNewPage: React.FC = () => {
                 </div>
                 <div className="hub-orcamento-novo__field">
                   <label className="hub-orcamento-novo__label">Telefone *</label>
-                  <input
+                  <HubBrPhoneInput
                     className="hub-orcamento-novo__input"
                     value={inline.phone}
-                    onChange={(e) => setInline((s) => ({ ...s, phone: e.target.value }))}
+                    onChange={(phone) => setInline((s) => ({ ...s, phone }))}
                   />
                 </div>
                 <div className="hub-orcamento-novo__field">

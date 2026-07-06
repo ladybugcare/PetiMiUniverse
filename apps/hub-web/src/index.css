@@ -1328,6 +1328,21 @@ body {
   box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.15);
 }
 
+.hub-login-page-field-row--readonly {
+  background: #faf7f4;
+}
+
+.hub-login-page-field-row--readonly:focus-within {
+  border-color: #d6d6d6;
+  box-shadow: none;
+}
+
+.hub-login-page-field-row--readonly .hub-login-page-text-input {
+  background: #faf7f4;
+  color: #6b5654;
+  cursor: default;
+}
+
 .hub-login-page-field-icon {
   flex-shrink: 0;
   width: 48px;

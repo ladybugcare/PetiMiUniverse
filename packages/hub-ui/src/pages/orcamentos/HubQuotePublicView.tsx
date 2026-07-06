@@ -27,6 +27,7 @@ import {
   staffStatusClass,
   staffStatusLabel,
 } from './hubQuoteViewUtils';
+import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import {
   PublicDocCardTitle,
   PublicDocFieldLabel,
@@ -150,7 +151,7 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
                 <PublicDocFieldLabel icon={User}>Nome</PublicDocFieldLabel>
                 <dd>{prospect.full_name}</dd>
                 <PublicDocFieldLabel icon={Phone}>Telefone</PublicDocFieldLabel>
-                <dd>{prospect.phone}</dd>
+                <dd>{formatBrPhoneDisplay(prospect.phone)}</dd>
                 {prospect.tax_id ? (
                   <>
                     <PublicDocFieldLabel icon={CreditCard}>CPF</PublicDocFieldLabel>

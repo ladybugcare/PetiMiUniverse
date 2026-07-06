@@ -1,5 +1,6 @@
 import React from 'react';
 import { Mail, MessageCircle, Phone } from 'lucide-react';
+import { digitsOnlyBrPhone, formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 
 export type DocumentContactStripProps = {
   name: string;
@@ -20,6 +21,9 @@ export function DocumentContactStrip({
   leading,
   extraLines,
 }: DocumentContactStripProps) {
+  const phoneDisplay = formatBrPhoneDisplay(phone);
+  const resolvedTelHref = telHref ?? (phone ? `tel:${digitsOnlyBrPhone(phone)}` : null);
+
   return (
     <div className="hub-doc-party">
       {leading}
@@ -42,12 +46,12 @@ export function DocumentContactStrip({
           <span className="hub-doc-party__col-label">Telefone</span>
           <span className="hub-doc-party__phone-row">
             <Phone size={15} strokeWidth={2} className="hub-doc-party__phone-ic" aria-hidden />
-            {telHref && phone ? (
-              <a href={telHref} className="hub-doc-party__phone-link">
-                {phone}
+            {resolvedTelHref && phone ? (
+              <a href={resolvedTelHref} className="hub-doc-party__phone-link">
+                {phoneDisplay}
               </a>
             ) : (
-              <span className="hub-doc-party__phone-link">{phone?.trim() || '—'}</span>
+              <span className="hub-doc-party__phone-link">{phoneDisplay}</span>
             )}
             {waHref ? (
               <a

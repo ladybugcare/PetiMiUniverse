@@ -13,7 +13,8 @@ import {
 import HubProfilePhotoPicker from '../components/HubProfilePhotoPicker';
 import HubClinicEditPanel from '../components/clinic-profile/HubClinicEditPanel';
 import HubUnitEditPanel from '../components/clinic-profile/HubUnitEditPanel';
-import { useAlert } from '@petimi/hub-ui';
+import { useAlert, formatBrPhoneDisplay } from '@petimi/hub-ui';
+import { usePermissions } from '@petimi/web-core';
 import '@petimi/hub-ui/pages/clientes/clientes.css';
 import { useHubUnit } from '../contexts/HubUnitContext';
 import { hubClinicProfileApi } from '../services/hubClinicProfileApi';
@@ -104,6 +105,9 @@ function unitFromListRow(row: {
 
 const HubClinicaPerfilPage: React.FC = () => {
   const { clinicId, clinicName, selectedUnit, units, reload, loading: unitContextLoading } = useHubUnit();
+  const { role: clinicRole } = usePermissions();
+  const canEditClinicProfile =
+    clinicRole === 'CADMIN' || clinicRole === 'CMANAGER';
   const { showSuccess, showError } = useAlert();
   const [clinic, setClinic] = useState<HubClinicProfile | null>(null);
   const [unit, setUnit] = useState<HubUnitProfile | null>(null);
@@ -219,13 +223,13 @@ const HubClinicaPerfilPage: React.FC = () => {
             photoUrl={clinic?.photo_url ?? undefined}
             displayName={displayName}
             size={96}
-            disabled={!clinicId}
+            disabled={!clinicId || !canEditClinicProfile}
           />
           <h2 className="hub-meu-perfil__sidebar-name">{displayName}</h2>
           <span className="hub-meu-perfil__badge">{badge}</span>
           <div className="hub-meu-perfil__contact">
             <span>{cnpjDisplay !== '—' ? `CNPJ ${cnpjDisplay}` : 'CNPJ não informado'}</span>
-            <span>{dash(clinic?.phone)}</span>
+            <span>{formatBrPhoneDisplay(clinic?.phone)}</span>
             <span>Unidade atual: {unitLabel}</span>
           </div>
         </div>
@@ -253,20 +257,22 @@ const HubClinicaPerfilPage: React.FC = () => {
                 Informações legais e de contacto da clínica (razão social).
               </p>
             </div>
-            <button
-              type="button"
-              className="hub-meu-perfil__btn-outline"
-              onClick={() => setEditClinicOpen(true)}
-              disabled={!clinic}
-            >
-              <Pencil size={16} aria-hidden />
-              Editar clínica
-            </button>
+            {canEditClinicProfile ? (
+              <button
+                type="button"
+                className="hub-meu-perfil__btn-outline"
+                onClick={() => setEditClinicOpen(true)}
+                disabled={!clinic}
+              >
+                <Pencil size={16} aria-hidden />
+                Editar clínica
+              </button>
+            ) : null}
           </header>
           <div className="hub-meu-perfil__grid">
             <InfoCell icon={<Building2 size={20} color={terracotta} />} label="Nome da clínica" value={dash(clinic?.name)} />
             <InfoCell icon={<Hash size={20} color={terracotta} />} label="CNPJ" value={cnpjDisplay} />
-            <InfoCell icon={<Phone size={20} color={terracotta} />} label="Telefone comercial" value={dash(clinic?.phone)} />
+            <InfoCell icon={<Phone size={20} color={terracotta} />} label="Telefone comercial" value={formatBrPhoneDisplay(clinic?.phone)} />
             <InfoCell
               icon={<MapPin size={20} color={terracotta} />}
               label="Endereço"
@@ -289,15 +295,17 @@ const HubClinicaPerfilPage: React.FC = () => {
                   Dados da unidade selecionada no header ({unitLabel}).
                 </p>
               </div>
-              <button type="button" className="hub-meu-perfil__btn-outline" onClick={() => setEditUnitOpen(true)}>
-                <Pencil size={16} aria-hidden />
-                Editar unidade
-              </button>
+              {canEditClinicProfile ? (
+                <button type="button" className="hub-meu-perfil__btn-outline" onClick={() => setEditUnitOpen(true)}>
+                  <Pencil size={16} aria-hidden />
+                  Editar unidade
+                </button>
+              ) : null}
             </header>
             <div className="hub-meu-perfil__grid">
               <InfoCell icon={<Store size={20} color={terracotta} />} label="Nome da unidade" value={dash(unit.name)} />
               <InfoCell icon={<FileText size={20} color={terracotta} />} label="Apelido (agenda)" value={dash(unit.nickname)} />
-              <InfoCell icon={<Phone size={20} color={terracotta} />} label="Telefone da unidade" value={dash(unit.phone)} />
+              <InfoCell icon={<Phone size={20} color={terracotta} />} label="Telefone da unidade" value={formatBrPhoneDisplay(unit.phone)} />
               <InfoCell
                 icon={<User size={20} color={terracotta} />}
                 label="Responsável técnico"
