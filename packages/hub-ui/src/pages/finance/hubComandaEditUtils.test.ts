@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { HubComandaDetailResponse } from '../../api/hubComandaApi';
 import type { HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
-import { resolveComandaCheckoutCTA, resolveDayBoardCheckoutLabel } from './hubComandaEditUtils';
+import {
+  canSendToFinanceiroHandoff,
+  resolveComandaCheckoutCTA,
+  resolveDayBoardCheckoutLabel,
+  resolveSendToFinanceiroConfirmMessage,
+} from './hubComandaEditUtils';
 
 function comandaInput(
   partial: Partial<Pick<HubComandaDetailResponse, 'open_item_ids' | 'active_receivable_ids' | 'balance_due' | 'edit_scopes'>>,
@@ -125,5 +130,51 @@ describe('resolveDayBoardCheckoutLabel', () => {
 
   it('caixa usa Receber', () => {
     expect(resolveDayBoardCheckoutLabel('caixa', dayBoardItem({ has_receivable: false }))).toBe('Receber');
+  });
+});
+
+describe('canSendToFinanceiroHandoff', () => {
+  it('permite handoff com saldo em recebível parcial', () => {
+    expect(
+      canSendToFinanceiroHandoff({
+        open_item_ids: [],
+        active_receivable_ids: ['recv-1'],
+        balance_due: 100,
+        finance_handoff_at: null,
+      }),
+    ).toBe(true);
+  });
+
+  it('bloqueia após finance_handoff_at', () => {
+    expect(
+      canSendToFinanceiroHandoff({
+        open_item_ids: [],
+        active_receivable_ids: ['recv-1'],
+        balance_due: 100,
+        finance_handoff_at: '2026-07-06T12:00:00.000Z',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('resolveSendToFinanceiroConfirmMessage', () => {
+  it('mensagem específica para saldo restante após parcial', () => {
+    expect(
+      resolveSendToFinanceiroConfirmMessage({
+        open_item_ids: [],
+        active_receivable_ids: ['recv-1'],
+        balance_due: 100,
+      }),
+    ).toContain('saldo restante');
+  });
+
+  it('mensagem padrão com itens em aberto', () => {
+    expect(
+      resolveSendToFinanceiroConfirmMessage({
+        open_item_ids: ['item-a'],
+        active_receivable_ids: [],
+        balance_due: 190,
+      }),
+    ).toContain('recebíveis pendentes');
   });
 });

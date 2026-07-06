@@ -2,11 +2,11 @@ import React from 'react';
 import { HubTabs } from '../../components/HubTabs';
 
 const links = [
-  { to: '..', label: 'Consultório', end: true },
-  { to: 'atendimentos', label: 'Operação clínica' },
-  { to: 'prontuarios', label: 'Pacientes', end: true },
-  { to: 'internacoes', label: 'Internações', end: true },
-  { to: 'cirurgias', label: 'Cirurgias', end: true },
+  { to: '/hub/clinica', label: 'Consultório', end: true },
+  { to: '/hub/clinica/atendimentos', label: 'Operação clínica' },
+  { to: '/hub/clinica/prontuarios', label: 'Pacientes', end: true },
+  { to: '/hub/clinica/internacoes', label: 'Internações', end: true },
+  { to: '/hub/clinica/cirurgias', label: 'Cirurgias', end: true },
 ];
 
 const HubClinicSubnav: React.FC = () => {

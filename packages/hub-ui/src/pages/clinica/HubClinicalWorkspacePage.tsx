@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Check,
@@ -94,6 +94,7 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   hideFinancial = false,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const clinicId = getStoredClinicId();
   const { showError, showSuccess } = useAlert();
   const { hasPermission } = usePermissions();
@@ -114,6 +115,15 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   const [rxItemsCount, setRxItemsCount] = useState(0);
   const [evolutionDrawerOpen, setEvolutionDrawerOpen] = useState(false);
   const [activeNav, setActiveNav] = useState(initialSection || 'sec-resumo');
+
+  const backTo =
+    (location.state as { from?: string } | null)?.from === 'cockpit'
+      ? '/hub/clinica'
+      : '/hub/clinica/atendimentos';
+  const backLabel =
+    (location.state as { from?: string } | null)?.from === 'cockpit'
+      ? 'Voltar ao consultório'
+      : 'Voltar à fila';
 
   useEffect(() => {
     if (initialSection) {
@@ -228,7 +238,7 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
       setEncounter(enc);
       showSuccess('Atendimento finalizado');
       if (mode === 'drawer') onCompleted?.();
-      else navigate('/hub/clinica/atendimentos');
+      else navigate(backTo);
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao finalizar');
     } finally {
@@ -426,10 +436,10 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
           ) : null
         ) : (
           <Link
-            to="/hub/clinica/atendimentos"
+            to={backTo}
             className="hub-clientes__btn hub-clientes__btn--ghost hub-clinic-workspace__back hub-cws-back"
           >
-            <ArrowLeft size={16} /> Voltar à fila
+            <ArrowLeft size={16} /> {backLabel}
           </Link>
         )}
 
@@ -1285,8 +1295,10 @@ function HubWorkspaceAttachments({
 
 const HubClinicalWorkspacePage: React.FC = () => {
   const { encounterId } = useParams<{ encounterId: string }>();
+  const [searchParams] = useSearchParams();
+  const section = searchParams.get('section') ?? undefined;
   if (!encounterId) return <p style={{ padding: 24 }}>Atendimento não encontrado.</p>;
-  return <HubClinicalWorkspace encounterId={encounterId} mode="page" />;
+  return <HubClinicalWorkspace encounterId={encounterId} mode="page" initialSection={section} />;
 };
 
 export default HubClinicalWorkspacePage;

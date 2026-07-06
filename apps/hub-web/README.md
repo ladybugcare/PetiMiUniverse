@@ -23,9 +23,15 @@ Neste diretório: `npm run dev`
 
 O Hub é uma SPA (React Router). Em produção, um **reload** em rotas como `/hub/orcamentos` ou `/hub/perfil-clinica` pede esse caminho ao servidor; sem reescrita, o Vercel devolve **404**.
 
-Este diretório inclui [`vercel.json`](vercel.json) com `rewrites` para servir `index.html` em qualquer rota (ficheiros estáticos existentes, por exemplo em `/assets/`, continuam a ter prioridade).
+Este diretório inclui [`vercel.json`](vercel.json) com `rewrites` para servir `index.html` em qualquer rota (arquivos estáticos existentes, por exemplo em `/assets/`, continuam com prioridade).
 
-Confirma no painel do projeto Vercel que a **raiz do código** é `apps/hub-web` (ou que o `vercel.json` aplicado ao deploy contém rewrites equivalentes).
+### Configuração obrigatória no painel Vercel (projeto `petmi-hub`)
+
+1. **Settings → General → Root Directory:** `apps/hub-web` (sem isso o Vercel instala na raiz do monorepo e não encontra a pasta `dist`).
+2. **Build & Development Settings:** deixe em branco ou use *Override* desligado — o `vercel.json` define `installCommand`, `buildCommand` e `outputDirectory`.
+3. **Environment Variables:** `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e, se necessário, `VITE_VET_WEB_URL`.
+
+O `installCommand` sobe dois níveis e roda `npm ci` na raiz do monorepo (workspaces `@petimi/hub-ui` e `@petimi/web-core`); o build roda `vite build` e publica `dist/`.
 
 ## Documentação de produto (Hub)
 

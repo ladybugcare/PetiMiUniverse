@@ -8,18 +8,18 @@ const COCKPIT_PATHS = new Set(['/hub/clinica', '/hub/clinica/consultorio']);
 
 function isCockpitRoute(pathname: string): boolean {
   if (COCKPIT_PATHS.has(pathname)) return true;
-  if (pathname === '/hub/clinica/' ) return true;
+  if (pathname === '/hub/clinica/') return true;
   return false;
 }
 
 const HubClinicShell: React.FC = () => {
   const { pathname } = useLocation();
-  const hideSubnav = isCockpitRoute(pathname);
+  const isCockpit = isCockpitRoute(pathname);
 
   return (
-    <div className={`hub-clinic-page hub-clientes${hideSubnav ? ' hub-clinic-page--cockpit' : ''}`}>
-      <div className={`hub-clinic-shell${hideSubnav ? '' : ' hub-clinic-shell--tabs'}`}>
-        {!hideSubnav ? <HubClinicSubnav /> : null}
+    <div className={`hub-clinic-page hub-clientes${isCockpit ? ' hub-clinic-page--cockpit' : ''}`}>
+      <div className={`hub-clinic-shell${isCockpit ? '' : ' hub-clinic-shell--tabs'}`}>
+        {!isCockpit ? <HubClinicSubnav /> : null}
         <div className="hub-clinic-shell__main">
           <Outlet />
         </div>

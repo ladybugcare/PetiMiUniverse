@@ -30,6 +30,8 @@ export type HubSearchableComboboxProps = {
   ariaLabel?: string;
   /** Mostrar «limpar» no trigger (desligar para campos obrigatórios sem opção vazia). */
   clearable?: boolean;
+  /** Valores já escolhidos noutro contexto (ex.: serviços já adicionados ao bloco). Mostram check no painel. */
+  markedValues?: readonly string[];
 };
 
 function norm(s: string): string {
@@ -53,6 +55,7 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
   triggerIcon,
   ariaLabel,
   clearable = true,
+  markedValues,
 }) => {
   const uid = useId();
   const listId = `${id}-list-${uid}`;
@@ -64,6 +67,7 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
   const [floating, setFloating] = useState<FloatingRect | null>(null);
 
   const selected = useMemo(() => options.find((o) => o.value === value), [options, value]);
+  const markedSet = useMemo(() => new Set(markedValues ?? []), [markedValues]);
 
   const filtered = useMemo(() => {
     const q = norm(query);
@@ -201,20 +205,22 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
         ) : (
           filtered.map((o) => {
             const isSel = o.value === value;
+            const isMarked = markedSet.has(o.value);
+            const isHighlighted = isSel || isMarked;
             return (
               <li key={o.value} role="presentation">
                 <button
                   type="button"
                   role="option"
-                  aria-selected={isSel}
-                  className={`hub-combobox__option ${isSel ? 'hub-combobox__option--selected' : ''} ${o.icon ? '' : 'hub-combobox__option--no-icon'}`.trim()}
+                  aria-selected={isHighlighted}
+                  className={`hub-combobox__option ${isHighlighted ? 'hub-combobox__option--selected' : ''} ${isMarked && !isSel ? 'hub-combobox__option--marked' : ''} ${o.icon ? '' : 'hub-combobox__option--no-icon'}`.trim()}
                   onClick={() => commit(o.value)}
                 >
                   <span className="hub-combobox__option-icon" aria-hidden>
                     {o.icon}
                   </span>
                   <span className="hub-combobox__option-label">{o.label}</span>
-                  {isSel ? (
+                  {isHighlighted ? (
                     <span className="hub-combobox__option-check" aria-hidden>
                       <Check size={18} strokeWidth={2.5} />
                     </span>

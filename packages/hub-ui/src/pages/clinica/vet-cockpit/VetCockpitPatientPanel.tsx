@@ -78,7 +78,8 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
       : '—';
 
   return (
-    <div className="vet-cockpit-panel">
+    <div className="vet-cockpit-panel vet-cockpit-panel--with-footer">
+      <div className="vet-cockpit-panel__scroll">
       <header className="vet-cockpit-panel__header">
         <h1 className="vet-cockpit-panel__pet-name">{pet.name}</h1>
         <p className="vet-cockpit-panel__pet-line">
@@ -246,29 +247,10 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
         </section>
       ) : null}
 
+      </div>
+
+      {encounterId && canWrite ? (
       <div className="vet-cockpit-actions">
-        {!encounterId && canWrite ? (
-          <button
-            type="button"
-            className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
-            onClick={onStartConsultation}
-          >
-            <Play size={20} aria-hidden />
-            Iniciar consulta
-          </button>
-        ) : null}
-        {encounterId ? (
-          <button
-            type="button"
-            className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
-            onClick={() => onOpenRecord('sec-resumo')}
-          >
-            <Stethoscope size={20} aria-hidden />
-            Abrir prontuário
-          </button>
-        ) : null}
-        {encounterId && canWrite ? (
-          <>
             <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-exames')}>
               <FlaskConical size={18} aria-hidden />
               Solicitar exame
@@ -289,9 +271,7 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
               <BedDouble size={18} aria-hidden />
               Internar
             </Link>
-          </>
-        ) : null}
-        {encounterId && inProgress && canWrite ? (
+        {inProgress ? (
           <>
             {opPhase !== 'awaiting_exams' ? (
               <button
@@ -324,6 +304,30 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
               </button>
             ) : null}
           </>
+        ) : null}
+      </div>
+      ) : null}
+
+      <div className="vet-cockpit-panel__footer">
+        {!encounterId && canWrite ? (
+          <button
+            type="button"
+            className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
+            onClick={onStartConsultation}
+          >
+            <Play size={20} aria-hidden />
+            Iniciar consulta
+          </button>
+        ) : null}
+        {encounterId ? (
+          <button
+            type="button"
+            className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
+            onClick={() => onOpenRecord('sec-resumo')}
+          >
+            <Stethoscope size={20} aria-hidden />
+            Abrir prontuário
+          </button>
         ) : null}
         {encounterId && inProgress && canWrite ? (
           <button

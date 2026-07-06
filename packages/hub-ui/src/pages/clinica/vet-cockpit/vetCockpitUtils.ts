@@ -117,6 +117,19 @@ export function writeStoredSelection(key: string | null) {
   }
 }
 
+export function cockpitEncounterPath(encounterId: string, section?: string): string {
+  const base = `/hub/clinica/atendimentos/${encounterId}`;
+  if (!section) return base;
+  return `${base}?section=${encodeURIComponent(section)}`;
+}
+
+export function petInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export function sexLabel(sex?: string | null): string {
   if (sex === 'M') return 'Macho';
   if (sex === 'F') return 'Fêmea';

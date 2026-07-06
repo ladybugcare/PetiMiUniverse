@@ -13,6 +13,31 @@ export type ComandaCheckoutCTAInput = Pick<
   'open_item_ids' | 'active_receivable_ids' | 'balance_due' | 'edit_scopes'
 >;
 
+export type ComandaFinanceHandoffInput = Pick<
+  HubComandaDetailResponse,
+  'open_item_ids' | 'active_receivable_ids' | 'balance_due'
+> & { finance_handoff_at?: string | null };
+
+/** Exibe "Enviar ao financeiro" quando há itens em aberto ou saldo pendente (incl. parcial). */
+export function canSendToFinanceiroHandoff(comanda: ComandaFinanceHandoffInput): boolean {
+  if (comanda.finance_handoff_at) return false;
+  const openCount = comanda.open_item_ids?.length ?? 0;
+  const balanceDue = Number(comanda.balance_due ?? 0);
+  return openCount > 0 || balanceDue > BALANCE_EPSILON;
+}
+
+/** Mensagem de confirmação conforme o estado da comanda. */
+export function resolveSendToFinanceiroConfirmMessage(comanda: ComandaFinanceHandoffInput): string {
+  const openCount = comanda.open_item_ids?.length ?? 0;
+  const hasActiveRec = (comanda.active_receivable_ids?.length ?? 0) > 0;
+  const balanceDue = Number(comanda.balance_due ?? 0);
+
+  if (openCount === 0 && hasActiveRec && balanceDue > BALANCE_EPSILON) {
+    return 'Enviar saldo restante ao financeiro? O recebível parcial ficará pendente para cobrança.';
+  }
+  return 'Enviar comanda ao financeiro? Os itens ficarão como recebíveis pendentes.';
+}
+
 /** Define o CTA principal de cobrança na ficha da comanda (caixa vs financeiro). */
 export function resolveComandaCheckoutCTA(
   mode: 'caixa' | 'financeiro',

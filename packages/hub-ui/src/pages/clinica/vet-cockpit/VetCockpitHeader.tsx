@@ -11,29 +11,29 @@ const VetCockpitHeader: React.FC<Props> = ({ summary, dateLabel }) => {
   const nextName = summary.next?.pet?.name || '—';
 
   return (
-    <header className="vet-cockpit-header">
-      <div className="vet-cockpit-header__date">{dateLabel}</div>
-      <div className="vet-cockpit-header__stats">
-        <div className="vet-cockpit-stat">
-          <span className="vet-cockpit-stat__value">{summary.remaining}</span>
-          <span className="vet-cockpit-stat__label">restantes</span>
+    <section className="vet-cockpit-summary" aria-label="Resumo do dia">
+      <p className="vet-cockpit-summary__date">{dateLabel}</p>
+      <div className="hub-clientes__metrics vet-cockpit-summary__metrics">
+        <div className="hub-clientes__metric-card">
+          <div className="hub-clientes__metric-label">Restantes</div>
+          <div className="hub-clientes__metric-value">{summary.remaining}</div>
         </div>
-        <div className="vet-cockpit-stat vet-cockpit-stat--current">
-          <span className="vet-cockpit-stat__label">Atual</span>
-          <span className="vet-cockpit-stat__value vet-cockpit-stat__value--name">{currentName}</span>
+        <div className="hub-clientes__metric-card">
+          <div className="hub-clientes__metric-label">Atual</div>
+          <div className="hub-clientes__metric-value vet-cockpit-summary__metric-name">{currentName}</div>
         </div>
-        <div className="vet-cockpit-stat">
-          <span className="vet-cockpit-stat__label">Próximo</span>
-          <span className="vet-cockpit-stat__value vet-cockpit-stat__value--name">{nextName}</span>
+        <div className="hub-clientes__metric-card">
+          <div className="hub-clientes__metric-label">Próximo</div>
+          <div className="hub-clientes__metric-value vet-cockpit-summary__metric-name">{nextName}</div>
         </div>
         {summary.late > 0 ? (
-          <div className="vet-cockpit-stat vet-cockpit-stat--late">
-            <span className="vet-cockpit-stat__value">{summary.late}</span>
-            <span className="vet-cockpit-stat__label">atrasados</span>
+          <div className="hub-clientes__metric-card vet-cockpit-summary__metric-card--late">
+            <div className="hub-clientes__metric-label">Atrasados</div>
+            <div className="hub-clientes__metric-value">{summary.late}</div>
           </div>
         ) : null}
       </div>
-    </header>
+    </section>
   );
 };
 

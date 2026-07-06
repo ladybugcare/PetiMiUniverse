@@ -1,4 +1,5 @@
 import React from 'react';
+import { HubTabs } from '../../../components/HubTabs';
 import type { VetCockpitViewMode } from './vetCockpitUtils';
 
 type Props = {
@@ -13,20 +14,13 @@ const OPTIONS: { id: VetCockpitViewMode; label: string }[] = [
 ];
 
 const VetCockpitViewToggle: React.FC<Props> = ({ mode, onChange }) => (
-  <div className="vet-cockpit-toggle" role="tablist" aria-label="Visualização do consultório">
-    {OPTIONS.map((opt) => (
-      <button
-        key={opt.id}
-        type="button"
-        role="tab"
-        aria-selected={mode === opt.id}
-        className={`vet-cockpit-toggle__btn${mode === opt.id ? ' vet-cockpit-toggle__btn--active' : ''}`}
-        onClick={() => onChange(opt.id)}
-      >
-        {opt.label}
-      </button>
-    ))}
-  </div>
+  <HubTabs
+    ariaLabel="Visualização do consultório"
+    items={OPTIONS}
+    activeId={mode}
+    onTabChange={(id) => onChange(id as VetCockpitViewMode)}
+    className="vet-cockpit-view-tabs"
+  />
 );
 
 export default VetCockpitViewToggle;

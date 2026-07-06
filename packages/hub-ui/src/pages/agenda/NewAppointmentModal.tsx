@@ -767,6 +767,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     [filteredServiceTypes],
   );
 
+  const addedMainServiceIds = useMemo(
+    () => services.map((s) => s.hub_service_type_id),
+    [services],
+  );
+
   const clinicalRoutineServiceOptions = useMemo<HubComboboxOption[]>(() => {
     const rows = serviceTypes.filter((st) => {
       if (st.active === false) return false;
@@ -2233,13 +2238,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 onChange={addService}
                 placeholder="Buscar e adicionar serviço…"
                 clearable={false}
+                markedValues={addedMainServiceIds}
               />
             </div>
           </div>
           {services.length > 0 && (
             <div className="nam-chips">
+              <p className="nam-chips__summary" aria-live="polite">
+                {services.length === 1 ? '1 serviço adicionado' : `${services.length} serviços adicionados`}
+              </p>
               {services.map((chip, idx) => (
-                <div key={chip.hub_service_type_id} className="nam-chip">
+                <div key={chip.hub_service_type_id} className="nam-chip nam-chip--added">
+                  <CheckCircle2 size={14} className="nam-chip__check" aria-hidden />
                   <GripVertical size={14} className="nam-chip__drag" />
                   <span className="nam-chip__name">{chip.name}</span>
                   <input
@@ -2858,13 +2868,18 @@ const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
                   onChange={addSvc}
                   placeholder="Buscar e adicionar serviço…"
                   clearable={false}
+                  markedValues={block.services.map((s) => s.hub_service_type_id)}
                 />
               </div>
             </div>
             {block.services.length > 0 && (
               <div className="nam-chips">
+                <p className="nam-chips__summary" aria-live="polite">
+                  {block.services.length === 1 ? '1 serviço adicionado' : `${block.services.length} serviços adicionados`}
+                </p>
                 {block.services.map((chip, idx) => (
-                  <div key={chip.hub_service_type_id} className="nam-chip">
+                  <div key={chip.hub_service_type_id} className="nam-chip nam-chip--added">
+                    <CheckCircle2 size={14} className="nam-chip__check" aria-hidden />
                     <GripVertical size={14} className="nam-chip__drag" />
                     <span className="nam-chip__name">{chip.name}</span>
                     <input

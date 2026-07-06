@@ -199,6 +199,10 @@
   background: var(--hc-combo-brand-soft);
 }
 
+.hub-combobox__option--marked .hub-combobox__option-label {
+  font-weight: 600;
+}
+
 .hub-combobox__option-icon {
   display: flex;
   width: 22px;

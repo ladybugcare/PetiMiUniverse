@@ -1,5 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd ../.. && npm ci --legacy-peer-deps --include=optional",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": null,
   "rewrites": [
     {
       "source": "/(.*)",

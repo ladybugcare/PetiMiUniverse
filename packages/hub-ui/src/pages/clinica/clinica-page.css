@@ -5,6 +5,21 @@
   min-height: calc(100vh - 140px);
 }
 
+.hub-clinic-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+}
+
+.hub-clinic-page.hub-clientes {
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  align-self: stretch;
+}
+
 .hub-clinic-shell--tabs > .hub-clientes__tabs {
   flex: 0 0 auto;
   flex-wrap: wrap;
@@ -842,6 +857,14 @@
   border-radius: 16px;
   padding: 8px 12px 100px;
   box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+}
+
+.hub-clinic-workspace.hub-clientes {
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
 }
 
 .hub-cws-back {

@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { useAlert } from '../../../components/AlertProvider';
 import { HubLoading } from '../../../components/HubLoading';
+import { HubDateField } from '../../../components/HubDateField';
+import { formatYmd, parseIsoYmd } from '../../../utils/hubCalendar';
 import {
   hubEncountersApi,
   hubVetCockpitApi,
@@ -20,9 +22,9 @@ import VetCockpitHeader from './VetCockpitHeader';
 import VetCockpitViewToggle from './VetCockpitViewToggle';
 import VetCockpitQueue from './VetCockpitQueue';
 import VetCockpitPatientPanel, { type VetCockpitDrawerSection } from './VetCockpitPatientPanel';
-import VetCockpitRecordDrawer from './VetCockpitRecordDrawer';
 import VetCockpitAgendaEmbed from './VetCockpitAgendaEmbed';
 import {
+  cockpitEncounterPath,
   computeTurnSummary,
   itemKey,
   readStoredSelection,
@@ -31,11 +33,13 @@ import {
 } from './vetCockpitUtils';
 import '../clinica-page.css';
 import '../../clientes/clientes.css';
+import '../../../components/HubViewDateToolbar.css';
 import './vet-cockpit.css';
 
 const POLL_MS = 30_000;
 
 const HubVetCockpitPage: React.FC = () => {
+  const navigate = useNavigate();
   const { showError, showSuccess } = useAlert();
   const { role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
@@ -54,9 +58,6 @@ const HubVetCockpitPage: React.FC = () => {
   const [startingEncounter, setStartingEncounter] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [phaseBusy, setPhaseBusy] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerEncounterId, setDrawerEncounterId] = useState<string | null>(null);
-  const [drawerSection, setDrawerSection] = useState<VetCockpitDrawerSection | undefined>();
   const [badgeHints, setBadgeHints] = useState<
     Record<string, { examsAvailable?: boolean; rxDraft?: boolean; hospitalized?: boolean }>
   >({});
@@ -164,16 +165,14 @@ const HubVetCockpitPage: React.FC = () => {
     writeStoredSelection(itemKey(item));
   };
 
-  const openDrawer = (encounterId: string, section?: VetCockpitDrawerSection) => {
-    setDrawerEncounterId(encounterId);
-    setDrawerSection(section);
-    setDrawerOpen(true);
+  const openEncounter = (encounterId: string, section?: VetCockpitDrawerSection) => {
+    navigate(cockpitEncounterPath(encounterId, section), { state: { from: 'cockpit' } });
   };
 
   const handleStartConsultation = () => {
     if (!selected) return;
     if (selected.encounter_id) {
-      openDrawer(selected.encounter_id);
+      openEncounter(selected.encounter_id);
       return;
     }
     if (selected.kind === 'appointment_slot') {
@@ -199,7 +198,7 @@ const HubVetCockpitPage: React.FC = () => {
         operational_phase: encounter.operational_phase,
       };
       setSelected(updated);
-      openDrawer(encounter.id);
+      openEncounter(encounter.id);
       showSuccess('Consulta iniciada');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao iniciar atendimento');
@@ -242,11 +241,15 @@ const HubVetCockpitPage: React.FC = () => {
 
   const summary = useMemo(() => computeTurnSummary(items, selected), [items, selected]);
 
-  const dateLabel = cursor.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
+  const cursorIso = useMemo(() => formatYmd(cursor), [cursor]);
+
+  const shiftCursor = (delta: number) => {
+    setCursor((d) => {
+      const n = new Date(d);
+      n.setDate(n.getDate() + delta);
+      return n;
+    });
+  };
 
   if (permLoading || !accessAllowed) {
     return (
@@ -278,47 +281,45 @@ const HubVetCockpitPage: React.FC = () => {
         </div>
       ) : null}
 
-      <div className="vet-cockpit-toolbar">
-        <div className="vet-cockpit-toolbar__date-nav">
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--icon"
-            onClick={() =>
-              setCursor((d) => {
-                const n = new Date(d);
-                n.setDate(n.getDate() - 1);
-                return n;
-              })
-            }
-            aria-label="Dia anterior"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <span className="vet-cockpit-toolbar__date">{dateLabel}</span>
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--icon"
-            onClick={() =>
-              setCursor((d) => {
-                const n = new Date(d);
-                n.setDate(n.getDate() + 1);
-                return n;
-              })
-            }
-            aria-label="Próximo dia"
-          >
-            <ChevronRight size={18} />
-          </button>
-        </div>
-        {myStaffMember ? (
-          <span className="vet-cockpit-toolbar__vet">{myStaffMember.full_name}</span>
-        ) : null}
-      </div>
-
       <VetCockpitViewToggle mode={viewMode} onChange={setViewMode} />
 
       {viewMode === 'queue' ? (
         <>
+          <div className="hub-view-date-toolbar vet-cockpit-toolbar">
+            <div className="hub-view-date-toolbar__nav-cluster">
+              <button
+                type="button"
+                className="hub-view-date-toolbar__icon-btn"
+                onClick={() => shiftCursor(-1)}
+                aria-label="Dia anterior"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                type="button"
+                className="hub-view-date-toolbar__icon-btn"
+                onClick={() => shiftCursor(1)}
+                aria-label="Próximo dia"
+              >
+                <ChevronRight size={18} />
+              </button>
+              <HubDateField
+                id="vet-cockpit-date"
+                className="hub-view-date-toolbar__date-field"
+                valueIso={cursorIso}
+                onChangeIso={(iso) => {
+                  if (!iso) return;
+                  const parsed = parseIsoYmd(iso);
+                  if (parsed) setCursor(parsed);
+                }}
+                showTodayButton
+              />
+            </div>
+            {myStaffMember ? (
+              <span className="vet-cockpit-toolbar__vet">{myStaffMember.full_name}</span>
+            ) : null}
+          </div>
+
           <VetCockpitHeader summary={summary} dateLabel={`Hoje: ${summary.total} atendimentos`} />
           <div className="vet-cockpit-layout">
             <VetCockpitQueue
@@ -338,7 +339,7 @@ const HubVetCockpitPage: React.FC = () => {
               onStartConsultation={handleStartConsultation}
               onOpenRecord={(section) => {
                 const encId = selected?.encounter_id ?? patientContext?.encounter?.id;
-                if (encId) openDrawer(encId, section);
+                if (encId) openEncounter(encId, section);
               }}
               onComplete={() => void handleComplete()}
               onSetOperationalPhase={(phase) => void handleSetOperationalPhase(phase)}
@@ -364,23 +365,6 @@ const HubVetCockpitPage: React.FC = () => {
         onClose={() => setStartModalItem(null)}
         onStart={handleStartEncounter}
         starting={startingEncounter}
-      />
-
-      <VetCockpitRecordDrawer
-        open={drawerOpen}
-        encounterId={drawerEncounterId}
-        initialSection={drawerSection}
-        onClose={() => {
-          setDrawerOpen(false);
-          setDrawerEncounterId(null);
-          setDrawerSection(undefined);
-          void loadQueue();
-          if (selected) void loadPatientContext(selected);
-        }}
-        onCompleted={() => {
-          void loadQueue();
-          if (selected) void loadPatientContext(selected);
-        }}
       />
     </div>
   );

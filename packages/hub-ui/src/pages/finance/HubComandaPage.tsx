@@ -41,7 +41,11 @@ import {
   guardianFirstName,
   waMeUrlWithText,
 } from './hubComandaShareUtils';
-import { resolveComandaCheckoutCTA } from './hubComandaEditUtils';
+import {
+  canSendToFinanceiroHandoff,
+  resolveComandaCheckoutCTA,
+  resolveSendToFinanceiroConfirmMessage,
+} from './hubComandaEditUtils';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import './hub-finance-page.css';
 import '../orcamentos/orcamentos-page.css';
@@ -300,8 +304,12 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
   };
 
   const handleSendToFinancial = () => {
-    if (!clinicId || !comandaId || !canWrite) return;
-    showConfirm('Enviar comanda ao financeiro? Os itens ficarão como recebíveis pendentes.', async () => {
+    if (!clinicId || !comandaId || !canWrite || !payload) return;
+    const confirmMessage = resolveSendToFinanceiroConfirmMessage({
+      ...payload,
+      finance_handoff_at: financeHandoffAt,
+    });
+    showConfirm(confirmMessage, async () => {
       setSaving(true);
       try {
         await persistComanda();
@@ -448,6 +456,14 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
   const checkoutCta = useMemo(
     () => (payload ? resolveComandaCheckoutCTA(mode, payload) : { kind: 'none' as const }),
     [mode, payload],
+  );
+
+  const showSendToFinanceiro = useMemo(
+    () =>
+      mode === 'caixa' &&
+      canEdit &&
+      Boolean(payload && canSendToFinanceiroHandoff({ ...payload, finance_handoff_at: financeHandoffAt })),
+    [mode, canEdit, payload, financeHandoffAt],
   );
 
   const checkoutLabel =
@@ -656,7 +672,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
             : undefined
         }
         checkoutLabel={checkoutLabel}
-        onSendToFinancial={mode === 'caixa' ? handleSendToFinancial : undefined}
+        onSendToFinancial={showSendToFinanceiro ? handleSendToFinancial : undefined}
         onOpenPdf={() => void openPdf()}
         onCopyPublic={() => void copyPublicLink()}
         onShareOpenPublic={() => void openPublicComanda()}

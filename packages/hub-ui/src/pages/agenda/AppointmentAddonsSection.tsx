@@ -24,6 +24,9 @@ export type AppointmentAddonsSectionProps = {
   onVariantChange: (addonId: string, variant: HubQuotePricingVariant | null) => void;
 };
 
+const EMPTY_ADDONS_HINT =
+  'Nenhum adicional disponível para estes serviços. Configure em Serviços → Adicionais ou na disponibilidade do serviço.';
+
 const AppointmentAddonsSection: React.FC<AppointmentAddonsSectionProps> = ({
   hasMainServices,
   addonsLoading,
@@ -34,25 +37,37 @@ const AppointmentAddonsSection: React.FC<AppointmentAddonsSectionProps> = ({
 }) => {
   if (!hasMainServices) return null;
 
+  const hasAddons = availableAddons.length > 0;
+
+  if (!hasAddons) {
+    return (
+      <div className="nam-addon-section nam-addon-section--compact">
+        <p
+          className="nam-addon-section__compact"
+          title={addonsLoading ? undefined : EMPTY_ADDONS_HINT}
+        >
+          <span className="nam-addon-section__compact-label">Adicionais</span>
+          {addonsLoading ? (
+            <>
+              <Loader2 size={13} className="nam-addon-section__spinner" aria-hidden />
+              <span className="nam-addon-section__compact-text">Carregando…</span>
+            </>
+          ) : (
+            <span className="nam-addon-section__compact-text">Nenhum disponível para os serviços selecionados.</span>
+          )}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="nam-addon-section">
       <p className="nam-label">Adicionais</p>
       <p className="nam-addon-section__hint nam-muted">
-        Opcionais do grupo. Só aparecem os adicionais disponíveis para os serviços seleccionados.
+        Opcionais do grupo. Só aparecem os adicionais disponíveis para os serviços selecionados.
       </p>
 
-      {addonsLoading ? (
-        <p className="nam-addon-section__loading">
-          <Loader2 size={16} className="nam-addon-section__spinner" aria-hidden />
-          Carregando adicionais…
-        </p>
-      ) : availableAddons.length === 0 ? (
-        <p className="nam-muted nam-addon-section__empty">
-          Nenhum adicional disponível para estes serviços. Configure em Serviços → Adicionais ou na
-          disponibilidade do serviço.
-        </p>
-      ) : (
-        <div className="nam-addon-card">
+      <div className="nam-addon-card">
           <ul className="nam-addon-list">
             {availableAddons.map((addon) => {
               const chip = selectedAddons.find((s) => s.hub_service_type_id === addon.id);
@@ -90,7 +105,6 @@ const AppointmentAddonsSection: React.FC<AppointmentAddonsSectionProps> = ({
             })}
           </ul>
         </div>
-      )}
     </div>
   );
 };

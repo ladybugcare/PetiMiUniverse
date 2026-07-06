@@ -442,6 +442,16 @@
   font-size: 13px;
 }
 
+.nam-chip--added {
+  background: rgba(200, 106, 77, 0.08);
+  border-color: rgba(200, 106, 77, 0.35);
+}
+
+.nam-chip__check {
+  color: #c86a4d;
+  flex-shrink: 0;
+}
+
 .nam-chip__drag {
   color: #c8c4c0;
   flex-shrink: 0;
@@ -514,9 +524,44 @@
   color: #c86a4d;
 }
 
+.nam-chips__summary {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #c86a4d;
+  letter-spacing: 0.01em;
+}
+
 /* Adicionais (bloco principal) */
 .nam-addon-section {
   margin-top: 16px;
+}
+
+.nam-addon-section--compact {
+  margin-top: 10px;
+}
+
+.nam-addon-section__compact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.nam-addon-section__compact-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8e6e67;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  flex-shrink: 0;
+}
+
+.nam-addon-section__compact-text {
+  font-size: 12px;
+  color: #9b9590;
 }
 
 .nam-addon-section__hint {
@@ -525,29 +570,16 @@
   line-height: 1.4;
 }
 
-.nam-addon-section__loading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #9b9590;
-  margin: 8px 0 0;
-}
-
 .nam-addon-section__spinner {
   animation: nam-spin 0.8s linear infinite;
+  color: #9b9590;
+  flex-shrink: 0;
 }
 
 @keyframes nam-spin {
   to {
     transform: rotate(360deg);
   }
-}
-
-.nam-addon-section__empty {
-  margin: 8px 0 0;
-  font-size: 13px;
-  line-height: 1.45;
 }
 
 .nam-addon-card {

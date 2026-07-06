@@ -21,6 +21,7 @@ import {
   recordComandaEvent,
   itemSnapshotFromRow,
 } from './comandaEvents';
+import { canHandoffExistingReceivables } from './comandaFinanceHandoff';
 
 const uuidStr = z.string().uuid();
 
@@ -404,6 +405,43 @@ async function computeComandaBalancePayload(
 
   const balance_due = round2(openLinesTotal + receivableResidual);
   return { paid_total: paid, balance_due, total_amount: totalAmount };
+}
+
+/** Preenche finance_handoff_at sem criar recebíveis (ex.: saldo restante após pagamento parcial). */
+async function applyFinanceHandoffOnly(
+  comandaId: string,
+  clinicId: string,
+  detail: Awaited<ReturnType<typeof getHubComandaDetailPayload>>,
+  dueDate?: string | null
+): Promise<string[]> {
+  const comanda = detail.comanda as Record<string, unknown>;
+  const activeRecIds = detail.active_receivable_ids as string[];
+
+  if (comanda.finance_handoff_at) {
+    return activeRecIds;
+  }
+
+  if (!canHandoffExistingReceivables(detail)) {
+    throw new Error('HANDOFF_NOT_APPLICABLE');
+  }
+
+  const { error: updErr } = await supabaseAdmin
+    .from('hub_comandas')
+    .update({ finance_handoff_at: new Date().toISOString() })
+    .eq('id', comandaId)
+    .eq('clinic_id', clinicId);
+  if (updErr) throw new Error(updErr.message);
+
+  if (dueDate) {
+    await supabaseAdmin
+      .from('hub_receivables')
+      .update({ due_date: dueDate })
+      .in('id', activeRecIds)
+      .eq('clinic_id', clinicId)
+      .in('status', ['pending', 'partially_paid']);
+  }
+
+  return activeRecIds;
 }
 
 async function refreshComandaFinancialStatus(
@@ -1959,6 +1997,31 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         return res.status(409).json({
           error: 'Sem itens em aberto. Aguarde a conclusão do serviço para encerrar a comanda ou sincronize os itens.',
         });
+      }
+      if (action === 'leave_pending') {
+        if (!due_date) {
+          return res.status(400).json({ error: 'due_date obrigatório para deixar pendente' });
+        }
+        if (canHandoffExistingReceivables(detail)) {
+          try {
+            const receivableIds = await applyFinanceHandoffOnly(comandaId, clinic_id, detail, due_date);
+            const { data: comandaFinal } = await supabaseAdmin
+              .from('hub_comandas')
+              .select('*')
+              .eq('id', comandaId)
+              .single();
+            return res.status(201).json({
+              comanda: comandaFinal,
+              receivable_ids: receivableIds,
+              detail: await getHubComandaDetailPayload(comandaId, clinic_id),
+            });
+          } catch (e: unknown) {
+            if ((e as Error).message === 'HANDOFF_NOT_APPLICABLE') {
+              return res.status(409).json({ error: 'Não há itens em aberto para faturar' });
+            }
+            throw e;
+          }
+        }
       }
       return res.status(409).json({ error: 'Não há itens em aberto para faturar' });
     }
@@ -3668,7 +3731,20 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
         );
 
         if (items.length === 0) {
-          results.push({ comanda_id: comandaId, receivable_ids: [] });
+          if (action === 'leave_pending' && canHandoffExistingReceivables(detail)) {
+            try {
+              const receivableIds = await applyFinanceHandoffOnly(comandaId, clinic_id, detail, due_date ?? null);
+              results.push({ comanda_id: comandaId, receivable_ids: receivableIds });
+            } catch (handoffErr: unknown) {
+              results.push({
+                comanda_id: comandaId,
+                receivable_ids: [],
+                error: (handoffErr as Error).message ?? 'Erro ao enviar ao financeiro',
+              });
+            }
+          } else {
+            results.push({ comanda_id: comandaId, receivable_ids: [] });
+          }
           continue;
         }
 
