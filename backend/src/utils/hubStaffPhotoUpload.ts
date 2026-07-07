@@ -27,7 +27,7 @@ function isBucketAlreadyExists(err: { message?: string } | null | undefined): bo
 
 /**
  * Garante o bucket de fotos da equipe (ex.: ambientes onde a migration SQL ainda não correu).
- * Para políticas RLS finas em `storage.objects`, continue a usar `create_hub_staff_photos_bucket.sql`.
+ * Para políticas RLS finas em `storage.objects`, continue a usar `011_create_hub_staff_photos_bucket.sql`.
  */
 async function ensureHubStaffPhotosBucket(): Promise<void> {
   const { error } = await supabaseAdmin.storage.createBucket(HUB_STAFF_PHOTOS_BUCKET, {
@@ -45,7 +45,7 @@ async function ensureHubStaffPhotosBucket(): Promise<void> {
   logger.error('[hub_staff_photo] createBucket failed', { message: error.message });
   throw new Error(
     `Não foi possível preparar o armazenamento de fotos da equipe (${error.message}). ` +
-      'No Supabase (SQL Editor), execute `petimi_hub/create_hub_staff_photos_bucket.sql` ou crie manualmente o bucket «hub-staff-photos» (público, até 5 MB, JPEG/PNG/WEBP).'
+      'No Supabase (SQL Editor), execute `petimi_hub/011_create_hub_staff_photos_bucket.sql` ou crie manualmente o bucket «hub-staff-photos» (público, até 5 MB, JPEG/PNG/WEBP).'
   );
 }
 
@@ -86,7 +86,7 @@ export async function uploadHubStaffPhotoToStorage(
     logger.error('[hub_staff_photo] upload failed', { clinicId, fileName, message: error.message });
     if (isBucketNotFound(error)) {
       throw new Error(
-        'Bucket «hub-staff-photos» não disponível. No Supabase, execute `petimi_hub/create_hub_staff_photos_bucket.sql` e confirme a service role e o Storage.'
+        'Bucket «hub-staff-photos» não disponível. No Supabase, execute `petimi_hub/011_create_hub_staff_photos_bucket.sql` e confirme a service role e o Storage.'
       );
     }
     throw error;

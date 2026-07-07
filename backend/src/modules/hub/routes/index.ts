@@ -61,7 +61,7 @@ import {
   listHubLowStock,
   listHubInventoryLots,
 } from '../hubInventoryController';
-import { listHubStaff, getHubStaff, createHubStaff, patchHubStaff, inviteHubStaff } from '../hubStaffController';
+import { listHubStaff, getHubStaff, createHubStaff, patchHubStaff, inviteHubStaff, linkHubStaffAccount } from '../hubStaffController';
 import { postHubStaffPhoto } from '../hubStaffPhotoController';
 import { postHubClinicProfilePhoto, postHubUserProfilePhoto } from '../hubProfilePhotoController.js';
 import { patchHubClinicProfile, patchHubUnitProfile } from '../hubClinicProfileController.js';
@@ -70,6 +70,7 @@ import {
   listHubAppointments,
   getHubAppointmentsStatsByServiceGroup,
   createHubAppointment,
+  createHubAppointmentBatch,
   patchHubAppointment,
   listHubAgendaCalendarBlocks,
   upsertHubAgendaCalendarBlock,
@@ -245,6 +246,7 @@ import {
   postHubComandaSuggestItemPrice,
   postHubComandaCheckoutBulk,
   postHubComandaSyncFromOrigin,
+  postHubComandaApplyPackage,
   listHubComandas,
   getHubComandaCancellationPendingCount,
   postHubComandaResolveCancellation,
@@ -253,7 +255,15 @@ import {
   getPublicComanda,
 } from '../hubComandasController';
 import { postHubCustomerCreditMovement, getHubCustomerCreditBalance } from '../hubCustomerCreditController';
-import { listHubPackages, postHubPackage } from '../hubPackagesController';
+import {
+  listHubPackages,
+  getHubPackage,
+  postHubPackage,
+  patchHubPackage,
+  postHubPackageSuggestPrice,
+  getHubGuardianPackageBalances,
+  getHubPetPackageBalances,
+} from '../hubPackagesController';
 import {
   listHubCommissionRules,
   postHubCommissionRule,
@@ -534,6 +544,7 @@ router.post(
 router.post('/staff', authenticateUser, requirePermission('hub.staff.write'), createHubStaff);
 router.get('/staff/:id', authenticateUser, requirePermission('hub.staff.read'), getHubStaff);
 router.patch('/staff/:id', authenticateUser, requirePermission('hub.staff.write'), patchHubStaff);
+router.post('/staff/:id/link-account', authenticateUser, requirePermission('hub.staff.write'), linkHubStaffAccount);
 router.post('/staff/:id/invite', authenticateUser, requirePermission('hub.staff.invite'), inviteHubStaff);
 
 /* --- Agenda / Agendamentos --- */
@@ -563,6 +574,7 @@ router.get(
 );
 router.get('/appointments', authenticateUser, requirePermission('hub.appointments.read'), listHubAppointments);
 router.post('/appointments', authenticateUser, requirePermission('hub.appointments.write'), createHubAppointment);
+router.post('/appointments/batch', authenticateUser, requirePermission('hub.appointments.write'), createHubAppointmentBatch);
 router.patch('/appointments/:id', authenticateUser, requirePermission('hub.appointments.write'), patchHubAppointment);
 
 /* --- Orçamentos / prospects --- */
@@ -976,6 +988,12 @@ router.post(
   postHubComandaSyncFromOrigin
 );
 router.post(
+  '/comandas/:id/apply-package',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  postHubComandaApplyPackage
+);
+router.post(
   '/comandas/:id/checkout',
   authenticateUser,
   requirePermission('hub.receivables.create'),
@@ -1232,10 +1250,40 @@ router.get(
   listHubPackages
 );
 router.post(
+  '/finance/packages/suggest-price',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  postHubPackageSuggestPrice
+);
+router.get(
+  '/finance/packages/:id',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubPackage
+);
+router.post(
   '/finance/packages',
   authenticateUser,
   requirePermission('hub.financial.write'),
   postHubPackage
+);
+router.patch(
+  '/finance/packages/:id',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  patchHubPackage
+);
+router.get(
+  '/guardians/:guardianId/package-balances',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubGuardianPackageBalances
+);
+router.get(
+  '/pets/:petId/package-balances',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubPetPackageBalances
 );
 
 router.get(

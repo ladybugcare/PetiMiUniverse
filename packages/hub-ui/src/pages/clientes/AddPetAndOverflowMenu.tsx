@@ -5,6 +5,7 @@ import { MoreVertical, PlusCircle } from 'lucide-react';
 
 type Props = {
   guardianId: string;
+  onEdit?: () => void;
   /** Quando definido, mostra o menu de overflow com Arquivar */
   onArchive?: () => void;
   /** true = estilo da linha da tabela (botões compactos) */
@@ -14,7 +15,7 @@ type Props = {
 /**
  * Adicionar pet (link para /hub/pets/novo com tutor pré-selecionado) + menu "…" com Arquivar.
  */
-export const AddPetAndOverflowMenu: React.FC<Props> = ({ guardianId, onArchive, compact }) => {
+export const AddPetAndOverflowMenu: React.FC<Props> = ({ guardianId, onEdit, onArchive, compact }) => {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -84,7 +85,7 @@ export const AddPetAndOverflowMenu: React.FC<Props> = ({ guardianId, onArchive, 
       >
         <PlusCircle size={compact ? 16 : 18} />
       </Link>
-      {onArchive && (
+      {onArchive || onEdit ? (
         <div className="hub-clientes__dropdown-wrap" ref={anchorRef}>
           <button
             type="button"
@@ -107,22 +108,37 @@ export const AddPetAndOverflowMenu: React.FC<Props> = ({ guardianId, onArchive, 
                 style={menuFixedStyle}
                 role="menu"
               >
-                <button
-                  type="button"
-                  className="hub-clientes__dropdown-item hub-clientes__dropdown-item--danger"
-                  role="menuitem"
-                  onClick={() => {
-                    setOpen(false);
-                    onArchive();
-                  }}
-                >
-                  Arquivar
-                </button>
+                {onEdit ? (
+                  <button
+                    type="button"
+                    className="hub-clientes__dropdown-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setOpen(false);
+                      onEdit();
+                    }}
+                  >
+                    Editar
+                  </button>
+                ) : null}
+                {onArchive ? (
+                  <button
+                    type="button"
+                    className="hub-clientes__dropdown-item hub-clientes__dropdown-item--danger"
+                    role="menuitem"
+                    onClick={() => {
+                      setOpen(false);
+                      onArchive();
+                    }}
+                  >
+                    Arquivar
+                  </button>
+                ) : null}
               </div>,
               document.body
             )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

@@ -4,6 +4,7 @@ import { HubTabs } from '../../components/HubTabs';
 const links = [
   { to: 'servicos', label: 'Serviços', end: true as const },
   { to: 'adicionais', label: 'Adicionais' },
+  { to: 'pacotes', label: 'Pacotes' },
 ];
 
 const HubServicosSubnav: React.FC = () => {

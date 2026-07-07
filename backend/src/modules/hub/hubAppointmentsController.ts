@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { createHash, randomUUID } from 'crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { ensureDefaultHubServiceGroups } from './hubServiceGroupsController';
@@ -19,6 +20,7 @@ import {
   financialAdjustmentFlagsForAppointments,
   syncOpenComandasAfterAppointmentOperationalComplete,
 } from './hubComandasController';
+import { hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
 
 /** Reparte um total comercial (ex.: ida+volta L&T) em duas linhas contábeis com soma exacta. */
 function splitMoneyTotalAcrossTwoLegs(total: number): [number, number] {
@@ -580,6 +582,15 @@ function shiftTimestampToDate(originalTs: string, newDate: string): string {
   return orig.toISOString();
 }
 
+/** UUID determinístico por data — agrupa irmãos multi-pet na mesma visita recorrente. */
+function visitGroupIdForOccurrence(baseGroupId: string, occDate: string): string {
+  const hash = createHash('sha256').update(`${baseGroupId}:${occDate}`).digest();
+  hash[6] = (hash[6]! & 0x0f) | 0x40;
+  hash[8] = (hash[8]! & 0x3f) | 0x80;
+  const hex = hash.subarray(0, 16).toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
 // ── Enrichment ───────────────────────────────────────────────────────────────
 
 type EnrichedAppointment = Record<string, unknown>;
@@ -682,6 +693,8 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
     ? await financialAdjustmentFlagsForAppointments(clinicId, apptIds)
     : new Map<string, { financial_adjustment_pending: boolean; comanda_id: string | null }>();
 
+  const clinicBalances = clinicId ? await listActivePackageBalances({ clinicId }) : [];
+
   return rows.map((r) => {
     const st = stMap.get(r.hub_service_type_id as string);
     const sm = r.hub_staff_member_id ? staffMap.get(r.hub_staff_member_id as string) : null;
@@ -709,6 +722,13 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
     }));
     const linked = encByAppt.get(r.id as string);
     const adj = adjustmentFlags.get(r.id as string);
+    const serviceTypeIds = services.map((s) => s.hub_service_type_id);
+    const hasPackageBalance = hasPackageBalanceForServices(
+      clinicBalances,
+      (r.guardian_id as string | null) ?? null,
+      (r.pet_id as string | null) ?? null,
+      serviceTypeIds
+    );
     return {
       ...r,
       service_type: st ?? null,
@@ -721,6 +741,7 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       hub_encounter_status: linked?.status ?? null,
       financial_adjustment_pending: adj?.financial_adjustment_pending ?? false,
       comanda_id: adj?.comanda_id ?? null,
+      has_package_balance: hasPackageBalance,
     };
   });
 }
@@ -787,6 +808,10 @@ const extraBlockSchema = z.object({
   title: optionalTrim(200).optional(),
 });
 
+const patchExtraBlockSchema = extraBlockSchema.extend({
+  id: uuidStr.optional(),
+});
+
 const pickupRoutePricingSchema = z
   .object({
     hub_service_type_id: uuidStr,
@@ -838,6 +863,31 @@ const createAppointmentSchema = z
     intake_new_case_title: optionalTrim(500).optional().nullable(),
     /** Permite sobrepor outro slot (somente kinds walk-in). */
     allow_schedule_overlap: z.boolean().optional(),
+    /** Agrupa vários agendamentos da mesma visita multi-pet. */
+    visit_group_id: uuidStr.optional().nullable(),
+  })
+  .strict();
+
+const batchPetEntrySchema = z
+  .object({
+    pet_id: uuidStr,
+    pricing_porte_tier: optionalPricingPorte.optional(),
+    pricing_coat_type: optionalPricingCoat.optional(),
+    services: z.array(serviceLineSchema).optional(),
+    starts_at: z.string().datetime({ offset: true }).optional(),
+    ends_at: z.string().datetime({ offset: true }).optional(),
+    hub_staff_member_id: uuidStr.optional().nullable(),
+    resource_label: optionalTrim(120).optional(),
+    extra_blocks: z.array(extraBlockSchema).optional(),
+  })
+  .strict();
+
+const createAppointmentBatchSchema = z
+  .object({
+    clinic_id: uuidStr,
+    visit_group_id: uuidStr.optional().nullable(),
+    shared: createAppointmentSchema,
+    pets: z.array(batchPetEntrySchema).min(2).max(20),
   })
   .strict();
 
@@ -865,6 +915,7 @@ const patchAppointmentSchema = z
     intake_hub_case_id: uuidStr.optional().nullable(),
     intake_create_new_case: z.boolean().optional(),
     intake_new_case_title: optionalTrim(200).optional().nullable(),
+    extra_blocks: z.array(patchExtraBlockSchema).optional(),
   })
   .strict();
 
@@ -899,8 +950,186 @@ function isStructuralAppointmentPatch(body: z.infer<typeof patchAppointmentSchem
     body.intake_hub_case_id !== undefined ||
     body.intake_create_new_case !== undefined ||
     body.intake_new_case_title !== undefined ||
-    (body.services !== undefined && body.services.length > 0)
+    (body.services !== undefined && body.services.length > 0) ||
+    body.extra_blocks !== undefined
   );
+}
+
+type PatchExtraBlock = z.infer<typeof patchExtraBlockSchema>;
+
+async function syncExtraBlocksForParent(
+  clinicId: string,
+  parentId: string,
+  parentRow: Record<string, unknown>,
+  blocks: PatchExtraBlock[],
+  excludeConflictIds: string[],
+): Promise<{ error?: string; status?: number }> {
+  const { data: existingChildren, error: childErr } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('parent_appointment_id', parentId)
+    .is('deleted_at', null);
+  if (childErr) return { error: childErr.message, status: 500 };
+
+  const existingChildIds = (existingChildren ?? []).map((r: { id: string }) => r.id);
+  const keepIds = new Set<string>();
+
+  const apptOverride = (parentRow.pricing_porte_tier as string | null) ?? null;
+  const apptCoatOverride = (parentRow.pricing_coat_type as string | null) ?? null;
+  const petId = (parentRow.pet_id as string | null) ?? null;
+  const guardianId = (parentRow.guardian_id as string | null) ?? null;
+  const unitId = (parentRow.unit_id as string | null) ?? null;
+  const seriesId = (parentRow.series_id as string | null) ?? null;
+  const seriesOccDate = (parentRow.series_occurrence_date as string | null) ?? null;
+  const parentStatus = (parentRow.status as string | undefined) ?? 'confirmed';
+
+  const allStIds = [...new Set(blocks.flatMap((bl) => bl.services.map((s) => s.hub_service_type_id)))];
+  let stMap: Map<string, ServiceTypePricingRow>;
+  try {
+    stMap = await fetchServiceTypesMap(clinicId, allStIds);
+  } catch (e) {
+    return { error: (e as Error).message, status: 500 };
+  }
+  for (const sid of allStIds) {
+    if (!stMap.has(sid)) {
+      return { error: `Tipo de serviço inválido: ${sid}`, status: 400 };
+    }
+  }
+
+  const pet = await fetchPetPricingFields(clinicId, petId);
+  const puppy = await getOrCreateHubClinicSettings(clinicId);
+
+  for (const block of blocks) {
+    if (new Date(block.ends_at) <= new Date(block.starts_at)) {
+      return { error: 'ends_at do bloco adicional deve ser posterior a starts_at', status: 400 };
+    }
+    if (block.hub_staff_member_id !== undefined && block.hub_staff_member_id !== null) {
+      if (!(await assertStaffInClinicOptional(clinicId, block.hub_staff_member_id))) {
+        return { error: 'Profissional inválido no bloco adicional', status: 400 };
+      }
+    }
+
+    const conflictExclude = [...excludeConflictIds, ...existingChildIds, ...[...keepIds]];
+    const chk = await assertNoScheduleConflict(
+      clinicId,
+      conflictExclude,
+      block.hub_staff_member_id ?? null,
+      block.resource_label ?? null,
+      unitId,
+      block.starts_at,
+      block.ends_at,
+    );
+    if (chk.conflict) {
+      return { error: `Bloco adicional: ${chk.reason}`, status: 409 };
+    }
+
+    const firstSvcType = block.services[0]!.hub_service_type_id;
+    const blockNormLines = block.services.map((s) => ({
+      hub_service_type_id: s.hub_service_type_id,
+      duration_minutes: s.duration_minutes,
+      pricing_porte_tier: s.pricing_porte_tier ?? null,
+      pricing_coat_type: s.pricing_coat_type ?? null,
+      pricing_variant: s.pricing_variant ?? null,
+    }));
+    const blockYmd = block.starts_at.slice(0, 10);
+    let blockSnaps: ReturnType<typeof buildServiceLineSnapshots>;
+    try {
+      blockSnaps = buildServiceLineSnapshots({
+        lines: blockNormLines,
+        stMap,
+        pet,
+        appointmentYmd: blockYmd,
+        puppyMaxMonths: puppy.pet_puppy_max_months,
+        appointmentOverride: apptOverride,
+        appointmentCoatOverride: apptCoatOverride,
+      });
+    } catch (e) {
+      return { error: (e as Error).message, status: 500 };
+    }
+
+    const rowPatch = {
+      unit_id: unitId,
+      hub_service_type_id: firstSvcType,
+      hub_staff_member_id: block.hub_staff_member_id ?? null,
+      pet_id: petId,
+      guardian_id: guardianId,
+      starts_at: block.starts_at,
+      ends_at: block.ends_at,
+      status: block.status ?? parentStatus,
+      resource_label: block.resource_label ?? null,
+      notes: block.notes ?? null,
+      title: block.title ?? null,
+      series_id: seriesId,
+      series_occurrence_date: seriesOccDate,
+      pricing_porte_tier: apptOverride,
+      pricing_coat_type: apptCoatOverride,
+      parent_appointment_id: parentId,
+    };
+
+    let blockId: string;
+    if (block.id) {
+      const { data: existingChild, error: exChildErr } = await supabaseAdmin
+        .from('hub_appointments')
+        .select('id')
+        .eq('id', block.id)
+        .eq('clinic_id', clinicId)
+        .eq('parent_appointment_id', parentId)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (exChildErr) return { error: exChildErr.message, status: 500 };
+      if (!existingChild) {
+        return { error: 'Bloco adicional não encontrado para este agendamento', status: 404 };
+      }
+      blockId = block.id;
+      const { error: updErr } = await supabaseAdmin
+        .from('hub_appointments')
+        .update(rowPatch)
+        .eq('id', blockId)
+        .eq('clinic_id', clinicId);
+      if (updErr) return { error: updErr.message, status: 500 };
+      await supabaseAdmin.from('hub_appointment_services').delete().eq('appointment_id', blockId);
+    } else {
+      const { data: blockRow, error: blockErr } = await supabaseAdmin
+        .from('hub_appointments')
+        .insert({
+          clinic_id: clinicId,
+          appointment_kind: 'standard',
+          ...rowPatch,
+        })
+        .select('id')
+        .single();
+      if (blockErr) return { error: blockErr.message, status: 500 };
+      blockId = (blockRow as { id: string }).id;
+    }
+
+    keepIds.add(blockId);
+    const blockSvcInsert = blockSnaps.map((row) => ({
+      appointment_id: blockId,
+      hub_service_type_id: row.hub_service_type_id,
+      duration_minutes: row.duration_minutes,
+      order_index: row.order_index,
+      pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+      pricing_coat_type_applied: row.pricing_coat_type_applied,
+      cost_amount_applied: row.cost_amount_applied,
+      sale_amount_applied: row.sale_amount_applied,
+      pricing_variant: row.pricing_variant as unknown as Record<string, unknown> | null,
+    }));
+    const { error: bSvcErr } = await supabaseAdmin.from('hub_appointment_services').insert(blockSvcInsert);
+    if (bSvcErr) return { error: bSvcErr.message, status: 500 };
+  }
+
+  const now = new Date().toISOString();
+  for (const childId of existingChildIds) {
+    if (keepIds.has(childId)) continue;
+    await supabaseAdmin
+      .from('hub_appointments')
+      .update({ deleted_at: now })
+      .eq('id', childId)
+      .eq('clinic_id', clinicId);
+  }
+
+  return {};
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -1041,8 +1270,12 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'ends_at deve ser posterior a starts_at' });
     }
     const resolvedAppointmentKind = b.appointment_kind ?? 'standard';
-    if (b.allow_schedule_overlap === true && !isWalkInAppointmentKind(resolvedAppointmentKind)) {
-      return res.status(400).json({ error: 'allow_schedule_overlap só é permitido para encaixes (walk-in).' });
+    if (
+      b.allow_schedule_overlap === true &&
+      !isWalkInAppointmentKind(resolvedAppointmentKind) &&
+      !b.visit_group_id
+    ) {
+      return res.status(400).json({ error: 'allow_schedule_overlap só é permitido para encaixes (walk-in) ou visitas multi-pet.' });
     }
     const skipScheduleConflictCheck =
       isWalkInAppointmentKind(resolvedAppointmentKind) || b.allow_schedule_overlap === true;
@@ -1337,6 +1570,10 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         intake_hub_case_id: b.intake_hub_case_id ?? null,
         intake_create_new_case: b.intake_create_new_case === true ? true : null,
         intake_new_case_title: b.intake_new_case_title ?? null,
+        visit_group_id:
+          seriesId && b.visit_group_id
+            ? visitGroupIdForOccurrence(b.visit_group_id, occDate)
+            : b.visit_group_id ?? null,
       };
 
       const { data: apptRow, error: apptErr } = await supabaseAdmin
@@ -1479,6 +1716,7 @@ export const createHubAppointment = async (req: Request, res: Response) => {
             series_occurrence_date: seriesId ? occDate : null,
             pricing_porte_tier: apptOverride,
             pricing_coat_type: apptCoatOverride,
+            parent_appointment_id: apptId,
           })
           .select('id')
           .single();
@@ -1568,6 +1806,12 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       return res.status(400).json({ error: parsed.error.flatten() });
     }
     const b = parsed.data;
+
+    if (b.extra_blocks !== undefined && scope !== 'this') {
+      return res.status(400).json({
+        error: 'Blocos adicionais só podem ser alterados nesta ocorrência (escopo «somente este»).',
+      });
+    }
 
     const { data: existing, error: exErr } = await supabaseAdmin
       .from('hub_appointments')
@@ -1675,7 +1919,7 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       patch.hub_service_type_id = b.services[0]!.hub_service_type_id;
     }
 
-    if (Object.keys(patch).length === 0 && !b.services) {
+    if (Object.keys(patch).length === 0 && !b.services && b.extra_blocks === undefined) {
       return res.status(400).json({ error: 'Nada para atualizar' });
     }
 
@@ -1870,6 +2114,28 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       }
     }
 
+    if (b.extra_blocks !== undefined) {
+      const { data: parentAfterPatch } = await supabaseAdmin
+        .from('hub_appointments')
+        .select('*')
+        .eq('id', id)
+        .eq('clinic_id', b.clinic_id)
+        .single();
+      if (!parentAfterPatch) {
+        return res.status(500).json({ error: 'Erro ao recarregar agendamento principal' });
+      }
+      const syncResult = await syncExtraBlocksForParent(
+        b.clinic_id,
+        id,
+        parentAfterPatch as Record<string, unknown>,
+        b.extra_blocks,
+        [id, ...targetIds],
+      );
+      if (syncResult.error) {
+        return res.status(syncResult.status ?? 500).json({ error: syncResult.error });
+      }
+    }
+
     const { data: updated } = await supabaseAdmin
       .from('hub_appointments')
       .select('*')
@@ -1976,5 +2242,134 @@ export const deleteHubAgendaCalendarBlock = async (req: Request, res: Response) 
   } catch (e: unknown) {
     console.error('deleteHubAgendaCalendarBlock', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro ao remover bloqueio' });
+  }
+};
+
+async function assertPetBelongsToGuardian(
+  clinicId: string,
+  petId: string,
+  guardianId: string,
+): Promise<boolean> {
+  const { data: pet } = await supabaseAdmin
+    .from('hub_pets')
+    .select('id')
+    .eq('id', petId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (!pet) return false;
+  const { data: link } = await supabaseAdmin
+    .from('hub_pet_guardians')
+    .select('id')
+    .eq('pet_id', petId)
+    .eq('guardian_id', guardianId)
+    .maybeSingle();
+  return Boolean(link);
+}
+
+/** POST /api/hub/appointments/batch — N agendamentos (1 por pet) com visit_group_id. */
+export const createHubAppointmentBatch = async (req: Request, res: Response) => {
+  try {
+    const parsed = createAppointmentBatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+    const { clinic_id, visit_group_id: inputVisitGroupId, shared, pets } = parsed.data;
+
+    if (new Date(shared.ends_at) <= new Date(shared.starts_at)) {
+      return res.status(400).json({ error: 'ends_at deve ser posterior a starts_at' });
+    }
+    if (!shared.guardian_id) {
+      return res.status(400).json({ error: 'Informe o tutor (guardian_id).' });
+    }
+
+    const guardianId = shared.guardian_id;
+    for (const p of pets) {
+      if (!(await assertPetBelongsToGuardian(clinic_id, p.pet_id, guardianId))) {
+        return res.status(400).json({ error: `Pet ${p.pet_id} não pertence ao tutor informado.` });
+      }
+    }
+
+    const visitGroupId = inputVisitGroupId ?? randomUUID();
+    const createdIds: string[] = [];
+
+    const rollbackCreated = async () => {
+      if (createdIds.length === 0) return;
+      const now = new Date().toISOString();
+      await supabaseAdmin
+        .from('hub_appointments')
+        .update({ deleted_at: now })
+        .in('id', createdIds)
+        .eq('clinic_id', clinic_id);
+    };
+
+    try {
+      for (const petEntry of pets) {
+        const petServices = petEntry.services ?? shared.services;
+        const body = {
+          ...shared,
+          pet_id: petEntry.pet_id,
+          starts_at: petEntry.starts_at ?? shared.starts_at,
+          ends_at: petEntry.ends_at ?? shared.ends_at,
+          hub_staff_member_id:
+            petEntry.hub_staff_member_id !== undefined
+              ? petEntry.hub_staff_member_id ?? null
+              : shared.hub_staff_member_id ?? null,
+          resource_label: petEntry.resource_label ?? shared.resource_label,
+          pricing_porte_tier: petEntry.pricing_porte_tier ?? shared.pricing_porte_tier ?? null,
+          pricing_coat_type: petEntry.pricing_coat_type ?? shared.pricing_coat_type ?? null,
+          services: petServices,
+          extra_blocks: petEntry.extra_blocks ?? [],
+          allow_schedule_overlap: true,
+          visit_group_id: visitGroupId,
+        };
+
+        const fakeReq = { body } as Request;
+        let statusCode = 201;
+        let responseBody: Record<string, unknown> = {};
+        const fakeRes = {
+          status(code: number) {
+            statusCode = code;
+            return fakeRes;
+          },
+          json(data: Record<string, unknown>) {
+            responseBody = data;
+            return fakeRes;
+          },
+        } as unknown as Response;
+
+        await createHubAppointment(fakeReq, fakeRes);
+
+        if (statusCode >= 400) {
+          await rollbackCreated();
+          return res.status(statusCode).json(responseBody);
+        }
+
+        const appt = responseBody.appointment as { id?: string } | undefined;
+        if (appt?.id) createdIds.push(appt.id);
+      }
+    } catch (e) {
+      await rollbackCreated();
+      throw e;
+    }
+
+    const enriched = await Promise.all(
+      createdIds.map(async (id) => {
+        const { data } = await supabaseAdmin.from('hub_appointments').select('*').eq('id', id).single();
+        return data;
+      }),
+    );
+    const appointments = await enrichAppointments(
+      enriched.filter(Boolean) as Record<string, unknown>[],
+    );
+
+    return res.status(201).json({
+      visit_group_id: visitGroupId,
+      appointments,
+      created_count: appointments.length,
+    });
+  } catch (e: unknown) {
+    console.error('createHubAppointmentBatch', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao criar agendamentos em lote' });
   }
 };

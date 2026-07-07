@@ -206,7 +206,8 @@ const HubStaffPage: React.FC = () => {
         {loading ? (
           <HubLoading variant="block" label="Carregando equipe…" />
         ) : (
-          <div className="hub-servicos__table-wrap">
+          <>
+          <div className="hub-servicos__table-wrap hub-clientes__table-wrap--desktop">
             <table className="hub-clientes__table">
               <thead>
                 <tr>
@@ -252,7 +253,13 @@ const HubStaffPage: React.FC = () => {
                           {m.active ? 'Ativo' : 'Inativo'}
                         </span>
                       </td>
-                      <td>{m.has_hub_access ? 'Sim' : 'Não'}</td>
+                      <td>
+                        {m.has_hub_access
+                          ? m.clinic_user_id
+                            ? 'Sim · vinculado'
+                            : 'Sim · sem vínculo'
+                          : 'Não'}
+                      </td>
                       {canWrite ? (
                         <td className="hub-clientes__td-actions" onClick={(e) => e.stopPropagation()}>
                           <div className="hub-servicos__row-actions">
@@ -285,6 +292,79 @@ const HubStaffPage: React.FC = () => {
               </tbody>
             </table>
           </div>
+
+          <div className="hub-clientes__mobile-list" aria-label="Lista de profissionais">
+            {staff.length === 0 ? (
+              <p className="hub-clientes__muted hub-clientes__mobile-list-empty">Nenhum profissional encontrado.</p>
+            ) : (
+              staff.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className="hub-clientes__mobile-card"
+                  onClick={() => canWrite && openEdit(m)}
+                  disabled={!canWrite}
+                >
+                  <div className="hub-clientes__mobile-card-top">
+                    <div className="hub-clientes__mobile-card-main">
+                      <span className="hub-clientes__mobile-card-name">{m.full_name}</span>
+                      <span className="hub-clientes__muted hub-clientes__mobile-card-contact">
+                        {m.job_title}
+                        {m.default_unit_name ? ` · ${m.default_unit_name}` : ''}
+                      </span>
+                    </div>
+                    <span
+                      className={`hub-clientes__pill ${
+                        m.active ? 'hub-clientes__pill--active' : 'hub-clientes__pill--inactive-alert'
+                      }`}
+                    >
+                      {m.active ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </div>
+                  <div className="hub-clientes__mobile-card-foot">
+                    <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                      {m.has_hub_access
+                        ? m.clinic_user_id
+                          ? 'Acesso Hub · vinculado'
+                          : 'Acesso Hub · sem vínculo'
+                        : 'Sem acesso Hub'}
+                    </span>
+                    {canWrite ? (
+                      <span
+                        className="hub-clientes__mobile-card-pets"
+                        onClick={(e) => e.stopPropagation()}
+                        role="presentation"
+                      >
+                        <div className="hub-servicos__row-actions">
+                          <button
+                            type="button"
+                            className="hub-servicos__icon-btn"
+                            title="Editar"
+                            aria-label="Editar"
+                            onClick={() => openEdit(m)}
+                          >
+                            <Pencil size={18} strokeWidth={2} />
+                          </button>
+                          {m.active ? (
+                            <button
+                              type="button"
+                              className="hub-servicos__icon-btn hub-servicos__icon-btn--danger"
+                              title="Inativar"
+                              aria-label="Inativar"
+                              onClick={() => inactivate(m)}
+                            >
+                              <UserX size={18} strokeWidth={2} />
+                            </button>
+                          ) : null}
+                        </div>
+                      </span>
+                    ) : null}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+          </>
         )}
       </div>
 

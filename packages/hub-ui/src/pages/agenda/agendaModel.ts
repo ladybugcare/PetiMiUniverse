@@ -1,5 +1,6 @@
 import type { HubServiceGroupValue } from '../../utils/serviceTypeSlug';
 import { SERVICE_GROUP_OPTIONS, serviceGroupLabel } from '../../utils/serviceTypeSlug';
+import { isExtraBlockChildHiddenFromGrid } from './extraBlockAgendaUtils';
 
 export type AgendaView = 'day' | 'week' | 'month';
 
@@ -62,6 +63,8 @@ export type AgendaAppointment = {
   hub_service_type_id?: string;
   /** UUID da série de recorrência (se pertencer a uma). */
   series_id?: string;
+  /** Bloco adicional: aponta para o agendamento principal. */
+  parent_appointment_id?: string | null;
   /** Título editável do agendamento. */
   title?: string;
   /** Serviços detalhados da linha N:M. */
@@ -94,6 +97,9 @@ export type AgendaAppointment = {
   comanda_id?: string | null;
   pricing_porte_tier?: string | null;
   pricing_coat_type?: string | null;
+  visit_group_id?: string | null;
+  visitGroupSize?: number;
+  visitGroupLabel?: string;
 };
 
 const EDITABLE_AGENDA_STATUSES: AgendaStatus[] = ['pending_confirm', 'confirmed'];
@@ -383,19 +389,40 @@ function uniqueServiceGroups(services: AgendaAppointment['services'], fallback: 
 
 /** Enriquece agendamentos com metadados de card e filtra pernas L&T ocultas. */
 export function enrichAgendaCardsForGrid(list: AgendaAppointment[]): AgendaAppointment[] {
+  const visitGroupCounts = new Map<string, number>();
+  const visitGroupPets = new Map<string, string[]>();
+  for (const appt of list) {
+    const vg = appt.visit_group_id;
+    if (!vg) continue;
+    visitGroupCounts.set(vg, (visitGroupCounts.get(vg) ?? 0) + 1);
+    const names = visitGroupPets.get(vg) ?? [];
+    if (appt.petName && appt.petName !== '—') names.push(appt.petName);
+    visitGroupPets.set(vg, names);
+  }
+
   const enriched = list.map((appt) => {
     const serviceGroups = uniqueServiceGroups(appt.services, appt.group);
     const displayServiceLabel = computeDisplayServiceLabel(appt);
     const pickupPackage = computePickupPackage(appt, list);
+    const vg = appt.visit_group_id;
+    const visitGroupSize = vg ? visitGroupCounts.get(vg) ?? 1 : undefined;
+    const visitGroupLabel =
+      vg && visitGroupSize && visitGroupSize > 1
+        ? (visitGroupPets.get(vg) ?? []).join(' · ')
+        : undefined;
     return {
       ...appt,
       serviceGroups,
       displayServiceLabel,
       isRecurring: Boolean(appt.series_id),
       pickupPackage,
+      visitGroupSize,
+      visitGroupLabel,
     };
   });
-  return enriched.filter((appt) => !isPickupLegHiddenFromGrid(appt, enriched));
+  return enriched.filter(
+    (appt) => !isPickupLegHiddenFromGrid(appt, enriched) && !isExtraBlockChildHiddenFromGrid(appt),
+  );
 }
 
 /** Filtra lista já enriquecida para exibição na grade (alias de enrich). */

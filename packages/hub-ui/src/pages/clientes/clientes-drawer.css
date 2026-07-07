@@ -1,0 +1,44 @@
+.hub-clientes-drawer__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  --hc-brand: #c86a4d;
+  --hc-text: #4a3b3a;
+  --hc-text-muted: #8e6e67;
+  --hc-border: #e5dcd6;
+  --hc-card: #fff;
+  --hc-row-selected: #fdf6f2;
+  --hc-radius: 10px;
+}
+
+.hub-clientes-page--full-width .hub-clientes__main {
+  padding-right: 0;
+  max-width: 100%;
+}
+
+.hub-clientes-drawer__banner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fdf6f2;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clientes-drawer__quote-review dt {
+  font-weight: 600;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clientes-drawer__quote-review dd {
+  margin: 0;
+}
+
+.hub-finance-page__drawer-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}

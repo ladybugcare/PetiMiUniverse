@@ -169,7 +169,7 @@ flowchart TB
 
 ### Banco — nova migration
 
-Arquivo sugerido: `create_hub_grooming_sessions.sql` (adicionar ao README migrations como item **31**).
+Arquivo sugerido: `031_create_hub_grooming_sessions.sql` (adicionar ao README migrations como item **31**).
 
 ```sql
 -- Esboço conceitual (implementar no PR da Fase 2)

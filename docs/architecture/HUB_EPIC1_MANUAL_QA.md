@@ -1,6 +1,6 @@
 # QA manual — PetMi Hub Epic 1 (tutores / `hub_guardians`)
 
-Executar após aplicar [`create_hub_guardians.sql`](../../backend/database_migrations/petimi_hub/create_hub_guardians.sql) e deploy do backend/frontend.
+Executar após aplicar [`001_create_hub_guardians.sql`](../../backend/database_migrations/petimi_hub/001_create_hub_guardians.sql) e deploy do backend/frontend.
 
 ## Pré-requisitos
 

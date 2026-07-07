@@ -122,7 +122,7 @@ flowchart TB
 
 ## Fase 2 — Rotas e atribuição de motorista
 
-### Banco — nova migration (`create_hub_pickup_routes.sql`)
+### Banco — nova migration (`012c_create_hub_pickup_routes.sql`)
 
 ```sql
 -- Esboço conceitual (implementar no PR da Fase 2)

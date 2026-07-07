@@ -22,8 +22,37 @@ import {
   itemSnapshotFromRow,
 } from './comandaEvents';
 import { canHandoffExistingReceivables } from './comandaFinanceHandoff';
+import {
+  buildComandaItemsFromPackagePurchase,
+  fulfillPackagePurchasesOnComandaCheckout,
+  findEligiblePackageBalance,
+  loadPackageWithItems,
+  newPurchaseGroupId,
+  redeemPackageBalancesOnCheckout,
+  reversePackageRedemptionsForComanda,
+  eligibleBalancesForComandaItem,
+  pricingVariantsEqual,
+} from './hubPackagesService';
+import type { HubQuotePricingVariantInput } from './hubPricingResolve';
 
 const uuidStr = z.string().uuid();
+
+async function resolveComandaItemPricingVariant(item: Record<string, unknown>): Promise<HubQuotePricingVariantInput | null> {
+  const originType = String(item.origin_type ?? '');
+  const originId = item.origin_id as string | null;
+  if (originType === 'appointment_service' && originId) {
+    const { data: svc } = await supabaseAdmin
+      .from('hub_appointment_services')
+      .select('pricing_variant')
+      .eq('id', originId)
+      .maybeSingle();
+    const raw = svc?.pricing_variant;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      return raw as HubQuotePricingVariantInput;
+    }
+  }
+  return null;
+}
 
 const comandaEditContextSchema = z.enum(['caixa', 'financeiro']).optional().default('caixa');
 
@@ -290,6 +319,7 @@ async function isOperationalCompleteForComanda(comanda: Record<string, unknown>)
   if (!originId) return true;
   if (originType === 'quote') return true;
   if (originType === 'manual') return true;
+  if (originType === 'package') return true;
   if (originType === 'appointment') {
     const { data: appt } = await supabaseAdmin
       .from('hub_appointments')
@@ -522,7 +552,36 @@ type ComandaItemInsert = {
   origin_type: string | null;
   origin_id: string | null;
   sort_order: number;
+  package_balance_id?: string | null;
 };
+
+/** Omite `package_balance_id` quando null — evita erro no PostgREST se a migration 078 ainda não rodou. */
+function comandaItemInsertRow(
+  clinicId: string,
+  comandaId: string,
+  it: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>,
+): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    clinic_id: clinicId,
+    comanda_id: comandaId,
+    pet_id: it.pet_id,
+    item_kind: it.item_kind,
+    hub_service_type_id: it.hub_service_type_id,
+    hub_inventory_item_id: it.hub_inventory_item_id,
+    hub_inventory_lot_id: it.hub_inventory_lot_id,
+    description: it.description,
+    quantity: it.quantity,
+    unit_amount: it.unit_amount,
+    discount_amount: it.discount_amount,
+    line_total: it.line_total,
+    service_date: it.service_date,
+    origin_type: it.origin_type,
+    origin_id: it.origin_id,
+    sort_order: it.sort_order,
+  };
+  if (it.package_balance_id != null) row.package_balance_id = it.package_balance_id;
+  return row;
+}
 
 async function sumAppointmentServicesSaleForComanda(
   appointmentId: string,
@@ -1294,8 +1353,31 @@ async function buildDesiredComandaSnapshot(
 const openComandaBodySchema = z
   .object({
     clinic_id: uuidStr,
-    origin_type: z.enum(['appointment', 'grooming_session', 'quote', 'encounter', 'manual', 'boarding_reservation']),
+    origin_type: z.enum([
+      'appointment',
+      'grooming_session',
+      'quote',
+      'encounter',
+      'manual',
+      'boarding_reservation',
+      'package',
+    ]),
     origin_id: uuidStr.optional(),
+    package_id: uuidStr.optional(),
+    pet_id: uuidStr.optional().nullable(),
+    pet_ids: z.array(uuidStr).min(1).max(20).optional(),
+    package_lines: z
+      .array(
+        z
+          .object({
+            package_id: uuidStr,
+            pet_id: uuidStr,
+          })
+          .strict()
+      )
+      .min(1)
+      .max(20)
+      .optional(),
     guardian_id: uuidStr.optional(),
     unit_id: uuidStr.optional().nullable(),
     manual_lines: z
@@ -1319,6 +1401,38 @@ const openComandaBodySchema = z
       if (!data.guardian_id) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'guardian_id obrigatório para comanda manual' });
       }
+    } else if (data.origin_type === 'package') {
+      if (!data.guardian_id) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'guardian_id obrigatório para venda de pacote' });
+      }
+      const hasPackageLines = Boolean(data.package_lines?.length);
+      const hasLegacyPackage = Boolean(data.package_id);
+      if (!hasPackageLines && !hasLegacyPackage) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'package_lines ou package_id obrigatório para venda de pacote',
+        });
+      }
+      if (hasPackageLines && hasLegacyPackage) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Use package_lines ou package_id + pet_ids, não ambos',
+        });
+      }
+      if (hasPackageLines) {
+        const seen = new Set<string>();
+        for (const ln of data.package_lines ?? []) {
+          const key = `${ln.package_id}:${ln.pet_id}`;
+          if (seen.has(key)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'Não é possível repetir o mesmo pacote para o mesmo pet na venda',
+            });
+            break;
+          }
+          seen.add(key);
+        }
+      }
     } else if (!data.origin_id) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'origin_id obrigatório para esta origem' });
     }
@@ -1333,7 +1447,11 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
     const b = parsed.data;
     const { clinic_id, origin_type, hub_case_id, hub_encounter_id } = b;
     const effectiveOriginId =
-      origin_type === 'manual' ? (b.origin_id ?? randomUUID()) : (b.origin_id as string);
+      origin_type === 'manual'
+        ? (b.origin_id ?? randomUUID())
+        : origin_type === 'package'
+          ? (b.origin_id ?? newPurchaseGroupId())
+          : (b.origin_id as string);
 
     if (origin_type !== 'manual') {
       const keys = await fetchActiveReceivableKeys(clinic_id);
@@ -1470,6 +1588,24 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       built = await buildComandaItemsFromQuote(clinic_id, effectiveOriginId);
     } else if (origin_type === 'boarding_reservation') {
       built = await buildComandaItemsFromBoardingReservation(clinic_id, effectiveOriginId);
+    } else if (origin_type === 'package') {
+      const pkgBuilt = await buildComandaItemsFromPackagePurchase({
+        clinicId: clinic_id,
+        packageId: b.package_id as string,
+        purchaseGroupId: effectiveOriginId,
+        petId: b.pet_id ?? null,
+        petIds: b.pet_ids,
+        packageLines: b.package_lines?.map((ln) => ({ packageId: ln.package_id, petId: ln.pet_id })),
+        guardianId: b.guardian_id as string,
+        unitId: b.unit_id ?? null,
+      });
+      built = {
+        items: pkgBuilt.items,
+        subtotal: pkgBuilt.subtotal,
+        unit_id: pkgBuilt.unit_id,
+        guardian_id: pkgBuilt.guardian_id,
+        pet_id: pkgBuilt.pet_id,
+      };
     } else {
       // Encounter: permite comanda antecipada (allowIncomplete) para recebimento antes de concluir
       built = await buildComandaItemsFromEncounter(clinic_id, effectiveOriginId, { allowIncomplete: true });
@@ -1516,24 +1652,7 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
     }
     const comandaId = comanda.id as string;
 
-    const rows = built.items.map((it) => ({
-      clinic_id,
-      comanda_id: comandaId,
-      pet_id: it.pet_id,
-      item_kind: it.item_kind,
-      hub_service_type_id: it.hub_service_type_id,
-      hub_inventory_item_id: it.hub_inventory_item_id,
-      hub_inventory_lot_id: it.hub_inventory_lot_id,
-      description: it.description,
-      quantity: it.quantity,
-      unit_amount: it.unit_amount,
-      discount_amount: it.discount_amount,
-      line_total: it.line_total,
-      service_date: it.service_date,
-      origin_type: it.origin_type,
-      origin_id: it.origin_id,
-      sort_order: it.sort_order,
-    }));
+    const rows = built.items.map((it) => comandaItemInsertRow(clinic_id, comandaId, it));
 
     const { error: iErr } = await supabaseAdmin.from('hub_comanda_items').insert(rows);
     if (iErr) {
@@ -1578,6 +1697,14 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       });
     }
     if (msg === 'ALREADY_BILLED') return res.status(409).json({ error: 'Orçamento já faturado' });
+    if (msg === 'PACKAGE_INACTIVE') return res.status(409).json({ error: 'Pacote inativo' });
+    if (msg === 'PET_NOT_FOUND') return res.status(404).json({ error: 'Pet não encontrado' });
+    if (msg === 'DUPLICATE_PACKAGE_PET_LINE') {
+      return res.status(400).json({ error: 'Não é possível repetir o mesmo pacote para o mesmo pet na venda' });
+    }
+    if (msg === 'PACKAGE_LINES_REQUIRED') {
+      return res.status(400).json({ error: 'Informe ao menos uma linha de pacote' });
+    }
     console.error('postHubComandaOpen', e);
     return res.status(500).json({ error: msg || 'Erro interno' });
   }
@@ -1730,6 +1857,23 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     pet_name: it.pet_id ? (petNameMap.get(it.pet_id as string) ?? null) : null,
   }));
 
+  const packageBalancesByItemId: Record<string, unknown[]> = {};
+  if (guardianId && String(comandaRow.origin_type) !== 'package') {
+    for (const it of enrichedItems) {
+      if (!(openItemIds as string[]).includes(it.id as string)) continue;
+      if (String(it.item_kind) !== 'service' || !it.hub_service_type_id) continue;
+      const lineVariant = await resolveComandaItemPricingVariant(it as Record<string, unknown>);
+      const eligible = await eligibleBalancesForComandaItem({
+        clinicId,
+        guardianId,
+        petId: (it.pet_id as string | null) ?? null,
+        hubServiceTypeId: it.hub_service_type_id as string,
+        pricingVariant: lineVariant,
+      });
+      if (eligible.length) packageBalancesByItemId[it.id as string] = eligible;
+    }
+  }
+
   const events = await listComandaEvents(comandaId, clinicId);
 
   return {
@@ -1744,6 +1888,7 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     operational_complete,
     edit_scopes,
     allowed_guardians: allowedGuardians,
+    package_balances_by_item_id: packageBalancesByItemId,
     events,
   };
 }
@@ -1920,6 +2065,127 @@ export const getHubComandaDetail = async (req: Request, res: Response) => {
   }
 };
 
+const applyPackageBodySchema = z
+  .object({
+    clinic_id: uuidStr,
+    item_id: uuidStr,
+    package_balance_id: uuidStr.nullable(),
+    edit_context: comandaEditContextSchema,
+  })
+  .strict();
+
+export const postHubComandaApplyPackage = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    const parsed = applyPackageBodySchema.safeParse(req.body);
+    if (!idParsed.success || !parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: parsed.success ? undefined : parsed.error.flatten() });
+    }
+    const comandaId = idParsed.data;
+    const { clinic_id, item_id, package_balance_id, edit_context } = parsed.data;
+    await assertComandaEditAllowed(comandaId, clinic_id, edit_context);
+
+    const detail = await getHubComandaDetailPayload(comandaId, clinic_id);
+    const item = (detail.items as Record<string, unknown>[]).find((it) => it.id === item_id);
+    if (!item) return res.status(404).json({ error: 'Item não encontrado' });
+    if ((detail.invoiced_item_ids as string[]).includes(item_id)) {
+      return res.status(409).json({ error: 'Item já faturado' });
+    }
+
+    const comanda = detail.comanda as Record<string, unknown>;
+    const guardianId = comanda.guardian_id as string;
+    const petId = (item.pet_id as string | null) ?? null;
+    const serviceTypeId = item.hub_service_type_id as string | null;
+
+    let unitAmount = Number(item.unit_amount ?? 0);
+    let lineTotal = Number(item.line_total ?? 0);
+    let description = String(item.description ?? '');
+    let balanceId: string | null = null;
+
+    if (package_balance_id) {
+      if (!serviceTypeId) return res.status(400).json({ error: 'Somente linhas de serviço podem usar pacote' });
+      const lineVariant = await resolveComandaItemPricingVariant(item as Record<string, unknown>);
+      const balance = await findEligiblePackageBalance({
+        clinicId: clinic_id,
+        guardianId,
+        petId,
+        hubServiceTypeId: serviceTypeId,
+        pricingVariant: lineVariant,
+      });
+      if (!balance || balance.id !== package_balance_id) {
+        return res.status(409).json({ error: 'Saldo de pacote indisponível para este serviço' });
+      }
+      const balVariant = (balance.pricing_variant as HubQuotePricingVariantInput | null) ?? null;
+      if (balVariant && !pricingVariantsEqual(balVariant, lineVariant)) {
+        return res.status(409).json({ error: 'A opção de preço desta linha não corresponde ao pacote' });
+      }
+      const pkgEmbed = balance.hub_packages as { name?: string } | { name?: string }[] | null;
+      const pkgName = Array.isArray(pkgEmbed) ? pkgEmbed[0]?.name : pkgEmbed?.name;
+      const remaining = Number(balance.sessions_remaining ?? 0);
+      const baseDesc = description.split(' — Pacote')[0].trim();
+      description = `${baseDesc} — Pacote ${pkgName ?? ''} (${remaining} restantes)`.trim();
+      unitAmount = 0;
+      lineTotal = 0;
+      balanceId = package_balance_id;
+    } else if (String(item.origin_type) === 'appointment_service' && item.origin_id) {
+      const { data: svc } = await supabaseAdmin
+        .from('hub_appointment_services')
+        .select('sale_amount_applied, hub_service_types(name)')
+        .eq('id', item.origin_id as string)
+        .maybeSingle();
+      if (svc) {
+        unitAmount = round2(Number(svc.sale_amount_applied ?? 0));
+        lineTotal = unitAmount;
+        const st = svc.hub_service_types as { name?: string } | { name?: string }[] | null;
+        const name = Array.isArray(st) ? st[0]?.name : st?.name;
+        description = (name as string) || description.split(' — Pacote')[0].trim();
+      }
+    } else if (String(item.origin_type) === 'grooming_extra' && item.origin_id) {
+      const { data: extra } = await supabaseAdmin
+        .from('hub_grooming_session_extras')
+        .select('sale_amount_snapshot, name_snapshot')
+        .eq('id', item.origin_id as string)
+        .maybeSingle();
+      if (extra) {
+        unitAmount = round2(Number(extra.sale_amount_snapshot ?? 0));
+        lineTotal = unitAmount;
+        description = String(extra.name_snapshot ?? description.split(' — Pacote')[0].trim());
+      }
+    }
+
+    const { error: uErr } = await supabaseAdmin
+      .from('hub_comanda_items')
+      .update({
+        unit_amount: unitAmount,
+        line_total: lineTotal,
+        description,
+        package_balance_id: balanceId,
+      })
+      .eq('id', item_id)
+      .eq('comanda_id', comandaId);
+    if (uErr) return res.status(500).json({ error: uErr.message });
+
+    const openItems = (detail.items as Record<string, unknown>[])
+      .filter((it) => !(detail.invoiced_item_ids as string[]).includes(it.id as string))
+      .map((it) => (it.id === item_id ? { ...it, line_total: lineTotal } : it));
+    const subtotal = round2(openItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+    const discount = Number(comanda.discount_amount ?? 0);
+    const total = round2(Math.max(0, subtotal - discount));
+    await supabaseAdmin
+      .from('hub_comandas')
+      .update({ subtotal_amount: subtotal, total_amount: total })
+      .eq('id', comandaId)
+      .eq('clinic_id', clinic_id);
+
+    return res.json({ detail: await getHubComandaDetailPayload(comandaId, clinic_id) });
+  } catch (e: unknown) {
+    const msg = (e as Error)?.message;
+    if (msg === 'NOT_FOUND') return res.status(404).json({ error: 'Comanda não encontrada' });
+    console.error('postHubComandaApplyPackage', e);
+    return res.status(500).json({ error: msg || 'Erro interno' });
+  }
+};
+
 const checkoutBodySchema = z
   .object({
     clinic_id: uuidStr,
@@ -2074,6 +2340,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       } else if (originType === 'manual') {
         /* comanda manual: sem entidade operacional a dispensar */
       }
+      await reversePackageRedemptionsForComanda(clinic_id, comandaId);
       await supabaseAdmin.from('hub_comandas').update({ status: 'cancelada', closed_at: now }).eq('id', comandaId);
       return res.json({ ok: true, comanda: { ...comanda, status: 'cancelada' } });
     }
@@ -2207,6 +2474,28 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
     }
 
     if (receivableIds.length === 0) {
+      const hasPackageCoverage = items.some((it) => it.package_balance_id);
+      if (hasPackageCoverage && (action === 'receive_now' || action === 'leave_pending')) {
+        await redeemPackageBalancesOnCheckout({
+          clinicId: clinic_id,
+          comandaId,
+          staffUserId: userId,
+        });
+        if (action === 'leave_pending') {
+          await supabaseAdmin
+            .from('hub_comandas')
+            .update({ finance_handoff_at: new Date().toISOString() })
+            .eq('id', comandaId)
+            .eq('clinic_id', clinic_id);
+        }
+        await tryAutoCloseComanda(comandaId, clinic_id);
+        const { data: comandaFinal } = await supabaseAdmin.from('hub_comandas').select('*').eq('id', comandaId).single();
+        return res.status(201).json({
+          comanda: comandaFinal,
+          receivable_ids: [],
+          detail: await getHubComandaDetailPayload(comandaId, clinic_id),
+        });
+      }
       return res.status(400).json({ error: 'Nenhum recebível gerado (valores zerados)' });
     }
 
@@ -2229,6 +2518,34 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         .update({ billing_state: 'receivable_created' })
         .eq('id', comanda.origin_id as string)
         .eq('clinic_id', clinic_id);
+    }
+
+    if (String(comanda.origin_type) === 'package' && comanda.origin_id) {
+      const packagePurchaseLines = items
+        .filter((it) => String(it.origin_type) === 'package_purchase' && it.origin_id)
+        .map((it) => ({
+          packageId: String(it.origin_id),
+          petId: (it.pet_id as string | null) ?? null,
+        }));
+      if (packagePurchaseLines.length) {
+        await fulfillPackagePurchasesOnComandaCheckout({
+          clinicId: clinic_id,
+          comandaId,
+          purchaseGroupId: comanda.origin_id as string,
+          guardianId,
+          packagePurchaseLines,
+          purchasedReceivableId: receivableIds[0] ?? null,
+        });
+      }
+    }
+
+    const hasServicePackageCoverage = items.some((it) => it.package_balance_id);
+    if (hasServicePackageCoverage && String(comanda.origin_type) !== 'package') {
+      await redeemPackageBalancesOnCheckout({
+        clinicId: clinic_id,
+        comandaId,
+        staffUserId: userId,
+      });
     }
 
     if (action === 'receive_now') {
@@ -3080,7 +3397,7 @@ export const listHubComandas = async (req: Request, res: Response) => {
     if (error) {
       if (String(error.message || '').includes('cancellation_pending')) {
         return res.status(503).json({
-          error: 'Colunas de cancelamento na comanda não encontradas. Execute alter_hub_comandas_cancellation_resolution.sql.',
+          error: 'Colunas de cancelamento na comanda não encontradas. Execute 050_alter_hub_comandas_cancellation_resolution.sql.',
         });
       }
       return res.status(500).json({ error: error.message });

@@ -169,9 +169,11 @@
 }
 
 /* Mobile: coluna única */
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   .hub-boarding-page .hub-clinic-queue {
     grid-template-columns: 1fr;
+    overflow-x: visible;
+    padding-bottom: 0;
   }
 
   .hub-boarding-page .hub-clinic-queue__actions .hub-clientes__btn--sm {

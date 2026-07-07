@@ -1,6 +1,6 @@
 # QA manual — Agenda Hub: porte, pelagem, filhotes e preço por agendamento
 
-Executar após aplicar as migrações `alter_hub_pets_size_tier.sql`, `alter_hub_appointment_services_pricing_snapshots.sql`, `create_hub_clinic_settings.sql`, `alter_hub_pets_coat_fields.sql`, `alter_hub_appointment_services_coat_pricing_snapshots.sql` (ver [`petimi_hub/README.md`](../../backend/database_migrations/petimi_hub/README.md)) e deploy do backend / `hub-ui`.
+Executar após aplicar as migrações `014_alter_hub_pets_size_tier.sql`, `015_alter_hub_appointment_services_pricing_snapshots.sql`, `016_create_hub_clinic_settings.sql`, `018_alter_hub_pets_coat_fields.sql`, `019_alter_hub_appointment_services_coat_pricing_snapshots.sql` (ver [`petimi_hub/README.md`](../../backend/database_migrations/petimi_hub/README.md)) e deploy do backend / `hub-ui`.
 
 ## Pré-requisitos
 

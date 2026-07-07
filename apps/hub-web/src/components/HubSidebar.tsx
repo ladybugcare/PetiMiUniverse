@@ -94,9 +94,27 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'hub-sidebar__link--active' : '',
   ].join(' ');
 
-const HubSidebar: React.FC = () => {
+type HubSidebarProps = {
+  isOpen?: boolean;
+  isMobile?: boolean;
+  onClose?: () => void;
+};
+
+const HubSidebar: React.FC<HubSidebarProps> = ({
+  isOpen = true,
+  isMobile = false,
+  onClose,
+}) => {
+  const handleNavClick = () => {
+    if (isMobile && onClose) onClose();
+  };
+
   return (
-    <aside className="hub-sidebar" aria-label="Navegação principal">
+    <aside
+      className={['hub-sidebar', isOpen ? 'hub-sidebar--open' : ''].filter(Boolean).join(' ')}
+      aria-label="Navegação principal"
+      aria-hidden={isMobile && !isOpen ? true : undefined}
+    >
       <div className="hub-sidebar__brand">
         <div className="hub-sidebar__logo-wrap">
           <img src={logoSrc} alt="PetMi Hub" className="hub-sidebar__logo" decoding="async" />
@@ -111,7 +129,7 @@ const HubSidebar: React.FC = () => {
             <p className="hub-sidebar__section-title">{section.title}</p>
             <div className="hub-sidebar__section-items">
               {section.items.map(({ to, label, icon: Icon, end }) => (
-                <NavLink key={to} to={to} className={linkClass} end={end}>
+                <NavLink key={to} to={to} className={linkClass} end={end} onClick={handleNavClick}>
                   <Icon size={18} strokeWidth={1.75} className="hub-sidebar__icon" aria-hidden />
                   <span>{label}</span>
                 </NavLink>

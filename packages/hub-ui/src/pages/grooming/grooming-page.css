@@ -373,8 +373,10 @@
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   .hub-grooming-queue--5col {
-    grid-template-columns: minmax(260px, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: visible;
+    padding-bottom: 0;
   }
 }

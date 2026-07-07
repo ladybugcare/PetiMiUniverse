@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, GripVertical, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, ChevronUp, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock, Zap } from 'lucide-react';
+import { Plus, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, ChevronUp, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock, Zap } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
@@ -10,6 +10,7 @@ import { HubCheckbox } from '../../components/HubCheckbox';
 import {
   hubAgendaApi,
   type CreateHubAppointmentPayload,
+  type CreateHubAppointmentBatchPetEntry,
   type HubAppointment,
   type HubAppointmentStatus,
   type HubAppointmentRecurrenceRule,
@@ -20,7 +21,40 @@ import { hubClinicSettingsApi } from '../../api/hubClinicSettingsApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
 import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
 import { hubServiceAddonsApi } from '../../api/hubServiceAddonsApi';
-import AppointmentAddonsSection from './AppointmentAddonsSection';
+import AppointmentPetSelector from './AppointmentPetSelector';
+import PetVisitBlock, {
+  clonePetVisitConfig,
+  emptyPetVisitConfig,
+  type PetVisitConfig,
+} from './PetVisitBlock';
+import { BlockCardHeader } from './BlockCardHeader';
+import { ExtraBlockCard } from './ExtraBlockCard';
+import {
+  addMinutes,
+  buildExtraBlocksApiPayload,
+  computePetVisitTimings,
+  createEmptyExtraBlock,
+  hmToMinutes,
+  maxHm,
+  minHm,
+  minutesToHm,
+  petExtraBlocksDurationMin,
+  todayYmd,
+  toEndIsoTs,
+  toIsoTs,
+  toIsoTsOnOrAfter,
+  tsToHm,
+  visitEndHmFromTimings,
+  visitTotalDurationMin,
+  type ExtraBlock,
+} from './appointmentSchedulingUtils';
+import {
+  AppointmentServiceCard,
+  allUniqueAddons,
+  mergeAddonsByParent,
+  serviceNeedsVariantMatrix,
+  useServiceCardExpansion,
+} from './AppointmentServiceCard';
 import { validateSelectedAddonVariants } from './appointmentAddonsUtils';
 import { isStaffCompatibleWithServiceType, type GroupJobMappings } from '../../utils/staffServiceCompatibility';
 import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
@@ -88,6 +122,21 @@ export type NewAppointmentInitial = {
   source_quote_id?: string | null;
   /** Pré-marca urgência no modo encaixe (fluxo operacional → agenda). */
   walk_in_emergency?: boolean;
+  extra_blocks?: Array<{
+    appointment_id?: string;
+    starts_at?: string;
+    ends_at?: string;
+    hub_staff_member_id?: string | null;
+    resource_label?: string | null;
+    title?: string | null;
+    notes?: string | null;
+    services: Array<{
+      hub_service_type_id: string;
+      name?: string | null;
+      duration_minutes?: number | null;
+      pricing_variant?: HubQuotePricingVariant | null;
+    }>;
+  }>;
 };
 
 export type NewAppointmentModalProps = {
@@ -113,21 +162,6 @@ type ServiceChip = {
 };
 
 type GuardianPetOption = { id: string; name: string; size_tier: string; coat_type: string | null; birth_date: string | null };
-
-type ExtraBlock = {
-  key: string;
-  expanded: boolean;
-  block_title: string;
-  block_description: string;
-  block_description_user_edited: boolean;
-  /** Filtro de grupo de serviço só para este bloco (`all` ou slug). */
-  group_filter: string;
-  services: ServiceChip[];
-  starts_hm: string;
-  ends_hm: string;
-  hub_staff_member_id: string;
-  resource_label: string;
-};
 
 /** Janela L&T: `ends_hm` mantém-se alinhado ao início (+1 h); não há campo «Fim» no formulário. */
 type PickupSubBlock = {
@@ -159,74 +193,35 @@ const DEFAULT_RECURRENCE: RecurrenceForm = {
 
 const DOW_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 
-function toIsoTs(dateYmd: string, hm: string): string {
-  const [h, m] = hm.split(':').map(Number);
-  const d = new Date(`${dateYmd}T00:00:00`);
-  d.setHours(h ?? 0, m ?? 0, 0, 0);
-  return d.toISOString();
-}
-
-function addDaysToYmd(dateYmd: string, days: number): string {
-  const [y, mo, d] = dateYmd.split('-').map(Number);
-  const dt = new Date(y!, (mo ?? 1) - 1, d ?? 1, 12, 0, 0, 0);
-  dt.setDate(dt.getDate() + days);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-}
-
-/** Fim do intervalo HH:MM; avança um dia quando endHm <= startHm (cruza meia-noite). */
-function toEndIsoTs(dateYmd: string, startHm: string, endHm: string): string {
-  const endDate = hmToMinutes(endHm) <= hmToMinutes(startHm) ? addDaysToYmd(dateYmd, 1) : dateYmd;
-  return toIsoTs(endDate, endHm);
-}
-
-/** Primeiro instante em dateYmd+HM que não seja anterior a anchorIso. */
-function toIsoTsOnOrAfter(dateYmd: string, hm: string, anchorIso: string): string {
-  let candDate = dateYmd;
-  let candidate = toIsoTs(candDate, hm);
-  const anchorMs = new Date(anchorIso).getTime();
-  while (new Date(candidate).getTime() < anchorMs) {
-    candDate = addDaysToYmd(candDate, 1);
-    candidate = toIsoTs(candDate, hm);
-  }
-  return candidate;
-}
-
-function addMinutes(hm: string, mins: number): string {
-  const [h, m] = hm.split(':').map(Number);
-  const total = (h ?? 0) * 60 + (m ?? 0) + mins;
-  return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
-
-function hmToMinutes(hm: string): number {
-  const [h, m] = hm.split(':').map(Number);
-  return (h ?? 0) * 60 + (m ?? 0);
-}
-
-function minHm(times: string[]): string {
-  if (times.length === 0) return '09:00';
-  return times.reduce((a, b) => (hmToMinutes(a) <= hmToMinutes(b) ? a : b));
-}
-
-function maxHm(times: string[]): string {
-  if (times.length === 0) return '10:00';
-  return times.reduce((a, b) => (hmToMinutes(a) >= hmToMinutes(b) ? a : b));
-}
-
-function minutesToHm(totalMin: number): string {
-  const t = ((totalMin % (24 * 60)) + 24 * 60) % (24 * 60);
-  const h = Math.floor(t / 60);
-  const m = t % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-function tsToHm(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-function todayYmd(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function mapInitialExtraBlocks(
+  blocks: NonNullable<NewAppointmentInitial['extra_blocks']>,
+  serviceTypes: HubServiceType[],
+  fallbackEndsHm: string,
+): ExtraBlock[] {
+  return blocks.map((eb, idx) => ({
+    key: eb.appointment_id ?? `extra-${idx}-${Date.now()}`,
+    appointment_id: eb.appointment_id,
+    expanded: idx === blocks.length - 1,
+    block_title: eb.title?.trim() ?? '',
+    block_description: eb.notes?.trim() ?? '',
+    block_description_user_edited: Boolean(eb.notes?.trim()),
+    group_filter: 'all',
+    services: eb.services
+      .filter((s) => s.hub_service_type_id)
+      .map((s) => {
+        const st = serviceTypes.find((t) => t.id === s.hub_service_type_id);
+        return {
+          hub_service_type_id: s.hub_service_type_id,
+          name: s.name || st?.name || 'Serviço',
+          duration_minutes: s.duration_minutes || st?.default_duration_minutes || 60,
+          pricing_variant: s.pricing_variant ?? null,
+        };
+      }),
+    starts_hm: eb.starts_at ? tsToHm(eb.starts_at) : fallbackEndsHm,
+    ends_hm: eb.ends_at ? tsToHm(eb.ends_at) : addMinutes(fallbackEndsHm, 60),
+    hub_staff_member_id: eb.hub_staff_member_id ?? '',
+    resource_label: eb.resource_label ?? '',
+  }));
 }
 
 /** Texto com bullets a partir das descrições dos tipos de serviço (cadastro). */
@@ -260,6 +255,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const isEditMode = mode === 'edit';
   const isClinicalRoutine = !isEditMode && layoutVariant === 'clinical_routine';
   const isWalkIn = !isEditMode && layoutVariant === 'walk_in';
+  const multiPetEnabled = !isEditMode && !isClinicalRoutine && !isWalkIn;
   const [jobMappings, setJobMappings] = useState<GroupJobMappings>({});
 
   useEffect(() => {
@@ -285,7 +281,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [groupFilter, setGroupFilter] = useState('all');
   const [services, setServices] = useState<ServiceChip[]>([]);
   const [selectedAddons, setSelectedAddons] = useState<ServiceChip[]>([]);
-  const [availableAddons, setAvailableAddons] = useState<HubServiceType[]>([]);
+  const [addonsByParent, setAddonsByParent] = useState<Map<string, HubServiceType[]>>(new Map());
   const [addonsLoading, setAddonsLoading] = useState(false);
   const [serviceSearchId, setServiceSearchId] = useState('');
 
@@ -294,6 +290,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [guardianName, setGuardianName] = useState('');
   const [petId, setPetId] = useState('');
   const [petName, setPetName] = useState('');
+  const [selectedPetIds, setSelectedPetIds] = useState<string[]>([]);
+  const [petVisitConfigs, setPetVisitConfigs] = useState<PetVisitConfig[]>([]);
+  const [syncSameServicesForAll, setSyncSameServicesForAll] = useState(false);
+  const [syncSameStaffForAll, setSyncSameStaffForAll] = useState(true);
   const [guardianPets, setGuardianPets] = useState<GuardianPetOption[]>([]);
   const [guardianOptions, setGuardianOptions] = useState<HubComboboxOption[]>([]);
   const [guardiansLoading, setGuardiansLoading] = useState(false);
@@ -350,22 +350,37 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   // ── Extra blocks ──────────────────────────────────────────────────────────
   const [extraBlocks, setExtraBlocks] = useState<ExtraBlock[]>([]);
 
-  /** Primeiro início do dia (principal + extras com serviço) — fim da perna «busca» L&T. */
-  const pickupDayFirstStartHm = useMemo(
-    () => minHm([startsHm, ...extraBlocks.filter((b) => b.services.length > 0).map((b) => b.starts_hm)]),
-    [startsHm, extraBlocks],
-  );
-
-  /** Último fim do dia — base para sugerir o início do «retorno». */
-  const pickupDayLastEndHm = useMemo(
-    () => maxHm([endsHm, ...extraBlocks.filter((b) => b.services.length > 0).map((b) => b.ends_hm)]),
-    [endsHm, extraBlocks],
-  );
-
   const mainServiceIdsSignature = useMemo(
     () => services.map((s) => s.hub_service_type_id).join('|'),
     [services],
   );
+
+  const effectiveSelectedPetIds = useMemo(() => {
+    if (!multiPetEnabled) return petId ? [petId] : [];
+    return selectedPetIds;
+  }, [multiPetEnabled, petId, selectedPetIds]);
+
+  const isMultiPetSelection = multiPetEnabled && effectiveSelectedPetIds.length >= 2;
+
+  const selectedPetNamesLabel = useMemo(
+    () =>
+      effectiveSelectedPetIds
+        .map((id) => guardianPets.find((p) => p.id === id)?.name)
+        .filter(Boolean)
+        .join(' · '),
+    [effectiveSelectedPetIds, guardianPets],
+  );
+
+  const allPetServiceIdsSignature = useMemo(() => {
+    if (!isMultiPetSelection) return mainServiceIdsSignature;
+    return petVisitConfigs
+      .flatMap((c) => c.services.map((s) => s.hub_service_type_id))
+      .join('|');
+  }, [isMultiPetSelection, mainServiceIdsSignature, petVisitConfigs]);
+
+  const availableAddons = useMemo(() => allUniqueAddons(addonsByParent), [addonsByParent]);
+
+  const mainServiceCardExpansion = useServiceCardExpansion(services.map((s) => s.hub_service_type_id));
 
   const extraBlocksServiceSignature = useMemo(
     () =>
@@ -441,21 +456,70 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     () => selectedAddons.reduce((s, c) => s + c.duration_minutes, 0),
     [selectedAddons]
   );
-  const totalDurationMin = servicesDurationMin + addonsDurationMin;
-  const extraBlocksDurationMin = useMemo(
-    () => extraBlocks.reduce((sum, b) => sum + b.services.reduce((s, c) => s + c.duration_minutes, 0), 0),
-    [extraBlocks],
-  );
+  const totalDurationMin = useMemo(() => {
+    if (isMultiPetSelection) {
+      return visitTotalDurationMin(petVisitConfigs, syncSameStaffForAll);
+    }
+    return servicesDurationMin + addonsDurationMin;
+  }, [isMultiPetSelection, petVisitConfigs, syncSameStaffForAll, servicesDurationMin, addonsDurationMin]);
+
+  const petVisitTimings = useMemo(() => {
+    if (!isMultiPetSelection) return new Map<string, { startsHm: string; endsHm: string }>();
+    return computePetVisitTimings(petVisitConfigs, startsHm, syncSameStaffForAll);
+  }, [isMultiPetSelection, petVisitConfigs, startsHm, syncSameStaffForAll]);
+
+  const multiPetVisitEndHm = useMemo(() => {
+    if (!isMultiPetSelection) return endsHm;
+    return visitEndHmFromTimings(petVisitConfigs, petVisitTimings, syncSameStaffForAll);
+  }, [isMultiPetSelection, petVisitConfigs, petVisitTimings, syncSameStaffForAll, endsHm]);
+
+  /** Primeiro início do dia (principal + extras com serviço) — fim da perna «busca» L&T. */
+  const pickupDayFirstStartHm = useMemo(() => {
+    if (isMultiPetSelection) {
+      const petStarts = [...petVisitTimings.values()].map((t) => t.startsHm);
+      const extraStarts = petVisitConfigs.flatMap((cfg) =>
+        cfg.extraBlocks.filter((b) => b.services.length > 0).map((b) => b.starts_hm),
+      );
+      return minHm([startsHm, ...petStarts, ...extraStarts]);
+    }
+    return minHm([startsHm, ...extraBlocks.filter((b) => b.services.length > 0).map((b) => b.starts_hm)]);
+  }, [isMultiPetSelection, startsHm, extraBlocks, petVisitConfigs, petVisitTimings]);
+
+  /** Último fim do dia — base para sugerir o início do «retorno». */
+  const pickupDayLastEndHm = useMemo(() => {
+    if (isMultiPetSelection) {
+      const extraEnds = petVisitConfigs.flatMap((cfg) =>
+        cfg.extraBlocks.filter((b) => b.services.length > 0).map((b) => b.ends_hm),
+      );
+      return maxHm([multiPetVisitEndHm, ...extraEnds]);
+    }
+    return maxHm([endsHm, ...extraBlocks.filter((b) => b.services.length > 0).map((b) => b.ends_hm)]);
+  }, [isMultiPetSelection, multiPetVisitEndHm, endsHm, extraBlocks, petVisitConfigs]);
+
+  const extraBlocksDurationMin = useMemo(() => {
+    if (isMultiPetSelection) {
+      return petVisitConfigs.reduce((sum, cfg) => sum + petExtraBlocksDurationMin(cfg.extraBlocks), 0);
+    }
+    return extraBlocks.reduce((sum, b) => sum + b.services.reduce((s, c) => s + c.duration_minutes, 0), 0);
+  }, [isMultiPetSelection, petVisitConfigs, extraBlocks]);
   const totalDurationAllBlocks = totalDurationMin + extraBlocksDurationMin;
 
   const autoTitle = useMemo(() => {
-    const svcPart = services.map((s) => s.name).join(' + ') || '';
-    const petPart = petName || '';
+    const svcPart = isMultiPetSelection
+      ? [...new Set(petVisitConfigs.flatMap((c) => c.services.map((s) => s.name)))].join(' + ')
+      : services.map((s) => s.name).join(' + ') || '';
+    const petPart =
+      multiPetEnabled && selectedPetIds.length > 0
+        ? selectedPetIds
+            .map((id) => guardianPets.find((p) => p.id === id)?.name)
+            .filter(Boolean)
+            .join(' · ')
+        : petName || '';
     if (!svcPart && !petPart) return '';
     if (!petPart) return svcPart;
     if (!svcPart) return petPart;
     return `${svcPart} — ${petPart}`;
-  }, [services, petName]);
+  }, [services, petName, multiPetEnabled, selectedPetIds, guardianPets, isMultiPetSelection, petVisitConfigs]);
 
   useEffect(() => {
     if (!titleOverridden) setTitle(autoTitle);
@@ -463,10 +527,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   // When services change, recalc ends_hm
   useEffect(() => {
+    if (isMultiPetSelection) {
+      if (petVisitConfigs.some((c) => c.services.length > 0)) {
+        setEndsHm(multiPetVisitEndHm);
+      }
+      return;
+    }
     if (totalDurationMin > 0) {
       setEndsHm(addMinutes(startsHm, totalDurationMin));
     }
-  }, [totalDurationMin, startsHm]);
+  }, [totalDurationMin, startsHm, isMultiPetSelection, multiPetVisitEndHm, petVisitConfigs]);
 
   /** Sem campo «Fim» na busca: o fim da perna acompanha sempre o início do primeiro bloco do dia. */
   useEffect(() => {
@@ -556,6 +626,20 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       } else if (isEditMode) {
         setSelectedAddons([]);
       }
+      if (!isWalkIn) {
+        if (isEditMode) {
+          const fallbackEnd = initial.ends_at ? tsToHm(initial.ends_at) : '10:00';
+          if (initial.extra_blocks?.length) {
+            setExtraBlocks(mapInitialExtraBlocks(initial.extra_blocks, serviceTypes, fallbackEnd));
+          } else {
+            setExtraBlocks([]);
+          }
+        } else {
+          setExtraBlocks([]);
+        }
+      }
+    } else if (!isWalkIn && !isEditMode) {
+      setExtraBlocks([]);
     }
   }, [open, initial, serviceTypes, isEditMode, isWalkIn]);
 
@@ -599,11 +683,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           if (target) {
             setPetId(target.id);
             setPetName(target.name);
+            if (multiPetEnabled) setSelectedPetIds([target.id]);
             return;
           }
         }
         setPetId('');
         setPetName('');
+        setSelectedPetIds([]);
       };
 
       if (!clinicId) {
@@ -620,7 +706,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       initialPetIdRef.current = result.pets.length === 1 ? result.pets[0]!.id : null;
       setGuardianId(result.guardian.id);
     },
-    [clinicId, guardianId, reloadGuardianOptions],
+    [clinicId, guardianId, reloadGuardianOptions, multiPetEnabled],
   );
 
   const openQuickRegisterFull = useCallback(() => {
@@ -690,16 +776,32 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       if (initialPet) {
         setPetId(initialPet.id);
         setPetName(initialPet.name);
+        setSelectedPetIds(multiPetEnabled ? [initialPet.id] : []);
         initialPetIdRef.current = null;
       } else if (mapped.length === 1) {
         setPetId(mapped[0]!.id);
         setPetName(mapped[0]!.name);
+        setSelectedPetIds(multiPetEnabled ? [mapped[0]!.id] : []);
       } else {
         setPetId('');
         setPetName('');
+        setSelectedPetIds([]);
       }
     }).catch(() => setGuardianPets([]));
-  }, [guardianId, clinicId]);
+  }, [guardianId, clinicId, multiPetEnabled]);
+
+  useEffect(() => {
+    if (!multiPetEnabled) return;
+    if (selectedPetIds.length === 1) {
+      const pid = selectedPetIds[0]!;
+      const p = guardianPets.find((x) => x.id === pid);
+      setPetId(pid);
+      setPetName(p?.name ?? '');
+    } else if (selectedPetIds.length === 0) {
+      setPetId('');
+      setPetName('');
+    }
+  }, [multiPetEnabled, selectedPetIds, guardianPets]);
 
   useEffect(() => {
     if (!open || !isClinicalRoutine || !clinicId || !petId) {
@@ -912,13 +1014,91 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   const selectedPet = useMemo(() => guardianPets.find((p) => p.id === petId) ?? null, [guardianPets, petId]);
 
+  const updatePetVisitConfig = useCallback(
+    (petIdToUpdate: string, nextConfig: PetVisitConfig) => {
+      setPetVisitConfigs((prev) => {
+        let next = prev.map((c) => (c.petId === petIdToUpdate ? nextConfig : c));
+        if (syncSameServicesForAll && petIdToUpdate === effectiveSelectedPetIds[0]) {
+          const source = next.find((c) => c.petId === petIdToUpdate)!;
+          next = next.map((c, idx) =>
+            idx === 0
+              ? c
+              : {
+                  ...c,
+                  services: source.services.map((s) => ({ ...s })),
+                  selectedAddons: source.selectedAddons.map((a) => ({ ...a })),
+                  pricingApptPorteTier: source.pricingApptPorteTier,
+                  pricingApptCoatType: source.pricingApptCoatType,
+                },
+          );
+        }
+        return next;
+      });
+    },
+    [syncSameServicesForAll, effectiveSelectedPetIds],
+  );
+
+  useEffect(() => {
+    if (!multiPetEnabled || selectedPetIds.length < 2) {
+      return;
+    }
+    setPetVisitConfigs((prev) => {
+      const prevById = new Map(prev.map((c) => [c.petId, c]));
+      const newlyAddedId = selectedPetIds.find((id) => !prevById.has(id));
+      const seedFromSingle = prev.length === 0 && services.length > 0;
+      return selectedPetIds.map((id, idx) => {
+        const existing = prevById.get(id);
+        if (existing) {
+          return newlyAddedId === id ? { ...existing, expanded: true } : existing;
+        }
+        if (seedFromSingle && idx === 0) {
+          return {
+            petId: id,
+            expanded: true,
+            services: services.map((s) => ({ ...s })),
+            selectedAddons: selectedAddons.map((a) => ({ ...a })),
+            pricingApptPorteTier,
+            pricingApptCoatType,
+            hubStaffMemberId: staffId,
+            extraBlocks: [],
+          };
+        }
+        const firstExisting = prevById.get(selectedPetIds[0]!);
+        if (syncSameServicesForAll && firstExisting) {
+          return {
+            ...clonePetVisitConfig(firstExisting),
+            petId: id,
+            expanded: newlyAddedId === id,
+            extraBlocks: [],
+          };
+        }
+        return emptyPetVisitConfig(id, newlyAddedId === id, staffId);
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sincroniza só quando a lista de pets muda
+  }, [multiPetEnabled, selectedPetIds.join('|')]);
+
+  useEffect(() => {
+    if (!multiPetEnabled || selectedPetIds.length >= 2) return;
+    setPetVisitConfigs([]);
+    setSyncSameServicesForAll(false);
+    setSyncSameStaffForAll(true);
+  }, [multiPetEnabled, selectedPetIds.length]);
+
   const serviceIdsForPorteUnion = useMemo(() => {
-    const ids = services.map((s) => s.hub_service_type_id);
-    for (const b of extraBlocks) {
-      for (const s of b.services) ids.push(s.hub_service_type_id);
+    const ids = isMultiPetSelection
+      ? petVisitConfigs.flatMap((c) => [
+          ...c.services.map((s) => s.hub_service_type_id),
+          ...c.extraBlocks.flatMap((b) => b.services.map((s) => s.hub_service_type_id)),
+        ])
+      : services.map((s) => s.hub_service_type_id);
+    if (!isMultiPetSelection) {
+      for (const b of extraBlocks) {
+        for (const s of b.services) ids.push(s.hub_service_type_id);
+      }
     }
     return ids;
-  }, [services, extraBlocks]);
+  }, [isMultiPetSelection, petVisitConfigs, services, extraBlocks]);
 
   const unionPricingTiers = useMemo(
     () => unionPorteTiersForServiceSelection(serviceIdsForPorteUnion, serviceTypes),
@@ -956,6 +1136,56 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     for (const addon of availableAddons) merged.set(addon.id, addon);
     return [...merged.values()];
   }, [serviceTypes, availableAddons]);
+
+  const multiPetPricingSummaries = useMemo(() => {
+    if (!isMultiPetSelection || petVisitConfigs.length < 2) return null;
+    return petVisitConfigs.map((cfg) => {
+      const pet = guardianPets.find((p) => p.id === cfg.petId);
+      const bodyTier =
+        pet?.size_tier && PET_BODY_PORTE_VALUES.includes(pet.size_tier as PetBodyPorteValue)
+          ? pet.size_tier
+          : 'medio';
+      const preview = buildAgendaPricingPreview({
+        mainServices: [
+          ...cfg.services.map((s) => ({
+            hub_service_type_id: s.hub_service_type_id,
+            name: s.name,
+            pricing_variant: s.pricing_variant,
+            isAddon: false as const,
+          })),
+          ...cfg.selectedAddons.map((s) => ({
+            hub_service_type_id: s.hub_service_type_id,
+            name: s.name,
+            pricing_variant: s.pricing_variant,
+            isAddon: true as const,
+          })),
+        ],
+        extraServices: [],
+        serviceTypes: serviceTypesForPricing,
+        petSizeTier: bodyTier,
+        petBirthDate: pet?.birth_date ?? null,
+        petCoatType: pet?.coat_type ?? null,
+        appointmentDateYmd: dateYmd,
+        puppyMaxMonths,
+        appointmentOverrideTier: cfg.pricingApptPorteTier.trim() || null,
+        appointmentOverrideCoatType: cfg.pricingApptCoatType.trim() || null,
+      });
+      return {
+        petId: cfg.petId,
+        petName: pet?.name ?? 'Pet',
+        total: preview.totalSale,
+        needsCoatType: preview.lines.some((l) => l.needsCoatType),
+        serviceNames: cfg.services.map((s) => s.name).join(' + ') || '—',
+      };
+    });
+  }, [
+    isMultiPetSelection,
+    petVisitConfigs,
+    guardianPets,
+    serviceTypesForPricing,
+    dateYmd,
+    puppyMaxMonths,
+  ]);
 
   const pricingPreview = useMemo(
     () =>
@@ -1004,6 +1234,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       pricingApptCoatType,
     ],
   );
+
+  const pricingLineByServiceId = useMemo(() => {
+    const map = new Map<string, (typeof pricingPreview.lines)[0]>();
+    for (const ln of pricingPreview.lines) {
+      if (!ln.isAddon) map.set(ln.hub_service_type_id, ln);
+    }
+    return map;
+  }, [pricingPreview.lines]);
 
   const pickupPricingPreview = useMemo(() => {
     if (!withPickup || !pickupLtServiceTypeId.trim()) return null;
@@ -1068,11 +1306,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     </div>
   ) : null;
 
-  const statusComboOptions = useMemo<HubComboboxOption[]>(
-    () =>
-      Object.entries(STATUS_META).map(([v, m]) => ({ value: v, label: m.label })),
-    [],
-  );
+  const statusComboOptions = useMemo<HubComboboxOption[]>(() => {
+    const statusIcon = <CheckCircle2 size={18} strokeWidth={2} aria-hidden />;
+    return Object.entries(STATUS_META).map(([v, m]) => ({
+      value: v,
+      label: m.label,
+      icon: statusIcon,
+    }));
+  }, []);
 
   // ── Service chips ─────────────────────────────────────────────────────────
   const addService = useCallback(
@@ -1109,28 +1350,25 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setServices((prev) => prev.map((s, i) => (i === idx ? { ...s, pricing_variant: variant } : s)));
 
   useEffect(() => {
-    if (!open || !clinicId || !mainServiceIdsSignature) {
-      setAvailableAddons([]);
+    if (!open || !clinicId || !allPetServiceIdsSignature) {
+      setAddonsByParent(new Map());
       return;
     }
     let cancelled = false;
-    const serviceIds = mainServiceIdsSignature.split('|').filter(Boolean);
+    const serviceIds = allPetServiceIdsSignature.split('|').filter(Boolean);
     const timer = window.setTimeout(() => {
       setAddonsLoading(true);
       void (async () => {
         try {
           const results = await Promise.all(
-            serviceIds.map((id) => hubServiceAddonsApi.getAvailableAddons(id, clinicId)),
+            serviceIds.map(async (id) => {
+              const res = await hubServiceAddonsApi.getAvailableAddons(id, clinicId);
+              return { parentId: id, addons: res.addons ?? [] };
+            }),
           );
-          const byId = new Map<string, HubServiceType>();
-          for (const res of results) {
-            for (const a of res.addons ?? []) {
-              if (!byId.has(a.id)) byId.set(a.id, a);
-            }
-          }
-          if (!cancelled) setAvailableAddons([...byId.values()]);
+          if (!cancelled) setAddonsByParent(mergeAddonsByParent(results));
         } catch {
-          if (!cancelled) setAvailableAddons([]);
+          if (!cancelled) setAddonsByParent(new Map());
         } finally {
           if (!cancelled) setAddonsLoading(false);
         }
@@ -1140,12 +1378,21 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, clinicId, mainServiceIdsSignature]);
+  }, [open, clinicId, allPetServiceIdsSignature]);
 
   useEffect(() => {
     const allowed = new Set(availableAddons.map((a) => a.id));
+    if (isMultiPetSelection) {
+      setPetVisitConfigs((prev) =>
+        prev.map((c) => ({
+          ...c,
+          selectedAddons: c.selectedAddons.filter((s) => allowed.has(s.hub_service_type_id)),
+        })),
+      );
+      return;
+    }
     setSelectedAddons((prev) => prev.filter((s) => allowed.has(s.hub_service_type_id)));
-  }, [availableAddons]);
+  }, [availableAddons, isMultiPetSelection]);
 
   const toggleAddon = useCallback(
     (addon: HubServiceType) => {
@@ -1175,41 +1422,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       prev.map((s) => (s.hub_service_type_id === addonId ? { ...s, pricing_variant: variant } : s))
     );
 
-  const servicesNeedingVariant = useMemo(() => {
-    return services
-      .map((s, idx) => {
-        const st = serviceTypes.find((x) => x.id === s.hub_service_type_id);
-        const matrix = st ? coercePricingMatrixFromApi(st.pricing_matrix) : null;
-        if (!matrix || !matrixNeedsVariantChoice(matrix)) return null;
-        return { idx, service: s, st, matrix };
-      })
-      .filter(Boolean) as Array<{
-      idx: number;
-      service: ServiceChip;
-      st: HubServiceType;
-      matrix: NonNullable<ReturnType<typeof coercePricingMatrixFromApi>>;
-    }>;
-  }, [services, serviceTypes]);
-
   // ── Extra blocks ──────────────────────────────────────────────────────────
   const addExtraBlock = () =>
     setExtraBlocks((prev) => {
       const collapsed = prev.map((b) => ({ ...b, expanded: false }));
       return [
         ...collapsed,
-        {
-          key: String(Date.now()),
-          expanded: true,
-          block_title: '',
-          block_description: '',
-          block_description_user_edited: false,
-          group_filter: groupFilter,
-          services: [],
-          starts_hm: endsHm,
-          ends_hm: addMinutes(endsHm, 60),
-          hub_staff_member_id: staffId,
-          resource_label: resourceLabel,
-        },
+        createEmptyExtraBlock({
+          groupFilter: groupFilter,
+          startsHm: endsHm,
+          staffId: staffId,
+          resourceLabel: resourceLabel,
+        }),
       ];
     });
   const removeExtraBlock = (key: string) => setExtraBlocks((prev) => prev.filter((b) => b.key !== key));
@@ -1222,7 +1446,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setSaving(true);
     setSaveError(null);
     try {
-      const result = await hubAgendaApi.patch(appointmentId, payload, { scope });
+      const scopedPayload = { ...payload };
+      if (scope !== 'this') {
+        delete scopedPayload.extra_blocks;
+      }
+      const result = await hubAgendaApi.patch(appointmentId, scopedPayload, { scope });
       pendingPatchPayloadRef.current = null;
       setSeriesScopePickerOpen(false);
       resetForm();
@@ -1238,7 +1466,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   const handleSave = async () => {
     if (!clinicId) return;
-    if (services.length === 0) {
+    if (isMultiPetSelection) {
+      const emptyPet = petVisitConfigs.find((c) => c.services.length === 0);
+      if (emptyPet) {
+        const name = guardianPets.find((p) => p.id === emptyPet.petId)?.name ?? 'um dos pets';
+        setSaveError(`Selecione pelo menos um serviço para ${name}.`);
+        return;
+      }
+    } else if (services.length === 0) {
       setSaveError('Selecione pelo menos um serviço.');
       return;
     }
@@ -1250,9 +1485,25 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       setSaveError('Selecione o tutor.');
       return;
     }
-    if (!petId) {
-      setSaveError('Selecione o pet.');
+    if (effectiveSelectedPetIds.length === 0) {
+      setSaveError('Selecione pelo menos um pet.');
       return;
+    }
+    if (isMultiPetSelection) {
+      for (const cfg of petVisitConfigs) {
+        const emptyEb = cfg.extraBlocks.filter((b) => b.services.length === 0);
+        if (emptyEb.length > 0) {
+          const name = guardianPets.find((p) => p.id === cfg.petId)?.name ?? 'pet';
+          setSaveError(`Cada bloco adicional de ${name} precisa ter pelo menos um serviço.`);
+          return;
+        }
+      }
+    } else {
+      const emptyExtraBlocks = extraBlocks.filter((b) => b.services.length === 0);
+      if (emptyExtraBlocks.length > 0) {
+        setSaveError('Cada bloco adicional precisa ter pelo menos um serviço.');
+        return;
+      }
     }
     if (isClinicalRoutine) {
       if (mainBlockNotes.length > 1000) {
@@ -1270,27 +1521,61 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       serviceIdsForPorteUnion,
       serviceTypes,
     );
-    if (tierErr) {
+    if (!isMultiPetSelection && tierErr) {
       setSaveError(tierErr);
       return;
+    }
+    if (isMultiPetSelection) {
+      for (const cfg of petVisitConfigs) {
+        const ids = cfg.services.map((s) => s.hub_service_type_id);
+        const te = validateAppointmentPorteOverride(cfg.pricingApptPorteTier.trim() || null, ids, serviceTypes);
+        if (te) {
+          const name = guardianPets.find((p) => p.id === cfg.petId)?.name ?? 'pet';
+          setSaveError(`${name}: ${te}`);
+          return;
+        }
+        const ce = validateAppointmentCoatOverride(cfg.pricingApptCoatType.trim() || null, ids, serviceTypes);
+        if (ce) {
+          const name = guardianPets.find((p) => p.id === cfg.petId)?.name ?? 'pet';
+          setSaveError(`${name}: ${ce}`);
+          return;
+        }
+      }
     }
     const coatErr = validateAppointmentCoatOverride(
       pricingApptCoatType.trim() || null,
       serviceIdsForPorteUnion,
       serviceTypes,
     );
-    if (coatErr) {
+    if (!isMultiPetSelection && coatErr) {
       setSaveError(coatErr);
       return;
     }
-    if (needsManualCoatType) {
+    if (needsManualCoatType && effectiveSelectedPetIds.length <= 1) {
       setSaveError('Selecione a pelagem para precificar os serviços escolhidos.');
       return;
     }
-    const addonVariantErr = validateSelectedAddonVariants(selectedAddons, availableAddons, serviceTypes);
-    if (!isClinicalRoutine && addonVariantErr) {
-      setSaveError(addonVariantErr);
+    if (multiPetPricingSummaries?.some((s) => s.needsCoatType)) {
+      const bad = multiPetPricingSummaries.find((s) => s.needsCoatType);
+      setSaveError(`Selecione a pelagem para precificar os serviços de ${bad?.petName ?? 'um dos pets'}.`);
       return;
+    }
+    if (isMultiPetSelection) {
+      for (const cfg of petVisitConfigs) {
+        const petAddons = cfg.selectedAddons;
+        const err = validateSelectedAddonVariants(petAddons, availableAddons, serviceTypes);
+        if (!isClinicalRoutine && err) {
+          const name = guardianPets.find((p) => p.id === cfg.petId)?.name ?? 'pet';
+          setSaveError(`${name}: ${err}`);
+          return;
+        }
+      }
+    } else {
+      const addonVariantErr = validateSelectedAddonVariants(selectedAddons, availableAddons, serviceTypes);
+      if (!isClinicalRoutine && addonVariantErr) {
+        setSaveError(addonVariantErr);
+        return;
+      }
     }
     if (!isClinicalRoutine && !isWalkIn && withPickup) {
       if (!pickupLtServiceTypeId.trim()) {
@@ -1309,7 +1594,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
     try {
       let startsAt = toIsoTs(dateYmd, startsHm);
-      let endsAt = toEndIsoTs(dateYmd, startsHm, endsHm);
+      let endsAt = toEndIsoTs(dateYmd, startsHm, isMultiPetSelection ? multiPetVisitEndHm : endsHm);
 
       if (isWalkIn) {
         const now = new Date();
@@ -1319,6 +1604,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
 
       if (isEditMode) {
+        const extraBlocksPayload = buildExtraBlocksApiPayload(extraBlocks, dateYmd, endsAt);
         const patchPayload = {
           clinic_id: clinicId,
           hub_staff_member_id: staffId || null,
@@ -1338,6 +1624,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             duration_minutes: s.duration_minutes,
             pricing_variant: s.pricing_variant ?? undefined,
           })),
+          extra_blocks: extraBlocksPayload,
         };
         pendingPatchPayloadRef.current = patchPayload;
         if (seriesId) {
@@ -1350,20 +1637,17 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
 
       let lastServiceEndAt = endsAt;
-      const resolvedExtraBlocks = isWalkIn
-        ? []
-        : extraBlocks
-            .filter((b) => b.services.length > 0)
-            .map((b) => {
-              const blockStart = toIsoTsOnOrAfter(dateYmd, b.starts_hm, lastServiceEndAt);
-              const blockEnd = toEndIsoTs(blockStart.slice(0, 10), b.starts_hm, b.ends_hm);
-              lastServiceEndAt = blockEnd;
-              return { block: b, blockStart, blockEnd };
-            });
+      const resolvedExtraBlocksPayload = isWalkIn
+        ? undefined
+        : buildExtraBlocksApiPayload(extraBlocks, dateYmd, lastServiceEndAt);
+
+      const primaryCfg = isMultiPetSelection ? petVisitConfigs[0] : null;
+      const primaryServices = primaryCfg?.services ?? services;
+      const primaryAddons = primaryCfg?.selectedAddons ?? selectedAddons;
 
       const payload: CreateHubAppointmentPayload = {
         clinic_id: clinicId,
-        hub_service_type_id: services[0]!.hub_service_type_id,
+        hub_service_type_id: primaryServices[0]!.hub_service_type_id,
         starts_at: startsAt,
         ends_at: endsAt,
         status: (isWalkIn ? 'checked_in' : status) as HubAppointmentStatus,
@@ -1375,9 +1659,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         description: null,
         notes: mainBlockNotes.trim() || null,
         financial_notes: financialNotes.trim() || null,
-        pricing_porte_tier: pricingApptPorteTier.trim() || null,
-        pricing_coat_type: pricingApptCoatType.trim() || null,
-        services: [...services, ...(isWalkIn ? [] : selectedAddons)].map((s) => ({
+        pricing_porte_tier: (primaryCfg?.pricingApptPorteTier ?? pricingApptPorteTier).trim() || null,
+        pricing_coat_type: (primaryCfg?.pricingApptCoatType ?? pricingApptCoatType).trim() || null,
+        services: [...primaryServices, ...(isWalkIn ? [] : primaryAddons)].map((s) => ({
           hub_service_type_id: s.hub_service_type_id,
           duration_minutes: s.duration_minutes,
           pricing_variant: s.pricing_variant ?? undefined,
@@ -1422,20 +1706,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         };
       }
 
-      if (resolvedExtraBlocks.length > 0) {
-        payload.extra_blocks = resolvedExtraBlocks.map(({ block: b, blockStart, blockEnd }) => ({
-          starts_at: blockStart,
-          ends_at: blockEnd,
-          services: b.services.map((s) => ({
-            hub_service_type_id: s.hub_service_type_id,
-            duration_minutes: s.duration_minutes,
-            pricing_variant: s.pricing_variant ?? undefined,
-          })),
-          hub_staff_member_id: b.hub_staff_member_id || null,
-          resource_label: b.resource_label || null,
-          title: b.block_title.trim() || null,
-          notes: b.block_description.trim() || null,
-        }));
+      if (resolvedExtraBlocksPayload && resolvedExtraBlocksPayload.length > 0) {
+        payload.extra_blocks = resolvedExtraBlocksPayload;
       }
 
       if (!isWalkIn && withRecurrence) {
@@ -1451,6 +1723,44 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           rule.occurrences = recurrence.occurrences;
         }
         payload.recurrence = rule;
+      }
+
+      if (isMultiPetSelection) {
+        const pets: CreateHubAppointmentBatchPetEntry[] = petVisitConfigs.map((cfg) => {
+          const t = petVisitTimings.get(cfg.petId)!;
+          const petStartsAt = toIsoTs(dateYmd, t.startsHm);
+          const petEndsAt = toEndIsoTs(dateYmd, t.startsHm, t.endsHm);
+          const entry: CreateHubAppointmentBatchPetEntry = {
+            pet_id: cfg.petId,
+            services: [...cfg.services, ...cfg.selectedAddons].map((s) => ({
+              hub_service_type_id: s.hub_service_type_id,
+              duration_minutes: s.duration_minutes,
+              pricing_variant: s.pricing_variant ?? undefined,
+            })),
+            pricing_porte_tier: cfg.pricingApptPorteTier.trim() || null,
+            pricing_coat_type: cfg.pricingApptCoatType.trim() || null,
+            starts_at: petStartsAt,
+            ends_at: petEndsAt,
+            extra_blocks: buildExtraBlocksApiPayload(cfg.extraBlocks, dateYmd, petEndsAt),
+          };
+          if (!syncSameStaffForAll) {
+            entry.hub_staff_member_id = cfg.hubStaffMemberId || null;
+          }
+          return entry;
+        });
+        const batchResult = await hubAgendaApi.createBatch({
+          clinic_id: clinicId,
+          shared: { ...payload, pet_id: petVisitConfigs[0]?.petId ?? null },
+          pets,
+        });
+        resetForm();
+        onClose();
+        onCreated({
+          appointment: batchResult.appointments[0]!,
+          created_count: batchResult.created_count,
+          conflict_count: 0,
+        });
+        return;
       }
 
       const result = await hubAgendaApi.create(payload);
@@ -1512,8 +1822,12 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setPricingApptPorteTier('');
     setPricingApptCoatType('');
     setSelectedAddons([]);
-    setAvailableAddons([]);
+    setAddonsByParent(new Map());
     setAddonsLoading(false);
+    setSelectedPetIds([]);
+    setPetVisitConfigs([]);
+    setSyncSameServicesForAll(false);
+    setSyncSameStaffForAll(true);
     setIntakeActiveCases([]);
     setIntakeCasesLoading(false);
     setIntakeCaseMode('new');
@@ -1529,9 +1843,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const clinicalRoutinePrimaryId = services[0]?.hub_service_type_id ?? '';
   const canSaveDefault =
     Boolean(clinicId) &&
-    services.length > 0 &&
+    (isMultiPetSelection
+      ? petVisitConfigs.length >= 2 && petVisitConfigs.every((c) => c.services.length > 0)
+      : services.length > 0) &&
     Boolean(guardianId) &&
-    Boolean(petId) &&
+    effectiveSelectedPetIds.length > 0 &&
     Boolean(dateYmd);
   const canSaveClinicalRoutine =
     canSaveDefault &&
@@ -1544,31 +1860,73 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     <div className="nam-aside">
       <p className="nam-aside__label">Resumo</p>
 
-      {(services.length > 0 || extraBlocks.some((b) => b.services.length > 0)) && (
+      {(isMultiPetSelection
+        ? petVisitConfigs.some(
+            (c) => c.services.length > 0 || c.extraBlocks.some((b) => b.services.length > 0),
+          )
+        : services.length > 0) || (!isMultiPetSelection && extraBlocks.some((b) => b.services.length > 0)) ? (
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Blocos no dia</p>
-          {services.length > 0 ? (
+          {isMultiPetSelection
+            ? petVisitConfigs
+                .filter((c) => c.services.length > 0)
+                .map((cfg) => {
+                  const pet = guardianPets.find((p) => p.id === cfg.petId);
+                  const t = petVisitTimings.get(cfg.petId);
+                  const svcPart = cfg.services.map((s) => s.name).join(' + ') || '—';
+                  const mainDur =
+                    cfg.services.reduce((s, c) => s + c.duration_minutes, 0) +
+                    cfg.selectedAddons.reduce((s, c) => s + c.duration_minutes, 0);
+                  return (
+                    <p key={cfg.petId} className="nam-aside__item">
+                      {pet?.name ?? 'Pet'}: {svcPart} · {t?.startsHm ?? startsHm}–{t?.endsHm ?? endsHm} · {mainDur}min
+                    </p>
+                  );
+                })
+            : services.length > 0 ? (
             <p className="nam-aside__item">
               {(() => {
-                const pt = title.trim() || autoTitle || '—';
-                return `Principal: ${pt.length > 48 ? `${pt.slice(0, 48)}…` : pt} · ${startsHm}–${endsHm} · ${totalDurationMin}min`;
+                const svcPart = services.map((s) => s.name).join(' + ') || '—';
+                const petPart = selectedPetNamesLabel || petName || '—';
+                const pt = title.trim() || (svcPart && petPart ? `${svcPart} — ${petPart}` : svcPart || petPart);
+                return `Principal: ${pt.length > 56 ? `${pt.slice(0, 56)}…` : pt} · ${startsHm}–${endsHm} · ${totalDurationMin}min`;
               })()}
             </p>
           ) : null}
-          {extraBlocks
-            .filter((b) => b.services.length > 0)
-            .map((b, i) => (
-              <p key={b.key} className="nam-aside__item">
-                Bloco {i + 2}: {(b.block_title || 'Sem título').slice(0, 40)} · {b.starts_hm}–{b.ends_hm} ·{' '}
-                {b.services.reduce((s, c) => s + c.duration_minutes, 0)}min
-              </p>
-            ))}
+          {isMultiPetSelection
+            ? petVisitConfigs.flatMap((cfg) =>
+                cfg.extraBlocks
+                  .filter((b) => b.services.length > 0)
+                  .map((b, i) => {
+                    const pet = guardianPets.find((p) => p.id === cfg.petId);
+                    return (
+                      <p key={`${cfg.petId}-${b.key}`} className="nam-aside__item">
+                        {pet?.name ?? 'Pet'} — bloco {i + 2}: {(b.block_title || 'Sem título').slice(0, 32)} ·{' '}
+                        {b.starts_hm}–{b.ends_hm} · {b.services.reduce((s, c) => s + c.duration_minutes, 0)}min
+                      </p>
+                    );
+                  }),
+              )
+            : extraBlocks
+                .filter((b) => b.services.length > 0)
+                .map((b, i) => (
+                  <p key={b.key} className="nam-aside__item">
+                    Bloco {i + 2}: {(b.block_title || 'Sem título').slice(0, 40)} · {b.starts_hm}–{b.ends_hm} ·{' '}
+                    {b.services.reduce((s, c) => s + c.duration_minutes, 0)}min
+                  </p>
+                ))}
           <div className="nam-aside__total">
             <span>Total duração</span>
             <strong>{totalDurationAllBlocks}min</strong>
           </div>
+          {isMultiPetSelection ? (
+            <p className="nam-aside__muted" style={{ marginTop: 6, fontSize: 12 }}>
+              Visita: {startsHm}–{multiPetVisitEndHm}
+              {syncSameStaffForAll ? ' · sequencial (mesmo profissional)' : ' · paralelo'}
+            </p>
+          ) : null}
         </div>
-      )}
+      ) : null}
 
       <div className="nam-aside__section">
         <p className="nam-aside__section-title">Notas para o financeiro</p>
@@ -1582,60 +1940,57 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         />
       </div>
 
-      {petName && (
+      {isMultiPetSelection ? (
+        <div className="nam-aside__section">
+          <p className="nam-aside__section-title">Pets ({effectiveSelectedPetIds.length})</p>
+          <p className="nam-aside__item">{selectedPetNamesLabel}</p>
+          {guardianName ? <p className="nam-aside__muted">{guardianName}</p> : null}
+        </div>
+      ) : petName ? (
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Pet</p>
           <p className="nam-aside__item">{petName}</p>
-          {selectedPet ? (
-            <>
-              <p className="nam-aside__muted">
-                Porte (cadastro): {PORTE_LABELS[petBodyTierForPricing as PetBodyPorteValue]}
-              </p>
-              <p className="nam-aside__muted">
-                Pelagem:{' '}
-                {selectedPet.coat_type && COAT_TYPE_LABELS[selectedPet.coat_type as CoatTypeValue]
-                  ? COAT_TYPE_LABELS[selectedPet.coat_type as CoatTypeValue]
-                  : 'não informada'}
-              </p>
-            </>
-          ) : null}
           {guardianName ? <p className="nam-aside__muted">{guardianName}</p> : null}
         </div>
-      )}
+      ) : null}
 
-      {(pricingPreview.lines.length > 0 || pickupPricingPreview) && (
+      {(pricingPreview.lines.length > 0 || pickupPricingPreview || multiPetPricingSummaries) && (
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Preços (estimativa)</p>
-          <p className="nam-aside__muted" style={{ fontSize: 12, marginBottom: 6 }}>
-            {pricingApptPorteTier.trim()
-              ? `Override: ${PORTE_LABELS[pricingApptPorteTier.trim() as PorteValue] ?? pricingApptPorteTier}`
-              : 'Automático (idade + porte)'}
-            {pricingApptCoatType.trim()
-              ? ` · Pelagem: ${COAT_TYPE_LABELS[pricingApptCoatType.trim() as CoatTypeValue] ?? pricingApptCoatType}`
-              : ''}
-          </p>
-          {pricingPreview.lines.map((ln, i) => (
-            <div
-              key={`${ln.hub_service_type_id}-${ln.name}-${i}`}
-              className={ln.isAddon ? 'nam-aside__row nam-aside__row--addon' : 'nam-aside__row'}
-            >
-              <span className="nam-aside__item">{ln.isAddon ? `Adicional: ${ln.name}` : ln.name}</span>
-              <span className="nam-aside__muted">
-                {ln.isAddon
-                  ? ln.sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                  : (
-                      <>
-                        {ln.tierApplied ? PORTE_LABELS[ln.tierApplied as PorteValue] ?? ln.tierApplied : '—'}
-                        {ln.coatTypeApplied
-                          ? ` / ${COAT_TYPE_LABELS[ln.coatTypeApplied as CoatTypeValue] ?? ln.coatTypeApplied}`
-                          : ''}
-                        {ln.needsCoatType ? ' / selecione pelagem' : ''} ·{' '}
-                        {ln.sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </>
-                    )}
-              </span>
-            </div>
-          ))}
+          {!isMultiPetSelection ? (
+            <>
+              <p className="nam-aside__muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                {pricingApptPorteTier.trim()
+                  ? `Override: ${PORTE_LABELS[pricingApptPorteTier.trim() as PorteValue] ?? pricingApptPorteTier}`
+                  : 'Automático (idade + porte)'}
+                {pricingApptCoatType.trim()
+                  ? ` · Pelagem: ${COAT_TYPE_LABELS[pricingApptCoatType.trim() as CoatTypeValue] ?? pricingApptCoatType}`
+                  : ''}
+              </p>
+              {pricingPreview.lines.map((ln, i) => (
+                <div
+                  key={`${ln.hub_service_type_id}-${ln.name}-${i}`}
+                  className={ln.isAddon ? 'nam-aside__row nam-aside__row--addon' : 'nam-aside__row'}
+                >
+                  <span className="nam-aside__item">{ln.isAddon ? `Adicional: ${ln.name}` : ln.name}</span>
+                  <span className="nam-aside__muted">
+                    {ln.isAddon
+                      ? ln.sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                      : (
+                          <>
+                            {ln.tierApplied ? PORTE_LABELS[ln.tierApplied as PorteValue] ?? ln.tierApplied : '—'}
+                            {ln.coatTypeApplied
+                              ? ` / ${COAT_TYPE_LABELS[ln.coatTypeApplied as CoatTypeValue] ?? ln.coatTypeApplied}`
+                              : ''}
+                            {ln.needsCoatType ? ' / selecione pelagem' : ''} ·{' '}
+                            {ln.sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </>
+                        )}
+                  </span>
+                </div>
+              ))}
+            </>
+          ) : null}
           {pickupPricingPreview ? (
             <div className="nam-aside__row">
               <span className="nam-aside__item">Leva e Traz total ({pickupPricingPreview.band.bandLabel})</span>
@@ -1644,10 +1999,37 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               </span>
             </div>
           ) : null}
+          {multiPetPricingSummaries && multiPetPricingSummaries.length > 1 ? (
+            <ul className="nam-pet-preview-list" style={{ marginTop: 10, marginBottom: 10 }}>
+              {multiPetPricingSummaries.map((row) => (
+                <li key={row.petId}>
+                  <span>
+                    {row.petName}
+                    <span className="nam-aside__muted" style={{ display: 'block', fontSize: 11 }}>
+                      {row.serviceNames}
+                    </span>
+                  </span>
+                  <strong>{row.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                </li>
+              ))}
+              <li style={{ borderTop: '1px solid #e8e4e0', paddingTop: 6, marginTop: 4 }}>
+                <span>Total ({multiPetPricingSummaries.length} pets)</span>
+                <strong>
+                  {multiPetPricingSummaries
+                    .reduce((s, r) => s + r.total, 0)
+                    .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </strong>
+              </li>
+            </ul>
+          ) : null}
           <div className="nam-aside__total">
             <span>Total venda</span>
             <strong>
-              {(pricingPreview.totalSale + (pickupPricingPreview?.saleRoundTrip ?? 0)).toLocaleString('pt-BR', {
+              {(isMultiPetSelection && multiPetPricingSummaries
+                ? multiPetPricingSummaries.reduce((s, r) => s + r.total, 0) +
+                  (pickupPricingPreview?.saleRoundTrip ?? 0)
+                : pricingPreview.totalSale + (pickupPricingPreview?.saleRoundTrip ?? 0)
+              ).toLocaleString('pt-BR', {
                 style: 'currency',
                 currency: 'BRL',
               })}
@@ -1724,6 +2106,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       <div className="hub-agenda-series-scope__card">
         <h3 className="hub-agenda-series-scope__title">Aplicar alterações em</h3>
         <p className="hub-agenda-series-scope__hint">Este agendamento faz parte de uma série recorrente.</p>
+        {extraBlocks.length > 0 ? (
+          <p className="hub-agenda-series-scope__hint">
+            Blocos adicionais só serão salvos se escolher «Só este agendamento».
+          </p>
+        ) : null}
         <div className="hub-agenda-series-scope__actions">
           <button type="button" className="hub-btn hub-btn--secondary" onClick={() => void submitPatch('this')} disabled={saving}>
             Só este agendamento
@@ -2100,6 +2487,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   value={status}
                   onChange={(v) => setStatus(v as AgendaStatus)}
                   clearable={false}
+                  triggerIcon={<CheckCircle2 size={18} strokeWidth={2} aria-hidden />}
+                  ariaLabel="Selecionar situação"
                 />
               </div>
             </div>
@@ -2124,6 +2513,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     onChange={(v) => {
                       setGuardianId(v);
                       setGuardianName(guardianOptions.find((o) => o.value === v)?.label ?? '');
+                      setSelectedPetIds([]);
+                      setPetId('');
+                      setPetName('');
                     }}
                     placeholder="Buscar tutor…"
                     triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
@@ -2137,6 +2529,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 </label>
                 {guardianId ? (
                   petComboOptions.length > 0 ? (
+                    multiPetEnabled ? (
+                      <AppointmentPetSelector
+                        id="nam-pet"
+                        pets={guardianPets}
+                        selectedPetIds={selectedPetIds}
+                        onChange={setSelectedPetIds}
+                      />
+                    ) : (
                     <HubSearchableCombobox
                       id="nam-pet"
                       options={petComboOptions}
@@ -2150,7 +2550,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                       triggerIcon={<Dog size={18} strokeWidth={2} aria-hidden />}
                       ariaLabel="Selecionar pet"
                     />
-                    ) : (
+                    )
+                  ) : (
                       <div className="nam-field-shell nam-field-shell--empty nam-field-shell--stacked" role="status">
                         <span className="nam-field-shell__icon" aria-hidden>
                           <Dog size={18} strokeWidth={2} />
@@ -2189,32 +2590,99 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 </HubCheckbox>
               </div>
             ) : null}
-            {petId && selectedPet ? (
-              <div className="nam-quick-card__pet-info">
-                <label className="nam-label">Dados do pet (cadastro)</label>
-                <p className="nam-muted nam-quick-card__pet-line">
-                  Porte: {PORTE_LABELS[petBodyTierForPricing as PetBodyPorteValue]}
-                </p>
-                <p className="nam-muted nam-quick-card__pet-line">
-                  Pelagem:{' '}
-                  {selectedPet.coat_type && COAT_TYPE_LABELS[selectedPet.coat_type as CoatTypeValue]
-                    ? COAT_TYPE_LABELS[selectedPet.coat_type as CoatTypeValue]
-                    : 'não informada'}
-                </p>
-              </div>
-            ) : null}
           </div>
         </div>
+
+        {isMultiPetSelection ? (
+          <div className="nam-section nam-multi-pet-visits">
+            <div className="nam-multi-pet-visits__toolbar">
+              <HubCheckbox
+                checked={syncSameServicesForAll}
+                onChange={(checked) => {
+                  setSyncSameServicesForAll(checked);
+                  if (checked && petVisitConfigs[0]) {
+                    const first = petVisitConfigs[0];
+                    setPetVisitConfigs((prev) =>
+                      prev.map((c, idx) =>
+                        idx === 0
+                          ? c
+                          : {
+                              ...c,
+                              services: first.services.map((s) => ({ ...s })),
+                              selectedAddons: first.selectedAddons.map((a) => ({ ...a })),
+                              pricingApptPorteTier: first.pricingApptPorteTier,
+                              pricingApptCoatType: first.pricingApptCoatType,
+                            },
+                      ),
+                    );
+                  }
+                }}
+              >
+                Mesmos serviços para todos
+              </HubCheckbox>
+              <HubCheckbox
+                checked={syncSameStaffForAll}
+                onChange={(checked) => {
+                  setSyncSameStaffForAll(checked);
+                  if (checked) {
+                    setPetVisitConfigs((prev) =>
+                      prev.map((c) => ({
+                        ...c,
+                        hubStaffMemberId: staffId,
+                        startsHmOverride: undefined,
+                        endsHmOverride: undefined,
+                      })),
+                    );
+                  }
+                }}
+              >
+                Mesmo profissional para todos
+              </HubCheckbox>
+            </div>
+            {petVisitConfigs.map((cfg, idx) => {
+              const pet = guardianPets.find((p) => p.id === cfg.petId);
+              const timing = petVisitTimings.get(cfg.petId);
+              return (
+                <PetVisitBlock
+                  key={cfg.petId}
+                  blockNumber={idx + 1}
+                  petName={pet?.name ?? 'Pet'}
+                  petSizeTier={pet?.size_tier ?? 'medio'}
+                  petCoatType={pet?.coat_type ?? null}
+                  petBirthDate={pet?.birth_date ?? null}
+                  config={cfg}
+                  onChange={(next) => updatePetVisitConfig(cfg.petId, next)}
+                  groups={groups}
+                  groupFilter={groupFilter}
+                  onGroupFilterChange={setGroupFilter}
+                  serviceTypes={serviceTypes}
+                  addonsByParent={addonsByParent}
+                  addonsLoading={addonsLoading}
+                  dateYmd={dateYmd}
+                  puppyMaxMonths={puppyMaxMonths}
+                  showStaffField={!syncSameStaffForAll}
+                  showTimeFields={!syncSameStaffForAll}
+                  staffComboOptions={staffComboOptions}
+                  computedStartHm={timing?.startsHm ?? startsHm}
+                  computedEndHm={timing?.endsHm ?? endsHm}
+                  defaultResourceLabel={resourceLabel}
+                />
+              );
+            })}
+          </div>
+        ) : null}
 
         <div className="nam-section nam-block-card">
           <BlockCardHeader
             blockNumber={1}
-            title="Bloco principal"
+            title={isMultiPetSelection ? 'Horário e detalhes da visita' : 'Bloco principal'}
             expanded={mainBlockExpanded}
             onToggle={() => setMainBlockExpanded((e) => !e)}
           />
           {mainBlockExpanded && (
             <div className="nam-block-card__body">
+        {!isMultiPetSelection ? (
+        <>
         {/* ── Grupo + Serviços ─────────────────────────────────────────── */}
         <div className="nam-section">
           <div className="nam-row nam-row--cols2">
@@ -2243,29 +2711,27 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             </div>
           </div>
           {services.length > 0 && (
-            <div className="nam-chips">
-              <p className="nam-chips__summary" aria-live="polite">
-                {services.length === 1 ? '1 serviço adicionado' : `${services.length} serviços adicionados`}
-              </p>
+            <div className="nam-service-cards">
               {services.map((chip, idx) => (
-                <div key={chip.hub_service_type_id} className="nam-chip nam-chip--added">
-                  <CheckCircle2 size={14} className="nam-chip__check" aria-hidden />
-                  <GripVertical size={14} className="nam-chip__drag" />
-                  <span className="nam-chip__name">{chip.name}</span>
-                  <input
-                    className="nam-chip__dur"
-                    type="number"
-                    min={1}
-                    max={480}
-                    value={chip.duration_minutes}
-                    onChange={(e) => updateServiceDuration(idx, Number(e.target.value))}
-                    aria-label="Duração em minutos"
-                  />
-                  <span className="nam-chip__unit">min</span>
-                  <button className="nam-chip__remove" type="button" onClick={() => removeService(idx)}>
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+                <AppointmentServiceCard
+                  key={chip.hub_service_type_id}
+                  idPrefix="nam-main"
+                  chip={chip}
+                  serviceIndex={idx}
+                  serviceType={serviceTypes.find((st) => st.id === chip.hub_service_type_id)}
+                  expanded={mainServiceCardExpansion.isExpanded(chip.hub_service_type_id)}
+                  onToggleExpand={() => mainServiceCardExpansion.toggle(chip.hub_service_type_id)}
+                  onRemove={() => removeService(idx)}
+                  onDurationChange={(dur) => updateServiceDuration(idx, dur)}
+                  parentAddons={addonsByParent.get(chip.hub_service_type_id) ?? []}
+                  addonsLoading={addonsLoading}
+                  selectedAddons={selectedAddons}
+                  onAddonToggle={toggleAddon}
+                  onAddonVariantChange={updateAddonPricingVariant}
+                  variantMatrix={serviceNeedsVariantMatrix(chip, serviceTypes)}
+                  onVariantChange={(v) => updateServicePricingVariant(idx, v)}
+                  pricingLine={pricingLineByServiceId.get(chip.hub_service_type_id) ?? null}
+                />
               ))}
               <div className="nam-chips__duration-breakdown">
                 Serviços: <strong>{servicesDurationMin} min</strong>
@@ -2280,42 +2746,12 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               </div>
             </div>
           )}
-          {!isWalkIn ? (
-          <AppointmentAddonsSection
-            hasMainServices={services.length > 0}
-            addonsLoading={addonsLoading}
-            availableAddons={availableAddons}
-            selectedAddons={selectedAddons}
-            onToggle={toggleAddon}
-            onVariantChange={updateAddonPricingVariant}
-          />
-          ) : null}
-          {servicesNeedingVariant.length > 0 && (
-            <div className="nam-section nam-section--pricing-variants" style={{ marginTop: 12 }}>
-              <p className="nam-label">Opção de preço por serviço</p>
-              {servicesNeedingVariant.map(({ idx, service, matrix }) => (
-                <div key={`${service.hub_service_type_id}-variant`} className="nam-field" style={{ marginTop: 8 }}>
-                  <label className="nam-muted" style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>
-                    {service.name}
-                  </label>
-                  <HubSearchableCombobox
-                    id={`nam-svc-variant-${idx}`}
-                    options={variantComboboxOptionsForMatrix(matrix)}
-                    value={variantToComboValue(matrix, service.pricing_variant ?? null)}
-                    onChange={(raw) => {
-                      const v = comboValueToVariant(matrix, raw);
-                      updateServicePricingVariant(idx, v);
-                    }}
-                    clearable={false}
-                    placeholder="Selecione a opção"
-                  />
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {appointmentPricingFields}
+
+        </>
+        ) : null}
 
         <div className="nam-section">
           <label className="nam-label">Título do bloco</label>
@@ -2392,6 +2828,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         {/* ── 3 + 4. Profissional / Recurso ────────────────────────────── */}
         <div className="nam-section">
           <div className="nam-row nam-row--cols2">
+            {(!isMultiPetSelection || syncSameStaffForAll) ? (
             <div className="nam-field">
               <label className="nam-label">Profissional</label>
               <HubSearchableCombobox
@@ -2403,6 +2840,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 clearable={false}
               />
             </div>
+            ) : (
+            <div className="nam-field">
+              <label className="nam-label">Profissional</label>
+              <p className="nam-muted" style={{ margin: 0, fontSize: 13 }}>
+                Definido por pet nos blocos acima.
+              </p>
+            </div>
+            )}
             <div className="nam-field">
               <label className="nam-label">Recurso / Sala</label>
               <input
@@ -2419,7 +2864,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           )}
         </div>
 
-        {!isEditMode && !isWalkIn ? (
+        {!isWalkIn && !isMultiPetSelection ? (
           <>
         {extraBlocks.length > 0 ? (
           <div className="nam-section nam-extra-blocks">
@@ -2450,7 +2895,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             <Plus size={14} /> Adicionar outro bloco no dia
           </button>
         </div>
+          </>
+        ) : null}
 
+        {!isWalkIn ? (
+          <>
         {/* ── 9. Repetição ─────────────────────────────────────────────── */}
         <div className="nam-section">
           <HubCheckbox
@@ -2727,266 +3176,5 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     />
     {seriesScopeOverlay}
     </>
-  );
-};
-
-// ── BlockCardHeader sub-component ──────────────────────────────────────────────
-
-type BlockCardHeaderProps = {
-  blockNumber: number;
-  title: string;
-  expanded: boolean;
-  onToggle: () => void;
-  onRemove?: () => void;
-};
-
-const BlockCardHeader: React.FC<BlockCardHeaderProps> = ({
-  blockNumber, title, expanded, onToggle, onRemove,
-}) => (
-  <div className={`nam-block-card__header-row${expanded ? '' : ' nam-block-card__header-row--collapsed'}`}>
-    <button type="button" className="nam-block-card__header" onClick={onToggle}>
-      <span className="nam-block-card__header-left">
-        <span className="nam-block-card__badge" aria-hidden>{blockNumber}</span>
-        <span className="nam-block-card__title">{title}</span>
-      </span>
-      <span className="nam-block-card__toggle">
-        {expanded ? 'Recolher' : 'Expandir'}
-        {expanded ? <ChevronUp size={16} strokeWidth={2.5} /> : <ChevronDown size={16} strokeWidth={2.5} />}
-      </span>
-    </button>
-    {onRemove ? (
-      <button
-        type="button"
-        className="nam-block-card__remove"
-        onClick={onRemove}
-        aria-label="Remover bloco"
-      >
-        <Trash2 size={14} />
-      </button>
-    ) : null}
-  </div>
-);
-
-// ── ExtraBlockCard sub-component ─────────────────────────────────────────────
-
-type ExtraBlockCardProps = {
-  block: ExtraBlock;
-  index: number;
-  groups: HubComboboxOption[];
-  staffComboOptions: HubComboboxOption[];
-  serviceTypes: HubServiceType[];
-  onRemove: () => void;
-  onChange: (updated: ExtraBlock) => void;
-  onToggleExpand: () => void;
-};
-
-const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
-  block, index, groups, staffComboOptions, serviceTypes, onRemove, onChange, onToggleExpand,
-}) => {
-  const [svcSearchId, setSvcSearchId] = useState('');
-
-  const blockServiceComboOptions = useMemo<HubComboboxOption[]>(() => {
-    const filtered = serviceTypes.filter(
-      (st) =>
-        st.allow_scheduling !== false &&
-        (block.group_filter === 'all' || normalizeServiceGroupSlug(st.service_group) === block.group_filter),
-    );
-    return filtered.map((st) => ({
-      value: st.id,
-      label: `${st.name}${st.default_duration_minutes ? ` (${st.default_duration_minutes}min)` : ''}`,
-    }));
-  }, [serviceTypes, block.group_filter]);
-
-  const addSvc = (id: string) => {
-    if (!id) return;
-    if (block.services.some((s) => s.hub_service_type_id === id)) { setSvcSearchId(''); return; }
-    const st = serviceTypes.find((s) => s.id === id);
-    if (!st) return;
-    const matrix = coercePricingMatrixFromApi(st.pricing_matrix);
-    const pricing_variant =
-      matrix && matrixNeedsVariantChoice(matrix) ? defaultPricingVariantForMatrix(matrix) : null;
-    onChange({
-      ...block,
-      services: [
-        ...block.services,
-        {
-          hub_service_type_id: id,
-          name: st.name,
-          duration_minutes: st.default_duration_minutes ?? 60,
-          pricing_variant,
-        },
-      ],
-    });
-    setSvcSearchId('');
-  };
-
-  const removeSvc = (svcId: string) =>
-    onChange({ ...block, services: block.services.filter((s) => s.hub_service_type_id !== svcId) });
-
-  const updateSvcDuration = (idx: number, dur: number) =>
-    onChange({
-      ...block,
-      services: block.services.map((s, i) => (i === idx ? { ...s, duration_minutes: dur } : s)),
-    });
-
-  const blockDurationMin = useMemo(
-    () => block.services.reduce((sum, s) => sum + s.duration_minutes, 0),
-    [block.services],
-  );
-
-  return (
-    <div className="nam-section nam-block-card nam-extra-block">
-      <BlockCardHeader
-        blockNumber={index + 2}
-        title={block.block_title.trim() || `Bloco ${index + 2}`}
-        expanded={block.expanded}
-        onToggle={onToggleExpand}
-        onRemove={onRemove}
-      />
-
-      {block.expanded && (
-        <div className="nam-block-card__body">
-          <div className="nam-section">
-            <div className="nam-row nam-row--cols2">
-              <div className="nam-field">
-                <label className="nam-label">Grupo de serviço</label>
-                <HubSearchableCombobox
-                  id={`nam-eb-group-${block.key}`}
-                  options={groups}
-                  value={block.group_filter}
-                  onChange={(v) => onChange({ ...block, group_filter: v })}
-                  clearable={false}
-                  placeholder="Todos os grupos"
-                />
-              </div>
-              <div className="nam-field">
-                <label className="nam-label">Serviços</label>
-                <HubSearchableCombobox
-                  id={`nam-eb-svc-${block.key}`}
-                  options={blockServiceComboOptions}
-                  value={svcSearchId}
-                  onChange={addSvc}
-                  placeholder="Buscar e adicionar serviço…"
-                  clearable={false}
-                  markedValues={block.services.map((s) => s.hub_service_type_id)}
-                />
-              </div>
-            </div>
-            {block.services.length > 0 && (
-              <div className="nam-chips">
-                <p className="nam-chips__summary" aria-live="polite">
-                  {block.services.length === 1 ? '1 serviço adicionado' : `${block.services.length} serviços adicionados`}
-                </p>
-                {block.services.map((chip, idx) => (
-                  <div key={chip.hub_service_type_id} className="nam-chip nam-chip--added">
-                    <CheckCircle2 size={14} className="nam-chip__check" aria-hidden />
-                    <GripVertical size={14} className="nam-chip__drag" />
-                    <span className="nam-chip__name">{chip.name}</span>
-                    <input
-                      className="nam-chip__dur"
-                      type="number"
-                      min={1}
-                      max={480}
-                      value={chip.duration_minutes}
-                      onChange={(e) => updateSvcDuration(idx, Number(e.target.value))}
-                      aria-label="Duração em minutos"
-                    />
-                    <span className="nam-chip__unit">min</span>
-                    <button
-                      className="nam-chip__remove"
-                      type="button"
-                      onClick={() => removeSvc(chip.hub_service_type_id)}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))}
-                <div className="nam-chips__total">
-                  Total: <strong>{blockDurationMin} min</strong>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="nam-section">
-            <label className="nam-label">Título do bloco</label>
-            <div className="nam-title-row">
-              <input
-                className="nam-input"
-                type="text"
-                maxLength={200}
-                placeholder={`Bloco ${index + 2}`}
-                value={block.block_title}
-                onChange={(e) => onChange({ ...block, block_title: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div className="nam-section">
-            <label className="nam-label">Descrição do bloco</label>
-            <textarea
-              className="nam-textarea"
-              rows={3}
-              maxLength={8000}
-              placeholder="Preenchida automaticamente com as descrições dos serviços deste bloco; pode editar."
-              value={block.block_description}
-              onChange={(e) =>
-                onChange({ ...block, block_description: e.target.value, block_description_user_edited: true })
-              }
-            />
-            <p className="nam-char-count">{block.block_description.length}/8000</p>
-          </div>
-
-          <div className="nam-section">
-            <div className="nam-row nam-row--cols2">
-              <div className="nam-field">
-                <label className="nam-label">Início</label>
-                <input
-                  className="nam-input"
-                  type="time"
-                  value={block.starts_hm}
-                  onChange={(e) => onChange({ ...block, starts_hm: e.target.value })}
-                />
-              </div>
-              <div className="nam-field">
-                <label className="nam-label">Fim previsto</label>
-                <input
-                  className="nam-input"
-                  type="time"
-                  value={block.ends_hm}
-                  onChange={(e) => onChange({ ...block, ends_hm: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="nam-section">
-            <div className="nam-row nam-row--cols2">
-              <div className="nam-field">
-                <label className="nam-label">Profissional</label>
-                <HubSearchableCombobox
-                  id={`nam-eb-staff-${block.key}`}
-                  options={staffComboOptions}
-                  value={block.hub_staff_member_id}
-                  onChange={(v) => onChange({ ...block, hub_staff_member_id: v })}
-                  placeholder="Não atribuído"
-                  clearable={false}
-                />
-              </div>
-              <div className="nam-field">
-                <label className="nam-label">Recurso / Sala</label>
-                <input
-                  className="nam-input"
-                  type="text"
-                  placeholder="Ex.: Mesa 1, Van…"
-                  value={block.resource_label}
-                  onChange={(e) => onChange({ ...block, resource_label: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
   );
 };

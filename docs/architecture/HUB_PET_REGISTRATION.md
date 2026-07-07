@@ -8,7 +8,7 @@
 
 ## Modelo persistido hoje (API + BD)
 
-Tabela `hub_pets` e `POST /api/hub/pets` (ver [`create_hub_pets_and_pet_guardians.sql`](../../backend/database_migrations/petimi_hub/create_hub_pets_and_pet_guardians.sql) e [`hubPetsController.ts`](../../backend/src/modules/hub/hubPetsController.ts)):
+Tabela `hub_pets` e `POST /api/hub/pets` (ver [`002_create_hub_pets_and_pet_guardians.sql`](../../backend/database_migrations/petimi_hub/002_create_hub_pets_and_pet_guardians.sql) e [`hubPetsController.ts`](../../backend/src/modules/hub/hubPetsController.ts)):
 
 | Coluna / payload | Descrição |
 |------------------|-----------|

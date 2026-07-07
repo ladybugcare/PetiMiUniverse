@@ -74,21 +74,21 @@ Se você está com erros ao criar demandas ou candidatar-se a vagas:
 
 ### PetMi Hub (operação / tutores)
 
-- **`petimi_hub/create_hub_guardians.sql`** — Cria `hub_guardians` (tutores por `clinic_id`, soft delete `deleted_at`) + índice + trigger `updated_at` via `moddatetime`.  
+- **`petimi_hub/001_create_hub_guardians.sql`** — Cria `hub_guardians` (tutores por `clinic_id`, soft delete `deleted_at`) + índice + trigger `updated_at` via `moddatetime`.  
   **Pré-requisito:** função/trigger `moddatetime` já aplicada (`petimi_vet/create_moddatetime_function.sql`). Se o trigger falhar, criar a função primeiro ou comentar o bloco `CREATE TRIGGER` no arquivo.  
   **Quando usar:** antes de usar `GET/POST/PATCH /api/hub/guardians` em staging/produção.
 
-- **`petimi_hub/create_hub_pets_and_pet_guardians.sql`** — Cria `hub_pets` (`petmi_pet_id`, dados do animal, soft delete) e `hub_pet_guardians` (primary/secondary, um primary por pet). **Executar depois** de `petimi_hub/create_hub_guardians.sql`.
+- **`petimi_hub/002_create_hub_pets_and_pet_guardians.sql`** — Cria `hub_pets` (`petmi_pet_id`, dados do animal, soft delete) e `hub_pet_guardians` (primary/secondary, um primary por pet). **Executar depois** de `petimi_hub/001_create_hub_guardians.sql`.
 
-- **`petimi_hub/alter_hub_guardians_client_profile.sql`** — Adiciona a `hub_guardians` perfil de cliente: `client_kind` (PF/PJ), `legal_name`, documentos, endereço, `client_status`, etc. **Executar depois** de `create_hub_guardians.sql`. Ver `petimi_hub/README.md`.
+- **`petimi_hub/007_alter_hub_guardians_client_profile.sql`** — Adiciona a `hub_guardians` perfil de cliente: `client_kind` (PF/PJ), `legal_name`, documentos, endereço, `client_status`, etc. **Executar depois** de `001_create_hub_guardians.sql`. Ver `petimi_hub/README.md`.
 
-- **`petimi_hub/create_hub_staff.sql`** — Equipe Hub (`hub_staff_members`, `hub_staff_service_types`). Ver comentários no arquivo.
+- **`petimi_hub/009_create_hub_staff.sql`** — Equipe Hub (`hub_staff_members`, `hub_staff_service_types`). Ver comentários no arquivo.
 
-- **`petimi_hub/alter_hub_staff_birth_date.sql`** — Adiciona `birth_date` (date, opcional) a `hub_staff_members` se ainda não existir.
+- **`petimi_hub/010_alter_hub_staff_birth_date.sql`** — Adiciona `birth_date` (date, opcional) a `hub_staff_members` se ainda não existir.
 
-- **`petimi_hub/create_hub_staff_photos_bucket.sql`** — Bucket Storage `hub-staff-photos` (fotos de profissionais; leitura pública, upload só pelo backend). **Executar** para `POST /api/hub/staff/photo` funcionar.
+- **`petimi_hub/011_create_hub_staff_photos_bucket.sql`** — Bucket Storage `hub-staff-photos` (fotos de profissionais; leitura pública, upload só pelo backend). **Executar** para `POST /api/hub/staff/photo` funcionar.
 
-- **`petimi_hub/create_hub_appointments.sql`** — Agenda Hub: `hub_appointments` (intervalos, staff opcional, tipo de serviço, pet/tutor, `appointment_kind`) e `hub_agenda_calendar_blocks` (feriados/fechamentos). **Executar depois** de `create_hub_staff.sql`, `create_hub_pets_and_pet_guardians.sql` e `create_hub_service_types.sql`. Ver `petimi_hub/README.md`.
+- **`petimi_hub/012_create_hub_appointments.sql`** — Agenda Hub: `hub_appointments` (intervalos, staff opcional, tipo de serviço, pet/tutor, `appointment_kind`) e `hub_agenda_calendar_blocks` (feriados/fechamentos). **Executar depois** de `009_create_hub_staff.sql`, `002_create_hub_pets_and_pet_guardians.sql` e `003_create_hub_service_types.sql`. Ver `petimi_hub/README.md`.
 
 ### Onboarding de veterinário (erro `onboarding_completed does not exist`)
 

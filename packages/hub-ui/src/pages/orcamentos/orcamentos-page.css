@@ -1409,10 +1409,17 @@
   display: inline;
 }
 
-@media (max-width: 720px) {
-  .hub-quote-detail__btn-text {
-    display: none;
-  }
+.hub-quote-detail__meta-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hub-quote-detail__svc-mobile {
+  display: none;
 }
 
 .hub-quote-detail__more {
@@ -2229,6 +2236,208 @@ a.hub-doc-party__phone-link:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Vista detalhe — mobile (desktop inalterado acima de 900px) */
+@media (max-width: 900px) {
+  .hub-quote-detail {
+    margin: 0 -12px;
+    padding: 0 0 24px;
+  }
+
+  .hub-quote-detail__inner {
+    padding: 8px 4px 0;
+  }
+
+  .hub-quote-detail__hero {
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .hub-quote-detail__title {
+    font-size: 1.35rem;
+  }
+
+  .hub-quote-detail__meta-line {
+    font-size: 13px;
+  }
+
+  .hub-quote-detail__hero-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    justify-content: stretch;
+  }
+
+  .hub-quote-detail__hero-actions .hub-quote-detail__btn--primary {
+    grid-column: 1 / -1;
+    min-height: 44px;
+  }
+
+  .hub-quote-detail__hero-actions .hub-quote-detail__btn {
+    min-height: 42px;
+    white-space: normal;
+    padding: 10px 12px;
+  }
+
+  .hub-quote-detail__hero-actions .hub-quote-detail__more {
+    justify-self: end;
+  }
+
+  .hub-quote-detail__more-panel {
+    right: 0;
+    left: auto;
+    min-width: min(280px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+  }
+
+  .hub-quote-detail__grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .hub-quote-detail__aside {
+    order: -1;
+  }
+
+  .hub-quote-detail__card {
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+
+  .hub-quote-detail__card--flush {
+    padding: 14px 0 0;
+  }
+
+  .hub-quote-detail__card--flush .hub-quote-detail__card-head {
+    padding-left: 16px;
+    padding-right: 16px;
+    margin-bottom: 12px;
+  }
+
+  .hub-quote-detail__card-head--spread {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .hub-quote-detail__table-scroll--desktop {
+    display: none;
+  }
+
+  .hub-quote-detail__svc-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 16px 16px;
+  }
+
+  .hub-quote-detail__svc-mobile-empty {
+    padding: 8px 0;
+    text-align: center;
+  }
+
+  .hub-quote-detail__svc-card {
+    border: 1px solid var(--qd-border);
+    border-radius: 10px;
+    background: #faf8f7;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .hub-quote-detail__svc-card-head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .hub-quote-detail__svc-pets {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-top: 1px solid color-mix(in srgb, var(--qd-border) 80%, transparent);
+    padding-top: 10px;
+  }
+
+  .hub-quote-detail__svc-pet-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 13px;
+  }
+
+  .hub-quote-detail__svc-pet-name {
+    color: var(--qd-muted);
+    min-width: 0;
+  }
+
+  .hub-quote-detail__svc-pet-price {
+    font-weight: 600;
+    color: var(--qd-text);
+    flex-shrink: 0;
+  }
+
+  .hub-quote-detail__svc-card-total {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--qd-border);
+    font-size: 14px;
+    color: var(--qd-text);
+  }
+
+  .hub-quote-detail__svc-card-total strong {
+    font-size: 16px;
+    color: var(--qd-brand);
+  }
+
+  .hub-quote-detail__money-row--total {
+    font-size: 18px;
+  }
+
+  .hub-quote-detail__convert-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-quote-detail__convert-tile {
+    min-height: 44px;
+    padding: 12px 14px;
+  }
+
+  .hub-quote-detail__lock-banner {
+    font-size: 12px;
+    padding: 12px 14px;
+  }
+
+  .hub-quote-detail__draft-banner,
+  .hub-quote-detail__warn-banner {
+    font-size: 13px;
+    padding: 10px 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .hub-quote-detail__hero-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-quote-detail__hero-actions .hub-quote-detail__more {
+    justify-self: stretch;
+  }
+
+  .hub-quote-detail__hero-actions .hub-quote-detail__more-summary {
+    width: 100%;
+  }
 }
 
 /* Pós-envio: mensagem WhatsApp + link público */

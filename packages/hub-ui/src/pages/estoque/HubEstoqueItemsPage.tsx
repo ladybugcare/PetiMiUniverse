@@ -23,6 +23,7 @@ import '../servicos/servicos-page.css';
 import './estoque.css';
 
 const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL'] as const;
+const MOBILE_MQ = '(max-width: 900px)';
 
 function formatMoneyNumberBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -157,6 +158,17 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
   const [manufacturers, setManufacturers] = useState<HubManufacturer[]>([]);
   const [search, setSearch] = useState('');
   const [panelMode, setPanelMode] = useState<PanelMode>('none');
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_MQ);
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [saving, setSaving] = useState(false);
@@ -484,6 +496,8 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
     );
   }
 
+  const showSidePanel = !isMobile || panelMode === 'create' || panelMode === 'edit';
+
   return (
     <div className="hub-clientes hub-servicos-page hub-estoque-page hub-pets-page">
       <div className="hub-clientes__main">
@@ -528,8 +542,9 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
         {loading ? (
           <HubLoading variant="block" label="Carregando itens…" />
         ) : (
-          <div className="hub-servicos__table-wrap">
-            <table className="hub-clientes__table">
+          <>
+            <div className="hub-servicos__table-wrap hub-clientes__table-wrap--desktop">
+              <table className="hub-clientes__table">
               <thead>
                 <tr>
                   <th>Nome</th>
@@ -588,6 +603,46 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
               </tbody>
             </table>
           </div>
+
+          <div className="hub-clientes__mobile-list" aria-label="Lista de itens">
+            {items.length === 0 ? (
+              <p className="hub-clientes__muted hub-clientes__mobile-list-empty">Nenhum item.</p>
+            ) : (
+              items.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="hub-clientes__mobile-card"
+                  onClick={() => {
+                    if (canWrite) openEdit(t);
+                  }}
+                  disabled={!canWrite}
+                >
+                  <div className="hub-clientes__mobile-card-top">
+                    <div className="hub-clientes__mobile-card-main">
+                      <span className="hub-clientes__mobile-card-name">{t.name}</span>
+                      <span className="hub-clientes__muted hub-clientes__mobile-card-contact">
+                        {t.ean ? `EAN ${t.ean}` : 'Sem EAN'}
+                        {t.store_sku ? ` · SKU ${t.store_sku}` : ''}
+                      </span>
+                    </div>
+                    <span className="hub-clientes__pill hub-clientes__pill--active">
+                      {t.qty_on_hand ?? 0} un.
+                    </span>
+                  </div>
+                  <div className="hub-clientes__mobile-card-foot">
+                    <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                      Mín. {t.min_stock_qty}
+                    </span>
+                    <span className="hub-clientes__muted hub-clientes__mobile-card-pets">
+                      {formatMoneyCurrencyBrl(Number(t.sale_amount))}
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+          </>
         )}
 
         <p className="hub-estoque__encounter-note">
@@ -597,6 +652,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
         </p>
       </div>
 
+      {showSidePanel ? (
       <aside className="hub-clientes__panel">
         <div className="hub-clientes__panel-scroll">
           {panelMode === 'none' ? (
@@ -910,6 +966,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
           )}
         </div>
       </aside>
+      ) : null}
     </div>
   );
 };

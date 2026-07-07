@@ -217,6 +217,85 @@
 @media (max-width: 900px) {
   .hub-meu-perfil {
     grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .hub-meu-perfil__card {
+    padding: 16px;
+  }
+
+  .hub-meu-perfil__panel {
+    padding: 16px;
+  }
+
+  .hub-meu-perfil__panel-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .hub-meu-perfil__btn-outline {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .hub-meu-perfil__summary {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      'avatar name'
+      'avatar badges'
+      'avatar contact'
+      'actions actions';
+    gap: 8px 14px;
+    text-align: left;
+    align-items: start;
+  }
+
+  .hub-meu-perfil__summary .hub-meu-perfil__avatar-initials {
+    grid-area: avatar;
+    margin: 0;
+    width: 72px;
+    height: 72px;
+    font-size: 1.35rem;
+  }
+
+  .hub-meu-perfil__sidebar-name {
+    grid-area: name;
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .hub-meu-perfil__summary .hub-meu-perfil__badge {
+    grid-area: badges;
+    margin: 0 8px 0 0;
+    display: inline-block;
+  }
+
+  .hub-meu-perfil__contact {
+    grid-area: contact;
+  }
+
+  .hub-meu-perfil__sidebar-actions {
+    grid-area: actions;
+    margin-top: 4px;
+    justify-content: flex-start;
+  }
+
+  .hub-meu-perfil__aside-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 12px;
+  }
+
+  .hub-meu-perfil__aside-meta .hub-meu-perfil__meta-row {
+    padding: 8px 0;
+  }
+
+  .hub-meu-perfil__aside-meta .hub-meu-perfil__meta-row + .hub-meu-perfil__meta-row {
+    border-top: none;
   }
 
   .hub-meu-perfil__grid {

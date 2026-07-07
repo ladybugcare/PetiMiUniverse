@@ -14,7 +14,7 @@ export type GroomingDayBoardPet = {
   birth_date?: string | null;
   coat_type?: string | null;
   notes?: string | null;
-  /** URL pública (migration `alter_hub_pets_avatar_url.sql`). */
+  /** URL pública (migration `033_alter_hub_pets_avatar_url.sql`). */
   avatar_url?: string | null;
   /** `true` se o pet nunca teve sessão de B&T encerrada nesta clínica. */
   is_first_grooming_visit?: boolean;
@@ -48,7 +48,7 @@ export type GroomingDayBoardItem = {
   estimated_duration_minutes?: number | null;
   /** Classificação heurística para filtros (ex.: «só banho»). */
   grooming_service_mix?: GroomingServiceMix;
-  /** Pausa operacional (`alter_hub_grooming_sessions_paused_at.sql`); não altera `grooming_stage`. */
+  /** Pausa operacional (`034_alter_hub_grooming_sessions_paused_at.sql`); não altera `grooming_stage`. */
   paused_at?: string | null;
   is_late?: boolean;
   pet?: GroomingDayBoardPet | null;

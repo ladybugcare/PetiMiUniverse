@@ -76,6 +76,7 @@ export type HubAppointment = {
   financial_notes?: string | null;
   series_id: string | null;
   series_occurrence_date: string | null;
+  parent_appointment_id?: string | null;
   created_at: string;
   updated_at: string;
   pricing_porte_tier?: string | null;
@@ -90,6 +91,7 @@ export type HubAppointment = {
   hub_encounter_status?: string | null;
   financial_adjustment_pending?: boolean;
   comanda_id?: string | null;
+  visit_group_id?: string | null;
 };
 
 export type HubAgendaCalendarBlock = {
@@ -142,6 +144,7 @@ export type CreatePickupRouteBlock = {
 };
 
 export type CreateExtraBlock = {
+  id?: string;
   starts_at: string;
   ends_at: string;
   services: Array<{
@@ -193,6 +196,26 @@ export type CreateHubAppointmentPayload = {
   intake_new_case_title?: string | null;
   /** Permite sobrepor outro slot (somente kinds walk-in). */
   allow_schedule_overlap?: boolean;
+  visit_group_id?: string | null;
+};
+
+export type CreateHubAppointmentBatchPetEntry = {
+  pet_id: string;
+  pricing_porte_tier?: string | null;
+  pricing_coat_type?: string | null;
+  services?: CreateHubAppointmentPayload['services'];
+  starts_at?: string;
+  ends_at?: string;
+  hub_staff_member_id?: string | null;
+  resource_label?: string | null;
+  extra_blocks?: CreateExtraBlock[];
+};
+
+export type CreateHubAppointmentBatchPayload = {
+  clinic_id: string;
+  visit_group_id?: string | null;
+  shared: CreateHubAppointmentPayload;
+  pets: CreateHubAppointmentBatchPetEntry[];
 };
 
 export type PatchHubAppointmentPayload = {
@@ -224,6 +247,7 @@ export type PatchHubAppointmentPayload = {
   intake_hub_case_id?: string | null;
   intake_create_new_case?: boolean;
   intake_new_case_title?: string | null;
+  extra_blocks?: CreateExtraBlock[];
 };
 
 function listAppointmentsUrl(p: ListHubAppointmentsParams): string {
@@ -276,6 +300,21 @@ export const hubAgendaApi = {
       created_count: number;
       conflict_count: number;
       conflicts?: Array<{ date: string; reason: string; conflictingId?: string }>;
+    }>;
+  },
+
+  async createBatch(payload: CreateHubAppointmentBatchPayload): Promise<{
+    visit_group_id: string;
+    appointments: HubAppointment[];
+    created_count: number;
+  }> {
+    return apiRequest(`${basePath}/batch`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{
+      visit_group_id: string;
+      appointments: HubAppointment[];
+      created_count: number;
     }>;
   },
 

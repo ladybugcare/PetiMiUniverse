@@ -305,7 +305,8 @@ const HubQuotesPage: React.FC = () => {
       {loading ? (
         <HubLoading variant="block" label="Carregando lista…" />
       ) : (
-        <div className="hub-servicos__table-wrap">
+        <>
+        <div className="hub-servicos__table-wrap hub-clientes__table-wrap--desktop">
           <table className="hub-clientes__table">
             <thead>
               <tr>
@@ -418,6 +419,59 @@ const HubQuotesPage: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        <div className="hub-clientes__mobile-list" aria-label="Lista de orçamentos">
+          {filteredQuotes.length === 0 ? (
+            <p className="hub-clientes__muted hub-clientes__mobile-list-empty">
+              {quotes.length === 0
+                ? 'Sem orçamentos ainda.'
+                : 'Nenhum orçamento corresponde à pesquisa ou ao filtro de estado.'}
+            </p>
+          ) : (
+            filteredQuotes.map((q) => {
+              const pr = prospectOne(q);
+              const exp = formatExpCell(q);
+              return (
+                <button
+                  key={q.id}
+                  type="button"
+                  className="hub-clientes__mobile-card"
+                  onClick={() => navigate(`/hub/orcamentos/${q.id}`)}
+                >
+                  <div className="hub-clientes__mobile-card-top">
+                    <div className="hub-clientes__mobile-card-main">
+                      <span className="hub-clientes__mobile-card-name">{pr?.full_name?.trim() || '—'}</span>
+                      <span className="hub-clientes__muted hub-clientes__mobile-card-contact">
+                        {petCellLabel(q)}
+                      </span>
+                    </div>
+                    <span className={statusClass(q.status)}>{statusLabel(q.status)}</span>
+                  </div>
+                  <div className="hub-clientes__mobile-card-foot">
+                    <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                      {q.created_at
+                        ? new Date(q.created_at).toLocaleDateString('pt-BR', { dateStyle: 'medium' })
+                        : '—'}
+                    </span>
+                    <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                      Exp.{' '}
+                      <span className={exp.warn ? 'hub-orcamentos-quote-list__expire--warn' : undefined}>
+                        {exp.text}
+                      </span>
+                    </span>
+                    <span className="hub-clientes__mobile-card-pets" style={{ fontWeight: 700, color: 'var(--hc-text)' }}>
+                      {Number(q.total_amount).toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: q.currency || 'BRL',
+                      })}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+        </>
       )}
     </div>
   );

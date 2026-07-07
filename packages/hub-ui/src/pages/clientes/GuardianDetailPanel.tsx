@@ -37,6 +37,8 @@ interface GuardianDetailPanelProps {
   onOpenInNewPage: () => void;
   onArchive?: () => void;
   hideNewPageButton?: boolean;
+  hideHeader?: boolean;
+  hideFooter?: boolean;
   layout?: ProfileLayout;
   clinicId?: string | null;
   unitId?: string | null;
@@ -55,6 +57,8 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   onOpenInNewPage,
   onArchive,
   hideNewPageButton = false,
+  hideHeader = false,
+  hideFooter = false,
   layout = 'panel',
   clinicId,
   unitId,
@@ -255,26 +259,13 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
       pets.length === 0 ? (
         <div className="hub-clientes__empty-state">Este cliente ainda não tem pets associados.</div>
       ) : (
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        <ul className="hub-clientes__pet-list">
           {pets.map((p) => (
-            <li
-              key={`${p.id}-${p.role}`}
-              style={{
-                padding: '10px 0',
-                borderBottom: '1px solid var(--hc-border)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-              }}
-            >
-              <Link
-                to={`/hub/pets/${p.id}`}
-                style={{ fontWeight: 600, color: 'inherit', textDecoration: 'none' }}
-              >
+            <li key={`${p.id}-${p.role}`} className="hub-clientes__pet-list-item">
+              <Link to={`/hub/pets/${p.id}`} className="hub-clientes__pet-list-link">
                 {p.name}
               </Link>
-              <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
+              <span className="hub-clientes__muted hub-clientes__pet-list-meta">
                 {p.species} · {p.role === 'primary' ? 'Principal' : 'Co-tutor'}
               </span>
             </li>
@@ -534,12 +525,14 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
 
   return (
     <div>
-      <div className="hub-clientes__panel-header">
-        <div style={{ flex: 1 }} />
-        <button type="button" className="hub-clientes__panel-close" aria-label="Fechar painel" onClick={onClose}>
-          <X size={18} />
-        </button>
-      </div>
+      {!hideHeader ? (
+        <div className="hub-clientes__panel-header">
+          <div style={{ flex: 1 }} />
+          <button type="button" className="hub-clientes__panel-close" aria-label="Fechar painel" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+      ) : null}
 
       <div className="hub-clientes__panel-hero">
         <div className="hub-clientes__panel-avatar-lg">{profileInitials(guardian.full_name)}</div>
@@ -568,24 +561,26 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
       {tabContent}
       {financeDrawer}
 
-      <div className="hub-clientes__footer-btns">
-        <div className="hub-clientes__btn-row">
-          <button type="button" className="hub-clientes__btn hub-clientes__btn--outline" onClick={onStartEdit}>
-            Editar tutor
-          </button>
-          {!hideNewPageButton && (
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--ghost"
-              onClick={onOpenInNewPage}
-              title="Abrir o perfil completo numa nova página"
-            >
-              <ExternalLink size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-              Ver perfil completo
+      {!hideFooter ? (
+        <div className="hub-clientes__footer-btns">
+          <div className="hub-clientes__btn-row">
+            <button type="button" className="hub-clientes__btn hub-clientes__btn--outline" onClick={onStartEdit}>
+              Editar tutor
             </button>
-          )}
+            {!hideNewPageButton && (
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost"
+                onClick={onOpenInNewPage}
+                title="Abrir o perfil completo numa nova página"
+              >
+                <ExternalLink size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                Ver perfil completo
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 };

@@ -445,3 +445,30 @@
   flex: 1 1 100%;
   max-width: 100%;
 }
+
+.hub-equipe__hub-link-status {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #e5e5e5;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hub-equipe__hub-link-status--linked {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.hub-equipe__hub-link-status__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #525252;
+}
+
+.hub-equipe__hub-link-status__text--ok {
+  color: #166534;
+}

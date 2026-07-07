@@ -8,21 +8,21 @@
 
 | # | Arquivo | Descrição breve |
 |---|---------|-----------------|
-| 1 | `create_hub_clinical_cases.sql` | Tabela `hub_clinical_cases`. |
-| 2 | `alter_hub_encounters_add_case.sql` | Colunas `hub_case_id` (nullable) e `encounter_type` em `hub_encounters`. |
-| 3 | `backfill_hub_clinical_cases.sql` | Um caso por encounter existente; preenche `hub_case_id`. **Rodar uma vez** por ambiente. |
+| 1 | `024a_create_hub_clinical_cases.sql` | Tabela `hub_clinical_cases`. |
+| 2 | `025c_alter_hub_encounters_add_case.sql` | Colunas `hub_case_id` (nullable) e `encounter_type` em `hub_encounters`. |
+| 3 | `025n_backfill_hub_clinical_cases.sql` | Um caso por encounter existente; preenche `hub_case_id`. **Rodar uma vez** por ambiente. |
 | 4 | *(validação)* | Ver queries na secção **Checklist** — órfãos = 0 antes do passo 5. |
-| 5 | `alter_hub_encounters_case_not_null.sql` | Torna `hub_case_id` **NOT NULL**. **Só após** o passo 4 OK. |
-| 6 | `create_hub_clinical_timeline_events.sql` | Ledger da timeline canônica. |
-| 7 | `create_hub_clinical_document_versions.sql` | Snapshots de audit do encounter. |
-| 8 | `create_hub_clinical_exams.sql` | Exames estruturados. |
-| 9 | `alter_hub_clinical_attachments_add_exam.sql` | Coluna `hub_exam_id` em anexos. |
-| 10 | `create_hub_prescription_documents.sql` | `hub_case_id` em prescrições + tabela `hub_prescription_documents`. |
-| 11 | `alter_hub_vaccination_records_fase6.sql` | Vacinas: fonte, lote, caso, estoque, etc. |
-| 12 | `create_hub_hospitalization_events.sql` | Eventos por horário na internação. |
-| 13 | `alter_hub_hospitalizations_fase7.sql` | Internação: caso, motivo, status ampliado. |
-| 14 | `alter_hub_surgeries_fase8.sql` | Cirurgias: caso, pré-op, ASA, JSONB equipe/materiais. |
-| 15 | `alter_hub_comandas_fase9.sql` | Comanda: `hub_case_id`, `hub_encounter_id`. |
+| 5 | `025d_alter_hub_encounters_case_not_null.sql` | Torna `hub_case_id` **NOT NULL**. **Só após** o passo 4 OK. |
+| 6 | `025v_create_hub_clinical_timeline_events.sql` | Ledger da timeline canônica. |
+| 7 | `025w_create_hub_clinical_document_versions.sql` | Snapshots de audit do encounter. |
+| 8 | `025p_create_hub_clinical_exams.sql` | Exames estruturados. |
+| 9 | `025q_alter_hub_clinical_attachments_add_exam.sql` | Coluna `hub_exam_id` em anexos. |
+| 10 | `025o_create_hub_prescription_documents.sql` | `hub_case_id` em prescrições + tabela `hub_prescription_documents`. |
+| 11 | `025u_alter_hub_vaccination_records_fase6.sql` | Vacinas: fonte, lote, caso, estoque, etc. |
+| 12 | `025r_create_hub_hospitalization_events.sql` | Eventos por horário na internação. |
+| 13 | `025s_alter_hub_hospitalizations_fase7.sql` | Internação: caso, motivo, status ampliado. |
+| 14 | `025t_alter_hub_surgeries_fase8.sql` | Cirurgias: caso, pré-op, ASA, JSONB equipe/materiais. |
+| 15 | `070a_alter_hub_comandas_fase9.sql` | Comanda: `hub_case_id`, `hub_encounter_id`. |
 
 > **Nota:** outras migrations do Hub (pets, encounters base, prescrições base, etc.) já devem existir no histórico do banco. Esta lista cobre o **pacote Clínica** entregue na reformulação recente.
 

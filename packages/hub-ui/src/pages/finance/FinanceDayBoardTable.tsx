@@ -150,6 +150,11 @@ export function FinanceDayBoardTable({
                 </td>
                 <td>
                   <div className="hub-dayboard__services-wrap">
+                    {item.has_package_balance ? (
+                      <span className="hub-clientes__pill hub-dayboard__pill--open" style={{ marginRight: 6 }}>
+                        Pacote
+                      </span>
+                    ) : null}
                     {groupLabel ? (
                       <span className="hub-clientes__pill hub-dayboard__group-pill">{groupLabel}</span>
                     ) : null}

@@ -12,26 +12,27 @@ import { HubTabs } from '../components/HubTabs';
 import { HubLoading } from '../components/HubLoading';
 import { hubGuardiansApi, type HubGuardian, type HubGuardianStats } from '../api/hubGuardiansApi';
 import './clientes/clientes.css';
+import './clientes/clientes-drawer.css';
+import './clientes/clientes-page.css';
 import { ClientesMetricsRow } from './clientes/ClientesMetricsRow';
 import { ClientesToolbar } from './clientes/ClientesToolbar';
 import { ClientesTable } from './clientes/ClientesTable';
+import { ClientesPagination } from './clientes/ClientesPagination';
 import {
-  GuardianCreateForm,
   emptyGuardianForm,
   guardianToFormValues,
   type GuardianFormValues,
 } from './clientes/GuardianCreateForm';
-import { GuardianDetailPanel } from './clientes/GuardianDetailPanel';
+import GuardianDrawer from './clientes/GuardianDrawer';
 import { formValuesToCreatePayload, formValuesToUpdatePayload } from './clientes/guardianFormPayload';
 import { hubQuotesApi, type HubQuote } from '../api/hubQuotesApi';
 import { quoteProspectToGuardianFormValues, prospectFromQuote } from './orcamentos/quoteToGuardianForm';
-import { formatBrPhoneDisplay } from '../utils/formatBrPhone';
 import { clearManualQuoteConversion } from './orcamentos/quoteManualConversionStorage';
 
 const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
 
 type MainTab = 'tutores' | 'empresas';
-type PanelMode = 'create' | 'detail' | 'edit';
+type PanelMode = 'create' | 'detail' | 'edit' | 'quote_review';
 
 function useDebounced<T>(value: T, ms: number): T {
   const [d, setD] = useState(value);
@@ -61,8 +62,11 @@ const HubGuardiansPage: React.FC = () => {
   const debouncedQ = useDebounced(searchQ, 350);
   const [bondFilter, setBondFilter] = useState<'all' | 'primary' | 'secondary'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [panelMode, setPanelMode] = useState<PanelMode>('create');
   const [form, setForm] = useState<GuardianFormValues>(emptyGuardianForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -150,9 +154,10 @@ const HubGuardiansPage: React.FC = () => {
         }
         setQuoteForConversion(quote);
         setSelectedId(null);
-        setPanelMode('create');
+        setPanelMode(linkGuardianId ? 'quote_review' : 'create');
         setEditingId(null);
         setForm(quoteProspectToGuardianFormValues(quote, prospect));
+        setDrawerOpen(true);
       } catch (e: unknown) {
         if (!cancelled) {
           showError((e as Error)?.message || 'Erro ao carregar orçamento');
@@ -193,26 +198,49 @@ const HubGuardiansPage: React.FC = () => {
     });
   }, [guardiansRaw, bondFilter]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQ, bondFilter, statusFilter, mainTab, kindParam]);
+
+  const totalFiltered = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const paginatedRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRows.slice(start, start + pageSize);
+  }, [filteredRows, page, pageSize]);
+
   const openCreate = useCallback(() => {
     setSelectedId(null);
     setPanelMode('create');
     setEditingId(null);
+    setDrawerOpen(true);
+    const defaultKind = mainTab === 'empresas' ? 'company' : 'individual';
     if (fromQuoteId && quoteForConversion) {
       const prospect = prospectFromQuote(quoteForConversion);
-      if (prospect) setForm(quoteProspectToGuardianFormValues(quoteForConversion, prospect));
-      else setForm(emptyGuardianForm);
+      if (prospect) {
+        setForm({ ...quoteProspectToGuardianFormValues(quoteForConversion, prospect), client_kind: defaultKind });
+      } else {
+        setForm({ ...emptyGuardianForm, client_kind: defaultKind });
+      }
     } else {
-      setForm(emptyGuardianForm);
+      setForm({ ...emptyGuardianForm, client_kind: defaultKind });
     }
-  }, [fromQuoteId, quoteForConversion]);
+  }, [fromQuoteId, quoteForConversion, mainTab]);
 
   const selectGuardian = useCallback((g: HubGuardian) => {
     setSelectedId(g.id);
     setPanelMode('detail');
     setEditingId(null);
+    setDrawerOpen(true);
   }, []);
 
   const closePanelDetail = useCallback(() => {
+    setDrawerOpen(false);
     setSelectedId(null);
     setPanelMode('create');
     setEditingId(null);
@@ -226,14 +254,22 @@ const HubGuardiansPage: React.FC = () => {
     setForm(guardianToFormValues(selectedGuardian));
   }, [selectedGuardian]);
 
+  const startEditFromTable = useCallback((g: HubGuardian) => {
+    setSelectedId(g.id);
+    setPanelMode('edit');
+    setEditingId(g.id);
+    setForm(guardianToFormValues(g));
+    setDrawerOpen(true);
+  }, []);
+
   const cancelEdit = useCallback(() => {
     if (selectedGuardian) {
       setPanelMode('detail');
       setEditingId(null);
     } else {
-      openCreate();
+      closePanelDetail();
     }
-  }, [selectedGuardian, openCreate]);
+  }, [selectedGuardian, closePanelDetail]);
 
   const openInNewPage = useCallback(() => {
     if (!selectedGuardian) return;
@@ -328,8 +364,13 @@ const HubGuardiansPage: React.FC = () => {
     );
   }
 
+  const drawerMode: 'create' | 'edit' | 'detail' | 'quote_review' =
+    linkGuardianId && fromQuoteId && (panelMode === 'create' || panelMode === 'quote_review')
+      ? 'quote_review'
+      : panelMode;
+
   return (
-    <div className="hub-clientes">
+    <div className="hub-clientes hub-clientes-page hub-clientes-page--full-width">
       <div className="hub-clientes__main">
         <HubTabs
           ariaLabel="Clientes"
@@ -341,147 +382,71 @@ const HubGuardiansPage: React.FC = () => {
           onTabChange={(id) => {
             setMainTab(id as 'tutores' | 'empresas');
             closePanelDetail();
+            setBondFilter('all');
           }}
         />
 
-        <ClientesMetricsRow stats={stats} loading={loading && !stats} />
+        <ClientesMetricsRow mainTab={mainTab} stats={stats} loading={loading && !stats} />
 
         <ClientesToolbar
+          mainTab={mainTab}
           searchQ={searchQ}
           onSearchChange={setSearchQ}
           bondFilter={bondFilter}
           onBondFilterChange={setBondFilter}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
-          onNewTutor={openCreate}
+          onNewClient={openCreate}
         />
 
         {loading ? (
           <HubLoading variant="block" label="Carregando lista…" />
         ) : (
-          <ClientesTable
-            rows={filteredRows}
-            selectedId={selectedId}
-            onSelect={selectGuardian}
-            onArchive={handleArchive}
-            canWrite={canWrite}
-          />
+          <>
+            <ClientesTable
+              mainTab={mainTab}
+              rows={paginatedRows}
+              selectedId={selectedId}
+              onSelect={selectGuardian}
+              onEdit={startEditFromTable}
+              onArchive={handleArchive}
+              canWrite={canWrite}
+            />
+            <ClientesPagination
+              page={page}
+              pageSize={pageSize}
+              total={totalFiltered}
+              entityLabel={mainTab === 'empresas' ? 'empresas' : 'tutores'}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => {
+                setPageSize(n);
+                setPage(1);
+              }}
+            />
+          </>
         )}
       </div>
 
-      <aside className="hub-clientes__panel">
-        <div className="hub-clientes__panel-scroll">
-          {panelMode === 'detail' && selectedGuardian ? (
-            <GuardianDetailPanel
-              guardian={selectedGuardian}
-              pets={selectedGuardian.pets ?? []}
-              onClose={closePanelDetail}
-              onStartEdit={startEditFromDetail}
-              onOpenInNewPage={openInNewPage}
-              onArchive={canWrite ? () => handleArchive(selectedGuardian) : undefined}
-            />
-          ) : panelMode === 'edit' && selectedGuardian ? (
-            <>
-              <div className="hub-clientes__panel-header">
-                <h2 className="hub-clientes__form-title" style={{ margin: 0 }}>
-                  Editar cliente
-                </h2>
-                <button type="button" className="hub-clientes__panel-close" aria-label="Cancelar edição" onClick={cancelEdit}>
-                  ×
-                </button>
-              </div>
-              <GuardianCreateForm
-                value={form}
-                onChange={setForm}
-                onSubmit={handleSubmit}
-                submitting={submitting}
-                canWrite={canWrite}
-                title=""
-              />
-            </>
-          ) : linkGuardianId && fromQuoteId ? (
-            <>
-              {fromQuoteId ? (
-                <div className="hub-clientes__draft-banner" style={{ marginBottom: 12 }} role="status">
-                  <p style={{ margin: 0 }}>
-                    {quoteConversionLoading ? (
-                      'A carregar orçamento…'
-                    ) : (
-                      <>
-                        A concluir conversão do orçamento #{quoteConvShort}.{' '}
-                        <strong>Será usado o tutor existente</strong> — confira os dados do contacto do orçamento e
-                        continue para cadastrar os pets.
-                      </>
-                    )}
-                  </p>
-                </div>
-              ) : null}
-              <div className="hub-clientes__panel-header">
-                <h2 className="hub-clientes__form-title" style={{ margin: 0 }}>
-                  Rever contacto do orçamento
-                </h2>
-              </div>
-              <dl className="hub-clientes__muted" style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-                <div>
-                  <dt style={{ fontWeight: 600, color: 'var(--hub-text, #333)' }}>Nome</dt>
-                  <dd style={{ margin: 0 }}>{form.full_name || '—'}</dd>
-                </div>
-                <div>
-                  <dt style={{ fontWeight: 600, color: 'var(--hub-text, #333)' }}>Telefone</dt>
-                  <dd style={{ margin: 0 }}>{formatBrPhoneDisplay(form.phone)}</dd>
-                </div>
-                <div>
-                  <dt style={{ fontWeight: 600, color: 'var(--hub-text, #333)' }}>CPF / CNPJ</dt>
-                  <dd style={{ margin: 0 }}>{form.tax_id?.trim() || '—'}</dd>
-                </div>
-                <div>
-                  <dt style={{ fontWeight: 600, color: 'var(--hub-text, #333)' }}>E-mail</dt>
-                  <dd style={{ margin: 0 }}>{form.email?.trim() || '—'}</dd>
-                </div>
-              </dl>
-              {!form.tax_id?.trim() ? (
-                <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>
-                  É obrigatório um CPF/CNPJ no contacto do orçamento para continuar. Atualize o orçamento ou o prospecto
-                  e volte a abrir esta conversão.
-                </p>
-              ) : null}
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--primary"
-                disabled={quoteConversionLoading || !form.tax_id?.trim()}
-                onClick={() => continueToPetsWithExistingGuardian()}
-              >
-                Continuar para pets
-              </button>
-            </>
-          ) : (
-            <>
-              {fromQuoteId ? (
-                <div className="hub-clientes__draft-banner" style={{ marginBottom: 12 }} role="status">
-                  <p style={{ margin: 0 }}>
-                    {quoteConversionLoading ? (
-                      'A carregar orçamento…'
-                    ) : (
-                      <>
-                        A concluir conversão do orçamento #{quoteConvShort}. Confirme ou ajuste os dados do tutor e
-                        salve para seguir ao cadastro dos pets.
-                      </>
-                    )}
-                  </p>
-                </div>
-              ) : null}
-              <GuardianCreateForm
-                value={form}
-                onChange={setForm}
-                onSubmit={handleSubmit}
-                submitting={submitting}
-                canWrite={canWrite}
-                title="Cadastrar novo cliente"
-              />
-            </>
-          )}
-        </div>
-      </aside>
+      <GuardianDrawer
+        open={drawerOpen}
+        onClose={closePanelDetail}
+        onCancelEdit={cancelEdit}
+        mode={drawerMode}
+        canWrite={canWrite}
+        form={form}
+        onFormChange={setForm}
+        onSubmit={handleSubmit}
+        submitting={submitting}
+        guardian={selectedGuardian}
+        onStartEdit={startEditFromDetail}
+        onOpenInNewPage={openInNewPage}
+        onArchive={canWrite && selectedGuardian ? () => handleArchive(selectedGuardian) : undefined}
+        fromQuoteId={fromQuoteId || undefined}
+        quoteConversionLoading={quoteConversionLoading}
+        quoteConvShort={quoteConvShort}
+        linkGuardianId={linkGuardianId || undefined}
+        onContinueToPets={continueToPetsWithExistingGuardian}
+      />
     </div>
   );
 };

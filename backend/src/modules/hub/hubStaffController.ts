@@ -11,6 +11,7 @@ import {
   buildInvitationShareMessage,
   buildInvitationUrl,
 } from './hubInvitationUtils';
+import { syncStaffHubAccessLink, type StaffLinkSyncResult } from './hubStaffLinkUtils';
 import {
   normalizeStaffSpecialtiesForStorage,
   sanitizeStaffSpecialtiesInput,
@@ -131,6 +132,27 @@ async function fetchActiveServiceTypeIdsForClinic(clinicId: string, ids: string[
   return unique.filter((id) => allowed.has(id));
 }
 
+async function applyStaffHubAccessLink(
+  staffId: string,
+  clinicId: string,
+  row: {
+    has_hub_access?: boolean | null;
+    hub_access_email?: string | null;
+    hub_access_role?: string | null;
+  },
+): Promise<StaffLinkSyncResult | null> {
+  const hasHubAccess = Boolean(row.has_hub_access);
+  const hubAccessEmail = (row.hub_access_email as string | null)?.trim() || null;
+  if (!hasHubAccess && !hubAccessEmail) return null;
+  return syncStaffHubAccessLink({
+    staffId,
+    clinicId,
+    hasHubAccess,
+    hubAccessEmail,
+    hubAccessRole: (row.hub_access_role as string | null) ?? null,
+  });
+}
+
 async function replaceStaffServiceTypes(staffId: string, clinicId: string, serviceTypeIds: string[]) {
   await supabaseAdmin.from('hub_staff_service_types').delete().eq('staff_id', staffId);
   const valid = await fetchActiveServiceTypeIdsForClinic(clinicId, serviceTypeIds);
@@ -211,7 +233,7 @@ export const listHubStaff = async (req: Request, res: Response) => {
     if (q) {
       const esc = q.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
       query = query.or(
-        `full_name.ilike.%${esc}%,display_name.ilike.%${esc}%,job_title.ilike.%${esc}%,email.ilike.%${esc}%`
+        `full_name.ilike.%${esc}%,display_name.ilike.%${esc}%,job_title.ilike.%${esc}%,email.ilike.%${esc}%,hub_access_email.ilike.%${esc}%`
       );
     }
 
@@ -313,8 +335,18 @@ export const createHubStaff = async (req: Request, res: Response) => {
       return res.status(500).json({ error: error?.message || 'Erro ao criar profissional' });
     }
     await replaceStaffServiceTypes(created.id as string, d.clinic_id, validNew);
-    const [enriched] = await enrichStaffRows(d.clinic_id, [created as StaffRow]);
-    return res.status(201).json({ staff: enriched });
+    const link = await applyStaffHubAccessLink(created.id as string, d.clinic_id, {
+      has_hub_access: d.has_hub_access ?? false,
+      hub_access_email: hubEmailNorm,
+      hub_access_role: d.hub_access_role ?? null,
+    });
+    const { data: fresh } = await supabaseAdmin
+      .from('hub_staff_members')
+      .select(STAFF_SELECT)
+      .eq('id', created.id as string)
+      .single();
+    const [enriched] = await enrichStaffRows(d.clinic_id, [(fresh ?? created) as StaffRow]);
+    return res.status(201).json({ staff: enriched, link });
   } catch (e) {
     console.error('[hub_staff] create', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
@@ -389,8 +421,26 @@ export const patchHubStaff = async (req: Request, res: Response) => {
       .eq('id', idParsed.data)
       .eq('clinic_id', clinic_id)
       .single();
-    const [enriched] = await enrichStaffRows(clinic_id, [fresh as StaffRow]);
-    return res.json({ staff: enriched });
+    if (!fresh) return res.status(404).json({ error: 'Profissional não encontrado' });
+
+    const hubAccessTouched =
+      d.has_hub_access !== undefined || d.hub_access_email !== undefined || d.hub_access_role !== undefined;
+    const link = hubAccessTouched
+      ? await applyStaffHubAccessLink(idParsed.data, clinic_id, {
+          has_hub_access: fresh.has_hub_access as boolean,
+          hub_access_email: fresh.hub_access_email as string | null,
+          hub_access_role: fresh.hub_access_role as string | null,
+        })
+      : null;
+
+    const { data: linkedFresh } = await supabaseAdmin
+      .from('hub_staff_members')
+      .select(STAFF_SELECT)
+      .eq('id', idParsed.data)
+      .eq('clinic_id', clinic_id)
+      .single();
+    const [enriched] = await enrichStaffRows(clinic_id, [(linkedFresh ?? fresh) as StaffRow]);
+    return res.json({ staff: enriched, link });
   } catch (e) {
     console.error('[hub_staff] patch', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
@@ -398,6 +448,54 @@ export const patchHubStaff = async (req: Request, res: Response) => {
 };
 
 const inviteStaffBodySchema = z.object({ clinic_id: uuidStr }).strict();
+const linkStaffBodySchema = z.object({ clinic_id: uuidStr }).strict();
+
+/** POST /api/hub/staff/:id/link-account — vincula profissional a conta existente pelo e-mail de acesso. */
+export const linkHubStaffAccount = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    const body = linkStaffBodySchema.safeParse(req.body);
+    if (!idParsed.success || !body.success) {
+      return res.status(400).json({ error: 'clinic_id inválido' });
+    }
+    const clinic_id = body.data.clinic_id;
+    const staffId = idParsed.data;
+
+    const { data: row, error: loadErr } = await supabaseAdmin
+      .from('hub_staff_members')
+      .select(STAFF_SELECT)
+      .eq('id', staffId)
+      .eq('clinic_id', clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (loadErr || !row) return res.status(404).json({ error: 'Profissional não encontrado' });
+    if (!row.has_hub_access) {
+      return res.status(400).json({ error: 'Ative «Tem acesso ao PetMi Hub» antes de vincular a conta.' });
+    }
+    const email = (row.hub_access_email as string | null)?.trim();
+    if (!email) {
+      return res.status(400).json({ error: 'Informe o e-mail de acesso antes de vincular.' });
+    }
+
+    const link = await applyStaffHubAccessLink(staffId, clinic_id, {
+      has_hub_access: true,
+      hub_access_email: email,
+      hub_access_role: row.hub_access_role as string | null,
+    });
+
+    const { data: fresh } = await supabaseAdmin
+      .from('hub_staff_members')
+      .select(STAFF_SELECT)
+      .eq('id', staffId)
+      .eq('clinic_id', clinic_id)
+      .single();
+    const [enriched] = await enrichStaffRows(clinic_id, [(fresh ?? row) as StaffRow]);
+    return res.json({ staff: enriched, link });
+  } catch (e) {
+    console.error('[hub_staff] link-account', e);
+    return res.status(400).json({ error: (e as Error)?.message || 'Erro ao vincular conta' });
+  }
+};
 
 export const inviteHubStaff = async (req: Request, res: Response) => {
   const invited_by = req.user!.id;

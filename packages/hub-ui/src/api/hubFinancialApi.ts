@@ -46,6 +46,7 @@ export type HubFinanceDayBoardItem = {
   estimated_amount: number;
   services: { name: string; amount: number }[];
   billing: HubFinanceDayBoardBilling;
+  has_package_balance?: boolean;
 };
 
 export type HubFinanceReceivable = {

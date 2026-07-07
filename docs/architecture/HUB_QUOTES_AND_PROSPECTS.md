@@ -44,7 +44,7 @@
 
 ### Pets no orçamento e tutor já existente (Fase 2b)
 
-- Coluna **`hub_quote_pets.hub_pet_id`** (já prevista na migração `alter_hub_quote_pets_hub_pet_id.sql`): vínculo **opcional** ao pet operacional da clínica.
+- Coluna **`hub_quote_pets.hub_pet_id`** (já prevista na migração `043_alter_hub_quote_pets_hub_pet_id.sql`): vínculo **opcional** ao pet operacional da clínica.
 - **Fluxo «Novo orçamento»** quando o CPF corresponde a um tutor: carregar pets desse tutor; o utilizador pode **selecionar explicitamente** um ou mais pets existentes e/ou **adicionar** pet novo **só no contexto do orçamento** (sem `hub_pet_id`).
 - **Não** fazer matching automático de pet **apenas pelo nome**; o nome pode ser ajuda visual, mas o vínculo confiável vem da **seleção explícita**.
 - **Na conversão (`convert`):** para cada `hub_quote_pet` com `hub_pet_id` já preenchido, **não** recriar `hub_pets`; para linhas **sem** `hub_pet_id`, criar pet e vincular ao tutor como hoje.

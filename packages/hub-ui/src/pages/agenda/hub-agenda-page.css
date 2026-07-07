@@ -1266,6 +1266,338 @@
   }
 }
 
+/* —— Mobile / telas estreitas (desktop inalterado acima de 900px) —— */
+
+.hub-agenda__filters-details {
+  margin-bottom: 14px;
+}
+
+.hub-agenda__filters-summary {
+  display: none;
+}
+
+.hub-agenda-day-list {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .hub-agenda-page {
+    margin-left: -16px;
+    margin-right: -16px;
+    width: calc(100% + 32px);
+    max-width: calc(100% + 32px);
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .hub-agenda {
+    min-height: 0;
+  }
+
+  .hub-agenda__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+  }
+
+  .hub-agenda__view-switch {
+    width: 100%;
+    display: flex;
+  }
+
+  .hub-agenda__view-switch .hub-agenda__view-btn {
+    flex: 1;
+    text-align: center;
+    padding: 10px 8px;
+  }
+
+  .hub-agenda__nav-cluster {
+    width: 100%;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .hub-agenda__date-field {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .hub-agenda__date-field .hub-date-field__control {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .hub-agenda__new-btn-group {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .hub-agenda__new-btn-group .hub-agenda__new-split {
+    width: 100%;
+  }
+
+  .hub-agenda__new-btn-group .hub-agenda__new-split-main {
+    flex: 1;
+    text-align: center;
+  }
+
+  .hub-agenda__search {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .hub-agenda__view-metrics {
+    font-size: 12px;
+    padding: 8px 10px;
+    gap: 4px;
+  }
+
+  .hub-agenda__filters-details {
+    border: 1px solid var(--ag-border);
+    border-radius: 10px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .hub-agenda__filters-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--hc-text, #4a3b3a);
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+
+  .hub-agenda__filters-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .hub-agenda__filters-summary::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid #8e6e67;
+    border-bottom: 2px solid #8e6e67;
+    transform: rotate(45deg);
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+    margin-right: 2px;
+  }
+
+  .hub-agenda__filters-details[open] .hub-agenda__filters-summary::after {
+    transform: rotate(-135deg);
+    margin-top: 4px;
+  }
+
+  .hub-agenda__filters-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--hc-brand, #c86a4d);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    margin-left: auto;
+    margin-right: 10px;
+  }
+
+  .hub-agenda__filters-details .hub-agenda__filters {
+    margin: 0;
+    padding: 0 12px 12px;
+    border-top: 1px solid #f0ebe8;
+  }
+
+  .hub-agenda-page .hub-agenda__filters .hub-agenda__filter-combo .hub-combobox {
+    max-width: none;
+  }
+
+  .hub-agenda-page .hub-agenda__filters .hub-servicos__filter-field {
+    flex: 1 1 100%;
+  }
+
+  .hub-agenda-page .hub-agenda__filters .hub-agenda__filter-field--toggle {
+    flex: 1 1 100%;
+  }
+
+  .hub-agenda-page .hub-agenda__filters .hub-agenda__group-toggle {
+    width: 100%;
+    display: flex;
+  }
+
+  .hub-agenda-page .hub-agenda__filters .hub-agenda__group-toggle button {
+    flex: 1;
+    padding: 10px 8px;
+    font-size: 12px;
+  }
+
+  .hub-agenda__legend {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 10px;
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+    scrollbar-width: none;
+  }
+
+  .hub-agenda__legend::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hub-agenda__legend-title,
+  .hub-agenda__legend-item {
+    flex-shrink: 0;
+  }
+
+  .hub-agenda__calendar-wrap {
+    min-height: 0;
+  }
+
+  .hub-agenda-day-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius);
+    background: var(--ag-card);
+    padding: 12px;
+  }
+
+  .hub-agenda-day-list__now {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #fdf6f2;
+    color: var(--ag-now);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .hub-agenda-day-list__now::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ag-now);
+    flex-shrink: 0;
+  }
+
+  .hub-agenda-day-list__empty {
+    margin: 8px 0;
+    text-align: center;
+    font-size: 14px;
+  }
+
+  .hub-agenda-day-list__item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .hub-agenda-day-list__time-col {
+    flex-shrink: 0;
+    width: 44px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 10px;
+    text-align: right;
+  }
+
+  .hub-agenda-day-list__time {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--hc-text, #4a3b3a);
+    line-height: 1.2;
+  }
+
+  .hub-agenda-day-list__time-end {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--ag-muted);
+    line-height: 1.2;
+  }
+
+  .hub-agenda-day-list__card {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .hub-agenda-day-list__card .hub-agenda-card--week {
+    width: 100%;
+  }
+
+  .hub-agenda-day-list__lane {
+    margin: 0;
+    padding: 0 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ag-muted);
+  }
+
+  .hub-agenda-week {
+    max-height: none;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--ag-radius);
+  }
+
+  .hub-agenda-week__table {
+    min-width: 640px;
+  }
+
+  .hub-agenda-month__day {
+    min-height: 76px;
+    padding: 6px;
+  }
+
+  .hub-agenda-month__day-num {
+    font-size: 12px;
+  }
+
+  .hub-agenda-month__counts {
+    font-size: 9px;
+    margin-top: 4px;
+  }
+
+  .hub-agenda-month__dow {
+    padding: 8px 4px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 640px) {
+  .hub-agenda__icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .hub-agenda-month__grid {
+    font-size: 10px;
+  }
+
+  .hub-agenda-month__day {
+    min-height: 64px;
+    padding: 4px;
+  }
+}
+
 /* ── Painel de visualização de agendamento (HubSidePanel) ── */
 
 .hub-agenda-appt-panel {

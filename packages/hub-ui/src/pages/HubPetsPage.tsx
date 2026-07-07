@@ -7,13 +7,13 @@ import { useAlert } from '../components/AlertProvider';
 import { HubLoading } from '../components/HubLoading';
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import './clientes/clientes.css';
+import './clientes/clientes-drawer.css';
 import './pets/pets-page.css';
 import { PetsMetricsRow } from './pets/PetsMetricsRow';
 import { PetsToolbar } from './pets/PetsToolbar';
 import { PetsTable } from './pets/PetsTable';
 import { PetsPagination } from './pets/PetsPagination';
-import { PetForm } from './pets/PetForm';
-import { PetDetailPanel } from './pets/PetDetailPanel';
+import PetDrawer from './pets/PetDrawer';
 import { emptyPetForm, type PetFormValues } from './pets/PetFormValues';
 import { getSelectedUnitId } from '../utils/useSelectedUnitId';
 import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
@@ -75,6 +75,7 @@ const HubPetsPage: React.FC = () => {
   const [pageSize, setPageSize] = useState(10);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [panelMode, setPanelMode] = useState<PanelMode>('create');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PetFormValues>(emptyPetForm);
@@ -197,15 +198,18 @@ const HubPetsPage: React.FC = () => {
     setSelectedId(null);
     setPanelMode('create');
     resetForm();
+    setDrawerOpen(true);
   }, [resetForm]);
 
   const selectPet = useCallback((p: HubPet) => {
     setSelectedId(p.id);
     setPanelMode('detail');
     setEditingId(null);
+    setDrawerOpen(true);
   }, []);
 
   const closePanel = useCallback(() => {
+    setDrawerOpen(false);
     setSelectedId(null);
     setPanelMode('create');
     resetForm();
@@ -223,6 +227,7 @@ const HubPetsPage: React.FC = () => {
     setPanelMode('edit');
     setEditingId(p.id);
     setForm(petToForm(p));
+    setDrawerOpen(true);
   }, []);
 
   const cancelEdit = useCallback(() => {
@@ -230,9 +235,9 @@ const HubPetsPage: React.FC = () => {
       setPanelMode('detail');
       setEditingId(null);
     } else {
-      openCreate();
+      closePanel();
     }
-  }, [selectedPet, openCreate]);
+  }, [selectedPet, closePanel]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -354,7 +359,7 @@ const HubPetsPage: React.FC = () => {
   }
 
   return (
-    <div className="hub-clientes hub-pets-page">
+    <div className="hub-clientes hub-pets-page hub-clientes-page--full-width">
       <div className="hub-clientes__main">
         <PetsMetricsRow pets={pets} loading={loading && pets.length === 0} />
 
@@ -370,6 +375,7 @@ const HubPetsPage: React.FC = () => {
           pets={pets}
           guardians={guardians}
           onNewPet={goToNewPetWizard}
+          onQuickCreate={openCreate}
         />
 
         {loading ? (
@@ -398,60 +404,26 @@ const HubPetsPage: React.FC = () => {
         )}
       </div>
 
-      <aside className="hub-clientes__panel">
-        <div className="hub-clientes__panel-scroll">
-          {panelMode === 'detail' && selectedPet ? (
-            <PetDetailPanel
-              pet={selectedPet}
-              onClose={closePanel}
-              onStartEdit={startEditFromDetail}
-              onOpenInNewPage={() => navigate(`/hub/pets/${selectedPet.id}`)}
-              onArchive={canWrite ? () => handleArchive(selectedPet) : undefined}
-              canWrite={canWrite}
-              clinicId={clinicId}
-              unitId={unitId}
-              canCreateReceivable={hasPermission('hub.receivables.create')}
-            />
-          ) : panelMode === 'edit' && selectedPet ? (
-            <>
-              <div className="hub-clientes__panel-header">
-                <h2 className="hub-clientes__form-title" style={{ margin: 0 }}>
-                  Editar pet
-                </h2>
-                <button type="button" className="hub-clientes__panel-close" aria-label="Cancelar edição" onClick={cancelEdit}>
-                  ×
-                </button>
-              </div>
-              <PetForm
-                key={`edit-${editingId}`}
-                value={form}
-                onChange={setForm}
-                onSubmit={handleSubmit}
-                guardians={guardians}
-                submitting={submitting}
-                canWrite={canWrite}
-                title=""
-                isEdit
-                showOptionalPhoto={false}
-                onCancelEdit={cancelEdit}
-              />
-            </>
-          ) : (
-            <PetForm
-              key="create-pet"
-              value={form}
-              onChange={setForm}
-              onSubmit={handleSubmit}
-              guardians={guardians}
-              submitting={submitting}
-              canWrite={canWrite}
-              title="Cadastro Rápido de Pet"
-              isEdit={false}
-              showOptionalPhoto
-            />
-          )}
-        </div>
-      </aside>
+      <PetDrawer
+        open={drawerOpen}
+        onClose={closePanel}
+        mode={panelMode}
+        canWrite={canWrite}
+        form={form}
+        onFormChange={setForm}
+        onSubmit={handleSubmit}
+        submitting={submitting}
+        guardians={guardians}
+        pet={selectedPet}
+        editingId={editingId}
+        onStartEdit={startEditFromDetail}
+        onOpenInNewPage={() => selectedPet && navigate(`/hub/pets/${selectedPet.id}`)}
+        onArchive={canWrite && selectedPet ? () => handleArchive(selectedPet) : undefined}
+        onCancelEdit={cancelEdit}
+        clinicId={clinicId}
+        unitId={unitId}
+        canCreateReceivable={hasPermission('hub.receivables.create')}
+      />
     </div>
   );
 };

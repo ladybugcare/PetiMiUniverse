@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Aplica create_hub_clinical_attachments.sql no Postgres remoto via DATABASE_URL.
+ * Aplica 025j_create_hub_clinical_attachments.sql no Postgres remoto via DATABASE_URL.
  * Uso: DATABASE_URL='postgresql://postgres:PASSWORD@db.PROJECT_REF.supabase.co:5432/postgres' node scripts/apply-clinical-attachments-migration.mjs
  */
 import { readFileSync } from 'node:fs';
@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const sqlPath = join(__dirname, '../database_migrations/petimi_hub/create_hub_clinical_attachments.sql');
+const sqlPath = join(__dirname, '../database_migrations/petimi_hub/025j_create_hub_clinical_attachments.sql');
 
 async function main() {
   const url = process.env.DATABASE_URL?.trim();

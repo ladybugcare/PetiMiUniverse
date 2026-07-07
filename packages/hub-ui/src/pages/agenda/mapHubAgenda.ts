@@ -88,6 +88,7 @@ export function mapHubAppointmentToAgenda(row: HubAppointment): AgendaAppointmen
     appointment_kind: row.appointment_kind,
     hub_service_type_id: row.hub_service_type_id,
     series_id: row.series_id ?? undefined,
+    parent_appointment_id: row.parent_appointment_id ?? null,
     title: row.title ?? undefined,
     services,
     serviceGroups,
@@ -98,6 +99,7 @@ export function mapHubAppointmentToAgenda(row: HubAppointment): AgendaAppointmen
     comanda_id: (row as { comanda_id?: string | null }).comanda_id ?? null,
     pricing_porte_tier: row.pricing_porte_tier ?? null,
     pricing_coat_type: row.pricing_coat_type ?? null,
+    visit_group_id: row.visit_group_id ?? null,
   };
 
   return {

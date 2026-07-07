@@ -28,6 +28,8 @@ type Props = {
   onRemoveItem: (idx: number) => void;
   onApplyService: (idx: number, serviceTypeId: string) => void;
   onApplyProduct: (idx: number, inventoryItemId: string) => void;
+  packageBalancesByItemId?: Record<string, Array<{ id: string; sessions_remaining: number; hub_packages?: { name?: string } | { name?: string }[] | null }>>;
+  onTogglePackage?: (itemId: string, balanceId: string | null) => void;
 };
 
 export const ComandaItemsSection: React.FC<Props> = ({
@@ -45,6 +47,8 @@ export const ComandaItemsSection: React.FC<Props> = ({
   onRemoveItem,
   onApplyService,
   onApplyProduct,
+  packageBalancesByItemId = {},
+  onTogglePackage,
 }) => {
   const serviceRows = useMemo(
     () => items.map((it, idx) => ({ it, idx })).filter(({ it }) => !isProductItem(it)),
@@ -93,6 +97,8 @@ export const ComandaItemsSection: React.FC<Props> = ({
   const renderServiceRow = ({ it, idx }: { it: ComandaItemDraft; idx: number }) => {
     const editable = canEdit && !it.invoiced;
     const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
+    const eligibleBalances = it.id ? packageBalancesByItemId[it.id] ?? [] : [];
+    const coveredByPackage = Boolean(it.package_balance_id);
     return (
       <tr key={it.id ?? `svc-${idx}`} className={it.invoiced ? 'hub-comanda-row--invoiced' : ''}>
         <td style={{ minWidth: 220 }}>
@@ -130,6 +136,32 @@ export const ComandaItemsSection: React.FC<Props> = ({
           )}
         </td>
         <td className="hub-orcamento-novo__services-table-cell--muted">{it.pet_name ?? '—'}</td>
+        <td style={{ minWidth: 120 }}>
+          {coveredByPackage ? (
+            <span className="hub-clientes__pill hub-dayboard__pill--open">Pacote</span>
+          ) : eligibleBalances.length > 0 && onTogglePackage && it.id && editable ? (
+            <select
+              className="hub-orcamento-novo__input"
+              value={it.package_balance_id ?? ''}
+              onChange={(e) => onTogglePackage(it.id!, e.target.value || null)}
+              aria-label="Usar pacote"
+            >
+              <option value="">Avulso</option>
+              {eligibleBalances.map((b) => {
+                const pkg = Array.isArray(b.hub_packages) ? b.hub_packages[0] : b.hub_packages;
+                return (
+                  <option key={b.id} value={b.id}>
+                    {pkg?.name ?? 'Pacote'} ({b.sessions_remaining})
+                  </option>
+                );
+              })}
+            </select>
+          ) : (
+            <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
+              Avulso
+            </span>
+          )}
+        </td>
         <td className="right" style={{ minWidth: 64 }}>
           {editable ? (
             <input
@@ -332,6 +364,7 @@ export const ComandaItemsSection: React.FC<Props> = ({
                 <tr>
                   <th>Serviço</th>
                   <th>Pet</th>
+                  <th>Pacote</th>
                   <th className="right">Qtd</th>
                   <th className="right">Valor unit.</th>
                   <th className="right">Desconto</th>

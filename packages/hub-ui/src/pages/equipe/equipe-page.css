@@ -44,6 +44,12 @@
   gap: 10px;
 }
 
+@media (max-width: 900px) {
+  .hub-equipe__service-group-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 480px) {
   .hub-equipe__service-group-grid {
     grid-template-columns: 1fr;

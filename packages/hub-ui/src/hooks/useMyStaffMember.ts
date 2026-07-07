@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getStoredClinicId } from '@petimi/web-core';
+import { CLINIC_STORAGE_UPDATED_EVENT, getStoredClinicId } from '@petimi/web-core';
 import { hubStaffApi, type HubStaffMember } from '../api/hubStaffApi';
 
 function readClinicUserId(): string | null {
@@ -15,9 +15,20 @@ function readClinicUserId(): string | null {
 
 export function useMyStaffMember() {
   const clinicId = getStoredClinicId();
-  const clinicUserId = useMemo(() => readClinicUserId(), []);
+  const [clinicUserId, setClinicUserId] = useState<string | null>(() => readClinicUserId());
   const [staffList, setStaffList] = useState<HubStaffMember[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const refreshClinicUserId = () => setClinicUserId(readClinicUserId());
+    refreshClinicUserId();
+    window.addEventListener('storage', refreshClinicUserId);
+    window.addEventListener(CLINIC_STORAGE_UPDATED_EVENT, refreshClinicUserId);
+    return () => {
+      window.removeEventListener('storage', refreshClinicUserId);
+      window.removeEventListener(CLINIC_STORAGE_UPDATED_EVENT, refreshClinicUserId);
+    };
+  }, []);
 
   useEffect(() => {
     if (!clinicId) {
@@ -31,7 +42,7 @@ export function useMyStaffMember() {
       .then((r) => setStaffList(r.staff ?? []))
       .catch(() => setStaffList([]))
       .finally(() => setLoading(false));
-  }, [clinicId]);
+  }, [clinicId, clinicUserId]);
 
   const myStaffMember = useMemo(() => {
     if (!clinicUserId) return null;

@@ -33,7 +33,7 @@
   overflow-x: auto;
 }
 
-@media (max-width: 800px) {
+@media (max-width: 900px) {
   .hub-pickup-board {
     grid-template-columns: 1fr;
   }

@@ -266,7 +266,7 @@ Quando um agendamento ou atendimento é **cancelado na operação** e já existi
 1. O cancelamento **não é bloqueado** pelo financeiro e **não** exige modal para perfis operacionais.
 2. O sistema marca **pendência de ajuste** na comanda (`cancellation_pending_at`); agenda, Banho & Tosa e workspace clínico exibem badge **somente leitura**.
 3. A **fila «Ajustes por cancelamento»** no Caixa (`hub.financial.read`) concentra o trabalho; a resolução exige `hub.financial.write`: **reembolso** (estorno nos recebíveis), **crédito do tutor** (estorno + movimento de crédito) ou **manter cobrança** (pagamentos intactos, comanda fechada).
-4. Migração: `alter_hub_comandas_cancellation_resolution.sql` (item 50 do README `petimi_hub`).
+4. Migração: `050_alter_hub_comandas_cancellation_resolution.sql` (item 50 do README `petimi_hub`).
 
 ### 5.7 Impactos financeiros
 

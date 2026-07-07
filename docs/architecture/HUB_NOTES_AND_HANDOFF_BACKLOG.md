@@ -6,7 +6,7 @@
 Referências:
 - [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md)
 - [HUB_QUOTES_AND_PROSPECTS.md](./HUB_QUOTES_AND_PROSPECTS.md)
-- Migrations: `alter_hub_comandas_client_notes.sql`, `alter_hub_comandas_finance_notes.sql`
+- Migrations: `068_alter_hub_comandas_client_notes.sql`, `069_alter_hub_comandas_finance_notes.sql`
 
 ---
 

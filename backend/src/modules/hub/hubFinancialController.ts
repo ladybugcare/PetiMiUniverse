@@ -26,6 +26,7 @@ import {
   pickActiveReceivableId,
 } from './hubFinancialDayBoard';
 import { financeSourceTypeSchema, receivableSourceTypeSchema } from './hubFinanceSchemas';
+import { hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
 
 const uuidStr = z.string().uuid();
 
@@ -2448,6 +2449,7 @@ type DayBoardItem = {
   estimated_amount: number;
   services: { name: string; amount: number }[];
   billing: DayBoardBilling;
+  has_package_balance?: boolean;
 };
 
 const dayBoardQuerySchema = z
@@ -2755,6 +2757,32 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       if (billing) item.billing = billing;
     }
 
+    const clinicBalances = await listActivePackageBalances({ clinicId: clinic_id });
+    for (const item of items) {
+      const serviceTypeIds = item.services
+        .map((_, idx) => {
+          const apptRow = (apptRows ?? []).find((r) => r.id === item.origin_id);
+          const svcs = (apptRow?.appointment_services as Array<{ hub_service_type_id?: string }> | null) ?? [];
+          return svcs[idx]?.hub_service_type_id ?? null;
+        })
+        .filter(Boolean) as string[];
+      if (!serviceTypeIds.length && item.origin_type === 'appointment') {
+        const apptRow = (apptRows ?? []).find((r) => r.id === item.origin_id);
+        const primary = apptRow?.hub_service_type_id as string | null;
+        if (primary) serviceTypeIds.push(primary);
+        const svcs = (apptRow?.appointment_services as Array<{ hub_service_type_id?: string }> | null) ?? [];
+        for (const s of svcs) {
+          if (s.hub_service_type_id) serviceTypeIds.push(s.hub_service_type_id);
+        }
+      }
+      item.has_package_balance = hasPackageBalanceForServices(
+        clinicBalances,
+        item.guardian_id,
+        item.pet_id,
+        [...new Set(serviceTypeIds)]
+      );
+    }
+
     let filteredItems = items;
     if (billing_scope === 'financeiro') {
       filteredItems = items.filter((item) => {
@@ -2919,7 +2947,7 @@ export const getHubFinanceDashboardSummary = async (req: Request, res: Response)
     if (eErr) {
       if (String(eErr.message || '').includes('hub_expenses')) {
         return res.status(503).json({
-          error: 'Tabela hub_expenses não encontrada. Aplique a migração create_hub_expenses.sql.',
+          error: 'Tabela hub_expenses não encontrada. Aplique a migração 037_create_hub_expenses.sql.',
         });
       }
       return res.status(500).json({ error: eErr.message });
@@ -3018,7 +3046,7 @@ export const getHubFinanceCashFlow = async (req: Request, res: Response) => {
     if (eErr) {
       if (String(eErr.message || '').includes('hub_expenses')) {
         return res.status(503).json({
-          error: 'Tabela hub_expenses não encontrada. Aplique a migração create_hub_expenses.sql.',
+          error: 'Tabela hub_expenses não encontrada. Aplique a migração 037_create_hub_expenses.sql.',
         });
       }
       return res.status(500).json({ error: eErr.message });
@@ -3380,7 +3408,7 @@ export const listHubFinanceExpenses = async (req: Request, res: Response) => {
     if (error) {
       if (String(error.message || '').includes('hub_expenses')) {
         return res.status(503).json({
-          error: 'Tabela hub_expenses não encontrada. Aplique a migração create_hub_expenses.sql.',
+          error: 'Tabela hub_expenses não encontrada. Aplique a migração 037_create_hub_expenses.sql.',
         });
       }
       return res.status(500).json({ error: error.message });
@@ -3431,7 +3459,7 @@ export const postHubFinanceExpense = async (req: Request, res: Response) => {
     if (error) {
       if (String(error.message || '').includes('hub_expenses')) {
         return res.status(503).json({
-          error: 'Tabela hub_expenses não encontrada. Aplique a migração create_hub_expenses.sql.',
+          error: 'Tabela hub_expenses não encontrada. Aplique a migração 037_create_hub_expenses.sql.',
         });
       }
       return res.status(500).json({ error: error.message });

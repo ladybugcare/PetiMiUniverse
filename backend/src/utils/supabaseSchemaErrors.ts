@@ -11,4 +11,4 @@ export function isMissingPostgrestRelation(error: { message?: string; code?: str
 }
 
 export const CLINICAL_ATTACHMENTS_MIGRATION_HINT =
-  'Execute no Supabase SQL Editor o ficheiro backend/database_migrations/petimi_hub/create_hub_clinical_attachments.sql (bloco 25 do README) e depois NOTIFY pgrst, \'reload schema\';';
+  'Execute no Supabase SQL Editor o ficheiro backend/database_migrations/petimi_hub/025j_create_hub_clinical_attachments.sql (bloco 25 do README) e depois NOTIFY pgrst, \'reload schema\';';

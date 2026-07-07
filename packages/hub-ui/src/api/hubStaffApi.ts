@@ -20,6 +20,13 @@ export interface HubStaffServiceTypeRef {
   code: string;
 }
 
+export type HubStaffLinkMeta = {
+  clinic_user_id: string | null;
+  linked: boolean;
+  role_synced: boolean;
+  message?: string;
+};
+
 export interface HubStaffMember {
   id: string;
   clinic_id: string;
@@ -82,18 +89,28 @@ export const hubStaffApi = {
     return apiRequest(`${basePath}/${encodeURIComponent(id)}?${q.toString()}`) as Promise<{ staff: HubStaffMember }>;
   },
 
-  async create(payload: Record<string, unknown>): Promise<{ staff: HubStaffMember }> {
+  async create(payload: Record<string, unknown>): Promise<{ staff: HubStaffMember; link?: HubStaffLinkMeta | null }> {
     return apiRequest(basePath, {
       method: 'POST',
       body: JSON.stringify(payload),
-    }) as Promise<{ staff: HubStaffMember }>;
+    }) as Promise<{ staff: HubStaffMember; link?: HubStaffLinkMeta | null }>;
   },
 
-  async patch(id: string, payload: Record<string, unknown>): Promise<{ staff: HubStaffMember }> {
+  async patch(id: string, payload: Record<string, unknown>): Promise<{ staff: HubStaffMember; link?: HubStaffLinkMeta | null }> {
     return apiRequest(`${basePath}/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
-    }) as Promise<{ staff: HubStaffMember }>;
+    }) as Promise<{ staff: HubStaffMember; link?: HubStaffLinkMeta | null }>;
+  },
+
+  async linkAccount(
+    id: string,
+    clinicId: string,
+  ): Promise<{ staff: HubStaffMember; link: HubStaffLinkMeta | null }> {
+    return apiRequest(`${basePath}/${encodeURIComponent(id)}/link-account`, {
+      method: 'POST',
+      body: JSON.stringify({ clinic_id: clinicId }),
+    }) as Promise<{ staff: HubStaffMember; link: HubStaffLinkMeta | null }>;
   },
 
   async sendInvite(

@@ -57,6 +57,9 @@ interface GuardianCreateFormProps {
   submitting: boolean;
   canWrite: boolean;
   title: string;
+  /** Oculta botões do rodapé (drawer usa footer externo). */
+  hideFooter?: boolean;
+  formId?: string;
 }
 
 const ORIGENS = [
@@ -90,6 +93,8 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
   submitting,
   canWrite,
   title,
+  hideFooter = false,
+  formId,
 }) => {
   const docTypeOptions = useMemo(
     (): HubComboboxOption[] => DOC_TIPOS.map((o) => ({ value: o, label: o || '—' })),
@@ -137,7 +142,7 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
   const isCompany = value.client_kind === 'company';
 
   return (
-    <form onSubmit={onSubmit}>
+    <form id={formId} onSubmit={onSubmit}>
       {title ? <h2 className="hub-clientes__form-title">{title}</h2> : null}
 
       <div className="hub-clientes__field">
@@ -373,11 +378,13 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
         />
       </div>
 
-      <div className="hub-clientes__footer-btns">
-        <button type="submit" className="hub-clientes__btn hub-clientes__btn--primary" disabled={submitting}>
-          {submitting ? 'Salvando…' : 'Salvar cliente'}
-        </button>
-      </div>
+      {!hideFooter ? (
+        <div className="hub-clientes__footer-btns">
+          <button type="submit" className="hub-clientes__btn hub-clientes__btn--primary" disabled={submitting}>
+            {submitting ? 'Salvando…' : 'Salvar cliente'}
+          </button>
+        </div>
+      ) : null}
     </form>
   );
 };

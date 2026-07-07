@@ -47,6 +47,18 @@ function CardBadges({
     );
   }
 
+  if (appt.visitGroupSize != null && appt.visitGroupSize > 1) {
+    badges.push(
+      <span
+        key="visit-group"
+        className="hub-agenda-card__badge"
+        title={appt.visitGroupLabel ? `Visita multi-pet: ${appt.visitGroupLabel}` : 'Visita multi-pet'}
+      >
+        <span className="nam-visit-group-badge">{appt.visitGroupSize} pets</span>
+      </span>,
+    );
+  }
+
   if (appt.pickupPackage?.hasBefore) {
     badges.push(
       <span key="pickup-before" className="hub-agenda-card__badge" title="Leva e traz: busca">

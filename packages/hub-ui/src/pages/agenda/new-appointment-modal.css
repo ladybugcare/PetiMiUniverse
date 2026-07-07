@@ -4,6 +4,7 @@
   display: flex;
   flex-direction: column;
   gap: 0;
+  padding-bottom: 12px;
 }
 
 /* Bloco inicial: Data / Situação · Tutor / Pet */
@@ -30,19 +31,6 @@
   .nam-quick-card .nam-row--cols2 {
     grid-template-columns: 1fr;
   }
-}
-
-.nam-quick-card__pet-info {
-  padding-top: 14px;
-  border-top: 1px solid #e8e4e0;
-}
-
-.nam-quick-card__pet-line {
-  margin: 0;
-}
-
-.nam-quick-card__pet-line + .nam-quick-card__pet-line {
-  margin-top: 4px;
 }
 
 .nam-quick-register-link {
@@ -317,7 +305,7 @@
   border-bottom: 1px solid #f0ede9;
 }
 
-.nam-section:last-child {
+.nam-section:last-child:not(.nam-block-card):not(.nam-multi-pet-visits) {
   border-bottom: none;
 }
 
@@ -530,6 +518,221 @@
   font-weight: 600;
   color: #c86a4d;
   letter-spacing: 0.01em;
+}
+
+/* Service configuration cards */
+.nam-service-cards {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nam-service-card {
+  border: 1px solid #e8e4e0;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.nam-service-card--expanded {
+  border-color: rgba(200, 106, 77, 0.35);
+  background: rgba(200, 106, 77, 0.04);
+}
+
+.nam-service-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  min-height: 42px;
+}
+
+.nam-service-card__expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: #9b9590;
+  cursor: pointer;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.nam-service-card__expand:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #2d2a28;
+}
+
+.nam-service-card__title-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.nam-service-card__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d2a28;
+}
+
+.nam-service-card__group-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8e6e67;
+  background: rgba(142, 110, 103, 0.1);
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+
+.nam-service-card__duration {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.nam-service-card__dur-input {
+  width: 54px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid #e8e4e0;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  text-align: center;
+  color: #2d2a28;
+}
+
+.nam-service-card__dur-unit {
+  font-size: 12px;
+  color: #9b9590;
+}
+
+.nam-service-card__header-price {
+  font-size: 13px;
+  font-weight: 600;
+  color: #c86a4d;
+  flex-shrink: 0;
+}
+
+.nam-service-card__remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #c0bab5;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.nam-service-card__remove:hover {
+  color: #e53e3e;
+  background: #fff0f0;
+}
+
+.nam-service-card__body {
+  padding: 0 12px 12px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nam-service-card__section-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8e6e67;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.nam-service-card__price-line {
+  margin: 0;
+  font-size: 13px;
+  color: #2d2a28;
+  font-weight: 500;
+}
+
+.nam-service-card__addons-compact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 0;
+}
+
+.nam-service-card__addons-empty {
+  font-size: 12px;
+  color: #9b9590;
+}
+
+.nam-multi-pet-visits {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.nam-multi-pet-visits + .nam-block-card {
+  margin-top: 12px;
+}
+
+.nam-multi-pet-visits__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 24px;
+  padding: 0 2px 4px;
+}
+
+.nam-pet-visit-block {
+  margin-bottom: 0;
+}
+
+.nam-pet-preview-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nam-pet-preview-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: #6b6560;
+}
+
+.nam-pet-preview-list strong {
+  color: #2d2a28;
+}
+
+.nam-visit-group-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8e6e67;
+  background: rgba(142, 110, 103, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
 }
 
 /* Adicionais (bloco principal) */
@@ -950,6 +1153,16 @@
 }
 
 /* Bloco colapsável (principal + extras) */
+.nam-section.nam-block-card {
+  padding: 0;
+  border-bottom: none;
+}
+
+.nam-section.nam-block-card,
+.nam-section.nam-block-card:last-child {
+  border: 1px solid #e8e4e0;
+}
+
 .nam-block-card {
   border: 1px solid #e8e4e0;
   border-radius: 8px;
@@ -1293,4 +1506,261 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ── Responsivo: novo agendamento (desktop inalterado acima de 900px) ── */
+
+@media (max-width: 900px) {
+  /* Painel lateral em tela cheia */
+  .hub-side-panel__sheet:has(.nam-form),
+  .hub-side-panel__sheet:has(.rqr-form) {
+    width: 100%;
+    min-width: 0;
+    border-radius: 0;
+  }
+
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__header,
+  .hub-side-panel__sheet:has(.rqr-form) .hub-side-panel__header {
+    padding: 16px;
+  }
+
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__title,
+  .hub-side-panel__sheet:has(.rqr-form) .hub-side-panel__title {
+    font-size: 16px;
+  }
+
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__main,
+  .hub-side-panel__sheet:has(.rqr-form) .hub-side-panel__main {
+    padding: 16px;
+  }
+
+  /* Formulário + resumo empilhados */
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__body {
+    flex-direction: column;
+  }
+
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__aside {
+    order: -1;
+  }
+
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__main--with-aside {
+    padding-right: 16px;
+  }
+
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__aside {
+    width: 100%;
+    flex-shrink: 0;
+    border-left: none;
+    border-top: 1px solid #e8e4e0;
+    padding: 16px;
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* Rodapé com botões em coluna */
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__footer,
+  .hub-side-panel__sheet:has(.rqr-form) .hub-side-panel__footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__footer .hub-btn,
+  .hub-side-panel__sheet:has(.rqr-form) .hub-side-panel__footer .hub-btn,
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__footer .hub-clientes__btn,
+  .hub-side-panel__sheet:has(.rqr-form) .hub-side-panel__footer .hub-clientes__btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .hub-side-panel__sheet:has(.nam-form) .nam-intake-footer-primary,
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__footer .hub-btn--primary {
+    justify-content: center;
+  }
+
+  .nam-footer-error {
+    flex: none;
+    width: 100%;
+    margin-bottom: 2px;
+  }
+
+  /* Grids do formulário em coluna única */
+  .nam-form .nam-row--cols2,
+  .nam-form .nam-row--cols3,
+  .rqr-form .nam-row--cols2,
+  .rqr-form .nam-row--cols3 {
+    grid-template-columns: 1fr;
+  }
+
+  .nam-quick-card {
+    padding: 14px 12px 12px;
+    gap: 14px;
+  }
+
+  .nam-quick-card .nam-row {
+    gap: 14px;
+  }
+
+  .nam-section {
+    padding: 10px 0;
+  }
+
+  /* Cards de serviço */
+  .nam-service-card__header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .nam-service-card__title-wrap {
+    flex: 1 1 calc(100% - 72px);
+    min-width: 0;
+  }
+
+  .nam-service-card__duration {
+    margin-left: auto;
+  }
+
+  .nam-service-card__header-price {
+    flex: 1 1 100%;
+    text-align: left;
+    font-size: 12px;
+  }
+
+  .nam-service-card__body {
+    padding: 10px;
+  }
+
+  /* Blocos colapsáveis */
+  .nam-block-card__header-row {
+    flex-wrap: wrap;
+  }
+
+  .nam-block-card__header {
+    padding: 10px 12px;
+    min-width: 0;
+  }
+
+  .nam-block-card__toggle {
+    font-size: 0;
+    line-height: 0;
+    color: transparent;
+  }
+
+  .nam-block-card__toggle svg {
+    color: #f0642f;
+  }
+
+  .nam-block-card__body {
+    padding: 10px 12px 14px;
+  }
+
+  .nam-title-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .nam-title-row .nam-btn-icon {
+    align-self: flex-end;
+  }
+
+  /* Recorrência, leva e traz, extras */
+  .nam-recurrence,
+  .nam-pickup,
+  .nam-extra-block {
+    padding: 12px;
+  }
+
+  .nam-multi-pet-visits__toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .nam-addon-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .nam-addon-row__check.hub-checkbox {
+    width: 100%;
+  }
+
+  /* Resumo lateral */
+  .nam-aside__row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .nam-aside__total {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  /* Cadastro rápido */
+  .rqr-pet-card__head {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .rqr-segmented__btn {
+    padding: 10px 8px;
+    font-size: 12px;
+  }
+
+  /* Modal de escopo de série */
+  .hub-agenda-series-scope {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .hub-agenda-series-scope__card {
+    width: 100%;
+    max-width: none;
+    border-radius: 16px 16px 0 0;
+    padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .hub-agenda-series-scope__actions .hub-btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 640px) {
+  .nam-intake-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .nam-dow-chips {
+    gap: 4px;
+  }
+
+  .nam-dow-chip {
+    padding: 6px 9px;
+    font-size: 11px;
+  }
+
+  .nam-block-card__remove {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #e8e4e0;
+    height: 40px;
+  }
+
+  .nam-block-card__header-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .nam-block-card__header {
+    width: 100%;
+  }
 }

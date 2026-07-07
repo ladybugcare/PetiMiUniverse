@@ -68,7 +68,7 @@ erDiagram
 ### 4. Guardian (tutor / responsável / cliente empresa)
 
 - **Significado**: pessoa **ou empresa** (PJ) com quem a clínica opera no dia a dia — contato, consentimento, preferências. O **pet** é o centro emocional para o tutor; o **guardian** é o centro **operacional e financeiro** na relação clínica–cliente.
-- **Persistência (Hub)**: tabela `hub_guardians` por `clinic_id`, com soft delete (`deleted_at`). Campos de perfil ampliados (migração `alter_hub_guardians_client_profile.sql`):
+- **Persistência (Hub)**: tabela `hub_guardians` por `clinic_id`, com soft delete (`deleted_at`). Campos de perfil ampliados (migração `007_alter_hub_guardians_client_profile.sql`):
   - **`client_kind`**: `individual` (tutor PF) ou `company` (cliente empresa com vários pets).
   - **Identidade**: `full_name` (nome de exibição / fantasia), `legal_name` (razão social, opcional para PJ), `phone` (obrigatório na criação via API), `email`, `birth_date`, `sex` (`M`/`F`/`U`), `tax_id` (CPF/CNPJ), `id_doc_type`, `id_doc_number`, `lead_source` (origem).
   - **Endereço**: `postal_code`, `state`, `city`, `district`, `street`, `street_number`, `complement`.

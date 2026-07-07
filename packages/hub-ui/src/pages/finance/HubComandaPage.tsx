@@ -175,6 +175,38 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
     return { subtotal, discountAmount, total };
   }, [items, discountKind, discountValueStr]);
 
+  const handleTogglePackage = useCallback(
+    async (itemId: string, balanceId: string | null) => {
+      if (!comandaId || !clinicId) return;
+      setSaving(true);
+      try {
+        const detail = await hubComandaApi.applyPackage(comandaId, {
+          clinic_id: clinicId,
+          item_id: itemId,
+          package_balance_id: balanceId,
+          edit_context: editContext,
+        });
+        setPayload(detail);
+        const invoicedSet = new Set(detail.invoiced_item_ids ?? []);
+        setItems(
+          (detail.items ?? [])
+            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+            .map((it) => apiItemToDraft(it, invoicedSet.has(it.id)))
+        );
+      } catch (e: unknown) {
+        showError((e as Error)?.message || 'Erro ao aplicar pacote');
+      } finally {
+        setSaving(false);
+      }
+    },
+    [comandaId, clinicId, editContext, showError]
+  );
+
+  const packageBalancesByItemId = (payload?.package_balances_by_item_id ?? {}) as Record<
+    string,
+    Array<{ id: string; sessions_remaining: number; hub_packages?: { name?: string } | { name?: string }[] | null }>
+  >;
+
   const updateItem = (idx: number, patch: Partial<ComandaItemDraft>) => {
     setItems((prev) =>
       prev.map((it, i) => {
@@ -547,6 +579,8 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
       onRemoveItem={removeItem}
       onApplyService={applyServiceToItem}
       onApplyProduct={applyProductToItem}
+      packageBalancesByItemId={packageBalancesByItemId}
+      onTogglePackage={String(comandaRow?.origin_type) !== 'package' ? handleTogglePackage : undefined}
     />
   );
 

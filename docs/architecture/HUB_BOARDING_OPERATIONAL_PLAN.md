@@ -116,7 +116,7 @@ flowchart TB
 
 **Objetivo:** modelo de execução próprio com controle de diárias e datas reais.
 
-### Banco — nova migration (`create_hub_boarding_reservations.sql`)
+### Banco — nova migration (`051_create_hub_boarding_reservations.sql`)
 
 ```sql
 -- Esboço conceitual (implementar no PR da Fase 2)
@@ -250,4 +250,4 @@ A equipe de Hotel & Creche consegue, **sem planilha paralela**:
 | 4 — Capacidade & UX | **Concluída** (jun/2026) |
 | 5 — Integrações | **Concluída** (jun/2026) |
 
-*Última atualização: jun/2026 — Todas as fases (0–5) implementadas. Executar as migrações SQL no Supabase SQL Editor em ordem: `create_hub_boarding_reservations.sql` (item 51) e `create_hub_unit_boarding_settings.sql` (item 52).*
+*Última atualização: jun/2026 — Todas as fases (0–5) implementadas. Executar as migrações SQL no Supabase SQL Editor em ordem: `051_create_hub_boarding_reservations.sql` (item 51) e `052_create_hub_unit_boarding_settings.sql` (item 52).*

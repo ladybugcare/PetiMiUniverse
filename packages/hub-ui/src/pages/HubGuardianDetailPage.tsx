@@ -134,7 +134,7 @@ const HubGuardianDetailPage: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: '24px 20px' }}>
+    <div className="hub-clientes__detail-page">
       <div className="hub-clientes__detail-page-back">
         <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => navigate('/hub/clientes')}>
           ← Voltar aos clientes

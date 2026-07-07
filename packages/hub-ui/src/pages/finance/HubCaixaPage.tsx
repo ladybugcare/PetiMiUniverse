@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Coins,
   Lock,
+  Package,
   Pencil,
   Receipt,
   Search,
@@ -37,6 +38,8 @@ import {
 } from './hubCaixaSessionHistory';
 import { CaixaSessionHistoryTimeline } from './CaixaSessionHistoryTimeline';
 import { FinanceDayBoardTable } from './FinanceDayBoardTable';
+import { SellPackageDrawer } from './SellPackageDrawer';
+import type { PackageSaleScheduleContext } from './packageSaleScheduleUtils';
 import { HubDateField } from '../../components/HubDateField';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { filterEnabledPaymentMethods } from '../../utils/hubPaymentMethods';
@@ -102,6 +105,8 @@ const HubCaixaPage: React.FC = () => {
 
   // Drawers
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
+  const [checkoutScheduleContext, setCheckoutScheduleContext] = useState<PackageSaleScheduleContext | null>(null);
+  const [showSellPackage, setShowSellPackage] = useState(false);
 
   // Sessão de dia anterior aberta
   const isPreviousDaySession = cashOpen?.opened_at
@@ -769,6 +774,15 @@ const HubCaixaPage: React.FC = () => {
           </div>
           <button
             type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+            disabled={!canCreateReceivable}
+            onClick={() => setShowSellPackage(true)}
+          >
+            <Package size={14} style={{ marginRight: 4 }} />
+            Vender pacote
+          </button>
+          <button
+            type="button"
             className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-dayboard__refresh-btn"
             disabled={dayBoardBusy}
             onClick={() => void loadDayBoard()}
@@ -892,10 +906,14 @@ const HubCaixaPage: React.FC = () => {
         <ComandaCheckoutDrawer
           key={checkoutComandaId}
           open={!!checkoutComandaId}
-          onClose={() => setCheckoutComandaId(null)}
+          onClose={() => {
+            setCheckoutComandaId(null);
+            setCheckoutScheduleContext(null);
+          }}
           clinicId={clinicId}
           unitId={unitId}
           comandaId={checkoutComandaId}
+          packageSaleSchedule={checkoutScheduleContext}
           onDataChanged={() => {
             void load();
             void loadDayBoard();
@@ -903,6 +921,7 @@ const HubCaixaPage: React.FC = () => {
           onSuccess={({ comandaId, kind, receivableIds }) => {
             showSuccess(kind === 'leave_pending' ? 'Comanda enviada ao financeiro.' : 'Cobrança concluída.');
             setCheckoutComandaId(null);
+            setCheckoutScheduleContext(null);
             void load();
             void loadDayBoard();
             if (kind === 'leave_pending') {
@@ -955,6 +974,15 @@ const HubCaixaPage: React.FC = () => {
           </div>
         </aside>
       ) : null}
+      <SellPackageDrawer
+        open={showSellPackage}
+        unitId={unitId}
+        onClose={() => setShowSellPackage(false)}
+        onCheckout={(comandaId, intent, scheduleContext) => {
+          setCheckoutComandaId(comandaId);
+          setCheckoutScheduleContext(intent === 'checkout_and_schedule' ? scheduleContext : null);
+        }}
+      />
     </>,
   );
 };

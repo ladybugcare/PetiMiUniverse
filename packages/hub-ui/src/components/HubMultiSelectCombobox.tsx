@@ -19,6 +19,8 @@ export type HubMultiSelectComboboxProps = {
   /** Resolve rótulo de valores selecionados (ex.: UUID → nome). */
   resolveLabel?: (value: string) => string;
   ariaLabel?: string;
+  /** Ícone à esquerda do trigger (ex.: cão no campo Pet). */
+  triggerIcon?: React.ReactNode;
 };
 
 function norm(s: string): string {
@@ -41,6 +43,7 @@ export const HubMultiSelectCombobox: React.FC<HubMultiSelectComboboxProps> = ({
   emptyResultsLabel = 'Nenhum resultado encontrado',
   resolveLabel,
   ariaLabel,
+  triggerIcon,
 }) => {
   const uid = useId();
   const listId = `${id}-list-${uid}`;
@@ -254,6 +257,11 @@ export const HubMultiSelectCombobox: React.FC<HubMultiSelectComboboxProps> = ({
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
       >
+        {triggerIcon ? (
+          <span className="hub-combobox__trigger-leading" aria-hidden>
+            {triggerIcon}
+          </span>
+        ) : null}
         <span className="hub-combobox__multi-tags">
           {value.length === 0 ? (
             <span className="hub-combobox__trigger-label hub-combobox__trigger-label--placeholder">{placeholder}</span>

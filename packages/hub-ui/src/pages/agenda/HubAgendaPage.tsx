@@ -26,6 +26,7 @@ import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { hubQuotesApi, type HubQuoteLine, type HubQuoteLineServiceEmbed } from '../../api/hubQuotesApi';
+import type { PackageSaleAgendaNavigationState } from '../finance/packageSaleScheduleUtils';
 import { AppointmentSidePanel } from './AppointmentSidePanel';
 import { AgendaNewEntryMenu } from './AgendaNewEntryMenu';
 import { NewAppointmentModal } from './NewAppointmentModal';
@@ -60,6 +61,7 @@ import {
   enrichAgendaCardsForGrid,
 } from './agendaModel';
 import { mapHubAppointmentToAgenda } from './mapHubAgenda';
+import { findExtraBlockChildren } from './extraBlockAgendaUtils';
 import { AgendaAppointmentCard } from './AgendaAppointmentCard';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
 import { hubGroomingApi } from '../../api/hubGroomingApi';
@@ -78,6 +80,7 @@ import {
 
 const FILTERS_STORAGE_KEY = AGENDA_FILTERS_STORAGE_KEY;
 
+const MOBILE_MQ = '(max-width: 900px)';
 const SLOT_MIN = 30;
 const SLOT_H = 26;
 const HEADER_H = 44;
@@ -183,6 +186,17 @@ const HubAgendaPage: React.FC = () => {
   const [agendaStartModalItem, setAgendaStartModalItem] = useState<DayBoardItem | null>(null);
   const [agendaStarting, setAgendaStarting] = useState(false);
   const consumedQuoteRef = useRef<string | null>(null);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_MQ);
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   const allAppointments = rawList;
 
@@ -276,6 +290,45 @@ const HubAgendaPage: React.FC = () => {
 
     navigate(`${location.pathname}${location.search ? location.search : ''}`, { replace: true, state: null });
   }, [location.state, location.pathname, location.search, clinicId, openCreateModal, navigate]);
+
+  /** Venda de pacote → «Agendar» ou «Cobrar e agendar»: abre o modal com tutor, pet e serviços do pacote. */
+  useEffect(() => {
+    const st = location.state as PackageSaleAgendaNavigationState | null;
+    if (!st?.packageSaleSchedule || !clinicId) return;
+
+    const { initial, remainingLines, packageName } = st.packageSaleSchedule;
+    const dedupeKey = `hub:agenda:package_sale:${clinicId}:${initial.pet_id ?? ''}:${initial.guardian_id ?? ''}:${(initial.services ?? []).map((s) => s.hub_service_type_id).join(',')}`;
+
+    let skipOpen = false;
+    try {
+      if (sessionStorage.getItem(dedupeKey) === '1') skipOpen = true;
+      else sessionStorage.setItem(dedupeKey, '1');
+    } catch {
+      /* ignore */
+    }
+
+    if (initial.date) {
+      const d = parseYmd(initial.date);
+      if (d) {
+        setCursorDate(startOfDay(d));
+        setView('day');
+      }
+    }
+    if (!skipOpen) {
+      openCreateModal(initial);
+      if (remainingLines.length > 0) {
+        const otherSummary = remainingLines.map((ln) => `${ln.petName} (${ln.packageName})`).join(', ');
+        showInfo(
+          `Pacote «${packageName}»: o primeiro item já veio pré-selecionado. Agende também: ${otherSummary}.`,
+          'Pacotes',
+        );
+      } else {
+        showInfo('Agenda aberta com dados da venda do pacote.', 'Pacotes');
+      }
+    }
+
+    navigate(`${location.pathname}${location.search ? location.search : ''}`, { replace: true, state: null });
+  }, [location.state, location.pathname, location.search, clinicId, openCreateModal, navigate, showInfo]);
 
   const focusAppointmentOnAgenda = useCallback(
     (appointmentId: string, startsAtIso: string) => {
@@ -741,6 +794,11 @@ const HubAgendaPage: React.FC = () => {
     [filtered, allAppointments, selectedId],
   );
 
+  const selectedExtraBlockChildren = useMemo(() => {
+    if (!selected) return [];
+    return findExtraBlockChildren(selected, allAppointments);
+  }, [selected, allAppointments]);
+
   const goNow = useCallback(() => {
     const n = new Date();
     setCursorDate(startOfDay(n));
@@ -921,6 +979,17 @@ const HubAgendaPage: React.FC = () => {
       conflicts: overlapSet.size,
     };
   }, [view, dayAppointments, weekAppointments, monthAppointments, groupMode]);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (unitFilter !== 'all') count += 1;
+    if (professionalFilter !== 'all') count += 1;
+    if (groupFilter !== 'all') count += 1;
+    if (statusFilter !== 'all') count += 1;
+    if (resourceFilter !== 'all') count += 1;
+    if (serviceTypeFilter !== 'all') count += 1;
+    return count;
+  }, [unitFilter, professionalFilter, groupFilter, statusFilter, resourceFilter, serviceTypeFilter]);
 
   const patchAppointmentStatus = async (status: AgendaStatus) => {
     if (!clinicId || !selected || !canWrite) return;
@@ -1243,6 +1312,51 @@ const HubAgendaPage: React.FC = () => {
     );
   };
 
+  const renderMobileDayList = () => {
+    const sorted = [...dayAppointmentsUI].sort((a, b) => a.start.getTime() - b.start.getTime());
+    const showNow = isSameDay(cursorDate, new Date());
+
+    return (
+      <div className="hub-agenda-day-list">
+        {showNow ? (
+          <div className="hub-agenda-day-list__now" aria-live="polite">
+            Agora · {formatHm(new Date())}
+          </div>
+        ) : null}
+        {sorted.length === 0 ? (
+          <p className="hub-clientes__muted hub-agenda-day-list__empty">Nenhum agendamento neste dia.</p>
+        ) : (
+          sorted.map((a) => (
+            <div key={a.id} className="hub-agenda-day-list__item">
+              <div className="hub-agenda-day-list__time-col">
+                <span className="hub-agenda-day-list__time">{formatHm(a.start)}</span>
+                <span className="hub-agenda-day-list__time-end">{formatHm(a.end)}</span>
+              </div>
+              <div className="hub-agenda-day-list__card">
+                <AgendaAppointmentCard
+                  appointment={a}
+                  variant="week"
+                  selected={selectedId === a.id}
+                  showProfessional={groupMode !== 'professional'}
+                  onClick={() => openAppointmentDetail(a.id)}
+                />
+                {groupMode === 'professional' ? (
+                  <p className="hub-agenda-day-list__lane">{a.professionalName || 'Não atribuído'}</p>
+                ) : null}
+                {groupMode === 'category' ? (
+                  <p className="hub-agenda-day-list__lane">{serviceGroupLabel(a.group)}</p>
+                ) : null}
+                {groupMode === 'resource' ? (
+                  <p className="hub-agenda-day-list__lane">{a.resourceLabel !== '—' ? a.resourceLabel : 'Sem recurso'}</p>
+                ) : null}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    );
+  };
+
   if (!user) return <Navigate to="/login" replace />;
   if (!permLoading && !clinicId) {
     return (
@@ -1392,7 +1506,14 @@ const HubAgendaPage: React.FC = () => {
             </div>
           ) : null}
 
-          <div className="hub-agenda__filters">
+          <details className="hub-agenda__filters-details" open={!isMobile ? true : undefined}>
+            <summary className="hub-agenda__filters-summary">
+              <span>Filtros</span>
+              {activeFilterCount > 0 ? (
+                <span className="hub-agenda__filters-badge">{activeFilterCount}</span>
+              ) : null}
+            </summary>
+            <div className="hub-agenda__filters">
             <div className="hub-servicos__filter-field hub-agenda__filter-combo">
               <label className="hub-clientes__label" htmlFor="ag-unit">
                 Unidade
@@ -1521,7 +1642,8 @@ const HubAgendaPage: React.FC = () => {
                 </button>
               </div>
             </div>
-          </div>
+            </div>
+          </details>
 
           <div className="hub-agenda__legend">
             <span className="hub-agenda__legend-title">Grupos</span>
@@ -1550,6 +1672,9 @@ const HubAgendaPage: React.FC = () => {
             ) : (
               <>
           {view === 'day' ? (
+            isMobile ? (
+              renderMobileDayList()
+            ) : (
             <div
               className="hub-agenda-day"
               style={{ ['--ag-slot-h' as string]: `${SLOT_H}px`, ['--ag-lane-h' as string]: `${laneH}px` }}
@@ -1576,6 +1701,7 @@ const HubAgendaPage: React.FC = () => {
                 </div>
               </div>
             </div>
+            )
           ) : null}
 
           {view === 'week' ? (
@@ -1773,6 +1899,7 @@ const HubAgendaPage: React.FC = () => {
             staffOptions={fullStaff}
             serviceTypes={fullSvcTypes}
             onUpdated={handleAppointmentUpdated}
+            extraBlockChildren={selectedExtraBlockChildren}
           />
         ) : null}
       </div>

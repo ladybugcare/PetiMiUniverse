@@ -274,6 +274,10 @@
   padding-bottom: 6px;
 }
 
+.hub-combobox--multi .hub-combobox__trigger--multi .hub-combobox__trigger-leading {
+  margin-top: 2px;
+}
+
 .hub-combobox__multi-tags {
   display: flex;
   flex-wrap: wrap;

@@ -326,7 +326,7 @@ Detalhe, decisões em aberto e critérios de aceite rascunho: [HUB_SIGNUP_FIRST_
 
 ## Backlog — orçamentos e contatos (sem “falso cliente”)
 
-**Implementado no código (MVP):** migração `create_hub_prospects_and_quotes.sql`, rotas Hub e UI em `/hub/orcamentos`. PDF, notificações e PJ permanecem backlog — ver [HUB_QUOTES_AND_PROSPECTS.md](./HUB_QUOTES_AND_PROSPECTS.md).
+**Implementado no código (MVP):** migração `021_create_hub_prospects_and_quotes.sql`, rotas Hub e UI em `/hub/orcamentos`. PDF, notificações e PJ permanecem backlog — ver [HUB_QUOTES_AND_PROSPECTS.md](./HUB_QUOTES_AND_PROSPECTS.md).
 
 ---
 

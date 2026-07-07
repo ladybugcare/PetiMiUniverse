@@ -32,3 +32,42 @@
   border-radius: 8px;
   border: 1px solid var(--hc-border);
 }
+
+@media (max-width: 900px) {
+  .hub-estoque-shell--tabs .hub-clientes__tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .hub-estoque-shell--tabs .hub-clientes__tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hub-estoque-shell--tabs .hub-clientes__tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .hub-estoque-page .hub-servicos__toolbar-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hub-estoque-page .hub-servicos__search-wrap {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .hub-estoque-page .hub-servicos__btn-primary-icon {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .hub-estoque-page .hub-clientes__row2,
+  .hub-estoque-page .hub-servicos__form-grid {
+    grid-template-columns: 1fr;
+  }
+}

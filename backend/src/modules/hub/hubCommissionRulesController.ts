@@ -42,7 +42,7 @@ export const listHubCommissionRules = async (req: Request, res: Response) => {
     if (error) {
       if (String(error.message || '').includes('hub_commission_rules')) {
         return res.status(503).json({
-          error: 'Tabela hub_commission_rules não encontrada. Aplique create_hub_commission_rules.sql.',
+          error: 'Tabela hub_commission_rules não encontrada. Aplique 038_create_hub_commission_rules.sql.',
         });
       }
       return res.status(500).json({ error: error.message });
@@ -121,7 +121,7 @@ export const postHubCommissionRule = async (req: Request, res: Response) => {
     if (error) {
       if (String(error.message || '').includes('hub_commission_rules')) {
         return res.status(503).json({
-          error: 'Tabela hub_commission_rules não encontrada. Aplique create_hub_commission_rules.sql.',
+          error: 'Tabela hub_commission_rules não encontrada. Aplique 038_create_hub_commission_rules.sql.',
         });
       }
       return res.status(500).json({ error: error.message });
@@ -258,7 +258,7 @@ export const getHubCommissionPreview = async (req: Request, res: Response) => {
     if (ruErr) {
       if (String(ruErr.message || '').includes('hub_commission_rules')) {
         return res.status(503).json({
-          error: 'Tabela hub_commission_rules não encontrada. Aplique create_hub_commission_rules.sql.',
+          error: 'Tabela hub_commission_rules não encontrada. Aplique 038_create_hub_commission_rules.sql.',
         });
       }
       return res.status(500).json({ error: ruErr.message });

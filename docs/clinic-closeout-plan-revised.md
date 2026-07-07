@@ -54,18 +54,18 @@ Garantir que **migrations**, **schema** e **ambiente** (local/staging/produção
 
 Exemplos típicos já presentes no repositório (lista não exaustiva — o README oficial deve ser a fonte enumerada):
 
-- `create_hub_clinical_cases.sql`
-- `alter_hub_encounters_add_case.sql`
-- `backfill_hub_clinical_cases.sql`
-- `alter_hub_encounters_case_not_null.sql` (somente após validação de órfãos)
-- `create_hub_clinical_timeline_events.sql`
-- `create_hub_clinical_document_versions.sql`
-- `create_hub_clinical_exams.sql`, `alter_hub_clinical_attachments_add_exam.sql`
-- `create_hub_prescription_documents.sql` (+ alter em `hub_prescriptions` se no mesmo arquivo)
-- `alter_hub_vaccination_records_fase6.sql`
-- `create_hub_hospitalization_events.sql`, `alter_hub_hospitalizations_fase7.sql`
-- `alter_hub_surgeries_fase8.sql`
-- `alter_hub_comandas_fase9.sql`
+- `024a_create_hub_clinical_cases.sql`
+- `025c_alter_hub_encounters_add_case.sql`
+- `025n_backfill_hub_clinical_cases.sql`
+- `025d_alter_hub_encounters_case_not_null.sql` (somente após validação de órfãos)
+- `025v_create_hub_clinical_timeline_events.sql`
+- `025w_create_hub_clinical_document_versions.sql`
+- `025p_create_hub_clinical_exams.sql`, `025q_alter_hub_clinical_attachments_add_exam.sql`
+- `025o_create_hub_prescription_documents.sql` (+ alter em `hub_prescriptions` se no mesmo arquivo)
+- `025u_alter_hub_vaccination_records_fase6.sql`
+- `025r_create_hub_hospitalization_events.sql`, `025s_alter_hub_hospitalizations_fase7.sql`
+- `025t_alter_hub_surgeries_fase8.sql`
+- `070a_alter_hub_comandas_fase9.sql`
 
 ## 7. Riscos
 
@@ -193,7 +193,7 @@ Fechar **pet → caso → atendimento → exame solicitado → resultado (e anex
 
 ## 6. Migrations afetadas
 
-- Nenhuma nova se a Onda A já aplicou `create_hub_clinical_exams.sql` e `alter_hub_clinical_attachments_add_exam.sql`.
+- Nenhuma nova se a Onda A já aplicou `025p_create_hub_clinical_exams.sql` e `025q_alter_hub_clinical_attachments_add_exam.sql`.
 
 ## 7. Riscos
 
@@ -314,7 +314,7 @@ Eliminar **`NO_GUARDIAN`** na comanda e alinhar-se às regras de [clinical-busin
 
 ## 6. Migrations afetadas
 
-- Já cobertas por `create_hub_prescription_documents.sql` + alter em `hub_prescriptions` (Onda A deve aplicá-las). Novas migrations só se faltar coluna em `hub_prescription_items`.
+- Já cobertas por `025o_create_hub_prescription_documents.sql` + alter em `hub_prescriptions` (Onda A deve aplicá-las). Novas migrations só se faltar coluna em `hub_prescription_items`.
 
 ## 7. Riscos
 
@@ -373,7 +373,7 @@ Aplicar [clinical-business-rules.md](clinical-business-rules.md) na prática: **
 
 ## 6. Migrations afetadas
 
-- `alter_hub_comandas_fase9.sql` (já prevê vínculo caso/encounter — aplicar na Onda A)
+- `070a_alter_hub_comandas_fase9.sql` (já prevê vínculo caso/encounter — aplicar na Onda A)
 - Tabelas de estoque já existentes — sem migration nova se regra for só de código
 
 ## 7. Riscos

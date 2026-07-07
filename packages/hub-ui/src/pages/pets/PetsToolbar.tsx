@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
-import { Search, Plus, SlidersHorizontal } from 'lucide-react';
+import { Search, SlidersHorizontal } from 'lucide-react';
 import type { HubGuardian } from '../../api/hubGuardiansApi';
 import type { HubPet } from '../../api/hubPetsApi';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { WIZARD_SPECIES_COMBO_ROWS } from './wizard/petSpeciesComboboxData';
+import { PetsNewEntryMenu } from './PetsNewEntryMenu';
 
 interface PetsToolbarProps {
   searchQ: string;
@@ -18,6 +19,7 @@ interface PetsToolbarProps {
   pets: HubPet[];
   guardians: HubGuardian[];
   onNewPet: () => void;
+  onQuickCreate: () => void;
 }
 
 export const PetsToolbar: React.FC<PetsToolbarProps> = ({
@@ -32,6 +34,7 @@ export const PetsToolbar: React.FC<PetsToolbarProps> = ({
   pets,
   guardians,
   onNewPet,
+  onQuickCreate,
 }) => {
   const situationFilterOptions = useMemo(
     (): HubComboboxOption[] => [
@@ -90,10 +93,9 @@ export const PetsToolbar: React.FC<PetsToolbarProps> = ({
             aria-label="Buscar pets"
           />
         </div>
-        <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={onNewPet}>
-          <Plus size={18} />
-          Novo pet
-        </button>
+        <div className="hub-pets-new-btn-group">
+          <PetsNewEntryMenu onNewPet={onNewPet} onQuickCreate={onQuickCreate} />
+        </div>
       </div>
       <div className="hub-pets-toolbar-row">
         <div style={{ flex: '1 1 200px', minWidth: 0, maxWidth: 360 }}>

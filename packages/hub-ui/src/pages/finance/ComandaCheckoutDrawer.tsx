@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, MessageCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Calendar, Download, MessageCircle } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubLoading } from '../../components/HubLoading';
 import { HubDateField } from '../../components/HubDateField';
@@ -40,6 +41,11 @@ import {
 import '../clientes/clientes.css';
 import './hub-finance-page.css';
 import '../orcamentos/orcamentos-page.css';
+import {
+  navigateToAgendaFromPackageSale,
+  schedulePetLabel,
+  type PackageSaleScheduleContext,
+} from './packageSaleScheduleUtils';
 
 function formatBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -75,6 +81,8 @@ export type ComandaCheckoutDrawerProps = {
     comandaId: string;
     kind: 'leave_pending' | 'receive_now' | 'cancel';
   }) => void;
+  /** Quando a venda veio de «Cobrar e agendar», exibe atalho para a agenda após o pagamento. */
+  packageSaleSchedule?: PackageSaleScheduleContext | null;
 } & (
   | { comandaId: string; originType?: never; originId?: never }
   | { comandaId?: never; originType: HubComandaOriginType; originId: string }
@@ -88,8 +96,10 @@ export function ComandaCheckoutDrawer({
   mode = 'caixa',
   onDataChanged,
   onSuccess,
+  packageSaleSchedule = null,
   ...rest
 }: ComandaCheckoutDrawerProps) {
+  const navigate = useNavigate();
   const comandaIdProp = 'comandaId' in rest ? rest.comandaId : undefined;
   const originType = 'originType' in rest ? rest.originType : undefined;
   const originId = 'originId' in rest ? rest.originId : undefined;
@@ -566,6 +576,12 @@ export function ComandaCheckoutDrawer({
     onClose();
   };
 
+  const handleScheduleFromPackageSale = () => {
+    if (!packageSaleSchedule) return;
+    navigateToAgendaFromPackageSale(navigate, packageSaleSchedule);
+    finishSuccess();
+  };
+
   const parsedPaymentAmount = parseAmount(paymentAmount);
   const remainingAfterPay =
     canPartialPay && parsedPaymentAmount > 0 && parsedPaymentAmount < chargeableTotal - 0.009
@@ -585,7 +601,25 @@ export function ComandaCheckoutDrawer({
       footer={
         successState ? (
           <div className="hub-finance-page__drawer-footer">
-            <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={finishSuccess}>
+            {packageSaleSchedule ? (
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                onClick={handleScheduleFromPackageSale}
+              >
+                <Calendar size={16} aria-hidden />
+                Agendar para {schedulePetLabel(packageSaleSchedule)}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={
+                packageSaleSchedule
+                  ? 'hub-clientes__btn hub-clientes__btn--ghost'
+                  : 'hub-clientes__btn hub-clientes__btn--primary'
+              }
+              onClick={finishSuccess}
+            >
               Concluir
             </button>
           </div>

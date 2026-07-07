@@ -32,6 +32,7 @@ import {
 } from '../../utils/hubServiceTypesPricingMatrix';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { hubFinancialApi, type HubFinanceReceivable } from '../../api/hubFinancialApi';
+import { hubPackagesApi, type HubPackageBalance } from '../../api/hubPackagesApi';
 import { PetBehaviorTagsDisplay } from './PetBehaviorTagsDisplay';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 import '../../components/hub-profile.css';
@@ -46,6 +47,8 @@ interface PetDetailPanelProps {
   onOpenInNewPage?: () => void;
   onArchive?: () => void;
   hideNewPageButton?: boolean;
+  hideHeader?: boolean;
+  hideFooter?: boolean;
   layout?: ProfileLayout;
   canWrite: boolean;
   clinicId?: string | null;
@@ -86,6 +89,8 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   onOpenInNewPage,
   onArchive,
   hideNewPageButton = false,
+  hideHeader = false,
+  hideFooter = false,
   layout = 'panel',
   canWrite,
   clinicId,
@@ -103,6 +108,25 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   const [finLoading, setFinLoading] = useState(false);
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
   const [openingComanda, setOpeningComanda] = useState(false);
+  const [packageBalances, setPackageBalances] = useState<HubPackageBalance[]>([]);
+  const [packagesLoading, setPackagesLoading] = useState(false);
+
+  const loadPackageBalances = useCallback(async () => {
+    if (!clinicId) return;
+    setPackagesLoading(true);
+    try {
+      const res = await hubPackagesApi.listPetBalances(clinicId, pet.id);
+      setPackageBalances(res.balances ?? []);
+    } catch {
+      setPackageBalances([]);
+    } finally {
+      setPackagesLoading(false);
+    }
+  }, [clinicId, pet.id]);
+
+  useEffect(() => {
+    if (tab === 'servicos') void loadPackageBalances();
+  }, [tab, loadPackageBalances]);
 
   const loadFinanceiro = useCallback(async () => {
     if (!clinicId) return;
@@ -503,7 +527,28 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   };
 
   const renderServicosTab = () => {
-    const inner = <div className="hub-clientes__empty-state">Serviços contratados e pacotes serão listados aqui em breve.</div>;
+    const inner = packagesLoading ? (
+      <HubLoading variant="inline" label="Carregando pacotes…" size="sm" />
+    ) : packageBalances.length === 0 ? (
+      <div className="hub-clientes__empty-state">Nenhum pacote ativo para este pet.</div>
+    ) : (
+      <ul className="hub-clientes__detail-list">
+        {packageBalances.map((b) => {
+          const pkg = Array.isArray(b.hub_packages) ? b.hub_packages[0] : b.hub_packages;
+          const svc = (b as { hub_service_types?: { name?: string } | { name?: string }[] }).hub_service_types;
+          const svcName = Array.isArray(svc) ? svc[0]?.name : svc?.name;
+          return (
+            <li key={b.id} className="hub-clientes__contact-card" style={{ marginBottom: 8, padding: 12 }}>
+              <strong>{pkg?.name ?? 'Pacote'}</strong>
+              <p className="hub-clientes__muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
+                {svcName ?? 'Serviço'} · {b.sessions_remaining} de {b.sessions_total ?? b.sessions_remaining} sessões
+                {b.expires_at ? ` · válido até ${new Date(`${b.expires_at}T12:00:00`).toLocaleDateString('pt-BR')}` : ''}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    );
 
     if (isPage) {
       return (
@@ -739,12 +784,14 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
 
   return (
     <div className="hub-pets-detail">
-      <div className="hub-clientes__panel-header">
-        <div style={{ flex: 1 }} />
-        <button type="button" className="hub-clientes__panel-close" aria-label="Fechar painel" onClick={onClose}>
-          <X size={18} />
-        </button>
-      </div>
+      {!hideHeader ? (
+        <div className="hub-clientes__panel-header">
+          <div style={{ flex: 1 }} />
+          <button type="button" className="hub-clientes__panel-close" aria-label="Fechar painel" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+      ) : null}
 
       <div className="hub-pets-detail__hero">
         <div className="hub-clientes__panel-avatar-lg hub-pets-detail__hero-avatar">{profileInitials(pet.name)}</div>
@@ -771,21 +818,23 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
       {tabContent}
       {financeDrawer}
 
-      {canWrite && !hideNewPageButton ? (
+      {canWrite && !hideFooter ? (
         <div className="hub-clientes__footer-btns">
           <div className="hub-clientes__btn-row">
             <button type="button" className="hub-clientes__btn hub-clientes__btn--outline" onClick={onStartEdit}>
               Editar pet
             </button>
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--ghost"
-              onClick={openFullPage}
-              title="Abrir o perfil completo numa nova página"
-            >
-              <ExternalLink size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-              Ver perfil completo
-            </button>
+            {!hideNewPageButton ? (
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost"
+                onClick={openFullPage}
+                title="Abrir o perfil completo numa nova página"
+              >
+                <ExternalLink size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                Ver perfil completo
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}

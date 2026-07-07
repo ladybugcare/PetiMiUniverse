@@ -202,16 +202,7 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
     e.currentTarget.closest('details')?.removeAttribute('open');
   };
 
-  const metaParts: string[] = [];
-  if (quote.created_at) {
-    metaParts.push(`Criado em ${new Date(quote.created_at).toLocaleString('pt-BR')}`);
-  }
-  if (quote.expires_at) {
-    const expStr = new Date(quote.expires_at).toLocaleDateString('pt-BR', { dateStyle: 'short' });
-    const days = daysUntilExpiry(quote);
-    metaParts.push(`Válido até ${expStr}${days ? ` (${days})` : ''}`);
-  }
-  metaParts.push(`Responsável: ${viewerLabel}`);
+  const expiryDaysLabel = daysUntilExpiry(quote);
 
   return (
     <div className="hub-quote-detail">
@@ -228,7 +219,21 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
               <h1 className="hub-quote-detail__title">Orçamento #{refShort}</h1>
               <span className={staffStatusClass(quote.status)}>{staffStatusLabel(quote.status)}</span>
             </div>
-            <p className="hub-quote-detail__meta-line">{metaParts.join(' · ')}</p>
+            <p className="hub-quote-detail__meta-line">
+              <ul className="hub-quote-detail__meta-list">
+                {quote.created_at ? (
+                  <li>Criado em {new Date(quote.created_at).toLocaleString('pt-BR')}</li>
+                ) : null}
+                {quote.expires_at ? (
+                  <li>
+                    Válido até{' '}
+                    {new Date(quote.expires_at).toLocaleDateString('pt-BR', { dateStyle: 'short' })}
+                    {expiryDaysLabel ? ` (${expiryDaysLabel})` : ''}
+                  </li>
+                ) : null}
+                <li>Responsável: {viewerLabel}</li>
+              </ul>
+            </p>
           </div>
           <div className="hub-quote-detail__hero-actions">
             {canWrite && isDraft ? (
@@ -493,7 +498,7 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
                   </Link>
                 ) : null}
               </div>
-              <div className="hub-quote-detail__table-scroll">
+              <div className="hub-quote-detail__table-scroll hub-quote-detail__table-scroll--desktop">
                 <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
                   <thead>
                     <tr>
@@ -540,6 +545,42 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
                     )}
                   </tbody>
                 </table>
+              </div>
+              <div className="hub-quote-detail__svc-mobile" aria-label="Serviços e valores">
+                {lines.length === 0 ? (
+                  <p className="hub-quote-detail__muted hub-quote-detail__svc-mobile-empty">Sem linhas de serviço.</p>
+                ) : (
+                  lines.map((ln: HubQuoteLine) => {
+                    const sub = publicLineServiceSubtitle(ln);
+                    return (
+                      <article key={ln.id} className="hub-quote-detail__svc-card">
+                        <div className="hub-quote-detail__svc-card-head">
+                          <span className="hub-quote-detail__svc-title">{publicLineServiceTitle(ln)}</span>
+                          {sub ? <span className="hub-quote-detail__svc-sub">{sub}</span> : null}
+                        </div>
+                        {pets.length > 0 ? (
+                          <ul className="hub-quote-detail__svc-pets">
+                            {pets.map((p, i) => {
+                              const lp = (ln.line_pets ?? []).find((x) => x.quote_pet_id === p.id);
+                              return (
+                                <li key={p.id} className="hub-quote-detail__svc-pet-row">
+                                  <span className="hub-quote-detail__svc-pet-name">{petLabel(p, i)}</span>
+                                  <span className="hub-quote-detail__svc-pet-price">
+                                    {lp ? brl(Number(lp.unit_price)) : '—'}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        ) : null}
+                        <div className="hub-quote-detail__svc-card-total">
+                          <span>Subtotal</span>
+                          <strong>{brl(Number(ln.line_total))}</strong>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
               </div>
             </section>
 

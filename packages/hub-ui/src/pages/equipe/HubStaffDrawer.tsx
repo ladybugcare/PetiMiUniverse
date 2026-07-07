@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Send, User } from 'lucide-react';
-import { hubStaffApi, type HubStaffAccessRole, type HubStaffMember } from '../../api/hubStaffApi';
+import { hubStaffApi, type HubStaffLinkMeta, type HubStaffAccessRole, type HubStaffMember } from '../../api/hubStaffApi';
 import { hubInvitationsApi } from '../../api/hubInvitationsApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import {
@@ -55,6 +55,14 @@ export type HubStaffDrawerProps = {
   onSaved: () => void | Promise<void>;
 };
 
+function staffLinkSuccessMessage(link: HubStaffLinkMeta | null | undefined, base: string): string {
+  if (!link?.linked) {
+    if (link?.message) return `${base}. ${link.message}`;
+    return base;
+  }
+  return link.message ? `${base}. ${link.message}` : `${base}. Conta vinculada ao login.`;
+}
+
 const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
   open,
   onClose,
@@ -72,8 +80,10 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
   const [form, setForm] = useState<HubStaffFormState>(emptyStaffForm());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [linking, setLinking] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [inviteShare, setInviteShare] = useState<StaffInviteShareResult | null>(null);
+  const [loginLinked, setLoginLinked] = useState(false);
   const [specialtyCatalog, setSpecialtyCatalog] = useState<{ id: string; name: string }[]>([]);
   const [specialtiesLoading, setSpecialtiesLoading] = useState(false);
 
@@ -101,9 +111,11 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
       const activeIds = new Set(serviceTypes.map((t) => t.id));
       setEditingId(staff.id);
       setForm(staffFormFromRow(staff, activeIds));
+      setLoginLinked(Boolean(staff.clinic_user_id));
     } else {
       setEditingId(null);
       setForm(emptyStaffForm());
+      setLoginLinked(false);
     }
   }, [open, mode, staff, serviceTypes, clearStaffPhotoLocal]);
 
@@ -309,16 +321,23 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
     Boolean(form.hub_access_role) &&
     Boolean(form.default_unit_id);
 
-  const persistStaff = useCallback(async (): Promise<string> => {
+  const isLoginLinked = loginLinked;
+  const canLinkAccount =
+    canWrite &&
+    form.has_hub_access &&
+    Boolean(form.hub_access_email.trim()) &&
+    (mode === 'edit' ? !isLoginLinked : false);
+
+  const persistStaff = useCallback(async (): Promise<{ id: string; link?: HubStaffLinkMeta | null }> => {
     const isVetJobTitle = form.job_title.trim() === VET_JOB_TITLE_VALUE;
     const payload = buildStaffPayload(clinicId, form, isVetJobTitle);
     if (mode === 'create') {
-      const { staff: created } = await hubStaffApi.create(payload);
-      return created.id;
+      const { staff: created, link } = await hubStaffApi.create(payload);
+      return { id: created.id, link };
     }
     if (!editingId) throw new Error('Profissional não encontrado');
-    await hubStaffApi.patch(editingId, payload);
-    return editingId;
+    const { link } = await hubStaffApi.patch(editingId, payload);
+    return { id: editingId, link };
   }, [clinicId, editingId, form, mode]);
 
   const handleSave = async (e?: React.FormEvent) => {
@@ -334,14 +353,38 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
     }
     setSaving(true);
     try {
-      await persistStaff();
-      showSuccess(mode === 'create' ? 'Profissional criado' : 'Profissional atualizado');
+      const { link } = await persistStaff();
+      if (link?.linked) setLoginLinked(true);
+      const base = mode === 'create' ? 'Profissional criado' : 'Profissional atualizado';
+      showSuccess(staffLinkSuccessMessage(link, base));
       await onSaved();
       onClose();
     } catch (err: unknown) {
       showError((err as Error)?.message || 'Erro ao salvar');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLinkAccount = async () => {
+    if (!clinicId || !canWrite || !editingId || !form.has_hub_access) return;
+    if (!form.hub_access_email.trim()) {
+      showError('Informe o e-mail de acesso antes de vincular.');
+      return;
+    }
+    setLinking(true);
+    try {
+      if (form.full_name.trim() && form.job_title.trim()) {
+        await persistStaff();
+      }
+      const { link } = await hubStaffApi.linkAccount(editingId, clinicId);
+      if (link?.linked) setLoginLinked(true);
+      showSuccess(staffLinkSuccessMessage(link, 'Conta vinculada'));
+      await onSaved();
+    } catch (err: unknown) {
+      showError((err as Error)?.message || 'Erro ao vincular conta');
+    } finally {
+      setLinking(false);
     }
   };
 
@@ -360,7 +403,7 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
     }
     setInviting(true);
     try {
-      const staffId = await persistStaff();
+      const { id: staffId } = await persistStaff();
       setEditingId(staffId);
       const res = await hubStaffApi.sendInvite(staffId, clinicId);
       setInviteShare({
@@ -991,6 +1034,38 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                         />
                       </div>
                     </div>
+
+                    {form.has_hub_access ? (
+                      <div
+                        className={`hub-equipe__hub-link-status${
+                          isLoginLinked ? ' hub-equipe__hub-link-status--linked' : ''
+                        }`}
+                        role="status"
+                      >
+                        {isLoginLinked ? (
+                          <p className="hub-equipe__hub-link-status__text hub-equipe__hub-link-status__text--ok">
+                            Login vinculado — este profissional está associado a uma conta ativa na clínica.
+                          </p>
+                        ) : (
+                          <>
+                            <p className="hub-equipe__hub-link-status__text">
+                              Sem vínculo com login. Se o e-mail de acesso já tem conta nesta clínica, salve ou use
+                              «Vincular conta».
+                            </p>
+                            {canLinkAccount ? (
+                              <button
+                                type="button"
+                                className="hub-servicos__btn-ghost-sm"
+                                disabled={linking || saving || inviting}
+                                onClick={() => void handleLinkAccount()}
+                              >
+                                {linking ? 'Vinculando…' : 'Vincular conta existente'}
+                              </button>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                    ) : null}
 
                     {canInvite ? (
                       <div className="hub-equipe__hub-invite">

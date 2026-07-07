@@ -37,8 +37,8 @@ Documentos são de **autenticidade PetMi Hub** — não substituem guias oficiai
 
 Execute após o núcleo clínico e receita (58–62):
 
-1. `alter_hub_clinical_exams_referral.sql`
-2. `create_hub_clinical_exam_order_documents.sql`
-3. `create_hub_clinical_specialist_referrals.sql`
-4. `create_hub_clinical_specialist_referral_documents.sql`
-5. `alter_hub_clinic_settings_exam_referral_templates.sql`
+1. `063_alter_hub_clinical_exams_referral.sql`
+2. `064_create_hub_clinical_exam_order_documents.sql`
+3. `065_create_hub_clinical_specialist_referrals.sql`
+4. `066_create_hub_clinical_specialist_referral_documents.sql`
+5. `067_alter_hub_clinic_settings_exam_referral_templates.sql`

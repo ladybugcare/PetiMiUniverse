@@ -9,10 +9,10 @@ export interface HubServiceType {
   code: string;
   name: string;
   service_group: string;
-  /** Presente após migration `alter_hub_service_types_pricing.sql`. */
+  /** Presente após migration `005_alter_hub_service_types_pricing.sql`. */
   cost_amount?: number;
   sale_amount?: number;
-  /** Matriz opcional (`alter_hub_service_types_pricing_matrix.sql`). */
+  /** Matriz opcional (`006_alter_hub_service_types_pricing_matrix.sql`). */
   pricing_matrix?: HubServicePricingMatrix | null;
   default_duration_minutes: number | null;
   active: boolean;

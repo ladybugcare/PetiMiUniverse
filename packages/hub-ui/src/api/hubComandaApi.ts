@@ -17,7 +17,7 @@ export type HubComandaGuardianEmbed = {
   email?: string | null;
 };
 
-export type HubComandaOriginType = 'appointment' | 'grooming_session' | 'quote' | 'encounter' | 'manual' | 'boarding_reservation';
+export type HubComandaOriginType = 'appointment' | 'grooming_session' | 'quote' | 'encounter' | 'manual' | 'boarding_reservation' | 'package';
 
 export type CancellationResolution = 'refund' | 'customer_credit' | 'keep_billing';
 
@@ -48,6 +48,7 @@ export type HubComandaItem = {
   origin_type?: string | null;
   origin_id?: string | null;
   sort_order: number;
+  package_balance_id?: string | null;
 };
 
 export type HubComandaEditContext = 'caixa' | 'financeiro';
@@ -81,6 +82,7 @@ export type HubComandaDetailResponse = {
   edit_scopes?: HubComandaEditScopes;
   allowed_guardians?: HubComandaAllowedGuardian[];
   pets?: HubPublicComandaPet[];
+  package_balances_by_item_id?: Record<string, Array<Record<string, unknown>>>;
   events?: HubComandaEvent[];
 };
 
@@ -103,11 +105,22 @@ export type HubPublicComandaResponse = {
   balance_due?: number;
 };
 
+export type HubComandaPackageLine = {
+  package_id: string;
+  pet_id: string;
+};
+
 export type HubComandaOpenBody = {
   clinic_id: string;
   origin_type: HubComandaOriginType;
   /** Obrigatório exceto para `origin_type: 'manual'`. */
   origin_id?: string;
+  package_id?: string;
+  pet_id?: string | null;
+  /** Um ou mais pets — uma linha de pacote por pet na mesma comanda (mesmo pacote). */
+  pet_ids?: string[];
+  /** Linhas pet + pacote — permite pacotes diferentes na mesma venda. */
+  package_lines?: HubComandaPackageLine[];
   guardian_id?: string;
   unit_id?: string | null;
   manual_lines?: HubComandaManualLine[];
@@ -142,6 +155,21 @@ export const hubComandaApi = {
     return apiRequest(`${base}/${encodeURIComponent(comandaId)}/sync-from-origin`, {
       method: 'POST',
       body: JSON.stringify({ clinic_id: clinicId, edit_context: editContext }),
+    }) as Promise<HubComandaDetailResponse>;
+  },
+
+  async applyPackage(
+    comandaId: string,
+    body: {
+      clinic_id: string;
+      item_id: string;
+      package_balance_id: string | null;
+      edit_context?: HubComandaEditContext;
+    }
+  ): Promise<HubComandaDetailResponse> {
+    return apiRequest(`${base}/${encodeURIComponent(comandaId)}/apply-package`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }) as Promise<HubComandaDetailResponse>;
   },
 

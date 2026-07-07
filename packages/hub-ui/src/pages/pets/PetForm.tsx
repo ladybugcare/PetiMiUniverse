@@ -46,6 +46,9 @@ interface PetFormProps {
   onCancelEdit?: () => void;
   /** Mostra upload circular opcional (cadastro rápido). */
   showOptionalPhoto?: boolean;
+  /** Oculta botões do rodapé (drawer usa footer externo). */
+  hideFooter?: boolean;
+  formId?: string;
 }
 
 export const PetForm: React.FC<PetFormProps> = ({
@@ -59,6 +62,8 @@ export const PetForm: React.FC<PetFormProps> = ({
   isEdit,
   onCancelEdit,
   showOptionalPhoto = false,
+  hideFooter = false,
+  formId,
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -132,7 +137,7 @@ export const PetForm: React.FC<PetFormProps> = ({
   }
 
   return (
-    <form onSubmit={onSubmit}>
+    <form id={formId} onSubmit={onSubmit}>
       {title ? <h2 className="hub-clientes__form-title">{title}</h2> : null}
 
       {showOptionalPhoto && (
@@ -366,14 +371,16 @@ export const PetForm: React.FC<PetFormProps> = ({
           placeholder="Alertas clínicos, preferências, etc."
         />
       </div>
-      <div className="hub-clientes__footer-btns">
-        <button type="submit" className="hub-clientes__btn hub-clientes__btn--primary" disabled={submitting}>
-          {isEdit ? 'Salvar alterações' : 'Adicionar pet'}
-        </button>
-        {isEdit && onCancelEdit && (
-          <HubCancelButton onClick={onCancelEdit}>Cancelar edição</HubCancelButton>
-        )}
-      </div>
+      {!hideFooter ? (
+        <div className="hub-clientes__footer-btns">
+          <button type="submit" className="hub-clientes__btn hub-clientes__btn--primary" disabled={submitting}>
+            {isEdit ? 'Salvar alterações' : 'Adicionar pet'}
+          </button>
+          {isEdit && onCancelEdit && (
+            <HubCancelButton onClick={onCancelEdit}>Cancelar edição</HubCancelButton>
+          )}
+        </div>
+      ) : null}
     </form>
   );
 };

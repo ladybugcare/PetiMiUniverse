@@ -36,6 +36,7 @@ import {
 } from './appointmentPanelActions';
 import { resolveOperationalModuleForAppointment } from './walkInUtils';
 import { mapAgendaToAppointmentInitial } from './mapHubAgenda';
+import { mapExtraBlocksToInitial } from './extraBlockAgendaUtils';
 import { NewAppointmentModal } from './NewAppointmentModal';
 import './new-appointment-modal.css';
 
@@ -58,6 +59,7 @@ export type AppointmentSidePanelProps = {
   staffOptions: HubStaffMember[];
   serviceTypes: HubServiceType[];
   onUpdated: (appointment: HubAppointment) => void;
+  extraBlockChildren?: AgendaAppointment[];
 };
 
 export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
@@ -79,6 +81,7 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
   staffOptions,
   serviceTypes,
   onUpdated,
+  extraBlockChildren = [],
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -143,7 +146,10 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
         mode="edit"
         appointmentId={appt.id}
         seriesId={appt.series_id ?? null}
-        initial={mapAgendaToAppointmentInitial(appt)}
+        initial={{
+          ...mapAgendaToAppointmentInitial(appt),
+          extra_blocks: mapExtraBlocksToInitial(extraBlockChildren),
+        }}
         onClose={onBackToView}
         onCreated={() => undefined}
         onUpdated={onUpdated}
