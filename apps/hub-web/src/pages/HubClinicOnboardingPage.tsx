@@ -9,6 +9,7 @@ import './hub-onboarding-page.css';
 import HubOnboardingStepper from '../components/HubOnboardingStepper';
 import HubOnboardingFooter from '../components/HubOnboardingFooter';
 import HubTechnicalManagerField from '../components/HubTechnicalManagerField';
+import HubBetaPlanCard from '../components/onboarding/HubBetaPlanCard';
 import { hubSignupApi } from '../services/hubSignupApi';
 import { formatCNPJ, validateCNPJ, BRAZILIAN_UF_COMBO_OPTIONS } from '../utils/brValidators';
 import { markHubOnboardingComplete } from '../utils/hubOnboardingState';
@@ -17,6 +18,8 @@ import { getHubUserDisplayName } from '../utils/hubUserDisplay';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const markSrc = `${baseUrl}hub-mark.svg`;
+
+const ONBOARDING_STEPS = ['Organização', 'Primeira unidade', 'Plano'];
 
 const HubClinicOnboardingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -28,6 +31,7 @@ const HubClinicOnboardingPage: React.FC = () => {
   const [isMainUnit, setIsMainUnit] = useState(true);
   const [technicalManagerSelf, setTechnicalManagerSelf] = useState(true);
   const [technicalManagerName, setTechnicalManagerName] = useState('');
+  const [betaTermsAccepted, setBetaTermsAccepted] = useState(false);
 
   const selfDisplayName = getHubUserDisplayName(user);
 
@@ -94,7 +98,7 @@ const HubClinicOnboardingPage: React.FC = () => {
     technicalManagerResolved.length >= 2;
 
   const submit = async () => {
-    if (!clinicValid || !unitValid) return;
+    if (!clinicValid || !unitValid || !betaTermsAccepted) return;
     setLoading(true);
     try {
       const res = await hubSignupApi.completeOnboarding({
@@ -117,6 +121,8 @@ const HubClinicOnboardingPage: React.FC = () => {
           is_main: isMainUnit,
           technical_manager: technicalManagerResolved,
         },
+        plan_slug: 'beta',
+        beta_terms_accepted: true,
       });
       const clinicUser = res.clinicUser as Record<string, unknown>;
       markHubOnboardingComplete(clinicUser, String(res.unit.id));
@@ -135,16 +141,25 @@ const HubClinicOnboardingPage: React.FC = () => {
         const ctx = await hubSessionApi.getContext();
         applyHubSessionContext(ctx);
       } catch {
-        /* onboarding response já vinculou clínica */
+        if (res.subscription) {
+          localStorage.setItem('hub_subscription', JSON.stringify(res.subscription));
+        }
       }
       showSuccess(res.message || 'Cadastro concluído');
       navigate('/hub/clientes', { replace: true });
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao guardar cadastro');
+      showError((e as Error)?.message || 'Erro ao salvar cadastro');
     } finally {
       setLoading(false);
     }
   };
+
+  const exitConfirm = () =>
+    showConfirm(
+      'Sair da configuração? Você pode concluir o cadastro da clínica mais tarde ao entrar de novo.',
+      () => navigate('/login', { replace: true }),
+      'Cancelar configuração',
+    );
 
   return (
     <div className="hub-onboarding-page-root">
@@ -159,10 +174,11 @@ const HubClinicOnboardingPage: React.FC = () => {
 
         <h1 className="hub-clientes__title">Configure sua clínica</h1>
         <p className="hub-clientes__subtitle">
-          Dados da organização e da primeira unidade operacional. Pode completar detalhes adicionais depois.
+          Dados da organização, da primeira unidade e do plano. Você pode completar detalhes
+          adicionais depois.
         </p>
 
-        <HubOnboardingStepper steps={['Organização', 'Primeira unidade']} activeStep={step} />
+        <HubOnboardingStepper steps={ONBOARDING_STEPS} activeStep={step} />
 
         {step === 0 ? (
           <section className="hub-onboarding-section-card">
@@ -175,7 +191,7 @@ const HubClinicOnboardingPage: React.FC = () => {
                   Dados da clínica
                 </h2>
                 <p className="hub-clientes__subtitle" style={{ margin: '4px 0 0' }}>
-                  Razão social e contacto da organização
+                  Razão social e contato da organização
                 </p>
               </div>
             </div>
@@ -251,7 +267,9 @@ const HubClinicOnboardingPage: React.FC = () => {
               onPrimary={goToUnitStep}
             />
           </section>
-        ) : (
+        ) : null}
+
+        {step === 1 ? (
           <section className="hub-onboarding-section-card">
             <div className="hub-onboarding-section-head">
               <div className="hub-onboarding-section-icon">
@@ -338,23 +356,32 @@ const HubClinicOnboardingPage: React.FC = () => {
               Esta é a unidade principal (matriz)
             </HubCheckbox>
             <HubOnboardingFooter
-              onCancel={() =>
-                showConfirm(
-                  'Sair da configuração? Pode concluir o cadastro da clínica mais tarde ao voltar a entrar.',
-                  () => navigate('/login', { replace: true }),
-                  'Cancelar configuração',
-                )
-              }
+              onCancel={exitConfirm}
               showBack
               onBack={() => setStep(0)}
               backLabel="Anterior"
-              primaryLabel="Concluir e entrar no Hub"
+              primaryLabel="Continuar"
               primaryDisabled={!unitValid}
+              onPrimary={() => setStep(2)}
+            />
+          </section>
+        ) : null}
+
+        {step === 2 ? (
+          <section className="hub-onboarding-section-card">
+            <HubBetaPlanCard termsAccepted={betaTermsAccepted} onTermsChange={setBetaTermsAccepted} />
+            <HubOnboardingFooter
+              onCancel={exitConfirm}
+              showBack
+              onBack={() => setStep(1)}
+              backLabel="Anterior"
+              primaryLabel="Concluir e entrar no Hub"
+              primaryDisabled={!betaTermsAccepted}
               primaryLoading={loading}
               onPrimary={() => void submit()}
             />
           </section>
-        )}
+        ) : null}
       </div>
     </div>
   );

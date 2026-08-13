@@ -19,7 +19,7 @@ const HubClinicRoutes: React.FC = () => {
     <Routes>
       <Route element={<HubClinicShell />}>
         <Route index element={<HubVetCockpitPage />} />
-        <Route path="consultorio" element={<HubVetCockpitPage />} />
+        <Route path="consultorio" element={<Navigate to="/hub/clinica" replace />} />
         <Route path="atendimentos" element={<HubClinicEncountersPage />} />
         <Route path="atendimentos/:encounterId" element={<HubClinicalWorkspacePage />} />
         <Route path="prontuarios" element={<HubClinicRecordsPage />} />

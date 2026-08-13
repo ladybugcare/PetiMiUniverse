@@ -127,13 +127,14 @@ export type HubAppointmentRecurrenceRule = {
 
 export type HubAppointmentPricingVariant = {
   km_tier_index?: number;
+  custom_tier_index?: number;
   period?: 'full_day' | 'half_day';
   consult_type?: 'padrao' | 'retorno';
 };
 
 export type HubAppointmentPickupRoutePricing = {
   hub_service_type_id: string;
-  pricing_variant: { km_tier_index: number };
+  pricing_variant: { km_tier_index?: number; custom_tier_index?: number };
 };
 
 export type CreatePickupRouteBlock = {

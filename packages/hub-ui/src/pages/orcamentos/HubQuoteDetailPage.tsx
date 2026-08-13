@@ -23,8 +23,6 @@ import {
 import '../clientes/clientes.css';
 import './orcamentos-page.css';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 function embedOne<T>(x: T | T[] | null | undefined): T | null {
   if (x == null) return null;
   return Array.isArray(x) ? x[0] ?? null : x;
@@ -45,7 +43,7 @@ const HubQuoteDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.quotes.write');
   const canCreateReceivable = hasPermission('hub.receivables.create');
@@ -56,8 +54,7 @@ const HubQuoteDetailPage: React.FC = () => {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [dupGuardians, setDupGuardians] = useState<HubGuardian[]>([]);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.quotes.read');
 
   const load = useCallback(async () => {
     if (!clinicId || !id) return;

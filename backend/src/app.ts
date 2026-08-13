@@ -5,7 +5,7 @@ import helmet from 'helmet';
 // loadEnv.ts é carregado automaticamente quando importamos supabase
 import { supabase } from './config/supabase.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { generalLimiter } from './middleware/rateLimiter.js';
+import { generalLimiter, rateLimitBypassMonitor } from './middleware/rateLimiter.js';
 import { correlationIdMiddleware } from './middleware/correlationId.js';
 
 // 🔹 Importa rotas
@@ -198,6 +198,7 @@ app.use('/freelancers/upload-certification', express.json({ limit: '5mb' }));
 app.use('/marketplace/upload-images', express.json({ limit: '10mb' }));
 
 // 🔹 Rate limiting global (aplicado a todas as rotas)
+app.use(rateLimitBypassMonitor);
 app.use(generalLimiter);
 
 // 🔹 Rotas principais

@@ -10,15 +10,12 @@ import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './estoque.css';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL'] as const;
-
 const HubEstoqueAlertasPage: React.FC = () => {
   const { showError } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.inventory.read');
   const [loading, setLoading] = useState(true);
   const [low, setLow] = useState<HubInventoryItem[]>([]);
   const [expiring, setExpiring] = useState<HubInventoryLotRow[]>([]);

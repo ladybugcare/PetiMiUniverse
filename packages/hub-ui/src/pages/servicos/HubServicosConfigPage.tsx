@@ -19,8 +19,6 @@ import './servicos-page.css';
 
 const AGENDA_SWATCHES = ['#f0642f', '#7b1fa2', '#00897b', '#1565c0', '#f9a825', '#c62828', '#78909c'] as const;
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 type InlineMode = 'none' | 'create' | 'edit';
 
 const emptyDraft = () => ({
@@ -35,7 +33,7 @@ const emptyDraft = () => ({
 const HubServicosConfigPage: React.FC = () => {
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.service_types.write');
   const canAgendaPrefsRead = hasPermission('hub.appointments.read');
@@ -53,8 +51,7 @@ const HubServicosConfigPage: React.FC = () => {
   const [draft, setDraft] = useState(emptyDraft);
   const [saving, setSaving] = useState(false);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.service_types.read');
 
   const load = useCallback(async () => {
     if (!clinicId) return;

@@ -19,8 +19,6 @@ import { getSelectedUnitId } from '../utils/useSelectedUnitId';
 import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
 import type { CoatTypeValue, PetBodyPorteValue } from '../utils/hubServiceTypesPricingMatrix';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 type PanelMode = 'create' | 'detail' | 'edit';
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -56,7 +54,7 @@ const HubPetsPage: React.FC = () => {
   const navigate = useNavigate();
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const [searchParams] = useSearchParams();
 
   const clinicId = getStoredClinicId();
@@ -81,8 +79,7 @@ const HubPetsPage: React.FC = () => {
   const [form, setForm] = useState<PetFormValues>(emptyPetForm);
   const [submitting, setSubmitting] = useState(false);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.pets.read');
 
   const loadGuardians = useCallback(async () => {
     if (!clinicId) return;

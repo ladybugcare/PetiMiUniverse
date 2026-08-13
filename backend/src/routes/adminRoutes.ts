@@ -17,6 +17,10 @@ import { getAllActiveUnits } from '../controllers/adminController';
 
 // Controllers de documentos
 import { getVetDocument } from '../controllers/admin/getVetDocument';
+import {
+  getAdminClinicSubscription,
+  patchAdminClinicSubscription,
+} from '../controllers/admin/adminClinicSubscriptionController';
 
 // Controllers de relatórios admin
 import { getAdminOverview, getAdminSpecialties, getAdminUsage } from '../controllers/adminReportsController';
@@ -58,6 +62,10 @@ router.get('/pending-units', authenticateUser, getPendingUnits);
 
 // Listar todas as unidades ativas (aprovadas ou ativas)
 router.get('/units', authenticateUser, getAllActiveUnits);
+
+// Assinatura SaaS Hub (Beta / planos) por clínica
+router.get('/clinics/:clinicId/subscription', authenticateUser, getAdminClinicSubscription);
+router.patch('/clinics/:clinicId/subscription', authenticateUser, patchAdminClinicSubscription);
 
 // Aprovar ou rejeitar unidade
 router.patch('/units/:id/review', authenticateUser, reviewUnit);

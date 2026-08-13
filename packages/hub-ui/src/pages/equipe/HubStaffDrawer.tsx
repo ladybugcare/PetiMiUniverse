@@ -20,6 +20,11 @@ import { HubSidePanel } from '../../components/HubSidePanel';
 import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
 import { useAlert } from '../../components/AlertProvider';
 import {
+  HUB_OPERATIONAL_AREAS,
+  HUB_OPERATIONAL_AREA_LABELS,
+  type HubOperationalArea,
+} from '@petimi/web-core';
+import {
   SERVICE_GROUP_OPTIONS,
   KNOWN_SERVICE_GROUP_SLUGS,
   resolveServiceAccentColor,
@@ -32,6 +37,7 @@ import {
   staffFormFromRow,
   buildStaffPayload,
   inviteReadyHint,
+  suggestOperationalAreasForJobTitle,
   type HubStaffFormState,
 } from './hubStaffFormTypes';
 import HubStaffInviteSharePanel, { type StaffInviteShareResult } from './HubStaffInviteSharePanel';
@@ -77,6 +83,17 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
   onSaved,
 }) => {
   const { showError, showSuccess } = useAlert();
+
+  // Detectar se o usuário está editando seu próprio perfil comparando clinic_user_id.
+  const myClinicUserId = useMemo(() => {
+    try {
+      const cu = JSON.parse(localStorage.getItem('clinic_user') ?? '{}') as { id?: string };
+      return cu?.id ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const [form, setForm] = useState<HubStaffFormState>(emptyStaffForm());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -322,6 +339,15 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
     Boolean(form.default_unit_id);
 
   const isLoginLinked = loginLinked;
+
+  // Bloquear auto-edição de acesso: CADMIN não pode alterar seu próprio role/acesso.
+  const isSelfEdit = Boolean(
+    mode === 'edit' &&
+    myClinicUserId &&
+    staff?.clinic_user_id &&
+    staff.clinic_user_id === myClinicUserId,
+  );
+
   const canLinkAccount =
     canWrite &&
     form.has_hub_access &&
@@ -639,6 +665,9 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                             const suggested = suggestServiceTypeIdsForJobTitle(v, jobMappings, serviceTypes);
                             if (suggested.length > 0) {
                               next.service_type_ids = [...new Set([...suggested, ...f.service_type_ids])];
+                            }
+                            if (next.operational_areas.length === 0) {
+                              next.operational_areas = suggestOperationalAreasForJobTitle(v);
                             }
                           }
                           return next;
@@ -979,12 +1008,18 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                   Acesso ao PetMi Hub
                 </h3>
 
+                {isSelfEdit && (
+                  <p className="hub-equipe__self-edit-warn">
+                    Você está editando seu próprio perfil. Por segurança, acesso e perfil de permissão só podem ser alterados por outro administrador.
+                  </p>
+                )}
+
                 <button
                   type="button"
                   className={`hub-equipe__section-toggle${form.has_hub_access ? ' hub-equipe__section-toggle--on' : ''}`}
                   onClick={() => setForm((f) => ({ ...f, has_hub_access: !f.has_hub_access }))}
                   aria-pressed={form.has_hub_access}
-                  disabled={!canWrite}
+                  disabled={!canWrite || isSelfEdit}
                 >
                   <span className="hub-equipe__section-toggle__copy">
                     <span className="hub-equipe__section-toggle__title">Tem acesso ao PetMi Hub</span>
@@ -1029,9 +1064,40 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                           placeholder="Selecionar perfil…"
                           searchPlaceholder="Buscar perfil…"
                           clearable={false}
-                          disabled={!canWrite}
+                          disabled={!canWrite || isSelfEdit}
                           ariaLabel="Perfil de permissão no Hub"
                         />
+                      </div>
+                    </div>
+
+                    <div className="hub-equipe__operational-areas">
+                      <p className="hub-clientes__label">Áreas do Hub</p>
+                      <p className="hub-equipe__role-hint">
+                        Complementam o perfil de permissão — marque o que esta pessoa faz no dia a dia (ex.: recepção +
+                        caixa).
+                      </p>
+                      <div className="hub-equipe__operational-areas__grid" role="group" aria-label="Áreas operacionais do Hub">
+                        {HUB_OPERATIONAL_AREAS.map((area) => {
+                          const checked = form.operational_areas.includes(area);
+                          return (
+                            <HubCheckbox
+                              key={area}
+                              id={`st-area-${area}`}
+                              checked={checked}
+                              disabled={!canWrite}
+                              onChange={(nextChecked) => {
+                                setForm((f) => {
+                                  const areas = new Set(f.operational_areas);
+                                  if (nextChecked) areas.add(area as HubOperationalArea);
+                                  else areas.delete(area as HubOperationalArea);
+                                  return { ...f, operational_areas: [...areas] as HubOperationalArea[] };
+                                });
+                              }}
+                            >
+                              {HUB_OPERATIONAL_AREA_LABELS[area]}
+                            </HubCheckbox>
+                          );
+                        })}
                       </div>
                     </div>
 

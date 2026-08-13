@@ -817,7 +817,8 @@ const pickupRoutePricingSchema = z
     hub_service_type_id: uuidStr,
     pricing_variant: z
       .object({
-        km_tier_index: z.number().int().min(0),
+        km_tier_index: z.number().int().min(0).optional(),
+        custom_tier_index: z.number().int().min(0).optional(),
       })
       .strict(),
   })
@@ -1333,7 +1334,7 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'pickup_route_pricing só é permitido com rotas de transporte.' });
     }
     if (hasPickupRoutes && !b.pickup_route_pricing) {
-      return res.status(400).json({ error: 'Leva e Traz: indique o tipo de serviço e a faixa de quilómetros.' });
+      return res.status(400).json({ error: 'Leva e Traz: indique o tipo de serviço de transporte.' });
     }
 
     const normLines = normalizeCreateServiceLines(b);
@@ -1359,17 +1360,30 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       const ltSt = stMap.get(b.pickup_route_pricing.hub_service_type_id);
       const ge = validateLevaTrazServiceType(ltSt);
       if (ge) return res.status(400).json({ error: ge });
+      // Preço único (sem matriz), faixas de km, ou personalizado (ex.: regiões).
       const parsedM = parsePricingMatrixJson(ltSt!.pricing_matrix);
-      if (!parsedM || typeof parsedM !== 'object' || ('error' in parsedM && (parsedM as { error?: string }).error)) {
-        return res.status(400).json({ error: 'O serviço de Leva e Traz deve ter matriz de preços por faixas de km.' });
+      if (parsedM && typeof parsedM === 'object' && 'error' in parsedM && (parsedM as { error?: string }).error) {
+        return res.status(400).json({ error: 'Matriz de preços do serviço de Leva e Traz inválida.' });
       }
-      if (!('kind' in parsedM) || (parsedM as { kind: string }).kind !== 'km_banda') {
-        return res.status(400).json({ error: 'O serviço de Leva e Traz deve ter matriz de preços por faixas de km.' });
-      }
-      const m = parsedM as { kind: 'km_banda'; tiers: unknown[] };
-      const kmIdx = b.pickup_route_pricing.pricing_variant.km_tier_index;
-      if (kmIdx < 0 || kmIdx >= m.tiers.length) {
-        return res.status(400).json({ error: 'Faixa de km inválida para o serviço de Leva e Traz.' });
+      if (parsedM && typeof parsedM === 'object' && 'kind' in parsedM) {
+        const kind = (parsedM as { kind: string }).kind;
+        if (kind === 'km_banda') {
+          const m = parsedM as { kind: 'km_banda'; tiers: unknown[] };
+          const kmIdx = b.pickup_route_pricing.pricing_variant.km_tier_index;
+          if (typeof kmIdx !== 'number' || kmIdx < 0 || kmIdx >= m.tiers.length) {
+            return res.status(400).json({ error: 'Faixa de km inválida para o serviço de Leva e Traz.' });
+          }
+        } else if (kind === 'personalizado') {
+          const m = parsedM as { kind: 'personalizado'; tiers: unknown[] };
+          const customIdx = b.pickup_route_pricing.pricing_variant.custom_tier_index;
+          if (typeof customIdx !== 'number' || customIdx < 0 || customIdx >= m.tiers.length) {
+            return res.status(400).json({ error: 'Opção de preço inválida para o serviço de Leva e Traz.' });
+          }
+        } else {
+          return res.status(400).json({
+            error: 'O serviço de Leva e Traz deve usar preço único, faixas de km ou preços personalizados.',
+          });
+        }
       }
     }
 
@@ -1400,16 +1414,24 @@ export const createHubAppointment = async (req: Request, res: Response) => {
 
     let pickupPricingBase: {
       ltId: string;
-      kmVariant: HubQuotePricingVariantInput;
-      /** Preço da matriz km_banda = ida+volta (uma cobrança); reparte-se nas duas pernas. */
+      kmVariant: HubQuotePricingVariantInput | null;
+      /** Preço ida+volta (matriz ou sale_amount do preço único); reparte-se nas duas pernas. */
       matrixSaleRoundTrip: number;
       matrixCostRoundTrip: number;
     } | null = null;
     if (hasPickupRoutes && b.pickup_route_pricing) {
       const ltId = b.pickup_route_pricing.hub_service_type_id;
-      const kmVariant: HubQuotePricingVariantInput = {
-        km_tier_index: b.pickup_route_pricing.pricing_variant.km_tier_index,
-      };
+      const ltMatrix = parsePricingMatrixJson(stMap.get(ltId)?.pricing_matrix);
+      const matrixKind =
+        ltMatrix != null && typeof ltMatrix === 'object' && 'kind' in ltMatrix
+          ? (ltMatrix as { kind: string }).kind
+          : null;
+      let kmVariant: HubQuotePricingVariantInput | null = null;
+      if (matrixKind === 'km_banda') {
+        kmVariant = { km_tier_index: b.pickup_route_pricing.pricing_variant.km_tier_index ?? 0 };
+      } else if (matrixKind === 'personalizado') {
+        kmVariant = { custom_tier_index: b.pickup_route_pricing.pricing_variant.custom_tier_index ?? 0 };
+      }
       const ymdRef = b.starts_at.slice(0, 10);
       try {
         const baseRows = buildServiceLineSnapshots({
@@ -1645,6 +1667,7 @@ export const createHubAppointment = async (req: Request, res: Response) => {
             status: b.status ?? 'confirmed',
             resource_label: pickupBlock.resource_label ?? null,
             appointment_kind: 'pickup_route',
+            parent_appointment_id: apptId,
             series_id: seriesId,
             series_occurrence_date: seriesId ? occDate : null,
             pricing_porte_tier: apptOverride,

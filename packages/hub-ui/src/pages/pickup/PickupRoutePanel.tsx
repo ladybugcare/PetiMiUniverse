@@ -85,8 +85,9 @@ const PickupRoutePanel: React.FC<Props> = ({
       {loading ? (
         <HubLoading variant="inline" size="sm" label="Carregando rotas…" />
       ) : routes.length === 0 ? (
-        <p className="hub-clientes__muted" style={{ fontSize: '0.8125rem', padding: '0.5rem 0' }}>
+        <p className="hub-clientes__muted hub-pickup-route-panel__empty">
           Nenhuma rota montada para este dia.
+          {canManage ? ' Use “Nova rota” para montar a sequência de paradas.' : ''}
         </p>
       ) : (
         <div className="hub-pickup-route-panel__list">

@@ -93,6 +93,8 @@ type Props = {
   dateYmd: string;
   unitId?: string;
   editingRoute?: PickupRoute | null;
+  /** Paradas já pertencentes à rota sendo editada (pré-popula o estado selected). */
+  editingStops?: (PickupDayBoardItem & { _direction: 'pickup' | 'delivery' })[];
   onClose: () => void;
   onSaved: () => void;
 };
@@ -102,6 +104,7 @@ const PickupRouteBuilder: React.FC<Props> = ({
   dateYmd,
   unitId,
   editingRoute,
+  editingStops,
   onClose,
   onSaved,
 }) => {
@@ -117,7 +120,7 @@ const PickupRouteBuilder: React.FC<Props> = ({
 
   // Paradas selecionadas com direção confirmada
   type StopCandidate = PickupDayBoardItem & { _direction: 'pickup' | 'delivery' };
-  const [selected, setSelected] = useState<StopCandidate[]>([]);
+  const [selected, setSelected] = useState<StopCandidate[]>(() => editingStops ?? []);
 
   // Cache de coordenadas geocodificadas para o preview do mapa
   const [coordsCache, setCoordsCache] = useState<Map<string, { lat: number; lng: number }>>(new Map());
@@ -166,10 +169,19 @@ const PickupRouteBuilder: React.FC<Props> = ({
     return () => { cancelled = true; };
   }, [looseItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Itens soltos disponíveis (não já selecionados)
+  // Pool de itens disponíveis: pernas soltas + paradas da rota em edição que foram removidas de selected
+  const availablePool = useMemo(() => {
+    const routeItemIds = new Set((editingStops ?? []).map((s) => s.appointment_id));
+    const looseNotInRoute = looseItems.filter((i) => !routeItemIds.has(i.appointment_id));
+    const routeItemsRemovedFromSelected = (editingStops ?? []).filter(
+      (s) => !selected.some((sel) => sel.appointment_id === s.appointment_id),
+    );
+    return [...looseNotInRoute, ...routeItemsRemovedFromSelected];
+  }, [looseItems, editingStops, selected]);
+
   const available = useMemo(
-    () => looseItems.filter((i) => !selected.some((s) => s.appointment_id === i.appointment_id)),
-    [looseItems, selected],
+    () => availablePool.filter((i) => !selected.some((s) => s.appointment_id === i.appointment_id)),
+    [availablePool, selected],
   );
 
   const addItem = (item: PickupDayBoardItem) => {

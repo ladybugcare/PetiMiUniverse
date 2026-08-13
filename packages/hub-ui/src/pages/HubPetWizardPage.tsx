@@ -26,14 +26,12 @@ import { PetWizardStepHealth } from './pets/wizard/steps/PetWizardStepHealth';
 import { PetWizardStepGuardians } from './pets/wizard/steps/PetWizardStepGuardians';
 import { PetWizardStepDocs } from './pets/wizard/steps/PetWizardStepDocs';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 const HubPetWizardPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { showError, showSuccess } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.pets.write');
 
@@ -45,8 +43,7 @@ const HubPetWizardPage: React.FC = () => {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const photoBlobRef = useRef<string | null>(null);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.pets.write');
 
   const update = useCallback((p: Partial<PetWizardState>) => {
     setState((s) => ({ ...s, ...p }));

@@ -31,8 +31,6 @@ import {
 import '../clientes/clientes.css';
 import '../orcamentos/orcamentos-page.css';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 type MessageVariant = 'link' | 'pdf';
 
 function extractGuardian(comanda: Record<string, unknown>): HubComandaGuardianEmbed | null {
@@ -49,7 +47,7 @@ const HubComandaReadyToSendPage: React.FC = () => {
   const moduleHomePath = financeMode ? '/hub/financeiro' : '/hub/caixa';
   const moduleLabel = financeMode ? 'Financeiro' : 'Caixa';
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const { showError } = useAlert();
   const copyDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -62,8 +60,7 @@ const HubComandaReadyToSendPage: React.FC = () => {
   const [messageCopied, setMessageCopied] = useState(false);
   const [dueDateLabel, setDueDateLabel] = useState('—');
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.receivables.create');
   const canWrite = hasPermission('hub.receivables.create');
 
   const load = useCallback(async () => {

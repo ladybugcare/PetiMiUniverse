@@ -1,4 +1,4 @@
-import { isRateLimitDisabled, parseJwtSub } from '../rateLimiter';
+import { isRateLimitDisabled, parseJwtSub, isRateLimitBypassUser, resetRateLimitBypassUserIdsCache } from '../rateLimiter';
 
 describe('rateLimiter helpers', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -53,6 +53,29 @@ describe('rateLimiter helpers', () => {
 
     it('retorna null sem header Bearer', () => {
       expect(parseJwtSub('Basic abc')).toBeNull();
+    });
+  });
+
+  describe('isRateLimitBypassUser', () => {
+    afterEach(() => {
+      delete process.env.RATE_LIMIT_BYPASS_USER_IDS;
+      resetRateLimitBypassUserIdsCache();
+    });
+
+    it('retorna true quando sub está na lista de bypass', () => {
+      process.env.RATE_LIMIT_BYPASS_USER_IDS = 'user-qa-1, user-qa-2';
+      resetRateLimitBypassUserIdsCache();
+      const payload = Buffer.from(JSON.stringify({ sub: 'user-qa-1' })).toString('base64url');
+      const token = `header.${payload}.signature`;
+      expect(isRateLimitBypassUser({ headers: { authorization: `Bearer ${token}` } } as any)).toBe(true);
+    });
+
+    it('retorna false quando sub não está na lista', () => {
+      process.env.RATE_LIMIT_BYPASS_USER_IDS = 'user-qa-1';
+      resetRateLimitBypassUserIdsCache();
+      const payload = Buffer.from(JSON.stringify({ sub: 'other-user' })).toString('base64url');
+      const token = `header.${payload}.signature`;
+      expect(isRateLimitBypassUser({ headers: { authorization: `Bearer ${token}` } } as any)).toBe(false);
     });
   });
 });

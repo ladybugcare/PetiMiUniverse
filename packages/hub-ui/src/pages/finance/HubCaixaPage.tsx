@@ -14,6 +14,7 @@ import {
   Pencil,
   Receipt,
   Search,
+  User,
   X,
 } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
@@ -30,6 +31,7 @@ import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
 import { CaixaMetricsRow } from './CaixaMetricsRow';
 import { CaixaSessionMovementsCard } from './CaixaSessionMovementsCard';
 import { canCaixaEditOpenComanda } from './hubComandaEditUtils';
+import { enviarComandasAbertasAoFinanceiro } from './caixaHandoffUtils';
 import {
   buildCaixaSessionHistoryItems,
   sumDayBoardPendingAmount,
@@ -39,6 +41,7 @@ import {
 import { CaixaSessionHistoryTimeline } from './CaixaSessionHistoryTimeline';
 import { FinanceDayBoardTable } from './FinanceDayBoardTable';
 import { SellPackageDrawer } from './SellPackageDrawer';
+import { EncerrarTurnoDrawer } from './EncerrarTurnoDrawer';
 import type { PackageSaleScheduleContext } from './packageSaleScheduleUtils';
 import { HubDateField } from '../../components/HubDateField';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
@@ -107,6 +110,9 @@ const HubCaixaPage: React.FC = () => {
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
   const [checkoutScheduleContext, setCheckoutScheduleContext] = useState<PackageSaleScheduleContext | null>(null);
   const [showSellPackage, setShowSellPackage] = useState(false);
+  const [showEncerrarTurno, setShowEncerrarTurno] = useState(false);
+  const [closedSessions, setClosedSessions] = useState<HubCashSession[]>([]);
+  const [showSessionHistory, setShowSessionHistory] = useState(false);
 
   // Sessão de dia anterior aberta
   const isPreviousDaySession = cashOpen?.opened_at
@@ -140,15 +146,17 @@ const HubCaixaPage: React.FC = () => {
     }
     setLoading(true);
     try {
-      const [c, cash, comandasRes, dayBoard] = await Promise.all([
+      const [c, cash, comandasRes, dayBoard, closedRes] = await Promise.all([
         hubFinancialApi.getPendingBillingCount(clinicId, unitId),
         hubFinancialApi.getCashSessionOpen(clinicId, unitId),
         hubComandaApi.listComandas({ clinic_id: clinicId, unit_id: unitId, status: 'aberta', enrich: true }).catch(() => ({ comandas: [] })),
         hubFinancialApi.getDayBoard(clinicId, unitId, dayBoardDate).catch(() => [] as HubFinanceDayBoardItem[]),
+        hubFinancialApi.listClosedCashSessions(clinicId, unitId, 10).catch(() => ({ sessions: [] })),
       ]);
       setPending(c);
       setOpenComandas(comandasRes.comandas ?? []);
       setDayBoardItems(dayBoard);
+      setClosedSessions(closedRes.sessions ?? []);
       const open = cash.cash_session ?? null;
       setCashOpen(open);
       if (open?.id) {
@@ -374,25 +382,9 @@ const HubCaixaPage: React.FC = () => {
   };
 
   const enviarComandasAbertas = async (): Promise<boolean> => {
-    const today = ymdToday();
-    const abertas = openComandas.filter((c) => c.status === 'aberta' && canCaixaEditOpenComanda(c));
-    if (abertas.length === 0) return true;
-    const erros: string[] = [];
-    for (const c of abertas) {
-      try {
-        await hubComandaApi.checkout(String(c.id), {
-          clinic_id: clinicId,
-          grouping: 'all',
-          action: 'leave_pending',
-          due_date: today,
-          payment_timing: 'on_checkout',
-        });
-      } catch (e: unknown) {
-        erros.push(`${String(c.id).slice(0, 8)}: ${(e as Error)?.message ?? 'Erro'}`);
-      }
-    }
-    if (erros.length > 0) {
-      showError(`Falha ao enviar ${erros.length} comanda(s) ao financeiro:\n${erros.join('\n')}`);
+    const result = await enviarComandasAbertasAoFinanceiro(openComandas, clinicId);
+    if (!result.success) {
+      showError(`Falha ao enviar ${result.errors.length} comanda(s) ao financeiro:\n${result.errors.join('\n')}`);
       return false;
     }
     return true;
@@ -485,6 +477,40 @@ const HubCaixaPage: React.FC = () => {
           Há uma sessão de caixa aberta de um dia anterior. Feche-a e abra uma nova sessão para o dia de hoje.
         </div>
       )}
+      {cashOpen?.opened_by_staff && !isPreviousDaySession && (
+        <div
+          style={{
+            fontSize: 12,
+            color: '#888',
+            marginBottom: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <User size={13} aria-hidden />
+          Caixa aberto por{' '}
+          <strong>
+            {cashOpen.opened_by_staff.display_name ?? cashOpen.opened_by_staff.full_name ?? 'desconhecido'}
+          </strong>
+          {cashOpen.opened_at &&
+            ` às ${new Date(cashOpen.opened_at).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        {cashOpen && hasPermission('hub.cash.session') && (
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary"
+            onClick={() => setShowEncerrarTurno(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <Lock size={15} strokeWidth={2} />
+            Encerrar turno
+          </button>
+        )}
+      </div>
 
       <CaixaMetricsRow
         loading={loading}
@@ -900,6 +926,108 @@ const HubCaixaPage: React.FC = () => {
           </>
         )}
       </section>
+
+      {/* ── Histórico de sessões fechadas ── */}
+      {closedSessions.length > 0 && (
+        <section className="hub-finance-page__section">
+          <button
+            type="button"
+            className="hub-clientes__form-title"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: 0,
+              fontWeight: 700,
+              fontSize: 15,
+              color: '#1a1a1a',
+            }}
+            onClick={() => setShowSessionHistory((v) => !v)}
+          >
+            Sessões anteriores ({closedSessions.length})
+            {showSessionHistory ? (
+              <ChevronUp size={16} aria-hidden />
+            ) : (
+              <ChevronDown size={16} aria-hidden />
+            )}
+          </button>
+          {showSessionHistory && (
+            <div style={{ marginTop: 12, overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e5e5e5', color: '#888' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600 }}>Abertura</th>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600 }}>Fechamento</th>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600 }}>Operador</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontWeight: 600 }}>Saldo esperado</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontWeight: 600 }}>Diferença</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {closedSessions.map((sess) => {
+                    const diff = sess.difference_amount ?? null;
+                    const diffColor =
+                      diff == null ? '#888' : diff >= -0.009 ? '#065f46' : '#dc2626';
+                    const operadorName =
+                      (sess.opened_by_staff as { display_name?: string | null; full_name?: string | null } | null | undefined)?.display_name ??
+                      (sess.opened_by_staff as { full_name?: string | null } | null | undefined)?.full_name ??
+                      '—';
+                    return (
+                      <tr
+                        key={sess.id}
+                        style={{ borderBottom: '1px solid #f0f0f0' }}
+                      >
+                        <td style={{ padding: '8px 10px' }}>
+                          {sess.opened_at
+                            ? new Date(sess.opened_at).toLocaleString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : '—'}
+                        </td>
+                        <td style={{ padding: '8px 10px', color: '#555' }}>
+                          {sess.closed_at
+                            ? new Date(sess.closed_at).toLocaleString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : '—'}
+                        </td>
+                        <td style={{ padding: '8px 10px', color: '#555' }}>{operadorName}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                          {sess.expected_balance != null
+                            ? new Intl.NumberFormat('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              }).format(Number(sess.expected_balance))
+                            : '—'}
+                        </td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', color: diffColor, fontWeight: 600 }}>
+                          {diff != null
+                            ? new Intl.NumberFormat('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              }).format(diff)
+                            : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
     </>,
     <>
       {clinicId && checkoutComandaId && unitId ? (
@@ -983,6 +1111,25 @@ const HubCaixaPage: React.FC = () => {
           setCheckoutScheduleContext(intent === 'checkout_and_schedule' ? scheduleContext : null);
         }}
       />
+      {showEncerrarTurno && cashOpen && (
+        <EncerrarTurnoDrawer
+          open={showEncerrarTurno}
+          onClose={() => setShowEncerrarTurno(false)}
+          clinicId={clinicId}
+          cashSession={cashOpen}
+          cashSummary={cashSummary}
+          openComandas={openComandas}
+          dayBoardItems={dayBoardItems}
+          expectedBalance={expectedBalance}
+          methodsTotal={methodsTotal}
+          onClosed={async () => {
+            setShowEncerrarTurno(false);
+            showSuccess('Caixa fechado com sucesso.');
+            setCloseBal('');
+            await load();
+          }}
+        />
+      )}
     </>,
   );
 };

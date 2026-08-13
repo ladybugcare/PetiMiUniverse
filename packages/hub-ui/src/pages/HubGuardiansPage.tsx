@@ -29,8 +29,6 @@ import { hubQuotesApi, type HubQuote } from '../api/hubQuotesApi';
 import { quoteProspectToGuardianFormValues, prospectFromQuote } from './orcamentos/quoteToGuardianForm';
 import { clearManualQuoteConversion } from './orcamentos/quoteManualConversionStorage';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 type MainTab = 'tutores' | 'empresas';
 type PanelMode = 'create' | 'detail' | 'edit' | 'quote_review';
 
@@ -50,7 +48,7 @@ const HubGuardiansPage: React.FC = () => {
   const linkGuardianId = searchParams.get('linkGuardianId')?.trim() || '';
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.guardians.write');
 
@@ -74,8 +72,7 @@ const HubGuardiansPage: React.FC = () => {
   const [quoteForConversion, setQuoteForConversion] = useState<HubQuote | null>(null);
   const [quoteConversionLoading, setQuoteConversionLoading] = useState(false);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.guardians.read');
 
   const kindParam = mainTab === 'tutores' ? 'individual' : 'company';
 

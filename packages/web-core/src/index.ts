@@ -2,7 +2,14 @@ export { getSupabase } from './supabase';
 export { apiRequest, login, getApiBaseUrl } from './api';
 export { handleInvalidToken } from './tokenInvalid';
 export { getUserRole, getStoredClinicId, getDashboardPathForRole } from './authHelpers';
-export { PERMISSIONS, hasPermission } from './permissions';
+export { PERMISSIONS, hasPermission, hasEffectivePermission, mergePermissionsForRoleAndAreas, isClinicAdminRole } from './permissions';
+export {
+  HUB_OPERATIONAL_AREAS,
+  HUB_OPERATIONAL_AREA_LABELS,
+  defaultOperationalAreasForJobTitle,
+  sanitizeOperationalAreas,
+  type HubOperationalArea,
+} from './operationalAreas';
 export { CLINIC_STORAGE_UPDATED_EVENT } from './constants/appEvents';
 export { usePermissions } from './usePermissions';
 export { AuthProvider, useAuth } from './AuthContext';

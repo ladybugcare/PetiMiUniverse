@@ -1,44 +1,62 @@
 import React, { useState } from 'react';
-import { ArrowDownToLine, ArrowUpFromLine, Loader, MapPin, Phone } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, Calendar, Clock, ExternalLink, Loader, MapPin, Phone, Tag } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { HubSidePanel } from '../../components/HubSidePanel';
-import { hubPickupApi, type PickupDayBoardItem, type PickupStopStatus } from '../../api/hubPickupApi';
+import { hubPickupApi, type PickupDayBoardItem, type PickupDirection, type PickupStopStatus } from '../../api/hubPickupApi';
 import { hubAgendaApi } from '../../api/hubAgendaApi';
 import { useAlert } from '../../components/AlertProvider';
-import { buildWhatsappLink } from '../../utils/whatsappLink';
 
-// ─── Mapa de transições válidas (espelha o backend) ───────────────────────
+// ─── Labels de status por sentido ─────────────────────────────────────────
 
-const VALID_STOP_TRANSITIONS: Record<PickupStopStatus, PickupStopStatus[]> = {
-  pending: ['en_route', 'failed'],
-  en_route: ['arrived', 'failed'],
-  arrived: ['completed', 'failed'],
-  completed: [],
-  failed: [],
+const STOP_STATUS_LABELS_PICKUP: Record<PickupStopStatus, string> = {
+  pending:    'Pendente',
+  en_route:   'A caminho do tutor',
+  arrived:    'No endereço',
+  in_transit: 'Pet a bordo',
+  completed:  'Na clínica',
+  failed:     'Falhou',
 };
 
-const STOP_STATUS_LABELS: Record<PickupStopStatus, string> = {
-  pending: 'Pendente',
-  en_route: 'A caminho',
-  arrived: 'Chegou',
-  completed: 'Concluído',
-  failed: 'Falhou',
+const STOP_STATUS_LABELS_DELIVERY: Record<PickupStopStatus, string> = {
+  pending:    'Pendente',
+  en_route:   'A caminho do tutor',
+  arrived:    'No endereço',
+  in_transit: 'A bordo',
+  completed:  'Entregue',
+  failed:     'Falhou',
 };
 
-const ACTION_LABELS: Record<PickupStopStatus, string> = {
-  pending: 'A caminho',
-  en_route: 'Chegou',
-  arrived: 'Concluído',
-  completed: '',
-  failed: '',
-};
+function getStatusLabel(status: PickupStopStatus, direction: PickupDirection): string {
+  if (direction === 'delivery') return STOP_STATUS_LABELS_DELIVERY[status] ?? status;
+  return STOP_STATUS_LABELS_PICKUP[status] ?? status;
+}
 
-// Statuses que precisam de action primária (avançar), ignora failed
-const ADVANCE_MAP: Partial<Record<PickupStopStatus, PickupStopStatus>> = {
-  pending: 'en_route',
-  en_route: 'arrived',
-  arrived: 'completed',
-};
+function getStatusVariant(status: PickupStopStatus): 'neutral' | 'progress' | 'done' | 'danger' {
+  if (status === 'completed') return 'done';
+  if (status === 'failed') return 'danger';
+  if (['en_route', 'arrived', 'in_transit'].includes(status)) return 'progress';
+  return 'neutral';
+}
+
+/** Próximo status e label do botão, considerando o sentido. */
+function getAdvanceInfo(
+  status: PickupStopStatus,
+  direction: PickupDirection,
+): { next: PickupStopStatus; label: string } | null {
+  switch (status) {
+    case 'pending':    return { next: 'en_route',   label: 'A caminho' };
+    case 'en_route':   return { next: 'arrived',    label: 'No endereço' };
+    case 'arrived':
+      if (direction === 'pickup') return { next: 'in_transit', label: 'Pet a bordo' };
+      return { next: 'completed', label: 'Entregue' };
+    case 'in_transit': return { next: 'completed',  label: 'Na clínica' };
+    default: return null;
+  }
+}
+
+function canFail(status: PickupStopStatus): boolean {
+  return ['pending', 'en_route', 'arrived', 'in_transit'].includes(status);
+}
 
 function formatTime(iso?: string | null): string {
   if (!iso) return '—';
@@ -81,37 +99,31 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
 
   if (!item) return null;
 
-  const stopStatus = (item.stop_status ?? item.status) as PickupStopStatus;
-  const nextStatus = ADVANCE_MAP[stopStatus];
-  const canAdvance = !!nextStatus && canUpdate;
-  const canFail =
-    canUpdate &&
-    VALID_STOP_TRANSITIONS[stopStatus]?.includes('failed') &&
-    stopStatus !== 'failed';
+  const stopStatus = (item.stop_status ?? 'pending') as PickupStopStatus;
+  const direction: PickupDirection = item.direction ?? 'pickup';
+  const advanceInfo = getAdvanceInfo(stopStatus, direction);
+  const canAdvance = !!advanceInfo && canUpdate;
+  const canFailStop = canUpdate && canFail(stopStatus);
+  const statusVariant = getStatusVariant(stopStatus);
 
   const handleAdvance = async () => {
-    if (!clinicId || !nextStatus) return;
+    if (!clinicId || !advanceInfo) return;
     setBusy(true);
     try {
       if (item.stop_id) {
         await hubPickupApi.patchStop(item.stop_id, {
           clinic_id: clinicId,
-          status: nextStatus,
+          status: advanceInfo.next,
         });
       } else {
-        // Perna solta: atualiza appointment diretamente
-        const apptStatus =
-          nextStatus === 'en_route' ? 'in_progress'
-          : nextStatus === 'completed' ? 'done'
-          : undefined;
-        if (apptStatus) {
-          await hubAgendaApi.patch(item.appointment_id, {
-            clinic_id: clinicId,
-            status: apptStatus as 'in_progress' | 'done',
-          });
-        }
+        await hubPickupApi.createLooseStop({
+          clinic_id: clinicId,
+          hub_appointment_id: item.appointment_id,
+          direction: direction === 'unknown' ? 'pickup' : direction,
+          status: advanceInfo.next,
+        });
       }
-      showSuccess(`Status atualizado: ${STOP_STATUS_LABELS[nextStatus]}`);
+      showSuccess(advanceInfo.label);
       setShowFailForm(false);
       onUpdated();
     } catch (e: unknown) {
@@ -135,6 +147,12 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
           failure_reason: failureReason.trim(),
         });
       } else {
+        await hubPickupApi.createLooseStop({
+          clinic_id: clinicId,
+          hub_appointment_id: item.appointment_id,
+          direction: direction === 'unknown' ? 'pickup' : direction,
+          status: 'failed',
+        });
         await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'cancelled' });
       }
       showSuccess('Parada marcada como falhou.');
@@ -149,56 +167,57 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
   };
 
   const phone = item.guardian?.phone ?? null;
-  const whatsappLink = phone ? buildWhatsappLink(phone, `Olá, ${item.guardian?.full_name ?? ''}! Estamos a caminho para buscar ${item.pet?.name ?? 'o pet'}.`) : null;
 
   const titleIcon =
-    item.direction === 'pickup' ? (
+    direction === 'pickup' ? (
       <ArrowDownToLine size={16} aria-hidden />
-    ) : item.direction === 'delivery' ? (
+    ) : direction === 'delivery' ? (
       <ArrowUpFromLine size={16} aria-hidden />
     ) : null;
 
   const dirLabel =
-    item.direction === 'pickup' ? 'Coleta' : item.direction === 'delivery' ? 'Entrega' : 'L&T';
+    direction === 'pickup' ? 'Coleta' : direction === 'delivery' ? 'Entrega' : 'L&T';
 
   const footer = (
-    <div className="hub-pickup-stop-drawer__actions">
-      {canAdvance && !showFailForm ? (
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--primary"
-          onClick={() => void handleAdvance()}
-          disabled={busy}
-        >
-          {busy ? <Loader size={14} className="spin" aria-hidden /> : null}
-          {ACTION_LABELS[stopStatus]}
-        </button>
-      ) : null}
-      {canFail && !showFailForm ? (
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--ghost"
-          onClick={() => setShowFailForm(true)}
-          disabled={busy}
-        >
-          Registrar falha
-        </button>
-      ) : null}
-      {showFailForm ? (
-        <div className="hub-pickup-stop-drawer__fail-form">
-          <textarea
-            className="hub-clientes__input"
-            placeholder="Motivo da falha (obrigatório)…"
-            value={failureReason}
-            onChange={(e) => setFailureReason(e.target.value)}
-            rows={2}
-            maxLength={1000}
-          />
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+    <div className="psd__footer">
+      {!showFailForm ? (
+        <>
+          {canAdvance ? (
             <button
               type="button"
-              className="hub-clientes__btn hub-clientes__btn--primary"
-              style={{ background: 'var(--hub-danger, #dc2626)' }}
+              className="psd__advance-btn"
+              onClick={() => void handleAdvance()}
+              disabled={busy}
+            >
+              {busy ? <Loader size={16} className="spin" aria-hidden /> : null}
+              {advanceInfo!.label}
+            </button>
+          ) : null}
+          {canFailStop ? (
+            <button
+              type="button"
+              className="psd__fail-trigger"
+              onClick={() => setShowFailForm(true)}
+              disabled={busy}
+            >
+              Registrar falha
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <div className="psd__fail-form">
+          <textarea
+            className="hub-clientes__input psd__fail-textarea"
+            placeholder="Descreva o motivo da falha…"
+            value={failureReason}
+            onChange={(e) => setFailureReason(e.target.value)}
+            rows={3}
+            maxLength={1000}
+          />
+          <div className="psd__fail-actions">
+            <button
+              type="button"
+              className="psd__confirm-fail-btn"
               onClick={() => void handleFail()}
               disabled={busy || !failureReason.trim()}
             >
@@ -207,7 +226,7 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
             </button>
             <button
               type="button"
-              className="hub-clientes__btn hub-clientes__btn--ghost"
+              className="psd__cancel-btn"
               onClick={() => setShowFailForm(false)}
               disabled={busy}
             >
@@ -215,7 +234,7 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
             </button>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 
@@ -228,111 +247,112 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
       subtitle={item.guardian?.full_name}
       footer={footer}
     >
-      <div className="hub-pickup-stop-drawer">
-        {/* Status atual */}
-        <div className="hub-pickup-stop-drawer__section">
-          <span className="hub-pickup-stop-drawer__label">Status</span>
-          <span className={`hub-clientes__pill${stopStatus === 'completed' ? ' hub-clinic-queue__pill--done' : stopStatus === 'en_route' || stopStatus === 'arrived' ? ' hub-clinic-queue__pill--progress' : ''}`}>
-            {STOP_STATUS_LABELS[stopStatus]}
-          </span>
-          {item.failure_reason ? (
-            <p className="hub-pickup-stop-drawer__failure-reason">
-              Motivo: {item.failure_reason}
+      <div className="psd">
+
+        {/* ── Hero: status + pet ──────────────────────────────────────── */}
+        <div className="psd__hero">
+          <div className="psd__hero-avatar" aria-hidden>🐾</div>
+          <div className="psd__hero-info">
+            <p className="psd__hero-pet">
+              {item.pet?.name ?? '—'}
+              {item.pet?.species ? <span className="psd__hero-species"> · {item.pet.species}{item.pet.breed ? ` · ${item.pet.breed}` : ''}</span> : null}
             </p>
+            <div className="psd__hero-badges">
+              <span className={`psd__status-badge psd__status-badge--${statusVariant}`}>
+                {getStatusLabel(stopStatus, direction)}
+              </span>
+              <span className={`psd__dir-badge psd__dir-badge--${direction}`}>
+                {titleIcon}
+                {dirLabel}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {item.failure_reason ? (
+          <div className="psd__failure-banner">
+            <span className="psd__failure-icon">⚠</span>
+            {item.failure_reason}
+          </div>
+        ) : null}
+
+        {/* ── Contato ─────────────────────────────────────────────────── */}
+        {phone ? (
+          <div className="psd__contact-block">
+            <div className="psd__contact-info">
+              <p className="psd__contact-name">{item.guardian?.full_name}</p>
+              <p className="psd__contact-phone">{phone}</p>
+            </div>
+            <a
+              href={`tel:${phone}`}
+              className="psd__call-btn"
+              aria-label={`Ligar para ${item.guardian?.full_name ?? 'tutor'}`}
+            >
+              <Phone size={18} aria-hidden />
+              Ligar
+            </a>
+          </div>
+        ) : item.guardian ? (
+          <div className="psd__contact-block psd__contact-block--no-phone">
+            <p className="psd__contact-name">{item.guardian.full_name}</p>
+            <span className="psd__no-phone">Sem telefone</span>
+          </div>
+        ) : null}
+
+        {/* ── Endereço ─────────────────────────────────────────────────── */}
+        {item.address ? (
+          <div className="psd__address-block">
+            <MapPin size={16} className="psd__address-icon" aria-hidden />
+            <p className="psd__address-text">{item.address}</p>
+          </div>
+        ) : null}
+
+        {/* ── Detalhes ─────────────────────────────────────────────────── */}
+        <div className="psd__details">
+          <div className="psd__detail-row">
+            <Clock size={14} className="psd__detail-icon" aria-hidden />
+            <span className="psd__detail-label">Previsto</span>
+            <span className="psd__detail-value">
+              {formatTime(item.planned_at ?? item.starts_at)}
+              {item.ends_at ? ` – ${formatTime(item.ends_at)}` : ''}
+            </span>
+          </div>
+
+          {item.service_type ? (
+            <div className="psd__detail-row">
+              <Tag size={14} className="psd__detail-icon" aria-hidden />
+              <span className="psd__detail-label">Serviço</span>
+              <span className="psd__detail-value">{item.service_type.name}</span>
+            </div>
+          ) : null}
+
+          {item.completed_at ? (
+            <div className="psd__detail-row">
+              <Calendar size={14} className="psd__detail-icon" aria-hidden />
+              <span className="psd__detail-label">Concluído</span>
+              <span className="psd__detail-value">{formatDateTime(item.completed_at)}</span>
+            </div>
+          ) : null}
+
+          {item.notes ? (
+            <div className="psd__detail-row psd__detail-row--notes">
+              <span className="psd__detail-label psd__detail-label--notes">Notas</span>
+              <span className="psd__detail-value psd__detail-value--notes">{item.notes}</span>
+            </div>
           ) : null}
         </div>
 
-        {/* Pet */}
-        {item.pet ? (
-          <div className="hub-pickup-stop-drawer__section">
-            <span className="hub-pickup-stop-drawer__label">Pet</span>
-            <p className="hub-pickup-stop-drawer__value">
-              {item.pet.name}
-              {item.pet.species ? ` · ${item.pet.species}` : ''}
-              {item.pet.breed ? ` · ${item.pet.breed}` : ''}
-            </p>
-          </div>
-        ) : null}
+        {/* ── Link agenda ──────────────────────────────────────────────── */}
+        <a
+          href={`/hub/appointments?highlight=${item.appointment_id}`}
+          className="psd__agenda-link"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <ExternalLink size={13} aria-hidden />
+          Ver na agenda
+        </a>
 
-        {/* Tutor e contato */}
-        {item.guardian ? (
-          <div className="hub-pickup-stop-drawer__section">
-            <span className="hub-pickup-stop-drawer__label">Tutor</span>
-            <p className="hub-pickup-stop-drawer__value">{item.guardian.full_name}</p>
-            {phone ? (
-              <div className="hub-pickup-stop-drawer__contact">
-                <a href={`tel:${phone}`} className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
-                  <Phone size={13} aria-hidden />
-                  Ligar
-                </a>
-                {whatsappLink ? (
-                  <a
-                    href={whatsappLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                  >
-                    WhatsApp
-                  </a>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {/* Endereço */}
-        {item.address ? (
-          <div className="hub-pickup-stop-drawer__section">
-            <span className="hub-pickup-stop-drawer__label">
-              <MapPin size={13} aria-hidden />
-              Endereço
-            </span>
-            <p className="hub-pickup-stop-drawer__value">{item.address}</p>
-          </div>
-        ) : null}
-
-        {/* Serviço de origem */}
-        {item.service_type ? (
-          <div className="hub-pickup-stop-drawer__section">
-            <span className="hub-pickup-stop-drawer__label">Serviço de origem</span>
-            <p className="hub-pickup-stop-drawer__value">{item.service_type.name}</p>
-          </div>
-        ) : null}
-
-        {/* Horários */}
-        <div className="hub-pickup-stop-drawer__section">
-          <span className="hub-pickup-stop-drawer__label">Horário previsto</span>
-          <p className="hub-pickup-stop-drawer__value">
-            {formatTime(item.planned_at ?? item.starts_at)} – {formatTime(item.ends_at)}
-          </p>
-        </div>
-
-        {item.completed_at ? (
-          <div className="hub-pickup-stop-drawer__section">
-            <span className="hub-pickup-stop-drawer__label">Concluído em</span>
-            <p className="hub-pickup-stop-drawer__value">{formatDateTime(item.completed_at)}</p>
-          </div>
-        ) : null}
-
-        {/* Notas */}
-        {item.notes ? (
-          <div className="hub-pickup-stop-drawer__section">
-            <span className="hub-pickup-stop-drawer__label">Notas</span>
-            <p className="hub-pickup-stop-drawer__value">{item.notes}</p>
-          </div>
-        ) : null}
-
-        {/* Link Ver na agenda */}
-        <div className="hub-pickup-stop-drawer__section">
-          <a
-            href={`/hub/appointments?highlight=${item.appointment_id}`}
-            className="hub-pickup-card__agenda-link"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Ver na agenda →
-          </a>
-        </div>
       </div>
     </HubSidePanel>
   );

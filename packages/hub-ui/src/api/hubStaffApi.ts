@@ -47,6 +47,7 @@ export interface HubStaffMember {
   has_hub_access: boolean;
   hub_access_email: string | null;
   hub_access_role: HubStaffAccessRole | null;
+  operational_areas?: string[] | null;
   accepts_appointments: boolean;
   available_days: unknown;
   work_hours: unknown;

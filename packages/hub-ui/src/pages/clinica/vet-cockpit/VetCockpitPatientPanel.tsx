@@ -267,7 +267,13 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
               <FileText size={18} aria-hidden />
               Gerar documento
             </button>
-            <Link to="/hub/clinica/internacoes" className="vet-cockpit-action-btn vet-cockpit-action-btn--link">
+            <Link
+              to={`/hub/clinica/internacoes?${new URLSearchParams({
+                ...(item.pet_id ? { pet_id: item.pet_id } : {}),
+                ...(context.encounter?.hub_case_id ? { hub_case_id: context.encounter.hub_case_id } : {}),
+              }).toString()}`}
+              className="vet-cockpit-action-btn vet-cockpit-action-btn--link"
+            >
               <BedDouble size={18} aria-hidden />
               Internar
             </Link>

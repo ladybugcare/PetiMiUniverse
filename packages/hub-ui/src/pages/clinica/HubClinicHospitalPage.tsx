@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
@@ -14,6 +15,10 @@ import {
 import { hubPetsApi, type HubPet } from '../../api/hubPetsApi';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubCancelButton } from '../../components/HubCancelButton';
+import ClinicalCaseLinkFields, {
+  type ClinicalCaseLinkValue,
+  isCaseLinkResolved,
+} from '../../components/clinical/ClinicalCaseLinkFields';
 
 const STATUS_LABEL: Record<string, string> = {
   active: 'Internado',
@@ -36,6 +41,7 @@ const HubClinicHospitalPage: React.FC = () => {
   const clinicId = getStoredClinicId();
   const { showError, showSuccess } = useAlert();
   const { hasPermission } = usePermissions();
+  const [searchParams] = useSearchParams();
   const canRead = hasPermission('hub.clinic.read');
   const canWrite = hasPermission('hub.clinic.write');
 
@@ -47,6 +53,8 @@ const HubClinicHospitalPage: React.FC = () => {
   const [petId, setPetId] = useState('');
   const [bedId, setBedId] = useState('');
   const [notes, setNotes] = useState('');
+  const [caseLink, setCaseLink] = useState<ClinicalCaseLinkValue>({});
+  const [hasActiveCases, setHasActiveCases] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Events panel
@@ -63,6 +71,12 @@ const HubClinicHospitalPage: React.FC = () => {
   const [dischargeStatus, setDischargeStatus] = useState<'discharged' | 'death' | 'transferred'>('discharged');
   const [dischargeNotes, setDischargeNotes] = useState('');
   const [dischargeSubmitting, setDischargeSubmitting] = useState(false);
+
+  // Link-case for orphan hospitalizations
+  const [linkCaseHosp, setLinkCaseHosp] = useState<HubHospitalization | null>(null);
+  const [linkCaseValue, setLinkCaseValue] = useState<ClinicalCaseLinkValue>({});
+  const [linkCaseHasActive, setLinkCaseHasActive] = useState(false);
+  const [linkCaseSubmitting, setLinkCaseSubmitting] = useState(false);
 
   const reload = async () => {
     if (!clinicId) return;
@@ -83,6 +97,17 @@ const HubClinicHospitalPage: React.FC = () => {
     if (!clinicId || !admitOpen) return;
     void hubPetsApi.list(clinicId).then((r) => setPets(r.pets ?? [])).catch(() => setPets([]));
   }, [clinicId, admitOpen]);
+
+  // Pre-fill from query params (?pet_id=...&hub_case_id=...)
+  useEffect(() => {
+    const qPet = searchParams.get('pet_id');
+    const qCase = searchParams.get('hub_case_id');
+    if (qPet || qCase) {
+      setAdmitOpen(true);
+      if (qPet) setPetId(qPet);
+      if (qCase) setCaseLink({ hub_case_id: qCase });
+    }
+  }, []);
 
   const openEvents = async (hospId: string) => {
     setEventsHospId(hospId);
@@ -114,8 +139,20 @@ const HubClinicHospitalPage: React.FC = () => {
     }
   };
 
+  const resetAdmitForm = () => {
+    setPetId('');
+    setBedId('');
+    setNotes('');
+    setCaseLink({});
+    setHasActiveCases(false);
+  };
+
   const admit = async () => {
     if (!clinicId || !petId) return;
+    if (!isCaseLinkResolved(caseLink, hasActiveCases)) {
+      showError('Selecione um caso clínico ou escolha criar um novo antes de continuar.');
+      return;
+    }
     setSubmitting(true);
     try {
       await hubClinicalApi.createHospitalization({
@@ -123,11 +160,10 @@ const HubClinicHospitalPage: React.FC = () => {
         pet_id: petId,
         hub_hospital_bed_id: bedId || null,
         admission_notes: notes.trim() || null,
+        ...caseLink,
       });
       setAdmitOpen(false);
-      setPetId('');
-      setBedId('');
-      setNotes('');
+      resetAdmitForm();
       await reload();
       showSuccess('Internação registrada');
     } catch (e: unknown) {
@@ -158,6 +194,29 @@ const HubClinicHospitalPage: React.FC = () => {
     }
   };
 
+  const confirmLinkCase = async () => {
+    if (!clinicId || !linkCaseHosp) return;
+    if (!isCaseLinkResolved(linkCaseValue, linkCaseHasActive)) {
+      showError('Selecione um caso clínico ou escolha criar um novo.');
+      return;
+    }
+    setLinkCaseSubmitting(true);
+    try {
+      await hubClinicalApi.patchHospitalization(linkCaseHosp.id, {
+        clinic_id: clinicId,
+        ...linkCaseValue,
+      });
+      setLinkCaseHosp(null);
+      setLinkCaseValue({});
+      await reload();
+      showSuccess('Internação vinculada ao caso');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao vincular caso');
+    } finally {
+      setLinkCaseSubmitting(false);
+    }
+  };
+
   const addEvent = async () => {
     if (!eventsHospId) return;
     setEventSubmitting(true);
@@ -185,6 +244,7 @@ const HubClinicHospitalPage: React.FC = () => {
   };
 
   const selectedHosp = hosp.find((h) => h.id === eventsHospId);
+  const canSubmitAdmit = !!petId && !submitting && isCaseLinkResolved(caseLink, hasActiveCases);
 
   if (!canRead) {
     return <p className="hub-clientes__muted hub-clinic-page__pad">Sem permissão.</p>;
@@ -232,13 +292,14 @@ const HubClinicHospitalPage: React.FC = () => {
               <th>Leito</th>
               <th>Entrada</th>
               <th>Status</th>
+              <th>Caso</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {hosp.length === 0 ? (
               <tr>
-                <td colSpan={5} className="hub-clientes__muted" style={{ textAlign: 'center', padding: 24 }}>
+                <td colSpan={6} className="hub-clientes__muted" style={{ textAlign: 'center', padding: 24 }}>
                   Nenhuma internação ativa.
                 </td>
               </tr>
@@ -249,7 +310,14 @@ const HubClinicHospitalPage: React.FC = () => {
                   <td>{h.hub_hospital_beds?.label || h.hub_hospital_beds?.code || '—'}</td>
                   <td>{String(h.admitted_at || '').slice(0, 10)}</td>
                   <td>{STATUS_LABEL[h.status] || h.status}</td>
-                  <td style={{ display: 'flex', gap: 4 }}>
+                  <td>
+                    {h.hub_case_id ? (
+                      <span style={{ color: 'var(--color-success, green)', fontSize: 12 }}>Vinculado</span>
+                    ) : (
+                      <span style={{ color: 'var(--color-warning, #b45309)', fontSize: 12 }}>Sem caso</span>
+                    )}
+                  </td>
+                  <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
@@ -257,6 +325,15 @@ const HubClinicHospitalPage: React.FC = () => {
                     >
                       Eventos
                     </button>
+                    {canWrite && !h.hub_case_id && (
+                      <button
+                        type="button"
+                        className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                        onClick={() => { setLinkCaseHosp(h); setLinkCaseValue({}); setLinkCaseHasActive(false); }}
+                      >
+                        Vincular caso
+                      </button>
+                    )}
                     {canWrite && (
                       <button
                         type="button"
@@ -277,15 +354,15 @@ const HubClinicHospitalPage: React.FC = () => {
       {/* Painel de admissão */}
       <HubSidePanel
         open={admitOpen}
-        onClose={() => setAdmitOpen(false)}
+        onClose={() => { setAdmitOpen(false); resetAdmitForm(); }}
         title="Internar pet"
         footer={
           <div className="hub-clientes__panel-footer">
-            <HubCancelButton onClick={() => setAdmitOpen(false)} />
+            <HubCancelButton onClick={() => { setAdmitOpen(false); resetAdmitForm(); }} />
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--primary"
-              disabled={submitting || !petId}
+              disabled={!canSubmitAdmit}
               onClick={() => void admit()}
             >
               {submitting ? 'Salvando…' : 'Confirmar internação'}
@@ -300,9 +377,19 @@ const HubClinicHospitalPage: React.FC = () => {
             className="hub-combobox--clientes"
             options={petOptions}
             value={petId}
-            onChange={setPetId}
+            onChange={(v) => { setPetId(v); setCaseLink({}); setHasActiveCases(false); }}
             placeholder="Buscar pet…"
           />
+          {clinicId && petId && (
+            <ClinicalCaseLinkFields
+              clinicId={clinicId}
+              petId={petId}
+              value={caseLink}
+              onChange={(v) => setCaseLink(v)}
+              onHasActiveCases={setHasActiveCases}
+              disabled={submitting}
+            />
+          )}
           <span className="hub-clientes__label">Leito (opcional)</span>
           <HubSearchableCombobox
             id="clinic-admit-bed"
@@ -314,6 +401,41 @@ const HubClinicHospitalPage: React.FC = () => {
           />
           <span className="hub-clientes__label">Observações de admissão</span>
           <textarea className="hub-clientes__textarea" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
+      </HubSidePanel>
+
+      {/* Painel de vincular caso (órfão) */}
+      <HubSidePanel
+        open={!!linkCaseHosp}
+        onClose={() => { setLinkCaseHosp(null); setLinkCaseValue({}); }}
+        title={`Vincular caso — ${linkCaseHosp?.hub_pets?.name || 'Internação'}`}
+        footer={
+          <div className="hub-clientes__panel-footer">
+            <HubCancelButton onClick={() => { setLinkCaseHosp(null); setLinkCaseValue({}); }} />
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              disabled={linkCaseSubmitting || !isCaseLinkResolved(linkCaseValue, linkCaseHasActive)}
+              onClick={() => void confirmLinkCase()}
+            >
+              {linkCaseSubmitting ? 'Salvando…' : 'Vincular'}
+            </button>
+          </div>
+        }
+      >
+        <div className="hub-clientes__form-stack">
+          {clinicId && linkCaseHosp && (
+            <ClinicalCaseLinkFields
+              clinicId={clinicId}
+              petId={linkCaseHosp.pet_id}
+              value={linkCaseValue}
+              onChange={(v) => {
+                setLinkCaseValue(v);
+                setLinkCaseHasActive(true);
+              }}
+              disabled={linkCaseSubmitting}
+            />
+          )}
         </div>
       </HubSidePanel>
 

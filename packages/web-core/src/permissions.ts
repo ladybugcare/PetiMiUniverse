@@ -1,4 +1,8 @@
 import type { ClinicStaffRole } from './types';
+import {
+  permissionsFromOperationalAreas,
+  sanitizeOperationalAreas,
+} from './operationalAreas';
 
 export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
   CADMIN: [
@@ -124,6 +128,10 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'pickup.routes.read',
     'pickup.routes.manage',
     'pickup.stops.update',
+    'hub.financial.read',
+    'hub.cash.session',
+    'hub.cash.receive',
+    'hub.receivables.create',
   ],
   CVET_INTERNAL: [
     'unit.view',
@@ -178,3 +186,22 @@ export const hasPermission = (role: ClinicStaffRole | null, permission: string):
   const rolePermissions = PERMISSIONS[role];
   return rolePermissions ? rolePermissions.includes(permission) : false;
 };
+
+export function mergePermissionsForRoleAndAreas(
+  role: ClinicStaffRole,
+  operationalAreas?: readonly string[] | null,
+): string[] {
+  const base = PERMISSIONS[role] ?? [];
+  const fromAreas = permissionsFromOperationalAreas(sanitizeOperationalAreas(operationalAreas ?? []));
+  return [...new Set([...base, ...fromAreas])];
+}
+
+export function hasEffectivePermission(
+  role: ClinicStaffRole | null,
+  permission: string,
+  operationalAreas?: readonly string[] | null,
+): boolean {
+  if (!role) return false;
+  if (isClinicAdminRole(role)) return true;
+  return mergePermissionsForRoleAndAreas(role, operationalAreas).includes(permission);
+}

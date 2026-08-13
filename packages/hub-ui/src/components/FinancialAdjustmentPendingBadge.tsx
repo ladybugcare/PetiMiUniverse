@@ -14,7 +14,7 @@ export function FinancialAdjustmentPendingBadge({ pending, showCaixaLink = false
       <AlertCircle size={14} strokeWidth={1.75} aria-hidden />
       <span>Ajuste financeiro pendente</span>
       {showCaixaLink ? (
-        <Link to="/hub/financeiro/caixa" className="hub-clientes__link hub-finance-adjustment-badge__link">
+        <Link to="/hub/caixa" className="hub-clientes__link hub-finance-adjustment-badge__link">
           Ver no Caixa
         </Link>
       ) : null}

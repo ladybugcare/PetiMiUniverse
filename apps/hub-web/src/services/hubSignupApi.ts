@@ -27,6 +27,16 @@ export type HubOnboardingClinicPayload = {
     is_main: boolean;
     technical_manager: string;
   };
+  plan_slug?: string;
+  beta_terms_accepted?: boolean;
+};
+
+export type HubSubscriptionPayload = {
+  status: string;
+  is_beta: boolean;
+  base_plan_slug: string | null;
+  enabled_modules: string[];
+  beta_free_until: string | null;
 };
 
 export const hubSignupApi = {
@@ -49,6 +59,7 @@ export const hubSignupApi = {
       clinic: Record<string, unknown>;
       unit: Record<string, unknown>;
       clinicUser: Record<string, unknown>;
+      subscription?: HubSubscriptionPayload | null;
       message: string;
     }>;
   },

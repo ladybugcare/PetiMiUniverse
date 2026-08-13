@@ -1667,14 +1667,48 @@ export const postHubFinanceCashSessionOpen = async (req: Request, res: Response)
     if (!parsed.success) {
       return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
     }
-    const { clinic_id, unit_id, opening_balance, opened_by_staff_id } = parsed.data;
+    const { clinic_id, unit_id, opening_balance, opened_by_staff_id: bodyStaffId } = parsed.data;
+
+    // Resolve o profissional vinculado ao usuário autenticado, se não informado no body
+    let opened_by_staff_id: string | null = bodyStaffId ?? null;
+    if (!opened_by_staff_id && req.user?.id) {
+      const { data: clinicUser } = await supabaseAdmin
+        .from('clinic_users')
+        .select('id')
+        .eq('clinic_id', clinic_id)
+        .eq('user_id', req.user.id)
+        .eq('status', 'active')
+        .maybeSingle();
+      if (clinicUser?.id) {
+        const { data: staffRow } = await supabaseAdmin
+          .from('hub_staff_members')
+          .select('id')
+          .eq('clinic_id', clinic_id)
+          .eq('clinic_user_id', clinicUser.id)
+          .is('deleted_at', null)
+          .maybeSingle();
+        opened_by_staff_id = (staffRow?.id as string | null) ?? null;
+      }
+    }
+
     const { data: existing } = await supabaseAdmin
       .from('hub_cash_sessions')
-      .select('id')
+      .select('id, opened_at')
       .eq('unit_id', unit_id)
       .eq('status', 'open')
       .maybeSingle();
-    if (existing) return res.status(409).json({ error: 'Já existe caixa aberto nesta unidade' });
+    if (existing) {
+      const openedAtDate = existing.opened_at
+        ? new Date(existing.opened_at as string).toISOString().slice(0, 10)
+        : null;
+      const todayYmd = new Date().toISOString().slice(0, 10);
+      const isPreviousDay = openedAtDate && openedAtDate < todayYmd;
+      return res.status(409).json({
+        error: 'Já existe caixa aberto nesta unidade',
+        previous_session_id: existing.id,
+        is_previous_day: isPreviousDay ?? false,
+      });
+    }
 
     const { data, error } = await supabaseAdmin
       .from('hub_cash_sessions')
@@ -1726,6 +1760,61 @@ export const postHubFinanceCashSessionClose = async (req: Request, res: Response
     if (sErr || !sess || sess.clinic_id !== clinic_id) return res.status(404).json({ error: 'Sessão não encontrada' });
     if (sess.status !== 'open') return res.status(409).json({ error: 'Caixa já fechado' });
 
+    // Auto-handoff: envia comandas abertas da unidade ao financeiro antes de fechar
+    let autoHandoffCount = 0;
+    const autoHandoffErrors: string[] = [];
+    const todayYmd = new Date().toISOString().slice(0, 10);
+    const { data: openComandas } = await supabaseAdmin
+      .from('hub_comandas')
+      .select('id')
+      .eq('clinic_id', clinic_id)
+      .eq('unit_id', sess.unit_id as string)
+      .eq('status', 'aberta')
+      .is('finance_handoff_at', null);
+    for (const comanda of openComandas ?? []) {
+      try {
+        await supabaseAdmin
+          .from('hub_comandas')
+          .update({ finance_handoff_at: new Date().toISOString() })
+          .eq('id', comanda.id as string)
+          .eq('status', 'aberta')
+          .is('finance_handoff_at', null);
+        // Cria recebível pendente se ainda não existe
+        const { data: existingRec } = await supabaseAdmin
+          .from('hub_receivables')
+          .select('id')
+          .eq('clinic_id', clinic_id)
+          .eq('comanda_id', comanda.id as string)
+          .is('deleted_at', null)
+          .neq('status', 'cancelled')
+          .limit(1)
+          .maybeSingle();
+        if (!existingRec) {
+          const { data: comandaRow } = await supabaseAdmin
+            .from('hub_comandas')
+            .select('origin_type, origin_id, total_amount, guardian_id, unit_id')
+            .eq('id', comanda.id as string)
+            .maybeSingle();
+          if (comandaRow) {
+            await supabaseAdmin.from('hub_receivables').insert({
+              clinic_id,
+              unit_id: comandaRow.unit_id,
+              comanda_id: comanda.id,
+              source_type: comandaRow.origin_type,
+              source_id: comandaRow.origin_id,
+              guardian_id: comandaRow.guardian_id,
+              final_amount: comandaRow.total_amount ?? 0,
+              status: 'pending',
+              due_date: todayYmd,
+            });
+          }
+        }
+        autoHandoffCount++;
+      } catch (handoffErr) {
+        autoHandoffErrors.push(String((handoffErr as Error)?.message ?? comanda.id));
+      }
+    }
+
     const openBal = Number(sess.opening_balance ?? 0);
     const [{ data: cashPayments, error: payErr }, { data: cashMovements, error: movErr }] = await Promise.all([
       supabaseAdmin
@@ -1772,9 +1861,63 @@ export const postHubFinanceCashSessionClose = async (req: Request, res: Response
       .select('*')
       .single();
     if (uErr) return res.status(500).json({ error: uErr.message });
-    return res.json({ cash_session: updated });
+    return res.json({
+      cash_session: updated,
+      auto_handoff_count: autoHandoffCount,
+      auto_handoff_errors: autoHandoffErrors,
+    });
   } catch (e: unknown) {
     console.error('postHubFinanceCashSessionClose', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+/**
+ * GET /finance/cash-sessions/status
+ * Endpoint leve que agrega status do caixa + contagem de pendências em uma única chamada.
+ * Usado pelo HubCashSessionContext para polling periódico no sidebar.
+ */
+export const getHubFinanceCashSessionStatus = async (req: Request, res: Response) => {
+  try {
+    const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+    const unitParsed = uuidStr.safeParse(req.query.unit_id);
+    if (!clinicParsed.success || !unitParsed.success) {
+      return res.status(400).json({ error: 'clinic_id e unit_id são obrigatórios' });
+    }
+    const clinic_id = clinicParsed.data;
+    const unit_id = unitParsed.data;
+
+    const [{ data: cashSession }, pendingBillingResult, { data: openComandasRows }] = await Promise.all([
+      supabaseAdmin
+        .from('hub_cash_sessions')
+        .select('id, status, opened_at, opening_balance, closed_at')
+        .eq('clinic_id', clinic_id)
+        .eq('unit_id', unit_id)
+        .eq('status', 'open')
+        .maybeSingle(),
+      collectUnbilledItems(clinic_id, unit_id, await fetchActiveReceivableKeys(clinic_id)).catch(() => [] as unknown[]),
+      supabaseAdmin
+        .from('hub_comandas')
+        .select('id, total_amount')
+        .eq('clinic_id', clinic_id)
+        .eq('unit_id', unit_id)
+        .eq('status', 'aberta')
+        .is('finance_handoff_at', null),
+    ]);
+
+    const openComandasCount = (openComandasRows ?? []).length;
+    const openComandasTotal = round2(
+      (openComandasRows ?? []).reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0),
+    );
+
+    return res.json({
+      cash_session: cashSession ?? null,
+      pending_billing_count: pendingBillingResult.length,
+      open_comandas_count: openComandasCount,
+      open_comandas_total: openComandasTotal,
+    });
+  } catch (e: unknown) {
+    console.error('getHubFinanceCashSessionStatus', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };
@@ -1791,7 +1934,7 @@ export const listHubFinanceCashSessionsClosed = async (req: Request, res: Respon
     const { data, error } = await supabaseAdmin
       .from('hub_cash_sessions')
       .select(
-        'id, opened_at, closed_at, opening_balance, closing_balance, expected_balance, difference_amount, status'
+        'id, opened_at, closed_at, opening_balance, closing_balance, expected_balance, difference_amount, status, opened_by_staff_id, opened_by_staff:hub_staff_members!opened_by_staff_id(id, full_name, display_name)'
       )
       .eq('clinic_id', clinicParsed.data)
       .eq('unit_id', unitParsed.data)
@@ -1815,7 +1958,7 @@ export const getHubFinanceCashSessionOpen = async (req: Request, res: Response) 
     }
     const { data, error } = await supabaseAdmin
       .from('hub_cash_sessions')
-      .select('*')
+      .select('*, opened_by_staff:hub_staff_members!opened_by_staff_id(id, full_name, display_name)')
       .eq('clinic_id', clinicParsed.data)
       .eq('unit_id', unitParsed.data)
       .eq('status', 'open')

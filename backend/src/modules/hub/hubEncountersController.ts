@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
-import { resolveOrCreateClinicalCase } from './hubClinicalCasesController';
+import { resolveOrCreateClinicalCase, CaseSelectionRequiredError } from './hubClinicalCasesController';
 import { recordTimelineEvent } from './hubClinicalTimelineController';
 import {
   syncOpenComandasAfterEncounterCompleted,
@@ -822,6 +822,9 @@ export const createHubEncounter = async (req: Request, res: Response) => {
           create_new_case: b.create_new_case,
         });
       } catch (caseErr: unknown) {
+        if (caseErr instanceof CaseSelectionRequiredError) {
+          return res.status(409).json({ error: caseErr.message, code: caseErr.code });
+        }
         return res.status(400).json({ error: (caseErr as Error)?.message || 'Erro ao resolver caso clínico' });
       }
     } else {
@@ -1000,6 +1003,9 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
           new_case_title: intakeNewTitle,
         });
       } catch (caseErr: unknown) {
+        if (caseErr instanceof CaseSelectionRequiredError) {
+          return res.status(409).json({ error: caseErr.message, code: caseErr.code });
+        }
         return res.status(400).json({ error: (caseErr as Error)?.message || 'Erro ao resolver caso clínico' });
       }
     }

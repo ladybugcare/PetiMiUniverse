@@ -7,7 +7,7 @@ const pickupBase = '/api/hub/pickup';
 export type PickupDirection = 'pickup' | 'delivery' | 'unknown';
 
 export type PickupRouteStatus = 'planned' | 'in_progress' | 'done' | 'cancelled';
-export type PickupStopStatus = 'pending' | 'en_route' | 'arrived' | 'completed' | 'failed';
+export type PickupStopStatus = 'pending' | 'en_route' | 'arrived' | 'in_transit' | 'completed' | 'failed';
 
 export type PickupDayBoardPet = {
   id: string;
@@ -30,6 +30,8 @@ export type PickupGuardian = {
 export type PickupDayBoardItem = {
   appointment_id: string;
   appointment_kind: 'pickup_route';
+  /** UUID do atendimento principal (pai) ao qual esta perna pertence. */
+  parent_appointment_id?: string | null;
   direction: PickupDirection;
   starts_at: string;
   ends_at: string;
@@ -200,5 +202,27 @@ export const hubPickupApi = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }) as Promise<{ stop: PickupStop }>;
+  },
+
+  /** Cria ou atualiza uma parada solta (sem rota) para uma perna pickup_route. */
+  createLooseStop(payload: {
+    clinic_id: string;
+    hub_appointment_id: string;
+    direction: 'pickup' | 'delivery';
+    status: PickupStopStatus;
+  }) {
+    return apiRequest(`${pickupBase}/stops`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ stop: PickupStop }>;
+  },
+
+  /** Rota do dia atribuída ao usuário autenticado (como motorista). */
+  myRoute(clinicId: string, dateYmd: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId, date: dateYmd });
+    return apiRequest(`${pickupBase}/my-route?${q}`) as Promise<{
+      route: (PickupRoute & { driver?: { id: string; full_name: string; phone?: string | null } | null }) | null;
+      stops?: PickupStop[];
+    }>;
   },
 };

@@ -1,18 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { HubUnitProvider } from '../contexts/HubUnitContext';
+import { HubCashSessionProvider } from '../contexts/HubCashSessionContext';
+import { useCaixaExitGuard } from '../hooks/useCaixaExitGuard';
 import HubSidebar from './HubSidebar';
 import HubTopHeader from './HubTopHeader';
 import HubUnitIncompleteBanner from './HubUnitIncompleteBanner';
+import HubCashOpenBanner from './HubCashOpenBanner';
 
 const MOBILE_MQ = '(max-width: 900px)';
 
-const HubAppShell: React.FC = () => {
+const HubAppShellInner: React.FC = () => {
   const { pathname } = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false
+    typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false,
   );
+
+  const { ExitGuardModal } = useCaixaExitGuard();
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);
@@ -52,35 +57,39 @@ const HubAppShell: React.FC = () => {
   const sidebarOpen = !isMobile || isSidebarOpen;
 
   return (
-    <HubUnitProvider>
-      <div className="hub-app-shell">
-        {isMobile && isSidebarOpen && (
-          <button
-            type="button"
-            className="hub-sidebar-backdrop"
-            aria-label="Fechar menu"
-            onClick={handleCloseSidebar}
-          />
-        )}
-        <HubSidebar
-          isOpen={sidebarOpen}
-          isMobile={isMobile}
-          onClose={handleCloseSidebar}
+    <div className="hub-app-shell">
+      <ExitGuardModal />
+      {isMobile && isSidebarOpen && (
+        <button
+          type="button"
+          className="hub-sidebar-backdrop"
+          aria-label="Fechar menu"
+          onClick={handleCloseSidebar}
         />
-        <div className="hub-app-shell__column">
-          <HubTopHeader
-            onMenuClick={handleMenuToggle}
-            isMenuOpen={isSidebarOpen}
-            showMenuButton={isMobile}
-          />
-          <div className="hub-app-shell__outlet">
-            <HubUnitIncompleteBanner />
-            <Outlet />
-          </div>
+      )}
+      <HubSidebar isOpen={sidebarOpen} isMobile={isMobile} onClose={handleCloseSidebar} />
+      <div className="hub-app-shell__column">
+        <HubTopHeader
+          onMenuClick={handleMenuToggle}
+          isMenuOpen={isSidebarOpen}
+          showMenuButton={isMobile}
+        />
+        <div className="hub-app-shell__outlet">
+          <HubUnitIncompleteBanner />
+          <HubCashOpenBanner />
+          <Outlet />
         </div>
       </div>
-    </HubUnitProvider>
+    </div>
   );
 };
+
+const HubAppShell: React.FC = () => (
+  <HubUnitProvider>
+    <HubCashSessionProvider>
+      <HubAppShellInner />
+    </HubCashSessionProvider>
+  </HubUnitProvider>
+);
 
 export default HubAppShell;

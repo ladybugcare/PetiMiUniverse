@@ -16,8 +16,6 @@ import HubQuoteWorkspace from './HubQuoteWorkspace';
 import '../clientes/clientes.css';
 import './orcamentos-page.css';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 /**
  * Edição do conteúdo do orçamento (rascunho). A vista de leitura fica em `/hub/orcamentos/:id`.
  */
@@ -26,7 +24,7 @@ const HubQuoteEditPage: React.FC = () => {
   const navigate = useNavigate();
   const { showError } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.quotes.write');
 
@@ -34,8 +32,7 @@ const HubQuoteEditPage: React.FC = () => {
   const [quote, setQuote] = useState<HubQuote | null>(null);
   const [serviceTypes, setServiceTypes] = useState<HubServiceType[]>([]);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.quotes.write');
 
   const load = useCallback(async () => {
     if (!clinicId || !id) return;

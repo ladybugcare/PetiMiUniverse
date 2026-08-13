@@ -165,6 +165,34 @@
   color: #059669;
 }
 
+.hub-beta-plan-card__icon {
+  background: #fff4e8;
+  color: #e65100;
+}
+
+.hub-beta-plan-card__perks {
+  margin: 0 0 14px;
+  padding-left: 1.2rem;
+  color: #4a3b3a;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.hub-beta-plan-card__perks li + li {
+  margin-top: 6px;
+}
+
+.hub-beta-plan-card__note {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: #faf7f4;
+  border: 1px solid #e8e4e0;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #6b6560;
+  line-height: 1.45;
+}
+
 @media (max-width: 640px) {
   .hub-onboarding-form-grid {
     grid-template-columns: 1fr;

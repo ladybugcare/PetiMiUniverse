@@ -95,6 +95,36 @@ export interface Admin {
   last_sign_in_at?: string | null;
 }
 
+export interface ClinicHubSubscription {
+  id: string;
+  clinic_id: string;
+  status: string;
+  is_beta: boolean;
+  beta_free_until: string | null;
+  beta_discount_percent: number | null;
+  override_monthly_cents: number | null;
+  beta_notes: string | null;
+  enabled_modules: string[];
+  started_at: string;
+  canceled_at: string | null;
+  base_plan: {
+    slug: string;
+    name: string;
+    max_units: number | null;
+    max_users: number | null;
+  } | null;
+}
+
+export type PatchClinicHubSubscription = {
+  is_beta?: boolean;
+  beta_free_until?: string | null;
+  beta_discount_percent?: number | null;
+  override_monthly_cents?: number | null;
+  beta_notes?: string | null;
+  enabled_modules?: string[];
+  status?: string;
+};
+
 // Serviços administrativos
 export const adminApi = {
   // Listar unidades pendentes
@@ -180,5 +210,19 @@ export const adminApi = {
     apiRequest(`/freelancers/${id}/reject`, {
       method: 'POST',
       body: JSON.stringify({ rejection_reason: reason }),
+    }),
+
+  getClinicSubscription: async (
+    clinicId: string,
+  ): Promise<{ subscription: ClinicHubSubscription; available_modules: string[] }> =>
+    apiRequest(`/admin/clinics/${clinicId}/subscription`),
+
+  patchClinicSubscription: async (
+    clinicId: string,
+    patch: PatchClinicHubSubscription,
+  ): Promise<{ subscription: ClinicHubSubscription; available_modules: string[] }> =>
+    apiRequest(`/admin/clinics/${clinicId}/subscription`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
     }),
 };

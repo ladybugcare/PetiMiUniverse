@@ -5,10 +5,10 @@ import { MenuItem } from '../components/DashboardSidebar';
 import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
 import { clinicsApi } from '../services/clinicsApi';
-import { adminApi, ActiveUnit } from '../services/adminApi';
+import { adminApi, ActiveUnit, ClinicHubSubscription } from '../services/adminApi';
 import { useAlert } from '../hooks/useAlert';
 import { SuccessModal } from '../components/SuccessModal';
-import { Eye, Edit, Trash2, CheckCircle, XCircle, Building2 } from 'lucide-react';
+import { Eye, Edit, Trash2, CheckCircle, XCircle, Building2, CreditCard } from 'lucide-react';
 import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
@@ -48,6 +48,19 @@ const AdminClinicsPage: React.FC = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<Clinic>>();
+  const [showBetaModal, setShowBetaModal] = useState(false);
+  const [subscription, setSubscription] = useState<ClinicHubSubscription | null>(null);
+  const [availableModules, setAvailableModules] = useState<string[]>([]);
+  const [loadingSubscription, setLoadingSubscription] = useState(false);
+  const [savingSubscription, setSavingSubscription] = useState(false);
+  const [betaForm, setBetaForm] = useState({
+    is_beta: true,
+    beta_free_until: '',
+    beta_discount_percent: '' as string,
+    override_monthly_cents: '' as string,
+    beta_notes: '',
+    enabled_modules: [] as string[],
+  });
 
   // Unidades state
   const [units, setUnits] = useState<ActiveUnit[]>([]);
@@ -148,9 +161,84 @@ const AdminClinicsPage: React.FC = () => {
   const currentUnits = filteredUnits.slice(unitsStartIndex, unitsEndIndex);
 
 
-  const handleView = (clinic: Clinic) => {
+  const handleView = async (clinic: Clinic) => {
     setSelectedClinic(clinic);
     setShowViewModal(true);
+    setSubscription(null);
+    setLoadingSubscription(true);
+    try {
+      const res = await adminApi.getClinicSubscription(clinic.id);
+      setSubscription(res.subscription);
+      setAvailableModules(res.available_modules || []);
+    } catch (error: any) {
+      console.warn('Assinatura Hub:', error?.message);
+    } finally {
+      setLoadingSubscription(false);
+    }
+  };
+
+  const openBetaEditor = () => {
+    if (!subscription) return;
+    const until = subscription.beta_free_until
+      ? subscription.beta_free_until.slice(0, 10)
+      : '';
+    setBetaForm({
+      is_beta: subscription.is_beta,
+      beta_free_until: until,
+      beta_discount_percent:
+        subscription.beta_discount_percent != null
+          ? String(subscription.beta_discount_percent)
+          : '',
+      override_monthly_cents:
+        subscription.override_monthly_cents != null
+          ? String(subscription.override_monthly_cents)
+          : '',
+      beta_notes: subscription.beta_notes || '',
+      enabled_modules: [...(subscription.enabled_modules || [])],
+    });
+    setShowBetaModal(true);
+  };
+
+  const toggleModule = (slug: string) => {
+    if (slug === 'hub_core') return;
+    setBetaForm((f) => {
+      const has = f.enabled_modules.includes(slug);
+      return {
+        ...f,
+        enabled_modules: has
+          ? f.enabled_modules.filter((m) => m !== slug)
+          : [...f.enabled_modules, slug],
+      };
+    });
+  };
+
+  const handleSaveBeta = async () => {
+    if (!selectedClinic) return;
+    setSavingSubscription(true);
+    try {
+      const modules = Array.from(new Set(['hub_core', ...betaForm.enabled_modules]));
+      const res = await adminApi.patchClinicSubscription(selectedClinic.id, {
+        is_beta: betaForm.is_beta,
+        beta_free_until: betaForm.beta_free_until.trim() || null,
+        beta_discount_percent: betaForm.beta_discount_percent.trim()
+          ? Number(betaForm.beta_discount_percent)
+          : null,
+        override_monthly_cents: betaForm.override_monthly_cents.trim()
+          ? Number(betaForm.override_monthly_cents)
+          : null,
+        beta_notes: betaForm.beta_notes.trim() || null,
+        enabled_modules: modules,
+        status: betaForm.is_beta ? 'beta' : undefined,
+      });
+      setSubscription(res.subscription);
+      setAvailableModules(res.available_modules || []);
+      setShowBetaModal(false);
+      showSuccess('Assinatura Beta atualizada.');
+    } catch (error: any) {
+      showError('Erro ao salvar assinatura: ' + (error?.message || 'desconhecido'));
+    } finally {
+      setSavingSubscription(false);
+    }
   };
 
   const handleEdit = (clinic: Clinic) => {
@@ -534,6 +622,176 @@ const AdminClinicsPage: React.FC = () => {
                 <div style={styles.detailRow}>
                   <strong>Data de Cadastro:</strong> {formatDate(selectedClinic.created_at)}
                 </div>
+
+                <div style={{ ...styles.detailRow, marginTop: 16, borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
+                  <strong>Assinatura Hub (SaaS)</strong>
+                </div>
+                {loadingSubscription ? (
+                  <p style={{ color: colors.textSecondary, fontSize: 14 }}>Carregando assinatura…</p>
+                ) : subscription ? (
+                  <>
+                    <div style={styles.detailRow}>
+                      <strong>Plano:</strong> {subscription.base_plan?.name || '—'} ({subscription.status})
+                    </div>
+                    <div style={styles.detailRow}>
+                      <strong>Beta:</strong> {subscription.is_beta ? 'Sim' : 'Não'}
+                    </div>
+                    <div style={styles.detailRow}>
+                      <strong>Grátis até:</strong>{' '}
+                      {subscription.beta_free_until
+                        ? formatDate(subscription.beta_free_until)
+                        : 'Até o admin encerrar'}
+                    </div>
+                    <div style={styles.detailRow}>
+                      <strong>Módulos:</strong> {(subscription.enabled_modules || []).join(', ') || '—'}
+                    </div>
+                    {subscription.beta_notes ? (
+                      <div style={styles.detailRow}>
+                        <strong>Notas:</strong> {subscription.beta_notes}
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={openBetaEditor}
+                      style={{
+                        marginTop: 12,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '8px 14px',
+                        borderRadius: 8,
+                        border: '1px solid #f59e0b',
+                        background: '#fffbeb',
+                        color: '#92400e',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: 13,
+                      }}
+                    >
+                      <CreditCard size={16} />
+                      Gerenciar Beta
+                    </button>
+                  </>
+                ) : (
+                  <p style={{ color: colors.textSecondary, fontSize: 14 }}>
+                    Assinatura não encontrada (execute a migration 082).
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showBetaModal && selectedClinic && (
+          <div style={styles.modalOverlay} onClick={() => setShowBetaModal(false)}>
+            <div style={{ ...styles.modal, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <h3 style={styles.modalTitle}>Programa Beta — {selectedClinic.name}</h3>
+                <button onClick={() => setShowBetaModal(false)} style={styles.closeButton}>
+                  ✕
+                </button>
+              </div>
+              <div style={styles.modalBody}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>
+                    <input
+                      type="checkbox"
+                      checked={betaForm.is_beta}
+                      onChange={(e) => setBetaForm({ ...betaForm, is_beta: e.target.checked })}
+                    />{' '}
+                    Usuário beta
+                  </label>
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Grátis até (opcional)</label>
+                  <input
+                    type="date"
+                    style={styles.input}
+                    value={betaForm.beta_free_until}
+                    onChange={(e) => setBetaForm({ ...betaForm, beta_free_until: e.target.value })}
+                  />
+                  <span style={{ fontSize: 12, color: '#6b7280' }}>
+                    Em branco = grátis até o admin encerrar
+                  </span>
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Desconto beta (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    style={styles.input}
+                    value={betaForm.beta_discount_percent}
+                    onChange={(e) =>
+                      setBetaForm({ ...betaForm, beta_discount_percent: e.target.value })
+                    }
+                    placeholder="0–100"
+                  />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Preço override (centavos/mês)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    style={styles.input}
+                    value={betaForm.override_monthly_cents}
+                    onChange={(e) =>
+                      setBetaForm({ ...betaForm, override_monthly_cents: e.target.value })
+                    }
+                    placeholder="Ex.: 0 = grátis"
+                  />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Notas internas</label>
+                  <textarea
+                    style={{ ...styles.input, minHeight: 72 }}
+                    value={betaForm.beta_notes}
+                    onChange={(e) => setBetaForm({ ...betaForm, beta_notes: e.target.value })}
+                    placeholder="Ex.: early adopter indicado pelo fulano"
+                  />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Módulos ativos</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                    {(availableModules.length
+                      ? availableModules
+                      : ['hub_core', 'clinic', 'grooming', 'boarding']
+                    ).map((slug) => (
+                      <label key={slug} style={{ fontSize: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={betaForm.enabled_modules.includes(slug) || slug === 'hub_core'}
+                          disabled={slug === 'hub_core'}
+                          onChange={() => toggleModule(slug)}
+                        />
+                        {slug}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div style={styles.formActions}>
+                <button
+                  type="button"
+                  onClick={() => setShowBetaModal(false)}
+                  style={styles.cancelButton}
+                  disabled={savingSubscription}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveBeta()}
+                  style={styles.saveButton}
+                  disabled={savingSubscription}
+                >
+                  {savingSubscription ? 'Salvando…' : 'Salvar'}
+                </button>
               </div>
             </div>
           </div>

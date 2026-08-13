@@ -43,6 +43,7 @@ import {
   toEndIsoTs,
   toIsoTs,
   toIsoTsOnOrAfter,
+  toIsoTsForPickupReturn,
   tsToHm,
   visitEndHmFromTimings,
   visitTotalDurationMin,
@@ -327,6 +328,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   // ── L&T ───────────────────────────────────────────────────────────────────
   const [withPickup, setWithPickup] = useState(false);
+  const [pickupMode, setPickupMode] = useState<'round_trip' | 'pickup_only' | 'delivery_only'>('round_trip');
   const [pickupBefore, setPickupBefore] = useState<PickupSubBlock>({
     starts_hm: '08:00',
     ends_hm: addMinutes('08:00', PICKUP_ROUTE_LEG_DURATION_MIN),
@@ -678,18 +680,32 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
       const applyPetsSelection = (mapped: GuardianPetOption[]) => {
         setGuardianPets(mapped);
-        if (result.pets.length === 1) {
-          const target = mapped.find((p) => p.id === result.pets[0]!.id);
-          if (target) {
-            setPetId(target.id);
-            setPetName(target.name);
-            if (multiPetEnabled) setSelectedPetIds([target.id]);
-            return;
-          }
+        const newIds = result.pets
+          .map((p) => p.id)
+          .filter((id) => mapped.some((m) => m.id === id));
+        if (newIds.length === 0) {
+          setPetId('');
+          setPetName('');
+          setSelectedPetIds([]);
+          return;
         }
-        setPetId('');
-        setPetName('');
-        setSelectedPetIds([]);
+        // Tutor já selecionado: seleciona o(s) pet(s) recém-criado(s),
+        // preservando os que já estavam marcados no multi-pet.
+        if (multiPetEnabled) {
+          setSelectedPetIds((prev) => {
+            const merged = [...prev];
+            for (const id of newIds) {
+              if (!merged.includes(id)) merged.push(id);
+            }
+            return merged;
+          });
+        }
+        const focusId = newIds[newIds.length - 1]!;
+        const target = mapped.find((p) => p.id === focusId);
+        if (target) {
+          setPetId(target.id);
+          setPetName(target.name);
+        }
       };
 
       if (!clinicId) {
@@ -980,12 +996,22 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     const st = serviceTypes.find((s) => s.id === pickupLtServiceTypeId);
     if (!st) return [];
     const m = coercePricingMatrixFromApi(st.pricing_matrix);
-    if (!m || m.kind !== 'km_banda') return [{ value: '0', label: 'Preço base' }];
+    if (!m || (m.kind !== 'km_banda' && m.kind !== 'personalizado')) return [];
     return m.tiers.map((t, i) => ({
       value: String(i),
-      label: `${t.label || `Faixa ${i + 1}`} — R$ ${Number(t.sale_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      label: `${t.label || `Opção ${i + 1}`} — R$ ${Number(t.sale_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     }));
   }, [serviceTypes, pickupLtServiceTypeId]);
+
+  const pickupLtPricingKind = useMemo<'km_banda' | 'personalizado' | 'simple'>(() => {
+    const st = serviceTypes.find((s) => s.id === pickupLtServiceTypeId);
+    const m = st ? coercePricingMatrixFromApi(st.pricing_matrix) : null;
+    if (m?.kind === 'km_banda') return 'km_banda';
+    if (m?.kind === 'personalizado') return 'personalizado';
+    return 'simple';
+  }, [serviceTypes, pickupLtServiceTypeId]);
+
+  const pickupUsesPriceTiers = kmTierComboOptions.length > 0;
 
   useEffect(() => {
     if (!withPickup) return;
@@ -997,7 +1023,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     const st = serviceTypes.find((s) => s.id === pickupLtServiceTypeId);
     if (!st || !pickupLtServiceTypeId) return;
     const m = coercePricingMatrixFromApi(st.pricing_matrix);
-    if (m?.kind === 'km_banda' && pickupKmTierIndex >= m.tiers.length) {
+    if (
+      (m?.kind === 'km_banda' || m?.kind === 'personalizado') &&
+      pickupKmTierIndex >= m.tiers.length
+    ) {
       setPickupKmTierIndex(0);
     }
   }, [pickupLtServiceTypeId, serviceTypes, pickupKmTierIndex]);
@@ -1687,22 +1716,38 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
 
       if (!isWalkIn && withPickup) {
-        payload.with_pickup_route_before = {
-          starts_at: toIsoTs(dateYmd, pickupBefore.starts_hm),
-          ends_at: toEndIsoTs(dateYmd, pickupBefore.starts_hm, pickupBefore.ends_hm),
-          hub_staff_member_id: pickupBefore.hub_staff_member_id || null,
-          resource_label: pickupBefore.resource_label || null,
-        };
-        const pickupAfterStart = toIsoTsOnOrAfter(dateYmd, pickupAfter.starts_hm, lastServiceEndAt);
-        payload.with_pickup_route_after = {
-          starts_at: pickupAfterStart,
-          ends_at: toEndIsoTs(pickupAfterStart.slice(0, 10), pickupAfter.starts_hm, pickupAfter.ends_hm),
-          hub_staff_member_id: pickupAfter.hub_staff_member_id || null,
-          resource_label: pickupAfter.resource_label || null,
-        };
+        if (pickupMode !== 'delivery_only') {
+          payload.with_pickup_route_before = {
+            starts_at: toIsoTs(dateYmd, pickupBefore.starts_hm),
+            ends_at: toEndIsoTs(dateYmd, pickupBefore.starts_hm, pickupBefore.ends_hm),
+            hub_staff_member_id: pickupBefore.hub_staff_member_id || null,
+            resource_label: pickupBefore.resource_label || null,
+          };
+        }
+        if (pickupMode !== 'pickup_only') {
+          // Usar toIsoTsForPickupReturn para garantir mesmo dia.
+          // Se o horário escolhido for anterior ao fim do serviço, o início real será o fim do serviço.
+          const pickupAfterStart = toIsoTsForPickupReturn(dateYmd, pickupAfter.starts_hm, lastServiceEndAt);
+          // Preservar a duração da perna (diferença ends_hm - starts_hm) relativa ao início real.
+          const returnLegDurationMin =
+            hmToMinutes(pickupAfter.ends_hm) - hmToMinutes(pickupAfter.starts_hm);
+          const returnLegEndMs =
+            new Date(pickupAfterStart).getTime() + Math.max(returnLegDurationMin, 30) * 60 * 1000;
+          payload.with_pickup_route_after = {
+            starts_at: pickupAfterStart,
+            ends_at: new Date(returnLegEndMs).toISOString(),
+            hub_staff_member_id: pickupAfter.hub_staff_member_id || null,
+            resource_label: pickupAfter.resource_label || null,
+          };
+        }
         payload.pickup_route_pricing = {
           hub_service_type_id: pickupLtServiceTypeId.trim(),
-          pricing_variant: { km_tier_index: pickupKmTierIndex },
+          pricing_variant:
+            pickupLtPricingKind === 'personalizado'
+              ? { custom_tier_index: pickupKmTierIndex }
+              : pickupLtPricingKind === 'km_banda'
+                ? { km_tier_index: pickupKmTierIndex }
+                : {},
         };
       }
 
@@ -2243,9 +2288,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               </div>
 
               <div className="nam-row">
-                <button type="button" className="nam-quick-register-btn" onClick={openQuickRegisterFull}>
+                <button
+                  type="button"
+                  className="nam-quick-register-btn"
+                  onClick={guardianId ? openQuickRegisterPetsOnly : openQuickRegisterFull}
+                >
                   <Plus size={16} strokeWidth={2} aria-hidden />
-                  Cadastrar tutor e pets
+                  {guardianId ? 'Cadastrar outros pets' : 'Cadastrar tutor e pets'}
                 </button>
               </div>
 
@@ -2537,32 +2586,32 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                         onChange={setSelectedPetIds}
                       />
                     ) : (
-                    <HubSearchableCombobox
-                      id="nam-pet"
-                      options={petComboOptions}
-                      value={petId}
-                      onChange={(v) => {
-                        setPetId(v);
-                        const p = guardianPets.find((x) => x.id === v);
-                        setPetName(p?.name ?? '');
-                      }}
-                      placeholder="Selecionar pet…"
-                      triggerIcon={<Dog size={18} strokeWidth={2} aria-hidden />}
-                      ariaLabel="Selecionar pet"
-                    />
+                      <HubSearchableCombobox
+                        id="nam-pet"
+                        options={petComboOptions}
+                        value={petId}
+                        onChange={(v) => {
+                          setPetId(v);
+                          const p = guardianPets.find((x) => x.id === v);
+                          setPetName(p?.name ?? '');
+                        }}
+                        placeholder="Selecionar pet…"
+                        triggerIcon={<Dog size={18} strokeWidth={2} aria-hidden />}
+                        ariaLabel="Selecionar pet"
+                      />
                     )
                   ) : (
-                      <div className="nam-field-shell nam-field-shell--empty nam-field-shell--stacked" role="status">
-                        <span className="nam-field-shell__icon" aria-hidden>
-                          <Dog size={18} strokeWidth={2} />
-                        </span>
-                        <span className="nam-field-shell__text">Nenhum pet cadastrado</span>
-                        <button type="button" className="nam-quick-register-btn" onClick={openQuickRegisterPetsOnly}>
-                          <Plus size={16} strokeWidth={2} aria-hidden />
-                          Cadastrar pet
-                        </button>
-                      </div>
-                    )
+                    <div className="nam-field-shell nam-field-shell--empty nam-field-shell--stacked" role="status">
+                      <span className="nam-field-shell__icon" aria-hidden>
+                        <Dog size={18} strokeWidth={2} />
+                      </span>
+                      <span className="nam-field-shell__text">Nenhum pet cadastrado</span>
+                      <button type="button" className="nam-quick-register-btn" onClick={openQuickRegisterPetsOnly}>
+                        <Plus size={16} strokeWidth={2} aria-hidden />
+                        Cadastrar pet
+                      </button>
+                    </div>
+                  )
                 ) : (
                   <div className="nam-field-shell nam-field-shell--blocked" role="status">
                     <span className="nam-field-shell__icon" aria-hidden>
@@ -2575,9 +2624,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               </div>
             </div>
             <div className="nam-row">
-              <button type="button" className="nam-quick-register-btn" onClick={openQuickRegisterFull}>
+              <button
+                type="button"
+                className="nam-quick-register-btn"
+                onClick={guardianId ? openQuickRegisterPetsOnly : openQuickRegisterFull}
+              >
                 <Plus size={16} strokeWidth={2} aria-hidden />
-                Cadastrar tutor e pets
+                {guardianId ? 'Cadastrar outros pets' : 'Cadastrar tutor e pets'}
               </button>
             </div>
             {isWalkIn && walkInIsClinical ? (
@@ -3061,18 +3114,43 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     clearable={false}
                   />
                 </div>
-                <div className="nam-field">
-                  <label className="nam-label">Faixa de quilometragem</label>
-                  <HubSearchableCombobox
-                    id="nam-pickup-km-tier"
-                    options={kmTierComboOptions}
-                    value={String(pickupKmTierIndex)}
-                    onChange={(v) => setPickupKmTierIndex(Number(v) || 0)}
-                    placeholder="Faixa"
-                    clearable={false}
-                  />
-                </div>
+                {pickupUsesPriceTiers ? (
+                  <div className="nam-field">
+                    <label className="nam-label">
+                      {pickupLtPricingKind === 'km_banda' ? 'Faixa de quilometragem' : 'Opção de preço'}
+                    </label>
+                    <HubSearchableCombobox
+                      id="nam-pickup-km-tier"
+                      options={kmTierComboOptions}
+                      value={String(pickupKmTierIndex)}
+                      onChange={(v) => setPickupKmTierIndex(Number(v) || 0)}
+                      placeholder={pickupLtPricingKind === 'km_banda' ? 'Faixa' : 'Opção'}
+                      clearable={false}
+                    />
+                  </div>
+                ) : null}
               </div>
+              <div className="nam-pickup__mode-selector" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                {(
+                  [
+                    { value: 'round_trip',    label: 'Ida e volta' },
+                    { value: 'pickup_only',   label: 'Só busca' },
+                    { value: 'delivery_only', label: 'Só retorno' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`hub-clientes__btn hub-clientes__btn--sm${pickupMode === opt.value ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
+                    onClick={() => setPickupMode(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {pickupMode !== 'delivery_only' ? (
+              <>
               <p className="nam-pickup__title">Busca (antes do atendimento)</p>
               <div className="nam-row nam-row--cols2">
                 <div className="nam-field">
@@ -3106,8 +3184,31 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   />
                 </div>
               </div>
+              </>
+              ) : null}
 
+              {pickupMode !== 'pickup_only' ? (
+              <>
               <p className="nam-pickup__title" style={{ marginTop: 12 }}>Retorno (após atendimento)</p>
+              {hmToMinutes(pickupAfter.starts_hm) < hmToMinutes(pickupDayLastEndHm) ? (
+                <p className="nam-pickup__return-warn">
+                  ⚠ Horário anterior ao fim do atendimento ({pickupDayLastEndHm}). O retorno começará ao fim do serviço.
+                  <button
+                    type="button"
+                    className="nam-pickup__return-warn-fix"
+                    onClick={() => {
+                      const fixed = addMinutes(pickupDayLastEndHm, 0);
+                      setPickupAfter((b) => ({
+                        ...b,
+                        starts_hm: fixed,
+                        ends_hm: addMinutes(fixed, PICKUP_ROUTE_LEG_DURATION_MIN),
+                      }));
+                    }}
+                  >
+                    Corrigir
+                  </button>
+                </p>
+              ) : null}
               <div className="nam-row nam-row--cols2">
                 <div className="nam-field">
                   <label className="nam-label">Início</label>
@@ -3140,6 +3241,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   />
                 </div>
               </div>
+              </>
+              ) : null}
             </div>
           )}
         </div>

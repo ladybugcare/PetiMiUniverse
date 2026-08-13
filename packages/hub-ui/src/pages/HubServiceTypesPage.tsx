@@ -104,8 +104,6 @@ function marginOverSalePct(cost: number, sale: number): number | null {
   return ((sale - cost) / sale) * 100;
 }
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 const SERVICE_GROUP_HINTS: Record<string, string> = {
   banho_tosa:
     'Pode usar uma única linha de serviço com preços diferentes por porte, por pelagem ou pela combinação porte + pelagem.',
@@ -294,7 +292,7 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
   const navigate = useNavigate();
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
 
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.service_types.write');
@@ -314,8 +312,7 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
   const [saving, setSaving] = useState(false);
   const [serviceGroups, setServiceGroups] = useState<HubServiceGroupRow[]>([]);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.service_types.read');
 
   const load = useCallback(async () => {
     if (!clinicId) return;

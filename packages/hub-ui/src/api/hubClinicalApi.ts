@@ -661,10 +661,30 @@ export const hubClinicalApi = {
       hospitalizations: HubHospitalization[];
     }>;
   },
-  createHospitalization(payload: Record<string, unknown>) {
-    return apiRequest(`${clinicalBase}/hospitalizations`, { method: 'POST', body: JSON.stringify(payload) });
+  createHospitalization(payload: {
+    clinic_id: string;
+    pet_id: string;
+    hub_hospital_bed_id?: string | null;
+    admission_notes?: string | null;
+    reason?: string | null;
+    hub_case_id?: string | null;
+    hub_encounter_id?: string | null;
+    create_new_case?: boolean;
+    new_case_title?: string | null;
+    hub_staff_member_id?: string | null;
+    guardian_id?: string | null;
+    unit_id?: string | null;
+  }) {
+    return apiRequest(`${clinicalBase}/hospitalizations`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<{ hospitalization: HubHospitalization }>;
   },
-  patchHospitalization(id: string, payload: { clinic_id: string; status?: string; discharge_notes?: string | null }) {
+  patchHospitalization(id: string, payload: {
+    clinic_id: string;
+    status?: string;
+    discharge_notes?: string | null;
+    hub_case_id?: string | null;
+    create_new_case?: boolean;
+    new_case_title?: string | null;
+  }) {
     return apiRequest(`${clinicalBase}/hospitalizations/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
@@ -695,8 +715,22 @@ export const hubClinicalApi = {
     if (hubCaseId) q.set('hub_case_id', hubCaseId);
     return apiRequest(`${clinicalBase}/surgeries?${q}`) as Promise<{ surgeries: HubSurgery[] }>;
   },
-  createSurgery(payload: Record<string, unknown>) {
-    return apiRequest(`${clinicalBase}/surgeries`, { method: 'POST', body: JSON.stringify(payload) });
+  createSurgery(payload: {
+    clinic_id: string;
+    pet_id: string;
+    title: string;
+    scheduled_at?: string | null;
+    anesthetic_risk?: HubAnestheticRisk | null;
+    pre_op?: Record<string, unknown>;
+    hub_case_id?: string | null;
+    hub_encounter_id?: string | null;
+    create_new_case?: boolean;
+    new_case_title?: string | null;
+    hub_staff_member_id?: string | null;
+    guardian_id?: string | null;
+    unit_id?: string | null;
+  }) {
+    return apiRequest(`${clinicalBase}/surgeries`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<{ surgery: HubSurgery }>;
   },
   patchSurgery(id: string, payload: Record<string, unknown>) {
     return apiRequest(`${clinicalBase}/surgeries/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });

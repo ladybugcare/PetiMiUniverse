@@ -57,7 +57,6 @@ import AddonGroupDeploymentsPanel from './AddonGroupDeploymentsPanel';
 import type { HubServiceCatalog } from '../HubServiceTypesPage';
 import './servicos-page.css';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
 const SERVICE_STEPS = ['Informações gerais', 'Precificação', 'Adicionais', 'Revisão'] as const;
 const ADDON_STEPS = ['Informações gerais', 'Precificação', 'Revisão'] as const;
 
@@ -85,7 +84,7 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
   const isDuplicateFlow = !isEdit && duplicateSourceId != null;
   const { showError, showSuccess } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.service_types.write');
 
@@ -103,8 +102,7 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
   const addonsStepIndex = isAddon ? -1 : 2;
   const pricingStepIndex = 1;
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.service_types.write');
 
   const load = useCallback(async () => {
     if (!clinicId) return;

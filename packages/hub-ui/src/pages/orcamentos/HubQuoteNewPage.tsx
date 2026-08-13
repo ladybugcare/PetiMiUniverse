@@ -19,8 +19,6 @@ import type { HubQuote } from '../../api/hubQuotesApi';
 import '../clientes/clientes.css';
 import './orcamentos-page.css';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 const HubQuoteNewPage: React.FC = () => {
   const { showError } = useAlert();
   const navigate = useNavigate();
@@ -28,7 +26,7 @@ const HubQuoteNewPage: React.FC = () => {
   const prospectIdParam = searchParams.get('prospect_id')?.trim() || '';
 
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.quotes.write');
 
@@ -46,8 +44,7 @@ const HubQuoteNewPage: React.FC = () => {
   const [lastQuote, setLastQuote] = useState<HubQuote | null>(null);
   const [serviceTypes, setServiceTypes] = useState<HubServiceType[]>([]);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.quotes.write');
 
   const loadProspect = useCallback(async () => {
     if (!clinicId || !prospectIdParam) {

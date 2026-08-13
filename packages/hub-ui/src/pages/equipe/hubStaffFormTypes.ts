@@ -2,6 +2,11 @@ import type { HubStaffAccessRole, HubStaffMember } from '../../api/hubStaffApi';
 import { professionalKindFromJobTitle } from '../../constants/hubJobFunctions';
 import { parseStaffSpecialties, staffSpecialtiesForApi } from '../../utils/staffSpecialties';
 import { formatBrPhoneFromApi } from '../../utils/formatBrPhone';
+import {
+  defaultOperationalAreasForJobTitle,
+  sanitizeOperationalAreas,
+  type HubOperationalArea,
+} from '@petimi/web-core';
 
 export const HUB_ACCESS_ROLE_OPTIONS: { value: HubStaffAccessRole; label: string }[] = [
   { value: 'CADMIN', label: 'Administrador' },
@@ -39,6 +44,7 @@ export type HubStaffFormState = {
   has_hub_access: boolean;
   hub_access_email: string;
   hub_access_role: HubStaffAccessRole | '';
+  operational_areas: HubOperationalArea[];
   accepts_appointments: boolean;
   available_days: number[];
   work_start: string;
@@ -66,6 +72,7 @@ export const emptyStaffForm = (): HubStaffFormState => ({
   has_hub_access: false,
   hub_access_email: '',
   hub_access_role: '',
+  operational_areas: [],
   accepts_appointments: false,
   available_days: [],
   work_start: '09:00',
@@ -122,6 +129,7 @@ export function staffFormFromRow(m: HubStaffMember, activeServiceTypeIds?: Set<s
     has_hub_access: m.has_hub_access,
     hub_access_email: m.hub_access_email ?? '',
     hub_access_role: (m.hub_access_role as HubStaffAccessRole) ?? '',
+    operational_areas: sanitizeOperationalAreas(m.operational_areas),
     accepts_appointments: m.accepts_appointments,
     available_days: parseDays(m.available_days),
     work_start: wh.start,
@@ -156,6 +164,7 @@ export function buildStaffPayload(clinicId: string, form: HubStaffFormState, isV
     has_hub_access: form.has_hub_access,
     hub_access_email: form.has_hub_access ? form.hub_access_email.trim() || null : null,
     hub_access_role: form.has_hub_access && form.hub_access_role ? form.hub_access_role : null,
+    operational_areas: form.has_hub_access ? form.operational_areas : [],
     accepts_appointments: form.accepts_appointments,
     available_days: form.available_days.length ? form.available_days : null,
     work_hours: { default_start: form.work_start, default_end: form.work_end },
@@ -164,6 +173,10 @@ export function buildStaffPayload(clinicId: string, form: HubStaffFormState, isV
     agenda_color: form.agenda_color.trim() || null,
     service_type_ids: form.service_type_ids,
   };
+}
+
+export function suggestOperationalAreasForJobTitle(jobTitle: string): HubOperationalArea[] {
+  return defaultOperationalAreasForJobTitle(jobTitle);
 }
 
 export function inviteReadyHint(form: HubStaffFormState): string | null {

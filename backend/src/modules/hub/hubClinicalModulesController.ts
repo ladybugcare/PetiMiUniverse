@@ -9,6 +9,7 @@ import {
 } from '../../utils/supabaseSchemaErrors.js';
 import { streamPrescriptionPdf, streamValidatablePrescriptionPdf } from './hubPrescriptionPdf';
 import { recordTimelineEvent } from './hubClinicalTimelineController';
+import { ensureCaseAndAdmissionEncounter, CaseSelectionRequiredError } from './hubClinicalCasesController';
 import {
   computeDocumentStatus,
   maskPublicToken,
@@ -964,6 +965,8 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
       guardian_id: uuidStr.optional().nullable(),
       hub_encounter_id: uuidStr.optional().nullable(),
       hub_case_id: uuidStr.optional().nullable(),
+      create_new_case: z.boolean().optional(),
+      new_case_title: z.string().trim().max(500).optional().nullable(),
       hub_hospital_bed_id: uuidStr.optional().nullable(),
       hub_staff_member_id: uuidStr.optional().nullable(),
       admission_notes: z.string().trim().max(4000).optional().nullable(),
@@ -972,9 +975,45 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
+
+  let caseId: string;
+  let encounterId: string;
+  try {
+    const resolved = await ensureCaseAndAdmissionEncounter({
+      clinic_id: b.clinic_id,
+      unit_id: b.unit_id,
+      pet_id: b.pet_id,
+      guardian_id: b.guardian_id,
+      hub_encounter_id: b.hub_encounter_id,
+      hub_case_id: b.hub_case_id,
+      create_new_case: b.create_new_case,
+      new_case_title: b.new_case_title,
+      encounter_chief_complaint: b.reason ?? b.admission_notes ?? 'Admissão de internação',
+    });
+    caseId = resolved.case_id;
+    encounterId = resolved.encounter_id;
+  } catch (e) {
+    if (e instanceof CaseSelectionRequiredError) {
+      return res.status(409).json({ error: e.message, code: e.code });
+    }
+    return res.status(400).json({ error: (e as Error)?.message });
+  }
+
   const { data, error } = await supabaseAdmin
     .from('hub_hospitalizations')
-    .insert({ ...b, status: 'active' })
+    .insert({
+      clinic_id: b.clinic_id,
+      unit_id: b.unit_id ?? null,
+      pet_id: b.pet_id,
+      guardian_id: b.guardian_id ?? null,
+      hub_case_id: caseId,
+      hub_encounter_id: encounterId,
+      hub_hospital_bed_id: b.hub_hospital_bed_id ?? null,
+      hub_staff_member_id: b.hub_staff_member_id ?? null,
+      admission_notes: b.admission_notes ?? null,
+      reason: b.reason ?? null,
+      status: 'active',
+    })
     .select('*')
     .single();
   if (error) return res.status(500).json({ error: error.message });
@@ -985,8 +1024,8 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
   void recordTimelineEvent({
     clinic_id: b.clinic_id,
     pet_id: b.pet_id,
-    hub_case_id: b.hub_case_id ?? null,
-    hub_encounter_id: b.hub_encounter_id ?? null,
+    hub_case_id: caseId,
+    hub_encounter_id: encounterId,
     event_type: 'hospitalization_started',
     ref_type: 'hospitalization',
     ref_id: (data as { id: string }).id,
@@ -1043,18 +1082,25 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
   }
 
   const hospData = data as Record<string, unknown> | null;
-  if (patch.status === 'discharged' && hospData) {
-    void recordTimelineEvent({
-      clinic_id,
-      pet_id: hospData.pet_id as string,
-      hub_case_id: hospData.hub_case_id as string | null,
-      hub_encounter_id: hospData.hub_encounter_id as string | null,
-      event_type: 'hospitalization_discharged',
-      ref_type: 'hospitalization',
-      ref_id: id.data,
-      title: 'Alta da internação',
-      body: patch.discharge_notes ?? null,
-    });
+  if (hospData) {
+    const closeStatus = patch.status;
+    if (closeStatus === 'discharged' || closeStatus === 'death' || closeStatus === 'transferred') {
+      const timelineTitle =
+        closeStatus === 'discharged' ? 'Alta da internação' :
+        closeStatus === 'death' ? 'Óbito — internação encerrada' :
+        'Transferência — internação encerrada';
+      void recordTimelineEvent({
+        clinic_id,
+        pet_id: hospData.pet_id as string,
+        hub_case_id: hospData.hub_case_id as string | null,
+        hub_encounter_id: hospData.hub_encounter_id as string | null,
+        event_type: closeStatus === 'discharged' ? 'hospitalization_discharged' : 'note',
+        ref_type: 'hospitalization',
+        ref_id: id.data,
+        title: timelineTitle,
+        body: patch.discharge_notes ?? null,
+      });
+    }
   }
 
   return res.json({ hospitalization: data });
@@ -1162,6 +1208,8 @@ export const createHubSurgery = async (req: Request, res: Response) => {
       guardian_id: uuidStr.optional().nullable(),
       hub_encounter_id: uuidStr.optional().nullable(),
       hub_case_id: uuidStr.optional().nullable(),
+      create_new_case: z.boolean().optional(),
+      new_case_title: z.string().trim().max(500).optional().nullable(),
       hub_staff_member_id: uuidStr.optional().nullable(),
       title: z.string().trim().min(1).max(200),
       scheduled_at: z.string().datetime({ offset: true }).optional().nullable(),
@@ -1180,40 +1228,65 @@ export const createHubSurgery = async (req: Request, res: Response) => {
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
-  const { data, error } = await supabaseAdmin
-    .from('hub_surgeries')
-    .insert({
+
+  let caseId: string;
+  let encounterId: string;
+  try {
+    const resolved = await ensureCaseAndAdmissionEncounter({
       clinic_id: b.clinic_id,
       unit_id: b.unit_id,
       pet_id: b.pet_id,
       guardian_id: b.guardian_id,
       hub_encounter_id: b.hub_encounter_id,
       hub_case_id: b.hub_case_id,
-      hub_staff_member_id: b.hub_staff_member_id,
+      create_new_case: b.create_new_case,
+      new_case_title: b.new_case_title,
+      encounter_chief_complaint: `Cirurgia: ${b.title}`,
+    });
+    caseId = resolved.case_id;
+    encounterId = resolved.encounter_id;
+  } catch (e) {
+    if (e instanceof CaseSelectionRequiredError) {
+      return res.status(409).json({ error: e.message, code: e.code });
+    }
+    return res.status(400).json({ error: (e as Error)?.message });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('hub_surgeries')
+    .insert({
+      clinic_id: b.clinic_id,
+      unit_id: b.unit_id ?? null,
+      pet_id: b.pet_id,
+      guardian_id: b.guardian_id ?? null,
+      hub_encounter_id: encounterId,
+      hub_case_id: caseId,
+      hub_staff_member_id: b.hub_staff_member_id ?? null,
       title: b.title,
-      scheduled_at: b.scheduled_at,
-      anesthetic_risk: b.anesthetic_risk,
+      scheduled_at: b.scheduled_at ?? null,
+      anesthetic_risk: b.anesthetic_risk ?? null,
       pre_op: b.pre_op ?? {},
       procedure: b.procedure ?? {},
       team: b.team ?? [],
       materials: b.materials ?? [],
       post_op: b.post_op ?? {},
-      anesthesia_notes: b.anesthesia_notes,
-      team_notes: b.team_notes,
-      materials_notes: b.materials_notes,
-      post_op_notes: b.post_op_notes,
+      anesthesia_notes: b.anesthesia_notes ?? null,
+      team_notes: b.team_notes ?? null,
+      materials_notes: b.materials_notes ?? null,
+      post_op_notes: b.post_op_notes ?? null,
       status: 'scheduled',
     })
     .select('*')
     .single();
   if (error) return res.status(500).json({ error: error.message });
 
+  // Agendamento: usar `note` (surgery_performed é reservado para conclusão)
   void recordTimelineEvent({
     clinic_id: b.clinic_id,
     pet_id: b.pet_id,
-    hub_case_id: b.hub_case_id ?? null,
-    hub_encounter_id: b.hub_encounter_id ?? null,
-    event_type: 'surgery_performed',
+    hub_case_id: caseId,
+    hub_encounter_id: encounterId,
+    event_type: 'note',
     ref_type: 'surgery',
     ref_id: (data as { id: string }).id,
     title: `Cirurgia agendada: ${b.title}`,
@@ -1242,6 +1315,7 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
       team_notes: z.string().optional().nullable(),
       materials_notes: z.string().optional().nullable(),
       post_op_notes: z.string().optional().nullable(),
+      hub_case_id: uuidStr.optional().nullable(),
     })
     .safeParse(req.body);
   if (!id.success || !parsed.success) return res.status(400).json({ error: 'Dados inválidos' });

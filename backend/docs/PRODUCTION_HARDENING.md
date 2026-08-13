@@ -4,6 +4,8 @@ Checklist alinhado ao plano de deploy (Railway + Vercel + Supabase). Nada disto 
 
 ## Rate limiting
 
+- Produção usa limites por utilizador (JWT `sub`) ou IP: **800 req / 15 min** (global) e **2000 req / 15 min** em `/api/hub` autenticado. Ver `GENERAL_RATE_LIMIT_MAX`, `HUB_RATE_LIMIT_MAX` em [RAILWAY.md](../RAILWAY.md).
+- **Utilizadores de teste/QA em produção**: definir `RATE_LIMIT_BYPASS_USER_IDS` com UUIDs Supabase (campo `sub` do JWT), separados por vírgula. Não recebem 429; o middleware `rateLimitBypassMonitor` regista aviso nos logs se ultrapassarem `RATE_LIMIT_BYPASS_MONITOR_MAX` (default 5000 / janela).
 - O `express-rate-limit` e os limitadores em memória em [middleware/rateLimiter.ts](../src/middleware/rateLimiter.ts) **não partilham estado entre réplicas**.
 - **Curto prazo**: uma réplica na Railway ou limites conservadores.
 - **Médio prazo**: store distribuído (Redis / Upstash) para `express-rate-limit` e para contadores por utilizador, se escalares horizontalmente.

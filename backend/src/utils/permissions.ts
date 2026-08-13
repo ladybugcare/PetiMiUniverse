@@ -1,5 +1,10 @@
 // Permission system for role-based access control (RBAC)
 
+import {
+  permissionsFromOperationalAreas,
+  sanitizeOperationalAreas,
+} from './operationalAreas';
+
 export type Role = 'CADMIN' | 'CMANAGER' | 'CASSISTANT' | 'CVET_INTERNAL' | 'CGROOMER' | 'CFINANCE';
 
 export const PERMISSIONS: Record<Role, string[]> = {
@@ -126,6 +131,10 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'pickup.routes.read',
     'pickup.routes.manage',
     'pickup.stops.update',
+    'hub.financial.read',
+    'hub.cash.session',
+    'hub.cash.receive',
+    'hub.receivables.create',
   ],
   CVET_INTERNAL: [
     'unit.view',
@@ -178,6 +187,34 @@ export const hasPermission = (role: Role, permission: string): boolean => {
   if (isClinicAdminRole(role)) return true;
   const rolePermissions = PERMISSIONS[role];
   return rolePermissions ? rolePermissions.includes(permission) : false;
+};
+
+/** União das permissões do papel de governança com as das áreas operacionais marcadas. */
+export function mergePermissionsForRoleAndAreas(
+  role: Role,
+  operationalAreas?: readonly string[] | null,
+): string[] {
+  const base = PERMISSIONS[role] ?? [];
+  const fromAreas = permissionsFromOperationalAreas(sanitizeOperationalAreas(operationalAreas ?? []));
+  return [...new Set([...base, ...fromAreas])];
+}
+
+/** Verifica permissão considerando papel + áreas operacionais do usuário. */
+export function hasEffectivePermission(
+  role: Role | string | null | undefined,
+  permission: string,
+  operationalAreas?: readonly string[] | null,
+): boolean {
+  // CADMIN tem acesso irrestrito.
+  if (role && isClinicAdminRole(String(role).toUpperCase())) return true;
+
+  // Verifica pelo role + áreas operacionais juntos.
+  // Não fazer early-return para role null/unknown: as áreas operacionais
+  // podem conceder a permissão mesmo sem um papel base definido.
+  const r = role ? (String(role).toUpperCase() as Role) : ('' as Role);
+  const fromRole = PERMISSIONS[r] ?? [];
+  const fromAreas = permissionsFromOperationalAreas(sanitizeOperationalAreas(operationalAreas ?? []));
+  return fromRole.includes(permission) || fromAreas.includes(permission);
 };
 
 export const getRoleDisplayName = (role: Role): string => {

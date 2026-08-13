@@ -66,6 +66,7 @@ import { postHubStaffPhoto } from '../hubStaffPhotoController';
 import { postHubClinicProfilePhoto, postHubUserProfilePhoto } from '../hubProfilePhotoController.js';
 import { patchHubClinicProfile, patchHubUnitProfile } from '../hubClinicProfileController.js';
 import { getHubSessionContext } from '../hubSessionController.js';
+import { getHubSubscriptionPlans } from '../hubSubscriptionController.js';
 import {
   listHubAppointments,
   getHubAppointmentsStatsByServiceGroup,
@@ -111,6 +112,8 @@ import {
   patchHubPickupRoute,
   getHubPickupRoute,
   patchHubPickupStop,
+  createOrUpdateLooseStop,
+  getMyPickupRoute,
 } from '../hubPickupController';
 import {
   getHubGroomingSessionDrawer,
@@ -212,6 +215,7 @@ import {
   postHubFinanceCashSessionOpen,
   postHubFinanceCashSessionClose,
   getHubFinanceCashSessionOpen,
+  getHubFinanceCashSessionStatus,
   listHubFinanceCashSessionsClosed,
   getHubFinanceCashSessionSummary,
   getHubFinanceUnbilledCompleted,
@@ -319,6 +323,7 @@ router.get(
 
 router.post('/onboarding/clinic', authenticateUser, postHubOnboardingClinic);
 router.get('/session/context', authenticateUser, getHubSessionContext);
+router.get('/subscription/plans', authenticateUser, getHubSubscriptionPlans);
 
 router.post('/profile/me/photo', authenticateUser, postHubUserProfilePhoto);
 router.post('/clinic/profile/photo', authenticateUser, postHubClinicProfilePhoto);
@@ -678,6 +683,18 @@ router.patch(
   authenticateUser,
   requirePermission('pickup.stops.update'),
   patchHubPickupStop,
+);
+router.post(
+  '/pickup/stops',
+  authenticateUser,
+  requirePermission('pickup.stops.update'),
+  createOrUpdateLooseStop,
+);
+router.get(
+  '/pickup/my-route',
+  authenticateUser,
+  requirePermission('pickup.routes.read'),
+  getMyPickupRoute,
 );
 
 /* --- Banho & Tosa (fila operacional) --- */
@@ -1152,6 +1169,12 @@ router.get(
   authenticateUser,
   requirePermission('hub.financial.read'),
   getHubFinanceCashSessionOpen
+);
+router.get(
+  '/finance/cash-sessions/status',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceCashSessionStatus
 );
 router.post(
   '/finance/cash-sessions/open',

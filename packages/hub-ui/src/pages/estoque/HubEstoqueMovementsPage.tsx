@@ -10,8 +10,6 @@ import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './estoque.css';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL'] as const;
-
 function movementLabel(t: string): string {
   const map: Record<string, string> = {
     initial_in: 'Entrada inicial',
@@ -29,11 +27,10 @@ const HubEstoqueMovementsPage: React.FC = () => {
   const direction = location.pathname.includes('saidas') ? 'out' : 'in';
   const { showError } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.inventory.write');
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.inventory.read');
 
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<HubStockMovement[]>([]);

@@ -481,35 +481,61 @@ const HubClinicCasePage: React.FC = () => {
       )}
 
       {tab === 'internacoes' && (
-        <ul className="hub-clinic-records__list">
-          {hospitalizations.length === 0 ? (
-            <li className="hub-clientes__muted">Nenhuma internação vinculada a este caso.</li>
-          ) : (
-            hospitalizations.map((h) => (
-              <li key={h.id}>
-                {HOSP_STATUS_LABELS[h.status] ?? h.status}
-                {h.hub_hospital_beds ? ` · Leito ${h.hub_hospital_beds.code}` : ''}
-                {h.admitted_at ? ` · Entrada ${String(h.admitted_at).slice(0, 10)}` : ''}
-                {h.discharged_at ? ` · Alta ${String(h.discharged_at).slice(0, 10)}` : ''}
-              </li>
-            ))
+        <>
+          {canWrite && clinicalCase && (
+            <div style={{ marginBottom: 12 }}>
+              <Link
+                to={`/hub/clinica/internacoes?pet_id=${encodeURIComponent(clinicalCase.pet_id)}&hub_case_id=${encodeURIComponent(clinicalCase.id)}`}
+                className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                style={{ textDecoration: 'none', display: 'inline-block' }}
+              >
+                + Nova internação neste caso
+              </Link>
+            </div>
           )}
-        </ul>
+          <ul className="hub-clinic-records__list">
+            {hospitalizations.length === 0 ? (
+              <li className="hub-clientes__muted">Nenhuma internação vinculada a este caso.</li>
+            ) : (
+              hospitalizations.map((h) => (
+                <li key={h.id}>
+                  {HOSP_STATUS_LABELS[h.status] ?? h.status}
+                  {h.hub_hospital_beds ? ` · Leito ${h.hub_hospital_beds.code}` : ''}
+                  {h.admitted_at ? ` · Entrada ${String(h.admitted_at).slice(0, 10)}` : ''}
+                  {h.discharged_at ? ` · Alta ${String(h.discharged_at).slice(0, 10)}` : ''}
+                </li>
+              ))
+            )}
+          </ul>
+        </>
       )}
 
       {tab === 'cirurgias' && (
-        <ul className="hub-clinic-records__list">
-          {surgeries.length === 0 ? (
-            <li className="hub-clientes__muted">Nenhuma cirurgia vinculada a este caso.</li>
-          ) : (
-            surgeries.map((s) => (
-              <li key={s.id}>
-                {s.title} — {SURGERY_STATUS_LABELS[s.status] ?? s.status}
-                {s.scheduled_at ? ` · ${new Date(s.scheduled_at).toLocaleString('pt-BR')}` : ''}
-              </li>
-            ))
+        <>
+          {canWrite && clinicalCase && (
+            <div style={{ marginBottom: 12 }}>
+              <Link
+                to={`/hub/clinica/cirurgias?pet_id=${encodeURIComponent(clinicalCase.pet_id)}&hub_case_id=${encodeURIComponent(clinicalCase.id)}`}
+                className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                style={{ textDecoration: 'none', display: 'inline-block' }}
+              >
+                + Agendar cirurgia neste caso
+              </Link>
+            </div>
           )}
-        </ul>
+          <ul className="hub-clinic-records__list">
+            {surgeries.length === 0 ? (
+              <li className="hub-clientes__muted">Nenhuma cirurgia vinculada a este caso.</li>
+            ) : (
+              surgeries.map((s) => (
+                <li key={s.id}>
+                  {s.title} — {SURGERY_STATUS_LABELS[s.status] ?? s.status}
+                  {s.scheduled_at ? ` · ${new Date(s.scheduled_at).toLocaleString('pt-BR')}` : ''}
+                </li>
+              ))
+            )}
+          </ul>
+        </>
       )}
 
       {tab === 'exames' && (

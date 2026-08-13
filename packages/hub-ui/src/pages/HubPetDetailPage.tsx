@@ -22,8 +22,6 @@ import { PetDetailPanel } from './pets/PetDetailPanel';
 import { PetForm } from './pets/PetForm';
 import { emptyPetForm, type PetFormValues } from './pets/PetFormValues';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 function petToForm(p: HubPet): PetFormValues {
   const st = p.size_tier;
   const sizeOk = st && (['mini', 'pequeno', 'medio', 'grande', 'gigante'] as const).includes(st as PetBodyPorteValue);
@@ -49,7 +47,7 @@ const HubPetDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const unitId = getSelectedUnitId();
   const canWrite = hasPermission('hub.pets.write');
@@ -61,8 +59,7 @@ const HubPetDetailPage: React.FC = () => {
   const [form, setForm] = useState<PetFormValues>(emptyPetForm);
   const [submitting, setSubmitting] = useState(false);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.pets.read');
 
   const load = useCallback(async () => {
     if (!clinicId || !petId || !accessAllowed) return;

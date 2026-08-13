@@ -180,6 +180,67 @@ async function main() {
     pass('getComandaDetail', 'pulado — nenhuma comanda aberta');
   }
 
+  // 6. getCashSessionStatus (novo endpoint agregado)
+  if (resolvedUnitId) {
+    const statusQ = new URLSearchParams({ clinic_id: clinicId, unit_id: resolvedUnitId });
+    const { res: statusRes, data: statusData } = await fetchJson(
+      `${API}/api/hub/finance/cash-sessions/status?${statusQ}`,
+      { headers },
+    );
+    if (!statusRes.ok) {
+      fail('getCashSessionStatus', statusData.error || statusRes.statusText);
+    } else {
+      const hasFields =
+        'cash_session' in statusData &&
+        typeof statusData.pending_billing_count === 'number' &&
+        typeof statusData.open_comandas_count === 'number' &&
+        typeof statusData.open_comandas_total === 'number';
+      if (hasFields) {
+        pass(
+          'getCashSessionStatus',
+          `caixa=${statusData.cash_session?.status ?? 'fechado'}, pendentes=${statusData.pending_billing_count}, comandas abertas=${statusData.open_comandas_count}`,
+        );
+      } else {
+        fail('getCashSessionStatus', 'campos esperados ausentes: ' + JSON.stringify(statusData));
+      }
+    }
+  } else {
+    pass('getCashSessionStatus', 'pulado — unit_id não resolvida');
+  }
+
+  // 7. open → close com auto-handoff (se não houver sessão aberta)
+  if (resolvedUnitId && !cashData.cash_session?.id) {
+    const { res: openRes, data: openData } = await fetchJson(
+      `${API}/api/hub/finance/cash-sessions/open`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ clinic_id: clinicId, unit_id: resolvedUnitId, opening_balance: 0 }),
+      },
+    );
+    if (!openRes.ok) {
+      fail('Abrir caixa (smoke)', openData.error || openRes.statusText);
+    } else {
+      const sessionId = openData.cash_session?.id;
+      pass('Abrir caixa (smoke)', sessionId?.slice(0, 8) + '…');
+      const { res: closeRes, data: closeData } = await fetchJson(
+        `${API}/api/hub/finance/cash-sessions/${sessionId}/close`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ clinic_id: clinicId, closing_balance: 0 }),
+        },
+      );
+      if (!closeRes.ok) {
+        fail('Fechar caixa (smoke)', closeData.error || closeRes.statusText);
+      } else {
+        pass('Fechar caixa (smoke)', `auto_handoff_count=${closeData.auto_handoff_count ?? 0}`);
+      }
+    }
+  } else {
+    pass('open→close (smoke)', 'pulado — sessão já aberta ou unit_id ausente');
+  }
+
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks OK`);
   process.exit(failed.length ? 1 : 0);

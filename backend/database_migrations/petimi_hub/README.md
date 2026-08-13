@@ -200,3 +200,7 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 70. **`070_create_hub_comanda_events.sql`** — Tabela `hub_comanda_events` (timeline de itens adicionados, removidos e alterados na comanda). Executar depois do item 39.
 
 71. **`071_alter_hub_encounters_operational_phase.sql`** — Coluna `operational_phase` em `hub_encounters` (fluxo Em exames / Retornou dos exames no consultório). Executar depois de `025b_create_hub_encounters.sql`.
+
+82. **`082_create_hub_platform_subscriptions.sql`** — Assinatura SaaS do Hub: `hub_platform_plans`, `hub_platform_modules`, `clinic_hub_subscriptions`; seed do Programa Beta + módulos; backfill de clínicas existentes. Ver [HUB_PLATFORM_SUBSCRIPTION_PLAN.md](../../docs/architecture/HUB_PLATFORM_SUBSCRIPTION_PLAN.md).
+
+83. **`083_alter_hub_pickup_stops_in_transit.sql`** — Adiciona status `in_transit` em `hub_pickup_stops` (pet a bordo / a caminho da clínica, exclusivo para coletas). Adiciona índice único para paradas soltas (`hub_pickup_route_id IS NULL`) por agendamento. Executar depois do item 12c.

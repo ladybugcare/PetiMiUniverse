@@ -1,8 +1,6 @@
 import type { DayBoardItem } from '../../../api/hubClinicalApi';
 import type { HubEncounterOperationalPhase } from '../../../api/hubClinicalApi';
 
-export type VetCockpitViewMode = 'queue' | 'agenda' | 'operation';
-
 const FINAL_STATUSES = new Set(['completed', 'done', 'cancelled']);
 
 export function itemOperationalStatus(item: DayBoardItem): string {

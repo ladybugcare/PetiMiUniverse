@@ -383,24 +383,24 @@ export function buildAgendaPricingPreview(input: {
   return { lines, totalSale: round2(totalSale), totalCost: round2(totalCost) };
 }
 
-/** Matriz km_banda: o valor do tier é a cobrança ida+volta (uma vez), não por perna. */
+/** Matriz km_banda / personalizado: o valor do tier é a cobrança ida+volta (uma vez), não por perna. */
 export function previewLevaTrazBandPricing(
   serviceType: HubServiceType,
-  kmTierIndex: number,
+  tierIndex: number,
 ): { bandLabel: string; saleRoundTrip: number; costRoundTrip: number } {
   const matrix = parsePricingMatrix(serviceType);
-  if (!matrix || matrix.kind !== 'km_banda') {
+  if (matrix && (matrix.kind === 'km_banda' || matrix.kind === 'personalizado')) {
+    const idx = Math.max(0, Math.min(Math.floor(Number(tierIndex)) || 0, matrix.tiers.length - 1));
+    const t = matrix.tiers[idx]!;
     return {
-      bandLabel: '—',
-      saleRoundTrip: round2(Number(serviceType.sale_amount) || 0),
-      costRoundTrip: round2(Number(serviceType.cost_amount) || 0),
+      bandLabel: t.label || `Opção ${idx + 1}`,
+      saleRoundTrip: round2(t.sale_amount),
+      costRoundTrip: round2(t.cost_amount),
     };
   }
-  const idx = Math.max(0, Math.min(Math.floor(Number(kmTierIndex)) || 0, matrix.tiers.length - 1));
-  const t = matrix.tiers[idx]!;
   return {
-    bandLabel: t.label || `Faixa ${idx + 1}`,
-    saleRoundTrip: round2(t.sale_amount),
-    costRoundTrip: round2(t.cost_amount),
+    bandLabel: 'Preço único',
+    saleRoundTrip: round2(Number(serviceType.sale_amount) || 0),
+    costRoundTrip: round2(Number(serviceType.cost_amount) || 0),
   };
 }

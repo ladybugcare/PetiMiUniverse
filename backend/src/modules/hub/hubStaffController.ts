@@ -5,13 +5,14 @@ import { checkPermission } from '../../middleware/authMiddleware';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
 import { generateInvitationToken, sendInvitationEmail } from '../../utils/emailService';
 import { getRoleDisplayName, type Role } from '../../utils/permissions';
+import { sanitizeOperationalAreas } from '../../utils/operationalAreas';
 import { createNotification } from '../../controllers/notificationsController';
 import {
   authUserExistsForEmail,
   buildInvitationShareMessage,
   buildInvitationUrl,
 } from './hubInvitationUtils';
-import { syncStaffHubAccessLink, type StaffLinkSyncResult } from './hubStaffLinkUtils';
+import { syncStaffHubAccessLink, syncOperationalAreasToClinicUser, type StaffLinkSyncResult } from './hubStaffLinkUtils';
 import {
   normalizeStaffSpecialtiesForStorage,
   sanitizeStaffSpecialtiesInput,
@@ -21,7 +22,7 @@ import {
 const uuidStr = z.string().uuid();
 
 const STAFF_SELECT =
-  'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, has_hub_access, hub_access_email, hub_access_role, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
+  'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
 
 const professionalKindSchema = z.enum([
   'vet',
@@ -75,6 +76,11 @@ const staffSpecialtiesSchema = z
     message: `Máximo de ${STAFF_SPECIALTIES_MAX_ITEMS} especialidades`,
   });
 
+const operationalAreasSchema = z
+  .union([z.array(z.string()), z.null(), z.undefined()])
+  .optional()
+  .transform((v) => (v === undefined ? undefined : sanitizeOperationalAreas(v ?? [])));
+
 const createStaffSchema = z
   .object({
     clinic_id: uuidStr,
@@ -95,6 +101,7 @@ const createStaffSchema = z
     has_hub_access: z.boolean().optional(),
     hub_access_email: z.union([z.string().email().max(254), z.literal(''), z.null()]).optional().nullable(),
     hub_access_role: hubAccessRoleSchema.optional().nullable(),
+    operational_areas: operationalAreasSchema,
     accepts_appointments: z.boolean().optional(),
     available_days: z.unknown().optional().nullable(),
     work_hours: z.unknown().optional().nullable(),
@@ -139,6 +146,7 @@ async function applyStaffHubAccessLink(
     has_hub_access?: boolean | null;
     hub_access_email?: string | null;
     hub_access_role?: string | null;
+    operational_areas?: string[] | null;
   },
 ): Promise<StaffLinkSyncResult | null> {
   const hasHubAccess = Boolean(row.has_hub_access);
@@ -150,6 +158,7 @@ async function applyStaffHubAccessLink(
     hasHubAccess,
     hubAccessEmail,
     hubAccessRole: (row.hub_access_role as string | null) ?? null,
+    operationalAreas: sanitizeOperationalAreas(row.operational_areas ?? []),
   });
 }
 
@@ -322,6 +331,7 @@ export const createHubStaff = async (req: Request, res: Response) => {
       has_hub_access: d.has_hub_access ?? false,
       hub_access_email: hubEmailNorm,
       hub_access_role: d.hub_access_role ?? null,
+      operational_areas: d.operational_areas ?? [],
       accepts_appointments: d.accepts_appointments ?? false,
       available_days: d.available_days ?? null,
       work_hours: d.work_hours ?? null,
@@ -339,6 +349,7 @@ export const createHubStaff = async (req: Request, res: Response) => {
       has_hub_access: d.has_hub_access ?? false,
       hub_access_email: hubEmailNorm,
       hub_access_role: d.hub_access_role ?? null,
+      operational_areas: d.operational_areas ?? [],
     });
     const { data: fresh } = await supabaseAdmin
       .from('hub_staff_members')
@@ -366,6 +377,30 @@ export const patchHubStaff = async (req: Request, res: Response) => {
     if (!staff) return res.status(404).json({ error: 'Profissional não encontrado' });
 
     const d = body.data;
+
+    // Proteção contra auto-remoção de CADMIN: se o profissional sendo editado
+    // é o próprio solicitante e tem role CADMIN, bloquear mudança de role/acesso.
+    const isSensitiveChange = d.hub_access_role !== undefined || d.has_hub_access === false;
+    if (isSensitiveChange && staff.clinic_user_id) {
+      const requestingUserId = (req as { user?: { id?: string } }).user?.id;
+      if (requestingUserId) {
+        const { data: selfCU } = await supabaseAdmin
+          .from('clinic_users')
+          .select('id')
+          .eq('user_id', requestingUserId)
+          .eq('clinic_id', clinic_id)
+          .maybeSingle();
+        if (selfCU?.id === staff.clinic_user_id) {
+          const currentRole = (staff.hub_access_role as string | null)?.toUpperCase();
+          if (currentRole === 'CADMIN') {
+            return res.status(403).json({
+              error:
+                'Você não pode alterar seu próprio perfil de administrador. Peça a outro administrador da clínica para fazer essa alteração.',
+            });
+          }
+        }
+      }
+    }
     const patch: Record<string, unknown> = {};
     if (d.full_name !== undefined) patch.full_name = d.full_name;
     if (d.display_name !== undefined) patch.display_name = d.display_name;
@@ -386,6 +421,7 @@ export const patchHubStaff = async (req: Request, res: Response) => {
     if (d.has_hub_access !== undefined) patch.has_hub_access = d.has_hub_access;
     if (d.hub_access_email !== undefined) patch.hub_access_email = d.hub_access_email === '' ? null : d.hub_access_email;
     if (d.hub_access_role !== undefined) patch.hub_access_role = d.hub_access_role;
+    if (d.operational_areas !== undefined) patch.operational_areas = d.operational_areas;
     if (d.accepts_appointments !== undefined) patch.accepts_appointments = d.accepts_appointments;
     if (d.available_days !== undefined) patch.available_days = d.available_days;
     if (d.work_hours !== undefined) patch.work_hours = d.work_hours;
@@ -424,14 +460,25 @@ export const patchHubStaff = async (req: Request, res: Response) => {
     if (!fresh) return res.status(404).json({ error: 'Profissional não encontrado' });
 
     const hubAccessTouched =
-      d.has_hub_access !== undefined || d.hub_access_email !== undefined || d.hub_access_role !== undefined;
+      d.has_hub_access !== undefined ||
+      d.hub_access_email !== undefined ||
+      d.hub_access_role !== undefined ||
+      d.operational_areas !== undefined;
     const link = hubAccessTouched
       ? await applyStaffHubAccessLink(idParsed.data, clinic_id, {
           has_hub_access: fresh.has_hub_access as boolean,
           hub_access_email: fresh.hub_access_email as string | null,
           hub_access_role: fresh.hub_access_role as string | null,
+          operational_areas: (fresh.operational_areas as string[] | null) ?? [],
         })
       : null;
+
+    if (d.operational_areas !== undefined && fresh.clinic_user_id) {
+      await syncOperationalAreasToClinicUser(
+        fresh.clinic_user_id as string,
+        (fresh.operational_areas as string[] | null) ?? [],
+      );
+    }
 
     const { data: linkedFresh } = await supabaseAdmin
       .from('hub_staff_members')
@@ -481,6 +528,7 @@ export const linkHubStaffAccount = async (req: Request, res: Response) => {
       has_hub_access: true,
       hub_access_email: email,
       hub_access_role: row.hub_access_role as string | null,
+      operational_areas: (row.operational_areas as string[] | null) ?? [],
     });
 
     const { data: fresh } = await supabaseAdmin

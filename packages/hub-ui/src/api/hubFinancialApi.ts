@@ -180,6 +180,12 @@ export type HubCashSession = {
   expected_balance?: number | null;
   closing_balance?: number | null;
   difference_amount?: number | null;
+  opened_by_staff_id?: string | null;
+  opened_by_staff?: {
+    id: string;
+    full_name?: string | null;
+    display_name?: string | null;
+  } | null;
 };
 
 export type HubCashSessionSummary = {
@@ -416,6 +422,24 @@ export const hubFinancialApi = {
   async getCashSessionOpen(clinicId: string, unitId: string): Promise<{ cash_session: HubCashSession | null }> {
     const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
     return apiRequest(`${base}/cash-sessions/open?${q.toString()}`) as Promise<{ cash_session: HubCashSession | null }>;
+  },
+
+  async getCashSessionStatus(
+    clinicId: string,
+    unitId: string,
+  ): Promise<{
+    cash_session: HubCashSession | null;
+    pending_billing_count: number;
+    open_comandas_count: number;
+    open_comandas_total: number;
+  }> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    return apiRequest(`${base}/cash-sessions/status?${q.toString()}`) as Promise<{
+      cash_session: HubCashSession | null;
+      pending_billing_count: number;
+      open_comandas_count: number;
+      open_comandas_total: number;
+    }>;
   },
 
   async openCashSession(body: {

@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { PERMISSIONS, hasPermission as checkPermission } from './permissions';
+import { mergePermissionsForRoleAndAreas, hasEffectivePermission } from './permissions';
+import type { HubOperationalArea } from './operationalAreas';
+import { sanitizeOperationalAreas } from './operationalAreas';
 import type { AppRole, ClinicStaffRole } from './types';
 import { CLINIC_STORAGE_UPDATED_EVENT } from './constants/appEvents';
 import { getUserRole } from './authHelpers';
 import { useAuth } from './AuthContext';
+import { PERMISSIONS } from './permissions';
 
 function isHubStaffRoleKey(r: string): r is ClinicStaffRole {
   return Object.prototype.hasOwnProperty.call(PERMISSIONS, r);
@@ -23,6 +26,18 @@ function readClinicUserRole(): ClinicStaffRole | null {
     /* clinic_user inválido — ignora */
   }
   return null;
+}
+
+/** Lê áreas operacionais persistidas em `clinic_user`. */
+function readClinicUserOperationalAreas(): HubOperationalArea[] {
+  try {
+    const raw = localStorage.getItem('clinic_user');
+    if (!raw) return [];
+    const cu = JSON.parse(raw) as { operational_areas?: unknown };
+    return sanitizeOperationalAreas(cu?.operational_areas);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -52,6 +67,7 @@ function resolveStaffRole(authRole: AppRole, user: unknown): ClinicStaffRole | n
 export const usePermissions = () => {
   const { user, role: authRole, loading: authLoading } = useAuth();
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [operationalAreas, setOperationalAreas] = useState<HubOperationalArea[]>([]);
   const [role, setRole] = useState<ClinicStaffRole | null>(null);
   // Começa `true` e só passa a `false` JUNTO com o `role` resolvido. Isto evita uma
   // janela em que `loading === false` e `role === null` no mesmo render — que fazia as
@@ -65,11 +81,14 @@ export const usePermissions = () => {
     const loadPermissions = () => {
       try {
         const r = resolveStaffRole(authRole, user);
+        const areas = readClinicUserOperationalAreas();
         setRole(r);
-        setPermissions(r ? PERMISSIONS[r] || [] : []);
+        setOperationalAreas(areas);
+        setPermissions(r ? mergePermissionsForRoleAndAreas(r, areas) : []);
       } catch (error) {
         console.error('[usePermissions] Error loading permissions:', error);
         setPermissions([]);
+        setOperationalAreas([]);
         setRole(null);
       } finally {
         setResolved(true);
@@ -88,13 +107,14 @@ export const usePermissions = () => {
 
   const hasPermission = useCallback(
     (permission: string): boolean => {
-      return checkPermission(role, permission);
+      return hasEffectivePermission(role, permission, operationalAreas);
     },
-    [role]
+    [role, operationalAreas],
   );
 
   return {
     role,
+    operationalAreas,
     permissions,
     // Carregando enquanto a sessão não terminou OU o papel ainda não foi resolvido.
     loading: authLoading || !resolved,

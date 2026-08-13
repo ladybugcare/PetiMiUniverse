@@ -226,7 +226,76 @@ Admissão (atendimento) → internação ativa → eventos/evoluções → saíd
 
 ---
 
-## 5. Comanda
+## 5. Cirurgia
+
+### 5.1 Objetivo
+
+Registrar procedimentos cirúrgicos com rastreio pré-operatório, anestésico, equipe, materiais e pós-operatório, **sempre** contextualizados no episódio de cuidado (caso clínico).
+
+### 5.2 Conceitos
+
+- Cirurgia é um procedimento com ciclo de vida próprio, mas **pertence a um caso clínico** e nasce de um atendimento.
+- **Alta cirúrgica** (status `completed`) encerra o **procedimento**, não o **caso**.
+
+### 5.3 Regras aprovadas
+
+1. Toda cirurgia pertence a um **caso clínico** (`hub_case_id` obrigatório na criação).
+2. Toda cirurgia nasce de um **atendimento**; se não existir atendimento de referência, o sistema **cria automaticamente** um atendimento de admissão cirúrgica (tipo `procedure`, título "Cirurgia: {título}").
+3. **Status:** `scheduled` → `in_progress` → `completed` | `cancelled`.
+4. Concluir a cirurgia (`completed`) **não** encerra automaticamente o **caso** clínico (o pet pode necessitar de internação pós-op, retornos, etc.).
+5. **Pós-operatório internado:** o sistema oferece CTA "Internar pós-operatório" na cirurgia em andamento ou concluída; o mesmo `hub_case_id` da cirurgia é pré-preenchido na admissão — **sem** coluna FK direta entre cirurgia e internação.
+6. Risco anestésico (ASA I–VI + E) é informado no pré-op; recomendado antes de confirmar o procedimento.
+
+### 5.4 Fluxos
+
+**Fluxo A — Agendamento direto:**  
+Selecionar pet → escolher/criar caso clínico → preencher dados da cirurgia → status `scheduled`.
+
+**Fluxo B — A partir do caso:**  
+Página do caso → aba "Cirurgias" → "Agendar cirurgia neste caso" → `hub_case_id` pré-preenchido.
+
+**Fluxo C — Pós-operatório internado:**  
+Cirurgia `in_progress` ou `completed` → "Internar pós-operatório" → rota de admissão com mesmo `pet_id` e `hub_case_id`.
+
+**Fluxo D — Conclusão:**  
+Cirurgia `in_progress` → "Concluir" → status `completed` → timeline recebe evento `surgery_performed` — **apenas** na conclusão, não no agendamento.
+
+### 5.5 Permissões
+
+- **Veterinário / administrador:** criar, editar, concluir.
+- **Recepção:** pode visualizar o agendamento; **não** acessa dados clínicos.
+- **Enfermagem:** pode registrar eventos de internação pós-op vinculados ao mesmo caso.
+
+### 5.6 Impactos financeiros
+
+- Indiretos: caso agrupa episódio; itens de materiais e equipe podem ser lançados em comanda vinculada ao atendimento/caso.
+- Comanda com `hub_surgery_id` como origem: follow-up pós v1 (documentado em "Fora").
+
+### 5.7 Impactos em estoque
+
+- Materiais cirúrgicos: **podem** baixar estoque conforme matriz de estoque (§6).
+
+### 5.8 Impactos em timeline
+
+- **Agendamento:** evento `note` com título "Cirurgia agendada: {título}" — **não** usa `surgery_performed`.
+- **Conclusão:** evento `surgery_performed` com título "Cirurgia realizada: {título}".
+
+### 5.9 Lacunas a resolver
+
+| # | Inconsistência | Resolução |
+|---|----------------|-----------|
+| 1 | `encounter_type` sem `cirurgia` como valor dedicado | Usar `procedure` + `chief_complaint` até expansão do enum em plano separado. |
+| 2 | Comanda sem `hub_surgery_id` como origem | Follow-up; cobrar via atendimento ou caso. |
+| 3 | FK direta cirurgia ↔ internação ausente | Usar mesmo `hub_case_id`; FK direta avaliada após go-live. |
+
+### 5.10 Perguntas futuras
+
+- Enum de `encounter_type` dedicado para cirurgia e internação.
+- Comanda com origem `hub_surgery_id`.
+
+---
+
+## 6. Comanda
 
 ### 5.1 Objetivo
 
@@ -286,7 +355,7 @@ Quando um agendamento ou atendimento é **cancelado na operação** e já existi
 
 ---
 
-## 6. Estoque
+## 7. Estoque
 
 ### 6.1 Objetivo
 
@@ -335,7 +404,7 @@ Administração clínica com item de estoque → baixa no ato **ou** na dispensa
 
 ---
 
-## 7. Permissões (resumo aprovado)
+## 8. Permissões (resumo aprovado)
 
 ### 7.1 Recepção
 
@@ -363,7 +432,7 @@ Pode registrar **evolução** e **eventos** de internação.
 
 ---
 
-## 8. Timeline clínica
+## 9. Timeline clínica
 
 ### 8.1 Princípio
 
@@ -407,7 +476,7 @@ Apenas **marcos** com impacto clínico, legal ou operacional forte. **Não** reg
 
 ---
 
-## 9. Orçamento → tutor, pet, caso, atendimento
+## 10. Orçamento → tutor, pet, caso, atendimento
 
 ### 9.1 Regras aprovadas
 
@@ -430,7 +499,7 @@ Aprovação → dados mestres + caso + atendimento → agendamento/execução �
 
 ---
 
-## 10. Conflitos entre decisões atuais e modelo técnico
+## 11. Conflitos entre decisões atuais e modelo técnico
 
 | # | Conflito | Resolução recomendada |
 |---|----------|------------------------|
@@ -441,7 +510,7 @@ Aprovação → dados mestres + caso + atendimento → agendamento/execução �
 
 ---
 
-## 11. Riscos de produto
+## 12. Riscos de produto
 
 1. **Lista de casos inflada** por muitos preventivos → mitigar com filtros e títulos inteligentes.  
 2. **Fricção** na pergunta “qual caso?” em horário de pico → mitigar com UX rápida (últimos casos, busca, favorito).  
@@ -451,7 +520,7 @@ Aprovação → dados mestres + caso + atendimento → agendamento/execução �
 
 ---
 
-## 12. Inconsistências a corrigir antes ou durante a implementação
+## 13. Inconsistências a corrigir antes ou durante a implementação
 
 1. Enum de tipo de atendimento vs lista aprovada neste documento.  
 2. Lista de eventos da timeline no código vs lista oficial **deste** documento (incluir `encounter_cancelled` e `exam_cancelled` se aprovado).  
@@ -459,7 +528,7 @@ Aprovação → dados mestres + caso + atendimento → agendamento/execução �
 
 ---
 
-## 13. Melhorias sugeridas antes da implementação
+## 14. Melhorias sugeridas antes da implementação
 
 1. **Wireframe** do modal “Associar caso / Novo caso” em walk-in e agenda.  
 2. **Catálogo** de `resolved_reason` configurável por clínica.  
@@ -469,7 +538,7 @@ Aprovação → dados mestres + caso + atendimento → agendamento/execução �
 
 ---
 
-## 14. Impactos em UX (consolidado)
+## 15. Impactos em UX (consolidado)
 
 - Modal obrigatório de caso quando houver casos ativos.  
 - Títulos sugeridos para preventivo e para orçamento convertido.  
@@ -479,7 +548,7 @@ Aprovação → dados mestres + caso + atendimento → agendamento/execução �
 
 ---
 
-## 15. Impactos em banco e arquitetura (consolidado, sem prescrever DDL)
+## 16. Impactos em banco e arquitetura (consolidado, sem prescrever DDL)
 
 - Campos de motivo de reabertura e `resolved_reason`.  
 - Metadados/tags de **preventivo** no caso.  
@@ -489,7 +558,7 @@ Aprovação → dados mestres + caso + atendimento → agendamento/execução �
 
 ---
 
-## 16. Perguntas futuras (backlog de produto)
+## 17. Perguntas futuras (backlog de produto)
 
 1. Mesclar casos duplicados.  
 2. Permissões finas para **auxiliar** e **recepção** (abrir comanda sim/não).  
@@ -500,7 +569,7 @@ Aprovação → dados mestres + caso + atendimento → agendamento/execução �
 
 ---
 
-## 17. Governança do documento
+## 18. Governança do documento
 
 - Alterações a este arquivo exigem **revisão explícita** (PM + RT ou equivalente).  
 - Versão: incrementar `Versão` no topo e registrar data no commit/PR de documentação.  

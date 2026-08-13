@@ -1,10 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Home, ChevronDown, Check } from 'lucide-react';
 import { useHubUnit } from '../contexts/HubUnitContext';
+import { useHubCashSession } from '../contexts/HubCashSessionContext';
+import type { HubUnit } from '../types/hubUnit';
 
 const HubHeaderUnitSelector: React.FC = () => {
   const { clinicId, clinicName, selectedUnit, units, setSelectedUnit, loading } = useHubUnit();
+  const { isOpen: caixaOpen, pendingBillingCount } = useHubCashSession();
   const [open, setOpen] = useState(false);
+  const [pendingUnit, setPendingUnit] = useState<HubUnit | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const hasMultiple = units.length > 1;
@@ -88,8 +92,14 @@ const HubHeaderUnitSelector: React.FC = () => {
                 aria-selected={active}
                 className={`hub-header-unit__option${active ? ' hub-header-unit__option--active' : ''}`}
                 onClick={() => {
-                  setSelectedUnit(unit);
-                  setOpen(false);
+                  const active = selectedUnit?.id === unit.id;
+                  if (!active && caixaOpen && pendingBillingCount > 0) {
+                    setPendingUnit(unit);
+                    setOpen(false);
+                  } else {
+                    setSelectedUnit(unit);
+                    setOpen(false);
+                  }
                 }}
               >
                 <span className="hub-header-unit__option-text">
@@ -100,6 +110,82 @@ const HubHeaderUnitSelector: React.FC = () => {
               </button>
             );
           })}
+        </div>
+      )}
+
+      {pendingUnit && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="unit-switch-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.45)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: 16,
+              padding: '24px 28px',
+              maxWidth: 380,
+              width: '100%',
+              margin: '0 16px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+            }}
+          >
+            <h2
+              id="unit-switch-title"
+              style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}
+            >
+              Caixa aberto na unidade atual
+            </h2>
+            <p style={{ margin: '0 0 18px', fontSize: 14, color: '#555', lineHeight: 1.5 }}>
+              Há <strong>{pendingBillingCount}</strong> item(ns) pendente(s) no caixa de{' '}
+              <strong>{selectedUnit?.name}</strong>. A sessão permanecerá aberta ao trocar de unidade.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setPendingUnit(null)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 10,
+                  border: '1px solid #e5e5e5',
+                  background: '#f5f5f5',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedUnit(pendingUnit);
+                  setPendingUnit(null);
+                }}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: '#f0642f',
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                Trocar mesmo assim
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

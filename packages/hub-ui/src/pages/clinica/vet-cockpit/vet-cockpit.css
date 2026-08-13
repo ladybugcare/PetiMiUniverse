@@ -21,12 +21,8 @@
   margin-bottom: 16px;
 }
 
-.vet-cockpit-view-tabs {
-  margin-bottom: 0;
-}
-
 .vet-cockpit-toolbar {
-  margin-top: 16px;
+  margin-top: 0;
   margin-bottom: 16px;
 }
 
@@ -528,11 +524,6 @@
 
 .hub-clinic-atendimentos--embedded {
   padding: 0;
-}
-
-.hub-clinic-page--cockpit .hub-clinic-shell__main {
-  padding-top: 0;
-  width: 100%;
 }
 
 .hub-clinic-workspace--drawer {

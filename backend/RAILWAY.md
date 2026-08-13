@@ -36,6 +36,10 @@ Configura o healthcheck do serviço na UI da Railway para usar este path.
 | `PRODUCTION_ORIGINS` | Sim (produção) | Origens CORS separadas por vírgula, **sem** barra final: `https://petmi.app,https://hub.petmi.app,https://shift.petmi.app` |
 | `FRONTEND_URL` | Opcional | Ex.: `https://petmi.app` — origem extra permitida pelo CORS em [app.ts](src/app.ts) |
 | `LOG_LEVEL` | Opcional | Ex.: `info` |
+| `GENERAL_RATE_LIMIT_MAX` | Opcional | Default produção: 800 req / 15 min por utilizador (JWT) ou IP |
+| `HUB_RATE_LIMIT_MAX` | Opcional | Default produção: 2000 req / 15 min nas rotas `/api/hub` autenticadas |
+| `RATE_LIMIT_BYPASS_USER_IDS` | Opcional | UUIDs Supabase (sub JWT) isentos de rate limit — QA/demos em produção |
+| `RATE_LIMIT_BYPASS_MONITOR_MAX` | Opcional | Aviso nos logs se utilizador com bypass exceder (default 5000); não bloqueia |
 
 Ver também [`.env.example`](.env.example) e [ENV_SETUP.md](ENV_SETUP.md).
 

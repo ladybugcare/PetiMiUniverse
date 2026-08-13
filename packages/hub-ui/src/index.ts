@@ -79,6 +79,7 @@ export { default as HubGroomingQueuePage } from './pages/grooming/HubGroomingQue
 export { hubGroomingApi } from './api/hubGroomingApi';
 export type { GroomingDayBoardItem, GroomingDayBoardResponse } from './api/hubGroomingApi';
 export { default as HubPickupPage } from './pages/pickup/HubPickupPage';
+export { default as PickupMyRoutePage } from './pages/pickup/PickupMyRoutePage';
 export { hubPickupApi } from './api/hubPickupApi';
 export type {
   PickupDayBoardItem,

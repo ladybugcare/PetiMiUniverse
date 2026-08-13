@@ -1,6 +1,10 @@
 import type { Request, Response } from 'express';
 import { supabaseAdmin } from '../../config/supabase.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
+import {
+  getClinicSubscription,
+  toSessionSubscriptionPayload,
+} from './hubSubscriptionService.js';
 
 const ALLOWED_CLINIC_ROLES = new Set([
   'CADMIN',
@@ -33,7 +37,7 @@ export const getHubSessionContext = asyncHandler(async (req: Request, res: Respo
   const { data: rows, error } = await supabaseAdmin
     .from('clinic_users')
     .select(
-      'id, clinic_id, user_id, role, status, unit_id, first_login_at, first_login_completed_at, onboarding_state, created_at',
+      'id, clinic_id, user_id, role, status, unit_id, operational_areas, first_login_at, first_login_completed_at, onboarding_state, created_at',
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
@@ -111,6 +115,7 @@ export const getHubSessionContext = asyncHandler(async (req: Request, res: Respo
         role: clinicUser.role,
         status: clinicUser.status,
         unit_id: clinicUser.unit_id,
+        operational_areas: clinicUser.operational_areas ?? [],
         first_login_at: clinicUser.first_login_at,
         first_login_completed_at: clinicUser.first_login_completed_at,
         onboarding_state: clinicUser.onboarding_state,
@@ -123,6 +128,7 @@ export const getHubSessionContext = asyncHandler(async (req: Request, res: Respo
           role: 'CADMIN',
           status: 'active',
           unit_id: null,
+          operational_areas: [],
           first_login_at: null,
           first_login_completed_at: null,
           onboarding_state: {},
@@ -134,6 +140,16 @@ export const getHubSessionContext = asyncHandler(async (req: Request, res: Respo
   const shouldCompleteClinicProfile =
     needsOnboarding && (role === 'CADMIN' || role === 'CMANAGER' || isClinicOwnerMetadata);
 
+  let subscription = null;
+  if (resolvedClinicId && !needsOnboarding) {
+    try {
+      const sub = await getClinicSubscription(resolvedClinicId);
+      subscription = toSessionSubscriptionPayload(sub);
+    } catch (subErr) {
+      console.warn('[hub_session] subscription', subErr);
+    }
+  }
+
   res.json({
     clinicUser: clinicUserPayload,
     onboarding: {
@@ -144,5 +160,6 @@ export const getHubSessionContext = asyncHandler(async (req: Request, res: Respo
       shouldCompleteClinicProfile,
       shouldCompleteFirstUnit: needsOnboarding && (role === 'CADMIN' || role === 'CMANAGER' || isClinicOwnerMetadata),
     },
+    subscription,
   });
 });

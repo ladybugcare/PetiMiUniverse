@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../../config/supabase.js';
 import { linkStaffMemberToClinicUser } from './hubInvitationUtils.js';
+import { sanitizeOperationalAreas } from '../../utils/operationalAreas.js';
 
 export type StaffHubAccessState = {
   staffId: string;
@@ -7,12 +8,14 @@ export type StaffHubAccessState = {
   hasHubAccess: boolean;
   hubAccessEmail: string | null;
   hubAccessRole: string | null;
+  operationalAreas?: string[] | null;
 };
 
 export type StaffLinkSyncResult = {
   clinic_user_id: string | null;
   linked: boolean;
   role_synced: boolean;
+  areas_synced: boolean;
   message?: string;
 };
 
@@ -60,13 +63,28 @@ export async function findConflictingStaffForClinicUser(
   return id;
 }
 
+/** Copia `operational_areas` do profissional para a linha `clinic_users` vinculada. */
+export async function syncOperationalAreasToClinicUser(
+  clinicUserId: string,
+  operationalAreas: string[] | null | undefined,
+): Promise<void> {
+  const areas = sanitizeOperationalAreas(operationalAreas ?? []);
+  const now = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from('clinic_users')
+    .update({ operational_areas: areas, updated_at: now })
+    .eq('id', clinicUserId);
+  if (error) throw error;
+}
+
 /**
  * Vincula (ou desvincula) o profissional ao login da clínica quando o e-mail de acesso
- * corresponde a um `clinic_users` ativo. Opcionalmente sincroniza `hub_access_role` → `clinic_users.role`.
+ * corresponde a um `clinic_users` ativo. Sincroniza `hub_access_role` e `operational_areas`.
  */
 export async function syncStaffHubAccessLink(state: StaffHubAccessState): Promise<StaffLinkSyncResult> {
-  const { staffId, clinicId, hasHubAccess, hubAccessEmail, hubAccessRole } = state;
+  const { staffId, clinicId, hasHubAccess, hubAccessEmail, hubAccessRole, operationalAreas } = state;
   const now = new Date().toISOString();
+  const sanitizedAreas = sanitizeOperationalAreas(operationalAreas ?? []);
 
   if (!hasHubAccess || !hubAccessEmail?.trim()) {
     await supabaseAdmin
@@ -74,7 +92,7 @@ export async function syncStaffHubAccessLink(state: StaffHubAccessState): Promis
       .update({ clinic_user_id: null, updated_at: now })
       .eq('id', staffId)
       .eq('clinic_id', clinicId);
-    return { clinic_user_id: null, linked: false, role_synced: false };
+    return { clinic_user_id: null, linked: false, role_synced: false, areas_synced: false };
   }
 
   const clinicUser = await resolveClinicUserByEmailInClinic(clinicId, hubAccessEmail);
@@ -88,6 +106,7 @@ export async function syncStaffHubAccessLink(state: StaffHubAccessState): Promis
       clinic_user_id: null,
       linked: false,
       role_synced: false,
+      areas_synced: false,
       message:
         'Nenhuma conta ativa com este e-mail nesta clínica. Use «Enviar convite» para criar o acesso ou corrija o e-mail.',
     };
@@ -99,24 +118,44 @@ export async function syncStaffHubAccessLink(state: StaffHubAccessState): Promis
   }
 
   let roleSynced = false;
+  let areasSynced = false;
   const targetRole = hubAccessRole?.trim().toUpperCase();
+  const patch: Record<string, unknown> = { updated_at: now };
+
   if (targetRole && targetRole !== String(clinicUser.role || '').toUpperCase()) {
-    const { error: roleErr } = await supabaseAdmin
-      .from('clinic_users')
-      .update({ role: targetRole, updated_at: now })
-      .eq('id', clinicUser.id);
-    if (roleErr) throw roleErr;
+    patch.role = targetRole;
     roleSynced = true;
   }
 
+  patch.operational_areas = sanitizedAreas;
+  areasSynced = true;
+
+  if (roleSynced || areasSynced) {
+    const { error: patchErr } = await supabaseAdmin
+      .from('clinic_users')
+      .update(patch)
+      .eq('id', clinicUser.id);
+    if (patchErr) throw patchErr;
+  }
+
   await linkStaffMemberToClinicUser(staffId, clinicUser.id);
+
+  const messages: string[] = [];
+  if (roleSynced) {
+    messages.push('perfil de permissão atualizado');
+  }
+  if (areasSynced) {
+    messages.push('áreas operacionais sincronizadas');
+  }
 
   return {
     clinic_user_id: clinicUser.id,
     linked: true,
     role_synced: roleSynced,
-    message: roleSynced
-      ? 'Conta vinculada e perfil de permissão atualizado. O usuário deve entrar novamente para aplicar as permissões.'
-      : 'Conta vinculada ao profissional.',
+    areas_synced: areasSynced,
+    message:
+      messages.length > 0
+        ? `Conta vinculada (${messages.join(', ')}). O usuário deve entrar novamente para aplicar as permissões.`
+        : 'Conta vinculada ao profissional.',
   };
 }

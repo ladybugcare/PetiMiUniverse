@@ -19,8 +19,6 @@ import '../servicos/servicos-page.css';
 import './orcamentos-page.css';
 import { CalendarDays, LayoutGrid, Mail, Plus, Search, UserMinus } from 'lucide-react';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 function useDebounced<T>(value: T, ms: number): T {
   const [d, setD] = useState(value);
   useEffect(() => {
@@ -33,7 +31,7 @@ function useDebounced<T>(value: T, ms: number): T {
 const HubProspectsPage: React.FC = () => {
   const { showError, showSuccess } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.prospects.write');
   const [loading, setLoading] = useState(true);
@@ -43,8 +41,7 @@ const HubProspectsPage: React.FC = () => {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ full_name: '', tax_id: '', phone: '', email: '' });
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.prospects.read');
 
   const load = useCallback(async () => {
     if (!clinicId) return;

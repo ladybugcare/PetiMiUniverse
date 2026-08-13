@@ -472,3 +472,30 @@
 .hub-equipe__hub-link-status__text--ok {
   color: #166534;
 }
+
+.hub-equipe__self-edit-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff8f0;
+  border: 1px solid #f5c07a;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #8a5300;
+}
+
+.hub-equipe__operational-areas {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e5e5;
+}
+
+.hub-equipe__operational-areas__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px 12px;
+  margin-top: 10px;
+}

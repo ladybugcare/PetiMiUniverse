@@ -7,9 +7,18 @@ export type HubSessionClinicUser = {
   role: string;
   status: string;
   unit_id: string | null;
+  operational_areas?: string[];
   first_login_at?: string | null;
   first_login_completed_at?: string | null;
   onboarding_state?: Record<string, unknown>;
+};
+
+export type HubSubscriptionSession = {
+  status: string;
+  is_beta: boolean;
+  base_plan_slug: string | null;
+  enabled_modules: string[];
+  beta_free_until: string | null;
 };
 
 export type HubSessionContext = {
@@ -22,6 +31,7 @@ export type HubSessionContext = {
     shouldCompleteClinicProfile: boolean;
     shouldCompleteFirstUnit?: boolean;
   };
+  subscription?: HubSubscriptionSession | null;
 };
 
 export function applyHubSessionContext(ctx: HubSessionContext): string | null {
@@ -30,6 +40,11 @@ export function applyHubSessionContext(ctx: HubSessionContext): string | null {
   }
   if (ctx.onboarding) {
     localStorage.setItem('clinicOnboarding', JSON.stringify(ctx.onboarding));
+  }
+  if (ctx.subscription) {
+    localStorage.setItem('hub_subscription', JSON.stringify(ctx.subscription));
+  } else {
+    localStorage.removeItem('hub_subscription');
   }
   const clinicId = ctx.clinicUser?.clinic_id || ctx.onboarding?.clinicId || null;
   if (clinicId) {
@@ -45,5 +60,28 @@ export function applyHubSessionContext(ctx: HubSessionContext): string | null {
 export const hubSessionApi = {
   getContext(): Promise<HubSessionContext> {
     return apiRequest('/api/hub/session/context') as Promise<HubSessionContext>;
+  },
+
+  getPlans() {
+    return apiRequest('/api/hub/subscription/plans') as Promise<{
+      mode: 'beta_only' | 'catalog';
+      plans: Array<{
+        slug: string;
+        name: string;
+        description: string | null;
+        max_units: number | null;
+        max_users: number | null;
+        monthly_price_cents: number | null;
+        sort_order: number;
+      }>;
+      modules: Array<{
+        slug: string;
+        name: string;
+        description: string | null;
+        monthly_price_cents: number | null;
+        maps_to_entitlement: string;
+        sort_order: number;
+      }>;
+    }>;
   },
 };

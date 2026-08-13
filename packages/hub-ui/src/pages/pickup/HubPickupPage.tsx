@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, PlusCircle, RefreshCw, Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
-import { hubPickupApi, type PickupDayBoardItem } from '../../api/hubPickupApi';
-import { hubAgendaApi } from '../../api/hubAgendaApi';
+import { hubPickupApi, type PickupDayBoardItem, type PickupRoute, type PickupStopStatus } from '../../api/hubPickupApi';
 import {
   dayRangeIsoLocal,
   isUuid,
@@ -20,6 +20,7 @@ import PickupRouteBuilder from './PickupRouteBuilder';
 import PickupStopDrawer from './PickupStopDrawer';
 import '../clinica/clinica-page.css';
 import '../clientes/clientes.css';
+import '../grooming/grooming-page.css';
 import './pickup-page.css';
 
 const POLL_MS = 30_000;
@@ -37,6 +38,7 @@ const HubPickupPage: React.FC = () => {
   const { role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
   const clinicId = getStoredClinicId();
+  const navigate = useNavigate();
   const accessAllowed = hasPermission('pickup.routes.read');
   const canWrite = hasPermission('pickup.stops.update') && hasPermission('hub.appointments.write');
   const canManage = hasPermission('pickup.routes.manage');
@@ -51,13 +53,13 @@ const HubPickupPage: React.FC = () => {
   const [searchQ, setSearchQ] = useState('');
   const [cursor, setCursor] = useState(() => new Date());
 
-  // Drawer de parada
   const [selectedItem, setSelectedItem] = useState<PickupDayBoardItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Builder de rota
   const [builderOpen, setBuilderOpen] = useState(false);
   const [routeRefreshTrigger, setRouteRefreshTrigger] = useState(0);
+  const [editingRoute, setEditingRoute] = useState<PickupRoute | null>(null);
+  const [editingStops, setEditingStops] = useState<(PickupDayBoardItem & { _direction: 'pickup' | 'delivery' })[]>([]);
 
   const dayRange = useMemo(() => dayRangeIsoLocal(cursor), [cursor]);
 
@@ -68,13 +70,32 @@ const HubPickupPage: React.FC = () => {
     return match?.id;
   }, [unitFilter, units]);
 
-  // Pernas ainda soltas (sem rota atribuída) para o builder
   const looseItems = useMemo(() => items.filter((i) => !i.route_id), [items]);
 
   useEffect(() => {
     if (permLoading) return;
-    if (!accessAllowed) redirectAwayFromHub(authRole as AppRole);
-  }, [permLoading, accessAllowed, authRole]);
+    if (!accessAllowed) {
+      redirectAwayFromHub(authRole as AppRole);
+      return;
+    }
+    // Motorista puro (só stops.update, sem manage) → vai direto para Minha rota
+    if (!canManage && canWrite) {
+      navigate('/hub/leva-e-traz/minha-rota', { replace: true });
+    }
+  }, [permLoading, accessAllowed, canManage, canWrite, authRole, navigate]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const load = useCallback(async () => {
     if (!clinicId) return;
@@ -85,6 +106,10 @@ const HubPickupPage: React.FC = () => {
         direction: directionFilter === 'all' ? undefined : directionFilter,
       });
       setItems(res.items ?? []);
+      setSelectedItem((prev) => {
+        if (!prev) return null;
+        return res.items?.find((i) => i.appointment_id === prev.appointment_id) ?? prev;
+      });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar paradas de Leva e Traz');
       setItems([]);
@@ -118,19 +143,20 @@ const HubPickupPage: React.FC = () => {
     saveAgendaPersistedUnit(value);
   };
 
-  const handleStatusChange = async (item: PickupDayBoardItem, status: string) => {
+  const handleStatusChange = async (item: PickupDayBoardItem, status: PickupStopStatus) => {
     if (!clinicId || !canWrite) return;
     setActionBusy(true);
     try {
       if (item.stop_id) {
-        await hubPickupApi.patchStop(item.stop_id, {
-          clinic_id: clinicId,
-          status: status as import('../../api/hubPickupApi').PickupStopStatus,
-        });
+        await hubPickupApi.patchStop(item.stop_id, { clinic_id: clinicId, status });
       } else {
-        await hubAgendaApi.patch(item.appointment_id, {
+        // Perna solta: materializar stop e avançar
+        const dir = item.direction === 'unknown' ? 'pickup' : item.direction;
+        await hubPickupApi.createLooseStop({
           clinic_id: clinicId,
-          status: status as 'confirmed' | 'in_progress' | 'done',
+          hub_appointment_id: item.appointment_id,
+          direction: dir as 'pickup' | 'delivery',
+          status,
         });
       }
       await load();
@@ -150,8 +176,31 @@ const HubPickupPage: React.FC = () => {
     await load();
   };
 
+  const handleSelectRoute = async (route: PickupRoute) => {
+    if (!clinicId) return;
+    try {
+      const detail = await hubPickupApi.getRoute(route.id, clinicId);
+      const sortedStops = (detail.stops ?? []).slice().sort((a, b) => a.sequence - b.sequence);
+      const prePopulated = sortedStops
+        .map((stop) => {
+          const boardItem = items.find((i) => i.appointment_id === stop.hub_appointment_id);
+          if (!boardItem) return null;
+          const dir = stop.direction === 'delivery' ? 'delivery' : 'pickup';
+          return { ...boardItem, _direction: dir } as PickupDayBoardItem & { _direction: 'pickup' | 'delivery' };
+        })
+        .filter(Boolean) as (PickupDayBoardItem & { _direction: 'pickup' | 'delivery' })[];
+      setEditingRoute(route);
+      setEditingStops(prePopulated);
+      setBuilderOpen(true);
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao carregar detalhes da rota');
+    }
+  };
+
   const handleBuilderSaved = () => {
     setBuilderOpen(false);
+    setEditingRoute(null);
+    setEditingStops([]);
     setRouteRefreshTrigger((n) => n + 1);
     void load();
   };
@@ -176,7 +225,14 @@ const HubPickupPage: React.FC = () => {
   const metrics = useMemo(() => {
     const pickups = items.filter((i) => i.direction === 'pickup').length;
     const deliveries = items.filter((i) => i.direction === 'delivery').length;
-    return { total: items.length, pickups, deliveries };
+    const enRoute = items.filter(
+      (i) => i.stop_status === 'en_route' || (!i.stop_status && i.status === 'in_progress'),
+    ).length;
+    const onSite = items.filter(
+      (i) => i.stop_status === 'arrived' || i.stop_status === 'in_transit',
+    ).length;
+    const loose = items.filter((i) => !i.route_id).length;
+    return { total: items.length, pickups, deliveries, enRoute, onSite, loose };
   }, [items]);
 
   if (!permLoading && !clinicId) {
@@ -202,7 +258,13 @@ const HubPickupPage: React.FC = () => {
   const dateYmd = dayRange.dateYmd;
 
   return (
-    <div className="hub-pickup-page">
+    <div className="hub-grooming-page hub-pickup-page">
+      {accessAllowed && !canWrite && !canManage ? (
+        <p className="hub-clientes__muted hub-grooming-page__perm-banner">
+          Visualização do painel (somente leitura).
+        </p>
+      ) : null}
+
       <div className="hub-clientes__toolbar hub-clinic-atendimentos__toolbar">
         <div className="hub-clinic-atendimentos__date-nav">
           <button
@@ -231,12 +293,6 @@ const HubPickupPage: React.FC = () => {
             placeholder="Buscar pet ou tutor… (/)"
             value={searchQ}
             onChange={(e) => setSearchQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                e.preventDefault();
-                searchInputRef.current?.focus();
-              }
-            }}
           />
         </div>
         <div className="hub-servicos__filter-field hub-clinic-atendimentos__staff-filter">
@@ -259,9 +315,26 @@ const HubPickupPage: React.FC = () => {
         >
           <RefreshCw size={16} />
         </button>
+        {canManage ? (
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary"
+            onClick={() => setBuilderOpen(true)}
+            disabled={loading}
+          >
+            <PlusCircle size={16} aria-hidden />
+            Nova rota
+          </button>
+        ) : null}
+        <Link to="/hub/leva-e-traz/minha-rota" className="hub-clientes__btn hub-clientes__btn--ghost">
+          Minha rota
+        </Link>
+        <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--ghost">
+          Agenda
+        </Link>
       </div>
 
-      <div className="hub-pickup-page__direction-tabs" role="toolbar" aria-label="Filtro por sentido">
+      <div className="hub-grooming-page__filters" role="toolbar" aria-label="Filtro por sentido">
         {DIRECTION_OPTIONS.map((opt) => (
           <button
             key={opt.value}
@@ -277,33 +350,44 @@ const HubPickupPage: React.FC = () => {
       </div>
 
       {!loading ? (
-        <p className="hub-clientes__muted hub-pickup-page__metrics">
-          {metrics.total} parada{metrics.total !== 1 ? 's' : ''} no dia · {metrics.pickups} coleta
+        <p className="hub-clientes__muted hub-grooming-page__metrics">
+          {metrics.total} parada{metrics.total !== 1 ? 's' : ''} · {metrics.pickups} coleta
           {metrics.pickups !== 1 ? 's' : ''} · {metrics.deliveries} entrega
           {metrics.deliveries !== 1 ? 's' : ''}
+          {metrics.enRoute > 0 ? ` · ${metrics.enRoute} em deslocamento` : ''}
+          {metrics.onSite > 0 ? ` · ${metrics.onSite} no local` : ''}
+          {metrics.loose > 0 ? ` · ${metrics.loose} solta${metrics.loose !== 1 ? 's' : ''}` : ''}
         </p>
       ) : null}
 
-      {/* Painel de rotas do dia (visível para quem tem read) */}
       {!loading ? (
         <PickupRoutePanel
           dateYmd={dateYmd}
           unitId={unitIdParam}
           canManage={canManage}
-          onBuildRoute={() => setBuilderOpen(true)}
-          onSelectRoute={() => {/* TODO: abrir detail de rota */}}
+          onBuildRoute={() => {
+            setEditingRoute(null);
+            setEditingStops([]);
+            setBuilderOpen(true);
+          }}
+          onSelectRoute={(r) => void handleSelectRoute(r)}
           refreshTrigger={routeRefreshTrigger}
         />
       ) : null}
 
-      {/* Builder de rota (modal) */}
       {builderOpen ? (
         <div className="hub-pickup-builder__overlay">
           <PickupRouteBuilder
             looseItems={looseItems}
             dateYmd={dateYmd}
             unitId={unitIdParam}
-            onClose={() => setBuilderOpen(false)}
+            editingRoute={editingRoute}
+            editingStops={editingStops.length > 0 ? editingStops : undefined}
+            onClose={() => {
+              setBuilderOpen(false);
+              setEditingRoute(null);
+              setEditingStops([]);
+            }}
             onSaved={handleBuilderSaved}
           />
         </div>
@@ -326,7 +410,6 @@ const HubPickupPage: React.FC = () => {
         />
       )}
 
-      {/* Drawer de parada */}
       <PickupStopDrawer
         item={selectedItem}
         open={drawerOpen}

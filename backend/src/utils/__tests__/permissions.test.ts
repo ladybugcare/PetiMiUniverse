@@ -1,4 +1,4 @@
-import { getRoleDisplayName, hasPermission, isClinicAdminRole, type Role } from '../permissions';
+import { getRoleDisplayName, hasPermission, hasEffectivePermission, isClinicAdminRole, type Role } from '../permissions';
 
 describe('permissions', () => {
   describe('hasPermission', () => {
@@ -8,6 +8,13 @@ describe('permissions', () => {
 
     it('CASSISTANT não tem hub.financial.write', () => {
       expect(hasPermission('CASSISTANT', 'hub.financial.write')).toBe(false);
+    });
+
+    it('CASSISTANT tem permissões de caixa (recepção + caixa)', () => {
+      expect(hasPermission('CASSISTANT', 'hub.financial.read')).toBe(true);
+      expect(hasPermission('CASSISTANT', 'hub.cash.session')).toBe(true);
+      expect(hasPermission('CASSISTANT', 'hub.cash.receive')).toBe(true);
+      expect(hasPermission('CASSISTANT', 'hub.receivables.create')).toBe(true);
     });
 
     it('CFINANCE tem hub.cash.receive', () => {
@@ -20,6 +27,18 @@ describe('permissions', () => {
 
     it('role inválido retorna false', () => {
       expect(hasPermission('INVALID' as Role, 'hub.pets.read')).toBe(false);
+    });
+  });
+
+  describe('hasEffectivePermission', () => {
+    it('une permissões do papel com as das áreas operacionais', () => {
+      expect(hasEffectivePermission('CGROOMER', 'hub.clinic.read', ['clinica'])).toBe(true);
+      expect(hasEffectivePermission('CGROOMER', 'hub.clinic.read', [])).toBe(false);
+    });
+
+    it('área caixa concede hub.cash.receive para papel sem caixa no perfil base', () => {
+      expect(hasEffectivePermission('CVET_INTERNAL', 'hub.cash.receive', ['caixa'])).toBe(true);
+      expect(hasEffectivePermission('CVET_INTERNAL', 'hub.cash.receive', [])).toBe(false);
     });
   });
 

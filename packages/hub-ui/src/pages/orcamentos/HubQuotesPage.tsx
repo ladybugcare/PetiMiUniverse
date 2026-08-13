@@ -27,8 +27,6 @@ import {
   Share2,
 } from 'lucide-react';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 function statusClass(s: HubQuoteStatus): string {
   return `hub-orcamentos__status hub-orcamentos__status--${s}`;
 }
@@ -105,7 +103,7 @@ const HubQuotesPage: React.FC = () => {
   const navigate = useNavigate();
   const { showError, showSuccess } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.quotes.write');
   const [loading, setLoading] = useState(true);
@@ -114,8 +112,7 @@ const HubQuotesPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.quotes.read');
 
   const load = useCallback(async () => {
     if (!clinicId) return;

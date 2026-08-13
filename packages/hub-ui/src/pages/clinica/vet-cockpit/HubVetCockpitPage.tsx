@@ -16,20 +16,16 @@ import {
 import { useMyStaffMember } from '../../../hooks/useMyStaffMember';
 import { redirectAwayFromHub } from '../../../utils/redirectAwayFromHub';
 import { dayRangeIsoLocal } from '../../agenda/agendaFilters';
-import HubClinicEncountersPage from '../HubClinicEncountersPage';
 import StartEncounterModal from '../StartEncounterModal';
 import VetCockpitHeader from './VetCockpitHeader';
-import VetCockpitViewToggle from './VetCockpitViewToggle';
 import VetCockpitQueue from './VetCockpitQueue';
 import VetCockpitPatientPanel, { type VetCockpitDrawerSection } from './VetCockpitPatientPanel';
-import VetCockpitAgendaEmbed from './VetCockpitAgendaEmbed';
 import {
   cockpitEncounterPath,
   computeTurnSummary,
   itemKey,
   readStoredSelection,
   writeStoredSelection,
-  type VetCockpitViewMode,
 } from './vetCockpitUtils';
 import '../clinica-page.css';
 import '../../clientes/clientes.css';
@@ -47,7 +43,6 @@ const HubVetCockpitPage: React.FC = () => {
   const canWrite = hasPermission('hub.clinic.write');
   const accessAllowed = hasPermission('hub.clinic.read');
 
-  const [viewMode, setViewMode] = useState<VetCockpitViewMode>('queue');
   const [cursor, setCursor] = useState(() => new Date());
   const [items, setItems] = useState<DayBoardItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,12 +84,12 @@ const HubVetCockpitPage: React.FC = () => {
   }, [permLoading, accessAllowed, authRole]);
 
   useEffect(() => {
-    if (!clinicId || !accessAllowed || viewMode !== 'queue') return;
+    if (!clinicId || !accessAllowed) return;
     void loadQueue();
-  }, [clinicId, accessAllowed, loadQueue, viewMode]);
+  }, [clinicId, accessAllowed, loadQueue]);
 
   useEffect(() => {
-    if (!clinicId || !accessAllowed || viewMode !== 'queue' || !staffId) return;
+    if (!clinicId || !accessAllowed || !staffId) return;
     const id = window.setInterval(() => {
       if (document.visibilityState === 'visible') void loadQueue();
     }, POLL_MS);
@@ -106,7 +101,7 @@ const HubVetCockpitPage: React.FC = () => {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [clinicId, accessAllowed, loadQueue, viewMode, staffId]);
+  }, [clinicId, accessAllowed, loadQueue, staffId]);
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -281,82 +276,66 @@ const HubVetCockpitPage: React.FC = () => {
         </div>
       ) : null}
 
-      <VetCockpitViewToggle mode={viewMode} onChange={setViewMode} />
-
-      {viewMode === 'queue' ? (
-        <>
-          <div className="hub-view-date-toolbar vet-cockpit-toolbar">
-            <div className="hub-view-date-toolbar__nav-cluster">
-              <button
-                type="button"
-                className="hub-view-date-toolbar__icon-btn"
-                onClick={() => shiftCursor(-1)}
-                aria-label="Dia anterior"
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <button
-                type="button"
-                className="hub-view-date-toolbar__icon-btn"
-                onClick={() => shiftCursor(1)}
-                aria-label="Próximo dia"
-              >
-                <ChevronRight size={18} />
-              </button>
-              <HubDateField
-                id="vet-cockpit-date"
-                className="hub-view-date-toolbar__date-field"
-                valueIso={cursorIso}
-                onChangeIso={(iso) => {
-                  if (!iso) return;
-                  const parsed = parseIsoYmd(iso);
-                  if (parsed) setCursor(parsed);
-                }}
-                showTodayButton
-              />
-            </div>
-            {myStaffMember ? (
-              <span className="vet-cockpit-toolbar__vet">{myStaffMember.full_name}</span>
-            ) : null}
-          </div>
-
-          <VetCockpitHeader summary={summary} dateLabel={`Hoje: ${summary.total} atendimentos`} />
-          <div className="vet-cockpit-layout">
-            <VetCockpitQueue
-              items={items}
-              selectedKey={selected ? itemKey(selected) : null}
-              onSelect={handleSelect}
-              loading={loading || staffLoading}
-              badgeHints={badgeHints}
-            />
-            <VetCockpitPatientPanel
-              item={selected}
-              context={patientContext}
-              loading={contextLoading}
-              canWrite={canWrite}
-              completing={completing}
-              phaseBusy={phaseBusy}
-              onStartConsultation={handleStartConsultation}
-              onOpenRecord={(section) => {
-                const encId = selected?.encounter_id ?? patientContext?.encounter?.id;
-                if (encId) openEncounter(encId, section);
-              }}
-              onComplete={() => void handleComplete()}
-              onSetOperationalPhase={(phase) => void handleSetOperationalPhase(phase)}
-            />
-          </div>
-        </>
-      ) : null}
-
-      {viewMode === 'agenda' && staffId ? (
-        <VetCockpitAgendaEmbed clinicId={clinicId} staffMemberId={staffId} />
-      ) : null}
-
-      {viewMode === 'operation' ? (
-        <div className="vet-cockpit-operation-embed">
-          <HubClinicEncountersPage embedded />
+      <div className="hub-view-date-toolbar vet-cockpit-toolbar">
+        <div className="hub-view-date-toolbar__nav-cluster">
+          <button
+            type="button"
+            className="hub-view-date-toolbar__icon-btn"
+            onClick={() => shiftCursor(-1)}
+            aria-label="Dia anterior"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <button
+            type="button"
+            className="hub-view-date-toolbar__icon-btn"
+            onClick={() => shiftCursor(1)}
+            aria-label="Próximo dia"
+          >
+            <ChevronRight size={18} />
+          </button>
+          <HubDateField
+            id="vet-cockpit-date"
+            className="hub-view-date-toolbar__date-field"
+            valueIso={cursorIso}
+            onChangeIso={(iso) => {
+              if (!iso) return;
+              const parsed = parseIsoYmd(iso);
+              if (parsed) setCursor(parsed);
+            }}
+            showTodayButton
+          />
         </div>
-      ) : null}
+        {myStaffMember ? (
+          <span className="vet-cockpit-toolbar__vet">{myStaffMember.full_name}</span>
+        ) : null}
+      </div>
+
+      <VetCockpitHeader summary={summary} dateLabel={`Hoje: ${summary.total} atendimentos`} />
+      <div className="vet-cockpit-layout">
+        <VetCockpitQueue
+          items={items}
+          selectedKey={selected ? itemKey(selected) : null}
+          onSelect={handleSelect}
+          loading={loading || staffLoading}
+          badgeHints={badgeHints}
+        />
+        <VetCockpitPatientPanel
+          item={selected}
+          context={patientContext}
+          loading={contextLoading}
+          canWrite={canWrite}
+          completing={completing}
+          phaseBusy={phaseBusy}
+          onStartConsultation={handleStartConsultation}
+          onOpenRecord={(section) => {
+            const encId = selected?.encounter_id ?? patientContext?.encounter?.id;
+            if (encId) openEncounter(encId, section);
+          }}
+          onComplete={() => void handleComplete()}
+          onSetOperationalPhase={(phase) => void handleSetOperationalPhase(phase)}
+        />
+      </div>
 
       <StartEncounterModal
         open={Boolean(startModalItem)}

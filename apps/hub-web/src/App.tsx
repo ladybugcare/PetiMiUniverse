@@ -1,5 +1,12 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import {
+  Route,
+  Navigate,
+  createBrowserRouter,
+  createRoutesFromElements,
+  RouterProvider,
+  useParams,
+} from 'react-router-dom';
 import { AuthProvider } from '@petimi/web-core';
 import {
   AlertProvider,
@@ -19,6 +26,7 @@ import {
   HubBoardingPage,
   HubPickupPage,
   PickupDriverView,
+  PickupMyRoutePage,
   HubCaixaPage,
   HubComandaPage,
   HubComandaFinancePage,
@@ -48,7 +56,6 @@ import PublicSpecialistReferralPage from './pages/PublicSpecialistReferralPage';
 import ValidateExamOrderPage from './pages/ValidateExamOrderPage';
 import ValidateSpecialistReferralPage from './pages/ValidateSpecialistReferralPage';
 import HubHomePage from './pages/HubHomePage';
-import { useParams } from 'react-router-dom';
 
 function PickupDriverViewPage() {
   const { routeId } = useParams<{ routeId: string }>();
@@ -56,89 +63,91 @@ function PickupDriverViewPage() {
   return <PickupDriverView routeId={routeId} />;
 }
 
+/** Data router — necessário para useBlocker (guard de saída do caixa). */
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <>
+      <Route path="/meu-perfil" element={<Navigate to="/hub/meu-perfil" replace />} />
+      <Route path="/login" element={<HubLoginPage />} />
+      <Route path="/signup" element={<HubSignUpPage />} />
+      <Route path="/accept-invitation" element={<HubAcceptInvitationPage />} />
+      <Route path="/signup-convite" element={<HubInviteSignUpPage />} />
+      <Route path="/email-confirmed" element={<HubEmailConfirmedPage />} />
+      <Route path="/orcamento/:token" element={<PublicQuotePage />} />
+      <Route path="/comanda/:token" element={<PublicComandaPage />} />
+      <Route path="/receita/:token" element={<PublicPrescriptionPage />} />
+      <Route path="/validar-receita" element={<ValidatePrescriptionPage />} />
+      <Route path="/solicitacao-exame/:token" element={<PublicExamOrderPage />} />
+      <Route path="/validar-exame" element={<ValidateExamOrderPage />} />
+      <Route path="/encaminhamento/:token" element={<PublicSpecialistReferralPage />} />
+      <Route path="/validar-encaminhamento" element={<ValidateSpecialistReferralPage />} />
+      <Route
+        path="/hub/onboarding/clinica"
+        element={
+          <HubProtectedRoute>
+            <HubClinicOnboardingPage />
+          </HubProtectedRoute>
+        }
+      />
+      <Route path="/hub/guardians" element={<Navigate to="/hub/clientes" replace />} />
+      <Route path="/hub/service-types" element={<Navigate to="/hub/servicos" replace />} />
+      <Route
+        path="/hub"
+        element={
+          <HubProtectedRoute>
+            <HubOnboardingGuard>
+              <HubAppShell />
+            </HubOnboardingGuard>
+          </HubProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="clientes" replace />} />
+        <Route path="dashboard" element={<HubDashboardPage />} />
+        <Route path="appointments" element={<HubAgendaPage />} />
+        <Route path="clientes" element={<HubGuardiansPage />} />
+        <Route path="clientes/:guardianId" element={<HubGuardianDetailPage />} />
+        <Route path="pets/novo" element={<HubPetWizardPage />} />
+        <Route path="pets/:petId" element={<HubPetDetailPage />} />
+        <Route path="pets" element={<HubPetsPage />} />
+        <Route path="financeiro" element={<HubFinanceiroPage />} />
+        <Route path="financeiro/comanda/:id" element={<HubComandaFinancePage />} />
+        <Route path="financeiro/comanda/:id/pronto-para-envio" element={<HubComandaReadyToSendPage />} />
+        <Route path="caixa" element={<HubCaixaPage />} />
+        <Route path="caixa/comanda/:id" element={<HubComandaPage />} />
+        <Route path="caixa/comanda/:id/pronto-para-envio" element={<HubComandaReadyToSendPage />} />
+        <Route path="orcamentos/*" element={<HubOrcamentosRoutes />} />
+        <Route path="servicos/*" element={<HubServicosRoutes />} />
+        <Route path="clinica/*" element={<HubClinicRoutes />} />
+        <Route path="hotel-creche" element={<HubBoardingPage />} />
+        <Route path="banho-tosa" element={<HubGroomingQueuePage />} />
+        <Route path="leva-e-traz" element={<HubPickupPage />} />
+        <Route path="leva-e-traz/minha-rota" element={<PickupMyRoutePage />} />
+        <Route path="leva-e-traz/motorista/:routeId" element={<PickupDriverViewPage />} />
+        <Route path="estoque/*" element={<HubEstoqueRoutes />} />
+        <Route path="equipe" element={<HubStaffPage />} />
+        <Route path="relatorios" element={<HubRelatoriosPage />} />
+        <Route path="encounters" element={<Navigate to="/hub/clinica/atendimentos" replace />} />
+        <Route path="meu-perfil" element={<HubMeuPerfilPage />} />
+        <Route path="perfil-clinica" element={<HubClinicaPerfilPage />} />
+        <Route path="design-system" element={<HubDesignSystemPage />} />
+        <Route path="configuracoes-sistema/*" element={<HubSystemSettingsRoutes />} />
+      </Route>
+      <Route path="/" element={<HubHomePage />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </>,
+  ),
+  {
+    future: {
+      v7_relativeSplatPath: true,
+    },
+  },
+);
+
 const App: React.FC = () => {
   return (
     <AuthProvider>
       <AlertProvider>
-        <Routes>
-          <Route path="/meu-perfil" element={<Navigate to="/hub/meu-perfil" replace />} />
-          <Route path="/login" element={<HubLoginPage />} />
-          <Route path="/signup" element={<HubSignUpPage />} />
-          <Route path="/accept-invitation" element={<HubAcceptInvitationPage />} />
-          <Route path="/signup-convite" element={<HubInviteSignUpPage />} />
-          <Route path="/email-confirmed" element={<HubEmailConfirmedPage />} />
-          <Route path="/orcamento/:token" element={<PublicQuotePage />} />
-          <Route path="/comanda/:token" element={<PublicComandaPage />} />
-          <Route path="/receita/:token" element={<PublicPrescriptionPage />} />
-          <Route path="/validar-receita" element={<ValidatePrescriptionPage />} />
-          <Route path="/solicitacao-exame/:token" element={<PublicExamOrderPage />} />
-          <Route path="/validar-exame" element={<ValidateExamOrderPage />} />
-          <Route path="/encaminhamento/:token" element={<PublicSpecialistReferralPage />} />
-          <Route path="/validar-encaminhamento" element={<ValidateSpecialistReferralPage />} />
-          <Route
-            path="/hub/onboarding/clinica"
-            element={
-              <HubProtectedRoute>
-                <HubClinicOnboardingPage />
-              </HubProtectedRoute>
-            }
-          />
-          <Route
-            path="/hub/guardians"
-            element={<Navigate to="/hub/clientes" replace />}
-          />
-          <Route
-            path="/hub/service-types"
-            element={<Navigate to="/hub/servicos" replace />}
-          />
-          <Route
-            path="/hub"
-            element={
-              <HubProtectedRoute>
-                <HubOnboardingGuard>
-                  <HubAppShell />
-                </HubOnboardingGuard>
-              </HubProtectedRoute>
-            }
-          >
-            <Route index element={<Navigate to="clientes" replace />} />
-            <Route path="dashboard" element={<HubDashboardPage />} />
-            <Route path="appointments" element={<HubAgendaPage />} />
-            <Route path="clientes" element={<HubGuardiansPage />} />
-            <Route path="clientes/:guardianId" element={<HubGuardianDetailPage />} />
-            <Route path="pets/novo" element={<HubPetWizardPage />} />
-            <Route path="pets/:petId" element={<HubPetDetailPage />} />
-            <Route path="pets" element={<HubPetsPage />} />
-            <Route path="financeiro" element={<HubFinanceiroPage />} />
-            <Route path="financeiro/comanda/:id" element={<HubComandaFinancePage />} />
-            <Route path="financeiro/comanda/:id/pronto-para-envio" element={<HubComandaReadyToSendPage />} />
-            <Route path="caixa" element={<HubCaixaPage />} />
-            <Route path="caixa/comanda/:id" element={<HubComandaPage />} />
-          <Route path="caixa/comanda/:id/pronto-para-envio" element={<HubComandaReadyToSendPage />} />
-            <Route path="orcamentos/*" element={<HubOrcamentosRoutes />} />
-            <Route path="servicos/*" element={<HubServicosRoutes />} />
-            <Route path="clinica/*" element={<HubClinicRoutes />} />
-            <Route path="hotel-creche" element={<HubBoardingPage />} />
-            <Route path="banho-tosa" element={<HubGroomingQueuePage />} />
-            <Route path="leva-e-traz" element={<HubPickupPage />} />
-            <Route
-              path="leva-e-traz/motorista/:routeId"
-              element={
-                <PickupDriverViewPage />
-              }
-            />
-            <Route path="estoque/*" element={<HubEstoqueRoutes />} />
-            <Route path="equipe" element={<HubStaffPage />} />
-            <Route path="relatorios" element={<HubRelatoriosPage />} />
-            <Route path="encounters" element={<Navigate to="/hub/clinica/atendimentos" replace />} />
-            <Route path="meu-perfil" element={<HubMeuPerfilPage />} />
-            <Route path="perfil-clinica" element={<HubClinicaPerfilPage />} />
-            <Route path="design-system" element={<HubDesignSystemPage />} />
-            <Route path="configuracoes-sistema/*" element={<HubSystemSettingsRoutes />} />
-          </Route>
-          <Route path="/" element={<HubHomePage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <RouterProvider router={router} />
       </AlertProvider>
     </AuthProvider>
   );

@@ -309,6 +309,7 @@ Decisão (jun/2026): os módulos abaixo **permanecem no MVP** e têm plano de im
 
 ## Pós-MVP imediato (não bloqueia release Foundation)
 
+- **Planos SaaS do Hub** (Beta no cadastro → catálogo base + módulos operacionais pós-MVP): [HUB_PLATFORM_SUBSCRIPTION_PLAN.md](./HUB_PLATFORM_SUBSCRIPTION_PLAN.md).
 - Entitlements por módulo (`module.hub_core`, …).
 - Consentimento LGPD explícito em guardian/pet.
 - Integração bidirecional com vet-match (demanda gerada a partir de escala) — Fase ecossistema.

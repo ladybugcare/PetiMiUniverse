@@ -22,14 +22,12 @@ import {
 import { formValuesToUpdatePayload } from './clientes/guardianFormPayload';
 import '../components/hub-profile.css';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 const HubGuardianDetailPage: React.FC = () => {
   const { guardianId } = useParams<{ guardianId: string }>();
   const navigate = useNavigate();
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const unitId = getSelectedUnitId();
   const canWrite = hasPermission('hub.guardians.write');
@@ -41,8 +39,7 @@ const HubGuardianDetailPage: React.FC = () => {
   const [form, setForm] = useState<GuardianFormValues | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.guardians.read');
 
   const load = useCallback(async () => {
     if (!clinicId || !guardianId || !accessAllowed) return;

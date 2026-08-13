@@ -22,7 +22,6 @@ import '../pets/pets-page.css';
 import '../servicos/servicos-page.css';
 import './estoque.css';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT', 'CVET_INTERNAL'] as const;
 const MOBILE_MQ = '(max-width: 900px)';
 
 function formatMoneyNumberBrl(n: number): string {
@@ -146,11 +145,10 @@ export interface HubEstoqueItemsPageProps {
 const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) => {
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.inventory.write');
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.inventory.read');
 
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<HubInventoryItem[]>([]);

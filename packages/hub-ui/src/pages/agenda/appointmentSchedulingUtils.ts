@@ -100,6 +100,18 @@ export function toIsoTsOnOrAfter(dateYmd: string, hm: string, anchorIso: string)
   return candidate;
 }
 
+/**
+ * Versão para pernas de retorno L&T: garante o mesmo dia do atendimento.
+ * Se o horário escolhido for anterior ao fim do serviço (anchorIso),
+ * usa o anchorIso diretamente — nunca avança ao dia seguinte.
+ *
+ * Diferença de toIsoTsOnOrAfter: aquela avança dias; esta usa o anchor como fallback.
+ */
+export function toIsoTsForPickupReturn(dateYmd: string, hm: string, anchorIso: string): string {
+  const candidate = toIsoTs(dateYmd, hm);
+  return new Date(candidate).getTime() >= new Date(anchorIso).getTime() ? candidate : anchorIso;
+}
+
 export function buildExtraBlocksApiPayload(
   extraBlocks: ExtraBlock[],
   dateYmd: string,

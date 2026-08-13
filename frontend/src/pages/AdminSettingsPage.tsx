@@ -126,24 +126,38 @@ const AdminSettingsPage: React.FC = () => {
         return (
           <div style={styles.tabContent}>
             <div style={styles.placeholderSection}>
-              <h3 style={styles.sectionTitle}>Planos de Clínicas</h3>
-              <p style={styles.placeholderText}>Em breve: Gerenciamento de planos (Free, Basic, Comfort, Pro)</p>
+              <h3 style={styles.sectionTitle}>Assinatura SaaS do Hub (pré-MVP)</h3>
+              <p style={styles.placeholderText}>
+                No pré-MVP, novas clínicas entram no <strong>Programa Beta</strong> (acesso total,
+                grátis). Gerencie Beta por clínica em{' '}
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/clinics')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: colors.brand.primary[500],
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    padding: 0,
+                    font: 'inherit',
+                  }}
+                >
+                  Clínicas → Ver detalhes → Gerenciar Beta
+                </button>
+                .
+              </p>
             </div>
             <div style={styles.placeholderSection}>
-              <h3 style={styles.sectionTitle}>Planos de Veterinários</h3>
-              <p style={styles.placeholderText}>Em breve: Gerenciamento de planos (Basic, Plus, Pro)</p>
+              <h3 style={styles.sectionTitle}>Catálogo comercial (pós-MVP)</h3>
+              <p style={styles.placeholderText}>
+                Em breve: planos Solo / Crescimento / Rede + módulos operacionais (Clínica, Banho
+                &amp; Tosa, Hotel &amp; Creche).
+              </p>
             </div>
             <div style={styles.placeholderSection}>
-              <h3 style={styles.sectionTitle}>Limites por Plano</h3>
-              <p style={styles.placeholderText}>Em breve: Configuração de limites (demandas, unidades, convites, uploads)</p>
-            </div>
-            <div style={styles.placeholderSection}>
-              <h3 style={styles.sectionTitle}>Período de Avaliação e Cobrança</h3>
-              <p style={styles.placeholderText}>Em breve: Configuração de trial e regras de cobrança</p>
-            </div>
-            <div style={styles.placeholderSection}>
-              <h3 style={styles.sectionTitle}>Método de Pagamento</h3>
-              <p style={styles.placeholderText}>Em breve: Configuração de gateway de pagamento padrão</p>
+              <h3 style={styles.sectionTitle}>Planos de Veterinários (Match)</h3>
+              <p style={styles.placeholderText}>Em breve: gerenciamento de planos (Basic, Plus, Pro)</p>
             </div>
           </div>
         );

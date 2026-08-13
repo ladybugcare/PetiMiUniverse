@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
-import { AlertCircle, ArrowRight, Receipt, Syringe, Package } from 'lucide-react';
+import { AlertCircle, ArrowRight, Receipt, Syringe, Package, Wallet } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -19,6 +19,7 @@ import {
 } from 'recharts';
 import {
   hubFinancialApi,
+  type HubCashSession,
   type HubFinanceAgingReport,
   type HubFinanceDashboardSummary,
   type HubFinanceRevenueSeriesPoint,
@@ -98,6 +99,7 @@ const HubDashboardPage: React.FC = () => {
   const [staffOptions, setStaffOptions] = useState<HubStaffMember[]>([]);
   const [serviceOptions, setServiceOptions] = useState<HubServiceType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openCashSession, setOpenCashSession] = useState<HubCashSession | null>(null);
 
   const periodQuery = useMemo(() => periodOpts(preset), [preset]);
   const pto = useMemo(() => periodFromTo(preset), [preset]);
@@ -140,7 +142,7 @@ const HubDashboardPage: React.FC = () => {
         ...(serviceFilter ? { hub_service_type_id: serviceFilter } : {}),
       };
 
-      const [s, rev, tic, top, ag, st, clin, low] = await Promise.all([
+      const [s, rev, tic, top, ag, st, clin, low, cashRes] = await Promise.all([
         hubFinancialApi.getDashboardSummary(clinicId, unitId, periodQuery),
         hubFinancialApi.getRevenueSeries(clinicId, unitId, { ...periodQuery, bucket: revenueBucket }),
         hubFinancialApi.getTicketAverageReport(clinicId, unitId, periodQuery),
@@ -149,9 +151,11 @@ const HubDashboardPage: React.FC = () => {
         hasApptRead ? hubAppointmentsApi.getStatsByServiceGroup(statsParams) : Promise.resolve({ items: [] }),
         hasClinicRead ? hubClinicalApi.alerts(clinicId) : Promise.resolve({ alerts: [] }),
         hasInvRead ? hubInventoryApi.reports.lowStock(clinicId) : Promise.resolve({ items: [] }),
+        hubFinancialApi.getCashSessionOpen(clinicId, unitId).catch(() => ({ cash_session: null })),
       ]);
 
       setSummary(s);
+      setOpenCashSession(cashRes.cash_session ?? null);
       setRevenuePoints(rev.points ?? []);
       setTicket(tic);
       setTopServices(top);
@@ -547,6 +551,27 @@ const HubDashboardPage: React.FC = () => {
             Precisa de atenção
           </h2>
           <div className="hub-dash__alerts">
+            {openCashSession?.status === 'open' && (
+              <div className="hub-dash__alert-card">
+                <Wallet size={20} strokeWidth={1.75} aria-hidden />
+                <div>
+                  <div className="hub-dash__alert-title">Caixa aberto</div>
+                  <div className="hub-dash__alert-meta">
+                    {openCashSession.opened_at
+                      ? `Desde ${new Date(openCashSession.opened_at).toLocaleString('pt-BR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}`
+                      : 'Sessão em aberto'}
+                  </div>
+                </div>
+                <Link className="hub-dash__alert-cta" to="/hub/caixa">
+                  Ver Caixa <ArrowRight size={14} />
+                </Link>
+              </div>
+            )}
             <div className="hub-dash__alert-card">
               <AlertCircle size={20} strokeWidth={1.75} aria-hidden />
               <div>

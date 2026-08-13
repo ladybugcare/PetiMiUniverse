@@ -14,6 +14,7 @@ import {
   linkStaffMemberToClinicUser,
   resolveHubWebUrl,
 } from './hubInvitationUtils.js';
+import { sanitizeOperationalAreas } from '../../utils/operationalAreas.js';
 
 const uuidStr = z.string().uuid();
 
@@ -173,6 +174,17 @@ export const signupFromHubInvitation = asyncHandler(async (req: Request, res: Re
   const userId = authData.user.id;
   const nowIso = new Date().toISOString();
 
+  let operationalAreas: string[] = [];
+  const staffMemberId = invitation.staff_member_id as string | null | undefined;
+  if (staffMemberId) {
+    const { data: staffRow } = await supabaseAdmin
+      .from('hub_staff_members')
+      .select('operational_areas')
+      .eq('id', staffMemberId)
+      .maybeSingle();
+    operationalAreas = sanitizeOperationalAreas(staffRow?.operational_areas);
+  }
+
   try {
     const { data: clinicUser, error: cuError } = await supabaseAdmin
       .from('clinic_users')
@@ -182,6 +194,7 @@ export const signupFromHubInvitation = asyncHandler(async (req: Request, res: Re
         clinic_id: invitation.clinic_id,
         unit_id: invitation.unit_id,
         role: invitation.role,
+        operational_areas: operationalAreas,
         status: 'active',
         invited_by: invitation.invited_by,
         invited_at: invitation.created_at,

@@ -1,6 +1,5 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
 import { setHubUiConfig } from '@petimi/hub-ui';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -24,8 +23,6 @@ setHubUiConfig({
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <App />
   </React.StrictMode>
 );

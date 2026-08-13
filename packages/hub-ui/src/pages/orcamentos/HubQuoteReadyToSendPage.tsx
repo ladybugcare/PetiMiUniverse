@@ -23,14 +23,12 @@ import {
 import '../clientes/clientes.css';
 import './orcamentos-page.css';
 
-const allowedClinicRoles = ['CADMIN', 'CMANAGER', 'CASSISTANT'] as const;
-
 type MessageVariant = 'link' | 'pdf';
 
 const HubQuoteReadyToSendPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user, role: authRole } = useAuth();
-  const { role: clinicRole, loading: permLoading, hasPermission } = usePermissions();
+  const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const { showError, showSuccess } = useAlert();
   const copyDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,8 +40,7 @@ const HubQuoteReadyToSendPage: React.FC = () => {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [messageCopied, setMessageCopied] = useState(false);
 
-  const accessAllowed =
-    clinicRole && allowedClinicRoles.includes(clinicRole as (typeof allowedClinicRoles)[number]);
+  const accessAllowed = hasPermission('hub.quotes.read');
   const canWrite = hasPermission('hub.quotes.write');
 
   const load = useCallback(async () => {

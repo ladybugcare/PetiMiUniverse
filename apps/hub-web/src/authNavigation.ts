@@ -19,9 +19,9 @@ function hubLandingForRole(role: AppRole): string {
     case 'CASSISTANT':
       return '/hub/appointments';
     case 'CVET_INTERNAL':
-      return '/hub/clinica/atendimentos';
+      return '/hub/clinica';
     case 'CGROOMER':
-      return '/hub/grooming';
+      return '/hub/banho-tosa';
     case 'CFINANCE':
       return '/hub/financeiro';
     default:

@@ -4,20 +4,23 @@ import { getStoredClinicId } from '@petimi/web-core';
 import { hubPickupApi, type PickupRouteDetailResponse, type PickupStop, type PickupStopStatus } from '../../api/hubPickupApi';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
-import { buildWhatsappLink } from '../../utils/whatsappLink';
 import './pickup-page.css';
 
-const ADVANCE_MAP: Partial<Record<PickupStopStatus, PickupStopStatus>> = {
-  pending: 'en_route',
-  en_route: 'arrived',
-  arrived: 'completed',
-};
-
-const ADVANCE_LABELS: Partial<Record<PickupStopStatus, string>> = {
-  pending: 'A caminho',
-  en_route: 'Chegou',
-  arrived: 'Concluído',
-};
+/** Retorna o próximo status e o label do botão, considerando o sentido da parada. */
+function getAdvanceInfo(
+  status: PickupStopStatus,
+  direction: 'pickup' | 'delivery' | undefined,
+): { next: PickupStopStatus; label: string } | null {
+  switch (status) {
+    case 'pending':    return { next: 'en_route', label: 'A caminho' };
+    case 'en_route':   return { next: 'arrived',  label: 'No endereço' };
+    case 'arrived':
+      if (direction === 'pickup') return { next: 'in_transit', label: 'Pet a bordo' };
+      return { next: 'completed', label: 'Entregue' };
+    case 'in_transit': return { next: 'completed', label: 'Na clínica' };
+    default: return null;
+  }
+}
 
 const DONE_STATUSES: PickupStopStatus[] = ['completed', 'failed'];
 
@@ -75,12 +78,12 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
 
   const handleAdvance = async () => {
     if (!nextStop || !clinicId) return;
-    const nextStatus = ADVANCE_MAP[nextStop.status];
-    if (!nextStatus) return;
+    const info = getAdvanceInfo(nextStop.status, nextStop.direction as 'pickup' | 'delivery' | undefined);
+    if (!info) return;
     setBusy(true);
     try {
-      await hubPickupApi.patchStop(nextStop.id, { clinic_id: clinicId, status: nextStatus });
-      showSuccess(ADVANCE_LABELS[nextStop.status] ?? 'Status atualizado');
+      await hubPickupApi.patchStop(nextStop.id, { clinic_id: clinicId, status: info.next });
+      showSuccess(info.label);
       setShowFailForm(false);
       await load();
     } catch (e: unknown) {
@@ -153,13 +156,10 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
         .join(', ')
     : null;
 
-  const waMessage =
-    nextStop?.direction === 'pickup'
-      ? `Olá, ${guardianName}! Estamos a caminho para buscar ${petName}.`
-      : `Olá, ${guardianName}! Estamos a caminho para entregar ${petName}.`;
-  const whatsappLink = phone ? buildWhatsappLink(phone, waMessage) : null;
-
-  const canAdvance = !!nextStop && !!ADVANCE_MAP[nextStop.status];
+  const advanceInfo = nextStop
+    ? getAdvanceInfo(nextStop.status, nextStop.direction as 'pickup' | 'delivery' | undefined)
+    : null;
+  const canAdvance = !!advanceInfo;
 
   return (
     <div className="hub-pickup-driver-view">
@@ -214,16 +214,6 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
                   Ligar
                 </a>
               ) : null}
-              {whatsappLink ? (
-                <a
-                  href={whatsappLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--whatsapp"
-                >
-                  WhatsApp
-                </a>
-              ) : null}
               {canAdvance ? (
                 <button
                   type="button"
@@ -232,10 +222,10 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
                   disabled={busy}
                 >
                   {busy ? <Loader size={16} className="spin" aria-hidden /> : null}
-                  {ADVANCE_LABELS[nextStop.status]}
+                  {advanceInfo!.label}
                 </button>
               ) : null}
-              {['pending', 'en_route', 'arrived'].includes(nextStop.status) ? (
+              {['pending', 'en_route', 'arrived', 'in_transit'].includes(nextStop.status) ? (
                 <button
                   type="button"
                   className="hub-pickup-driver-view__action-btn"

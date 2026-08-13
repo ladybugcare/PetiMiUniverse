@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase';
-import { PERMISSIONS, Role, isClinicAdminRole } from '../utils/permissions';
+import { PERMISSIONS, Role, isClinicAdminRole, hasEffectivePermission } from '../utils/permissions';
 
 // Extend Express Request to include user info
 declare global {
@@ -101,7 +101,7 @@ export const checkPermission = async (
     // sessão RLS do usuário e devolve vazio → falsos negativos e 403 em /units/clinic/:id.
     const { data: clinicUser, error } = await supabaseAdmin
       .from('clinic_users')
-      .select('role')
+      .select('role, operational_areas')
       .eq('user_id', user_id)
       .eq('clinic_id', clinic_id)
       .eq('status', 'active')
@@ -111,13 +111,11 @@ export const checkPermission = async (
       return false;
     }
 
-    if (isClinicAdminRole(clinicUser.role)) {
-      return true;
-    }
-
-    // Verificar se role tem a permissão
-    const userPermissions = PERMISSIONS[clinicUser.role as Role];
-    return userPermissions ? userPermissions.includes(permission) : false;
+    return hasEffectivePermission(
+      clinicUser.role as Role,
+      permission,
+      (clinicUser.operational_areas as string[] | null) ?? [],
+    );
   } catch (error) {
     console.error('Error checking permission:', error);
     return false;
