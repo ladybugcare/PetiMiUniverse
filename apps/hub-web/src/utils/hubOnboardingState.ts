@@ -1,22 +1,38 @@
-/** Utilizador CADMIN ainda sem clínica/unidade no Hub. */
+/** Utilizador CADMIN/CMANAGER ainda sem clínica/unidade no Hub. */
 export function needsHubClinicOnboarding(): boolean {
   try {
+    const rawCu = localStorage.getItem('clinic_user');
+    if (rawCu) {
+      const cu = JSON.parse(rawCu) as { clinic_id?: string | null; role?: string };
+      // Já vinculado a uma clínica (dono ou funcionário) — nunca forçar onboarding de org.
+      if (cu.clinic_id) return false;
+      const role = String(cu.role || '').toUpperCase();
+      if (role === 'CADMIN' || role === 'CMANAGER') {
+        const rawOnb = localStorage.getItem('clinicOnboarding');
+        if (rawOnb) {
+          const o = JSON.parse(rawOnb) as {
+            shouldCompleteClinicProfile?: boolean;
+            needsOnboarding?: boolean;
+          };
+          if (o.shouldCompleteClinicProfile === true) return true;
+          if (o.needsOnboarding === true) return true;
+        }
+        return true;
+      }
+      // Staff sem clinic_id é estado inválido; não mandar para criar clínica.
+      return false;
+    }
+
     const rawOnb = localStorage.getItem('clinicOnboarding');
     if (rawOnb) {
-      const o = JSON.parse(rawOnb) as { shouldCompleteClinicProfile?: boolean; needsOnboarding?: boolean };
+      const o = JSON.parse(rawOnb) as {
+        shouldCompleteClinicProfile?: boolean;
+        needsOnboarding?: boolean;
+        clinicId?: string | null;
+      };
+      if (o.clinicId) return false;
       if (o.shouldCompleteClinicProfile === true) return true;
-      if (o.needsOnboarding === true && o.shouldCompleteClinicProfile !== false) {
-        const cu = localStorage.getItem('clinic_user');
-        if (cu) {
-          const parsed = JSON.parse(cu) as { clinic_id?: string | null };
-          if (!parsed.clinic_id) return true;
-        }
-      }
     }
-    const rawCu = localStorage.getItem('clinic_user');
-    if (!rawCu) return false;
-    const cu = JSON.parse(rawCu) as { clinic_id?: string | null; role?: string };
-    if (String(cu.role || '').toUpperCase() === 'CADMIN' && !cu.clinic_id) return true;
     return false;
   } catch {
     return false;

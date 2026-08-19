@@ -1,5 +1,5 @@
 import type { HubStaffAccessRole, HubStaffMember } from '../../api/hubStaffApi';
-import { professionalKindFromJobTitle } from '../../constants/hubJobFunctions';
+import { professionalKindFromJobTitle, VET_JOB_TITLE_VALUE } from '../../constants/hubJobFunctions';
 import { parseStaffSpecialties, staffSpecialtiesForApi } from '../../utils/staffSpecialties';
 import { formatBrPhoneFromApi } from '../../utils/formatBrPhone';
 import {
@@ -10,12 +10,35 @@ import {
 
 export const HUB_ACCESS_ROLE_OPTIONS: { value: HubStaffAccessRole; label: string }[] = [
   { value: 'CADMIN', label: 'Administrador' },
-  { value: 'CMANAGER', label: 'Gerente / Financeiro' },
+  { value: 'CMANAGER', label: 'Gerente' },
   { value: 'CASSISTANT', label: 'Recepção' },
-  { value: 'CVET_INTERNAL', label: 'Veterinário (perfil interno)' },
-  { value: 'CGROOMER', label: 'Banho e Tosa' },
+  { value: 'CSTAFF', label: 'Funcionário' },
   { value: 'CFINANCE', label: 'Financeiro' },
 ];
+
+/** Perfis antigos ainda válidos no banco — só aparecem se a pessoa já os tiver. */
+export const HUB_ACCESS_ROLE_LEGACY_OPTIONS: { value: HubStaffAccessRole; label: string }[] = [
+  { value: 'CVET_INTERNAL', label: 'Veterinário (legado)' },
+  { value: 'CGROOMER', label: 'Banho e Tosa (legado)' },
+];
+
+/** Papéis sugeridos ao escolher a função principal (cargo ≠ perfil). */
+export function suggestAccessRoleForJobTitle(jobTitle: string): HubStaffAccessRole | null {
+  const j = jobTitle.trim();
+  if (j === 'Recepção') return 'CASSISTANT';
+  if (
+    j === 'Motorista' ||
+    j === 'Banho & Tosa' ||
+    j === VET_JOB_TITLE_VALUE ||
+    j === 'Auxiliar Veterinário(a)' ||
+    j === 'Enfermeiro(a) Veterinário(a)' ||
+    j === 'Recreador(a)' ||
+    j === 'Adestrador(a)'
+  ) {
+    return 'CSTAFF';
+  }
+  return null;
+}
 
 export const WEEKDAY_OPTS: { bit: number; label: string }[] = [
   { bit: 1, label: 'Seg' },
@@ -179,10 +202,11 @@ export function suggestOperationalAreasForJobTitle(jobTitle: string): HubOperati
   return defaultOperationalAreasForJobTitle(jobTitle);
 }
 
-export function inviteReadyHint(form: HubStaffFormState): string | null {
+export function inviteReadyHint(form: HubStaffFormState, hasUnits = true): string | null {
   if (!form.has_hub_access) return null;
   if (!form.hub_access_email.trim()) return 'Informe o e-mail de acesso para enviar o convite.';
   if (!form.hub_access_role) return 'Selecione o perfil de permissão.';
-  if (!form.default_unit_id) return 'Selecione a unidade padrão na seção Agenda.';
+  if (!hasUnits) return 'Nenhuma unidade ativa encontrada. Cadastre uma unidade antes de convidar.';
+  if (!form.default_unit_id) return 'Selecione a unidade padrão (obrigatória para o convite).';
   return null;
 }

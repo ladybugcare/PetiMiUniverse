@@ -16,6 +16,12 @@ export function hubAccessTypeLabel(
       return 'Assistente';
     case 'CVET_INTERNAL':
       return 'Veterinário interno';
+    case 'CGROOMER':
+      return 'Banho e Tosa';
+    case 'CFINANCE':
+      return 'Financeiro';
+    case 'CSTAFF':
+      return 'Funcionário';
     case 'ADMIN':
       return 'Administrador PetMi';
     case 'VET':
@@ -43,6 +49,12 @@ export function hubProfileAccessBadge(
       return 'Assistente';
     case 'CVET_INTERNAL':
       return 'Veterinário interno';
+    case 'CGROOMER':
+      return 'Banho e Tosa';
+    case 'CFINANCE':
+      return 'Financeiro';
+    case 'CSTAFF':
+      return 'Funcionário';
     case 'ADMIN':
       return 'Administrador PetMi';
     case 'VET':

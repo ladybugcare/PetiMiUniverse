@@ -1,0 +1,253 @@
+/* HubMessageTemplatesPage — Templates de Mensagem */
+
+.hub-mt {
+  padding: 8px 4px 32px;
+  max-width: 760px;
+}
+
+.hub-mt__intro {
+  margin-bottom: 28px;
+}
+
+.hub-mt__intro-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  color: #2d1e1c;
+}
+
+.hub-mt__intro-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #7a6060;
+  max-width: 560px;
+}
+
+.hub-mt__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.hub-mt__group-label {
+  display: block;
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #a08080;
+}
+
+.hub-mt__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hub-mt__card {
+  border: 1px solid #e5e0dc;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.hub-mt__card--dirty {
+  border-color: #f0c4b0;
+  box-shadow: 0 0 0 1px rgba(200, 106, 77, 0.12);
+}
+
+.hub-mt__card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #f0ebe6;
+}
+
+.hub-mt__card-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #f5f0eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9a6a5a;
+}
+
+.hub-mt__card-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-mt__card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hub-mt__card-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d1e1c;
+}
+
+.hub-mt__badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #f0ebe6;
+  color: #9a7060;
+}
+
+.hub-mt__badge--custom {
+  background: #fff3ee;
+  color: #c86a4d;
+}
+
+.hub-mt__badge--dirty {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.hub-mt__card-body {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hub-mt__vars {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.hub-mt__vars-label {
+  font-size: 12px;
+  color: #a08080;
+  margin-right: 2px;
+}
+
+.hub-mt__chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #e5e0dc;
+  background: #faf8f6;
+  color: #5c4040;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.hub-mt__chip:hover:not(:disabled) {
+  background: #fff3ee;
+  border-color: #f0c4b0;
+  color: #c86a4d;
+}
+
+.hub-mt__chip:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.hub-mt__textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 10px 12px;
+  border: 1px solid #e5e0dc;
+  border-radius: 8px;
+  background: #fff;
+  color: #2d1e1c;
+  box-sizing: border-box;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.hub-mt__textarea:focus {
+  outline: none;
+  border-color: #c86a4d;
+  box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.15);
+}
+
+.hub-mt__textarea:disabled {
+  background: #faf8f6;
+  color: #7a6060;
+}
+
+.hub-mt__textarea::placeholder {
+  color: #b0a0a0;
+}
+
+.hub-mt__preview {
+  border-radius: 10px;
+  background: #f5f7f4;
+  border: 1px solid #e4ebe0;
+  padding: 10px 12px;
+}
+
+.hub-mt__preview-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #7a8a72;
+  letter-spacing: 0.02em;
+}
+
+.hub-mt__preview-bubble {
+  margin: 0;
+  display: inline-block;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px 10px 10px 2px;
+  background: #fff;
+  border: 1px solid #e0e8dc;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #2d1e1c;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hub-mt__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.hub-mt__empty,
+.hub-mt__loading {
+  padding: 48px 16px;
+  text-align: center;
+  color: #a08080;
+  font-size: 14px;
+}
+
+@media (max-width: 560px) {
+  .hub-mt {
+    padding: 4px 0 24px;
+  }
+
+  .hub-mt__card-header {
+    padding: 12px;
+  }
+
+  .hub-mt__card-body {
+    padding: 12px;
+  }
+}

@@ -27,6 +27,13 @@ export type HubInviteSignupResult = {
   role: string;
 };
 
+export type HubInviteAcceptResult = {
+  success: boolean;
+  message: string;
+  clinic_user: Record<string, unknown>;
+  role: string;
+};
+
 export const hubInvitationsApi = {
   preview(token: string): Promise<HubInvitationPreview> {
     const q = new URLSearchParams({ token });
@@ -43,5 +50,12 @@ export const hubInvitationsApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }) as Promise<HubInviteSignupResult>;
+  },
+
+  accept(token: string): Promise<HubInviteAcceptResult> {
+    return apiRequest(`${basePath}/accept`, {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }) as Promise<HubInviteAcceptResult>;
   },
 };

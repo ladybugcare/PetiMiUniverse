@@ -48,6 +48,8 @@ export type FormState = {
   pricing_matrix: HubServicePricingMatrix | null;
   cost_amount: string;
   sale_amount: string;
+  /** Leva e Traz: valor cadastrado é ida+volta ou por perna. */
+  pickup_price_scope: 'round_trip' | 'per_leg';
   /** Valor mostrado no input, interpretado com `duration_input_unit`. */
   default_duration_minutes: string;
   duration_input_unit: DurationInputUnit;
@@ -64,7 +66,8 @@ export const SERVICE_GROUP_HINTS: Record<string, string> = {
   creche: 'Defina valores para dia completo e meio dia no mesmo serviço, quando activar a tabela de preços.',
   clinica: 'Consulta padrão e retorno no mesmo registo; retorno pode ter venda 0 (gratuita).',
   cirurgia: 'Precificação única (custo e venda) por serviço, salvo extensões futuras.',
-  leva_traz: 'Adicione faixas de quilometragem com nome e valores; pode haver várias linhas no mesmo serviço.',
+  leva_traz:
+    'Adicione faixas de quilometragem com nome e valores; indique se o valor é ida e volta ou por perna (busca/retorno).',
   internacao: 'Hospitalização ou internamento: preço único por serviço ou pacotes por dia.',
   outros: 'Serviços gerais: preço único por linha.',
 };
@@ -166,6 +169,7 @@ export function emptyForm(): FormState {
     pricing_matrix: null,
     cost_amount: '',
     sale_amount: '',
+    pickup_price_scope: 'round_trip',
     default_duration_minutes: '',
     duration_input_unit: 'min',
     description: '',
@@ -204,6 +208,7 @@ export function fromRow(t: HubServiceType): FormState {
     pricing_matrix,
     cost_amount: formatMoneyNumberBrl(Number.isFinite(ref.cost) ? ref.cost : 0),
     sale_amount: formatMoneyNumberBrl(Number.isFinite(ref.sale) ? ref.sale : 0),
+    pickup_price_scope: t.pickup_price_scope === 'per_leg' ? 'per_leg' : 'round_trip',
     default_duration_minutes: durationStr,
     duration_input_unit: durationUnit,
     description: t.description ?? '',
@@ -250,10 +255,17 @@ export function applySvcGroupChange(prev: FormState, newGroup: string): FormStat
       pricing_matrix,
       cost_amount: formatMoneyNumberBrl(ref.cost),
       sale_amount: formatMoneyNumberBrl(ref.sale),
+      pickup_price_scope: newGroup === 'leva_traz' ? prev.pickup_price_scope : 'round_trip',
     };
   }
 
-  return { ...prev, service_group: newGroup, pricing_mode, pricing_matrix };
+  return {
+    ...prev,
+    service_group: newGroup,
+    pricing_mode,
+    pricing_matrix,
+    pickup_price_scope: newGroup === 'leva_traz' ? prev.pickup_price_scope : 'round_trip',
+  };
 }
 
 export function groupComboOptionsFromGroups(

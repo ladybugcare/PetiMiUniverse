@@ -1,13 +1,57 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Banknote,
+  CreditCard,
+  Landmark,
+  Link2,
+  QrCode,
+  Wallet,
+  WalletCards,
+} from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { hubFinancialApi, type HubPaymentMethod } from '../../api/hubFinancialApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubCheckbox } from '../../components/HubCheckbox';
 import {
   ALL_HUB_PAYMENT_METHODS,
   HUB_PAYMENT_METHOD_LABELS,
 } from '../../utils/hubPaymentMethods';
 import '../clientes/clientes.css';
-import '../servicos/servicos-page.css';
+import './hub-payment-methods.css';
+
+const METHOD_META: Record<
+  HubPaymentMethod,
+  { icon: React.ReactNode; hint: string }
+> = {
+  pix: {
+    icon: <QrCode size={18} strokeWidth={1.75} />,
+    hint: 'Pagamento instantâneo via QR Code ou chave',
+  },
+  cash: {
+    icon: <Banknote size={18} strokeWidth={1.75} />,
+    hint: 'Recebimento em espécie no caixa',
+  },
+  credit_card: {
+    icon: <CreditCard size={18} strokeWidth={1.75} />,
+    hint: 'Máquina ou digitação — crédito',
+  },
+  debit_card: {
+    icon: <WalletCards size={18} strokeWidth={1.75} />,
+    hint: 'Máquina ou digitação — débito',
+  },
+  transfer: {
+    icon: <Landmark size={18} strokeWidth={1.75} />,
+    hint: 'TED, DOC ou transferência bancária',
+  },
+  payment_link: {
+    icon: <Link2 size={18} strokeWidth={1.75} />,
+    hint: 'Link enviado ao tutor para pagar online',
+  },
+  customer_credit: {
+    icon: <Wallet size={18} strokeWidth={1.75} />,
+    hint: 'Saldo ou crédito já existente do tutor',
+  },
+};
 
 const HubPaymentMethodsPage: React.FC = () => {
   const { hasPermission } = usePermissions();
@@ -22,11 +66,12 @@ const HubPaymentMethodsPage: React.FC = () => {
   const [enabled, setEnabled] = useState<Set<HubPaymentMethod>>(new Set(ALL_HUB_PAYMENT_METHODS));
   const [saved, setSaved] = useState<Set<HubPaymentMethod>>(new Set(ALL_HUB_PAYMENT_METHODS));
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: { cancelled: boolean }) => {
     if (!clinicId || !canRead) return;
     setLoading(true);
     try {
       const res = await hubFinancialApi.getPaymentMethodSettings(clinicId);
+      if (signal?.cancelled) return;
       const methods = res.accepted_payment_methods?.length
         ? res.accepted_payment_methods
         : [...ALL_HUB_PAYMENT_METHODS];
@@ -34,17 +79,23 @@ const HubPaymentMethodsPage: React.FC = () => {
       setEnabled(set);
       setSaved(set);
     } catch (e: unknown) {
+      if (signal?.cancelled) return;
       showError((e as Error)?.message || 'Erro ao carregar formas de pagamento');
     } finally {
-      setLoading(false);
+      if (!signal?.cancelled) setLoading(false);
     }
   }, [clinicId, canRead, showError]);
 
   useEffect(() => {
-    void load();
+    const signal = { cancelled: false };
+    void load(signal);
+    return () => {
+      signal.cancelled = true;
+    };
   }, [load]);
 
   const toggleMethod = (method: HubPaymentMethod) => {
+    if (!canWrite || saving) return;
     setEnabled((prev) => {
       const next = new Set(prev);
       if (next.has(method)) {
@@ -81,10 +132,11 @@ const HubPaymentMethodsPage: React.FC = () => {
   const hasChanges = ALL_HUB_PAYMENT_METHODS.some(
     (m) => enabled.has(m) !== saved.has(m),
   );
+  const enabledCount = enabled.size;
 
   if (!canRead) {
     return (
-      <div className="hub-clientes__empty">
+      <div className="hub-pm__state">
         <p className="hub-clientes__muted">Sem permissão para visualizar configurações financeiras.</p>
       </div>
     );
@@ -92,69 +144,110 @@ const HubPaymentMethodsPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="hub-clientes__empty">
+      <div className="hub-pm__state">
         <p className="hub-clientes__muted">Carregando formas de pagamento…</p>
       </div>
     );
   }
 
   return (
-    <div className="hub-servicos-config__section" style={{ maxWidth: 560 }}>
-      <p className="hub-clientes__muted" style={{ marginBottom: 24 }}>
-        Define quais opções aparecem no checkout e no registro de pagamentos.
-        Pagamentos já registrados continuam visíveis no histórico, mesmo que a forma seja desabilitada depois.
-      </p>
+    <div className="hub-pm">
+      <header className="hub-pm__intro">
+        <h2 className="hub-pm__intro-title">Formas de pagamento</h2>
+        <p className="hub-pm__intro-text">
+          Define quais opções aparecem no checkout e no registro de pagamentos. Pagamentos já
+          registrados continuam visíveis no histórico, mesmo que a forma seja desabilitada depois.
+        </p>
+      </header>
 
-      <div className="hub-servicos-config__inline-form" style={{ marginBottom: 20 }}>
-        <h3 className="hub-servicos-config__inline-title" style={{ marginBottom: 16 }}>
-          Formas aceitas
-        </h3>
+      <div className={`hub-pm__card${hasChanges ? ' hub-pm__card--dirty' : ''}`}>
+        <div className="hub-pm__card-header">
+          <div className="hub-pm__card-icon" aria-hidden>
+            <WalletCards size={18} strokeWidth={1.75} />
+          </div>
+          <div className="hub-pm__card-heading">
+            <div className="hub-pm__card-title-row">
+              <h3 className="hub-pm__card-title">Formas aceitas</h3>
+              {hasChanges && <span className="hub-pm__badge hub-pm__badge--dirty">Não salvo</span>}
+            </div>
+            <p className="hub-pm__card-sub">
+              {enabledCount} de {ALL_HUB_PAYMENT_METHODS.length}{' '}
+              {enabledCount === 1 ? 'habilitada' : 'habilitadas'}
+            </p>
+          </div>
+        </div>
 
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {ALL_HUB_PAYMENT_METHODS.map((method) => (
-            <li key={method}>
-              <label
-                style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: canWrite ? 'pointer' : 'default' }}
+        <ul className="hub-pm__list">
+          {ALL_HUB_PAYMENT_METHODS.map((method) => {
+            const isOn = enabled.has(method);
+            const isLastEnabled = isOn && enabled.size <= 1;
+            const meta = METHOD_META[method];
+            return (
+              <li
+                key={method}
+                className={`hub-pm__item${isOn ? ' hub-pm__item--on' : ' hub-pm__item--off'}${
+                  !canWrite || saving || isLastEnabled ? ' hub-pm__item--locked' : ''
+                }`}
+                onClick={() => {
+                  if (!canWrite || saving || isLastEnabled) return;
+                  toggleMethod(method);
+                }}
               >
-                <input
-                  type="checkbox"
-                  checked={enabled.has(method)}
-                  disabled={!canWrite || saving || (enabled.has(method) && enabled.size <= 1)}
-                  onChange={() => toggleMethod(method)}
-                />
-                <span>{HUB_PAYMENT_METHOD_LABELS[method]}</span>
-              </label>
-            </li>
-          ))}
+                <span className="hub-pm__item-icon" aria-hidden>
+                  {meta.icon}
+                </span>
+                <div className="hub-pm__item-body">
+                  <span className="hub-pm__item-name">{HUB_PAYMENT_METHOD_LABELS[method]}</span>
+                  <span className="hub-pm__item-hint">
+                    {isLastEnabled
+                      ? 'Pelo menos uma forma deve permanecer habilitada'
+                      : meta.hint}
+                  </span>
+                </div>
+                <div
+                  className="hub-pm__item-toggle"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <HubCheckbox
+                    checked={isOn}
+                    disabled={!canWrite || saving || isLastEnabled}
+                    onChange={() => toggleMethod(method)}
+                    ariaLabel={HUB_PAYMENT_METHOD_LABELS[method]}
+                  />
+                </div>
+              </li>
+            );
+          })}
         </ul>
 
-        <p className="hub-clientes__muted" style={{ fontSize: 12, marginTop: 12 }}>
-          Pelo menos uma forma deve permanecer habilitada.
-        </p>
+        {canWrite && (
+          <div className="hub-pm__footer">
+            <p className="hub-pm__hint">
+              Pelo menos uma forma deve permanecer habilitada no checkout.
+            </p>
+            <div className="hub-pm__actions">
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                disabled={saving || !hasChanges}
+                onClick={() => void handleSave()}
+              >
+                {saving ? 'Salvando…' : 'Salvar'}
+              </button>
+              {hasChanges && (
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost"
+                  disabled={saving}
+                  onClick={() => setEnabled(new Set(saved))}
+                >
+                  Descartar
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
-
-      {canWrite && (
-        <div className="hub-servicos-config__inline-actions">
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary"
-            disabled={saving || !hasChanges}
-            onClick={() => void handleSave()}
-          >
-            {saving ? 'Salvando…' : 'Salvar'}
-          </button>
-          {hasChanges && (
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--ghost"
-              disabled={saving}
-              onClick={() => setEnabled(new Set(saved))}
-            >
-              Descartar alterações
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 };

@@ -9,15 +9,19 @@ export type StaffInviteShareResult = {
   share_message: string;
   email: string;
   expires_at?: string;
+  /** Convite já existente reaberto para reenvio (não acabou de ser criado). */
+  reused?: boolean;
 };
 
 type Props = {
   result: StaffInviteShareResult;
   whatsappPhone?: string | null;
   onDone: () => void;
+  /** Volta ao formulário sem fechar o drawer (edição). */
+  onBackToForm?: () => void;
 };
 
-const HubStaffInviteSharePanel: React.FC<Props> = ({ result, whatsappPhone, onDone }) => {
+const HubStaffInviteSharePanel: React.FC<Props> = ({ result, whatsappPhone, onDone, onBackToForm }) => {
   const { showSuccess, showError } = useAlert();
   const [linkCopied, setLinkCopied] = useState(false);
   const [messageCopied, setMessageCopied] = useState(false);
@@ -65,8 +69,17 @@ const HubStaffInviteSharePanel: React.FC<Props> = ({ result, whatsappPhone, onDo
   return (
     <div className="hub-equipe-drawer__share">
       <p className="hub-equipe-drawer__share-lead">
-        Convite criado para <strong>{result.email}</strong>. Compartilhe o link com o profissional (válido até{' '}
-        {expiresLabel}).
+        {result.reused ? (
+          <>
+            Convite pendente para <strong>{result.email}</strong>. Reenvie o link ao profissional (válido até{' '}
+            {expiresLabel}).
+          </>
+        ) : (
+          <>
+            Convite criado para <strong>{result.email}</strong>. Compartilhe o link com o profissional (válido até{' '}
+            {expiresLabel}).
+          </>
+        )}
       </p>
 
       <div className="hub-equipe-drawer__share-url">
@@ -108,6 +121,11 @@ const HubStaffInviteSharePanel: React.FC<Props> = ({ result, whatsappPhone, onDo
       </div>
 
       <div className="hub-equipe-drawer__share-footer">
+        {onBackToForm ? (
+          <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={onBackToForm}>
+            Voltar ao cadastro
+          </button>
+        ) : null}
         <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={onDone}>
           Concluir
         </button>

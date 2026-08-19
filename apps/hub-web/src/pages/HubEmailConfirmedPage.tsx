@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { CheckCircle2, XCircle, ArrowRight } from 'lucide-react';
 import { getSupabase, useAuth } from '@petimi/web-core';
 import { getHubPostLoginDestination } from '../authNavigation';
+import { applyHubSessionContext, hubSessionApi } from '../services/hubSessionApi';
 import './hub-onboarding-page.css';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
@@ -12,7 +13,7 @@ const HubEmailConfirmedPage: React.FC = () => {
   const navigate = useNavigate();
   const { setAuthFromLogin } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [message, setMessage] = useState('A confirmar o seu e-mail…');
+  const [message, setMessage] = useState('Confirmando o seu e-mail…');
 
   useEffect(() => {
     let cancelled = false;
@@ -32,18 +33,30 @@ const HubEmailConfirmedPage: React.FC = () => {
           });
           if (error) throw error;
           if (!cancelled && data.session) {
+            let clinicUser: Record<string, unknown> | null = null;
+            let onboarding: Record<string, unknown> = {
+              shouldCompleteClinicProfile: false,
+              needsOnboarding: false,
+            };
+
+            try {
+              const ctx = await hubSessionApi.getContext();
+              applyHubSessionContext(ctx);
+              clinicUser = ctx.clinicUser as Record<string, unknown> | null;
+              onboarding = ctx.onboarding as Record<string, unknown>;
+            } catch {
+              /* sessão Auth ok; contexto Hub pode falhar — não forçar onboarding de clínica */
+            }
+
             await setAuthFromLogin({
               user: data.user,
               session: data.session,
-              clinicUser: null,
-              onboarding: { shouldCompleteClinicProfile: true, needsOnboarding: true },
+              clinicUser,
+              onboarding,
             });
             setStatus('success');
-            setMessage('E-mail confirmado! A redirecionar…');
-            const dest = getHubPostLoginDestination(
-              { onboarding: { shouldCompleteClinicProfile: true }, clinicUser: { role: 'CADMIN' } },
-              undefined,
-            );
+            setMessage('E-mail confirmado! Redirecionando…');
+            const dest = getHubPostLoginDestination({ onboarding, clinicUser, user: data.user }, undefined);
             setTimeout(() => {
               if (!cancelled && dest.type === 'internal') navigate(dest.path, { replace: true });
             }, 1200);
@@ -55,7 +68,7 @@ const HubEmailConfirmedPage: React.FC = () => {
         if (sessionData.session?.user) {
           if (!cancelled) {
             setStatus('success');
-            setMessage('Sessão activa. Pode continuar o cadastro.');
+            setMessage('Sessão ativa. Pode continuar o cadastro.');
           }
           return;
         }

@@ -17,6 +17,8 @@ export type ServiceTypePricingRow = {
   pricing_matrix: unknown;
   cost_amount: number;
   sale_amount: number;
+  /** Só relevante para `leva_traz`: valor cadastrado é ida+volta ou por perna. */
+  pickup_price_scope?: 'round_trip' | 'per_leg' | null;
 };
 
 /** Idade em meses completos entre birthYmd e refYmd (ref >= birth). */

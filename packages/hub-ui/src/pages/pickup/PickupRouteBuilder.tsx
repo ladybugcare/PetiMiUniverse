@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowUpFromLine, GripVertical, Loader, X } from 'lucide-react';
-import { getStoredClinicId } from '@petimi/web-core';
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, ExternalLink, GripVertical, Loader, Package, Scissors, Sparkles, Truck, X } from 'lucide-react';
+import { apiRequest, getStoredClinicId } from '@petimi/web-core';
 import {
   DndContext,
   PointerSensor,
@@ -17,11 +17,18 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { hubPickupApi, type PickupDayBoardItem, type PickupRoute } from '../../api/hubPickupApi';
+import { hubPickupVehiclesApi, type PickupVehicle } from '../../api/hubPickupVehiclesApi';
 import { hubStaffApi, type HubStaffMember } from '../../api/hubStaffApi';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
+import { HubSidePanel } from '../../components/HubSidePanel';
 import { useAlert } from '../../components/AlertProvider';
 import PickupRouteMap from './PickupRouteMap';
 import type { MapStop, MapAvailableStop } from './PickupRouteMap';
+import {
+  buildGoogleMapsDirectionsUrl,
+  openGoogleMapsUrl,
+  type MapPoint,
+} from './pickupMapsLinks';
 
 function formatTime(iso?: string): string {
   if (!iso) return '—';
@@ -35,9 +42,13 @@ function formatTime(iso?: string): string {
 function SortableStopItem({
   item,
   onRemove,
+  onSplitAfter,
+  canSplit,
 }: {
   item: PickupDayBoardItem & { _direction: 'pickup' | 'delivery' };
   onRemove: (id: string) => void;
+  onSplitAfter?: (id: string) => void;
+  canSplit?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.appointment_id,
@@ -67,16 +78,32 @@ function SortableStopItem({
       </span>
       <div className="hub-pickup-builder__stop-info">
         <span className="hub-pickup-builder__stop-pet">{item.pet?.name ?? '—'}</span>
-        <span className="hub-pickup-builder__stop-meta">
+        <span
+          className="hub-pickup-builder__stop-meta"
+          title={[item.guardian?.full_name, item.address, formatTime(item.starts_at)]
+            .filter(Boolean)
+            .join(' · ')}
+        >
           {item.guardian?.full_name ?? ''}
           {item.address ? ` · ${item.address}` : ''}
           {' · '}
           {formatTime(item.starts_at)}
         </span>
       </div>
+      {canSplit && onSplitAfter ? (
+        <button
+          type="button"
+          className="hub-clientes__icon-btn hub-pickup-builder__stop-split"
+          onClick={() => onSplitAfter(item.appointment_id)}
+          aria-label="Dividir rota a partir daqui"
+          title="Dividir a partir daqui (lote seguinte)"
+        >
+          <Scissors size={14} />
+        </button>
+      ) : null}
       <button
         type="button"
-        className="hub-clientes__icon-btn"
+        className="hub-clientes__icon-btn hub-pickup-builder__stop-remove"
         onClick={() => onRemove(item.appointment_id)}
         aria-label="Remover parada"
       >
@@ -89,6 +116,7 @@ function SortableStopItem({
 // ─── PickupRouteBuilder ───────────────────────────────────────────────────
 
 type Props = {
+  open: boolean;
   looseItems: PickupDayBoardItem[];
   dateYmd: string;
   unitId?: string;
@@ -100,6 +128,7 @@ type Props = {
 };
 
 const PickupRouteBuilder: React.FC<Props> = ({
+  open,
   looseItems,
   dateYmd,
   unitId,
@@ -113,10 +142,46 @@ const PickupRouteBuilder: React.FC<Props> = ({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const [staff, setStaff] = useState<HubStaffMember[]>([]);
+  const [vehicles, setVehicles] = useState<PickupVehicle[]>([]);
   const [driverStaffId, setDriverStaffId] = useState(editingRoute?.driver_staff_id ?? '');
-  const [vehicleLabel, setVehicleLabel] = useState(editingRoute?.vehicle_label ?? '');
+  const [vehicleId, setVehicleId] = useState(editingRoute?.vehicle_id ?? '');
   const [notes, setNotes] = useState(editingRoute?.notes ?? '');
+  const [routeLabel, setRouteLabel] = useState(editingRoute?.label ?? '');
   const [busy, setBusy] = useState(false);
+  const [startKind, setStartKind] = useState<'clinic' | 'custom'>(
+    editingRoute?.start_kind === 'custom' ? 'custom' : 'clinic',
+  );
+  const [customStartAddress, setCustomStartAddress] = useState(
+    editingRoute?.start_kind === 'custom' ? (editingRoute.start_address ?? '') : '',
+  );
+  const [clinicStartAddress, setClinicStartAddress] = useState<string | null>(
+    editingRoute?.start_kind === 'clinic' ? (editingRoute.start_address ?? null) : null,
+  );
+  const [startCoords, setStartCoords] = useState<{ lat: number; lng: number } | null>(() => {
+    if (
+      editingRoute?.start_lat != null &&
+      editingRoute?.start_lng != null &&
+      Number.isFinite(editingRoute.start_lat) &&
+      Number.isFinite(editingRoute.start_lng)
+    ) {
+      return { lat: editingRoute.start_lat, lng: editingRoute.start_lng };
+    }
+    return null;
+  });
+
+  // cage_id por appointment: mapa de appointmentId → cageId (opcional)
+  const [stopCages, setStopCages] = useState<Map<string, string>>(() => {
+    const m = new Map<string, string>();
+    for (const s of editingStops ?? []) {
+      if (s.cage_id) m.set(s.appointment_id, s.cage_id);
+    }
+    return m;
+  });
+
+  const selectedVehicle = useMemo(
+    () => vehicles.find((v) => v.id === vehicleId) ?? null,
+    [vehicles, vehicleId],
+  );
 
   // Paradas selecionadas com direção confirmada
   type StopCandidate = PickupDayBoardItem & { _direction: 'pickup' | 'delivery' };
@@ -129,7 +194,73 @@ const PickupRouteBuilder: React.FC<Props> = ({
   useEffect(() => {
     if (!clinicId) return;
     void hubStaffApi.list(clinicId).then((r) => setStaff(r.staff ?? [])).catch(() => setStaff([]));
+    void hubPickupVehiclesApi
+      .listVehicles(clinicId)
+      .then((r) => setVehicles(r.vehicles))
+      .catch(() => setVehicles([]));
   }, [clinicId]);
+
+  // Endereço da clínica (preview quando saída = clínica)
+  useEffect(() => {
+    if (!clinicId || startKind !== 'clinic') return;
+    if (editingRoute?.start_kind === 'clinic' && editingRoute.start_address) {
+      setClinicStartAddress(editingRoute.start_address);
+      return;
+    }
+    let cancelled = false;
+    void (apiRequest(`/clinics/${encodeURIComponent(clinicId)}`) as Promise<{
+      clinic?: { address?: string | null; city?: string | null; state?: string | null; name?: string | null };
+    }>)
+      .then((r) => {
+        if (cancelled) return;
+        const c = r.clinic;
+        if (!c) {
+          setClinicStartAddress(null);
+          return;
+        }
+        const line = String(c.address ?? '').trim();
+        const cityState = [String(c.city ?? '').trim(), String(c.state ?? '').trim()].filter(Boolean).join(' - ');
+        const full = [line, cityState].filter(Boolean).join(', ');
+        setClinicStartAddress(full || null);
+      })
+      .catch(() => {
+        if (!cancelled) setClinicStartAddress(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, startKind, editingRoute?.start_kind, editingRoute?.start_address]);
+
+  const effectiveStartAddress = startKind === 'custom' ? customStartAddress.trim() : (clinicStartAddress ?? '');
+
+  // Geocode do ponto de saída
+  useEffect(() => {
+    const addr = effectiveStartAddress;
+    if (addr.length < 5) {
+      setStartCoords(null);
+      return;
+    }
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(addr)}`;
+          const res = await fetch(url, { headers: { Accept: 'application/json' } });
+          if (!res.ok || cancelled) return;
+          const data = (await res.json()) as Array<{ lat: string; lon: string }>;
+          const hit = data[0];
+          if (!hit || cancelled) return;
+          setStartCoords({ lat: Number(hit.lat), lng: Number(hit.lon) });
+        } catch {
+          if (!cancelled) setStartCoords(null);
+        }
+      })();
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [effectiveStartAddress]);
 
   // Geocodifica endereços de pernas soltas para o preview do mapa (Nominatim, 1 req/s)
   useEffect(() => {
@@ -214,43 +345,62 @@ const PickupRouteBuilder: React.FC<Props> = ({
   };
 
   // Dados do mapa: paradas selecionadas (numeradas) e disponíveis (cinza)
-  const mapStops = useMemo<MapStop[]>(() => {
-    return selected
-      .map((s, idx) => {
-        const coords = coordsCache.get(s.appointment_id);
-        if (!coords) return null;
-        return {
-          id: s.appointment_id,
-          petName: s.pet?.name ?? '—',
-          guardianName: s.guardian?.full_name ?? null,
-          address: s.address ?? null,
-          direction: s._direction,
-          sequence: idx,
-          time: s.starts_at,
-          lat: coords.lat,
-          lng: coords.lng,
-        } satisfies MapStop;
-      })
-      .filter((s): s is MapStop => s !== null);
+  const mapStops = useMemo(() => {
+    const out: MapStop[] = [];
+    selected.forEach((s, idx) => {
+      const coords = coordsCache.get(s.appointment_id);
+      if (!coords) return;
+      out.push({
+        id: s.appointment_id,
+        petName: s.pet?.name ?? '—',
+        guardianName: s.guardian?.full_name ?? null,
+        address: s.address ?? null,
+        direction: s._direction,
+        sequence: idx,
+        time: s.starts_at,
+        lat: coords.lat,
+        lng: coords.lng,
+      });
+    });
+    return out;
   }, [selected, coordsCache]);
 
-  const mapAvailableStops = useMemo<MapAvailableStop[]>(() => {
-    return available
-      .map((item) => {
-        const coords = coordsCache.get(item.appointment_id);
-        if (!coords) return null;
-        return {
-          id: item.appointment_id,
-          petName: item.pet?.name ?? '—',
-          guardianName: item.guardian?.full_name ?? null,
-          address: item.address ?? null,
-          direction: item.direction === 'unknown' ? 'unknown' : (item.direction as 'pickup' | 'delivery'),
-          lat: coords.lat,
-          lng: coords.lng,
-        } satisfies MapAvailableStop;
-      })
-      .filter((s): s is MapAvailableStop => s !== null);
+  const mapAvailableStops = useMemo(() => {
+    const out: MapAvailableStop[] = [];
+    for (const item of available) {
+      const coords = coordsCache.get(item.appointment_id);
+      if (!coords) continue;
+      out.push({
+        id: item.appointment_id,
+        petName: item.pet?.name ?? '—',
+        guardianName: item.guardian?.full_name ?? null,
+        address: item.address ?? null,
+        direction: item.direction === 'unknown' ? 'unknown' : (item.direction as 'pickup' | 'delivery'),
+        lat: coords.lat,
+        lng: coords.lng,
+      });
+    }
+    return out;
   }, [available, coordsCache]);
+
+  const googleMapsDirections = useMemo(() => {
+    const points: MapPoint[] = [
+      {
+        lat: startCoords?.lat ?? null,
+        lng: startCoords?.lng ?? null,
+        address: effectiveStartAddress || null,
+      },
+      ...selected.map((s) => {
+        const coords = coordsCache.get(s.appointment_id);
+        return {
+          lat: coords?.lat ?? null,
+          lng: coords?.lng ?? null,
+          address: s.address ?? null,
+        };
+      }),
+    ];
+    return buildGoogleMapsDirectionsUrl(points);
+  }, [startCoords, effectiveStartAddress, selected, coordsCache]);
 
   const staffOptions = useMemo(
     () => [
@@ -260,22 +410,84 @@ const PickupRouteBuilder: React.FC<Props> = ({
     [staff],
   );
 
+  const vehicleOptions = useMemo(
+    () => [
+      { value: '', label: 'Sem veículo' },
+      ...vehicles.map((v) => {
+        const cap = v.has_cages && v.cages.length > 0
+          ? v.cages.filter((c) => c.active).reduce((s, c) => s + c.capacity, 0)
+          : v.capacity_animals;
+        const plate = v.license_plate ? ` · ${v.license_plate}` : '';
+        return { value: v.id, label: `${v.name}${plate} (${cap} anim.)` };
+      }),
+    ],
+    [vehicles],
+  );
+
+  // Capacidade total do veículo selecionado
+  const vehicleCapacity = useMemo(() => {
+    if (!selectedVehicle) return null;
+    const activeCages = selectedVehicle.cages.filter((c) => c.active);
+    if (selectedVehicle.has_cages && activeCages.length > 0) {
+      return activeCages.reduce((s, c) => s + c.capacity, 0);
+    }
+    return selectedVehicle.capacity_animals;
+  }, [selectedVehicle]);
+
+  const projectedPickups = useMemo(
+    () => selected.filter((s) => s._direction === 'pickup').length,
+    [selected],
+  );
+
+  const isOverCapacity = vehicleCapacity !== null && projectedPickups > vehicleCapacity;
+
+  // Caixas disponíveis do veículo selecionado (ativas)
+  const availableCages = useMemo(
+    () => (selectedVehicle?.has_cages ? selectedVehicle.cages.filter((c) => c.active) : []),
+    [selectedVehicle],
+  );
+
   const handleSave = async () => {
     if (!clinicId) return;
     if (selected.length === 0) {
       showError('Adicione ao menos uma parada antes de salvar.');
       return;
     }
+    if (isOverCapacity) {
+      showError(
+        `Capacidade do veículo excedida: ${projectedPickups} coleta(s) para capacidade ${vehicleCapacity}.`,
+      );
+      return;
+    }
+    if (startKind === 'custom' && customStartAddress.trim().length < 3) {
+      showError('Informe o endereço de saída do motorista.');
+      return;
+    }
+    if (startKind === 'clinic' && !clinicStartAddress) {
+      showError(
+        'A clínica não tem endereço cadastrado. Cadastre no perfil ou escolha «Outro endereço».',
+      );
+      return;
+    }
     setBusy(true);
     try {
       let routeId: string;
+      const startPayload = {
+        start_kind: startKind,
+        start_address: startKind === 'custom' ? customStartAddress.trim() : null,
+        start_lat: startCoords?.lat ?? null,
+        start_lng: startCoords?.lng ?? null,
+      };
+      const labelValue = routeLabel.trim() || null;
 
       if (editingRoute) {
         await hubPickupApi.patchRoute(editingRoute.id, {
           clinic_id: clinicId,
           driver_staff_id: driverStaffId || null,
-          vehicle_label: vehicleLabel || null,
+          vehicle_id: vehicleId || null,
           notes: notes || null,
+          label: labelValue,
+          ...startPayload,
         });
         routeId = editingRoute.id;
       } else {
@@ -284,8 +496,10 @@ const PickupRouteBuilder: React.FC<Props> = ({
           unit_id: unitId ?? null,
           route_date: dateYmd,
           driver_staff_id: driverStaffId || null,
-          vehicle_label: vehicleLabel || null,
+          vehicle_id: vehicleId || null,
           notes: notes || null,
+          label: labelValue,
+          ...startPayload,
         });
         routeId = route.id;
       }
@@ -296,6 +510,7 @@ const PickupRouteBuilder: React.FC<Props> = ({
           hub_appointment_id: s.appointment_id,
           direction: s._direction,
           sequence: idx,
+          cage_id: stopCages.get(s.appointment_id) ?? null,
         })),
       });
 
@@ -308,18 +523,220 @@ const PickupRouteBuilder: React.FC<Props> = ({
     }
   };
 
-  return (
-    <div className="hub-pickup-builder">
-      <div className="hub-pickup-builder__header">
-        <span className="hub-pickup-builder__title">
-          {editingRoute ? 'Editar rota' : 'Nova rota'} — {dateYmd}
-        </span>
-        <button type="button" className="hub-clientes__icon-btn" onClick={onClose} aria-label="Fechar">
-          <X size={16} />
-        </button>
-      </div>
+  const handleSplitAfter = async (appointmentId: string) => {
+    if (!clinicId || !editingRoute) return;
+    const idx = selected.findIndex((s) => s.appointment_id === appointmentId);
+    if (idx < 0 || idx >= selected.length - 1) {
+      showError('Não há paradas após este ponto para dividir.');
+      return;
+    }
+    setBusy(true);
+    try {
+      // Persistir ordem atual antes de dividir
+      await hubPickupApi.patchRoute(editingRoute.id, {
+        clinic_id: clinicId,
+        driver_staff_id: driverStaffId || null,
+        vehicle_id: vehicleId || null,
+        notes: notes || null,
+        label: routeLabel.trim() || null,
+        start_kind: startKind,
+        start_address: startKind === 'custom' ? customStartAddress.trim() : null,
+        start_lat: startCoords?.lat ?? null,
+        start_lng: startCoords?.lng ?? null,
+      });
+      await hubPickupApi.addStops(editingRoute.id, {
+        clinic_id: clinicId,
+        stops: selected.map((s, i) => ({
+          hub_appointment_id: s.appointment_id,
+          direction: s._direction,
+          sequence: i,
+          cage_id: stopCages.get(s.appointment_id) ?? null,
+        })),
+      });
+      await hubPickupApi.splitRoute(editingRoute.id, {
+        clinic_id: clinicId,
+        after_sequence: idx,
+        label: 'Lote 2',
+        insert_clinic_return: true,
+      });
+      showSuccess('Rota dividida. O lote seguinte foi criado com retorno à clínica.');
+      onSaved();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao dividir rota.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
+  const handleSuggestBatches = async () => {
+    if (!clinicId) return;
+    const pool = [...selected, ...available.map((i) => ({
+      ...i,
+      _direction: (i.direction === 'delivery' ? 'delivery' : 'pickup') as 'pickup' | 'delivery',
+    }))];
+    if (pool.length === 0) {
+      showError('Não há pernas para sugerir lotes.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const suggestion = await hubPickupApi.suggestBatches({
+        clinic_id: clinicId,
+        vehicle_id: vehicleId || null,
+        capacity: vehicleCapacity ?? undefined,
+        stops: pool.map((s) => ({
+          hub_appointment_id: s.appointment_id,
+          direction: s._direction,
+          starts_at: s.starts_at,
+          lat: coordsCache.get(s.appointment_id)?.lat ?? null,
+          lng: coordsCache.get(s.appointment_id)?.lng ?? null,
+        })),
+      });
+
+      if (suggestion.batches.length <= 1) {
+        showSuccess('Um único lote já cabe na capacidade — nada a dividir.');
+        setBusy(false);
+        return;
+      }
+
+      const startPayload = {
+        start_kind: startKind,
+        start_address: startKind === 'custom' ? customStartAddress.trim() : null,
+        start_lat: startCoords?.lat ?? null,
+        start_lng: startCoords?.lng ?? null,
+      };
+
+      for (let bIdx = 0; bIdx < suggestion.batches.length; bIdx++) {
+        const batch = suggestion.batches[bIdx];
+        const batchStops = batch.stop_ids
+          .map((id) => pool.find((p) => p.appointment_id === id))
+          .filter(Boolean) as Array<PickupDayBoardItem & { _direction: 'pickup' | 'delivery' }>;
+        if (batchStops.length === 0) continue;
+
+        const { route } = await hubPickupApi.createRoute({
+          clinic_id: clinicId,
+          unit_id: unitId ?? null,
+          route_date: dateYmd,
+          driver_staff_id: driverStaffId || null,
+          vehicle_id: vehicleId || null,
+          notes: notes || null,
+          label: batch.label,
+          sort_order: bIdx,
+          ...startPayload,
+        });
+        await hubPickupApi.addStops(route.id, {
+          clinic_id: clinicId,
+          stops: batchStops.map((s, idx) => ({
+            hub_appointment_id: s.appointment_id,
+            direction: s._direction,
+            sequence: idx,
+          })),
+        });
+        if (bIdx < suggestion.batches.length - 1) {
+          await hubPickupApi.addClinicReturn(route.id, { clinic_id: clinicId });
+        }
+      }
+
+      showSuccess(`${suggestion.batches.length} lotes criados a partir da sugestão.`);
+      onSaved();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao sugerir lotes.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <HubSidePanel
+      open={open}
+      onClose={onClose}
+      title={editingRoute ? 'Editar rota' : 'Nova rota'}
+      titleIcon={<Truck size={22} strokeWidth={2} aria-hidden />}
+      subtitle={dateYmd}
+      size="wide"
+      footer={
+        <>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost"
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancelar
+          </button>
+          {!editingRoute ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost"
+              onClick={() => void handleSuggestBatches()}
+              disabled={busy}
+              title="Cria vários lotes pela capacidade do veículo"
+            >
+              {busy ? <Loader size={14} className="spin" aria-hidden /> : <Sparkles size={14} aria-hidden />}
+              Sugerir lotes
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary"
+            onClick={() => void handleSave()}
+            disabled={busy || selected.length === 0 || isOverCapacity}
+          >
+            {busy ? <Loader size={14} className="spin" aria-hidden /> : null}
+            {editingRoute ? 'Salvar rota' : 'Criar rota'}
+          </button>
+        </>
+      }
+    >
+    <div className="hub-pickup-builder">
       <div className="hub-pickup-builder__form">
+        <div className="hub-pickup-builder__field">
+          <label className="hub-pickup-builder__label" htmlFor="hub-pb-label">
+            Rótulo do turno/lote
+          </label>
+          <input
+            id="hub-pb-label"
+            className="hub-clientes__input"
+            value={routeLabel}
+            onChange={(e) => setRouteLabel(e.target.value)}
+            placeholder="Ex.: Manhã, Tarde, Lote 1"
+            maxLength={80}
+          />
+        </div>
+        <div className="hub-pickup-builder__field hub-pickup-builder__field--full">
+          <span className="hub-pickup-builder__label">Saída do motorista</span>
+          <div className="hub-pickup-builder__start-seg" role="group" aria-label="Origem da rota">
+            <button
+              type="button"
+              className={startKind === 'clinic' ? 'hub-pickup-builder__start-seg--active' : ''}
+              onClick={() => setStartKind('clinic')}
+            >
+              Clínica
+            </button>
+            <button
+              type="button"
+              className={startKind === 'custom' ? 'hub-pickup-builder__start-seg--active' : ''}
+              onClick={() => setStartKind('custom')}
+            >
+              Outro endereço
+            </button>
+          </div>
+          {startKind === 'clinic' ? (
+            <p className="hub-pickup-builder__start-hint">
+              {clinicStartAddress
+                ? clinicStartAddress
+                : 'Endereço da clínica ainda não cadastrado no perfil.'}
+            </p>
+          ) : (
+            <input
+              className="hub-clientes__input"
+              value={customStartAddress}
+              onChange={(e) => setCustomStartAddress(e.target.value)}
+              placeholder="Rua, número, bairro, cidade…"
+              maxLength={500}
+            />
+          )}
+        </div>
         <div className="hub-pickup-builder__field">
           <label className="hub-pickup-builder__label" htmlFor="hub-pb-driver">
             Motorista
@@ -336,17 +753,26 @@ const PickupRouteBuilder: React.FC<Props> = ({
         </div>
         <div className="hub-pickup-builder__field">
           <label className="hub-pickup-builder__label" htmlFor="hub-pb-vehicle">
-            Veículo (opcional)
+            Veículo
           </label>
-          <input
+          <HubSearchableCombobox
             id="hub-pb-vehicle"
-            type="text"
-            className="hub-clientes__input"
-            value={vehicleLabel}
-            onChange={(e) => setVehicleLabel(e.target.value)}
-            placeholder="Ex.: Van branca, Gol prata"
-            maxLength={200}
+            className="hub-combobox--clientes"
+            options={vehicleOptions}
+            value={vehicleId}
+            onChange={(v) => { setVehicleId(v); setStopCages(new Map()); }}
+            placeholder="Selecionar veículo"
+            allowCreate={false}
           />
+          {selectedVehicle && vehicleCapacity !== null && (
+            <div className={`hub-pb__capacity-bar${isOverCapacity ? ' hub-pb__capacity-bar--over' : ''}`}>
+              {isOverCapacity && <AlertTriangle size={13} />}
+              <span>
+                {projectedPickups} {projectedPickups === 1 ? 'coleta' : 'coletas'} a bordo / capacidade {vehicleCapacity}
+                {selectedVehicle.license_plate && ` · ${selectedVehicle.license_plate}`}
+              </span>
+            </div>
+          )}
         </div>
         <div className="hub-pickup-builder__field">
           <label className="hub-pickup-builder__label" htmlFor="hub-pb-notes">
@@ -414,17 +840,61 @@ const PickupRouteBuilder: React.FC<Props> = ({
                 items={selected.map((s) => s.appointment_id)}
                 strategy={verticalListSortingStrategy}
               >
-                {selected.map((item) => (
-                  <div key={item.appointment_id} style={{ position: 'relative' }}>
-                    <SortableStopItem item={item} onRemove={removeItem} />
-                    <button
-                      type="button"
-                      className="hub-pickup-builder__dir-toggle"
-                      onClick={() => toggleDirection(item.appointment_id)}
-                      title="Inverter sentido (coleta/entrega)"
-                    >
-                      ⇄
-                    </button>
+                {selected.map((item, idx) => (
+                  <div key={item.appointment_id} className="hub-pb__stop-row">
+                    <div style={{ flex: 1, position: 'relative' }}>
+                      <SortableStopItem
+                        item={item}
+                        onRemove={removeItem}
+                        canSplit={!!editingRoute && idx < selected.length - 1 && !busy}
+                        onSplitAfter={(id) => void handleSplitAfter(id)}
+                      />
+                      <button
+                        type="button"
+                        className="hub-pickup-builder__dir-toggle"
+                        onClick={() => toggleDirection(item.appointment_id)}
+                        title="Inverter sentido (coleta/entrega)"
+                      >
+                        ⇄
+                      </button>
+                    </div>
+                    {availableCages.length > 0 && (
+                      <div className="hub-pb__cage-assign">
+                        <label className="hub-pb__cage-label">
+                          <Package size={12} /> Caixa
+                        </label>
+                        <select
+                          className="hub-pb__cage-select"
+                          value={stopCages.get(item.appointment_id) ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setStopCages((prev) => {
+                              const next = new Map(prev);
+                              if (val) next.set(item.appointment_id, val);
+                              else next.delete(item.appointment_id);
+                              return next;
+                            });
+                          }}
+                        >
+                          <option value="">— sem caixa —</option>
+                          {availableCages.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}{c.capacity > 1 ? ` (${c.capacity})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {stopCages.get(item.appointment_id) && (() => {
+                          const cage = availableCages.find((c) => c.id === stopCages.get(item.appointment_id));
+                          return cage?.color ? (
+                            <span
+                              className="hub-pb__cage-color-dot"
+                              style={{ background: cage.color }}
+                              title={cage.name}
+                            />
+                          ) : null;
+                        })()}
+                      </div>
+                    )}
                   </div>
                 ))}
               </SortableContext>
@@ -434,34 +904,56 @@ const PickupRouteBuilder: React.FC<Props> = ({
       </div>
 
       {/* Mapa de preview — mostra pontos à medida que os endereços são geocodificados */}
-      {(mapStops.length > 0 || mapAvailableStops.length > 0) ? (
-        <PickupRouteMap stops={mapStops} availableStops={mapAvailableStops} />
+      {(mapStops.length > 0 || mapAvailableStops.length > 0 || startCoords) ? (
+        <div className="hub-pickup-builder__map-block">
+          <div className="hub-pickup-builder__map-toolbar">
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+              disabled={!googleMapsDirections}
+              title={
+                googleMapsDirections
+                  ? googleMapsDirections.truncated
+                    ? 'Abre no Google Maps (rota com muitas paradas — o link cobre as primeiras)'
+                    : 'Abrir rota no Google Maps'
+                  : 'Inclua saída e ao menos uma parada com endereço'
+              }
+              onClick={() => {
+                if (!googleMapsDirections) return;
+                openGoogleMapsUrl(googleMapsDirections.url);
+                if (googleMapsDirections.truncated) {
+                  showError(
+                    'A rota tem muitas paradas: o Google Maps abre as primeiras + a última. Ajuste a ordem no app se precisar.',
+                  );
+                }
+              }}
+            >
+              <ExternalLink size={14} aria-hidden />
+              Abrir no Google Maps
+            </button>
+          </div>
+          <PickupRouteMap
+            stops={mapStops}
+            availableStops={mapAvailableStops}
+            startPoint={
+              startCoords
+                ? {
+                    lat: startCoords.lat,
+                    lng: startCoords.lng,
+                    label: startKind === 'clinic' ? 'Saída — Clínica' : 'Saída — Personalizada',
+                    address: effectiveStartAddress || null,
+                  }
+                : null
+            }
+          />
+        </div>
       ) : (
         <div className="hub-pickup-builder__map-placeholder">
           <span>Mapa disponível após geocodificação dos endereços…</span>
         </div>
       )}
-
-      <div className="hub-pickup-builder__footer">
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--ghost"
-          onClick={onClose}
-          disabled={busy}
-        >
-          Cancelar
-        </button>
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--primary"
-          onClick={() => void handleSave()}
-          disabled={busy || selected.length === 0}
-        >
-          {busy ? <Loader size={14} className="spin" aria-hidden /> : null}
-          {editingRoute ? 'Salvar rota' : 'Criar rota'}
-        </button>
-      </div>
     </div>
+    </HubSidePanel>
   );
 };
 

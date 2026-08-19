@@ -174,6 +174,8 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.cash.session',
     'hub.cash.receive',
   ],
+  /** Base mínima — módulos vêm das áreas operacionais. */
+  CSTAFF: ['unit.view'],
 };
 
 /** CADMIN tem acesso irrestrito a todo o Hub. */

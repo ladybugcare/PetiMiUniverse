@@ -1,5 +1,12 @@
 // Tipos de role clinic (staff) — alinhado a frontend/src/types/units.ts
-export type ClinicStaffRole = 'CADMIN' | 'CMANAGER' | 'CASSISTANT' | 'CVET_INTERNAL' | 'CGROOMER' | 'CFINANCE';
+export type ClinicStaffRole =
+  | 'CADMIN'
+  | 'CMANAGER'
+  | 'CASSISTANT'
+  | 'CVET_INTERNAL'
+  | 'CGROOMER'
+  | 'CFINANCE'
+  | 'CSTAFF';
 
 // Role de app (auth metadata) — alinhado a frontend/src/utils/authHelpers.ts
 export type AppRole =
@@ -10,6 +17,7 @@ export type AppRole =
   | 'CVET_INTERNAL'
   | 'CGROOMER'
   | 'CFINANCE'
+  | 'CSTAFF'
   | 'VET'
   | 'FREELANCER'
   | 'UNKNOWN';

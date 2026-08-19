@@ -7,6 +7,11 @@
 
 # testing
 /coverage
+**/test-results/
+**/playwright-report/
+**/blob-report/
+**/playwright/.cache/
+**/apps/hub-web/e2e/.auth/
 
 # production
 /build

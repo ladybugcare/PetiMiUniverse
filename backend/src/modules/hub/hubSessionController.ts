@@ -13,6 +13,7 @@ const ALLOWED_CLINIC_ROLES = new Set([
   'CVET_INTERNAL',
   'CGROOMER',
   'CFINANCE',
+  'CSTAFF',
 ]);
 
 function pickClinicUserRow(rows: Array<Record<string, unknown>>) {
@@ -137,8 +138,16 @@ export const getHubSessionContext = asyncHandler(async (req: Request, res: Respo
 
   const needsOnboarding = !resolvedClinicId || !hasUnits;
   const role = String(clinicUserPayload?.role || '').toUpperCase();
-  const shouldCompleteClinicProfile =
-    needsOnboarding && (role === 'CADMIN' || role === 'CMANAGER' || isClinicOwnerMetadata);
+  const linkedClinicId =
+    (clinicUserPayload?.clinic_id as string | null | undefined) ||
+    (resolvedClinicId && clinicUserPayload ? resolvedClinicId : null);
+  // Onboarding de org/unidade só para dono pendente — nunca por metadata genérico de staff convidado.
+  const isOwnerCapable =
+    role === 'CADMIN' ||
+    role === 'CMANAGER' ||
+    (!clinicUserPayload && isClinicOwnerMetadata);
+  const shouldCompleteClinicProfile = Boolean(isOwnerCapable && !linkedClinicId && needsOnboarding);
+  const shouldCompleteFirstUnit = Boolean(isOwnerCapable && needsOnboarding);
 
   let subscription = null;
   if (resolvedClinicId && !needsOnboarding) {
@@ -158,7 +167,7 @@ export const getHubSessionContext = asyncHandler(async (req: Request, res: Respo
       hasUnits,
       needsOnboarding,
       shouldCompleteClinicProfile,
-      shouldCompleteFirstUnit: needsOnboarding && (role === 'CADMIN' || role === 'CMANAGER' || isClinicOwnerMetadata),
+      shouldCompleteFirstUnit,
     },
     subscription,
   });

@@ -6,6 +6,11 @@ import { ensureDefaultHubServiceGroups } from './hubServiceGroupsController';
 import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
 import { COAT_TYPE_VALUES, PORTE_VALUES, parsePricingMatrixJson, roundMoney2 } from './hubServiceTypesPricingMatrix';
 import {
+  normalizePickupPriceScope,
+  resolvePickupLegAmounts,
+  type PickupPriceScope,
+} from './hubPickupPricing';
+import {
   PET_BODY_SIZE_TIERS,
   requiresCoatPricing,
   resolveServiceLinePricing,
@@ -21,13 +26,6 @@ import {
   syncOpenComandasAfterAppointmentOperationalComplete,
 } from './hubComandasController';
 import { hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
-
-/** Reparte um total comercial (ex.: ida+volta L&T) em duas linhas contábeis com soma exacta. */
-function splitMoneyTotalAcrossTwoLegs(total: number): [number, number] {
-  const a = roundMoney2(total / 2);
-  const b = roundMoney2(total - a);
-  return [a, b];
-}
 
 function validateLevaTrazServiceType(st: ServiceTypePricingRow | undefined): string | null {
   if (!st) return 'Tipo de serviço de Leva e Traz inválido.';
@@ -89,6 +87,25 @@ const appointmentKindSchema = z.enum([
   'clinical_emergency',
   'walk_in',
 ]);
+
+type AppointmentKind = z.infer<typeof appointmentKindSchema>;
+
+function isLevaTrazServiceGroup(st: ServiceTypePricingRow | undefined): boolean {
+  return String(st?.service_group ?? '').trim().toLowerCase() === 'leva_traz';
+}
+
+/**
+ * Serviço principal do grupo Leva e Traz vira parada operacional (`pickup_route`),
+ * a menos que o cliente tenha pedido explicitamente outro kind (ex.: walk-in).
+ */
+function resolveAppointmentKindForCreate(
+  explicitKind: AppointmentKind | undefined,
+  primaryService: ServiceTypePricingRow | undefined,
+): AppointmentKind {
+  if (explicitKind && explicitKind !== 'standard') return explicitKind;
+  if (isLevaTrazServiceGroup(primaryService)) return 'pickup_route';
+  return explicitKind ?? 'standard';
+}
 
 const WALK_IN_APPOINTMENT_KINDS = new Set([
   'walk_in',
@@ -259,22 +276,38 @@ const optionalPricingCoat = z
 async function fetchServiceTypesMap(clinicId: string, ids: string[]): Promise<Map<string, ServiceTypePricingRow>> {
   const uniq = [...new Set(ids)];
   if (uniq.length === 0) return new Map();
-  const { data, error } = await supabaseAdmin
-    .from('hub_service_types')
-    .select('id, service_group, pricing_matrix, cost_amount, sale_amount')
-    .eq('clinic_id', clinicId)
-    .in('id', uniq)
-    .is('deleted_at', null);
-  if (error) throw new Error(error.message);
+  let rows: Array<Record<string, unknown>> = [];
+  {
+    const first = await supabaseAdmin
+      .from('hub_service_types')
+      .select('id, service_group, pricing_matrix, cost_amount, sale_amount, pickup_price_scope')
+      .eq('clinic_id', clinicId)
+      .in('id', uniq)
+      .is('deleted_at', null);
+    if (first.error && String(first.error.message ?? '').includes('pickup_price_scope')) {
+      const legacy = await supabaseAdmin
+        .from('hub_service_types')
+        .select('id, service_group, pricing_matrix, cost_amount, sale_amount')
+        .eq('clinic_id', clinicId)
+        .in('id', uniq)
+        .is('deleted_at', null);
+      if (legacy.error) throw new Error(legacy.error.message);
+      rows = (legacy.data ?? []) as Array<Record<string, unknown>>;
+    } else if (first.error) {
+      throw new Error(first.error.message);
+    } else {
+      rows = (first.data ?? []) as Array<Record<string, unknown>>;
+    }
+  }
   const m = new Map<string, ServiceTypePricingRow>();
-  for (const row of data ?? []) {
-    const r = row as Record<string, unknown>;
+  for (const r of rows) {
     m.set(String(r.id), {
       id: String(r.id),
       service_group: String(r.service_group ?? ''),
       pricing_matrix: r.pricing_matrix,
       cost_amount: Number(r.cost_amount) || 0,
       sale_amount: Number(r.sale_amount) || 0,
+      pickup_price_scope: normalizePickupPriceScope(r.pickup_price_scope),
     });
   }
   return m;
@@ -856,6 +889,13 @@ const createAppointmentSchema = z
     with_pickup_route_before: pickupBlockSchema.optional().nullable(),
     with_pickup_route_after: pickupBlockSchema.optional().nullable(),
     pickup_route_pricing: pickupRoutePricingSchema.optional().nullable(),
+    /**
+     * L&T como serviço principal: modo operacional (1 ou 2 paradas).
+     * Ignorado quando há with_pickup_route_* (anexo a banho/clínica).
+     */
+    standalone_pickup_mode: z.enum(['round_trip', 'pickup_only', 'delivery_only']).optional(),
+    /** Segunda perna (retorno) quando standalone_pickup_mode = round_trip. */
+    standalone_pickup_return: pickupBlockSchema.optional().nullable(),
     extra_blocks: z.array(extraBlockSchema).optional(),
     recurrence: recurrenceSchema.optional().nullable(),
     /** Preferência de caso ao abrir atendimento (fluxo agenda consulta de rotina). */
@@ -1270,7 +1310,8 @@ export const createHubAppointment = async (req: Request, res: Response) => {
     if (new Date(b.ends_at) <= new Date(b.starts_at)) {
       return res.status(400).json({ error: 'ends_at deve ser posterior a starts_at' });
     }
-    const resolvedAppointmentKind = b.appointment_kind ?? 'standard';
+    // Kind preliminar (walk-in etc.); pode virar pickup_route após carregar o serviço principal.
+    let resolvedAppointmentKind: AppointmentKind = b.appointment_kind ?? 'standard';
     if (
       b.allow_schedule_overlap === true &&
       !isWalkInAppointmentKind(resolvedAppointmentKind) &&
@@ -1356,6 +1397,16 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       }
     }
 
+    const primarySt = stMap.get(b.hub_service_type_id);
+    resolvedAppointmentKind = resolveAppointmentKindForCreate(b.appointment_kind, primarySt);
+
+    if (hasPickupRoutes && isLevaTrazServiceGroup(primarySt)) {
+      return res.status(400).json({
+        error:
+          'O atendimento principal já é Leva e Traz. Use o checkbox «Incluir Leva e Traz» apenas junto de banho, clínica ou outros serviços — não combine com um serviço L&T como principal.',
+      });
+    }
+
     if (hasPickupRoutes && b.pickup_route_pricing) {
       const ltSt = stMap.get(b.pickup_route_pricing.hub_service_type_id);
       const ge = validateLevaTrazServiceType(ltSt);
@@ -1415,13 +1466,15 @@ export const createHubAppointment = async (req: Request, res: Response) => {
     let pickupPricingBase: {
       ltId: string;
       kmVariant: HubQuotePricingVariantInput | null;
-      /** Preço ida+volta (matriz ou sale_amount do preço único); reparte-se nas duas pernas. */
-      matrixSaleRoundTrip: number;
-      matrixCostRoundTrip: number;
+      /** Valor cadastrado (matriz / sale_amount) antes do escopo round_trip|per_leg. */
+      catalogSale: number;
+      catalogCost: number;
+      priceScope: PickupPriceScope;
     } | null = null;
     if (hasPickupRoutes && b.pickup_route_pricing) {
       const ltId = b.pickup_route_pricing.hub_service_type_id;
-      const ltMatrix = parsePricingMatrixJson(stMap.get(ltId)?.pricing_matrix);
+      const ltSt = stMap.get(ltId);
+      const ltMatrix = parsePricingMatrixJson(ltSt?.pricing_matrix);
       const matrixKind =
         ltMatrix != null && typeof ltMatrix === 'object' && 'kind' in ltMatrix
           ? (ltMatrix as { kind: string }).kind
@@ -1448,8 +1501,68 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         pickupPricingBase = {
           ltId,
           kmVariant,
-          matrixSaleRoundTrip: br.sale_amount_applied,
-          matrixCostRoundTrip: br.cost_amount_applied,
+          catalogSale: br.sale_amount_applied,
+          catalogCost: br.cost_amount_applied,
+          priceScope: normalizePickupPriceScope(ltSt?.pickup_price_scope),
+        };
+      } catch (e) {
+        return res.status(400).json({ error: (e as Error).message || 'Erro ao precificar Leva e Traz' });
+      }
+    }
+
+    const standaloneLtPrimary = isLevaTrazServiceGroup(primarySt) && resolvedAppointmentKind === 'pickup_route';
+    const standalonePickupMode =
+      standaloneLtPrimary && !hasPickupRoutes
+        ? (b.standalone_pickup_mode ?? 'pickup_only')
+        : null;
+    if (standalonePickupMode === 'round_trip' && !b.standalone_pickup_return) {
+      return res.status(400).json({
+        error: 'Ida e volta: informe os horários da perna de retorno (standalone_pickup_return).',
+      });
+    }
+
+    let standalonePricingBase: {
+      kmVariant: HubQuotePricingVariantInput | null;
+      catalogSale: number;
+      catalogCost: number;
+      priceScope: PickupPriceScope;
+      legCount: 1 | 2;
+    } | null = null;
+    if (standalonePickupMode) {
+      const ltId = b.hub_service_type_id;
+      const ltSt = stMap.get(ltId);
+      const ltMatrix = parsePricingMatrixJson(ltSt?.pricing_matrix);
+      const matrixKind =
+        ltMatrix != null && typeof ltMatrix === 'object' && 'kind' in ltMatrix
+          ? (ltMatrix as { kind: string }).kind
+          : null;
+      let kmVariant: HubQuotePricingVariantInput | null = null;
+      const primaryLine = normLines.find((s) => s.hub_service_type_id === ltId) ?? normLines[0];
+      const pv = primaryLine?.pricing_variant ?? null;
+      if (matrixKind === 'km_banda') {
+        kmVariant = { km_tier_index: pv?.km_tier_index ?? 0 };
+      } else if (matrixKind === 'personalizado') {
+        kmVariant = { custom_tier_index: pv?.custom_tier_index ?? 0 };
+      }
+      const ymdRef = b.starts_at.slice(0, 10);
+      try {
+        const baseRows = buildServiceLineSnapshots({
+          lines: [{ hub_service_type_id: ltId, duration_minutes: 1, pricing_variant: kmVariant }],
+          stMap,
+          pet,
+          appointmentYmd: ymdRef,
+          puppyMaxMonths: puppy.pet_puppy_max_months,
+          appointmentOverride: apptOverride,
+          appointmentCoatOverride: apptCoatOverride,
+        });
+        const br = baseRows[0];
+        if (!br) throw new Error('Preço Leva e Traz inválido');
+        standalonePricingBase = {
+          kmVariant,
+          catalogSale: br.sale_amount_applied,
+          catalogCost: br.cost_amount_applied,
+          priceScope: normalizePickupPriceScope(ltSt?.pickup_price_scope),
+          legCount: standalonePickupMode === 'round_trip' ? 2 : 1,
         };
       } catch (e) {
         return res.status(400).json({ error: (e as Error).message || 'Erro ao precificar Leva e Traz' });
@@ -1516,8 +1629,21 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         resource: b.resource_label ?? null,
         starts: startsAt,
         ends: endsAt,
-        label: 'Atendimento principal',
+        label: standalonePickupMode ? 'Leva e Traz (parada)' : 'Atendimento principal',
       });
+
+      if (standalonePickupMode === 'round_trip' && b.standalone_pickup_return) {
+        const rb = b.standalone_pickup_return;
+        const rStarts = seriesId ? shiftTimestampToDate(rb.starts_at, occDate) : rb.starts_at;
+        const rEnds = seriesId ? shiftTimestampToDate(rb.ends_at, occDate) : rb.ends_at;
+        conflictWindows.push({
+          staff: rb.hub_staff_member_id ?? null,
+          resource: rb.resource_label ?? null,
+          starts: rStarts,
+          ends: rEnds,
+          label: 'Retorno (Leva e Traz)',
+        });
+      }
 
       for (const block of b.extra_blocks ?? []) {
         const bStarts = seriesId ? shiftTimestampToDate(block.starts_at, occDate) : block.starts_at;
@@ -1581,7 +1707,7 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         status: b.status ?? 'confirmed',
         resource_label: b.resource_label ?? null,
         notes: b.notes ?? null,
-        appointment_kind: b.appointment_kind ?? 'standard',
+        appointment_kind: resolvedAppointmentKind,
         title: b.title ?? null,
         description: b.description ?? null,
         financial_notes: b.financial_notes ?? null,
@@ -1608,10 +1734,31 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       createdIds.push(apptId);
 
       const ymd = startsAt.slice(0, 10);
+      const standaloneLegAmounts = standalonePricingBase
+        ? resolvePickupLegAmounts(
+            standalonePricingBase.catalogSale,
+            standalonePricingBase.catalogCost,
+            standalonePricingBase.priceScope,
+            standalonePricingBase.legCount,
+          )
+        : null;
       let snapRows: ReturnType<typeof buildServiceLineSnapshots>;
       try {
+        const linesForSnap =
+          standaloneLegAmounts && standalonePricingBase
+            ? normLines.map((l, i) =>
+                i === 0
+                  ? {
+                      ...l,
+                      pricing_variant: standalonePricingBase.kmVariant ?? l.pricing_variant,
+                      sale_amount_override: standaloneLegAmounts.saleLegs[0] ?? 0,
+                      cost_amount_override: standaloneLegAmounts.costLegs[0] ?? 0,
+                    }
+                  : l,
+              )
+            : normLines;
         snapRows = buildServiceLineSnapshots({
-          lines: normLines,
+          lines: linesForSnap,
           stMap,
           pet,
           appointmentYmd: ymd,
@@ -1637,13 +1784,35 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       if (svcErr) return res.status(500).json({ error: svcErr.message });
 
       const ltCfg = b.pickup_route_pricing;
-      // L&T: uma cobrança ida+volta (valor da matriz); overrides de total foram removidos do produto.
-      const [saleBeforeLeg, saleAfterLeg] = pickupPricingBase
-        ? splitMoneyTotalAcrossTwoLegs(pickupPricingBase.matrixSaleRoundTrip)
-        : [0, 0];
-      const [costBeforeLeg, costAfterLeg] = pickupPricingBase
-        ? splitMoneyTotalAcrossTwoLegs(pickupPricingBase.matrixCostRoundTrip)
-        : [0, 0];
+      const hasBefore = Boolean(b.with_pickup_route_before);
+      const hasAfter = Boolean(b.with_pickup_route_after);
+      const attachedLegCount: 1 | 2 = hasBefore && hasAfter ? 2 : 1;
+      const attachedAmounts = pickupPricingBase
+        ? resolvePickupLegAmounts(
+            pickupPricingBase.catalogSale,
+            pickupPricingBase.catalogCost,
+            pickupPricingBase.priceScope,
+            attachedLegCount,
+          )
+        : null;
+      let saleBeforeLeg = 0;
+      let saleAfterLeg = 0;
+      let costBeforeLeg = 0;
+      let costAfterLeg = 0;
+      if (attachedAmounts) {
+        if (hasBefore && hasAfter) {
+          saleBeforeLeg = attachedAmounts.saleLegs[0] ?? 0;
+          saleAfterLeg = attachedAmounts.saleLegs[1] ?? 0;
+          costBeforeLeg = attachedAmounts.costLegs[0] ?? 0;
+          costAfterLeg = attachedAmounts.costLegs[1] ?? 0;
+        } else if (hasBefore) {
+          saleBeforeLeg = attachedAmounts.saleLegs[0] ?? 0;
+          costBeforeLeg = attachedAmounts.costLegs[0] ?? 0;
+        } else if (hasAfter) {
+          saleAfterLeg = attachedAmounts.saleLegs[0] ?? 0;
+          costAfterLeg = attachedAmounts.costLegs[0] ?? 0;
+        }
+      }
 
       for (const [_kind, pickupBlock, saleLeg, costLeg] of [
         ['before', b.with_pickup_route_before, saleBeforeLeg, costBeforeLeg] as const,
@@ -1713,6 +1882,83 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         }));
         const { error: pSvcErr } = await supabaseAdmin.from('hub_appointment_services').insert(pickupSvcInsert);
         if (pSvcErr) return res.status(500).json({ error: pSvcErr.message });
+      }
+
+      if (
+        standalonePickupMode === 'round_trip' &&
+        b.standalone_pickup_return &&
+        standalonePricingBase &&
+        standaloneLegAmounts
+      ) {
+        const rb = b.standalone_pickup_return;
+        const rStarts = seriesId ? shiftTimestampToDate(rb.starts_at, occDate) : rb.starts_at;
+        const rEnds = seriesId ? shiftTimestampToDate(rb.ends_at, occDate) : rb.ends_at;
+        const legDur = pickupLegMinutes(rStarts, rEnds);
+        const saleLeg = standaloneLegAmounts.saleLegs[1] ?? standaloneLegAmounts.saleLegs[0] ?? 0;
+        const costLeg = standaloneLegAmounts.costLegs[1] ?? standaloneLegAmounts.costLegs[0] ?? 0;
+        const { data: rRow, error: rInsErr } = await supabaseAdmin
+          .from('hub_appointments')
+          .insert({
+            clinic_id: b.clinic_id,
+            unit_id: resolvedUnitId,
+            hub_service_type_id: b.hub_service_type_id,
+            hub_staff_member_id: rb.hub_staff_member_id ?? b.hub_staff_member_id ?? null,
+            pet_id: b.pet_id ?? null,
+            guardian_id: b.guardian_id ?? null,
+            starts_at: rStarts,
+            ends_at: rEnds,
+            status: b.status ?? 'confirmed',
+            resource_label: rb.resource_label ?? b.resource_label ?? null,
+            appointment_kind: 'pickup_route',
+            parent_appointment_id: apptId,
+            series_id: seriesId,
+            series_occurrence_date: seriesId ? occDate : null,
+            pricing_porte_tier: apptOverride,
+            pricing_coat_type: apptCoatOverride,
+            title: b.title ?? null,
+          })
+          .select('id')
+          .single();
+        if (rInsErr || !rRow) {
+          return res.status(500).json({ error: rInsErr?.message || 'Erro ao criar retorno Leva e Traz' });
+        }
+        const returnApptId = (rRow as { id: string }).id;
+        createdIds.push(returnApptId);
+        let returnSnaps: ReturnType<typeof buildServiceLineSnapshots>;
+        try {
+          returnSnaps = buildServiceLineSnapshots({
+            lines: [
+              {
+                hub_service_type_id: b.hub_service_type_id,
+                duration_minutes: legDur,
+                pricing_variant: standalonePricingBase.kmVariant,
+                sale_amount_override: saleLeg,
+                cost_amount_override: costLeg,
+              },
+            ],
+            stMap,
+            pet,
+            appointmentYmd: ymd,
+            puppyMaxMonths: puppy.pet_puppy_max_months,
+            appointmentOverride: apptOverride,
+            appointmentCoatOverride: apptCoatOverride,
+          });
+        } catch (e) {
+          return res.status(500).json({ error: (e as Error).message });
+        }
+        const returnSvcInsert = returnSnaps.map((row) => ({
+          appointment_id: returnApptId,
+          hub_service_type_id: row.hub_service_type_id,
+          duration_minutes: row.duration_minutes,
+          order_index: row.order_index,
+          pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+          pricing_coat_type_applied: row.pricing_coat_type_applied,
+          cost_amount_applied: row.cost_amount_applied,
+          sale_amount_applied: row.sale_amount_applied,
+          pricing_variant: row.pricing_variant as unknown as Record<string, unknown> | null,
+        }));
+        const { error: rSvcErr } = await supabaseAdmin.from('hub_appointment_services').insert(returnSvcInsert);
+        if (rSvcErr) return res.status(500).json({ error: rSvcErr.message });
       }
 
       for (const block of b.extra_blocks ?? []) {

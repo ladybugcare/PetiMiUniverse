@@ -39,6 +39,15 @@ export const TEMPLATE_LABELS: Record<MessageTemplateKey, string> = {
   specialist_referral_share: 'Encaminhamento a especialista (WhatsApp)',
 };
 
+/** Placeholders que o operador pode inserir em cada template. */
+export const TEMPLATE_VARS: Record<MessageTemplateKey, readonly string[]> = {
+  pet_ready: ['tutor', 'pet', 'clinica'],
+  pet_on_the_way: ['tutor', 'pet'],
+  appointment_reminder: ['tutor', 'pet', 'data', 'hora'],
+  exam_order_share: ['tutor', 'pet', 'link'],
+  specialist_referral_share: ['tutor', 'pet', 'link'],
+};
+
 export const TEMPLATE_PLACEHOLDER_HINTS: Record<MessageTemplateKey, string> = {
   pet_ready: 'Variáveis disponíveis: {tutor}, {pet}, {clinica}',
   pet_on_the_way: 'Variáveis disponíveis: {tutor}, {pet}',

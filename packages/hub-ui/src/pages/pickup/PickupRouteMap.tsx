@@ -31,6 +31,8 @@ type Props = {
   stops: MapStop[];
   /** Pernas soltas ainda não adicionadas à rota (plotadas em cinza). */
   availableStops?: MapAvailableStop[];
+  /** Ponto de saída do motorista (clínica ou endereço custom). */
+  startPoint?: { lat: number; lng: number; label: string; address?: string | null } | null;
 };
 
 // ─── Ícones ────────────────────────────────────────────────────────────────
@@ -61,18 +63,47 @@ function makeNumberedIcon(sequence: number, direction: 'pickup' | 'delivery' | '
   });
 }
 
+const startIcon = L.divIcon({
+  className: '',
+  html: `<div style="
+    background:#c86a4d;
+    color:#fff;
+    width:30px;
+    height:30px;
+    border-radius:8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:11px;
+    font-weight:700;
+    border:2px solid rgba(255,255,255,0.95);
+    box-shadow:0 2px 6px rgba(0,0,0,0.3);
+    font-family:system-ui,sans-serif;
+  ">S</div>`,
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+  popupAnchor: [0, -16],
+});
+
 const grayIcon = L.divIcon({
   className: '',
   html: `<div style="
     background:#94a3b8;
-    width:18px;
-    height:18px;
+    color:#fff;
+    width:22px;
+    height:22px;
     border-radius:50%;
-    border:2px solid rgba(255,255,255,0.8);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:11px;
+    font-weight:700;
+    border:2px solid rgba(255,255,255,0.9);
     box-shadow:0 1px 4px rgba(0,0,0,0.25);
-  "></div>`,
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
+    font-family:system-ui,sans-serif;
+  ">·</div>`,
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
   popupAnchor: [0, -12],
 });
 
@@ -101,17 +132,21 @@ function formatTime(iso?: string | null): string {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-export const PickupRouteMap: React.FC<Props> = ({ stops, availableStops = [] }) => {
+export const PickupRouteMap: React.FC<Props> = ({ stops, availableStops = [], startPoint = null }) => {
   const allPoints: [number, number][] = [
+    ...(startPoint ? ([[startPoint.lat, startPoint.lng]] as [number, number][]) : []),
     ...stops.map((s): [number, number] => [s.lat, s.lng]),
     ...availableStops.map((s): [number, number] => [s.lat, s.lng]),
   ];
 
-  // Pontos da polyline em ordem de sequence
-  const routeLine: [number, number][] = stops
-    .slice()
-    .sort((a, b) => a.sequence - b.sequence)
-    .map((s): [number, number] => [s.lat, s.lng]);
+  // Pontos da polyline: saída → paradas em ordem
+  const routeLine: [number, number][] = [
+    ...(startPoint ? ([[startPoint.lat, startPoint.lng]] as [number, number][]) : []),
+    ...stops
+      .slice()
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((s): [number, number] => [s.lat, s.lng]),
+  ];
 
   // Centro inicial (São Paulo como fallback)
   const center: [number, number] = allPoints[0] ?? [-23.5505, -46.6333];
@@ -141,6 +176,17 @@ export const PickupRouteMap: React.FC<Props> = ({ stops, availableStops = [] }) 
             positions={routeLine}
             pathOptions={{ color: '#4f46e5', weight: 3, opacity: 0.7, dashArray: '8 4' }}
           />
+        ) : null}
+
+        {startPoint ? (
+          <Marker position={[startPoint.lat, startPoint.lng]} icon={startIcon}>
+            <Popup>
+              <div style={{ fontSize: '0.8125rem', lineHeight: '1.5', minWidth: '160px' }}>
+                <strong>{startPoint.label}</strong>
+                {startPoint.address ? <div>{startPoint.address}</div> : null}
+              </div>
+            </Popup>
+          </Marker>
         ) : null}
 
         {/* Marcadores numerados das paradas selecionadas */}

@@ -6,6 +6,7 @@ import {
   previewHubInvitation,
   signupFromHubInvitation,
   checkHubInviteEmail,
+  acceptHubInvitation,
 } from '../hubInvitationsController.js';
 import { postHubMessageLog } from '../hubMessageLogsController';
 import {
@@ -61,7 +62,7 @@ import {
   listHubLowStock,
   listHubInventoryLots,
 } from '../hubInventoryController';
-import { listHubStaff, getHubStaff, createHubStaff, patchHubStaff, inviteHubStaff, linkHubStaffAccount } from '../hubStaffController';
+import { listHubStaff, getHubStaff, createHubStaff, patchHubStaff, inviteHubStaff, linkHubStaffAccount, getHubStaffPendingInvite } from '../hubStaffController';
 import { postHubStaffPhoto } from '../hubStaffPhotoController';
 import { postHubClinicProfilePhoto, postHubUserProfilePhoto } from '../hubProfilePhotoController.js';
 import { patchHubClinicProfile, patchHubUnitProfile } from '../hubClinicProfileController.js';
@@ -114,7 +115,20 @@ import {
   patchHubPickupStop,
   createOrUpdateLooseStop,
   getMyPickupRoute,
+  getMyPickupRoutes,
+  splitHubPickupRoute,
+  addClinicReturnStop,
+  getHubPickupDriverDay,
+  suggestHubPickupBatches,
 } from '../hubPickupController';
+import {
+  listPickupVehicles,
+  createPickupVehicle,
+  patchPickupVehicle,
+  createTransportCage,
+  patchTransportCage,
+  deleteTransportCage,
+} from '../hubPickupVehiclesController';
 import {
   getHubGroomingSessionDrawer,
   postHubGroomingSessionExtra,
@@ -320,6 +334,7 @@ router.get(
   requirePermission('hub.staff.invite'),
   checkHubInviteEmail,
 );
+router.post('/invitations/accept', authenticateUser, acceptHubInvitation);
 
 router.post('/onboarding/clinic', authenticateUser, postHubOnboardingClinic);
 router.get('/session/context', authenticateUser, getHubSessionContext);
@@ -550,6 +565,7 @@ router.post('/staff', authenticateUser, requirePermission('hub.staff.write'), cr
 router.get('/staff/:id', authenticateUser, requirePermission('hub.staff.read'), getHubStaff);
 router.patch('/staff/:id', authenticateUser, requirePermission('hub.staff.write'), patchHubStaff);
 router.post('/staff/:id/link-account', authenticateUser, requirePermission('hub.staff.write'), linkHubStaffAccount);
+router.get('/staff/:id/pending-invite', authenticateUser, requirePermission('hub.staff.invite'), getHubStaffPendingInvite);
 router.post('/staff/:id/invite', authenticateUser, requirePermission('hub.staff.invite'), inviteHubStaff);
 
 /* --- Agenda / Agendamentos --- */
@@ -649,6 +665,18 @@ router.get(
   getHubPickupDayBoard,
 );
 router.get(
+  '/pickup/driver-day',
+  authenticateUser,
+  requirePermission('pickup.routes.read'),
+  getHubPickupDriverDay,
+);
+router.post(
+  '/pickup/routes/suggest-batches',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  suggestHubPickupBatches,
+);
+router.get(
   '/pickup/routes',
   authenticateUser,
   requirePermission('pickup.routes.read'),
@@ -678,6 +706,18 @@ router.post(
   requirePermission('pickup.routes.manage'),
   addHubPickupStops,
 );
+router.post(
+  '/pickup/routes/:id/split',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  splitHubPickupRoute,
+);
+router.post(
+  '/pickup/routes/:id/clinic-return',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  addClinicReturnStop,
+);
 router.patch(
   '/pickup/stops/:id',
   authenticateUser,
@@ -695,6 +735,50 @@ router.get(
   authenticateUser,
   requirePermission('pickup.routes.read'),
   getMyPickupRoute,
+);
+router.get(
+  '/pickup/my-routes',
+  authenticateUser,
+  requirePermission('pickup.routes.read'),
+  getMyPickupRoutes,
+);
+
+/* --- Leva e Traz — Veículos e caixas de transporte --- */
+router.get(
+  '/pickup/vehicles',
+  authenticateUser,
+  requirePermission('pickup.routes.read'),
+  listPickupVehicles,
+);
+router.post(
+  '/pickup/vehicles',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  createPickupVehicle,
+);
+router.patch(
+  '/pickup/vehicles/:id',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  patchPickupVehicle,
+);
+router.post(
+  '/pickup/vehicles/:vehicleId/cages',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  createTransportCage,
+);
+router.patch(
+  '/pickup/cages/:id',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  patchTransportCage,
+);
+router.delete(
+  '/pickup/cages/:id',
+  authenticateUser,
+  requirePermission('pickup.routes.manage'),
+  deleteTransportCage,
 );
 
 /* --- Banho & Tosa (fila operacional) --- */

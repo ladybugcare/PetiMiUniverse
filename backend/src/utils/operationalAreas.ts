@@ -49,14 +49,33 @@ export const OPERATIONAL_AREA_PERMISSIONS: Record<HubOperationalArea, readonly s
     'hub.receivables.create',
   ],
   financeiro: ['hub.financial.read', 'hub.financial.write'],
-  clinica: ['hub.clinic.read', 'hub.clinic.write'],
-  banho_tosa: ['grooming.queue.read', 'grooming.queue.manage'],
+  clinica: [
+    'hub.clinic.read',
+    'hub.clinic.write',
+    'hub.appointments.read',
+    'hub.inventory.read',
+    'hub.staff.read',
+    'hub.guardians.read',
+    'hub.pets.read',
+  ],
+  banho_tosa: [
+    'hub.guardians.read',
+    'hub.pets.read',
+    'hub.service_types.read',
+    'hub.appointments.read',
+    'grooming.queue.read',
+    'grooming.queue.manage',
+  ],
   hotel_creche: [
+    'hub.guardians.read',
+    'hub.pets.read',
+    'hub.appointments.read',
     'boarding.reservations.read',
     'boarding.reservations.manage',
     'boarding.daily_report.write',
   ],
-  leva_traz: ['pickup.routes.read', 'pickup.routes.manage', 'pickup.stops.update'],
+  /** Motorista-first: ver rota e atualizar paradas (sem montar rotas/frota). */
+  leva_traz: ['pickup.routes.read', 'pickup.stops.update'],
   estoque: ['hub.inventory.read', 'hub.inventory.write'],
   servicos: ['hub.service_types.read', 'hub.service_types.write'],
   equipe: ['hub.staff.read', 'hub.staff.write', 'hub.staff.invite', 'user.invite'],
@@ -85,7 +104,13 @@ export function defaultOperationalAreasForJobTitle(jobTitle: string): HubOperati
   if (j === 'Recepção') return ['recepcao', 'caixa'];
   if (j === 'Banho & Tosa') return ['banho_tosa'];
   if (j === 'Motorista') return ['leva_traz'];
-  if (j === 'Médico(a) Veterinário(a)') return ['clinica'];
+  if (
+    j === 'Médico(a) Veterinário(a)' ||
+    j === 'Auxiliar Veterinário(a)' ||
+    j === 'Enfermeiro(a) Veterinário(a)'
+  ) {
+    return ['clinica'];
+  }
   if (j === 'Recreador(a)' || j === 'Adestrador(a)') return ['hotel_creche'];
   return [];
 }

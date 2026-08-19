@@ -14,6 +14,11 @@ export interface HubServiceType {
   sale_amount?: number;
   /** Matriz opcional (`006_alter_hub_service_types_pricing_matrix.sql`). */
   pricing_matrix?: HubServicePricingMatrix | null;
+  /**
+   * Leva e Traz: o valor cadastrado é ida+volta (`round_trip`) ou por perna (`per_leg`).
+   * Default: `round_trip`.
+   */
+  pickup_price_scope?: 'round_trip' | 'per_leg';
   default_duration_minutes: number | null;
   active: boolean;
   allow_scheduling?: boolean;
@@ -68,6 +73,7 @@ export const hubServiceTypesApi = {
     internal_notes?: string | null;
     code?: string;
     pricing_matrix?: HubServicePricingMatrix | null;
+    pickup_price_scope?: 'round_trip' | 'per_leg';
     is_addon?: boolean;
   }): Promise<{ service_type: HubServiceType }> {
     return apiRequest(basePath, {
@@ -92,6 +98,7 @@ export const hubServiceTypesApi = {
       active?: boolean;
       archived?: boolean;
       pricing_matrix?: HubServicePricingMatrix | null;
+      pickup_price_scope?: 'round_trip' | 'per_leg';
       is_addon?: boolean;
     }
   ): Promise<{ service_type: HubServiceType }> {

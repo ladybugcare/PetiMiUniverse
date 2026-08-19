@@ -40,10 +40,13 @@ const HubInviteSignUpPage: React.FC = () => {
     void hubInvitationsApi
       .preview(token)
       .then((p) => {
-        if (p.blocked || p.account_exists) {
-          setPreviewError(
-            'Este e-mail já possui conta. No MVP, o convite é apenas para novos usuários.',
-          );
+        if (p.blocked) {
+          setPreviewError('Este convite não está disponível.');
+          return;
+        }
+        if (p.account_exists) {
+          const redirect = `/accept-invitation?token=${encodeURIComponent(token)}`;
+          navigate(`/login?redirect=${encodeURIComponent(redirect)}`, { replace: true });
           return;
         }
         setInviteEmail(p.invitation.email);
@@ -53,7 +56,7 @@ const HubInviteSignUpPage: React.FC = () => {
         setPreviewError((e as Error)?.message || 'Convite inválido ou expirado.');
       })
       .finally(() => setLoadingPreview(false));
-  }, [token]);
+  }, [token, navigate]);
 
   const canSubmit =
     fullName.trim().length >= 2 &&

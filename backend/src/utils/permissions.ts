@@ -5,7 +5,14 @@ import {
   sanitizeOperationalAreas,
 } from './operationalAreas';
 
-export type Role = 'CADMIN' | 'CMANAGER' | 'CASSISTANT' | 'CVET_INTERNAL' | 'CGROOMER' | 'CFINANCE';
+export type Role =
+  | 'CADMIN'
+  | 'CMANAGER'
+  | 'CASSISTANT'
+  | 'CVET_INTERNAL'
+  | 'CGROOMER'
+  | 'CFINANCE'
+  | 'CSTAFF';
 
 export const PERMISSIONS: Record<Role, string[]> = {
   CADMIN: [
@@ -177,6 +184,8 @@ export const PERMISSIONS: Record<Role, string[]> = {
     'hub.cash.session',
     'hub.cash.receive',
   ],
+  /** Base mínima — módulos vêm das áreas operacionais. */
+  CSTAFF: ['unit.view'],
 };
 
 /** CADMIN tem acesso irrestrito a todas as permissões do Hub e da clínica. */
@@ -220,11 +229,12 @@ export function hasEffectivePermission(
 export const getRoleDisplayName = (role: Role): string => {
   const names: Record<Role, string> = {
     CADMIN: 'Administrador da Clínica',
-    CMANAGER: 'Gestor de Unidade',
-    CASSISTANT: 'Assistente/Secretário',
-    CVET_INTERNAL: 'Veterinário Interno',
-    CGROOMER: 'Banho e Tosa',
+    CMANAGER: 'Gerente',
+    CASSISTANT: 'Recepção',
+    CVET_INTERNAL: 'Veterinário Interno (legado)',
+    CGROOMER: 'Banho e Tosa (legado)',
     CFINANCE: 'Financeiro',
+    CSTAFF: 'Funcionário',
   };
   return names[role] || role;
 };

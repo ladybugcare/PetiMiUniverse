@@ -205,6 +205,78 @@ const HubCaixaPage: React.FC = () => {
     };
   }, [clinicId]);
 
+  const dayBoardFiltered = useMemo(() => {
+    const searchTerm = normalizeText(dayBoardSearch.trim());
+    let result = searchTerm
+      ? dayBoardItems.filter((item) => {
+          const guardian = normalizeText(item.guardian?.full_name ?? '');
+          const pet = normalizeText(item.pet?.name ?? '');
+          const svcNames = normalizeText((item.services ?? []).map((s) => s.name).join(' '));
+          const label = normalizeText(item.origin_label ?? '');
+          return guardian.includes(searchTerm) || pet.includes(searchTerm) || svcNames.includes(searchTerm) || label.includes(searchTerm);
+        })
+      : dayBoardItems;
+
+    if (atendimentosStatusFilter !== 'all') {
+      result = result.filter((it) => {
+        if (atendimentosStatusFilter === 'sem_comanda') return !it.billing.comanda_id && !it.billing.receivable_status;
+        if (atendimentosStatusFilter === 'comanda_aberta') {
+          return it.billing.comanda_id && it.billing.comanda_status === 'aberta' && !it.billing.receivable_status;
+        }
+        if (atendimentosStatusFilter === 'a_receber') {
+          return it.billing.receivable_status === 'pending' || it.billing.receivable_status === 'partially_paid';
+        }
+        if (atendimentosStatusFilter === 'recebido') return it.billing.receivable_status === 'paid';
+        return true;
+      });
+    }
+
+    return result;
+  }, [dayBoardItems, dayBoardSearch, atendimentosStatusFilter]);
+
+  const expectedBalance = cashSummary?.summary.expected_balance ?? Number(cashOpen?.opening_balance ?? 0);
+  const closeInformedNum = useMemo(() => {
+    const t = String(closeBal).trim();
+    if (!t) return null;
+    const v = Number(t.replace(',', '.'));
+    return Number.isNaN(v) ? null : v;
+  }, [closeBal]);
+  const closeDiffPreview = closeInformedNum != null && cashOpen
+    ? Math.round((closeInformedNum - expectedBalance + Number.EPSILON) * 100) / 100
+    : null;
+
+  const methodsEntries = useMemo(() => {
+    const totals = cashSummary?.summary.totals_by_method ?? {};
+    return acceptedPaymentMethods.map(
+      (method) => [method, Number(totals[method] ?? 0)] as const,
+    );
+  }, [cashSummary, acceptedPaymentMethods]);
+
+  const methodsTotal = useMemo(
+    () => methodsEntries.reduce((sum, [, total]) => sum + Number(total), 0),
+    [methodsEntries],
+  );
+
+  const dayBoardComandaIds = useMemo(
+    () => new Set(dayBoardItems.map((item) => item.billing.comanda_id).filter(Boolean).map(String)),
+    [dayBoardItems],
+  );
+
+  const dayPendingTotal = useMemo(
+    () => round2(
+      sumDayBoardPendingAmount(dayBoardItems)
+      + sumOpenComandasPendingAmount(openComandas, dayBoardComandaIds),
+    ),
+    [dayBoardItems, openComandas, dayBoardComandaIds],
+  );
+
+  const sessionHistoryItems = useMemo(
+    () => buildCaixaSessionHistoryItems(cashSummary, dayBoardItems, openComandas),
+    [cashSummary, dayBoardItems, openComandas],
+  );
+
+  const diffDisplay = closeDiffPreview;
+
   if (!permLoading && !hasPermission('hub.financial.read')) {
     return <Navigate to="/hub/clientes" replace />;
   }
@@ -328,35 +400,6 @@ const HubCaixaPage: React.FC = () => {
     }
   };
 
-  const dayBoardFiltered = useMemo(() => {
-    const searchTerm = normalizeText(dayBoardSearch.trim());
-    let result = searchTerm
-      ? dayBoardItems.filter((item) => {
-          const guardian = normalizeText(item.guardian?.full_name ?? '');
-          const pet = normalizeText(item.pet?.name ?? '');
-          const svcNames = normalizeText((item.services ?? []).map((s) => s.name).join(' '));
-          const label = normalizeText(item.origin_label ?? '');
-          return guardian.includes(searchTerm) || pet.includes(searchTerm) || svcNames.includes(searchTerm) || label.includes(searchTerm);
-        })
-      : dayBoardItems;
-
-    if (atendimentosStatusFilter !== 'all') {
-      result = result.filter((it) => {
-        if (atendimentosStatusFilter === 'sem_comanda') return !it.billing.comanda_id && !it.billing.receivable_status;
-        if (atendimentosStatusFilter === 'comanda_aberta') {
-          return it.billing.comanda_id && it.billing.comanda_status === 'aberta' && !it.billing.receivable_status;
-        }
-        if (atendimentosStatusFilter === 'a_receber') {
-          return it.billing.receivable_status === 'pending' || it.billing.receivable_status === 'partially_paid';
-        }
-        if (atendimentosStatusFilter === 'recebido') return it.billing.receivable_status === 'paid';
-        return true;
-      });
-    }
-
-    return result;
-  }, [dayBoardItems, dayBoardSearch, atendimentosStatusFilter]);
-
   const onOpenCash = async () => {
     if (!hasPermission('hub.cash.session')) { showError('Sem permissão para abrir caixa.'); return; }
     const v = Number(String(openBal).replace(',', '.'));
@@ -425,49 +468,6 @@ const HubCaixaPage: React.FC = () => {
       showError((e as Error)?.message || 'Erro ao registrar movimento');
     }
   };
-
-  const expectedBalance = cashSummary?.summary.expected_balance ?? Number(cashOpen?.opening_balance ?? 0);
-  const closeInformedNum = useMemo(() => {
-    const t = String(closeBal).trim();
-    if (!t) return null;
-    const v = Number(t.replace(',', '.'));
-    return Number.isNaN(v) ? null : v;
-  }, [closeBal]);
-  const closeDiffPreview = closeInformedNum != null && cashOpen
-    ? Math.round((closeInformedNum - expectedBalance + Number.EPSILON) * 100) / 100
-    : null;
-
-  const methodsEntries = useMemo(() => {
-    const totals = cashSummary?.summary.totals_by_method ?? {};
-    return acceptedPaymentMethods.map(
-      (method) => [method, Number(totals[method] ?? 0)] as const,
-    );
-  }, [cashSummary, acceptedPaymentMethods]);
-
-  const methodsTotal = useMemo(
-    () => methodsEntries.reduce((sum, [, total]) => sum + Number(total), 0),
-    [methodsEntries],
-  );
-
-  const dayBoardComandaIds = useMemo(
-    () => new Set(dayBoardItems.map((item) => item.billing.comanda_id).filter(Boolean).map(String)),
-    [dayBoardItems],
-  );
-
-  const dayPendingTotal = useMemo(
-    () => round2(
-      sumDayBoardPendingAmount(dayBoardItems)
-      + sumOpenComandasPendingAmount(openComandas, dayBoardComandaIds),
-    ),
-    [dayBoardItems, openComandas, dayBoardComandaIds],
-  );
-
-  const sessionHistoryItems = useMemo(
-    () => buildCaixaSessionHistoryItems(cashSummary, dayBoardItems, openComandas),
-    [cashSummary, dayBoardItems, openComandas],
-  );
-
-  const diffDisplay = closeDiffPreview;
 
   return shell(
     <>

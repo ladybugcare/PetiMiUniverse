@@ -1,0 +1,222 @@
+/* HubPaymentMethodsPage — Formas de pagamento */
+
+.hub-pm {
+  padding: 8px 4px 32px;
+  max-width: 640px;
+}
+
+.hub-pm__intro {
+  margin-bottom: 24px;
+}
+
+.hub-pm__intro-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  color: #2d1e1c;
+}
+
+.hub-pm__intro-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #7a6060;
+  max-width: 520px;
+}
+
+.hub-pm__card {
+  border: 1px solid #e5e0dc;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.hub-pm__card--dirty {
+  border-color: #f0c4b0;
+  box-shadow: 0 0 0 1px rgba(200, 106, 77, 0.12);
+}
+
+.hub-pm__card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #f0ebe6;
+  background: #faf8f6;
+}
+
+.hub-pm__card-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #f5f0eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9a6a5a;
+}
+
+.hub-pm__card-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-pm__card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hub-pm__card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #2d1e1c;
+}
+
+.hub-pm__card-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #7a6060;
+}
+
+.hub-pm__badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #f0ebe6;
+  color: #9a7060;
+}
+
+.hub-pm__badge--dirty {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.hub-pm__list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hub-pm__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.hub-pm__item:hover {
+  background: #faf8f6;
+}
+
+.hub-pm__item--locked {
+  cursor: default;
+}
+
+.hub-pm__item--on {
+  background: #fffaf7;
+  border-color: #f3e2d8;
+}
+
+.hub-pm__item--on:hover {
+  background: #fff5ef;
+}
+
+.hub-pm__item--locked.hub-pm__item--on:hover {
+  background: #fffaf7;
+}
+
+.hub-pm__item--off {
+  opacity: 0.72;
+}
+
+.hub-pm__item-icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #f5f0eb;
+  color: #9a6a5a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hub-pm__item--on .hub-pm__item-icon {
+  background: #fff3ee;
+  color: #c86a4d;
+}
+
+.hub-pm__item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hub-pm__item-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #2d1e1c;
+}
+
+.hub-pm__item-hint {
+  font-size: 11px;
+  color: #a08080;
+}
+
+.hub-pm__item-toggle {
+  flex-shrink: 0;
+}
+
+.hub-pm__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid #f0ebe6;
+}
+
+.hub-pm__hint {
+  margin: 0;
+  font-size: 12px;
+  color: #7a6060;
+  line-height: 1.4;
+}
+
+.hub-pm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hub-pm__state {
+  padding: 48px 16px;
+  text-align: center;
+  color: #a08080;
+  font-size: 14px;
+}
+
+@media (max-width: 520px) {
+  .hub-pm__item {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .hub-pm__item-hint {
+    display: none;
+  }
+}

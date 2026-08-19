@@ -190,6 +190,10 @@ export type CreateHubAppointmentPayload = {
   with_pickup_route_before?: CreatePickupRouteBlock | null;
   with_pickup_route_after?: CreatePickupRouteBlock | null;
   pickup_route_pricing?: HubAppointmentPickupRoutePricing | null;
+  /** L&T como serviço principal: modo operacional (1 ou 2 paradas). */
+  standalone_pickup_mode?: 'round_trip' | 'pickup_only' | 'delivery_only';
+  /** Retorno quando standalone_pickup_mode = round_trip. */
+  standalone_pickup_return?: CreatePickupRouteBlock | null;
   extra_blocks?: CreateExtraBlock[];
   recurrence?: HubAppointmentRecurrenceRule | null;
   intake_hub_case_id?: string | null;

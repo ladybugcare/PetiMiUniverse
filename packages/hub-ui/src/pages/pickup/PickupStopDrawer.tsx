@@ -48,6 +48,7 @@ function getAdvanceInfo(
     case 'en_route':   return { next: 'arrived',    label: 'No endereço' };
     case 'arrived':
       if (direction === 'pickup') return { next: 'in_transit', label: 'Pet a bordo' };
+      if (direction === 'clinic_return') return { next: 'completed', label: 'Descarregado' };
       return { next: 'completed', label: 'Entregue' };
     case 'in_transit': return { next: 'completed',  label: 'Na clínica' };
     default: return null;
@@ -116,10 +117,11 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
           status: advanceInfo.next,
         });
       } else {
+        const looseDir: 'pickup' | 'delivery' = direction === 'delivery' ? 'delivery' : 'pickup';
         await hubPickupApi.createLooseStop({
           clinic_id: clinicId,
           hub_appointment_id: item.appointment_id,
-          direction: direction === 'unknown' ? 'pickup' : direction,
+          direction: looseDir,
           status: advanceInfo.next,
         });
       }
@@ -147,10 +149,11 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
           failure_reason: failureReason.trim(),
         });
       } else {
+        const looseDir: 'pickup' | 'delivery' = direction === 'delivery' ? 'delivery' : 'pickup';
         await hubPickupApi.createLooseStop({
           clinic_id: clinicId,
           hub_appointment_id: item.appointment_id,
-          direction: direction === 'unknown' ? 'pickup' : direction,
+          direction: looseDir,
           status: 'failed',
         });
         await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'cancelled' });

@@ -26,6 +26,7 @@ export function getUserRole(user: unknown): AppRole {
   if (role === 'CVET_INTERNAL' || role === 'VET_INTERNAL' || role === 'INTERNAL_VET') return 'CVET_INTERNAL';
   if (role === 'CGROOMER' || role === 'GROOMER' || role === 'BATHER') return 'CGROOMER';
   if (role === 'CFINANCE' || role === 'FINANCE' || role === 'FINANCIAL') return 'CFINANCE';
+  if (role === 'CSTAFF' || role === 'STAFF' || role === 'FUNCIONARIO' || role === 'FUNCIONÁRIO') return 'CSTAFF';
   if (role === 'VET' || role === 'VETERINARIAN' || role === 'VETERINARIO') return 'VET';
   if (role === 'FREELANCER' || role === 'FREELA') return 'FREELANCER';
   if (role === 'CLINIC' || role === 'CLINICA') return 'CADMIN';
@@ -72,6 +73,7 @@ export function getDashboardPathForRole(role: AppRole): string {
     case 'CVET_INTERNAL':
     case 'CGROOMER':
     case 'CFINANCE':
+    case 'CSTAFF':
       return '/clinic-dashboard';
     case 'VET':
       return '/vet-dashboard';

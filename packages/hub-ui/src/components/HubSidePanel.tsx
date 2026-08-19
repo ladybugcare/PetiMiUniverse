@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import './HubSidePanel.css';
@@ -14,6 +14,15 @@ export type HubSidePanelProps = {
   footer?: React.ReactNode;
   /** Conteúdo lateral direito (aside), dentro do painel. */
   aside?: React.ReactNode;
+  /**
+   * `default` = metade da viewport.
+   * `wide` = painel mais largo (formulários densos / mapas).
+   */
+  size?: 'default' | 'wide';
+  /**
+   * Quando muda, o corpo do painel volta ao topo (ex.: trocar formulário ↔ compartilhar convite).
+   */
+  contentKey?: string | number;
   children?: React.ReactNode;
 };
 
@@ -29,8 +38,12 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
   subtitle,
   footer,
   aside,
+  size = 'default',
+  contentKey,
   children,
 }) => {
+  const mainRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -51,6 +64,11 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [open, contentKey]);
+
   if (!open) return null;
 
   const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -65,7 +83,10 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
       role="dialog"
       aria-label={title}
     >
-      <div className="hub-side-panel__sheet" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`hub-side-panel__sheet${size === 'wide' ? ' hub-side-panel__sheet--wide' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="hub-side-panel__header">
           <div className="hub-side-panel__header-text">
             <div className="hub-side-panel__title-row">
@@ -91,7 +112,10 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
         </div>
 
         <div className="hub-side-panel__body">
-          <div className={`hub-side-panel__main${aside ? ' hub-side-panel__main--with-aside' : ''}`}>
+          <div
+            ref={mainRef}
+            className={`hub-side-panel__main${aside ? ' hub-side-panel__main--with-aside' : ''}`}
+          >
             {children}
           </div>
           {aside && <aside className="hub-side-panel__aside">{aside}</aside>}

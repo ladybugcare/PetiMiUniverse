@@ -14,6 +14,7 @@ const HUB_INTERNAL_LANDING: Partial<Record<AppRole, string>> = {
   CVET_INTERNAL: '/hub/clinica',
   CGROOMER: '/hub/banho-tosa',
   CFINANCE: '/hub/financeiro',
+  CSTAFF: '/hub/meu-perfil',
 };
 
 function hubInternalLandingPath(role: AppRole): string {

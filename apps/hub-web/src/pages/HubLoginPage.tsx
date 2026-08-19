@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { login, useAuth } from '@petimi/web-core';
 import { getHubPostLoginDestination } from '../authNavigation';
@@ -12,6 +12,13 @@ const REMEMBER_EMAIL_KEY = 'petimi_hub_login_email';
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const markSrc = `${baseUrl}hub-mark.svg`;
 
+function safeInternalRedirect(raw: string | null): string | null {
+  if (!raw) return null;
+  const path = raw.trim();
+  if (!path.startsWith('/') || path.startsWith('//')) return null;
+  return path;
+}
+
 const HubLoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,7 +29,14 @@ const HubLoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { setAuthFromLogin } = useAuth();
+
+  const redirectAfterLogin = useMemo(
+    () => safeInternalRedirect(searchParams.get('redirect')),
+    [searchParams],
+  );
+  const isInviteLogin = Boolean(redirectAfterLogin?.startsWith('/accept-invitation'));
 
   useEffect(() => {
     try {
@@ -75,6 +89,11 @@ const HubLoginPage: React.FC = () => {
         /* ignore */
       }
 
+      if (redirectAfterLogin) {
+        navigate(redirectAfterLogin, { replace: true });
+        return;
+      }
+
       const dest = getHubPostLoginDestination(data, vetBase || undefined);
       if (dest.type === 'external') {
         window.location.replace(dest.url);
@@ -93,7 +112,6 @@ const HubLoginPage: React.FC = () => {
   };
 
   const vetForgot = vetBase ? `${vetBase}/forgot-password` : null;
-  const vetSignup = vetBase ? `${vetBase}/clinic-signup` : null;
   const vetLogin = vetBase ? `${vetBase}/login` : null;
 
   return (
@@ -113,7 +131,9 @@ const HubLoginPage: React.FC = () => {
 
         <h1 className="hub-login-page-welcome">Bem-vindo de volta! 👋</h1>
         <p className="hub-login-page-subwelcome">
-          Faça login para acessar sua conta PetMi Hub
+          {isInviteLogin
+            ? 'Entre com a conta do e-mail convidado para aceitar o acesso à clínica.'
+            : 'Faça login para acessar sua conta PetMi Hub'}
         </p>
 
         <form onSubmit={handleLogin}>
@@ -189,13 +209,13 @@ const HubLoginPage: React.FC = () => {
           {error && <div className="hub-login-page-msg hub-login-page-msg--error">{error}</div>}
 
           <button type="submit" className="hub-login-page-submit" disabled={loading}>
-            {loading ? 'Entrando...' : 'Entrar'}
+            {loading ? 'Entrando...' : isInviteLogin ? 'Entrar e aceitar convite' : 'Entrar'}
             {!loading && <ArrowRight size={20} aria-hidden />}
           </button>
         </form>
 
         <p className="hub-login-page-footer">
-          Ainda não tem uma conta? <Link to="/signup">Criar conta no Hub →</Link>
+          Ainda não tem uma conta? <Link to="/signup">Criar conta da clínica →</Link>
         </p>
 
         {vetLogin && (

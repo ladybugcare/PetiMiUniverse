@@ -8,10 +8,20 @@ export const HUB_VALID_ROLES: AppRole[] = [
   'CVET_INTERNAL',
   'CGROOMER',
   'CFINANCE',
+  'CSTAFF',
 ];
 
-/** Internal-path landing per role (all Hub-valid roles). */
-function hubLandingForRole(role: AppRole): string {
+function hubLandingForStaff(role: AppRole, areas: string[] = []): string {
+  if (role === 'CSTAFF') {
+    if (areas.includes('leva_traz')) return '/hub/leva-e-traz/minha-rota';
+    if (areas.includes('banho_tosa')) return '/hub/banho-tosa';
+    if (areas.includes('clinica')) return '/hub/clinica';
+    if (areas.includes('hotel_creche')) return '/hub/hotel-creche';
+    if (areas.includes('financeiro') || areas.includes('caixa')) return '/hub/financeiro';
+    if (areas.includes('recepcao')) return '/hub/appointments';
+    return '/hub/meu-perfil';
+  }
+
   switch (role) {
     case 'CADMIN':
     case 'CMANAGER':
@@ -33,6 +43,13 @@ function staffRoleFromLoginPayload(data: unknown): string | null {
   const d = data as { clinicUser?: { role?: string } } | null;
   const r = d?.clinicUser?.role;
   return r ? String(r).toUpperCase() : null;
+}
+
+function staffAreasFromLoginPayload(data: unknown): string[] {
+  const d = data as { clinicUser?: { operational_areas?: unknown } } | null;
+  const raw = d?.clinicUser?.operational_areas;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((a) => String(a)).filter(Boolean);
 }
 
 /**
@@ -72,6 +89,7 @@ export function getHubPostLoginDestination(
   }
 
   const staffRole = staffRoleFromLoginPayload(data);
+  const staffAreas = staffAreasFromLoginPayload(data);
   const d = data as { user?: unknown; clinicUser?: { clinic_id?: string | null } } | null;
   const cu = d?.clinicUser;
   if (
@@ -84,13 +102,13 @@ export function getHubPostLoginDestination(
 
   // 1. Authoritative: server-resolved clinic_user role
   if (staffRole && (HUB_VALID_ROLES as string[]).includes(staffRole)) {
-    return { type: 'internal', path: hubLandingForRole(staffRole as AppRole) };
+    return { type: 'internal', path: hubLandingForStaff(staffRole as AppRole, staffAreas) };
   }
 
   // 2. Fallback: user metadata role
   const role = getUserRole(d?.user);
   if (HUB_VALID_ROLES.includes(role)) {
-    return { type: 'internal', path: hubLandingForRole(role) };
+    return { type: 'internal', path: hubLandingForStaff(role, staffAreas) };
   }
 
   // Non-Hub role — redirect to Vet login (re-login per app is the design).

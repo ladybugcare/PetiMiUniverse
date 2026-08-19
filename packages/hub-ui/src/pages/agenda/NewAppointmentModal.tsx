@@ -84,6 +84,11 @@ import {
   validateAppointmentCoatOverride,
   validateAppointmentPorteOverride,
 } from './agendaPortePricingPreview';
+import {
+  normalizePickupPriceScope,
+  pickupModeLegCount,
+  resolvePickupLegAmounts,
+} from '../../utils/hubPickupPricing';
 import { isOperationalClinicalGroup, normalizeServiceGroupSlug, serviceGroupLabel } from '../../utils/serviceTypeSlug';
 import { STATUS_META, type AgendaStatus } from './agendaModel';
 import { ReceptionQuickRegisterPanel, type QuickRegisterSaveResult } from './ReceptionQuickRegisterPanel';
@@ -987,6 +992,34 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     [serviceTypes],
   );
 
+  /** Serviço principal é L&T avulso (parada operacional), não atendimento + checkbox L&T. */
+  const isPrimaryLevaTraz = useMemo(() => {
+    const ids = isMultiPetSelection
+      ? petVisitConfigs.flatMap((c) => c.services.map((s) => s.hub_service_type_id))
+      : services.map((s) => s.hub_service_type_id);
+    if (ids.length === 0) return false;
+    return ids.every((id) => {
+      const st = serviceTypes.find((t) => t.id === id);
+      return normalizeServiceGroupSlug(st?.service_group) === 'leva_traz';
+    });
+  }, [isMultiPetSelection, petVisitConfigs, services, serviceTypes]);
+
+  useEffect(() => {
+    if (!isPrimaryLevaTraz) return;
+    if (withPickup) setWithPickup(false);
+  }, [isPrimaryLevaTraz, withPickup]);
+
+  useEffect(() => {
+    if (!isPrimaryLevaTraz || pickupMode !== 'round_trip') return;
+    setPickupAfter((pa) => {
+      const startMin = hmToMinutes(endsHm);
+      const suggestedStart = minutesToHm(startMin);
+      const suggestedEnd = minutesToHm(Math.min(24 * 60 - 1, startMin + PICKUP_ROUTE_LEG_DURATION_MIN));
+      if (pa.starts_hm && hmToMinutes(pa.starts_hm) >= startMin) return pa;
+      return { ...pa, starts_hm: suggestedStart, ends_hm: suggestedEnd };
+    });
+  }, [isPrimaryLevaTraz, pickupMode, endsHm]);
+
   const ltServiceComboOptions = useMemo<HubComboboxOption[]>(
     () => levaTrazServiceTypes.map((st) => ({ value: st.id, label: st.name })),
     [levaTrazServiceTypes],
@@ -1273,12 +1306,62 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   }, [pricingPreview.lines]);
 
   const pickupPricingPreview = useMemo(() => {
+    const mode = pickupMode;
+    const legCount = pickupModeLegCount(mode);
+
+    if (isPrimaryLevaTraz) {
+      const primaryId = isMultiPetSelection
+        ? petVisitConfigs[0]?.services[0]?.hub_service_type_id
+        : services[0]?.hub_service_type_id;
+      if (!primaryId) return null;
+      const st = serviceTypes.find((s) => s.id === primaryId);
+      if (!st) return null;
+      const tierIdx =
+        services[0]?.pricing_variant && 'km_tier_index' in (services[0].pricing_variant ?? {})
+          ? Number((services[0].pricing_variant as { km_tier_index?: number }).km_tier_index) || 0
+          : services[0]?.pricing_variant && 'custom_tier_index' in (services[0].pricing_variant ?? {})
+            ? Number((services[0].pricing_variant as { custom_tier_index?: number }).custom_tier_index) || 0
+            : 0;
+      const band = previewLevaTrazBandPricing(st, tierIdx);
+      const scope = normalizePickupPriceScope(st.pickup_price_scope);
+      const amounts = resolvePickupLegAmounts(band.catalogSale, band.catalogCost, scope, legCount);
+      return {
+        bandLabel: band.bandLabel,
+        scope,
+        mode,
+        catalogSale: band.catalogSale,
+        totalSale: amounts.totalSale,
+        totalCost: amounts.totalCost,
+        source: 'standalone' as const,
+      };
+    }
+
     if (!withPickup || !pickupLtServiceTypeId.trim()) return null;
     const st = serviceTypes.find((s) => s.id === pickupLtServiceTypeId.trim());
     if (!st) return null;
     const band = previewLevaTrazBandPricing(st, pickupKmTierIndex);
-    return { band, saleRoundTrip: band.saleRoundTrip, costRoundTrip: band.costRoundTrip };
-  }, [withPickup, pickupLtServiceTypeId, pickupKmTierIndex, serviceTypes]);
+    const scope = normalizePickupPriceScope(st.pickup_price_scope);
+    const amounts = resolvePickupLegAmounts(band.catalogSale, band.catalogCost, scope, legCount);
+    return {
+      bandLabel: band.bandLabel,
+      scope,
+      mode,
+      catalogSale: band.catalogSale,
+      totalSale: amounts.totalSale,
+      totalCost: amounts.totalCost,
+      source: 'attached' as const,
+    };
+  }, [
+    isPrimaryLevaTraz,
+    isMultiPetSelection,
+    petVisitConfigs,
+    services,
+    withPickup,
+    pickupLtServiceTypeId,
+    pickupKmTierIndex,
+    pickupMode,
+    serviceTypes,
+  ]);
 
   const pricingTierComboOptions = useMemo<HubComboboxOption[]>(() => {
     const auto: HubComboboxOption = { value: '', label: 'Automático (idade + porte do pet)' };
@@ -1606,7 +1689,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         return;
       }
     }
-    if (!isClinicalRoutine && !isWalkIn && withPickup) {
+    if (!isClinicalRoutine && !isWalkIn && withPickup && !isPrimaryLevaTraz) {
       if (!pickupLtServiceTypeId.trim()) {
         setSaveError('Leva e Traz: selecione o tipo de serviço de transporte.');
         return;
@@ -1703,6 +1786,25 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           services.map((s) => s.hub_service_type_id),
           walkInEmergency,
         );
+      } else if (isPrimaryLevaTraz) {
+        // Parada operacional — o backend também infere, mas deixamos explícito no payload.
+        payload.appointment_kind = 'pickup_route';
+        payload.standalone_pickup_mode = pickupMode;
+        if (pickupMode === 'round_trip') {
+          const returnStart = toIsoTs(dateYmd, pickupAfter.starts_hm);
+          const returnLegDurationMin = Math.max(
+            30,
+            hmToMinutes(pickupAfter.ends_hm) - hmToMinutes(pickupAfter.starts_hm),
+          );
+          payload.standalone_pickup_return = {
+            starts_at: returnStart,
+            ends_at: new Date(
+              new Date(returnStart).getTime() + returnLegDurationMin * 60 * 1000,
+            ).toISOString(),
+            hub_staff_member_id: pickupAfter.hub_staff_member_id || staffId || null,
+            resource_label: pickupAfter.resource_label || null,
+          };
+        }
       }
 
       if (isClinicalRoutine) {
@@ -1715,7 +1817,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         }
       }
 
-      if (!isWalkIn && withPickup) {
+      if (!isWalkIn && withPickup && !isPrimaryLevaTraz) {
         if (pickupMode !== 'delivery_only') {
           payload.with_pickup_route_before = {
             starts_at: toIsoTs(dateYmd, pickupBefore.starts_hm),
@@ -2002,7 +2104,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       {(pricingPreview.lines.length > 0 || pickupPricingPreview || multiPetPricingSummaries) && (
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Preços (estimativa)</p>
-          {!isMultiPetSelection ? (
+          {!isMultiPetSelection && pickupPricingPreview?.source !== 'standalone' ? (
             <>
               <p className="nam-aside__muted" style={{ fontSize: 12, marginBottom: 6 }}>
                 {pricingApptPorteTier.trim()
@@ -2036,11 +2138,36 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               ))}
             </>
           ) : null}
-          {pickupPricingPreview ? (
+          {pickupPricingPreview && pickupPricingPreview.source === 'attached' ? (
             <div className="nam-aside__row">
-              <span className="nam-aside__item">Leva e Traz total ({pickupPricingPreview.band.bandLabel})</span>
+              <span className="nam-aside__item">
+                Leva e Traz ({pickupPricingPreview.bandLabel}
+                {pickupPricingPreview.mode === 'round_trip'
+                  ? ' · ida e volta'
+                  : pickupPricingPreview.mode === 'pickup_only'
+                    ? ' · só busca'
+                    : ' · só retorno'}
+                )
+              </span>
               <span className="nam-aside__muted">
-                {pickupPricingPreview.saleRoundTrip.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {pickupPricingPreview.totalSale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </span>
+            </div>
+          ) : null}
+          {pickupPricingPreview && pickupPricingPreview.source === 'standalone' ? (
+            <div className="nam-aside__row">
+              <span className="nam-aside__item">
+                Leva e Traz ({pickupPricingPreview.bandLabel}
+                {pickupPricingPreview.mode === 'round_trip'
+                  ? ' · ida e volta'
+                  : pickupPricingPreview.mode === 'pickup_only'
+                    ? ' · só busca'
+                    : ' · só retorno'}
+                {pickupPricingPreview.scope === 'per_leg' ? ' · por perna' : ''}
+                )
+              </span>
+              <span className="nam-aside__muted">
+                {pickupPricingPreview.totalSale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </span>
             </div>
           ) : null}
@@ -2072,8 +2199,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             <strong>
               {(isMultiPetSelection && multiPetPricingSummaries
                 ? multiPetPricingSummaries.reduce((s, r) => s + r.total, 0) +
-                  (pickupPricingPreview?.saleRoundTrip ?? 0)
-                : pricingPreview.totalSale + (pickupPricingPreview?.saleRoundTrip ?? 0)
+                  (pickupPricingPreview?.source === 'attached' ? pickupPricingPreview.totalSale : 0)
+                : pickupPricingPreview?.source === 'standalone'
+                  ? pickupPricingPreview.totalSale
+                  : pricingPreview.totalSale +
+                    (pickupPricingPreview?.source === 'attached' ? pickupPricingPreview.totalSale : 0)
               ).toLocaleString('pt-BR', {
                 style: 'currency',
                 currency: 'BRL',
@@ -2104,14 +2234,32 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         </div>
       )}
 
-      {!isEditMode && withPickup && (
+      {!isEditMode && withPickup && !isPrimaryLevaTraz && (
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Leva e Traz</p>
-          {pickupPricingPreview ? (
-            <p className="nam-aside__muted">{pickupPricingPreview.band.bandLabel}</p>
+            {pickupPricingPreview ? (
+            <p className="nam-aside__muted">{pickupPricingPreview.bandLabel}</p>
           ) : null}
           <p className="nam-aside__item">Busca {pickupBefore.starts_hm} – {pickupBefore.ends_hm}</p>
           <p className="nam-aside__item">Retorno {pickupAfter.starts_hm} – {pickupAfter.ends_hm}</p>
+        </div>
+      )}
+      {!isEditMode && isPrimaryLevaTraz && (
+        <div className="nam-aside__section">
+          <p className="nam-aside__section-title">Leva e Traz</p>
+          <p className="nam-aside__muted">
+            {pickupMode === 'round_trip'
+              ? 'Ida e volta — 2 paradas no board do dia'
+              : pickupMode === 'pickup_only'
+                ? 'Só busca — 1 parada operacional'
+                : 'Só retorno — 1 parada operacional'}
+          </p>
+          {pickupMode === 'round_trip' ? (
+            <>
+              <p className="nam-aside__item">Busca {startsHm} – {endsHm}</p>
+              <p className="nam-aside__item">Retorno {pickupAfter.starts_hm} – {pickupAfter.ends_hm}</p>
+            </>
+          ) : null}
         </div>
       )}
 
@@ -3065,6 +3213,76 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
         {/* ── 10. L&T ──────────────────────────────────────────────────── */}
         <div className="nam-section">
+          {isPrimaryLevaTraz ? (
+            <div className="nam-pickup">
+              <div className="nam-lt-standalone" role="status">
+                <p className="nam-lt-standalone__title">Parada de Leva e Traz</p>
+                <p className="nam-lt-standalone__text">
+                  Entra no <strong>Leva e Traz operacional</strong>. Ida e volta cria duas paradas
+                  (busca + retorno). O preço segue o cadastro do serviço (ida e volta ou por perna).
+                </p>
+              </div>
+              <div
+                className="nam-pickup__mode-selector"
+                style={{ display: 'flex', gap: '0.5rem', margin: '0.75rem 0', flexWrap: 'wrap' }}
+              >
+                {(
+                  [
+                    { value: 'round_trip', label: 'Ida e volta' },
+                    { value: 'pickup_only', label: 'Só busca' },
+                    { value: 'delivery_only', label: 'Só retorno' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`hub-clientes__btn hub-clientes__btn--sm${pickupMode === opt.value ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
+                    onClick={() => setPickupMode(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {pickupMode === 'round_trip' ? (
+                <>
+                  <p className="nam-pickup__title">Retorno (segunda parada)</p>
+                  <p className="nam-aside__muted" style={{ marginBottom: 8, fontSize: 13 }}>
+                    A busca usa o horário principal do agendamento ({startsHm} – {endsHm}).
+                  </p>
+                  <div className="nam-row nam-row--cols2">
+                    <div className="nam-field">
+                      <label className="nam-label">Início do retorno</label>
+                      <input
+                        className="nam-input"
+                        type="time"
+                        value={pickupAfter.starts_hm}
+                        onChange={(e) => {
+                          const starts_hm = e.target.value;
+                          setPickupAfter((b) => ({
+                            ...b,
+                            starts_hm,
+                            ends_hm: addMinutes(starts_hm, PICKUP_ROUTE_LEG_DURATION_MIN),
+                          }));
+                        }}
+                      />
+                    </div>
+                    <div className="nam-field">
+                      <label className="nam-label">Motorista (retorno)</label>
+                      <HubSearchableCombobox
+                        id="nam-standalone-pickup-after-staff"
+                        options={staffComboOptions}
+                        value={pickupAfter.hub_staff_member_id || staffId}
+                        onChange={(v) => setPickupAfter((b) => ({ ...b, hub_staff_member_id: v }))}
+                        placeholder="Não atribuído"
+                        clearable={false}
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : (
+            <>
           <HubCheckbox
             className="nam-checkbox-label"
             checked={withPickup}
@@ -3096,8 +3314,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           {withPickup && (
             <div className="nam-pickup">
               <p className="nam-aside__muted" style={{ marginBottom: 10, fontSize: 13 }}>
-                A busca termina no início do primeiro bloco do dia; o retorno dura 1 h a partir do início
-                indicado. Os horários sugeridos ao activar L&T seguem estes critérios.
+                    A busca termina no início do primeiro bloco do dia; o retorno dura 1 h a partir do início
+                    indicado. Os horários sugeridos ao ativar L&T seguem estes critérios.
               </p>
               <div className="nam-row nam-row--cols2" style={{ marginBottom: 12 }}>
                 <div className="nam-field">
@@ -3244,6 +3462,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               </>
               ) : null}
             </div>
+          )}
+            </>
           )}
         </div>
           </>

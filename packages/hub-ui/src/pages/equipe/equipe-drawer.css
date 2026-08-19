@@ -439,6 +439,10 @@
 
 .hub-equipe-drawer__share-footer {
   margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .hub-equipe-page--full-width .hub-clientes__main {

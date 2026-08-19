@@ -38,10 +38,20 @@ const requestCache = new Map<string, { data: unknown; timestamp: number }>();
 /** Evita rajadas de GET idênticos (StrictMode, vários mounts, polling). */
 const inFlightGets = new Map<string, Promise<unknown>>();
 const CACHE_TTL = 30_000;
+/** Incrementado em mutações para descartar respostas GET iniciadas antes da invalidação. */
+let cacheGeneration = 0;
+
+/** Limpa cache/in-flight de GET para o próximo refetch pós-mutação ver dados frescos. */
+export function invalidateApiRequestCache(): void {
+  cacheGeneration += 1;
+  requestCache.clear();
+  inFlightGets.clear();
+}
 
 async function executeApiRequest(
   endpoint: string,
   options: RequestInit = {},
+  generationAtStart = cacheGeneration,
 ): Promise<unknown> {
   const API_BASE_URL = getApiBaseUrl();
   const url = `${API_BASE_URL}${endpoint}`;
@@ -203,7 +213,10 @@ async function executeApiRequest(
       result = {};
     }
 
-    if (options.method === 'GET' || !options.method) {
+    if (
+      (options.method === 'GET' || !options.method) &&
+      generationAtStart === cacheGeneration
+    ) {
       const cacheKey = `${endpoint}_${JSON.stringify(options)}`;
       requestCache.set(cacheKey, { data: result, timestamp: Date.now() });
       if (requestCache.size > 100) {
@@ -215,8 +228,18 @@ async function executeApiRequest(
     return result;
   } catch (error: unknown) {
     clearTimeout(timeoutId);
-    if ((error as Error).name === 'AbortError') {
+    const err = error as Error;
+    if (err.name === 'AbortError') {
       throw new Error('A requisição demorou muito para responder. Verifique sua conexão ou tente novamente.');
+    }
+    const msg = String(err.message || '');
+    if (
+      err.name === 'TypeError' &&
+      (/Failed to fetch/i.test(msg) || /NetworkError/i.test(msg) || /Load failed/i.test(msg))
+    ) {
+      throw new Error(
+        'Não foi possível conectar ao servidor. Verifique se a API está em execução e tente novamente.',
+      );
     }
     throw error;
   }
@@ -238,7 +261,8 @@ export const apiRequest = async (
     if (pending) return pending;
   }
 
-  const run = executeApiRequest(endpoint, options);
+  const generationAtStart = cacheGeneration;
+  const run = executeApiRequest(endpoint, options, generationAtStart);
 
   if (cacheKey) {
     const shared = run.finally(() => {
@@ -248,7 +272,10 @@ export const apiRequest = async (
     return shared;
   }
 
-  return run;
+  const result = await run;
+  // POST/PATCH/PUT/DELETE bem-sucedidos: próximo GET (ex.: day-board) não pode reutilizar cache.
+  invalidateApiRequestCache();
+  return result;
 };
 
 export const login = async (data: LoginData): Promise<unknown> => {

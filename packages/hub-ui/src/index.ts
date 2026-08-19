@@ -196,7 +196,7 @@ export { default as HubRelatoriosPage } from './pages/finance/HubRelatoriosPage'
 export { maskTaxIdForList } from './utils/maskTaxId';
 export { buildWhatsappLink, normalizeBrPhone } from './utils/whatsappLink';
 export { formatBrPhoneInput, formatBrPhoneFromApi, formatBrPhoneDisplay, digitsOnlyBrPhone } from './utils/formatBrPhone';
-export { renderTemplate, DEFAULT_TEMPLATES, TEMPLATE_LABELS, TEMPLATE_PLACEHOLDER_HINTS } from './utils/hubMessageTemplates';
+export { renderTemplate, DEFAULT_TEMPLATES, TEMPLATE_LABELS, TEMPLATE_PLACEHOLDER_HINTS, TEMPLATE_VARS } from './utils/hubMessageTemplates';
 export type { MessageTemplateKey } from './utils/hubMessageTemplates';
 export { useMessageTemplates } from './utils/useMessageTemplates';
 export { logMessageAttempt } from './api/hubMessageLogsApi';

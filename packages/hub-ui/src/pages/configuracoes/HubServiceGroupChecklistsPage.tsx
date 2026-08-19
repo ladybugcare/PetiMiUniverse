@@ -11,7 +11,7 @@ import { HubCheckbox } from '../../components/HubCheckbox';
 import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
 import { hexToSoftFill, resolveServiceAccentColor } from '../../utils/serviceTypeSlug';
 import '../clientes/clientes.css';
-import '../servicos/servicos-page.css';
+import './hub-checklists.css';
 
 type DraftItem = ChecklistTemplateItem & { draftKey: string };
 
@@ -23,6 +23,10 @@ function nextDraftKey() {
 
 function toDraftItems(items: ChecklistTemplateItem[]): DraftItem[] {
   return items.map((item) => ({ ...item, draftKey: nextDraftKey() }));
+}
+
+function groupAccent(group: ServiceGroupChecklistRow): string {
+  return resolveServiceAccentColor(group.slug, group.color);
 }
 
 const HubServiceGroupChecklistsPage: React.FC = () => {
@@ -45,11 +49,12 @@ const HubServiceGroupChecklistsPage: React.FC = () => {
     [groups, selectedSlug],
   );
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: { cancelled: boolean }) => {
     if (!clinicId || !canRead) return;
     setLoading(true);
     try {
       const res = await hubServiceGroupChecklistApi.list(clinicId);
+      if (signal?.cancelled) return;
       const nextGroups = res.groups ?? [];
       setGroups(nextGroups);
       setSelectedSlug((prev) => {
@@ -57,14 +62,19 @@ const HubServiceGroupChecklistsPage: React.FC = () => {
         return nextGroups[0]?.slug ?? '';
       });
     } catch (e: unknown) {
+      if (signal?.cancelled) return;
       showError((e as Error)?.message || 'Erro ao carregar checklists');
     } finally {
-      setLoading(false);
+      if (!signal?.cancelled) setLoading(false);
     }
   }, [clinicId, canRead, showError]);
 
   useEffect(() => {
-    void load();
+    const signal = { cancelled: false };
+    void load(signal);
+    return () => {
+      signal.cancelled = true;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -150,7 +160,7 @@ const HubServiceGroupChecklistsPage: React.FC = () => {
 
   if (!canRead) {
     return (
-      <div className="hub-clientes__empty">
+      <div className="hub-cl__state">
         <p className="hub-clientes__muted">Sem permissão para visualizar configurações.</p>
       </div>
     );
@@ -158,7 +168,7 @@ const HubServiceGroupChecklistsPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="hub-clientes__empty">
+      <div className="hub-cl__state">
         <p className="hub-clientes__muted">Carregando checklists…</p>
       </div>
     );
@@ -166,199 +176,203 @@ const HubServiceGroupChecklistsPage: React.FC = () => {
 
   if (!groups.length) {
     return (
-      <div className="hub-clientes__empty">
+      <div className="hub-cl__state">
         <p className="hub-clientes__muted">Nenhum grupo de serviço encontrado.</p>
       </div>
     );
   }
 
-  const accent = selectedGroup ? resolveServiceAccentColor(selectedGroup.slug, selectedGroup.color) : '#78909c';
+  const accent = selectedGroup ? groupAccent(selectedGroup) : '#78909c';
   const softFill = hexToSoftFill(accent);
+  const canRestore =
+    Boolean(selectedGroup?.is_custom) || Boolean(selectedGroup?.has_system_default);
 
   return (
-    <div className="hub-servicos-config__section" style={{ maxWidth: 760 }}>
-      <p className="hub-clientes__muted" style={{ marginBottom: 20 }}>
-        Personalize os itens de checklist usados durante o atendimento operacional. Hoje, apenas o
-        grupo Banho &amp; Tosa exibe checklist na fila; os demais grupos ficam prontos para quando
-        seus módulos operacionais forem integrados.
-      </p>
+    <div className="hub-cl">
+      <header className="hub-cl__intro">
+        <h2 className="hub-cl__intro-title">Checklists operacionais</h2>
+        <p className="hub-cl__intro-text">
+          Personalize os itens usados durante o atendimento. Hoje, apenas Banho &amp; Tosa exibe
+          checklist na fila; os demais grupos ficam prontos para quando seus módulos forem
+          integrados.
+        </p>
+      </header>
 
-      <div className="hub-servicos-config__inline-form" style={{ marginBottom: 20 }}>
-        <label className="hub-clientes__field-label" htmlFor="checklist-group-select">
-          Grupo de serviço
-        </label>
-        <select
-          id="checklist-group-select"
-          className="hub-input"
-          value={selectedSlug}
-          onChange={(e) => setSelectedSlug(e.target.value)}
-          style={{ maxWidth: 360 }}
-        >
-          {groups.map((group) => (
-            <option key={group.slug} value={group.slug}>
-              {group.name}
-            </option>
-          ))}
-        </select>
+      <div className="hub-cl__groups" role="tablist" aria-label="Grupos de serviço">
+        {groups.map((group) => {
+          const groupColor = groupAccent(group);
+          const active = group.slug === selectedSlug;
+          return (
+            <button
+              key={group.slug}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={`hub-cl__group-tab${active ? ' hub-cl__group-tab--active' : ''}`}
+              style={active ? ({ ['--hub-cl-accent' as string]: groupColor } as React.CSSProperties) : undefined}
+              onClick={() => setSelectedSlug(group.slug)}
+            >
+              <span
+                className="hub-cl__group-tab-icon"
+                style={{ background: hexToSoftFill(groupColor), color: groupColor }}
+              >
+                <ServiceGroupIcon group={group.slug} color={groupColor} size={16} />
+              </span>
+              <span className="hub-cl__group-tab-meta">
+                <span className="hub-cl__group-tab-name">{group.name}</span>
+                <span className="hub-cl__group-tab-hint">
+                  {group.is_custom ? 'Personalizado' : 'Padrão'}
+                  {' · '}
+                  {group.items.length} {group.items.length === 1 ? 'item' : 'itens'}
+                </span>
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {selectedGroup ? (
         <div
-          className="hub-servicos-config__inline-form"
-          style={{ borderLeft: `4px solid ${accent}`, paddingLeft: 16 }}
+          className={`hub-cl__editor${isDirty ? ' hub-cl__editor--dirty' : ''}`}
+          style={{ ['--hub-cl-accent' as string]: accent } as React.CSSProperties}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-            <span
-              className="hub-servicos-config__group-icon-wrap"
-              style={{ background: softFill, color: accent }}
-            >
+          <div className="hub-cl__editor-header">
+            <span className="hub-cl__editor-icon" style={{ background: softFill, color: accent }}>
               <ServiceGroupIcon group={selectedGroup.slug} color={accent} size={18} />
             </span>
-            <div style={{ flex: 1 }}>
-              <h3 className="hub-servicos-config__inline-title" style={{ margin: 0 }}>
-                {selectedGroup.name}
-              </h3>
-              <p className="hub-clientes__muted" style={{ margin: '4px 0 0', fontSize: 12 }}>
-                {selectedGroup.is_custom ? 'Checklist personalizado' : 'Usando padrão do sistema'}
-                {selectedGroup.has_system_default ? ' · pode restaurar padrão' : ''}
+            <div className="hub-cl__editor-heading">
+              <div className="hub-cl__editor-title-row">
+                <h3 className="hub-cl__editor-title">{selectedGroup.name}</h3>
+                {selectedGroup.is_custom && (
+                  <span className="hub-cl__badge hub-cl__badge--custom">Personalizado</span>
+                )}
+                {isDirty && <span className="hub-cl__badge hub-cl__badge--dirty">Não salvo</span>}
+              </div>
+              <p className="hub-cl__editor-sub">
+                {selectedGroup.is_custom ? 'Checklist personalizado da clínica' : 'Usando padrão do sistema'}
+                {selectedGroup.has_system_default ? ' · é possível restaurar o padrão' : ''}
               </p>
             </div>
-            {selectedGroup.is_custom && (
-              <span className="hub-clientes__pill hub-clientes__pill--neutral" style={{ fontSize: 11 }}>
-                Personalizado
-              </span>
-            )}
           </div>
 
-          {draftItems.length === 0 ? (
-            <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>
-              Nenhum item configurado. Adicione itens ou salve a lista vazia para ocultar o checklist
-              na operação.
-            </p>
-          ) : (
-            <ul className="hub-servicos-config__checklist-editor" style={{ listStyle: 'none', padding: 0, margin: '0 0 12px' }}>
-              {draftItems.map((item, index) => (
-                <li
-                  key={item.draftKey}
-                  className="hub-servicos-config__checklist-editor-row"
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'auto 1fr auto auto',
-                    gap: 8,
-                    alignItems: 'center',
-                    marginBottom: 8,
-                  }}
+          <div className="hub-cl__editor-body">
+            {draftItems.length === 0 ? (
+              <p className="hub-cl__empty-items">
+                Nenhum item configurado. Adicione itens ou salve a lista vazia para ocultar o
+                checklist na operação.
+              </p>
+            ) : (
+              <ul className="hub-cl__items">
+                {draftItems.map((item, index) => (
+                  <li key={item.draftKey} className="hub-cl__item">
+                    <div className="hub-cl__item-order">
+                      <button
+                        type="button"
+                        className="hub-cl__icon-btn"
+                        disabled={!canWrite || index === 0}
+                        onClick={() => moveItem(index, -1)}
+                        aria-label="Mover para cima"
+                      >
+                        <ArrowUp size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="hub-cl__icon-btn"
+                        disabled={!canWrite || index === draftItems.length - 1}
+                        onClick={() => moveItem(index, 1)}
+                        aria-label="Mover para baixo"
+                      >
+                        <ArrowDown size={14} />
+                      </button>
+                    </div>
+
+                    <input
+                      className="hub-cl__item-input"
+                      type="text"
+                      disabled={!canWrite}
+                      placeholder="Descrição do item"
+                      value={item.label}
+                      onChange={(e) =>
+                        setDraftItems((items) =>
+                          items.map((row) =>
+                            row.draftKey === item.draftKey ? { ...row, label: e.target.value } : row,
+                          ),
+                        )
+                      }
+                      aria-label={`Item ${index + 1}`}
+                    />
+
+                    <HubCheckbox
+                      className="hub-cl__item-check"
+                      checked={Boolean(item.default_checked)}
+                      disabled={!canWrite}
+                      onChange={(checked) =>
+                        setDraftItems((items) =>
+                          items.map((row) =>
+                            row.draftKey === item.draftKey
+                              ? { ...row, default_checked: checked }
+                              : row,
+                          ),
+                        )
+                      }
+                    >
+                      Marcado por padrão
+                    </HubCheckbox>
+
+                    <button
+                      type="button"
+                      className="hub-cl__icon-btn hub-cl__icon-btn--danger hub-cl__item-delete"
+                      disabled={!canWrite}
+                      onClick={() => handleRemoveItem(item.draftKey)}
+                      aria-label="Remover item"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {canWrite && (
+              <button type="button" className="hub-cl__add-btn" onClick={handleAddItem}>
+                <Plus size={16} />
+                Adicionar item
+              </button>
+            )}
+
+            {canWrite && (
+              <div className="hub-cl__actions">
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--primary"
+                  disabled={saving || !isDirty}
+                  onClick={() => void handleSave()}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <button
-                      type="button"
-                      className="hub-clientes__btn hub-clientes__btn--ghost"
-                      disabled={!canWrite || index === 0}
-                      onClick={() => moveItem(index, -1)}
-                      aria-label="Mover para cima"
-                      style={{ padding: 4, minWidth: 0 }}
-                    >
-                      <ArrowUp size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="hub-clientes__btn hub-clientes__btn--ghost"
-                      disabled={!canWrite || index === draftItems.length - 1}
-                      onClick={() => moveItem(index, 1)}
-                      aria-label="Mover para baixo"
-                      style={{ padding: 4, minWidth: 0 }}
-                    >
-                      <ArrowDown size={14} />
-                    </button>
-                  </div>
-
-                  <input
-                    className="hub-input"
-                    type="text"
-                    disabled={!canWrite}
-                    placeholder="Descrição do item"
-                    value={item.label}
-                    onChange={(e) =>
-                      setDraftItems((items) =>
-                        items.map((row) =>
-                          row.draftKey === item.draftKey ? { ...row, label: e.target.value } : row,
-                        ),
-                      )
-                    }
-                  />
-
-                  <HubCheckbox
-                    checked={Boolean(item.default_checked)}
-                    disabled={!canWrite}
-                    onChange={(checked) =>
-                      setDraftItems((items) =>
-                        items.map((row) =>
-                          row.draftKey === item.draftKey ? { ...row, default_checked: checked } : row,
-                        ),
-                      )
-                    }
-                  >
-                    Marcado por padrão
-                  </HubCheckbox>
-
+                  {saving ? 'Salvando…' : 'Salvar'}
+                </button>
+                {isDirty && (
                   <button
                     type="button"
                     className="hub-clientes__btn hub-clientes__btn--ghost"
-                    disabled={!canWrite}
-                    onClick={() => handleRemoveItem(item.draftKey)}
-                    aria-label="Remover item"
-                    style={{ color: 'var(--hc-danger, #c62828)' }}
+                    disabled={saving}
+                    onClick={handleDiscard}
                   >
-                    <Trash2 size={16} />
+                    Descartar
                   </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {canWrite && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--ghost"
-                onClick={handleAddItem}
-              >
-                <Plus size={16} style={{ marginRight: 6 }} />
-                Adicionar item
-              </button>
-            </div>
-          )}
-
-          {canWrite && (
-            <div className="hub-servicos-config__inline-actions">
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--primary"
-                disabled={saving || !isDirty}
-                onClick={() => void handleSave()}
-              >
-                {saving ? 'Salvando…' : 'Salvar'}
-              </button>
-              {(selectedGroup.is_custom || selectedGroup.has_system_default) && (
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--ghost"
-                  disabled={restoring}
-                  onClick={() => void handleRestoreDefault()}
-                >
-                  {restoring ? 'Restaurando…' : 'Restaurar padrão'}
-                </button>
-              )}
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--ghost"
-                disabled={!isDirty || saving}
-                onClick={handleDiscard}
-              >
-                Descartar alterações
-              </button>
-            </div>
-          )}
+                )}
+                {canRestore && (
+                  <button
+                    type="button"
+                    className="hub-clientes__btn hub-clientes__btn--ghost"
+                    disabled={restoring || saving}
+                    onClick={() => void handleRestoreDefault()}
+                  >
+                    {restoring ? 'Restaurando…' : 'Restaurar padrão'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       ) : null}
     </div>

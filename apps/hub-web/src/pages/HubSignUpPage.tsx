@@ -82,13 +82,14 @@ const HubSignUpPage: React.FC = () => {
           <img src={markSrc} alt="" className="hub-login-page-logo-img" width={48} height={48} />
           <div className="hub-login-page-brand-block">
             <span className="hub-login-page-brand-name">PetMi Hub</span>
-            <span className="hub-login-page-tagline">CRIAR CONTA</span>
+            <span className="hub-login-page-tagline">CRIAR ORGANIZAÇÃO</span>
           </div>
         </div>
 
-        <h1 className="hub-login-page-welcome">Criar conta no Hub</h1>
+        <h1 className="hub-login-page-welcome">Criar conta da clínica</h1>
         <p className="hub-login-page-subwelcome">
-          Você será o administrador da clínica (responsável pela conta).
+          Para quem vai administrar a organização no PetMi Hub. Funcionários entram pelo convite
+          enviado por e-mail.
         </p>
 
         <HubOnboardingStepper steps={['Seus dados', 'Acesso']} activeStep={step} />
@@ -223,6 +224,8 @@ const HubSignUpPage: React.FC = () => {
 
         <p className="hub-login-page-footer">
           Já tem conta? <Link to="/login">Entrar</Link>
+          <br />
+          Recebeu um convite da equipe? Abra o link do e-mail — não crie outra conta aqui.
         </p>
       </div>
     </div>

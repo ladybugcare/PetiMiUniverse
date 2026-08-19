@@ -42,6 +42,7 @@ function getCardAction(
     case 'en_route':   return { nextStatus: 'arrived', label: 'No endereço' };
     case 'arrived':
       if (dir === 'pickup') return { nextStatus: 'in_transit', label: 'Pet a bordo' };
+      if (dir === 'clinic_return') return { nextStatus: 'completed', label: 'Descarregado' };
       return { nextStatus: 'completed', label: 'Entregue' };
     case 'in_transit': return { nextStatus: 'completed', label: 'Na clínica' };
     default:           return null;

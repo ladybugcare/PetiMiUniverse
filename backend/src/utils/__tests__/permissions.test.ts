@@ -36,9 +36,21 @@ describe('permissions', () => {
       expect(hasEffectivePermission('CGROOMER', 'hub.clinic.read', [])).toBe(false);
     });
 
-    it('área caixa concede hub.cash.receive para papel sem caixa no perfil base', () => {
-      expect(hasEffectivePermission('CVET_INTERNAL', 'hub.cash.receive', ['caixa'])).toBe(true);
-      expect(hasEffectivePermission('CVET_INTERNAL', 'hub.cash.receive', [])).toBe(false);
+    it('área leva_traz concede execução (sem manage) para CSTAFF', () => {
+      expect(hasEffectivePermission('CSTAFF', 'pickup.routes.read', ['leva_traz'])).toBe(true);
+      expect(hasEffectivePermission('CSTAFF', 'pickup.stops.update', ['leva_traz'])).toBe(true);
+      expect(hasEffectivePermission('CSTAFF', 'pickup.routes.manage', ['leva_traz'])).toBe(false);
+    });
+
+    it('área banho_tosa concede fila de grooming para CSTAFF', () => {
+      expect(hasEffectivePermission('CSTAFF', 'grooming.queue.manage', ['banho_tosa'])).toBe(true);
+      expect(hasEffectivePermission('CSTAFF', 'hub.pets.read', ['banho_tosa'])).toBe(true);
+      expect(hasEffectivePermission('CSTAFF', 'hub.clinic.write', ['banho_tosa'])).toBe(false);
+    });
+
+    it('CSTAFF sozinho não tem módulos operacionais', () => {
+      expect(hasPermission('CSTAFF', 'pickup.routes.read')).toBe(false);
+      expect(hasPermission('CSTAFF', 'unit.view')).toBe(true);
     });
   });
 

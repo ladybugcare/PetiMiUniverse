@@ -5,6 +5,7 @@ import HubServicosConfigPage from '../servicos/HubServicosConfigPage';
 import HubMessageTemplatesPage from './HubMessageTemplatesPage';
 import HubServiceGroupChecklistsPage from './HubServiceGroupChecklistsPage';
 import HubPaymentMethodsPage from './HubPaymentMethodsPage';
+import HubPickupSettingsPage from './HubPickupSettingsPage';
 
 /**
  * Rotas aninhadas sob `/hub/configuracoes-sistema/*`.
@@ -18,6 +19,7 @@ const HubSystemSettingsRoutes: React.FC = () => {
         <Route path="templates-mensagem" element={<HubMessageTemplatesPage />} />
         <Route path="checklists" element={<HubServiceGroupChecklistsPage />} />
         <Route path="formas-pagamento" element={<HubPaymentMethodsPage />} />
+        <Route path="leva-e-traz" element={<HubPickupSettingsPage />} />
       </Route>
     </Routes>
   );

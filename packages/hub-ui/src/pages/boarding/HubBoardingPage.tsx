@@ -40,6 +40,7 @@ const HubBoardingPage: React.FC = () => {
   const canWriteInventory = hasPermission('hub.inventory.write');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const loadSeqRef = useRef(0);
   const [activeMode, setActiveMode] = useState<BoardingMode>('all');
   const [items, setItems] = useState<BoardingDayBoardItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,14 +65,16 @@ const HubBoardingPage: React.FC = () => {
     return match?.id;
   }, [unitFilter, units]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { soft?: boolean }) => {
     if (!clinicId) return;
-    setLoading(true);
+    const seq = ++loadSeqRef.current;
+    if (!opts?.soft) setLoading(true);
     try {
       const res = await hubBoardingApi.dayBoard(clinicId, dayRange, {
         unitId: unitIdParam,
         mode: activeMode === 'all' ? undefined : activeMode,
       });
+      if (seq !== loadSeqRef.current) return;
       setItems(res.items ?? []);
       setBoardingTypesConfigured(res.boarding_types_configured !== false);
       setSelected((prev) => {
@@ -80,11 +83,12 @@ const HubBoardingPage: React.FC = () => {
         return res.items?.find((i) => (i.reservation_id || i.appointment_id) === key) ?? prev;
       });
     } catch (e: unknown) {
+      if (seq !== loadSeqRef.current) return;
       showError((e as Error)?.message || 'Erro ao carregar painel de Hotel & Creche');
       setItems([]);
       setBoardingTypesConfigured(true);
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, [clinicId, dayRange, unitIdParam, activeMode, showError]);
 
@@ -100,7 +104,7 @@ const HubBoardingPage: React.FC = () => {
 
   useEffect(() => {
     if (!clinicId || !accessAllowed) return;
-    const id = window.setInterval(() => void load(), POLL_MS);
+    const id = window.setInterval(() => void load({ soft: true }), POLL_MS);
     return () => window.clearInterval(id);
   }, [clinicId, accessAllowed, load]);
 
@@ -132,7 +136,7 @@ const HubBoardingPage: React.FC = () => {
           table: 'hub_boarding_reservations',
           filter: `clinic_id=eq.${clinicId}`,
         },
-        () => { void load(); }
+        () => { void load({ soft: true }); }
       )
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -192,7 +196,7 @@ const HubBoardingPage: React.FC = () => {
         notes: payload.notes ?? null,
       });
       setWalkInOpen(false);
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao registrar entrada avulsa');
     } finally {
@@ -214,7 +218,7 @@ const HubBoardingPage: React.FC = () => {
         await hubBoardingApi.openFromAppointment(clinicId, item.appointment_id);
         await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'in_progress' });
       }
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao fazer check-in');
     } finally {
@@ -235,7 +239,7 @@ const HubBoardingPage: React.FC = () => {
       } else if (item.appointment_id) {
         await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'done' });
       }
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao fazer check-out');
     } finally {
@@ -482,7 +486,7 @@ const HubBoardingPage: React.FC = () => {
         canWriteInventory={canWriteInventory}
         unitId={unitIdParam}
         onClose={() => setSelected(null)}
-        onUpdated={() => void load()}
+        onUpdated={() => void load({ soft: true })}
       />
 
       {canWrite && (

@@ -49,6 +49,7 @@ const HubGroomingQueuePage: React.FC = () => {
   const canPauseQueue = hasPermission('grooming.queue.manage');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const loadSeqRef = useRef(0);
   const [filterPriorityOnly, setFilterPriorityOnly] = useState(false);
   const [filterLtOnly, setFilterLtOnly] = useState(false);
   const [filterPorte, setFilterPorte] = useState('all');
@@ -99,14 +100,16 @@ const HubGroomingQueuePage: React.FC = () => {
   }, [unitFilter, units]);
 
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { soft?: boolean }) => {
     if (!clinicId) return;
-    setLoading(true);
+    const seq = ++loadSeqRef.current;
+    if (!opts?.soft) setLoading(true);
     try {
       const res = await hubGroomingApi.dayBoard(clinicId, dayRange, {
         staffId: staffFilter || undefined,
         unitId: unitIdParam,
       });
+      if (seq !== loadSeqRef.current) return;
       setItems(res.items ?? []);
       setGroomingTypesConfigured(res.grooming_types_configured !== false);
       setSelected((prev) => {
@@ -115,11 +118,12 @@ const HubGroomingQueuePage: React.FC = () => {
         return res.items?.find((i) => (i.session_id || i.appointment_id) === key) ?? prev;
       });
     } catch (e: unknown) {
+      if (seq !== loadSeqRef.current) return;
       showError((e as Error)?.message || 'Erro ao carregar fila de Banho & Tosa');
       setItems([]);
       setGroomingTypesConfigured(true);
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, [clinicId, dayRange, staffFilter, unitIdParam, showError]);
 
@@ -135,7 +139,7 @@ const HubGroomingQueuePage: React.FC = () => {
 
   useEffect(() => {
     if (!clinicId || !accessAllowed) return;
-    const id = window.setInterval(() => void load(), POLL_MS);
+    const id = window.setInterval(() => void load({ soft: true }), POLL_MS);
     return () => window.clearInterval(id);
   }, [clinicId, accessAllowed, load]);
 
@@ -169,7 +173,7 @@ const HubGroomingQueuePage: React.FC = () => {
       } else if (action.type === 'advance' && item.session_id) {
         await hubGroomingApi.advanceSession(item.session_id, clinicId);
       }
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao atualizar atendimento');
     } finally {
@@ -183,7 +187,7 @@ const HubGroomingQueuePage: React.FC = () => {
       setActionBusy(true);
       try {
         await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, grooming_stage: stage });
-        await load();
+        await load({ soft: true });
       } catch (e: unknown) {
         showError((e as Error)?.message || 'Transição não permitida');
       } finally {
@@ -199,7 +203,7 @@ const HubGroomingQueuePage: React.FC = () => {
     try {
       const nextPaused = !item.paused_at;
       await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, paused: nextPaused });
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao pausar ou retomar atendimento');
     } finally {
@@ -213,7 +217,7 @@ const HubGroomingQueuePage: React.FC = () => {
     try {
       const next = (item.priority ?? 0) > 0 ? 0 : 1;
       await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, priority: next });
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao alterar prioridade');
     } finally {
@@ -233,7 +237,7 @@ const HubGroomingQueuePage: React.FC = () => {
         operational_notes: payload.notes.trim() || null,
       });
       setWalkInOpen(false);
-      await load();
+      await load({ soft: true });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao registrar avulso');
     } finally {
@@ -465,7 +469,7 @@ const HubGroomingQueuePage: React.FC = () => {
         busy={actionBusy}
         onClose={() => setSelected(null)}
         onQuickAction={handleQuickAction}
-        onSessionUpdated={() => void load()}
+        onSessionUpdated={() => void load({ soft: true })}
         checkoutEnabled={false}
         canViewFinancial={canViewFinancial}
       />

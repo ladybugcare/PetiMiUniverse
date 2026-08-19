@@ -1,0 +1,350 @@
+/* HubServiceGroupChecklistsPage — Checklists operacionais */
+
+.hub-cl {
+  padding: 8px 4px 32px;
+  max-width: 820px;
+}
+
+.hub-cl__intro {
+  margin-bottom: 24px;
+}
+
+.hub-cl__intro-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  color: #2d1e1c;
+}
+
+.hub-cl__intro-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #7a6060;
+  max-width: 580px;
+}
+
+/* ── Seletor de grupos ───────────────────────────────────────── */
+
+.hub-cl__groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.hub-cl__group-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 8px 8px;
+  border: 1px solid #e5e0dc;
+  border-radius: 10px;
+  background: #fff;
+  color: #4a3535;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+
+.hub-cl__group-tab:hover {
+  background: #faf8f6;
+  border-color: #d8d0c8;
+}
+
+.hub-cl__group-tab--active {
+  border-color: var(--hub-cl-accent, #c86a4d);
+  box-shadow: 0 0 0 1px var(--hub-cl-accent, #c86a4d);
+  background: #fff;
+}
+
+.hub-cl__group-tab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  flex-shrink: 0;
+}
+
+.hub-cl__group-tab-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+
+.hub-cl__group-tab-name {
+  line-height: 1.2;
+}
+
+.hub-cl__group-tab-hint {
+  font-size: 10px;
+  font-weight: 500;
+  color: #a08080;
+  line-height: 1.2;
+}
+
+.hub-cl__group-tab--active .hub-cl__group-tab-hint {
+  color: #9a7060;
+}
+
+/* ── Card do editor ──────────────────────────────────────────── */
+
+.hub-cl__editor {
+  border: 1px solid #e5e0dc;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+  border-left: 4px solid var(--hub-cl-accent, #c86a4d);
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.hub-cl__editor--dirty {
+  border-color: #f0c4b0;
+  box-shadow: 0 0 0 1px rgba(200, 106, 77, 0.12);
+}
+
+.hub-cl__editor-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #f0ebe6;
+  background: #faf8f6;
+}
+
+.hub-cl__editor-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.hub-cl__editor-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-cl__editor-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hub-cl__editor-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #2d1e1c;
+}
+
+.hub-cl__editor-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #7a6060;
+}
+
+.hub-cl__badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #f0ebe6;
+  color: #9a7060;
+}
+
+.hub-cl__badge--custom {
+  background: #fff3ee;
+  color: #c86a4d;
+}
+
+.hub-cl__badge--dirty {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.hub-cl__editor-body {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Lista de itens ──────────────────────────────────────────── */
+
+.hub-cl__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-cl__item {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #ede8e4;
+  border-radius: 10px;
+  background: #faf8f6;
+}
+
+.hub-cl__item-order {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hub-cl__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #7a6060;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.hub-cl__icon-btn:hover:not(:disabled) {
+  background: #f0ebe6;
+  color: #3d2020;
+}
+
+.hub-cl__icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.hub-cl__icon-btn--danger:hover:not(:disabled) {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.hub-cl__item-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  border: 1px solid #e5e0dc;
+  border-radius: 8px;
+  background: #fff;
+  color: #2d1e1c;
+  box-sizing: border-box;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.hub-cl__item-input:focus {
+  outline: none;
+  border-color: var(--hub-cl-accent, #c86a4d);
+  box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.15);
+}
+
+.hub-cl__item-input:disabled {
+  background: #f5f0eb;
+  color: #7a6060;
+}
+
+.hub-cl__item-input::placeholder {
+  color: #b0a0a0;
+}
+
+.hub-cl__item-check {
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.hub-cl__empty-items {
+  margin: 0;
+  padding: 20px 16px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #a08080;
+  background: #faf8f6;
+  border: 1px dashed #e0dbd5;
+  border-radius: 10px;
+}
+
+.hub-cl__add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: 13px;
+  font-weight: 500;
+  color: #c86a4d;
+  background: none;
+  border: 1px solid #f0c4b0;
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.hub-cl__add-btn:hover:not(:disabled) {
+  background: #fff3ee;
+}
+
+.hub-cl__add-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.hub-cl__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid #f0ebe6;
+  margin-top: 4px;
+}
+
+.hub-cl__state {
+  padding: 48px 16px;
+  text-align: center;
+  color: #a08080;
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .hub-cl__item {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'order input delete'
+      'order check check';
+  }
+
+  .hub-cl__item-order {
+    grid-area: order;
+  }
+
+  .hub-cl__item-input {
+    grid-area: input;
+  }
+
+  .hub-cl__item-check {
+    grid-area: check;
+    justify-self: start;
+  }
+
+  .hub-cl__item-delete {
+    grid-area: delete;
+  }
+}

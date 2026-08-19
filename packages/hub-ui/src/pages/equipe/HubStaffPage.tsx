@@ -295,12 +295,19 @@ const HubStaffPage: React.FC = () => {
               <p className="hub-clientes__muted hub-clientes__mobile-list-empty">Nenhum profissional encontrado.</p>
             ) : (
               staff.map((m) => (
-                <button
+                <div
                   key={m.id}
-                  type="button"
                   className="hub-clientes__mobile-card"
+                  role={canWrite ? 'button' : undefined}
+                  tabIndex={canWrite ? 0 : undefined}
                   onClick={() => canWrite && openEdit(m)}
-                  disabled={!canWrite}
+                  onKeyDown={(e) => {
+                    if (!canWrite) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openEdit(m);
+                    }
+                  }}
                 >
                   <div className="hub-clientes__mobile-card-top">
                     <div className="hub-clientes__mobile-card-main">
@@ -357,7 +364,7 @@ const HubStaffPage: React.FC = () => {
                       </span>
                     ) : null}
                   </div>
-                </button>
+                </div>
               ))
             )}
           </div>

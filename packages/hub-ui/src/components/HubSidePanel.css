@@ -45,6 +45,11 @@
   --hc-border: #e5dcd6;
 }
 
+.hub-side-panel__sheet--wide {
+  width: min(840px, 92vw);
+  min-width: min(840px, 92vw);
+}
+
 @keyframes hub-side-panel-sheet-in {
   from {
     transform: translateX(100%);
@@ -59,6 +64,11 @@
     width: 100%;
     min-width: 0;
     border-radius: 0;
+  }
+
+  .hub-side-panel__sheet--wide {
+    width: 100%;
+    min-width: 0;
   }
 
   .hub-side-panel__body {

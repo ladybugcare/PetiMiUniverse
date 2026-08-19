@@ -986,6 +986,27 @@
   padding: 14px;
 }
 
+.nam-lt-standalone {
+  background: #fff7f2;
+  border: 1px solid #f0c4b0;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.nam-lt-standalone__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #c86a4d;
+}
+
+.nam-lt-standalone__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #5c4040;
+}
+
 .nam-pickup__title {
   font-size: 12px;
   font-weight: 700;

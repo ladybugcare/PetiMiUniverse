@@ -4,7 +4,7 @@ const pickupBase = '/api/hub/pickup';
 
 // ─── Tipos base ────────────────────────────────────────────────────────────
 
-export type PickupDirection = 'pickup' | 'delivery' | 'unknown';
+export type PickupDirection = 'pickup' | 'delivery' | 'clinic_return' | 'unknown';
 
 export type PickupRouteStatus = 'planned' | 'in_progress' | 'done' | 'cancelled';
 export type PickupStopStatus = 'pending' | 'en_route' | 'arrived' | 'in_transit' | 'completed' | 'failed';
@@ -49,6 +49,7 @@ export type PickupDayBoardItem = {
   stop_id?: string | null;
   route_id?: string | null;
   sequence?: number | null;
+  cage_id?: string | null;
   stop_status?: PickupStopStatus | null;
   planned_at?: string | null;
   completed_at?: string | null;
@@ -69,16 +70,34 @@ export type PickupRoute = {
   unit_id?: string | null;
   route_date: string;
   driver_staff_id?: string | null;
+  vehicle_id?: string | null;
   vehicle_label?: string | null;
   status: PickupRouteStatus;
   notes?: string | null;
+  label?: string | null;
+  sort_order?: number;
+  /** clinic = endereço da clínica/unidade; custom = informado na rota. */
+  start_kind?: 'clinic' | 'custom' | null;
+  start_address?: string | null;
+  start_lat?: number | null;
+  start_lng?: number | null;
   stops_count?: number;
+  onboard_count?: number;
   driver?: { id: string; full_name: string } | null;
   created_at: string;
   updated_at: string;
 };
 
 export type PickupRoutesResponse = { routes: PickupRoute[] };
+
+export type PickupDriverDayResponse = {
+  date: string;
+  clinic_id: string;
+  drivers: Array<{
+    driver: { id: string; full_name: string } | null;
+    routes: PickupRoute[];
+  }>;
+};
 
 // ─── Paradas ──────────────────────────────────────────────────────────────
 
@@ -87,9 +106,10 @@ export type PickupStop = {
   hub_appointment_id?: string | null;
   pet_id?: string | null;
   guardian_id?: string | null;
-  direction: 'pickup' | 'delivery';
+  direction: 'pickup' | 'delivery' | 'clinic_return';
   address_snapshot?: Record<string, unknown> | null;
   sequence: number;
+  cage_id?: string | null;
   status: PickupStopStatus;
   planned_at?: string | null;
   completed_at?: string | null;
@@ -102,6 +122,11 @@ export type PickupStop = {
 export type PickupRouteDetailResponse = {
   route: PickupRoute & { driver?: { id: string; full_name: string; phone?: string | null } | null };
   stops: PickupStop[];
+};
+
+export type SuggestBatchesResponse = {
+  capacity: number;
+  batches: Array<{ label: string; stop_ids: string[]; pickup_count: number }>;
 };
 
 // ─── API client ───────────────────────────────────────────────────────────
@@ -123,6 +148,12 @@ export const hubPickupApi = {
     return apiRequest(`${pickupBase}/day-board?${q}`) as Promise<PickupDayBoardResponse>;
   },
 
+  driverDay(clinicId: string, dateYmd: string, opts?: { unitId?: string }) {
+    const q = new URLSearchParams({ clinic_id: clinicId, date: dateYmd });
+    if (opts?.unitId) q.set('unit_id', opts.unitId);
+    return apiRequest(`${pickupBase}/driver-day?${q}`) as Promise<PickupDriverDayResponse>;
+  },
+
   listRoutes(clinicId: string, opts?: { date?: string; unitId?: string; status?: PickupRouteStatus }) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (opts?.date) q.set('date', opts.date);
@@ -136,8 +167,15 @@ export const hubPickupApi = {
     unit_id?: string | null;
     route_date: string;
     driver_staff_id?: string | null;
+    vehicle_id?: string | null;
     vehicle_label?: string | null;
     notes?: string | null;
+    label?: string | null;
+    sort_order?: number;
+    start_kind?: 'clinic' | 'custom';
+    start_address?: string | null;
+    start_lat?: number | null;
+    start_lng?: number | null;
   }) {
     return apiRequest(`${pickupBase}/routes`, {
       method: 'POST',
@@ -157,9 +195,17 @@ export const hubPickupApi = {
       clinic_id: string;
       status?: PickupRouteStatus;
       driver_staff_id?: string | null;
+      vehicle_id?: string | null;
       vehicle_label?: string | null;
       notes?: string | null;
+      label?: string | null;
+      sort_order?: number;
       stop_sequence?: string[];
+      start_kind?: 'clinic' | 'custom';
+      start_address?: string | null;
+      start_lat?: number | null;
+      start_lng?: number | null;
+      unit_id?: string | null;
     },
   ) {
     return apiRequest(`${pickupBase}/routes/${encodeURIComponent(routeId)}`, {
@@ -177,6 +223,7 @@ export const hubPickupApi = {
         direction: 'pickup' | 'delivery';
         sequence?: number;
         planned_at?: string | null;
+        cage_id?: string | null;
       }>;
     },
   ) {
@@ -184,6 +231,46 @@ export const hubPickupApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }) as Promise<{ stops: PickupStop[] }>;
+  },
+
+  splitRoute(
+    routeId: string,
+    payload: {
+      clinic_id: string;
+      after_sequence: number;
+      label?: string | null;
+      insert_clinic_return?: boolean;
+    },
+  ) {
+    return apiRequest(`${pickupBase}/routes/${encodeURIComponent(routeId)}/split`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ route_a: PickupRoute; route_b: PickupRoute }>;
+  },
+
+  addClinicReturn(routeId: string, payload: { clinic_id: string; sequence?: number }) {
+    return apiRequest(`${pickupBase}/routes/${encodeURIComponent(routeId)}/clinic-return`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ stops: PickupStop[] }>;
+  },
+
+  suggestBatches(payload: {
+    clinic_id: string;
+    vehicle_id?: string | null;
+    capacity?: number;
+    stops: Array<{
+      hub_appointment_id: string;
+      direction: 'pickup' | 'delivery';
+      starts_at?: string | null;
+      lat?: number | null;
+      lng?: number | null;
+    }>;
+  }) {
+    return apiRequest(`${pickupBase}/routes/suggest-batches`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<SuggestBatchesResponse>;
   },
 
   patchStop(
@@ -217,12 +304,21 @@ export const hubPickupApi = {
     }) as Promise<{ stop: PickupStop }>;
   },
 
-  /** Rota do dia atribuída ao usuário autenticado (como motorista). */
+  /** Rota ativa do dia atribuída ao usuário autenticado (como motorista). */
   myRoute(clinicId: string, dateYmd: string) {
     const q = new URLSearchParams({ clinic_id: clinicId, date: dateYmd });
     return apiRequest(`${pickupBase}/my-route?${q}`) as Promise<{
       route: (PickupRoute & { driver?: { id: string; full_name: string; phone?: string | null } | null }) | null;
       stops?: PickupStop[];
+    }>;
+  },
+
+  /** Fila de rotas do dia do motorista autenticado. */
+  myRoutes(clinicId: string, dateYmd: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId, date: dateYmd });
+    return apiRequest(`${pickupBase}/my-routes?${q}`) as Promise<{
+      routes: PickupRoute[];
+      active_route_id: string | null;
     }>;
   },
 };

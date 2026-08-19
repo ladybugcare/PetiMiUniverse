@@ -33,11 +33,16 @@ export const hubInvitationsApi = {
     return apiRequest(`${basePath}/preview?${q.toString()}`) as Promise<HubInvitationPreview>;
   },
 
-  checkEmail(clinicId: string, email: string): Promise<{ available: boolean; reason?: string }> {
+  checkEmail(
+    clinicId: string,
+    email: string,
+  ): Promise<{ available: boolean; reason?: string; has_pending?: boolean; account_exists?: boolean }> {
     const q = new URLSearchParams({ clinic_id: clinicId, email });
     return apiRequest(`${basePath}/check-email?${q.toString()}`) as Promise<{
       available: boolean;
       reason?: string;
+      has_pending?: boolean;
+      account_exists?: boolean;
     }>;
   },
 

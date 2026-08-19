@@ -1,5 +1,5 @@
 export { getSupabase } from './supabase';
-export { apiRequest, login, getApiBaseUrl } from './api';
+export { apiRequest, login, getApiBaseUrl, invalidateApiRequestCache } from './api';
 export { handleInvalidToken } from './tokenInvalid';
 export { getUserRole, getStoredClinicId, getDashboardPathForRole } from './authHelpers';
 export { PERMISSIONS, hasPermission, hasEffectivePermission, mergePermissionsForRoleAndAreas, isClinicAdminRole } from './permissions';

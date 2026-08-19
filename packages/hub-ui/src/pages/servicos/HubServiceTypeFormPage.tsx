@@ -299,6 +299,8 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
       cost_amount: costVal,
       sale_amount: saleVal,
       pricing_matrix: pricingMatrixPayload,
+      pickup_price_scope:
+        form.service_group === 'leva_traz' ? form.pickup_price_scope : 'round_trip',
       default_duration_minutes: dur,
       description: form.description.trim() || null,
       allow_scheduling: isAddon ? false : form.allow_scheduling,
@@ -529,6 +531,32 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
                       </div>
                     </>
                   )}
+                  {form.service_group === 'leva_traz' ? (
+                    <div className="pet-wizard__field--full">
+                      <span className="pet-wizard__label">O valor cadastrado representa</span>
+                      <div className="hub-servicos__seg" role="group" aria-label="Escopo do preço Leva e Traz">
+                        <button
+                          type="button"
+                          className={form.pickup_price_scope === 'round_trip' ? 'hub-servicos__seg--active' : ''}
+                          onClick={() => setForm((f) => ({ ...f, pickup_price_scope: 'round_trip' }))}
+                        >
+                          Valor ida e volta
+                        </button>
+                        <button
+                          type="button"
+                          className={form.pickup_price_scope === 'per_leg' ? 'hub-servicos__seg--active' : ''}
+                          onClick={() => setForm((f) => ({ ...f, pickup_price_scope: 'per_leg' }))}
+                        >
+                          Valor por perna
+                        </button>
+                      </div>
+                      <p className="hub-servicos__margin-info" style={{ marginTop: 8 }}>
+                        {form.pickup_price_scope === 'per_leg'
+                          ? 'Cada busca ou retorno cobra este valor. Ida e volta = 2×.'
+                          : 'Este valor é da ida e volta completa. Só busca ou só retorno cobra metade.'}
+                      </p>
+                    </div>
+                  ) : null}
                   <div className="pet-wizard__field--full">
                     <p className="hub-servicos__margin-info">{pricingPreview ?? 'Preencha os valores para ver lucro e margem.'}</p>
                   </div>
@@ -605,6 +633,14 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
                           <dt>Modelo</dt>
                           <dd>{pricingKindLabel}</dd>
                         </div>
+                        {form.service_group === 'leva_traz' ? (
+                          <div>
+                            <dt>Escopo do valor</dt>
+                            <dd>
+                              {form.pickup_price_scope === 'per_leg' ? 'Por perna' : 'Ida e volta'}
+                            </dd>
+                          </div>
+                        ) : null}
                         <div>
                           <dt>Resumo</dt>
                           <dd>{pricingPreview ?? '—'}</dd>

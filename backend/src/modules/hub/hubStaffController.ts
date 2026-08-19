@@ -8,7 +8,6 @@ import { getRoleDisplayName, type Role } from '../../utils/permissions';
 import { sanitizeOperationalAreas } from '../../utils/operationalAreas';
 import { createNotification } from '../../controllers/notificationsController';
 import {
-  authUserExistsForEmail,
   buildInvitationShareMessage,
   buildInvitationUrl,
 } from './hubInvitationUtils';
@@ -42,6 +41,7 @@ const hubAccessRoleSchema = z.enum([
   'CVET_INTERNAL',
   'CGROOMER',
   'CFINANCE',
+  'CSTAFF',
 ]);
 
 const optionalTrim = (max: number) =>
@@ -497,6 +497,173 @@ export const patchHubStaff = async (req: Request, res: Response) => {
 const inviteStaffBodySchema = z.object({ clinic_id: uuidStr }).strict();
 const linkStaffBodySchema = z.object({ clinic_id: uuidStr }).strict();
 
+type InvitationRow = {
+  id: string;
+  email: string;
+  clinic_id: string;
+  unit_id: string;
+  role: string;
+  token: string;
+  expires_at: string;
+  status: string;
+  staff_member_id?: string | null;
+};
+
+async function expireStalePendingInvitations(opts: {
+  clinic_id: string;
+  email?: string | null;
+  staff_member_id?: string | null;
+  unit_id?: string | null;
+}): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const base = () =>
+    supabaseAdmin
+      .from('user_invitations')
+      .update({ status: 'expired' })
+      .eq('clinic_id', opts.clinic_id)
+      .eq('status', 'pending')
+      .lt('expires_at', nowIso);
+
+  if (opts.staff_member_id) {
+    await base().eq('staff_member_id', opts.staff_member_id);
+  }
+  if (opts.email) {
+    let q = base().ilike('email', opts.email.trim());
+    if (opts.unit_id) q = q.eq('unit_id', opts.unit_id);
+    await q;
+  }
+}
+
+async function findValidPendingInvitation(opts: {
+  clinic_id: string;
+  staff_member_id: string;
+  email?: string | null;
+  unit_id?: string | null;
+}): Promise<InvitationRow | null> {
+  const nowIso = new Date().toISOString();
+
+  const { data: byStaff } = await supabaseAdmin
+    .from('user_invitations')
+    .select('id, email, clinic_id, unit_id, role, token, expires_at, status, staff_member_id')
+    .eq('clinic_id', opts.clinic_id)
+    .eq('staff_member_id', opts.staff_member_id)
+    .eq('status', 'pending')
+    .gte('expires_at', nowIso)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (byStaff) return byStaff as InvitationRow;
+
+  const email = opts.email?.trim();
+  const unitId = opts.unit_id;
+  if (!email || !unitId) return null;
+
+  const { data: byEmail } = await supabaseAdmin
+    .from('user_invitations')
+    .select('id, email, clinic_id, unit_id, role, token, expires_at, status, staff_member_id')
+    .eq('clinic_id', opts.clinic_id)
+    .eq('unit_id', unitId)
+    .ilike('email', email)
+    .eq('status', 'pending')
+    .gte('expires_at', nowIso)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (byEmail as InvitationRow | null) ?? null;
+}
+
+async function buildInviteSharePayload(
+  invitation: InvitationRow,
+  inviteeName?: string | null,
+): Promise<{ invitation_url: string; share_message: string }> {
+  const invitation_url = buildInvitationUrl(invitation.token);
+  const [{ data: clinic }, { data: unit }] = await Promise.all([
+    supabaseAdmin.from('clinics').select('name').eq('id', invitation.clinic_id).maybeSingle(),
+    supabaseAdmin.from('units').select('name').eq('id', invitation.unit_id).maybeSingle(),
+  ]);
+  const share_message = buildInvitationShareMessage({
+    clinicName: (clinic?.name as string) || 'sua clínica',
+    unitName: (unit?.name as string) || 'unidade',
+    role: invitation.role,
+    invitationUrl: invitation_url,
+    inviteeName,
+  });
+  return { invitation_url, share_message };
+}
+
+/** GET /api/hub/staff/:id/pending-invite?clinic_id= — reabre link válido ou indica expirado. */
+export const getHubStaffPendingInvite = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+    if (!idParsed.success || !clinicParsed.success) {
+      return res.status(400).json({ error: 'Parâmetros inválidos' });
+    }
+    const clinic_id = clinicParsed.data;
+    const staffId = idParsed.data;
+    const userId = req.user!.id;
+
+    const canStaff = await checkPermission(userId, clinic_id, 'hub.staff.invite');
+    const canUserInvite = await checkPermission(userId, clinic_id, 'user.invite');
+    if (!canStaff || !canUserInvite) {
+      return res.status(403).json({ error: 'Sem permissão para ver convites' });
+    }
+
+    const { data: row, error: loadErr } = await supabaseAdmin
+      .from('hub_staff_members')
+      .select(STAFF_SELECT)
+      .eq('id', staffId)
+      .eq('clinic_id', clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (loadErr || !row) return res.status(404).json({ error: 'Profissional não encontrado' });
+
+    const email = (row.hub_access_email as string | null)?.trim() || '';
+    const unit_id = (row.default_unit_id as string | null) || null;
+
+    await expireStalePendingInvitations({
+      clinic_id,
+      staff_member_id: staffId,
+      email: email || null,
+      unit_id,
+    });
+
+    // Busca por staff_member_id primeiro — não depende de e-mail/unidade no form atual.
+    const pendingByStaff = await findValidPendingInvitation({
+      clinic_id,
+      staff_member_id: staffId,
+      email: email || null,
+      unit_id,
+    });
+    if (pendingByStaff) {
+      const share = await buildInviteSharePayload(pendingByStaff, row.full_name as string | null);
+      return res.json({
+        pending: {
+          invitation: pendingByStaff,
+          invitation_url: share.invitation_url,
+          share_message: share.share_message,
+          email: pendingByStaff.email,
+          expires_at: pendingByStaff.expires_at,
+        },
+        expired: false,
+      });
+    }
+
+    const { data: expiredRows } = await supabaseAdmin
+      .from('user_invitations')
+      .select('id')
+      .eq('clinic_id', clinic_id)
+      .eq('staff_member_id', staffId)
+      .eq('status', 'expired')
+      .limit(1);
+
+    return res.json({ pending: null, expired: Boolean(expiredRows?.length) });
+  } catch (e) {
+    console.error('[hub_staff] pending-invite', e);
+    return res.status(500).json({ error: 'Erro ao buscar convite' });
+  }
+};
+
 /** POST /api/hub/staff/:id/link-account — vincula profissional a conta existente pelo e-mail de acesso. */
 export const linkHubStaffAccount = async (req: Request, res: Response) => {
   try {
@@ -582,12 +749,6 @@ export const inviteHubStaff = async (req: Request, res: Response) => {
     const { data: unitCheck } = await supabaseAdmin.from('units').select('id, clinic_id').eq('id', unit_id).maybeSingle();
     if (!unitCheck || unitCheck.clinic_id !== clinic_id) return res.status(400).json({ error: 'Unidade inválida' });
 
-    if (await authUserExistsForEmail(email)) {
-      return res.status(409).json({
-        error: 'Este e-mail já possui conta. No MVP, use um e-mail novo para convites.',
-      });
-    }
-
     const { data: existingUnitUsers } = await supabaseAdmin
       .from('clinic_users')
       .select('user_id')
@@ -602,15 +763,27 @@ export const inviteHubStaff = async (req: Request, res: Response) => {
       }
     }
 
-    const { data: existingInvitation } = await supabaseAdmin
-      .from('user_invitations')
-      .select('id')
-      .eq('email', email)
-      .eq('clinic_id', clinic_id)
-      .eq('unit_id', unit_id)
-      .eq('status', 'pending');
-    if (existingInvitation && existingInvitation.length > 0) {
-      return res.status(400).json({ error: 'Já existe um convite pendente para este e-mail nesta unidade' });
+    await expireStalePendingInvitations({
+      clinic_id,
+      staff_member_id: staffId,
+      email,
+      unit_id,
+    });
+
+    const existingPending = await findValidPendingInvitation({
+      clinic_id,
+      staff_member_id: staffId,
+      email,
+      unit_id,
+    });
+    if (existingPending) {
+      const share = await buildInviteSharePayload(existingPending, row.full_name as string | null);
+      return res.status(200).json({
+        invitation: existingPending,
+        invitation_url: share.invitation_url,
+        share_message: share.share_message,
+        reused: true,
+      });
     }
 
     const token = generateInvitationToken();
@@ -637,34 +810,28 @@ export const inviteHubStaff = async (req: Request, res: Response) => {
       return res.status(400).json({ error: invErr?.message || 'Erro ao criar convite' });
     }
 
-    const invitation_url = buildInvitationUrl(token);
+    const invitation = invRows[0] as InvitationRow;
+    const share = await buildInviteSharePayload(invitation, row.full_name as string | null);
 
-    const { data: clinic } = await supabaseAdmin.from('clinics').select('name').eq('id', clinic_id).single();
-    const { data: unit } = await supabaseAdmin.from('units').select('name').eq('id', unit_id).single();
-
-    const share_message = buildInvitationShareMessage({
-      clinicName: (clinic?.name as string) || 'sua clínica',
-      unitName: (unit?.name as string) || 'unidade',
-      role,
-      invitationUrl: invitation_url,
-      inviteeName: row.full_name as string | null,
-    });
-
-    await sendInvitationEmail(email, token, clinic_id, unit_id, getRoleDisplayName(role), invitation_url);
+    await sendInvitationEmail(email, token, clinic_id, unit_id, getRoleDisplayName(role), share.invitation_url);
 
     try {
       const { data: usersData } = await supabaseAdmin.auth.admin.listUsers();
       const existingAuthUser = usersData?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
-      if (existingAuthUser?.id && clinic && unit) {
-        await createNotification({
-          user_id: existingAuthUser.id,
-          type: 'unit_invitation',
-          title: 'Convite para Unidade',
-          message: `Foi convidado para a unidade "${unit.name}" da clínica "${clinic.name}" como ${getRoleDisplayName(role)}`,
-          link: `/accept-invitation?token=${token}`,
-          entity_type: 'invitation',
-          entity_id: invRows[0].id,
-        });
+      if (existingAuthUser?.id) {
+        const { data: clinic } = await supabaseAdmin.from('clinics').select('name').eq('id', clinic_id).maybeSingle();
+        const { data: unit } = await supabaseAdmin.from('units').select('name').eq('id', unit_id).maybeSingle();
+        if (clinic && unit) {
+          await createNotification({
+            user_id: existingAuthUser.id,
+            type: 'unit_invitation',
+            title: 'Convite para Unidade',
+            message: `Foi convidado para a unidade "${unit.name}" da clínica "${clinic.name}" como ${getRoleDisplayName(role)}`,
+            link: `/accept-invitation?token=${token}`,
+            entity_type: 'invitation',
+            entity_id: invitation.id,
+          });
+        }
       }
     } catch (notifErr) {
       console.warn('[hub_staff] invite notification', notifErr);
@@ -677,15 +844,16 @@ export const inviteHubStaff = async (req: Request, res: Response) => {
       unit_id,
       action: 'HUB_STAFF_INVITE',
       entity_type: 'invitation',
-      entity_id: invRows[0].id as string,
+      entity_id: invitation.id,
       new_values: { email, role, staff_id: staffId },
       ...metadata,
     });
 
     return res.status(201).json({
-      invitation: invRows[0],
-      invitation_url,
-      share_message,
+      invitation,
+      invitation_url: share.invitation_url,
+      share_message: share.share_message,
+      reused: false,
     });
   } catch (error: unknown) {
     console.error('[hub_staff] invite', error);

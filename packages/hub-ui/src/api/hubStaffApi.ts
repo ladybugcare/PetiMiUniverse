@@ -12,7 +12,14 @@ export type HubProfessionalKind =
   | 'assistant'
   | 'other';
 
-export type HubStaffAccessRole = 'CADMIN' | 'CMANAGER' | 'CASSISTANT' | 'CVET_INTERNAL' | 'CGROOMER' | 'CFINANCE';
+export type HubStaffAccessRole =
+  | 'CADMIN'
+  | 'CMANAGER'
+  | 'CASSISTANT'
+  | 'CVET_INTERNAL'
+  | 'CGROOMER'
+  | 'CFINANCE'
+  | 'CSTAFF';
 
 export interface HubStaffServiceTypeRef {
   id: string;
@@ -121,6 +128,7 @@ export const hubStaffApi = {
     invitation: Record<string, unknown>;
     invitation_url: string;
     share_message: string;
+    reused?: boolean;
   }> {
     return apiRequest(`${basePath}/${encodeURIComponent(id)}/invite`, {
       method: 'POST',
@@ -129,6 +137,33 @@ export const hubStaffApi = {
       invitation: Record<string, unknown>;
       invitation_url: string;
       share_message: string;
+      reused?: boolean;
+    }>;
+  },
+
+  async getPendingInvite(
+    id: string,
+    clinicId: string,
+  ): Promise<{
+    pending: {
+      invitation: Record<string, unknown>;
+      invitation_url: string;
+      share_message: string;
+      email: string;
+      expires_at: string;
+    } | null;
+    expired: boolean;
+  }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${basePath}/${encodeURIComponent(id)}/pending-invite?${q.toString()}`) as Promise<{
+      pending: {
+        invitation: Record<string, unknown>;
+        invitation_url: string;
+        share_message: string;
+        email: string;
+        expires_at: string;
+      } | null;
+      expired: boolean;
     }>;
   },
 

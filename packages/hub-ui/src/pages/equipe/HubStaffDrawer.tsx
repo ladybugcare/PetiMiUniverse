@@ -32,12 +32,14 @@ import {
 } from '../../utils/serviceTypeSlug';
 import {
   HUB_ACCESS_ROLE_OPTIONS,
+  HUB_ACCESS_ROLE_LEGACY_OPTIONS,
   WEEKDAY_OPTS,
   emptyStaffForm,
   staffFormFromRow,
   buildStaffPayload,
   inviteReadyHint,
   suggestOperationalAreasForJobTitle,
+  suggestAccessRoleForJobTitle,
   type HubStaffFormState,
 } from './hubStaffFormTypes';
 import HubStaffInviteSharePanel, { type StaffInviteShareResult } from './HubStaffInviteSharePanel';
@@ -100,6 +102,9 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
   const [linking, setLinking] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [inviteShare, setInviteShare] = useState<StaffInviteShareResult | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<StaffInviteShareResult | null>(null);
+  const [inviteExpired, setInviteExpired] = useState(false);
+  const [loadingPendingInvite, setLoadingPendingInvite] = useState(false);
   const [loginLinked, setLoginLinked] = useState(false);
   const [specialtyCatalog, setSpecialtyCatalog] = useState<{ id: string; name: string }[]>([]);
   const [specialtiesLoading, setSpecialtiesLoading] = useState(false);
@@ -121,6 +126,9 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
   useEffect(() => {
     if (!open) {
       setInviteShare(null);
+      setPendingInvite(null);
+      setInviteExpired(false);
+      setLoadingPendingInvite(false);
       return;
     }
     clearStaffPhotoLocal();
@@ -131,10 +139,68 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
       setLoginLinked(Boolean(staff.clinic_user_id));
     } else {
       setEditingId(null);
-      setForm(emptyStaffForm());
+      const blank = emptyStaffForm();
+      if (units.length > 0) {
+        blank.default_unit_id = units[0]!.id;
+      }
+      setForm(blank);
       setLoginLinked(false);
     }
+    // `units` propositalmente fora das deps: só pré-preenche na abertura; se chegar depois, o efeito abaixo completa.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- units handled separately
   }, [open, mode, staff, serviceTypes, clearStaffPhotoLocal]);
+
+  // Se as unidades carregarem depois de abrir o drawer, preenche a unidade padrão.
+  useEffect(() => {
+    if (!open || units.length === 0) return;
+    setForm((f) => (f.default_unit_id ? f : { ...f, default_unit_id: units[0]!.id }));
+  }, [open, units]);
+
+  useEffect(() => {
+    if (!open || !canInvite || mode !== 'edit' || !staff?.id || !clinicId || staff.clinic_user_id) {
+      if (staff?.clinic_user_id) {
+        setPendingInvite(null);
+        setInviteShare(null);
+        setInviteExpired(false);
+      }
+      return;
+    }
+    let cancelled = false;
+    setLoadingPendingInvite(true);
+    hubStaffApi
+      .getPendingInvite(staff.id, clinicId)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.pending) {
+          const share: StaffInviteShareResult = {
+            invitation_url: res.pending.invitation_url,
+            share_message: res.pending.share_message,
+            email: res.pending.email,
+            expires_at: res.pending.expires_at,
+            reused: true,
+          };
+          setPendingInvite(share);
+          setInviteShare(share);
+          setInviteExpired(false);
+        } else {
+          setPendingInvite(null);
+          setInviteExpired(Boolean(res.expired));
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setPendingInvite(null);
+          setInviteExpired(false);
+          showError((e as Error)?.message || 'Não foi possível carregar o convite pendente.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPendingInvite(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, canInvite, mode, staff?.id, staff?.clinic_user_id, clinicId, showError]);
 
   useEffect(() => () => {
     if (staffPhotoBlobRef.current) URL.revokeObjectURL(staffPhotoBlobRef.current);
@@ -322,15 +388,21 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
   }, [units]);
 
   const hubAccessRoleOptions = useMemo((): HubComboboxOption[] => {
+    const current = form.hub_access_role;
+    const legacy =
+      current && HUB_ACCESS_ROLE_LEGACY_OPTIONS.some((o) => o.value === current)
+        ? HUB_ACCESS_ROLE_LEGACY_OPTIONS.filter((o) => o.value === current)
+        : [];
     return [
       { value: '', label: 'Selecionar perfil…' },
       ...HUB_ACCESS_ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+      ...legacy.map((o) => ({ value: o.value, label: o.label })),
     ];
-  }, []);
+  }, [form.hub_access_role]);
 
   const agendaColorValue = form.agenda_color.startsWith('#') ? form.agenda_color : '#3B82F6';
 
-  const inviteHint = inviteReadyHint(form);
+  const inviteHint = inviteReadyHint(form, units.length > 0);
   const canSendInvite =
     canInvite &&
     form.has_hub_access &&
@@ -406,6 +478,9 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
       const { link } = await hubStaffApi.linkAccount(editingId, clinicId);
       if (link?.linked) setLoginLinked(true);
       showSuccess(staffLinkSuccessMessage(link, 'Conta vinculada'));
+      setPendingInvite(null);
+      setInviteShare(null);
+      setInviteExpired(false);
       await onSaved();
     } catch (err: unknown) {
       showError((err as Error)?.message || 'Erro ao vincular conta');
@@ -415,7 +490,11 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
   };
 
   const handleInvite = async () => {
-    if (!clinicId || !canInvite || !canSendInvite) return;
+    if (!clinicId || !canInvite) return;
+    if (!canSendInvite) {
+      showError(inviteHint || 'Preencha e-mail, perfil e unidade padrão para gerar o convite.');
+      return;
+    }
     const email = form.hub_access_email.trim();
     try {
       const check = await hubInvitationsApi.checkEmail(clinicId, email);
@@ -432,19 +511,28 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
       const { id: staffId } = await persistStaff();
       setEditingId(staffId);
       const res = await hubStaffApi.sendInvite(staffId, clinicId);
-      setInviteShare({
+      const share: StaffInviteShareResult = {
         invitation_url: res.invitation_url,
         share_message: res.share_message,
         email,
         expires_at: (res.invitation as { expires_at?: string })?.expires_at,
-      });
+        reused: Boolean(res.reused),
+      };
+      setInviteShare(share);
+      setPendingInvite(share);
+      setInviteExpired(false);
       await onSaved();
-      showSuccess('Convite gerado');
+      showSuccess(res.reused ? 'Link do convite pronto para reenviar' : 'Convite gerado');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao enviar convite');
     } finally {
       setInviting(false);
     }
+  };
+
+  const handleShowPendingInvite = () => {
+    if (!pendingInvite) return;
+    setInviteShare(pendingInvite);
   };
 
   const handleClose = () => {
@@ -453,6 +541,13 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
   };
 
   const title = inviteShare ? 'Compartilhar convite' : mode === 'create' ? 'Novo profissional' : 'Editar profissional';
+  const inviteButtonLabel = inviteExpired
+    ? inviting
+      ? 'Gerando novo link…'
+      : 'Gerar novo link de convite'
+    : inviting
+      ? 'Gerando convite…'
+      : 'Enviar convite de acesso';
 
   return (
     <HubSidePanel
@@ -460,6 +555,7 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
       onClose={handleClose}
       title={title}
       titleIcon={<User size={20} strokeWidth={2} aria-hidden />}
+      contentKey={inviteShare ? 'invite-share' : 'staff-form'}
       footer={
         inviteShare ? undefined : (
           <div className="hub-finance-page__drawer-footer">
@@ -478,6 +574,7 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
           result={inviteShare}
           whatsappPhone={form.whatsapp_phone}
           onDone={handleClose}
+          onBackToForm={() => setInviteShare(null)}
         />
       ) : (
         <div className="hub-equipe-drawer__content hub-equipe-drawer">
@@ -668,6 +765,11 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                             }
                             if (next.operational_areas.length === 0) {
                               next.operational_areas = suggestOperationalAreasForJobTitle(v);
+                            }
+                            const suggestedRole = suggestAccessRoleForJobTitle(v);
+                            if (!next.hub_access_role && suggestedRole) {
+                              next.hub_access_role = suggestedRole;
+                              next.has_hub_access = true;
                             }
                           }
                           return next;
@@ -1050,31 +1152,55 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                         />
                       </div>
                       <div className="hub-clientes__field">
-                        <label className="hub-clientes__label" htmlFor="st-acc-role">
-                          Perfil de permissão
+                        <label className="hub-clientes__label" htmlFor="st-acc-unit">
+                          Unidade padrão *
                         </label>
                         <HubSearchableCombobox
-                          id="st-acc-role"
+                          id="st-acc-unit"
                           className="hub-combobox--clientes"
-                          options={hubAccessRoleOptions}
-                          value={form.hub_access_role}
-                          onChange={(hub_access_role) =>
-                            setForm((f) => ({ ...f, hub_access_role: hub_access_role as HubStaffAccessRole | '' }))
-                          }
-                          placeholder="Selecionar perfil…"
-                          searchPlaceholder="Buscar perfil…"
-                          clearable={false}
-                          disabled={!canWrite || isSelfEdit}
-                          ariaLabel="Perfil de permissão no Hub"
+                          options={unitComboboxOptions}
+                          value={form.default_unit_id}
+                          onChange={(default_unit_id) => setForm((f) => ({ ...f, default_unit_id }))}
+                          placeholder="Selecionar unidade…"
+                          searchPlaceholder="Buscar unidade…"
+                          disabled={!canWrite}
+                          ariaLabel="Unidade padrão do profissional"
                         />
+                        <p className="hub-equipe__role-hint">
+                          Necessária para gerar o convite de acesso, mesmo sem agenda.
+                        </p>
                       </div>
+                    </div>
+
+                    <div className="hub-clientes__field">
+                      <label className="hub-clientes__label" htmlFor="st-acc-role">
+                        Perfil de permissão
+                      </label>
+                      <p className="hub-equipe__role-hint">
+                        Quem a pessoa é no sistema: Admin, Gerente, Recepção, Funcionário ou Financeiro.
+                        Banho, clínica, Leva e Traz etc. não são perfil — marque em «Áreas do Hub».
+                      </p>
+                      <HubSearchableCombobox
+                        id="st-acc-role"
+                        className="hub-combobox--clientes"
+                        options={hubAccessRoleOptions}
+                        value={form.hub_access_role}
+                        onChange={(hub_access_role) =>
+                          setForm((f) => ({ ...f, hub_access_role: hub_access_role as HubStaffAccessRole | '' }))
+                        }
+                        placeholder="Selecionar perfil…"
+                        searchPlaceholder="Buscar perfil…"
+                        clearable={false}
+                        disabled={!canWrite || isSelfEdit}
+                        ariaLabel="Perfil de permissão no Hub"
+                      />
                     </div>
 
                     <div className="hub-equipe__operational-areas">
                       <p className="hub-clientes__label">Áreas do Hub</p>
                       <p className="hub-equipe__role-hint">
-                        Complementam o perfil de permissão — marque o que esta pessoa faz no dia a dia (ex.: recepção +
-                        caixa).
+                        O que a pessoa faz no dia a dia. Ex.: Funcionário + Banho &amp; Tosa; Funcionário + Leva e
+                        Traz; Recepção costuma usar Recepção + Caixa.
                       </p>
                       <div className="hub-equipe__operational-areas__grid" role="group" aria-label="Áreas operacionais do Hub">
                         {HUB_OPERATIONAL_AREAS.map((area) => {
@@ -1133,7 +1259,7 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                       </div>
                     ) : null}
 
-                    {canInvite ? (
+                    {canInvite && form.has_hub_access && !isLoginLinked ? (
                       <div className="hub-equipe__hub-invite">
                         <div className="hub-equipe__hub-invite__head">
                           <span className="hub-equipe__hub-invite__icon" aria-hidden>
@@ -1142,19 +1268,40 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                           <div>
                             <p className="hub-equipe__hub-invite__title">Convite de acesso</p>
                             <p className="hub-equipe__hub-invite__text">
-                              Salva o cadastro e gera um link para compartilhar (válido por 7 dias).
+                              {loadingPendingInvite
+                                ? 'Carregando convite pendente…'
+                                : pendingInvite
+                                  ? `Há um convite pendente (válido até ${
+                                      pendingInvite.expires_at
+                                        ? new Date(pendingInvite.expires_at).toLocaleDateString('pt-BR')
+                                        : '—'
+                                    }). Você pode ver e reenviar o link.`
+                                  : inviteExpired
+                                    ? 'O último convite expirou. Gere um novo link para compartilhar.'
+                                    : 'Salva o cadastro e gera um link para compartilhar (válido por 7 dias).'}
                             </p>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          className="hub-clientes__btn hub-clientes__btn--primary"
-                          disabled={!canSendInvite || inviting || saving || !canWrite}
-                          onClick={() => void handleInvite()}
-                        >
-                          {inviting ? 'Gerando convite…' : 'Enviar convite de acesso'}
-                        </button>
-                        {inviteHint ? (
+                        {pendingInvite ? (
+                          <button
+                            type="button"
+                            className="hub-clientes__btn hub-clientes__btn--primary"
+                            disabled={loadingPendingInvite}
+                            onClick={handleShowPendingInvite}
+                          >
+                            Ver link do convite
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="hub-clientes__btn hub-clientes__btn--primary"
+                            disabled={inviting || saving || !canWrite || !canSendInvite}
+                            onClick={() => void handleInvite()}
+                          >
+                            {inviteButtonLabel}
+                          </button>
+                        )}
+                        {inviteHint && !pendingInvite ? (
                           <p className="hub-equipe__hub-invite__hint hub-equipe__hub-invite__hint--warn">{inviteHint}</p>
                         ) : null}
                       </div>

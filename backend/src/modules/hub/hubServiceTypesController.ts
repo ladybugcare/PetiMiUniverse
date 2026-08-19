@@ -60,6 +60,8 @@ const createServiceTypeBodySchema = z
     /** Matriz opcional (porte, período, consulta, km); alinhada a `service_group`. */
     pricing_matrix: z.unknown().optional().nullable(),
     is_addon: z.boolean().optional(),
+    /** Leva e Traz: valor cadastrado é ida+volta ou por perna. */
+    pickup_price_scope: z.enum(['round_trip', 'per_leg']).optional(),
     /** Legado / migração: se enviado, deve coincidir com o slug gerado ou ser único. Preferir omitir. */
     code: z
       .string()
@@ -84,6 +86,7 @@ const updateServiceTypeBodySchema = z
     internal_notes: z.string().max(4000).optional().nullable(),
     pricing_matrix: z.unknown().optional().nullable(),
     is_addon: z.boolean().optional(),
+    pickup_price_scope: z.enum(['round_trip', 'per_leg']).optional(),
     code_locked: z.boolean().optional(),
     active: z.boolean().optional(),
     archived: z.boolean().optional(),
@@ -91,9 +94,32 @@ const updateServiceTypeBodySchema = z
   .strict();
 
 const SELECT_FIELDS =
+  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+
+/** Sem `pickup_price_scope` — fallback se a migração 087 ainda não foi aplicada. */
+const SELECT_FIELDS_LEGACY =
   'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
 
-type ServiceTypeRow = Record<string, unknown> & { service_group?: string | null };
+function isMissingPickupPriceScopeColumn(error: { message?: string; code?: string } | null | undefined): boolean {
+  const msg = String(error?.message ?? '');
+  return msg.includes('pickup_price_scope') && (msg.includes('does not exist') || error?.code === '42703');
+}
+
+function withDefaultPickupPriceScope<T extends ServiceTypeRow>(rows: T[]): Array<T & { pickup_price_scope: string }> {
+  return rows.map((r) => ({
+    ...r,
+    pickup_price_scope:
+      r.pickup_price_scope === 'per_leg' || r.pickup_price_scope === 'round_trip'
+        ? String(r.pickup_price_scope)
+        : 'round_trip',
+  }));
+}
+
+type ServiceTypeRow = Record<string, unknown> & {
+  service_group?: string | null;
+  pickup_price_scope?: string | null;
+};
+
 
 async function fetchGroupColorMap(clinicId: string): Promise<Map<string, string>> {
   await ensureDefaultGroupJobFunctions(clinicId);
@@ -196,7 +222,32 @@ export const listHubServiceTypes = async (req: Request, res: Response) => {
       q = q.is('deleted_at', null);
     }
 
-    const { data, error } = await q;
+    let data: unknown[] | null = null;
+    let error: { message?: string; code?: string } | null = null;
+
+    {
+      const first = await q;
+      data = (first.data as unknown[] | null) ?? null;
+      error = first.error;
+    }
+
+    if (error && isMissingPickupPriceScopeColumn(error)) {
+      console.warn(
+        '[hub_service_types] list: coluna pickup_price_scope ausente — aplique a migração 087. Usando SELECT legado.',
+      );
+      let qLegacy = supabaseAdmin
+        .from('hub_service_types')
+        .select(SELECT_FIELDS_LEGACY)
+        .eq('clinic_id', clinic_id)
+        .eq('is_addon', addonsOnly)
+        .order('name', { ascending: true });
+      if (!includeArchived) {
+        qLegacy = qLegacy.is('deleted_at', null);
+      }
+      const legacy = await qLegacy;
+      data = (legacy.data as unknown[] | null) ?? null;
+      error = legacy.error;
+    }
 
     if (error) {
       console.error('[hub_service_types] list', error);
@@ -204,7 +255,10 @@ export const listHubServiceTypes = async (req: Request, res: Response) => {
     }
 
     const colorMap = await fetchGroupColorMap(clinic_id);
-    const service_types = enrichRowsWithGroupColor((data ?? []) as ServiceTypeRow[], colorMap);
+    const service_types = enrichRowsWithGroupColor(
+      withDefaultPickupPriceScope((data ?? []) as ServiceTypeRow[]),
+      colorMap,
+    );
 
     return res.json({ service_types });
   } catch (e) {
@@ -232,10 +286,13 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       code: codeOverride,
       pricing_matrix: pricing_matrix_raw,
       is_addon: is_addon_raw,
+      pickup_price_scope: pickup_price_scope_raw,
     } = body.data;
 
     const is_addon = is_addon_raw === true;
     const group = service_group;
+    const pickup_price_scope =
+      group === 'leva_traz' && pickup_price_scope_raw === 'per_leg' ? 'per_leg' : 'round_trip';
 
     if (is_addon && (default_duration_minutes == null || default_duration_minutes < 1)) {
       return res.status(400).json({ error: 'Adicionais exigem duração padrão em minutos (≥ 1)' });
@@ -300,6 +357,7 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       sale_amount: saleDb,
       default_duration_minutes: default_duration_minutes ?? null,
       pricing_matrix,
+      pickup_price_scope,
       description: description ?? null,
       allow_scheduling: is_addon ? false : (allow_scheduling ?? true),
       is_addon,
@@ -310,11 +368,32 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       deleted_at: null,
     };
 
-    const { data, error } = await supabaseAdmin
-      .from('hub_service_types')
-      .insert([row])
-      .select(SELECT_FIELDS)
-      .single();
+    let data: Record<string, unknown> | null = null;
+    let error: { message?: string; code?: string } | null = null;
+
+    {
+      const first = await supabaseAdmin
+        .from('hub_service_types')
+        .insert([row])
+        .select(SELECT_FIELDS)
+        .single();
+      data = (first.data as Record<string, unknown> | null) ?? null;
+      error = first.error;
+    }
+
+    if (error && isMissingPickupPriceScopeColumn(error)) {
+      console.warn(
+        '[hub_service_types] create: coluna pickup_price_scope ausente — aplique a migração 087. Inserindo sem o campo.',
+      );
+      const { pickup_price_scope: _omit, ...rowLegacy } = row;
+      const legacy = await supabaseAdmin
+        .from('hub_service_types')
+        .insert([rowLegacy])
+        .select(SELECT_FIELDS_LEGACY)
+        .single();
+      data = (legacy.data as Record<string, unknown> | null) ?? null;
+      error = legacy.error;
+    }
 
     if (error) {
       if (error.code === '23505') {
@@ -325,7 +404,10 @@ export const createHubServiceType = async (req: Request, res: Response) => {
     }
 
     const colorMap = await fetchGroupColorMap(clinic_id);
-    const service_type = enrichRowsWithGroupColor([data as ServiceTypeRow], colorMap)[0];
+    const service_type = enrichRowsWithGroupColor(
+      withDefaultPickupPriceScope([data as ServiceTypeRow]),
+      colorMap,
+    )[0];
 
     if (!is_addon && data?.id) {
       await seedAddonAvailabilityForNewService(clinic_id, data.id as string, group);
@@ -365,6 +447,7 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       archived,
       pricing_matrix: pricing_matrix_raw,
       is_addon: is_addon_patch,
+      pickup_price_scope: pickup_price_scope_raw,
     } = body.data;
 
     if (
@@ -380,7 +463,8 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       active === undefined &&
       archived === undefined &&
       pricing_matrix_raw === undefined &&
-      is_addon_patch === undefined
+      is_addon_patch === undefined &&
+      pickup_price_scope_raw === undefined
     ) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
     }
@@ -466,6 +550,17 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       patch.pricing_matrix = null;
     }
 
+    if (pickup_price_scope_raw !== undefined || service_group !== undefined) {
+      const scopeGroup = String(nextGroup ?? 'outros').trim();
+      if (scopeGroup === 'leva_traz') {
+        if (pickup_price_scope_raw !== undefined) {
+          patch.pickup_price_scope = pickup_price_scope_raw === 'per_leg' ? 'per_leg' : 'round_trip';
+        }
+      } else if (service_group !== undefined || pickup_price_scope_raw !== undefined) {
+        patch.pickup_price_scope = 'round_trip';
+      }
+    }
+
     const nextName = name !== undefined ? name : existing.name;
     const locked = code_locked !== undefined ? code_locked : Boolean(existing.code_locked);
     const nameChanged = name !== undefined && name !== existing.name;
@@ -479,13 +574,37 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
     }
 
-    const { data, error } = await supabaseAdmin
-      .from('hub_service_types')
-      .update(patch)
-      .eq('id', id)
-      .eq('clinic_id', clinic_id)
-      .select(SELECT_FIELDS)
-      .single();
+    let data: Record<string, unknown> | null = null;
+    let error: { message?: string; code?: string } | null = null;
+
+    {
+      const first = await supabaseAdmin
+        .from('hub_service_types')
+        .update(patch)
+        .eq('id', id)
+        .eq('clinic_id', clinic_id)
+        .select(SELECT_FIELDS)
+        .single();
+      data = (first.data as Record<string, unknown> | null) ?? null;
+      error = first.error;
+    }
+
+    if (error && isMissingPickupPriceScopeColumn(error)) {
+      console.warn(
+        '[hub_service_types] update: coluna pickup_price_scope ausente — aplique a migração 087. Atualizando sem o campo.',
+      );
+      const patchLegacy = { ...patch };
+      delete patchLegacy.pickup_price_scope;
+      const legacy = await supabaseAdmin
+        .from('hub_service_types')
+        .update(patchLegacy)
+        .eq('id', id)
+        .eq('clinic_id', clinic_id)
+        .select(SELECT_FIELDS_LEGACY)
+        .single();
+      data = (legacy.data as Record<string, unknown> | null) ?? null;
+      error = legacy.error;
+    }
 
     if (error) {
       if (error.code === '23505') {
@@ -505,7 +624,10 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
     }
 
     const colorMap = await fetchGroupColorMap(clinic_id);
-    const service_type = enrichRowsWithGroupColor([data as ServiceTypeRow], colorMap)[0];
+    const service_type = enrichRowsWithGroupColor(
+      withDefaultPickupPriceScope([data as ServiceTypeRow]),
+      colorMap,
+    )[0];
 
     return res.json({ service_type });
   } catch (e) {
@@ -572,14 +694,36 @@ export const bootstrapHubServiceTypes = async (req: Request, res: Response) => {
       q = q.is('deleted_at', null);
     }
 
-    const { data: all, error: finalErr } = await q;
+    let all: unknown[] | null = null;
+    let finalErr: { message?: string; code?: string } | null = null;
+    {
+      const first = await q;
+      all = (first.data as unknown[] | null) ?? null;
+      finalErr = first.error;
+    }
+    if (finalErr && isMissingPickupPriceScopeColumn(finalErr)) {
+      let qLegacy = supabaseAdmin
+        .from('hub_service_types')
+        .select(SELECT_FIELDS_LEGACY)
+        .eq('clinic_id', clinic_id)
+        .order('name', { ascending: true });
+      if (!includeArchived) {
+        qLegacy = qLegacy.is('deleted_at', null);
+      }
+      const legacy = await qLegacy;
+      all = (legacy.data as unknown[] | null) ?? null;
+      finalErr = legacy.error;
+    }
 
     if (finalErr) {
       return res.status(500).json({ error: 'Erro ao listar tipos após bootstrap' });
     }
 
     const colorMap = await fetchGroupColorMap(clinic_id);
-    const service_types = enrichRowsWithGroupColor((all ?? []) as ServiceTypeRow[], colorMap);
+    const service_types = enrichRowsWithGroupColor(
+      withDefaultPickupPriceScope((all ?? []) as ServiceTypeRow[]),
+      colorMap,
+    );
 
     return res.json({
       inserted: toInsert.length,
