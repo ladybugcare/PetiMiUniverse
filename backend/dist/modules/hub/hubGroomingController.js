@@ -248,7 +248,7 @@ const getHubGroomingDayBoard = async (req, res) => {
         if (sessErr) {
             if (sessErr.message?.includes('hub_grooming_sessions')) {
                 return res.status(503).json({
-                    error: 'Tabela hub_grooming_sessions não encontrada. Execute create_hub_grooming_sessions.sql no Supabase.',
+                    error: 'Tabela hub_grooming_sessions não encontrada. Execute 031_create_hub_grooming_sessions.sql no Supabase.',
                 });
             }
             return res.status(500).json({ error: sessErr.message });

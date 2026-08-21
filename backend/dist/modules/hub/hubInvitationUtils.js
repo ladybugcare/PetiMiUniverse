@@ -24,7 +24,7 @@ function buildInvitationShareMessage(opts) {
         '',
         `Você foi convidado(a) para a equipe da clínica ${opts.clinicName} (unidade ${opts.unitName}) como ${roleLabel}.`,
         '',
-        'Crie sua conta e acesse o PetMi Hub pelo link abaixo (válido por 7 dias):',
+        'Crie sua conta (ou entre se já tiver) e acesse o PetMi Hub pelo link abaixo (válido por 7 dias):',
         opts.invitationUrl,
         '',
         'PetMi Hub',

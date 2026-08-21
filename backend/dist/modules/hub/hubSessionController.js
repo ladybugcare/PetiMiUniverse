@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getHubSessionContext = void 0;
 const supabase_js_1 = require("../../config/supabase.js");
 const errorHandler_js_1 = require("../../middleware/errorHandler.js");
+const hubSubscriptionService_js_1 = require("./hubSubscriptionService.js");
 const ALLOWED_CLINIC_ROLES = new Set([
     'CADMIN',
     'CMANAGER',
@@ -10,6 +11,7 @@ const ALLOWED_CLINIC_ROLES = new Set([
     'CVET_INTERNAL',
     'CGROOMER',
     'CFINANCE',
+    'CSTAFF',
 ]);
 function pickClinicUserRow(rows) {
     const withClinic = (r) => r.clinic_id != null && String(r.clinic_id).trim() !== '';
@@ -26,7 +28,7 @@ exports.getHubSessionContext = (0, errorHandler_js_1.asyncHandler)(async (req, r
     const userRole = req.user?.user_metadata?.role;
     const { data: rows, error } = await supabase_js_1.supabaseAdmin
         .from('clinic_users')
-        .select('id, clinic_id, user_id, role, status, unit_id, first_login_at, first_login_completed_at, onboarding_state, created_at')
+        .select('id, clinic_id, user_id, role, status, unit_id, operational_areas, first_login_at, first_login_completed_at, onboarding_state, created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: true });
     if (error) {
@@ -90,6 +92,7 @@ exports.getHubSessionContext = (0, errorHandler_js_1.asyncHandler)(async (req, r
             role: clinicUser.role,
             status: clinicUser.status,
             unit_id: clinicUser.unit_id,
+            operational_areas: clinicUser.operational_areas ?? [],
             first_login_at: clinicUser.first_login_at,
             first_login_completed_at: clinicUser.first_login_completed_at,
             onboarding_state: clinicUser.onboarding_state,
@@ -102,6 +105,7 @@ exports.getHubSessionContext = (0, errorHandler_js_1.asyncHandler)(async (req, r
                 role: 'CADMIN',
                 status: 'active',
                 unit_id: null,
+                operational_areas: [],
                 first_login_at: null,
                 first_login_completed_at: null,
                 onboarding_state: {},
@@ -109,7 +113,24 @@ exports.getHubSessionContext = (0, errorHandler_js_1.asyncHandler)(async (req, r
             : null;
     const needsOnboarding = !resolvedClinicId || !hasUnits;
     const role = String(clinicUserPayload?.role || '').toUpperCase();
-    const shouldCompleteClinicProfile = needsOnboarding && (role === 'CADMIN' || role === 'CMANAGER' || isClinicOwnerMetadata);
+    const linkedClinicId = clinicUserPayload?.clinic_id ||
+        (resolvedClinicId && clinicUserPayload ? resolvedClinicId : null);
+    // Onboarding de org/unidade só para dono pendente — nunca por metadata genérico de staff convidado.
+    const isOwnerCapable = role === 'CADMIN' ||
+        role === 'CMANAGER' ||
+        (!clinicUserPayload && isClinicOwnerMetadata);
+    const shouldCompleteClinicProfile = Boolean(isOwnerCapable && !linkedClinicId && needsOnboarding);
+    const shouldCompleteFirstUnit = Boolean(isOwnerCapable && needsOnboarding);
+    let subscription = null;
+    if (resolvedClinicId && !needsOnboarding) {
+        try {
+            const sub = await (0, hubSubscriptionService_js_1.getClinicSubscription)(resolvedClinicId);
+            subscription = (0, hubSubscriptionService_js_1.toSessionSubscriptionPayload)(sub);
+        }
+        catch (subErr) {
+            console.warn('[hub_session] subscription', subErr);
+        }
+    }
     res.json({
         clinicUser: clinicUserPayload,
         onboarding: {
@@ -118,7 +139,8 @@ exports.getHubSessionContext = (0, errorHandler_js_1.asyncHandler)(async (req, r
             hasUnits,
             needsOnboarding,
             shouldCompleteClinicProfile,
-            shouldCompleteFirstUnit: needsOnboarding && (role === 'CADMIN' || role === 'CMANAGER' || isClinicOwnerMetadata),
+            shouldCompleteFirstUnit,
         },
+        subscription,
     });
 });

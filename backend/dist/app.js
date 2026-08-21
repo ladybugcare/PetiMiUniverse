@@ -191,6 +191,7 @@ app.use('/vets/upload-crmv', express_1.default.json({ limit: '5mb' }));
 app.use('/freelancers/upload-certification', express_1.default.json({ limit: '5mb' }));
 app.use('/marketplace/upload-images', express_1.default.json({ limit: '10mb' }));
 // 🔹 Rate limiting global (aplicado a todas as rotas)
+app.use(rateLimiter_js_1.rateLimitBypassMonitor);
 app.use(rateLimiter_js_1.generalLimiter);
 // 🔹 Rotas principais
 app.use('/auth', auth_js_1.default);

@@ -18,12 +18,14 @@ const hubStaffPhotoController_1 = require("../hubStaffPhotoController");
 const hubProfilePhotoController_js_1 = require("../hubProfilePhotoController.js");
 const hubClinicProfileController_js_1 = require("../hubClinicProfileController.js");
 const hubSessionController_js_1 = require("../hubSessionController.js");
+const hubSubscriptionController_js_1 = require("../hubSubscriptionController.js");
 const hubAppointmentsController_1 = require("../hubAppointmentsController");
 const hubClinicSettingsController_1 = require("../hubClinicSettingsController");
 const hubProspectsController_1 = require("../hubProspectsController");
 const hubEncountersController_1 = require("../hubEncountersController");
 const hubGroomingController_1 = require("../hubGroomingController");
 const hubPickupController_1 = require("../hubPickupController");
+const hubPickupVehiclesController_1 = require("../hubPickupVehiclesController");
 const hubGroomingDrawerController_1 = require("../hubGroomingDrawerController");
 const hubClinicalCasesController_1 = require("../hubClinicalCasesController");
 const hubClinicalTimelineController_1 = require("../hubClinicalTimelineController");
@@ -60,8 +62,10 @@ router.post('/invitations/signup', rateLimiter_js_1.authLimiter, hubInvitationsC
 /** Limite dedicado ao Hub autenticado (polling, modais com vários GETs). */
 router.use(rateLimiter_js_1.hubApiLimiter);
 router.get('/invitations/check-email', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.staff.invite'), hubInvitationsController_js_1.checkHubInviteEmail);
+router.post('/invitations/accept', authMiddleware_1.authenticateUser, hubInvitationsController_js_1.acceptHubInvitation);
 router.post('/onboarding/clinic', authMiddleware_1.authenticateUser, hubSignupController_js_1.postHubOnboardingClinic);
 router.get('/session/context', authMiddleware_1.authenticateUser, hubSessionController_js_1.getHubSessionContext);
+router.get('/subscription/plans', authMiddleware_1.authenticateUser, hubSubscriptionController_js_1.getHubSubscriptionPlans);
 router.post('/profile/me/photo', authMiddleware_1.authenticateUser, hubProfilePhotoController_js_1.postHubUserProfilePhoto);
 router.post('/clinic/profile/photo', authMiddleware_1.authenticateUser, hubProfilePhotoController_js_1.postHubClinicProfilePhoto);
 router.patch('/clinic/profile', authMiddleware_1.authenticateUser, hubClinicProfileController_js_1.patchHubClinicProfile);
@@ -118,6 +122,8 @@ router.post('/staff/photo', authMiddleware_1.authenticateUser, (0, authMiddlewar
 router.post('/staff', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.staff.write'), hubStaffController_1.createHubStaff);
 router.get('/staff/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.staff.read'), hubStaffController_1.getHubStaff);
 router.patch('/staff/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.staff.write'), hubStaffController_1.patchHubStaff);
+router.post('/staff/:id/link-account', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.staff.write'), hubStaffController_1.linkHubStaffAccount);
+router.get('/staff/:id/pending-invite', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.staff.invite'), hubStaffController_1.getHubStaffPendingInvite);
 router.post('/staff/:id/invite', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.staff.invite'), hubStaffController_1.inviteHubStaff);
 /* --- Agenda / Agendamentos --- */
 router.get('/appointments/calendar-blocks', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.appointments.read'), hubAppointmentsController_1.listHubAgendaCalendarBlocks);
@@ -126,6 +132,7 @@ router.delete('/appointments/calendar-blocks/:id', authMiddleware_1.authenticate
 router.get('/appointments/stats/by-service-group', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.appointments.read'), hubAppointmentsController_1.getHubAppointmentsStatsByServiceGroup);
 router.get('/appointments', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.appointments.read'), hubAppointmentsController_1.listHubAppointments);
 router.post('/appointments', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.appointments.write'), hubAppointmentsController_1.createHubAppointment);
+router.post('/appointments/batch', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.appointments.write'), hubAppointmentsController_1.createHubAppointmentBatch);
 router.patch('/appointments/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.appointments.write'), hubAppointmentsController_1.patchHubAppointment);
 /* --- Orçamentos / prospects --- */
 router.get('/prospects', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.prospects.read'), hubProspectsController_1.listHubProspects);
@@ -160,12 +167,26 @@ router.get('/encounters/:id/versions', authMiddleware_1.authenticateUser, (0, au
 router.post('/encounters/:id/complete', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubEncountersController_1.completeHubEncounter);
 /* --- Leva e Traz (paradas operacionais) --- */
 router.get('/pickup/day-board', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupController_1.getHubPickupDayBoard);
+router.get('/pickup/driver-day', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupController_1.getHubPickupDriverDay);
+router.post('/pickup/routes/suggest-batches', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupController_1.suggestHubPickupBatches);
 router.get('/pickup/routes', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupController_1.listHubPickupRoutes);
 router.post('/pickup/routes', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupController_1.createHubPickupRoute);
 router.get('/pickup/routes/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupController_1.getHubPickupRoute);
 router.patch('/pickup/routes/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupController_1.patchHubPickupRoute);
 router.post('/pickup/routes/:id/stops', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupController_1.addHubPickupStops);
+router.post('/pickup/routes/:id/split', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupController_1.splitHubPickupRoute);
+router.post('/pickup/routes/:id/clinic-return', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupController_1.addClinicReturnStop);
 router.patch('/pickup/stops/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.stops.update'), hubPickupController_1.patchHubPickupStop);
+router.post('/pickup/stops', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.stops.update'), hubPickupController_1.createOrUpdateLooseStop);
+router.get('/pickup/my-route', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupController_1.getMyPickupRoute);
+router.get('/pickup/my-routes', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupController_1.getMyPickupRoutes);
+/* --- Leva e Traz — Veículos e caixas de transporte --- */
+router.get('/pickup/vehicles', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupVehiclesController_1.listPickupVehicles);
+router.post('/pickup/vehicles', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupVehiclesController_1.createPickupVehicle);
+router.patch('/pickup/vehicles/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupVehiclesController_1.patchPickupVehicle);
+router.post('/pickup/vehicles/:vehicleId/cages', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupVehiclesController_1.createTransportCage);
+router.patch('/pickup/cages/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupVehiclesController_1.patchTransportCage);
+router.delete('/pickup/cages/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupVehiclesController_1.deleteTransportCage);
 /* --- Banho & Tosa (fila operacional) --- */
 router.get('/grooming/day-board', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('grooming.queue.read'), hubGroomingController_1.getHubGroomingDayBoard);
 router.post('/grooming/sessions/open-from-appointment', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('grooming.queue.manage'), hubGroomingController_1.openHubGroomingSessionFromAppointment);
@@ -243,6 +264,7 @@ router.get('/comandas/:id/pdf', authMiddleware_1.authenticateUser, (0, authMiddl
 router.post('/comandas/:id/public-token', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.ensureComandaPublicToken);
 router.get('/comandas/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaDetail);
 router.post('/comandas/:id/sync-from-origin', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaSyncFromOrigin);
+router.post('/comandas/:id/apply-package', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaApplyPackage);
 router.post('/comandas/:id/checkout', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaCheckout);
 router.post('/comandas/:id/resolve-cancellation', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubComandasController_1.postHubComandaResolveCancellation);
 router.post('/comandas/suggest-item-price', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubComandasController_1.postHubComandaSuggestItemPrice);
@@ -271,6 +293,7 @@ router.post('/finance/payments/:id/reverse', authMiddleware_1.authenticateUser, 
 router.get('/finance/payments/:id/receipt', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinancePaymentReceipt);
 router.get('/finance/cash-sessions/closed', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.listHubFinanceCashSessionsClosed);
 router.get('/finance/cash-sessions/open', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinanceCashSessionOpen);
+router.get('/finance/cash-sessions/status', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinanceCashSessionStatus);
 router.post('/finance/cash-sessions/open', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.cash.session'), hubFinancialController_1.postHubFinanceCashSessionOpen);
 router.post('/finance/cash-sessions/:id/close', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.cash.session'), hubFinancialController_1.postHubFinanceCashSessionClose);
 router.get('/finance/cash-sessions/:id/summary', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinanceCashSessionSummary);
@@ -287,7 +310,12 @@ router.post('/finance/cash-sessions/:id/movements', authMiddleware_1.authenticat
 router.post('/finance/credit-movements', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubCustomerCreditController_1.postHubCustomerCreditMovement);
 router.get('/finance/credit-balance', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubCustomerCreditController_1.getHubCustomerCreditBalance);
 router.get('/finance/packages', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubPackagesController_1.listHubPackages);
+router.post('/finance/packages/suggest-price', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubPackagesController_1.postHubPackageSuggestPrice);
+router.get('/finance/packages/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubPackagesController_1.getHubPackage);
 router.post('/finance/packages', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubPackagesController_1.postHubPackage);
+router.patch('/finance/packages/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubPackagesController_1.patchHubPackage);
+router.get('/guardians/:guardianId/package-balances', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubPackagesController_1.getHubGuardianPackageBalances);
+router.get('/pets/:petId/package-balances', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubPackagesController_1.getHubPetPackageBalances);
 router.get('/finance/commission-preview', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubCommissionRulesController_1.getHubCommissionPreview);
 router.get('/finance/commission-rules', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubCommissionRulesController_1.listHubCommissionRules);
 router.post('/finance/commission-rules', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubCommissionRulesController_1.postHubCommissionRule);

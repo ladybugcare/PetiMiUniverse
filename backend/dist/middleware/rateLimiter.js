@@ -36,6 +36,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.publicPrescriptionLimiter = exports.uploadLimiter = exports.userRateLimiter = exports.statsLimiter = exports.createLimiter = exports.authLimiter = exports.hubApiLimiter = exports.generalLimiter = void 0;
 exports.parseJwtSub = parseJwtSub;
 exports.isRateLimitDisabled = isRateLimitDisabled;
+exports.getRateLimitBypassUserIds = getRateLimitBypassUserIds;
+exports.resetRateLimitBypassUserIdsCache = resetRateLimitBypassUserIdsCache;
+exports.isRateLimitBypassUser = isRateLimitBypassUser;
+exports.rateLimitBypassMonitor = rateLimitBypassMonitor;
 const express_rate_limit_1 = __importStar(require("express-rate-limit"));
 const logger_js_1 = require("../utils/logger.js");
 require("../config/loadEnv.js");
@@ -71,13 +75,45 @@ function parsePositiveInt(raw, fallback) {
 function isRateLimitDisabled() {
     return process.env.DISABLE_RATE_LIMIT === 'true';
 }
+function parseCsvEnvSet(name) {
+    const raw = process.env[name]?.trim();
+    if (!raw)
+        return new Set();
+    return new Set(raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean));
+}
+let bypassUserIdsCache = null;
+/** IDs Supabase (`sub` do JWT) isentos de rate limit em produção (QA / demos). */
+function getRateLimitBypassUserIds() {
+    if (!bypassUserIdsCache) {
+        bypassUserIdsCache = parseCsvEnvSet('RATE_LIMIT_BYPASS_USER_IDS');
+    }
+    return bypassUserIdsCache;
+}
+/** Repõe cache (testes). */
+function resetRateLimitBypassUserIdsCache() {
+    bypassUserIdsCache = null;
+}
+function isRateLimitBypassUser(req) {
+    const sub = parseJwtSub(req.headers.authorization);
+    if (!sub)
+        return false;
+    return getRateLimitBypassUserIds().has(sub);
+}
+const bypassMonitorCounts = new Map();
 function isHealthProbePath(path) {
     return path === '/' || path === '/health' || path === '/health/live';
 }
 function shouldSkipRateLimit(req) {
     if (isRateLimitDisabled())
         return true;
-    return isHealthProbePath(req.path);
+    if (isHealthProbePath(req.path))
+        return true;
+    if (isRateLimitBypassUser(req))
+        return true;
+    return false;
 }
 /** Hub autenticado usa `hubApiLimiter` (limite maior); não conta também no global. */
 function shouldSkipGeneralForAuthenticatedHub(req) {
@@ -104,6 +140,41 @@ const maxRequests = parsePositiveInt(process.env.GENERAL_RATE_LIMIT_MAX, default
 const generalWindowMs = parsePositiveInt(process.env.GENERAL_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
 const defaultHubMaxRequests = isDevelopment ? 3000 : isStaging ? 2000 : 2000;
 const hubMaxRequests = parsePositiveInt(process.env.HUB_RATE_LIMIT_MAX, defaultHubMaxRequests);
+const authMaxRequests = parsePositiveInt(process.env.AUTH_RATE_LIMIT_MAX, 5);
+/**
+ * Conta tráfego de utilizadores com bypass (não bloqueia) para detectar chamadas excessivas.
+ * Limiar: RATE_LIMIT_BYPASS_MONITOR_MAX (default 5000 / janela geral).
+ */
+function rateLimitBypassMonitor(req, _res, next) {
+    if (!isRateLimitBypassUser(req)) {
+        next();
+        return;
+    }
+    const sub = parseJwtSub(req.headers.authorization);
+    if (!sub) {
+        next();
+        return;
+    }
+    const monitorMax = parsePositiveInt(process.env.RATE_LIMIT_BYPASS_MONITOR_MAX, 5000);
+    const now = Date.now();
+    let data = bypassMonitorCounts.get(sub);
+    if (!data || now > data.resetTime) {
+        data = { count: 0, resetTime: now + generalWindowMs, warned: false };
+        bypassMonitorCounts.set(sub, data);
+    }
+    data.count += 1;
+    if (!data.warned && data.count >= monitorMax) {
+        data.warned = true;
+        logger_js_1.logger.warn('Utilizador com bypass de rate limit excedeu limiar de monitorização', {
+            userId: sub,
+            count: data.count,
+            threshold: monitorMax,
+            path: req.path,
+            method: req.method,
+        });
+    }
+    next();
+}
 exports.generalLimiter = (0, express_rate_limit_1.default)({
     windowMs: generalWindowMs,
     max: maxRequests,
@@ -132,6 +203,8 @@ exports.hubApiLimiter = (0, express_rate_limit_1.default)({
             return true;
         if (req.path === '/signup')
             return true;
+        if (isRateLimitBypassUser(req))
+            return true;
         return !parseJwtSub(req.headers.authorization);
     },
 });
@@ -141,14 +214,14 @@ exports.hubApiLimiter = (0, express_rate_limit_1.default)({
  */
 exports.authLimiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 5, // máximo de 5 tentativas por IP
+    max: authMaxRequests,
     message: {
         error: 'Muitas tentativas de login. Tente novamente em 15 minutos.',
     },
     skipSuccessfulRequests: true, // Não conta requisições bem-sucedidas
     standardHeaders: true,
     legacyHeaders: false,
-    skip: () => isRateLimitDisabled(),
+    skip: (req) => isRateLimitDisabled() || isRateLimitBypassUser(req),
 });
 /**
  * Rate limiter para criação de recursos
@@ -162,7 +235,7 @@ exports.createLimiter = (0, express_rate_limit_1.default)({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    skip: () => isRateLimitDisabled(),
+    skip: (req) => isRateLimitDisabled() || isRateLimitBypassUser(req),
 });
 /**
  * Rate limiter mais permissivo para rotas de estatísticas/dashboard
@@ -202,7 +275,7 @@ const userRateLimiter = (maxRequests = 200, windowMs = 15 * 60 * 1000) => {
         }
     }, 60000); // Limpar a cada minuto
     return (req, res, next) => {
-        if (isRateLimitDisabled()) {
+        if (isRateLimitDisabled() || isRateLimitBypassUser(req)) {
             return next();
         }
         const userId = req.user?.id;
@@ -261,5 +334,5 @@ exports.publicPrescriptionLimiter = (0, express_rate_limit_1.default)({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    skip: () => isRateLimitDisabled(),
+    skip: (req) => isRateLimitDisabled() || isRateLimitBypassUser(req),
 });

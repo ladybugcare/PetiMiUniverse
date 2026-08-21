@@ -117,7 +117,7 @@ const patchStaffSchema = createStaffSchema.partial().required({ clinic_id: true 
 async function assertStaffInClinic(clinicId: string, staffId: string) {
   const { data, error } = await supabaseAdmin
     .from('hub_staff_members')
-    .select('id, clinic_id, deleted_at')
+    .select('id, clinic_id, deleted_at, clinic_user_id, hub_access_role')
     .eq('id', staffId)
     .maybeSingle();
   if (error || !data || data.clinic_id !== clinicId || data.deleted_at) return null;

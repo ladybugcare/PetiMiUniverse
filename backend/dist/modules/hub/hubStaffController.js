@@ -1,17 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.inviteHubStaff = exports.patchHubStaff = exports.createHubStaff = exports.getHubStaff = exports.listHubStaff = void 0;
+exports.inviteHubStaff = exports.linkHubStaffAccount = exports.getHubStaffPendingInvite = exports.patchHubStaff = exports.createHubStaff = exports.getHubStaff = exports.listHubStaff = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const authMiddleware_1 = require("../../middleware/authMiddleware");
 const auditLog_1 = require("../../utils/auditLog");
 const emailService_1 = require("../../utils/emailService");
 const permissions_1 = require("../../utils/permissions");
+const operationalAreas_1 = require("../../utils/operationalAreas");
 const notificationsController_1 = require("../../controllers/notificationsController");
 const hubInvitationUtils_1 = require("./hubInvitationUtils");
+const hubStaffLinkUtils_1 = require("./hubStaffLinkUtils");
 const hubStaffSpecialties_1 = require("./hubStaffSpecialties");
 const uuidStr = zod_1.z.string().uuid();
-const STAFF_SELECT = 'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, has_hub_access, hub_access_email, hub_access_role, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
+const STAFF_SELECT = 'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
 const professionalKindSchema = zod_1.z.enum([
     'vet',
     'groomer',
@@ -29,6 +31,7 @@ const hubAccessRoleSchema = zod_1.z.enum([
     'CVET_INTERNAL',
     'CGROOMER',
     'CFINANCE',
+    'CSTAFF',
 ]);
 const optionalTrim = (max) => zod_1.z
     .union([zod_1.z.string(), zod_1.z.null(), zod_1.z.undefined()])
@@ -61,6 +64,10 @@ const staffSpecialtiesSchema = zod_1.z
     .refine((v) => v === undefined || v.length <= hubStaffSpecialties_1.STAFF_SPECIALTIES_MAX_ITEMS, {
     message: `Máximo de ${hubStaffSpecialties_1.STAFF_SPECIALTIES_MAX_ITEMS} especialidades`,
 });
+const operationalAreasSchema = zod_1.z
+    .union([zod_1.z.array(zod_1.z.string()), zod_1.z.null(), zod_1.z.undefined()])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : (0, operationalAreas_1.sanitizeOperationalAreas)(v ?? [])));
 const createStaffSchema = zod_1.z
     .object({
     clinic_id: uuidStr,
@@ -81,6 +88,7 @@ const createStaffSchema = zod_1.z
     has_hub_access: zod_1.z.boolean().optional(),
     hub_access_email: zod_1.z.union([zod_1.z.string().email().max(254), zod_1.z.literal(''), zod_1.z.null()]).optional().nullable(),
     hub_access_role: hubAccessRoleSchema.optional().nullable(),
+    operational_areas: operationalAreasSchema,
     accepts_appointments: zod_1.z.boolean().optional(),
     available_days: zod_1.z.unknown().optional().nullable(),
     work_hours: zod_1.z.unknown().optional().nullable(),
@@ -94,7 +102,7 @@ const patchStaffSchema = createStaffSchema.partial().required({ clinic_id: true 
 async function assertStaffInClinic(clinicId, staffId) {
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_staff_members')
-        .select('id, clinic_id, deleted_at')
+        .select('id, clinic_id, deleted_at, clinic_user_id, hub_access_role')
         .eq('id', staffId)
         .maybeSingle();
     if (error || !data || data.clinic_id !== clinicId || data.deleted_at)
@@ -116,6 +124,20 @@ async function fetchActiveServiceTypeIdsForClinic(clinicId, ids) {
         return [];
     const allowed = new Set(data.map((r) => r.id));
     return unique.filter((id) => allowed.has(id));
+}
+async function applyStaffHubAccessLink(staffId, clinicId, row) {
+    const hasHubAccess = Boolean(row.has_hub_access);
+    const hubAccessEmail = row.hub_access_email?.trim() || null;
+    if (!hasHubAccess && !hubAccessEmail)
+        return null;
+    return (0, hubStaffLinkUtils_1.syncStaffHubAccessLink)({
+        staffId,
+        clinicId,
+        hasHubAccess,
+        hubAccessEmail,
+        hubAccessRole: row.hub_access_role ?? null,
+        operationalAreas: (0, operationalAreas_1.sanitizeOperationalAreas)(row.operational_areas ?? []),
+    });
 }
 async function replaceStaffServiceTypes(staffId, clinicId, serviceTypeIds) {
     await supabase_1.supabaseAdmin.from('hub_staff_service_types').delete().eq('staff_id', staffId);
@@ -197,7 +219,7 @@ const listHubStaff = async (req, res) => {
             query = query.eq('active', true);
         if (q) {
             const esc = q.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-            query = query.or(`full_name.ilike.%${esc}%,display_name.ilike.%${esc}%,job_title.ilike.%${esc}%,email.ilike.%${esc}%`);
+            query = query.or(`full_name.ilike.%${esc}%,display_name.ilike.%${esc}%,job_title.ilike.%${esc}%,email.ilike.%${esc}%,hub_access_email.ilike.%${esc}%`);
         }
         const { data, error } = await query;
         if (error) {
@@ -287,6 +309,7 @@ const createHubStaff = async (req, res) => {
             has_hub_access: d.has_hub_access ?? false,
             hub_access_email: hubEmailNorm,
             hub_access_role: d.hub_access_role ?? null,
+            operational_areas: d.operational_areas ?? [],
             accepts_appointments: d.accepts_appointments ?? false,
             available_days: d.available_days ?? null,
             work_hours: d.work_hours ?? null,
@@ -300,8 +323,19 @@ const createHubStaff = async (req, res) => {
             return res.status(500).json({ error: error?.message || 'Erro ao criar profissional' });
         }
         await replaceStaffServiceTypes(created.id, d.clinic_id, validNew);
-        const [enriched] = await enrichStaffRows(d.clinic_id, [created]);
-        return res.status(201).json({ staff: enriched });
+        const link = await applyStaffHubAccessLink(created.id, d.clinic_id, {
+            has_hub_access: d.has_hub_access ?? false,
+            hub_access_email: hubEmailNorm,
+            hub_access_role: d.hub_access_role ?? null,
+            operational_areas: d.operational_areas ?? [],
+        });
+        const { data: fresh } = await supabase_1.supabaseAdmin
+            .from('hub_staff_members')
+            .select(STAFF_SELECT)
+            .eq('id', created.id)
+            .single();
+        const [enriched] = await enrichStaffRows(d.clinic_id, [(fresh ?? created)]);
+        return res.status(201).json({ staff: enriched, link });
     }
     catch (e) {
         console.error('[hub_staff] create', e);
@@ -323,6 +357,28 @@ const patchHubStaff = async (req, res) => {
         if (!staff)
             return res.status(404).json({ error: 'Profissional não encontrado' });
         const d = body.data;
+        // Proteção contra auto-remoção de CADMIN: se o profissional sendo editado
+        // é o próprio solicitante e tem role CADMIN, bloquear mudança de role/acesso.
+        const isSensitiveChange = d.hub_access_role !== undefined || d.has_hub_access === false;
+        if (isSensitiveChange && staff.clinic_user_id) {
+            const requestingUserId = req.user?.id;
+            if (requestingUserId) {
+                const { data: selfCU } = await supabase_1.supabaseAdmin
+                    .from('clinic_users')
+                    .select('id')
+                    .eq('user_id', requestingUserId)
+                    .eq('clinic_id', clinic_id)
+                    .maybeSingle();
+                if (selfCU?.id === staff.clinic_user_id) {
+                    const currentRole = staff.hub_access_role?.toUpperCase();
+                    if (currentRole === 'CADMIN') {
+                        return res.status(403).json({
+                            error: 'Você não pode alterar seu próprio perfil de administrador. Peça a outro administrador da clínica para fazer essa alteração.',
+                        });
+                    }
+                }
+            }
+        }
         const patch = {};
         if (d.full_name !== undefined)
             patch.full_name = d.full_name;
@@ -359,6 +415,8 @@ const patchHubStaff = async (req, res) => {
             patch.hub_access_email = d.hub_access_email === '' ? null : d.hub_access_email;
         if (d.hub_access_role !== undefined)
             patch.hub_access_role = d.hub_access_role;
+        if (d.operational_areas !== undefined)
+            patch.operational_areas = d.operational_areas;
         if (d.accepts_appointments !== undefined)
             patch.accepts_appointments = d.accepts_appointments;
         if (d.available_days !== undefined)
@@ -399,8 +457,31 @@ const patchHubStaff = async (req, res) => {
             .eq('id', idParsed.data)
             .eq('clinic_id', clinic_id)
             .single();
-        const [enriched] = await enrichStaffRows(clinic_id, [fresh]);
-        return res.json({ staff: enriched });
+        if (!fresh)
+            return res.status(404).json({ error: 'Profissional não encontrado' });
+        const hubAccessTouched = d.has_hub_access !== undefined ||
+            d.hub_access_email !== undefined ||
+            d.hub_access_role !== undefined ||
+            d.operational_areas !== undefined;
+        const link = hubAccessTouched
+            ? await applyStaffHubAccessLink(idParsed.data, clinic_id, {
+                has_hub_access: fresh.has_hub_access,
+                hub_access_email: fresh.hub_access_email,
+                hub_access_role: fresh.hub_access_role,
+                operational_areas: fresh.operational_areas ?? [],
+            })
+            : null;
+        if (d.operational_areas !== undefined && fresh.clinic_user_id) {
+            await (0, hubStaffLinkUtils_1.syncOperationalAreasToClinicUser)(fresh.clinic_user_id, fresh.operational_areas ?? []);
+        }
+        const { data: linkedFresh } = await supabase_1.supabaseAdmin
+            .from('hub_staff_members')
+            .select(STAFF_SELECT)
+            .eq('id', idParsed.data)
+            .eq('clinic_id', clinic_id)
+            .single();
+        const [enriched] = await enrichStaffRows(clinic_id, [(linkedFresh ?? fresh)]);
+        return res.json({ staff: enriched, link });
     }
     catch (e) {
         console.error('[hub_staff] patch', e);
@@ -409,6 +490,186 @@ const patchHubStaff = async (req, res) => {
 };
 exports.patchHubStaff = patchHubStaff;
 const inviteStaffBodySchema = zod_1.z.object({ clinic_id: uuidStr }).strict();
+const linkStaffBodySchema = zod_1.z.object({ clinic_id: uuidStr }).strict();
+async function expireStalePendingInvitations(opts) {
+    const nowIso = new Date().toISOString();
+    const base = () => supabase_1.supabaseAdmin
+        .from('user_invitations')
+        .update({ status: 'expired' })
+        .eq('clinic_id', opts.clinic_id)
+        .eq('status', 'pending')
+        .lt('expires_at', nowIso);
+    if (opts.staff_member_id) {
+        await base().eq('staff_member_id', opts.staff_member_id);
+    }
+    if (opts.email) {
+        let q = base().ilike('email', opts.email.trim());
+        if (opts.unit_id)
+            q = q.eq('unit_id', opts.unit_id);
+        await q;
+    }
+}
+async function findValidPendingInvitation(opts) {
+    const nowIso = new Date().toISOString();
+    const { data: byStaff } = await supabase_1.supabaseAdmin
+        .from('user_invitations')
+        .select('id, email, clinic_id, unit_id, role, token, expires_at, status, staff_member_id')
+        .eq('clinic_id', opts.clinic_id)
+        .eq('staff_member_id', opts.staff_member_id)
+        .eq('status', 'pending')
+        .gte('expires_at', nowIso)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    if (byStaff)
+        return byStaff;
+    const email = opts.email?.trim();
+    const unitId = opts.unit_id;
+    if (!email || !unitId)
+        return null;
+    const { data: byEmail } = await supabase_1.supabaseAdmin
+        .from('user_invitations')
+        .select('id, email, clinic_id, unit_id, role, token, expires_at, status, staff_member_id')
+        .eq('clinic_id', opts.clinic_id)
+        .eq('unit_id', unitId)
+        .ilike('email', email)
+        .eq('status', 'pending')
+        .gte('expires_at', nowIso)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    return byEmail ?? null;
+}
+async function buildInviteSharePayload(invitation, inviteeName) {
+    const invitation_url = (0, hubInvitationUtils_1.buildInvitationUrl)(invitation.token);
+    const [{ data: clinic }, { data: unit }] = await Promise.all([
+        supabase_1.supabaseAdmin.from('clinics').select('name').eq('id', invitation.clinic_id).maybeSingle(),
+        supabase_1.supabaseAdmin.from('units').select('name').eq('id', invitation.unit_id).maybeSingle(),
+    ]);
+    const share_message = (0, hubInvitationUtils_1.buildInvitationShareMessage)({
+        clinicName: clinic?.name || 'sua clínica',
+        unitName: unit?.name || 'unidade',
+        role: invitation.role,
+        invitationUrl: invitation_url,
+        inviteeName,
+    });
+    return { invitation_url, share_message };
+}
+/** GET /api/hub/staff/:id/pending-invite?clinic_id= — reabre link válido ou indica expirado. */
+const getHubStaffPendingInvite = async (req, res) => {
+    try {
+        const idParsed = uuidStr.safeParse(req.params.id);
+        const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+        if (!idParsed.success || !clinicParsed.success) {
+            return res.status(400).json({ error: 'Parâmetros inválidos' });
+        }
+        const clinic_id = clinicParsed.data;
+        const staffId = idParsed.data;
+        const userId = req.user.id;
+        const canStaff = await (0, authMiddleware_1.checkPermission)(userId, clinic_id, 'hub.staff.invite');
+        const canUserInvite = await (0, authMiddleware_1.checkPermission)(userId, clinic_id, 'user.invite');
+        if (!canStaff || !canUserInvite) {
+            return res.status(403).json({ error: 'Sem permissão para ver convites' });
+        }
+        const { data: row, error: loadErr } = await supabase_1.supabaseAdmin
+            .from('hub_staff_members')
+            .select(STAFF_SELECT)
+            .eq('id', staffId)
+            .eq('clinic_id', clinic_id)
+            .is('deleted_at', null)
+            .maybeSingle();
+        if (loadErr || !row)
+            return res.status(404).json({ error: 'Profissional não encontrado' });
+        const email = row.hub_access_email?.trim() || '';
+        const unit_id = row.default_unit_id || null;
+        await expireStalePendingInvitations({
+            clinic_id,
+            staff_member_id: staffId,
+            email: email || null,
+            unit_id,
+        });
+        // Busca por staff_member_id primeiro — não depende de e-mail/unidade no form atual.
+        const pendingByStaff = await findValidPendingInvitation({
+            clinic_id,
+            staff_member_id: staffId,
+            email: email || null,
+            unit_id,
+        });
+        if (pendingByStaff) {
+            const share = await buildInviteSharePayload(pendingByStaff, row.full_name);
+            return res.json({
+                pending: {
+                    invitation: pendingByStaff,
+                    invitation_url: share.invitation_url,
+                    share_message: share.share_message,
+                    email: pendingByStaff.email,
+                    expires_at: pendingByStaff.expires_at,
+                },
+                expired: false,
+            });
+        }
+        const { data: expiredRows } = await supabase_1.supabaseAdmin
+            .from('user_invitations')
+            .select('id')
+            .eq('clinic_id', clinic_id)
+            .eq('staff_member_id', staffId)
+            .eq('status', 'expired')
+            .limit(1);
+        return res.json({ pending: null, expired: Boolean(expiredRows?.length) });
+    }
+    catch (e) {
+        console.error('[hub_staff] pending-invite', e);
+        return res.status(500).json({ error: 'Erro ao buscar convite' });
+    }
+};
+exports.getHubStaffPendingInvite = getHubStaffPendingInvite;
+/** POST /api/hub/staff/:id/link-account — vincula profissional a conta existente pelo e-mail de acesso. */
+const linkHubStaffAccount = async (req, res) => {
+    try {
+        const idParsed = uuidStr.safeParse(req.params.id);
+        const body = linkStaffBodySchema.safeParse(req.body);
+        if (!idParsed.success || !body.success) {
+            return res.status(400).json({ error: 'clinic_id inválido' });
+        }
+        const clinic_id = body.data.clinic_id;
+        const staffId = idParsed.data;
+        const { data: row, error: loadErr } = await supabase_1.supabaseAdmin
+            .from('hub_staff_members')
+            .select(STAFF_SELECT)
+            .eq('id', staffId)
+            .eq('clinic_id', clinic_id)
+            .is('deleted_at', null)
+            .maybeSingle();
+        if (loadErr || !row)
+            return res.status(404).json({ error: 'Profissional não encontrado' });
+        if (!row.has_hub_access) {
+            return res.status(400).json({ error: 'Ative «Tem acesso ao PetMi Hub» antes de vincular a conta.' });
+        }
+        const email = row.hub_access_email?.trim();
+        if (!email) {
+            return res.status(400).json({ error: 'Informe o e-mail de acesso antes de vincular.' });
+        }
+        const link = await applyStaffHubAccessLink(staffId, clinic_id, {
+            has_hub_access: true,
+            hub_access_email: email,
+            hub_access_role: row.hub_access_role,
+            operational_areas: row.operational_areas ?? [],
+        });
+        const { data: fresh } = await supabase_1.supabaseAdmin
+            .from('hub_staff_members')
+            .select(STAFF_SELECT)
+            .eq('id', staffId)
+            .eq('clinic_id', clinic_id)
+            .single();
+        const [enriched] = await enrichStaffRows(clinic_id, [(fresh ?? row)]);
+        return res.json({ staff: enriched, link });
+    }
+    catch (e) {
+        console.error('[hub_staff] link-account', e);
+        return res.status(400).json({ error: e?.message || 'Erro ao vincular conta' });
+    }
+};
+exports.linkHubStaffAccount = linkHubStaffAccount;
 const inviteHubStaff = async (req, res) => {
     const invited_by = req.user.id;
     try {
@@ -447,11 +708,6 @@ const inviteHubStaff = async (req, res) => {
         const { data: unitCheck } = await supabase_1.supabaseAdmin.from('units').select('id, clinic_id').eq('id', unit_id).maybeSingle();
         if (!unitCheck || unitCheck.clinic_id !== clinic_id)
             return res.status(400).json({ error: 'Unidade inválida' });
-        if (await (0, hubInvitationUtils_1.authUserExistsForEmail)(email)) {
-            return res.status(409).json({
-                error: 'Este e-mail já possui conta. No MVP, use um e-mail novo para convites.',
-            });
-        }
         const { data: existingUnitUsers } = await supabase_1.supabaseAdmin
             .from('clinic_users')
             .select('user_id')
@@ -465,15 +721,26 @@ const inviteHubStaff = async (req, res) => {
                 }
             }
         }
-        const { data: existingInvitation } = await supabase_1.supabaseAdmin
-            .from('user_invitations')
-            .select('id')
-            .eq('email', email)
-            .eq('clinic_id', clinic_id)
-            .eq('unit_id', unit_id)
-            .eq('status', 'pending');
-        if (existingInvitation && existingInvitation.length > 0) {
-            return res.status(400).json({ error: 'Já existe um convite pendente para este e-mail nesta unidade' });
+        await expireStalePendingInvitations({
+            clinic_id,
+            staff_member_id: staffId,
+            email,
+            unit_id,
+        });
+        const existingPending = await findValidPendingInvitation({
+            clinic_id,
+            staff_member_id: staffId,
+            email,
+            unit_id,
+        });
+        if (existingPending) {
+            const share = await buildInviteSharePayload(existingPending, row.full_name);
+            return res.status(200).json({
+                invitation: existingPending,
+                invitation_url: share.invitation_url,
+                share_message: share.share_message,
+                reused: true,
+            });
         }
         const token = (0, emailService_1.generateInvitationToken)();
         const expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -496,30 +763,26 @@ const inviteHubStaff = async (req, res) => {
             console.error('[hub_staff] invite insert', invErr);
             return res.status(400).json({ error: invErr?.message || 'Erro ao criar convite' });
         }
-        const invitation_url = (0, hubInvitationUtils_1.buildInvitationUrl)(token);
-        const { data: clinic } = await supabase_1.supabaseAdmin.from('clinics').select('name').eq('id', clinic_id).single();
-        const { data: unit } = await supabase_1.supabaseAdmin.from('units').select('name').eq('id', unit_id).single();
-        const share_message = (0, hubInvitationUtils_1.buildInvitationShareMessage)({
-            clinicName: clinic?.name || 'sua clínica',
-            unitName: unit?.name || 'unidade',
-            role,
-            invitationUrl: invitation_url,
-            inviteeName: row.full_name,
-        });
-        await (0, emailService_1.sendInvitationEmail)(email, token, clinic_id, unit_id, (0, permissions_1.getRoleDisplayName)(role), invitation_url);
+        const invitation = invRows[0];
+        const share = await buildInviteSharePayload(invitation, row.full_name);
+        await (0, emailService_1.sendInvitationEmail)(email, token, clinic_id, unit_id, (0, permissions_1.getRoleDisplayName)(role), share.invitation_url);
         try {
             const { data: usersData } = await supabase_1.supabaseAdmin.auth.admin.listUsers();
             const existingAuthUser = usersData?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
-            if (existingAuthUser?.id && clinic && unit) {
-                await (0, notificationsController_1.createNotification)({
-                    user_id: existingAuthUser.id,
-                    type: 'unit_invitation',
-                    title: 'Convite para Unidade',
-                    message: `Foi convidado para a unidade "${unit.name}" da clínica "${clinic.name}" como ${(0, permissions_1.getRoleDisplayName)(role)}`,
-                    link: `/accept-invitation?token=${token}`,
-                    entity_type: 'invitation',
-                    entity_id: invRows[0].id,
-                });
+            if (existingAuthUser?.id) {
+                const { data: clinic } = await supabase_1.supabaseAdmin.from('clinics').select('name').eq('id', clinic_id).maybeSingle();
+                const { data: unit } = await supabase_1.supabaseAdmin.from('units').select('name').eq('id', unit_id).maybeSingle();
+                if (clinic && unit) {
+                    await (0, notificationsController_1.createNotification)({
+                        user_id: existingAuthUser.id,
+                        type: 'unit_invitation',
+                        title: 'Convite para Unidade',
+                        message: `Foi convidado para a unidade "${unit.name}" da clínica "${clinic.name}" como ${(0, permissions_1.getRoleDisplayName)(role)}`,
+                        link: `/accept-invitation?token=${token}`,
+                        entity_type: 'invitation',
+                        entity_id: invitation.id,
+                    });
+                }
             }
         }
         catch (notifErr) {
@@ -532,14 +795,15 @@ const inviteHubStaff = async (req, res) => {
             unit_id,
             action: 'HUB_STAFF_INVITE',
             entity_type: 'invitation',
-            entity_id: invRows[0].id,
+            entity_id: invitation.id,
             new_values: { email, role, staff_id: staffId },
             ...metadata,
         });
         return res.status(201).json({
-            invitation: invRows[0],
-            invitation_url,
-            share_message,
+            invitation,
+            invitation_url: share.invitation_url,
+            share_message: share.share_message,
+            reused: false,
         });
     }
     catch (error) {

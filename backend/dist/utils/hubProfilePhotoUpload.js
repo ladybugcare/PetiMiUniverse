@@ -27,7 +27,7 @@ async function ensureHubProfilePhotosBucket() {
         return;
     logger_js_1.logger.error('[hub_profile_photo] createBucket failed', { message: error.message });
     throw new Error(`Não foi possível preparar o armazenamento de fotos de perfil (${error.message}). ` +
-        'Execute `petimi_hub/create_hub_profile_photos_bucket.sql` no Supabase.');
+        'Execute `petimi_hub/011a_create_hub_profile_photos_bucket.sql` no Supabase.');
 }
 async function uploadToHubProfileBucket(file, storagePath) {
     (0, fileValidation_js_1.validateFile)(file.buffer, file.mimetype, file.originalname, {

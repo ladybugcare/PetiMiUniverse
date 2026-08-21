@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.postHubFinanceCashMovement = exports.postHubFinanceExpense = exports.listHubFinanceExpenses = exports.getHubFinanceAgingReport = exports.getHubFinanceTopServicesReport = exports.getHubFinanceTicketAverageReport = exports.getHubFinanceRevenueSeries = exports.getHubFinanceRevenueReport = exports.getHubFinanceCashFlow = exports.getHubFinanceDashboardSummary = exports.getHubFinanceDayBoard = exports.getHubFinancePendingBillingCount = exports.getHubFinanceUnbilledCompleted = exports.getHubFinanceCashSessionSummary = exports.getHubFinanceCashSessionOpen = exports.listHubFinanceCashSessionsClosed = exports.postHubFinanceCashSessionClose = exports.postHubFinanceCashSessionOpen = exports.listHubFinanceReceivables = exports.getHubFinancePaymentReceipt = exports.getHubFinanceReceivableDetail = exports.postHubFinanceReceivableCancel = exports.postHubFinancePaymentReverse = exports.deleteHubFinanceReceivableProductLine = exports.postHubFinanceReceivableProductLine = exports.postHubFinanceReceivablePayment = exports.postHubFinanceWaiveBilling = exports.postHubFinanceReceivable = exports.getHubFinancePreview = exports.patchHubFinancePaymentMethodSettings = exports.getHubFinancePaymentMethodSettings = void 0;
+exports.postHubFinanceCashMovement = exports.postHubFinanceExpense = exports.listHubFinanceExpenses = exports.getHubFinanceAgingReport = exports.getHubFinanceTopServicesReport = exports.getHubFinanceTicketAverageReport = exports.getHubFinanceRevenueSeries = exports.getHubFinanceRevenueReport = exports.getHubFinanceCashFlow = exports.getHubFinanceDashboardSummary = exports.getHubFinanceDayBoard = exports.getHubFinancePendingBillingCount = exports.getHubFinanceUnbilledCompleted = exports.getHubFinanceCashSessionSummary = exports.getHubFinanceCashSessionOpen = exports.listHubFinanceCashSessionsClosed = exports.getHubFinanceCashSessionStatus = exports.postHubFinanceCashSessionClose = exports.postHubFinanceCashSessionOpen = exports.listHubFinanceReceivables = exports.getHubFinancePaymentReceipt = exports.getHubFinanceReceivableDetail = exports.postHubFinanceReceivableCancel = exports.postHubFinancePaymentReverse = exports.deleteHubFinanceReceivableProductLine = exports.postHubFinanceReceivableProductLine = exports.postHubFinanceReceivablePayment = exports.postHubFinanceWaiveBilling = exports.postHubFinanceReceivable = exports.getHubFinancePreview = exports.patchHubFinancePaymentMethodSettings = exports.getHubFinancePaymentMethodSettings = void 0;
 exports.resolveOpenCashSessionId = resolveOpenCashSessionId;
 exports.resolvePaymentCashSessionId = resolvePaymentCashSessionId;
 exports.linkOrphanPaymentsToSession = linkOrphanPaymentsToSession;
@@ -15,6 +15,7 @@ const hubPaymentMethods_1 = require("./hubPaymentMethods");
 const boardingBilling_1 = require("./boardingBilling");
 const hubFinancialDayBoard_1 = require("./hubFinancialDayBoard");
 const hubFinanceSchemas_1 = require("./hubFinanceSchemas");
+const hubPackagesService_1 = require("./hubPackagesService");
 const uuidStr = zod_1.z.string().uuid();
 function round2(n) {
     return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -1627,15 +1628,46 @@ const postHubFinanceCashSessionOpen = async (req, res) => {
         if (!parsed.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
         }
-        const { clinic_id, unit_id, opening_balance, opened_by_staff_id } = parsed.data;
+        const { clinic_id, unit_id, opening_balance, opened_by_staff_id: bodyStaffId } = parsed.data;
+        // Resolve o profissional vinculado ao usuário autenticado, se não informado no body
+        let opened_by_staff_id = bodyStaffId ?? null;
+        if (!opened_by_staff_id && req.user?.id) {
+            const { data: clinicUser } = await supabase_1.supabaseAdmin
+                .from('clinic_users')
+                .select('id')
+                .eq('clinic_id', clinic_id)
+                .eq('user_id', req.user.id)
+                .eq('status', 'active')
+                .maybeSingle();
+            if (clinicUser?.id) {
+                const { data: staffRow } = await supabase_1.supabaseAdmin
+                    .from('hub_staff_members')
+                    .select('id')
+                    .eq('clinic_id', clinic_id)
+                    .eq('clinic_user_id', clinicUser.id)
+                    .is('deleted_at', null)
+                    .maybeSingle();
+                opened_by_staff_id = staffRow?.id ?? null;
+            }
+        }
         const { data: existing } = await supabase_1.supabaseAdmin
             .from('hub_cash_sessions')
-            .select('id')
+            .select('id, opened_at')
             .eq('unit_id', unit_id)
             .eq('status', 'open')
             .maybeSingle();
-        if (existing)
-            return res.status(409).json({ error: 'Já existe caixa aberto nesta unidade' });
+        if (existing) {
+            const openedAtDate = existing.opened_at
+                ? new Date(existing.opened_at).toISOString().slice(0, 10)
+                : null;
+            const todayYmd = new Date().toISOString().slice(0, 10);
+            const isPreviousDay = openedAtDate && openedAtDate < todayYmd;
+            return res.status(409).json({
+                error: 'Já existe caixa aberto nesta unidade',
+                previous_session_id: existing.id,
+                is_previous_day: isPreviousDay ?? false,
+            });
+        }
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_cash_sessions')
             .insert({
@@ -1688,6 +1720,61 @@ const postHubFinanceCashSessionClose = async (req, res) => {
             return res.status(404).json({ error: 'Sessão não encontrada' });
         if (sess.status !== 'open')
             return res.status(409).json({ error: 'Caixa já fechado' });
+        // Auto-handoff: envia comandas abertas da unidade ao financeiro antes de fechar
+        let autoHandoffCount = 0;
+        const autoHandoffErrors = [];
+        const todayYmd = new Date().toISOString().slice(0, 10);
+        const { data: openComandas } = await supabase_1.supabaseAdmin
+            .from('hub_comandas')
+            .select('id')
+            .eq('clinic_id', clinic_id)
+            .eq('unit_id', sess.unit_id)
+            .eq('status', 'aberta')
+            .is('finance_handoff_at', null);
+        for (const comanda of openComandas ?? []) {
+            try {
+                await supabase_1.supabaseAdmin
+                    .from('hub_comandas')
+                    .update({ finance_handoff_at: new Date().toISOString() })
+                    .eq('id', comanda.id)
+                    .eq('status', 'aberta')
+                    .is('finance_handoff_at', null);
+                // Cria recebível pendente se ainda não existe
+                const { data: existingRec } = await supabase_1.supabaseAdmin
+                    .from('hub_receivables')
+                    .select('id')
+                    .eq('clinic_id', clinic_id)
+                    .eq('comanda_id', comanda.id)
+                    .is('deleted_at', null)
+                    .neq('status', 'cancelled')
+                    .limit(1)
+                    .maybeSingle();
+                if (!existingRec) {
+                    const { data: comandaRow } = await supabase_1.supabaseAdmin
+                        .from('hub_comandas')
+                        .select('origin_type, origin_id, total_amount, guardian_id, unit_id')
+                        .eq('id', comanda.id)
+                        .maybeSingle();
+                    if (comandaRow) {
+                        await supabase_1.supabaseAdmin.from('hub_receivables').insert({
+                            clinic_id,
+                            unit_id: comandaRow.unit_id,
+                            comanda_id: comanda.id,
+                            source_type: comandaRow.origin_type,
+                            source_id: comandaRow.origin_id,
+                            guardian_id: comandaRow.guardian_id,
+                            final_amount: comandaRow.total_amount ?? 0,
+                            status: 'pending',
+                            due_date: todayYmd,
+                        });
+                    }
+                }
+                autoHandoffCount++;
+            }
+            catch (handoffErr) {
+                autoHandoffErrors.push(String(handoffErr?.message ?? comanda.id));
+            }
+        }
         const openBal = Number(sess.opening_balance ?? 0);
         const [{ data: cashPayments, error: payErr }, { data: cashMovements, error: movErr }] = await Promise.all([
             supabase_1.supabaseAdmin
@@ -1733,7 +1820,11 @@ const postHubFinanceCashSessionClose = async (req, res) => {
             .single();
         if (uErr)
             return res.status(500).json({ error: uErr.message });
-        return res.json({ cash_session: updated });
+        return res.json({
+            cash_session: updated,
+            auto_handoff_count: autoHandoffCount,
+            auto_handoff_errors: autoHandoffErrors,
+        });
     }
     catch (e) {
         console.error('postHubFinanceCashSessionClose', e);
@@ -1741,6 +1832,52 @@ const postHubFinanceCashSessionClose = async (req, res) => {
     }
 };
 exports.postHubFinanceCashSessionClose = postHubFinanceCashSessionClose;
+/**
+ * GET /finance/cash-sessions/status
+ * Endpoint leve que agrega status do caixa + contagem de pendências em uma única chamada.
+ * Usado pelo HubCashSessionContext para polling periódico no sidebar.
+ */
+const getHubFinanceCashSessionStatus = async (req, res) => {
+    try {
+        const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+        const unitParsed = uuidStr.safeParse(req.query.unit_id);
+        if (!clinicParsed.success || !unitParsed.success) {
+            return res.status(400).json({ error: 'clinic_id e unit_id são obrigatórios' });
+        }
+        const clinic_id = clinicParsed.data;
+        const unit_id = unitParsed.data;
+        const [{ data: cashSession }, pendingBillingResult, { data: openComandasRows }] = await Promise.all([
+            supabase_1.supabaseAdmin
+                .from('hub_cash_sessions')
+                .select('id, status, opened_at, opening_balance, closed_at')
+                .eq('clinic_id', clinic_id)
+                .eq('unit_id', unit_id)
+                .eq('status', 'open')
+                .maybeSingle(),
+            collectUnbilledItems(clinic_id, unit_id, await fetchActiveReceivableKeys(clinic_id)).catch(() => []),
+            supabase_1.supabaseAdmin
+                .from('hub_comandas')
+                .select('id, total_amount')
+                .eq('clinic_id', clinic_id)
+                .eq('unit_id', unit_id)
+                .eq('status', 'aberta')
+                .is('finance_handoff_at', null),
+        ]);
+        const openComandasCount = (openComandasRows ?? []).length;
+        const openComandasTotal = round2((openComandasRows ?? []).reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0));
+        return res.json({
+            cash_session: cashSession ?? null,
+            pending_billing_count: pendingBillingResult.length,
+            open_comandas_count: openComandasCount,
+            open_comandas_total: openComandasTotal,
+        });
+    }
+    catch (e) {
+        console.error('getHubFinanceCashSessionStatus', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.getHubFinanceCashSessionStatus = getHubFinanceCashSessionStatus;
 const listHubFinanceCashSessionsClosed = async (req, res) => {
     try {
         const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
@@ -1752,7 +1889,7 @@ const listHubFinanceCashSessionsClosed = async (req, res) => {
         }
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_cash_sessions')
-            .select('id, opened_at, closed_at, opening_balance, closing_balance, expected_balance, difference_amount, status')
+            .select('id, opened_at, closed_at, opening_balance, closing_balance, expected_balance, difference_amount, status, opened_by_staff_id, opened_by_staff:hub_staff_members!opened_by_staff_id(id, full_name, display_name)')
             .eq('clinic_id', clinicParsed.data)
             .eq('unit_id', unitParsed.data)
             .eq('status', 'closed')
@@ -1777,7 +1914,7 @@ const getHubFinanceCashSessionOpen = async (req, res) => {
         }
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_cash_sessions')
-            .select('*')
+            .select('*, opened_by_staff:hub_staff_members!opened_by_staff_id(id, full_name, display_name)')
             .eq('clinic_id', clinicParsed.data)
             .eq('unit_id', unitParsed.data)
             .eq('status', 'open')
@@ -2649,6 +2786,28 @@ const getHubFinanceDayBoard = async (req, res) => {
             if (billing)
                 item.billing = billing;
         }
+        const clinicBalances = await (0, hubPackagesService_1.listActivePackageBalances)({ clinicId: clinic_id });
+        for (const item of items) {
+            const serviceTypeIds = item.services
+                .map((_, idx) => {
+                const apptRow = (apptRows ?? []).find((r) => r.id === item.origin_id);
+                const svcs = apptRow?.appointment_services ?? [];
+                return svcs[idx]?.hub_service_type_id ?? null;
+            })
+                .filter(Boolean);
+            if (!serviceTypeIds.length && item.origin_type === 'appointment') {
+                const apptRow = (apptRows ?? []).find((r) => r.id === item.origin_id);
+                const primary = apptRow?.hub_service_type_id;
+                if (primary)
+                    serviceTypeIds.push(primary);
+                const svcs = apptRow?.appointment_services ?? [];
+                for (const s of svcs) {
+                    if (s.hub_service_type_id)
+                        serviceTypeIds.push(s.hub_service_type_id);
+                }
+            }
+            item.has_package_balance = (0, hubPackagesService_1.hasPackageBalanceForServices)(clinicBalances, item.guardian_id, item.pet_id, [...new Set(serviceTypeIds)]);
+        }
         let filteredItems = items;
         if (billing_scope === 'financeiro') {
             filteredItems = items.filter((item) => {
@@ -2802,7 +2961,7 @@ const getHubFinanceDashboardSummary = async (req, res) => {
         if (eErr) {
             if (String(eErr.message || '').includes('hub_expenses')) {
                 return res.status(503).json({
-                    error: 'Tabela hub_expenses não encontrada. Aplique a migração create_hub_expenses.sql.',
+                    error: 'Tabela hub_expenses não encontrada. Aplique a migração 037_create_hub_expenses.sql.',
                 });
             }
             return res.status(500).json({ error: eErr.message });
@@ -2892,7 +3051,7 @@ const getHubFinanceCashFlow = async (req, res) => {
         if (eErr) {
             if (String(eErr.message || '').includes('hub_expenses')) {
                 return res.status(503).json({
-                    error: 'Tabela hub_expenses não encontrada. Aplique a migração create_hub_expenses.sql.',
+                    error: 'Tabela hub_expenses não encontrada. Aplique a migração 037_create_hub_expenses.sql.',
                 });
             }
             return res.status(500).json({ error: eErr.message });
@@ -3274,7 +3433,7 @@ const listHubFinanceExpenses = async (req, res) => {
         if (error) {
             if (String(error.message || '').includes('hub_expenses')) {
                 return res.status(503).json({
-                    error: 'Tabela hub_expenses não encontrada. Aplique a migração create_hub_expenses.sql.',
+                    error: 'Tabela hub_expenses não encontrada. Aplique a migração 037_create_hub_expenses.sql.',
                 });
             }
             return res.status(500).json({ error: error.message });
@@ -3325,7 +3484,7 @@ const postHubFinanceExpense = async (req, res) => {
         if (error) {
             if (String(error.message || '').includes('hub_expenses')) {
                 return res.status(503).json({
-                    error: 'Tabela hub_expenses não encontrada. Aplique a migração create_hub_expenses.sql.',
+                    error: 'Tabela hub_expenses não encontrada. Aplique a migração 037_create_hub_expenses.sql.',
                 });
             }
             return res.status(500).json({ error: error.message });

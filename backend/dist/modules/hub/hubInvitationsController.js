@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resolveHubWebUrl = exports.buildInvitationShareMessage = exports.buildInvitationUrl = exports.signupFromHubInvitation = exports.checkHubInviteEmail = exports.previewHubInvitation = void 0;
+exports.resolveHubWebUrl = exports.buildInvitationShareMessage = exports.buildInvitationUrl = exports.acceptHubInvitation = exports.signupFromHubInvitation = exports.checkHubInviteEmail = exports.previewHubInvitation = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const zod_1 = require("zod");
 const supabase_js_1 = require("../../config/supabase.js");
@@ -16,6 +16,7 @@ const hubInvitationUtils_js_1 = require("./hubInvitationUtils.js");
 Object.defineProperty(exports, "buildInvitationShareMessage", { enumerable: true, get: function () { return hubInvitationUtils_js_1.buildInvitationShareMessage; } });
 Object.defineProperty(exports, "buildInvitationUrl", { enumerable: true, get: function () { return hubInvitationUtils_js_1.buildInvitationUrl; } });
 Object.defineProperty(exports, "resolveHubWebUrl", { enumerable: true, get: function () { return hubInvitationUtils_js_1.resolveHubWebUrl; } });
+const operationalAreas_js_1 = require("../../utils/operationalAreas.js");
 const uuidStr = zod_1.z.string().uuid();
 function resolveHubWebUrlForSignup() {
     const raw = process.env.HUB_WEB_URL?.trim() ||
@@ -69,7 +70,8 @@ exports.previewHubInvitation = (0, errorHandler_js_1.asyncHandler)(async (req, r
         unit_name: unit?.name ?? null,
         role_label: (0, permissions_js_1.getRoleDisplayName)(String(invitation.role).toUpperCase()),
         account_exists: accountExists,
-        blocked: accountExists,
+        /** Conta existente não bloqueia — o usuário faz login e aceita o convite. */
+        blocked: false,
         invitation_url: (0, hubInvitationUtils_js_1.buildInvitationUrl)(token),
     });
 });
@@ -90,20 +92,31 @@ exports.checkHubInviteEmail = (0, errorHandler_js_1.asyncHandler)(async (req, re
     const accountExists = await (0, hubInvitationUtils_js_1.authUserExistsForEmail)(email);
     if (accountExists) {
         return res.json({
-            available: false,
-            reason: 'Este e-mail já possui conta. No MVP, use um e-mail novo para convites.',
+            available: true,
+            account_exists: true,
+            reason: 'Este e-mail já possui conta. O convidado deve entrar e aceitar o convite pelo link.',
         });
     }
+    const nowIso = new Date().toISOString();
+    await supabase_js_1.supabaseAdmin
+        .from('user_invitations')
+        .update({ status: 'expired' })
+        .eq('clinic_id', clinic_id)
+        .ilike('email', email)
+        .eq('status', 'pending')
+        .lt('expires_at', nowIso);
     const { data: pending } = await supabase_js_1.supabaseAdmin
         .from('user_invitations')
         .select('id')
-        .eq('email', email.toLowerCase())
+        .ilike('email', email)
         .eq('clinic_id', clinic_id)
         .eq('status', 'pending')
+        .gte('expires_at', nowIso)
         .limit(1);
     if (pending?.length) {
         return res.json({
-            available: false,
+            available: true,
+            has_pending: true,
             reason: 'Já existe um convite pendente para este e-mail nesta clínica.',
         });
     }
@@ -129,7 +142,7 @@ exports.signupFromHubInvitation = (0, errorHandler_js_1.asyncHandler)(async (req
     const email = String(invitation.email || '').trim().toLowerCase();
     if (await (0, hubInvitationUtils_js_1.authUserExistsForEmail)(email)) {
         return res.status(409).json({
-            error: 'Este e-mail já possui conta. No MVP, o convite é apenas para novos usuários.',
+            error: 'Este e-mail já possui conta. Faça login e aceite o convite pelo mesmo link (não é necessário criar outra conta).',
         });
     }
     const hubWebUrl = resolveHubWebUrlForSignup();
@@ -155,6 +168,16 @@ exports.signupFromHubInvitation = (0, errorHandler_js_1.asyncHandler)(async (req
     }
     const userId = authData.user.id;
     const nowIso = new Date().toISOString();
+    let operationalAreas = [];
+    const staffMemberId = invitation.staff_member_id;
+    if (staffMemberId) {
+        const { data: staffRow } = await supabase_js_1.supabaseAdmin
+            .from('hub_staff_members')
+            .select('operational_areas')
+            .eq('id', staffMemberId)
+            .maybeSingle();
+        operationalAreas = (0, operationalAreas_js_1.sanitizeOperationalAreas)(staffRow?.operational_areas);
+    }
     try {
         const { data: clinicUser, error: cuError } = await supabase_js_1.supabaseAdmin
             .from('clinic_users')
@@ -164,6 +187,7 @@ exports.signupFromHubInvitation = (0, errorHandler_js_1.asyncHandler)(async (req
             clinic_id: invitation.clinic_id,
             unit_id: invitation.unit_id,
             role: invitation.role,
+            operational_areas: operationalAreas,
             status: 'active',
             invited_by: invitation.invited_by,
             invited_at: invitation.created_at,
@@ -211,4 +235,173 @@ exports.signupFromHubInvitation = (0, errorHandler_js_1.asyncHandler)(async (req
         await supabase_js_1.supabaseAdmin.auth.admin.deleteUser(userId);
         throw e;
     }
+});
+const acceptInviteSchema = zod_1.z.object({
+    token: zod_1.z.string().trim().min(1),
+});
+async function resolveOperationalAreasForInvitation(staffMemberId) {
+    if (!staffMemberId)
+        return [];
+    const { data: staffRow } = await supabase_js_1.supabaseAdmin
+        .from('hub_staff_members')
+        .select('operational_areas')
+        .eq('id', staffMemberId)
+        .maybeSingle();
+    return (0, operationalAreas_js_1.sanitizeOperationalAreas)(staffRow?.operational_areas);
+}
+/** POST /api/hub/invitations/accept — aceita convite com conta já autenticada. */
+exports.acceptHubInvitation = (0, errorHandler_js_1.asyncHandler)(async (req, res) => {
+    const parsed = acceptInviteSchema.safeParse(req.body);
+    if (!parsed.success) {
+        throw new errors_js_1.ValidationError(parsed.error.issues.map((i) => i.message).join('; '));
+    }
+    const userId = req.user.id;
+    const userEmail = String(req.user.email || '')
+        .trim()
+        .toLowerCase();
+    if (!userEmail) {
+        return res.status(400).json({ error: 'Sessão sem e-mail. Faça login novamente.' });
+    }
+    const invitation = await loadPendingInvitation(parsed.data.token);
+    if (!invitation) {
+        return res.status(404).json({ error: 'Convite inválido ou expirado' });
+    }
+    const inviteEmail = String(invitation.email || '')
+        .trim()
+        .toLowerCase();
+    if (inviteEmail !== userEmail) {
+        return res.status(403).json({
+            error: 'Este convite é para outro e-mail. Entre com a conta convidada para aceitar.',
+        });
+    }
+    const clinicId = invitation.clinic_id;
+    const unitId = invitation.unit_id;
+    const role = invitation.role;
+    const nowIso = new Date().toISOString();
+    const operationalAreas = await resolveOperationalAreasForInvitation(invitation.staff_member_id);
+    const { data: memberships, error: memErr } = await supabase_js_1.supabaseAdmin
+        .from('clinic_users')
+        .select('id, clinic_id, unit_id, role, status, user_id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true });
+    if (memErr) {
+        return res.status(500).json({ error: 'Erro ao verificar vínculos existentes' });
+    }
+    const rows = memberships || [];
+    const sameClinic = rows.find((r) => r.clinic_id != null && String(r.clinic_id) === String(clinicId));
+    const pendingOwner = rows.find((r) => (r.clinic_id == null || String(r.clinic_id).trim() === '') &&
+        String(r.status || '').toLowerCase() === 'pending_clinic');
+    const otherActive = rows.find((r) => r.clinic_id != null &&
+        String(r.clinic_id).trim() !== '' &&
+        String(r.clinic_id) !== String(clinicId) &&
+        String(r.status || '').toLowerCase() !== 'pending_clinic');
+    if (otherActive && !sameClinic) {
+        return res.status(400).json({
+            error: 'Esta conta já está vinculada a outra organização. Use outro e-mail ou peça suporte para transferir o acesso.',
+        });
+    }
+    let clinicUser;
+    if (sameClinic) {
+        const { data: updated, error: updErr } = await supabase_js_1.supabaseAdmin
+            .from('clinic_users')
+            .update({
+            unit_id: unitId,
+            role,
+            operational_areas: operationalAreas,
+            status: 'active',
+            accepted_at: nowIso,
+            first_login_completed_at: nowIso,
+            onboarding_state: {
+                source: 'hub_invitation_accept',
+                completed: true,
+                completed_at: nowIso,
+            },
+            updated_at: nowIso,
+        })
+            .eq('id', sameClinic.id)
+            .select()
+            .single();
+        if (updErr || !updated) {
+            return res.status(400).json({ error: updErr?.message || 'Erro ao atualizar vínculo' });
+        }
+        clinicUser = updated;
+    }
+    else if (pendingOwner) {
+        const { data: updated, error: updErr } = await supabase_js_1.supabaseAdmin
+            .from('clinic_users')
+            .update({
+            clinic_id: clinicId,
+            unit_id: unitId,
+            role,
+            operational_areas: operationalAreas,
+            status: 'active',
+            invited_by: invitation.invited_by,
+            invited_at: invitation.created_at,
+            accepted_at: nowIso,
+            first_login_completed_at: nowIso,
+            onboarding_state: {
+                source: 'hub_invitation_accept',
+                completed: true,
+                completed_at: nowIso,
+                converted_from: 'pending_clinic',
+            },
+            updated_at: nowIso,
+        })
+            .eq('id', pendingOwner.id)
+            .select()
+            .single();
+        if (updErr || !updated) {
+            return res.status(400).json({ error: updErr?.message || 'Erro ao vincular à clínica do convite' });
+        }
+        clinicUser = updated;
+    }
+    else {
+        const { data: created, error: cuError } = await supabase_js_1.supabaseAdmin
+            .from('clinic_users')
+            .insert({
+            id: crypto_1.default.randomUUID(),
+            user_id: userId,
+            clinic_id: clinicId,
+            unit_id: unitId,
+            role,
+            operational_areas: operationalAreas,
+            status: 'active',
+            invited_by: invitation.invited_by,
+            invited_at: invitation.created_at,
+            accepted_at: nowIso,
+            first_login_completed_at: nowIso,
+            onboarding_state: {
+                source: 'hub_invitation_accept',
+                completed: true,
+                completed_at: nowIso,
+            },
+            created_at: nowIso,
+            updated_at: nowIso,
+        })
+            .select()
+            .single();
+        if (cuError || !created) {
+            return res.status(400).json({ error: cuError?.message || 'Erro ao vincular à clínica' });
+        }
+        clinicUser = created;
+    }
+    await (0, hubInvitationUtils_js_1.linkStaffMemberToClinicUser)(invitation.staff_member_id, clinicUser.id);
+    await supabase_js_1.supabaseAdmin.from('user_invitations').update({ status: 'accepted' }).eq('token', parsed.data.token);
+    const metadata = (0, auditLog_js_1.extractRequestMetadata)(req);
+    await (0, auditLog_js_1.createAuditLog)({
+        user_id: userId,
+        clinic_id: clinicId,
+        unit_id: unitId,
+        action: 'HUB_INVITATION_ACCEPT',
+        entity_type: 'clinic_user',
+        entity_id: clinicUser.id,
+        new_values: { email: userEmail, role, invitation_id: invitation.id },
+        ...metadata,
+    });
+    return res.json({
+        success: true,
+        message: 'Convite aceito. Você já está vinculado à clínica.',
+        clinic_user: clinicUser,
+        role,
+    });
 });

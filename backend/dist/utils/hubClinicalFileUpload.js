@@ -29,7 +29,7 @@ async function ensureHubClinicalFilesBucket() {
         return;
     logger_js_1.logger.error('[hub_clinical_file] createBucket failed', { message: error.message });
     throw new Error(`Não foi possível preparar o armazenamento de exames clínicos (${error.message}). ` +
-        'Execute a migration `create_hub_clinical_attachments.sql` ou crie o bucket «hub-clinical-files» no Supabase.');
+        'Execute a migration `025j_create_hub_clinical_attachments.sql` ou crie o bucket «hub-clinical-files» no Supabase.');
 }
 /**
  * Upload de anexo clínico (PDF/imagem). Caminho: `{clinicId}/{petId}/{timestamp}-{rand}.{ext}`

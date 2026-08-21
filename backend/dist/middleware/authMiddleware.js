@@ -67,7 +67,7 @@ const checkPermission = async (user_id, clinic_id, permission) => {
         // sessão RLS do usuário e devolve vazio → falsos negativos e 403 em /units/clinic/:id.
         const { data: clinicUser, error } = await supabase_1.supabaseAdmin
             .from('clinic_users')
-            .select('role')
+            .select('role, operational_areas')
             .eq('user_id', user_id)
             .eq('clinic_id', clinic_id)
             .eq('status', 'active')
@@ -75,12 +75,7 @@ const checkPermission = async (user_id, clinic_id, permission) => {
         if (error || !clinicUser) {
             return false;
         }
-        if ((0, permissions_1.isClinicAdminRole)(clinicUser.role)) {
-            return true;
-        }
-        // Verificar se role tem a permissão
-        const userPermissions = permissions_1.PERMISSIONS[clinicUser.role];
-        return userPermissions ? userPermissions.includes(permission) : false;
+        return (0, permissions_1.hasEffectivePermission)(clinicUser.role, permission, clinicUser.operational_areas ?? []);
     }
     catch (error) {
         console.error('Error checking permission:', error);

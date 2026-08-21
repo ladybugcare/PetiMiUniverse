@@ -745,6 +745,9 @@ const createHubEncounter = async (req, res) => {
                 });
             }
             catch (caseErr) {
+                if (caseErr instanceof hubClinicalCasesController_1.CaseSelectionRequiredError) {
+                    return res.status(409).json({ error: caseErr.message, code: caseErr.code });
+                }
                 return res.status(400).json({ error: caseErr?.message || 'Erro ao resolver caso clínico' });
             }
         }
@@ -910,6 +913,9 @@ const openHubEncounterFromAppointment = async (req, res) => {
                 });
             }
             catch (caseErr) {
+                if (caseErr instanceof hubClinicalCasesController_1.CaseSelectionRequiredError) {
+                    return res.status(409).json({ error: caseErr.message, code: caseErr.code });
+                }
                 return res.status(400).json({ error: caseErr?.message || 'Erro ao resolver caso clínico' });
             }
         }

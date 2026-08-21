@@ -62,7 +62,7 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
         if (user) {
             const { data: clinicUserRows, error: clinicUserError, } = await supabase_1.supabaseAdmin
                 .from('clinic_users')
-                .select('id, clinic_id, user_id, role, status, unit_id, first_login_at, first_login_completed_at, onboarding_state')
+                .select('id, clinic_id, user_id, role, status, unit_id, operational_areas, first_login_at, first_login_completed_at, onboarding_state')
                 .eq('user_id', user.id)
                 .order('created_at', { ascending: true });
             if (clinicUserError) {
@@ -175,9 +175,16 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
                 // ✅ needsOnboarding: falta clínica vinculada OU ainda não existe nenhuma unidade cadastrada.
                 // `pending_unit` no registro da clínica não deve forçar onboarding se já houver linha em `units`.
                 const needsOnboarding = !resolvedClinicId || !hasUnits;
-                const shouldCompleteFirstUnit = needsOnboarding && (isEligibleClinicUser || isClinicOwnerMetadata);
-                const shouldCompleteClinicProfile = (!resolvedClinicId || !hasUnits) &&
-                    (isEligibleClinicUser || isClinicOwnerMetadata || clinicUserRole === 'CADMIN');
+                const roleUpper = String(clinicUserRole || '').toUpperCase();
+                const linkedClinicId = clinicUser?.clinic_id ||
+                    (resolvedClinicId && clinicUser ? resolvedClinicId : null);
+                // Dono pendente: CADMIN/CMANAGER sem clínica, ou metadata de dono sem membership.
+                // Staff convidado (metadata role=clinic + clinic_users já com clinic_id) NÃO entra aqui.
+                const isOwnerCapable = roleUpper === 'CADMIN' ||
+                    roleUpper === 'CMANAGER' ||
+                    (!clinicUser && isClinicOwnerMetadata);
+                const shouldCompleteClinicProfile = Boolean(isOwnerCapable && !linkedClinicId && needsOnboarding);
+                const shouldCompleteFirstUnit = Boolean(isOwnerCapable && needsOnboarding);
                 onboarding = {
                     clinicId: resolvedClinicId,
                     clinicStatus: clinicStatusValue,
@@ -189,7 +196,7 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
                     firstLoginAt,
                     firstLoginCompletedAt,
                     onboardingState: clinicUser?.onboarding_state || {},
-                    clinicUserRole: clinicUserRole || (isClinicOwnerMetadata ? 'CADMIN' : null),
+                    clinicUserRole: clinicUserRole || (isClinicOwnerMetadata && !clinicUser ? 'CADMIN' : null),
                     clinicUserStatus,
                 };
                 if (clinicStatusValue) {
@@ -325,6 +332,9 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
             role: clinicUserRecord.role,
             status: clinicUserRecord.status,
             unit_id: clinicUserRecord.unit_id,
+            operational_areas: Array.isArray(clinicUserRecord.operational_areas)
+                ? clinicUserRecord.operational_areas
+                : [],
             first_login_at: clinicUserRecord.first_login_at,
             first_login_completed_at: clinicUserRecord.first_login_completed_at,
             onboarding_state: clinicUserRecord.onboarding_state,
@@ -337,6 +347,7 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
                 role: 'CADMIN',
                 status: 'active',
                 unit_id: null,
+                operational_areas: [],
                 first_login_at: null,
                 first_login_completed_at: null,
                 onboarding_state: {},

@@ -18,7 +18,7 @@ function isBucketAlreadyExists(err) {
 }
 /**
  * Garante o bucket de fotos da equipe (ex.: ambientes onde a migration SQL ainda não correu).
- * Para políticas RLS finas em `storage.objects`, continue a usar `create_hub_staff_photos_bucket.sql`.
+ * Para políticas RLS finas em `storage.objects`, continue a usar `011_create_hub_staff_photos_bucket.sql`.
  */
 async function ensureHubStaffPhotosBucket() {
     const { error } = await supabase_1.supabaseAdmin.storage.createBucket(HUB_STAFF_PHOTOS_BUCKET, {
@@ -35,7 +35,7 @@ async function ensureHubStaffPhotosBucket() {
     }
     logger_js_1.logger.error('[hub_staff_photo] createBucket failed', { message: error.message });
     throw new Error(`Não foi possível preparar o armazenamento de fotos da equipe (${error.message}). ` +
-        'No Supabase (SQL Editor), execute `petimi_hub/create_hub_staff_photos_bucket.sql` ou crie manualmente o bucket «hub-staff-photos» (público, até 5 MB, JPEG/PNG/WEBP).');
+        'No Supabase (SQL Editor), execute `petimi_hub/011_create_hub_staff_photos_bucket.sql` ou crie manualmente o bucket «hub-staff-photos» (público, até 5 MB, JPEG/PNG/WEBP).');
 }
 /**
  * Envia imagem de perfil de membro da equipe para Storage (bucket `hub-staff-photos`).
@@ -64,7 +64,7 @@ async function uploadHubStaffPhotoToStorage(file, clinicId) {
     if (error) {
         logger_js_1.logger.error('[hub_staff_photo] upload failed', { clinicId, fileName, message: error.message });
         if (isBucketNotFound(error)) {
-            throw new Error('Bucket «hub-staff-photos» não disponível. No Supabase, execute `petimi_hub/create_hub_staff_photos_bucket.sql` e confirme a service role e o Storage.');
+            throw new Error('Bucket «hub-staff-photos» não disponível. No Supabase, execute `petimi_hub/011_create_hub_staff_photos_bucket.sql` e confirme a service role e o Storage.');
         }
         throw error;
     }

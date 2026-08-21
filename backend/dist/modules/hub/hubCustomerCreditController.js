@@ -61,7 +61,7 @@ const postHubCustomerCreditMovement = async (req, res) => {
             .single();
         if (error) {
             if (String(error.message || '').includes('hub_customer_credit')) {
-                return res.status(503).json({ error: 'Tabela de crédito do tutor não encontrada. Aplique create_hub_customer_credit_movements.sql.' });
+                return res.status(503).json({ error: 'Tabela de crédito do tutor não encontrada. Aplique 044_create_hub_customer_credit_movements.sql.' });
             }
             return res.status(500).json({ error: error.message });
         }

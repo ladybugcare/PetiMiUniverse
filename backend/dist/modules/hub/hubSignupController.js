@@ -12,6 +12,7 @@ const auditLog_js_1 = require("../../utils/auditLog.js");
 const errorHandler_js_1 = require("../../middleware/errorHandler.js");
 const errors_js_1 = require("../../utils/errors.js");
 const hubServiceGroupsController_js_1 = require("./hubServiceGroupsController.js");
+const hubSubscriptionService_js_1 = require("./hubSubscriptionService.js");
 function resolveHubWebUrl() {
     const raw = process.env.HUB_WEB_URL?.trim() ||
         process.env.VITE_HUB_WEB_URL?.trim() ||
@@ -49,6 +50,9 @@ const unitBlockSchema = zod_1.z.object({
 const hubOnboardingBodySchema = zod_1.z.object({
     clinic: clinicBlockSchema,
     unit: unitBlockSchema,
+    /** Pré-MVP: ignorado — backend força plano beta. */
+    plan_slug: zod_1.z.string().trim().max(50).optional(),
+    beta_terms_accepted: zod_1.z.boolean().optional(),
 });
 async function ensureClinicUserForSignup(userId) {
     const { data: existing, error: fetchError } = await supabase_js_1.supabaseAdmin
@@ -265,6 +269,17 @@ exports.postHubOnboardingClinic = (0, errorHandler_js_1.asyncHandler)(async (req
     catch (bootstrapErr) {
         console.warn('[hub_onboarding] ensureDefaultGroupJobFunctions', bootstrapErr);
     }
+    let subscription = null;
+    try {
+        subscription = await (0, hubSubscriptionService_js_1.createBetaSubscription)(finalClinicId, {
+            notes: parsed.data.beta_terms_accepted
+                ? 'Programa Beta — termos aceitos no onboarding'
+                : 'Programa Beta (pré-MVP)',
+        });
+    }
+    catch (subErr) {
+        console.warn('[hub_onboarding] createBetaSubscription', subErr);
+    }
     const adminFullName = req.user?.user_metadata?.full_name ||
         req.user?.user_metadata?.name ||
         clinicInput.name;
@@ -310,6 +325,15 @@ exports.postHubOnboardingClinic = (0, errorHandler_js_1.asyncHandler)(async (req
         clinic: newClinic,
         unit,
         clinicUser: updatedCu,
-        message: 'Clínica e unidade registadas com sucesso.',
+        subscription: subscription
+            ? {
+                status: subscription.status,
+                is_beta: subscription.is_beta,
+                base_plan_slug: subscription.hub_platform_plans?.slug ?? 'beta',
+                enabled_modules: subscription.enabled_modules,
+                beta_free_until: subscription.beta_free_until,
+            }
+            : null,
+        message: 'Clínica e unidade cadastradas com sucesso.',
     });
 });

@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteHubClinicalCase = exports.patchHubClinicalCase = exports.createHubClinicalCase = exports.getHubClinicalCase = exports.listHubClinicalCases = void 0;
+exports.CaseSelectionRequiredError = exports.deleteHubClinicalCase = exports.patchHubClinicalCase = exports.createHubClinicalCase = exports.getHubClinicalCase = exports.listHubClinicalCases = void 0;
 exports.resolveOrCreateClinicalCase = resolveOrCreateClinicalCase;
+exports.ensureCaseAndAdmissionEncounter = ensureCaseAndAdmissionEncounter;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const uuidStr = zod_1.z.string().uuid();
@@ -252,14 +253,26 @@ const deleteHubClinicalCase = async (req, res) => {
 };
 exports.deleteHubClinicalCase = deleteHubClinicalCase;
 /**
+ * Erro lançado quando um pet tem caso(s) ativo(s) mas nenhuma escolha explícita foi feita.
+ * Permite que o caller retorne 409 com código tipado para a UI exibir o seletor de caso.
+ */
+class CaseSelectionRequiredError extends Error {
+    code = 'CASE_SELECTION_REQUIRED';
+    constructor() {
+        super('Este pet possui caso(s) clínico(s) ativo(s). Associe a um caso existente ou crie um novo.');
+        this.name = 'CaseSelectionRequiredError';
+    }
+}
+exports.CaseSelectionRequiredError = CaseSelectionRequiredError;
+/**
  * Utilitário interno: retorna ou cria um caso clínico para o encounter.
- * Chamado por hubEncountersController ao criar/abrir um atendimento.
+ * Chamado por hubEncountersController e hubClinicalModulesController.
  *
  * Lógica:
  * - Se hub_case_id foi explicitamente enviado → valida que pertence ao pet/clínica e está ativo/monitoring.
  * - Se create_new_case=true  → cria novo caso.
- * - Se nenhum → verifica se há casos active/monitoring para o pet; se sim, reaproveita o mais recente.
- *               Se não, cria auto-caso.
+ * - Se nenhum e existir ≥1 caso active/monitoring → lança CaseSelectionRequiredError (UI deve perguntar).
+ * - Se nenhum caso ativo → cria auto-caso.
  */
 async function resolveOrCreateClinicalCase(opts) {
     const { clinic_id, unit_id, pet_id, guardian_id, primary_veterinarian_id, chief_complaint, started_at, hub_case_id, create_new_case, new_case_title, } = opts;
@@ -294,7 +307,7 @@ async function resolveOrCreateClinicalCase(opts) {
             case_title: new_case_title ?? null,
         });
     }
-    // Sem indicação explícita: buscar caso ativo/monitoring mais recente
+    // Sem indicação explícita: verificar casos ativos
     const { data: activeCases } = await supabase_1.supabaseAdmin
         .from('hub_clinical_cases')
         .select('id, status')
@@ -305,10 +318,67 @@ async function resolveOrCreateClinicalCase(opts) {
         .order('opened_at', { ascending: false })
         .limit(1);
     if (activeCases && activeCases.length > 0) {
-        return activeCases[0].id;
+        throw new CaseSelectionRequiredError();
     }
     // Sem caso ativo → cria auto-caso
     return createAutoCase({ clinic_id, unit_id, pet_id, guardian_id, primary_veterinarian_id, chief_complaint, started_at });
+}
+/**
+ * Garante que uma internação/cirurgia tenha caso clínico e atendimento de referência.
+ * Se não houver `hub_encounter_id`, cria um encounter de admissão automaticamente.
+ * Retorna os IDs resolvidos.
+ */
+async function ensureCaseAndAdmissionEncounter(opts) {
+    const { clinic_id, unit_id, pet_id, guardian_id, hub_encounter_id, hub_case_id, create_new_case, new_case_title, encounter_chief_complaint, } = opts;
+    // Encounter fornecido: validar e extrair case_id dele
+    if (hub_encounter_id) {
+        const { data: enc } = await supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .select('id, hub_case_id')
+            .eq('id', hub_encounter_id)
+            .eq('clinic_id', clinic_id)
+            .eq('pet_id', pet_id)
+            .is('deleted_at', null)
+            .maybeSingle();
+        if (!enc)
+            throw new Error('Atendimento não encontrado ou não pertence a este pet/clínica');
+        const caseId = enc.hub_case_id ?? null;
+        // Se o encounter já tem case, usar; se não, criar/resolver
+        const finalCaseId = caseId ?? await resolveOrCreateClinicalCase({
+            clinic_id, unit_id, pet_id, guardian_id, hub_case_id, create_new_case, new_case_title,
+        });
+        return { case_id: finalCaseId, encounter_id: hub_encounter_id };
+    }
+    // Sem encounter: resolver/criar caso primeiro
+    const finalCaseId = await resolveOrCreateClinicalCase({
+        clinic_id,
+        unit_id,
+        pet_id,
+        guardian_id,
+        hub_case_id,
+        create_new_case,
+        new_case_title,
+        chief_complaint: encounter_chief_complaint,
+    });
+    // Criar encounter de admissão
+    const { data: enc, error: encErr } = await supabase_1.supabaseAdmin
+        .from('hub_encounters')
+        .insert({
+        clinic_id,
+        unit_id: unit_id ?? null,
+        pet_id,
+        guardian_id: guardian_id ?? null,
+        hub_case_id: finalCaseId,
+        encounter_type: 'procedure',
+        status: 'in_progress',
+        chief_complaint: encounter_chief_complaint,
+        started_at: new Date().toISOString(),
+    })
+        .select('id')
+        .single();
+    if (encErr || !enc)
+        throw new Error(`Erro ao criar atendimento de admissão: ${encErr?.message}`);
+    return { case_id: finalCaseId, encounter_id: enc.id };
 }
 async function createAutoCase(opts) {
     const title = opts.case_title?.trim() || opts.chief_complaint?.trim() || 'Atendimento avulso';
