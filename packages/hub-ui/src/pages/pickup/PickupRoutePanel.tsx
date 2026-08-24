@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, MapPin, PlusCircle, Truck, User } from 'lucide-react';
+import { ArrowDown, ArrowUp, MapPin, PlusCircle, Radio, Truck, User } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { getStoredClinicId } from '@petimi/web-core';
 import { hubPickupApi, type PickupRoute, type PickupRouteStatus } from '../../api/hubPickupApi';
 import { useAlert } from '../../components/AlertProvider';
@@ -152,32 +153,45 @@ const PickupRoutePanel: React.FC<Props> = ({
                   </div>
                 ) : null}
               </button>
-              {canManage && routes.length > 1 ? (
-                <div className="hub-pickup-route-card__reorder">
-                  <button
-                    type="button"
-                    className="hub-clientes__icon-btn"
-                    aria-label="Subir na fila"
-                    disabled={idx === 0 || reorderingId === r.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void moveRoute(r, -1);
-                    }}
+              {canManage ? (
+                <div className="hub-pickup-route-card__actions">
+                  <Link
+                    to={`/hub/leva-e-traz/monitoramento/${r.id}`}
+                    className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-pickup-route-card__monitor-link"
+                    onClick={(e) => e.stopPropagation()}
+                    title="Monitorar rota"
                   >
-                    <ArrowUp size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className="hub-clientes__icon-btn"
-                    aria-label="Descer na fila"
-                    disabled={idx === routes.length - 1 || reorderingId === r.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void moveRoute(r, 1);
-                    }}
-                  >
-                    <ArrowDown size={14} />
-                  </button>
+                    <Radio size={12} aria-hidden />
+                    Monitorar
+                  </Link>
+                  {routes.length > 1 ? (
+                    <div className="hub-pickup-route-card__reorder">
+                      <button
+                        type="button"
+                        className="hub-clientes__icon-btn"
+                        aria-label="Subir na fila"
+                        disabled={idx === 0 || reorderingId === r.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void moveRoute(r, -1);
+                        }}
+                      >
+                        <ArrowUp size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="hub-clientes__icon-btn"
+                        aria-label="Descer na fila"
+                        disabled={idx === routes.length - 1 || reorderingId === r.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void moveRoute(r, 1);
+                        }}
+                      >
+                        <ArrowDown size={14} />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>

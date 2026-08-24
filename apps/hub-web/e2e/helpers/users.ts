@@ -35,6 +35,16 @@ export const E2E_CSTAFF_HOTEL = {
   fullName: 'E2E Hotel e Creche',
 } as const;
 
+export const E2E_CSTAFF_CAIXA = {
+  email: 'e2e.cstaff.caixa@example.com',
+  fullName: 'E2E Caixa',
+} as const;
+
+export const E2E_CSTAFF_RECEPCAO = {
+  email: 'e2e.cstaff.recepcao@example.com',
+  fullName: 'E2E Recepcao',
+} as const;
+
 export const E2E_GUARDIAN = {
   fullName: '[E2E] Maria Tutor',
   taxId: '52998224725',
@@ -56,6 +66,8 @@ export type E2EUsersFile = {
   cstaffBath?: E2EUserCreds;
   cstaffClinic?: E2EUserCreds;
   cstaffHotel?: E2EUserCreds;
+  cstaffCash?: E2EUserCreds;
+  cstaffReception?: E2EUserCreds;
   clinicId: string;
   unitId: string;
   guardianName: string;

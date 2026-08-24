@@ -45,6 +45,14 @@ export function hubCstaffHotelCredentials() {
   return credsFromRow(readProvisionedUsers()?.cstaffHotel);
 }
 
+export function hubCstaffCashCredentials() {
+  return credsFromRow(readProvisionedUsers()?.cstaffCash);
+}
+
+export function hubCstaffReceptionCredentials() {
+  return credsFromRow(readProvisionedUsers()?.cstaffReception);
+}
+
 export function e2eOpsNames(): { guardianName: string; petName: string; driverName: string } {
   const file = readProvisionedUsers();
   return {

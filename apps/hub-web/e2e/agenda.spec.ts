@@ -2,6 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 import { loginAs } from './helpers/auth';
 import { e2eOpsNames, hubCadminCredentials } from './helpers/env';
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function openAgendaAsCadmin(page: Page) {
   const creds = hubCadminCredentials();
   test.skip(!creds, 'CADMIN e2e não provisionado.');
@@ -24,6 +28,17 @@ test.describe('agenda', () => {
     const pet = page.getByText(petName);
     const guardian = page.getByText(guardianName);
     await expect(pet.or(guardian).first()).toBeVisible({ timeout: 20_000 });
+  });
+
+  test('CADMIN vê leva-e-traz no banho avulso das 14h', async ({ page }) => {
+    if (!(await openAgendaAsCadmin(page))) return;
+
+    const { petName } = e2eOpsNames();
+    const card = page.getByRole('button', { name: new RegExp(`14:00.*${escapeRegExp(petName)}`) });
+    await expect(card.first()).toBeVisible({ timeout: 20_000 });
+    await expect(card.first().getByTitle('Leva e traz: busca')).toBeVisible();
+    await expect(card.first().getByTitle('Leva e traz: retorno')).toBeVisible();
+    await expect(card.first().getByTitle('Parte de série recorrente')).toHaveCount(0);
   });
 
   test('CADMIN vê multi-serviço Banho + Tosa no card e no detalhe', async ({ page }) => {

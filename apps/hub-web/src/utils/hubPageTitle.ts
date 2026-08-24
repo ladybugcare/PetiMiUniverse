@@ -27,6 +27,8 @@ const ROUTES: { path: string; title: string }[] = [
   { path: '/signup', title: 'Criar conta' },
   { path: '/email-confirmed', title: 'Confirmar e-mail' },
   { path: '/hub/clinica', title: 'Clínica — Consultório' },
+  { path: '/hub/leva-e-traz/monitoramento', title: 'Leva e Traz — Monitoramento' },
+  { path: '/hub/leva-e-traz/minha-rota', title: 'Leva e Traz — Minha rota' },
   { path: '/hub/leva-e-traz', title: 'Leva e Traz' },
   { path: '/hub/caixa', title: 'Caixa' },
   { path: '/hub/hotel-creche', title: 'Hotel & Creche' },

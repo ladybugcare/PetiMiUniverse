@@ -101,6 +101,21 @@ Componentes: `HubPickupPage`, `PickupDayBoard`.
 - Avanço direction-aware: `arrived → in_transit` (Pet a bordo) para coleta; `arrived → completed` (Entregue) para entrega.
 - Sem botão WhatsApp; manter `Ligar`.
 
+### 5. Monitoramento inferido (`PickupRouteMonitorPage`)
+
+- Rota: `/hub/leva-e-traz/monitoramento/:routeId`.
+- Permissão: `pickup.routes.manage` (quem monta a rota). Motorista puro não acessa.
+- Entrada: link **Monitorar** no painel de rotas e na timeline do dia.
+- **Sem GPS.** Posição do motorista no mapa é inferida pelos status das paradas:
+  - rota planejada / todas `pending` → ponto de saída;
+  - `en_route` → último ponto confirmado (ou saída), destino = parada ativa;
+  - `arrived` → no endereço da parada;
+  - `in_transit` (coleta) → no endereço da coleta; destino = próxima parada (outra coleta/entrega ou `clinic_return`);
+  - `clinic_return` em deslocamento/no local → retorno à clínica (coords do start);
+  - todas concluídas → última parada concluída.
+- Lateral: histórico de `hub_pickup_stop_events` (transições de status com horário) + lista de paradas.
+- Poll ~20s via `GET /pickup/routes/:id` (inclui `events` e `updated_at` nas stops).
+
 ---
 
 ## Agendamento: pernas L&T (`NewAppointmentModal`)
@@ -118,10 +133,10 @@ Componentes: `HubPickupPage`, `PickupDayBoard`.
 | `GET` | `/pickup/day-board` | `routes.read` | Board do dia |
 | `GET` | `/pickup/routes` | `routes.read` | Listar rotas |
 | `POST` | `/pickup/routes` | `routes.manage` | Criar rota |
-| `GET` | `/pickup/routes/:id` | `routes.read` | Detalhe da rota |
+| `GET` | `/pickup/routes/:id` | `routes.read` | Detalhe da rota (+ `events` de status) |
 | `PATCH` | `/pickup/routes/:id` | `routes.manage` | Atualizar rota |
 | `POST` | `/pickup/routes/:id/stops` | `routes.manage` | Adicionar paradas à rota |
-| `PATCH` | `/pickup/stops/:id` | `stops.update` | Avançar/atualizar parada |
+| `PATCH` | `/pickup/stops/:id` | `stops.update` | Avançar/atualizar parada (grava evento) |
 | `POST` | `/pickup/stops` | `stops.update` | Criar/atualizar parada solta (sem rota) |
 | `GET` | `/pickup/my-route` | `routes.read` | Rota do dia do motorista autenticado |
 
@@ -130,18 +145,21 @@ Componentes: `HubPickupPage`, `PickupDayBoard`.
 ## Arquivos-chave
 
 - `packages/hub-ui/src/pages/pickup/` — todos os componentes operacionais
+- `packages/hub-ui/src/pages/pickup/PickupRouteMonitorPage.tsx` — monitoramento gerencial
+- `packages/hub-ui/src/pages/pickup/inferDriverMapPosition.ts` — regra de posição inferida
 - `packages/hub-ui/src/api/hubPickupApi.ts` — tipos e cliente API
 - `backend/src/modules/hub/hubPickupController.ts` — lógica backend
 - `backend/src/modules/hub/hubAppointmentsController.ts` — criação das pernas
 - `packages/hub-ui/src/pages/agenda/NewAppointmentModal.tsx` — agendamento L&T
 - `apps/hub-web/src/App.tsx`, `HubSidebar.tsx` — rotas e navegação
 - `backend/database_migrations/petimi_hub/083_alter_hub_pickup_stops_in_transit.sql` — migration `in_transit`
+- `backend/database_migrations/petimi_hub/092_create_hub_pickup_stop_events.sql` — histórico de status
 
 ---
 
 ## Fora de escopo
 
 - Templates WhatsApp operacionais
-- GPS / tracking em tempo real
+- GPS / tracking em tempo real (pings do celular ou rastreador de frota)
 - Ordenação de paradas por distância
 - Role dedicado de motorista

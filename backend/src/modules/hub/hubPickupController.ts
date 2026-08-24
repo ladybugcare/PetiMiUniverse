@@ -85,6 +85,37 @@ async function resolveDriverStaffIdForUser(
   return staffRow ? (staffRow as { id: string }).id : null;
 }
 
+/** Grava transição de status para o histórico de monitoramento. */
+async function recordStopStatusEvent(opts: {
+  clinic_id: string;
+  hub_pickup_stop_id: string;
+  hub_pickup_route_id?: string | null;
+  from_status: string | null;
+  to_status: string;
+  actor_staff_id?: string | null;
+}): Promise<void> {
+  const { error } = await supabaseAdmin.from('hub_pickup_stop_events').insert({
+    clinic_id: opts.clinic_id,
+    hub_pickup_stop_id: opts.hub_pickup_stop_id,
+    hub_pickup_route_id: opts.hub_pickup_route_id ?? null,
+    from_status: opts.from_status,
+    to_status: opts.to_status,
+    actor_staff_id: opts.actor_staff_id ?? null,
+  });
+  if (error) {
+    console.error('[hubPickupController] recordStopStatusEvent', error.message);
+  }
+}
+
+async function resolveActorStaffIdFromRequest(
+  req: Request,
+  clinicId: string,
+): Promise<string | null> {
+  const userId = (req as Request & { user?: { id?: string } }).user?.id;
+  if (!userId) return null;
+  return resolveDriverStaffIdForUser(clinicId, userId);
+}
+
 /** Capacidade efetiva do veículo (soma de caixas ativas ou capacity_animals). */
 async function resolveVehicleCapacity(
   clinicId: string,
@@ -1201,7 +1232,9 @@ export const getHubPickupRoute = async (req: Request, res: Response) => {
 
     const { data: stopsRaw, error: stopsErr } = await supabaseAdmin
       .from('hub_pickup_stops')
-      .select('id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, status, planned_at, completed_at, failure_reason, notes')
+      .select(
+        'id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, status, planned_at, completed_at, failure_reason, notes, updated_at',
+      )
       .eq('hub_pickup_route_id', id)
       .order('sequence', { ascending: true });
     if (stopsErr) return res.status(500).json({ error: stopsErr.message });
@@ -1219,6 +1252,7 @@ export const getHubPickupRoute = async (req: Request, res: Response) => {
       completed_at: string | null;
       failure_reason: string | null;
       notes: string | null;
+      updated_at: string;
     }>;
 
     // Enriquecer com pet e tutor
@@ -1231,12 +1265,23 @@ export const getHubPickupRoute = async (req: Request, res: Response) => {
     const petByGuardian = await resolvePrimaryPetIdsByGuardians(clinic_id, guardiansMissingPet);
     for (const pid of petByGuardian.values()) petIdSet.add(pid);
 
-    const [gusRes, petMap] = await Promise.all([
+    const [gusRes, petMap, eventsRes] = await Promise.all([
       guIds.length
         ? supabaseAdmin.from('hub_guardians').select('id, full_name, phone').in('id', guIds)
         : Promise.resolve({ data: [] }),
       fetchHubPetsMapByIds(petIdSet),
+      supabaseAdmin
+        .from('hub_pickup_stop_events')
+        .select(
+          'id, clinic_id, hub_pickup_stop_id, hub_pickup_route_id, from_status, to_status, recorded_at, actor_staff_id',
+        )
+        .eq('hub_pickup_route_id', id)
+        .eq('clinic_id', clinic_id)
+        .order('recorded_at', { ascending: true }),
     ]);
+    if (eventsRes.error) {
+      console.error('[hubPickupController] getHubPickupRoute events', eventsRes.error.message);
+    }
     const guMap = new Map(
       ((gusRes.data ?? []) as Array<{ id: string; full_name: string; phone?: string | null }>).map((g) => [g.id, g]),
     );
@@ -1265,7 +1310,18 @@ export const getHubPickupRoute = async (req: Request, res: Response) => {
       };
     });
 
-    return res.json({ route: { ...route, driver }, stops: enrichedStops });
+    const events = (eventsRes.data ?? []) as Array<{
+      id: string;
+      clinic_id: string;
+      hub_pickup_stop_id: string;
+      hub_pickup_route_id: string | null;
+      from_status: string | null;
+      to_status: string;
+      recorded_at: string;
+      actor_staff_id: string | null;
+    }>;
+
+    return res.json({ route: { ...route, driver }, stops: enrichedStops, events });
   } catch (e) {
     console.error('[hubPickupController] getHubPickupRoute', e);
     return res.status(500).json({ error: 'Erro ao buscar rota.' });
@@ -1349,9 +1405,21 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
       .update(patch)
       .eq('id', id)
       .eq('clinic_id', clinic_id)
-      .select('id, status, completed_at, failure_reason, notes, sequence, direction, planned_at')
+      .select('id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at')
       .single();
     if (updateErr) return res.status(500).json({ error: updateErr.message });
+
+    if (newStatus && newStatus !== cur.status) {
+      const actorStaffId = await resolveActorStaffIdFromRequest(req, clinic_id);
+      await recordStopStatusEvent({
+        clinic_id,
+        hub_pickup_stop_id: id,
+        hub_pickup_route_id: cur.hub_pickup_route_id,
+        from_status: cur.status,
+        to_status: newStatus,
+        actor_staff_id: actorStaffId,
+      });
+    }
 
     // Auto planned → in_progress na primeira parada que sai de pending
     if (
@@ -1466,6 +1534,8 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
       .maybeSingle();
 
     let stop: Record<string, unknown>;
+    let fromStatus: string | null = null;
+    let statusChanged = false;
     if (existing) {
       const ex = existing as { id: string; status: string };
       // Validar transição
@@ -1484,10 +1554,12 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
         .update(patch)
         .eq('id', ex.id)
         .eq('clinic_id', clinic_id)
-        .select('id, status, direction, sequence, planned_at, completed_at, failure_reason, notes')
+        .select('id, status, direction, sequence, planned_at, completed_at, failure_reason, notes, updated_at')
         .single();
       if (updErr) return res.status(500).json({ error: updErr.message });
       stop = updated as Record<string, unknown>;
+      fromStatus = ex.status;
+      statusChanged = status !== ex.status;
     } else {
       const { data: created, error: insErr } = await supabaseAdmin
         .from('hub_pickup_stops')
@@ -1501,10 +1573,24 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
           sequence: 0,
           address_snapshot: addressSnapshot,
         })
-        .select('id, status, direction, sequence, planned_at, completed_at, failure_reason, notes')
+        .select('id, status, direction, sequence, planned_at, completed_at, failure_reason, notes, updated_at')
         .single();
       if (insErr) return res.status(500).json({ error: insErr.message });
       stop = created as Record<string, unknown>;
+      fromStatus = null;
+      statusChanged = status !== 'pending';
+    }
+
+    if (statusChanged) {
+      const actorStaffId = await resolveActorStaffIdFromRequest(req, clinic_id);
+      await recordStopStatusEvent({
+        clinic_id,
+        hub_pickup_stop_id: String(stop.id),
+        hub_pickup_route_id: null,
+        from_status: fromStatus,
+        to_status: status,
+        actor_staff_id: actorStaffId,
+      });
     }
 
     // Sincronizar appointment
@@ -1537,7 +1623,7 @@ async function loadEnrichedStopsForRoute(routeId: string) {
   const { data: stops, error: stopsErr } = await supabaseAdmin
     .from('hub_pickup_stops')
     .select(
-      'id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, cage_id, status, planned_at, completed_at, failure_reason, notes',
+      'id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, cage_id, status, planned_at, completed_at, failure_reason, notes, updated_at',
     )
     .eq('hub_pickup_route_id', routeId)
     .order('sequence', { ascending: true });
@@ -1557,6 +1643,7 @@ async function loadEnrichedStopsForRoute(routeId: string) {
     completed_at: string | null;
     failure_reason: string | null;
     notes: string | null;
+    updated_at?: string;
   }>;
 
   const petIds = [...new Set(stopRows.map((s) => s.pet_id).filter(Boolean) as string[])];
@@ -1592,13 +1679,34 @@ async function insertClinicReturnStop(opts: {
   sequence: number;
 }): Promise<void> {
   const resolved = await resolveClinicOrUnitAddress(opts.clinic_id, opts.unit_id);
+  const { data: routeCoords } = await supabaseAdmin
+    .from('hub_pickup_routes')
+    .select('start_lat, start_lng, start_address')
+    .eq('id', opts.route_id)
+    .eq('clinic_id', opts.clinic_id)
+    .maybeSingle();
+  const rc = (routeCoords ?? {}) as {
+    start_lat?: number | null;
+    start_lng?: number | null;
+    start_address?: string | null;
+  };
+  const lat =
+    typeof rc.start_lat === 'number' && Number.isFinite(rc.start_lat) ? rc.start_lat : null;
+  const lng =
+    typeof rc.start_lng === 'number' && Number.isFinite(rc.start_lng) ? rc.start_lng : null;
+
   const addressSnapshot: Record<string, unknown> = {
     label: resolved.label,
-    address: resolved.address,
-    address_street: resolved.address,
+    address: resolved.address ?? rc.start_address ?? null,
+    address_street: resolved.address ?? rc.start_address ?? null,
     address_city: null,
     address_neighborhood: null,
   };
+  if (lat != null && lng != null) {
+    addressSnapshot.lat = lat;
+    addressSnapshot.lng = lng;
+  }
+
   await supabaseAdmin.from('hub_pickup_stops').insert({
     clinic_id: opts.clinic_id,
     hub_pickup_route_id: opts.route_id,

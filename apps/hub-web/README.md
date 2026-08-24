@@ -32,6 +32,8 @@ Antes dos casos autenticados, o projeto `setup` cria (ou reutiliza) contas de te
 | CSTAFF (banho_tosa) | `e2e.cstaff.banho@example.com` | a mesma |
 | CSTAFF (clinica) | `e2e.cstaff.clinica@example.com` | a mesma |
 | CSTAFF (hotel_creche) | `e2e.cstaff.hotel@example.com` | a mesma |
+| CSTAFF (caixa) | `e2e.cstaff.caixa@example.com` | a mesma |
+| CSTAFF (recepcao) | `e2e.cstaff.recepcao@example.com` | a mesma |
 
 O CADMIN passa pelo onboarding da clínica; em seguida o setup cadastra os CSTAFF por área, envia o convite, cria tutor/pet e um agendamento de hoje com pernas de leva e traz. Reexecuções são idempotentes.
 

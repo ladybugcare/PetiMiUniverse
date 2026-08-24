@@ -83,7 +83,7 @@ export type AgendaAppointment = {
   displayServiceLabel?: string;
   /** Parte de série recorrente. */
   isRecurring?: boolean;
-  /** L&T via checkbox: busca/retorno na mesma série (badges no card principal). */
+  /** L&T via checkbox: busca/retorno vinculados ao principal (badges no card). */
   pickupPackage?: { hasBefore: boolean; hasAfter: boolean } | null;
   description?: string;
   financial_notes?: string;
@@ -357,14 +357,11 @@ function computePickupPackage(
   appt: AgendaAppointment,
   allAppts: AgendaAppointment[],
 ): { hasBefore: boolean; hasAfter: boolean } | null {
-  if (!isMainAppointmentKind(appt.appointment_kind) || !appt.series_id) return null;
+  if (!isMainAppointmentKind(appt.appointment_kind)) return null;
   if (appt.group === 'leva_traz') return null;
 
   const legs = allAppts.filter(
-    (s) =>
-      s.series_id === appt.series_id &&
-      s.appointment_kind === 'pickup_route' &&
-      isSameDay(s.start, appt.start),
+    (s) => s.parent_appointment_id === appt.id && s.appointment_kind === 'pickup_route',
   );
   if (legs.length === 0) return null;
 

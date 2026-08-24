@@ -1,19 +1,23 @@
 import React, { useEffect } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import type { PickupStopStatus } from '../../api/hubPickupApi';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────
+
+export type MapStopDirection = 'pickup' | 'delivery' | 'clinic_return' | 'unknown';
 
 export type MapStop = {
   id: string;
   petName: string;
   guardianName?: string | null;
   address?: string | null;
-  direction: 'pickup' | 'delivery' | 'unknown';
+  direction: MapStopDirection;
   sequence: number;
   time?: string | null;
   lat: number;
   lng: number;
+  status?: PickupStopStatus | string | null;
 };
 
 export type MapAvailableStop = {
@@ -21,9 +25,15 @@ export type MapAvailableStop = {
   petName: string;
   guardianName?: string | null;
   address?: string | null;
-  direction: 'pickup' | 'delivery' | 'unknown';
+  direction: MapStopDirection;
   lat: number;
   lng: number;
+};
+
+export type InferredMapMarker = {
+  lat: number;
+  lng: number;
+  label: string;
 };
 
 type Props = {
@@ -33,32 +43,60 @@ type Props = {
   availableStops?: MapAvailableStop[];
   /** Ponto de saída do motorista (clínica ou endereço custom). */
   startPoint?: { lat: number; lng: number; label: string; address?: string | null } | null;
+  /** Última posição conhecida inferida (monitoramento sem GPS). */
+  inferredPosition?: InferredMapMarker | null;
+  /** Destaca a parada de destino (ex.: a caminho de). */
+  highlightStopId?: string | null;
+  /** Altura do mapa (px). Default do CSS do builder. */
+  mapHeight?: number;
 };
 
 // ─── Ícones ────────────────────────────────────────────────────────────────
 
-function makeNumberedIcon(sequence: number, direction: 'pickup' | 'delivery' | 'unknown'): L.DivIcon {
-  const bg =
-    direction === 'pickup' ? '#1d4ed8' : direction === 'delivery' ? '#15803d' : '#64748b';
+function directionColor(direction: MapStopDirection): string {
+  if (direction === 'pickup') return '#1d4ed8';
+  if (direction === 'delivery') return '#15803d';
+  if (direction === 'clinic_return') return '#c86a4d';
+  return '#64748b';
+}
+
+function statusOpacity(status?: string | null): number {
+  if (!status) return 1;
+  if (status === 'completed') return 0.55;
+  if (status === 'failed') return 0.4;
+  if (status === 'pending') return 0.85;
+  return 1;
+}
+
+function makeNumberedIcon(
+  sequence: number,
+  direction: MapStopDirection,
+  opts?: { status?: string | null; highlighted?: boolean },
+): L.DivIcon {
+  const bg = directionColor(direction);
+  const opacity = statusOpacity(opts?.status);
+  const ring = opts?.highlighted ? '3px solid #f59e0b' : '2px solid rgba(255,255,255,0.9)';
+  const size = opts?.highlighted ? 32 : 28;
   return L.divIcon({
     className: '',
     html: `<div style="
       background:${bg};
       color:#fff;
-      width:28px;
-      height:28px;
+      width:${size}px;
+      height:${size}px;
       border-radius:50%;
       display:flex;
       align-items:center;
       justify-content:center;
       font-size:13px;
       font-weight:700;
-      border:2px solid rgba(255,255,255,0.9);
+      border:${ring};
       box-shadow:0 2px 6px rgba(0,0,0,0.3);
       font-family:system-ui,sans-serif;
+      opacity:${opacity};
     ">${sequence + 1}</div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -16],
   });
 }
@@ -107,6 +145,28 @@ const grayIcon = L.divIcon({
   popupAnchor: [0, -12],
 });
 
+const inferredIcon = L.divIcon({
+  className: '',
+  html: `<div style="
+    background:#0f172a;
+    color:#fff;
+    width:34px;
+    height:34px;
+    border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:12px;
+    font-weight:800;
+    border:3px solid #fbbf24;
+    box-shadow:0 3px 10px rgba(0,0,0,0.35);
+    font-family:system-ui,sans-serif;
+  ">M</div>`,
+  iconSize: [34, 34],
+  iconAnchor: [17, 17],
+  popupAnchor: [0, -18],
+});
+
 // ─── FitBounds interno ────────────────────────────────────────────────────
 
 function FitBounds({ points }: { points: [number, number][] }) {
@@ -132,11 +192,28 @@ function formatTime(iso?: string | null): string {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-export const PickupRouteMap: React.FC<Props> = ({ stops, availableStops = [], startPoint = null }) => {
+function directionLabel(direction: MapStopDirection): string {
+  if (direction === 'pickup') return '↓ Coleta';
+  if (direction === 'delivery') return '↑ Entrega';
+  if (direction === 'clinic_return') return '↩ Clínica';
+  return 'L&T';
+}
+
+export const PickupRouteMap: React.FC<Props> = ({
+  stops,
+  availableStops = [],
+  startPoint = null,
+  inferredPosition = null,
+  highlightStopId = null,
+  mapHeight,
+}) => {
   const allPoints: [number, number][] = [
     ...(startPoint ? ([[startPoint.lat, startPoint.lng]] as [number, number][]) : []),
     ...stops.map((s): [number, number] => [s.lat, s.lng]),
     ...availableStops.map((s): [number, number] => [s.lat, s.lng]),
+    ...(inferredPosition
+      ? ([[inferredPosition.lat, inferredPosition.lng]] as [number, number][])
+      : []),
   ];
 
   // Pontos da polyline: saída → paradas em ordem
@@ -156,11 +233,15 @@ export const PickupRouteMap: React.FC<Props> = ({ stops, availableStops = [], st
   const missingCount = withoutMap.length + availWithoutMap.length;
 
   return (
-    <div className="hub-pickup-builder__map-wrapper">
+    <div
+      className="hub-pickup-builder__map-wrapper"
+      style={mapHeight ? { minHeight: mapHeight } : undefined}
+    >
       <MapContainer
         center={center}
         zoom={12}
         className="hub-pickup-builder__map"
+        style={mapHeight ? { height: mapHeight } : undefined}
         scrollWheelZoom={false}
       >
         <TileLayer
@@ -191,7 +272,14 @@ export const PickupRouteMap: React.FC<Props> = ({ stops, availableStops = [], st
 
         {/* Marcadores numerados das paradas selecionadas */}
         {stops.map((stop) => (
-          <Marker key={stop.id} position={[stop.lat, stop.lng]} icon={makeNumberedIcon(stop.sequence, stop.direction)}>
+          <Marker
+            key={stop.id}
+            position={[stop.lat, stop.lng]}
+            icon={makeNumberedIcon(stop.sequence, stop.direction, {
+              status: stop.status,
+              highlighted: highlightStopId === stop.id,
+            })}
+          >
             <Popup>
               <div style={{ fontSize: '0.8125rem', lineHeight: '1.5', minWidth: '160px' }}>
                 <strong>{stop.petName}</strong>
@@ -209,6 +297,12 @@ export const PickupRouteMap: React.FC<Props> = ({ stops, availableStops = [], st
                     <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{formatTime(stop.time)}</span>
                   </>
                 ) : null}
+                {stop.status ? (
+                  <>
+                    <br />
+                    <span style={{ color: '#64748b', fontSize: '0.75rem' }}>Status: {stop.status}</span>
+                  </>
+                ) : null}
                 <br />
                 <span
                   style={{
@@ -218,11 +312,18 @@ export const PickupRouteMap: React.FC<Props> = ({ stops, availableStops = [], st
                     borderRadius: '9999px',
                     fontSize: '0.7rem',
                     fontWeight: 700,
-                    background: stop.direction === 'pickup' ? '#dbeafe' : stop.direction === 'delivery' ? '#dcfce7' : '#f1f5f9',
-                    color: stop.direction === 'pickup' ? '#1d4ed8' : stop.direction === 'delivery' ? '#15803d' : '#64748b',
+                    background:
+                      stop.direction === 'pickup'
+                        ? '#dbeafe'
+                        : stop.direction === 'delivery'
+                          ? '#dcfce7'
+                          : stop.direction === 'clinic_return'
+                            ? '#ffedd5'
+                            : '#f1f5f9',
+                    color: directionColor(stop.direction),
                   }}
                 >
-                  {stop.direction === 'pickup' ? '↓ Coleta' : stop.direction === 'delivery' ? '↑ Entrega' : 'L&T'} · #{stop.sequence + 1}
+                  {directionLabel(stop.direction)} · #{stop.sequence + 1}
                 </span>
               </div>
             </Popup>
@@ -253,6 +354,26 @@ export const PickupRouteMap: React.FC<Props> = ({ stops, availableStops = [], st
             </Popup>
           </Marker>
         ))}
+
+        {inferredPosition ? (
+          <Marker
+            position={[inferredPosition.lat, inferredPosition.lng]}
+            icon={inferredIcon}
+            zIndexOffset={1000}
+          >
+            <Popup>
+              <div style={{ fontSize: '0.8125rem', lineHeight: '1.5', minWidth: '160px' }}>
+                <strong>Motorista (inferido)</strong>
+                <br />
+                <span>{inferredPosition.label}</span>
+                <br />
+                <span style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                  Posição baseada no status da rota — sem GPS
+                </span>
+              </div>
+            </Popup>
+          </Marker>
+        ) : null}
       </MapContainer>
 
       {missingCount > 0 ? (

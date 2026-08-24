@@ -115,13 +115,26 @@ export type PickupStop = {
   completed_at?: string | null;
   failure_reason?: string | null;
   notes?: string | null;
+  updated_at?: string | null;
   pet?: PickupDayBoardPet | null;
   guardian?: PickupGuardian | null;
+};
+
+export type PickupStopEvent = {
+  id: string;
+  clinic_id: string;
+  hub_pickup_stop_id: string;
+  hub_pickup_route_id?: string | null;
+  from_status: PickupStopStatus | string | null;
+  to_status: PickupStopStatus | string;
+  recorded_at: string;
+  actor_staff_id?: string | null;
 };
 
 export type PickupRouteDetailResponse = {
   route: PickupRoute & { driver?: { id: string; full_name: string; phone?: string | null } | null };
   stops: PickupStop[];
+  events?: PickupStopEvent[];
 };
 
 export type SuggestBatchesResponse = {

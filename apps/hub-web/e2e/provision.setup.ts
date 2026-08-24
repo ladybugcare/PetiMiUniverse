@@ -7,8 +7,10 @@ import {
   E2E_CADMIN,
   E2E_CSTAFF,
   E2E_CSTAFF_BANHO,
+  E2E_CSTAFF_CAIXA,
   E2E_CSTAFF_CLINICA,
   E2E_CSTAFF_HOTEL,
+  E2E_CSTAFF_RECEPCAO,
   E2E_GUARDIAN,
   E2E_PET,
   provisionPassword,
@@ -192,7 +194,7 @@ type CstaffSpec = {
   password: string;
   fullName: string;
   jobTitle: string;
-  professionalKind: 'driver' | 'bather' | 'assistant' | 'caretaker';
+  professionalKind: 'driver' | 'bather' | 'assistant' | 'caretaker' | 'reception';
   operationalAreas: string[];
   agendaColor: string;
 };
@@ -332,11 +334,31 @@ setup('provisiona CADMIN, clínica, CSTAFF e dados operacionais', async () => {
     operationalAreas: ['hotel_creche'],
     agendaColor: '#ef6c00',
   };
+  const cstaffCaixa = {
+    email: E2E_CSTAFF_CAIXA.email,
+    password,
+    fullName: E2E_CSTAFF_CAIXA.fullName,
+    jobTitle: 'Caixa',
+    professionalKind: 'reception' as const,
+    operationalAreas: ['caixa'],
+    agendaColor: '#00838f',
+  };
+  const cstaffRecepcao = {
+    email: E2E_CSTAFF_RECEPCAO.email,
+    password,
+    fullName: E2E_CSTAFF_RECEPCAO.fullName,
+    jobTitle: 'Recepção',
+    professionalKind: 'reception' as const,
+    operationalAreas: ['recepcao'],
+    agendaColor: '#5d4037',
+  };
 
   await ensureCstaff(token, clinicId, unitId, cstaffLevaTraz);
   await ensureCstaff(token, clinicId, unitId, cstaffBanho);
   await ensureCstaff(token, clinicId, unitId, cstaffClinica);
   await ensureCstaff(token, clinicId, unitId, cstaffHotel);
+  await ensureCstaff(token, clinicId, unitId, cstaffCaixa);
+  await ensureCstaff(token, clinicId, unitId, cstaffRecepcao);
 
   const catalog = await ensureServiceCatalog(token, clinicId);
   const { guardianId, petId } = await ensureGuardianPet(token, clinicId);
@@ -357,6 +379,8 @@ setup('provisiona CADMIN, clínica, CSTAFF e dados operacionais', async () => {
     cstaffBath: { email: cstaffBanho.email, password, fullName: cstaffBanho.fullName },
     cstaffClinic: { email: cstaffClinica.email, password, fullName: cstaffClinica.fullName },
     cstaffHotel: { email: cstaffHotel.email, password, fullName: cstaffHotel.fullName },
+    cstaffCash: { email: cstaffCaixa.email, password, fullName: cstaffCaixa.fullName },
+    cstaffReception: { email: cstaffRecepcao.email, password, fullName: cstaffRecepcao.fullName },
     clinicId,
     unitId,
     guardianName: E2E_GUARDIAN.fullName,
@@ -364,6 +388,6 @@ setup('provisiona CADMIN, clínica, CSTAFF e dados operacionais', async () => {
   };
   writeProvisionedUsers(file);
   console.log(
-    `[e2e] contas e dados prontos: CADMIN ${cadminEmail} | CSTAFF ${cstaffLevaTraz.email}, ${cstaffBanho.email}, ${cstaffClinica.email}, ${cstaffHotel.email} | ${E2E_PET.name} (senha em e2e/.auth/users.json)`,
+    `[e2e] contas e dados prontos: CADMIN ${cadminEmail} | CSTAFF ${cstaffLevaTraz.email}, ${cstaffBanho.email}, ${cstaffClinica.email}, ${cstaffHotel.email}, ${cstaffCaixa.email}, ${cstaffRecepcao.email} | ${E2E_PET.name} (senha em e2e/.auth/users.json)`,
   );
 });

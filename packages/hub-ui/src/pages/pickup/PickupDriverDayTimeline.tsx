@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { User } from 'lucide-react';
-import { getStoredClinicId } from '@petimi/web-core';
+import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { hubPickupApi, type PickupDriverDayResponse, type PickupRouteStatus } from '../../api/hubPickupApi';
 import { HubLoading } from '../../components/HubLoading';
 
@@ -22,6 +23,8 @@ type Props = {
  */
 const PickupDriverDayTimeline: React.FC<Props> = ({ dateYmd, unitId, refreshTrigger }) => {
   const clinicId = getStoredClinicId();
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission('pickup.routes.manage');
   const [data, setData] = useState<PickupDriverDayResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -61,13 +64,23 @@ const PickupDriverDayTimeline: React.FC<Props> = ({ dateYmd, unitId, refreshTrig
             <ol className="hub-pickup-driver-day__routes">
               {bucket.routes.map((r) => (
                 <li key={r.id}>
-                  <span className="hub-pickup-driver-day__route-label">
-                    {r.label?.trim() || 'Rota'}
-                  </span>
-                  <span className="hub-clientes__muted">
-                    {STATUS_LABELS[r.status]} · {r.stops_count ?? 0} paradas
-                    {(r.onboard_count ?? 0) > 0 ? ` · ${r.onboard_count} a bordo` : ''}
-                  </span>
+                  <div className="hub-pickup-driver-day__route-row">
+                    <span className="hub-pickup-driver-day__route-label">
+                      {r.label?.trim() || 'Rota'}
+                    </span>
+                    <span className="hub-clientes__muted">
+                      {STATUS_LABELS[r.status]} · {r.stops_count ?? 0} paradas
+                      {(r.onboard_count ?? 0) > 0 ? ` · ${r.onboard_count} a bordo` : ''}
+                    </span>
+                    {canManage ? (
+                      <Link
+                        to={`/hub/leva-e-traz/monitoramento/${r.id}`}
+                        className="hub-pickup-driver-day__monitor-link"
+                      >
+                        Monitorar
+                      </Link>
+                    ) : null}
+                  </div>
                 </li>
               ))}
             </ol>

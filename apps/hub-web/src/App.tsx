@@ -27,6 +27,7 @@ import {
   HubPickupPage,
   PickupDriverView,
   PickupMyRoutePage,
+  PickupRouteMonitorPage,
   HubCaixaPage,
   HubComandaPage,
   HubComandaFinancePage,
@@ -61,6 +62,12 @@ function PickupDriverViewPage() {
   const { routeId } = useParams<{ routeId: string }>();
   if (!routeId) return <p style={{ padding: '1rem' }}>ID de rota inválido.</p>;
   return <PickupDriverView routeId={routeId} />;
+}
+
+function PickupRouteMonitorViewPage() {
+  const { routeId } = useParams<{ routeId: string }>();
+  if (!routeId) return <p style={{ padding: '1rem' }}>ID de rota inválido.</p>;
+  return <PickupRouteMonitorPage routeId={routeId} />;
 }
 
 /** Data router — necessário para useBlocker (guard de saída do caixa). */
@@ -123,6 +130,7 @@ const router = createBrowserRouter(
         <Route path="leva-e-traz" element={<HubPickupPage />} />
         <Route path="leva-e-traz/minha-rota" element={<PickupMyRoutePage />} />
         <Route path="leva-e-traz/motorista/:routeId" element={<PickupDriverViewPage />} />
+        <Route path="leva-e-traz/monitoramento/:routeId" element={<PickupRouteMonitorViewPage />} />
         <Route path="estoque/*" element={<HubEstoqueRoutes />} />
         <Route path="equipe" element={<HubStaffPage />} />
         <Route path="relatorios" element={<HubRelatoriosPage />} />

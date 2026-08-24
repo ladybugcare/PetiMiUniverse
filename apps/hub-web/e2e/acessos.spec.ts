@@ -4,9 +4,11 @@ import { loginAs } from './helpers/auth';
 import {
   hubCadminCredentials,
   hubCstaffBathCredentials,
+  hubCstaffCashCredentials,
   hubCstaffClinicCredentials,
   hubCstaffCredentials,
   hubCstaffHotelCredentials,
+  hubCstaffReceptionCredentials,
 } from './helpers/env';
 
 type Creds = { email: string; password: string };
@@ -113,6 +115,32 @@ test.describe('acessos Hub', () => {
     await expectNav(page, {
       visiveis: ['Hotel & Creche', 'Agenda'],
       ocultos: ['Clínica', 'Banho & Tosa', 'Leva e Traz', 'Financeiro'],
+    });
+  });
+
+  test('CSTAFF caixa cai no Financeiro com o menu financeiro', async ({ page }) => {
+    const creds = hubCstaffCashCredentials();
+    if (!skipIfMissing(creds, 'CSTAFF caixa')) return;
+
+    await loginAs(page, creds.email, creds.password);
+    await expect(page).toHaveURL(/\/hub\/financeiro(?:\?|$)/, { timeout: 20_000 });
+
+    await expectNav(page, {
+      visiveis: ['Dashboard', 'Financeiro', /^Caixa/],
+      ocultos: ['Agenda', 'Clientes', 'Clínica', 'Banho & Tosa', 'Leva e Traz'],
+    });
+  });
+
+  test('CSTAFF recepcao cai na Agenda com o menu de atendimento', async ({ page }) => {
+    const creds = hubCstaffReceptionCredentials();
+    if (!skipIfMissing(creds, 'CSTAFF recepcao')) return;
+
+    await loginAs(page, creds.email, creds.password);
+    await expect(page).toHaveURL(/\/hub\/appointments(?:\?|$)/, { timeout: 20_000 });
+
+    await expectNav(page, {
+      visiveis: ['Agenda', 'Orçamento', 'Clientes', 'Pets'],
+      ocultos: ['Dashboard', 'Financeiro', /^Caixa/, 'Clínica', 'Banho & Tosa', 'Leva e Traz'],
     });
   });
 });

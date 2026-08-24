@@ -20,6 +20,7 @@
     "build:hub-web": "npm run build --workspace=@petimi/hub-web",
     "seed:clinic-e2e-demands": "node scripts/seed-clinic-e2e-demands.mjs",
     "seed:hub-beatriz-demo": "node scripts/seed-hub-beatriz-demo.mjs",
+    "seed:hub-petmi-showcase": "node scripts/seed-hub-petmi-showcase.mjs",
     "test:e2e:hub": "npm run test:e2e --workspace=@petimi/hub-web"
   },
   "dependencies": {
