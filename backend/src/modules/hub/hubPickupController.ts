@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { fetchHubPetsMapByIds, resolvePrimaryPetIdsByGuardians } from './hubDayBoardPets';
 import { syncOpenComandasAfterAppointmentOperationalComplete } from './hubComandasController';
+import { partitionStopsIntoBatches } from './hubPickupSuggestBatches';
 
 const uuidStr = z.string().uuid();
 const UUID_RE = /^[0-9a-f-]{36}$/;
@@ -2124,6 +2125,7 @@ const suggestBatchesSchema = z
     clinic_id: uuidStr,
     vehicle_id: uuidStr.optional().nullable(),
     capacity: z.number().int().min(1).optional(),
+    window_minutes: z.union([z.literal(0), z.literal(15), z.literal(30)]),
     stops: z
       .array(
         z.object({
@@ -2139,53 +2141,45 @@ const suggestBatchesSchema = z
   .strict();
 
 /**
- * Sugere partições de lotes (não persiste). Heurística: ordena por horário e
- * empacota coletas até a capacidade; entregas acompanham o lote atual.
+ * Sugere partições de lotes (não persiste).
+ * Agrupa por janela de horário (window_minutes) e empacota até a capacidade
+ * (1 pet por parada — coleta e entrega contam igualmente).
  */
 export const suggestHubPickupBatches = async (req: Request, res: Response) => {
   try {
     const parsed = suggestBatchesSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const { clinic_id, vehicle_id, capacity: capacityOverride, stops } = parsed.data;
+    const {
+      clinic_id,
+      vehicle_id,
+      capacity: capacityOverride,
+      window_minutes,
+      stops,
+    } = parsed.data;
 
-    let capacity =
-      capacityOverride ??
-      (await resolveVehicleCapacity(clinic_id, vehicle_id ?? null)) ??
-      Math.max(4, Math.ceil(stops.filter((s) => s.direction === 'pickup').length / 2));
+    const vehicleCapacity = await resolveVehicleCapacity(clinic_id, vehicle_id ?? null);
+    let capacity = capacityOverride ?? vehicleCapacity ?? null;
 
-    if (capacity < 1) capacity = 1;
-
-    const ordered = [...stops].sort((a, b) => {
-      const ta = a.starts_at ? Date.parse(a.starts_at) : 0;
-      const tb = b.starts_at ? Date.parse(b.starts_at) : 0;
-      if (ta !== tb) return ta - tb;
-      return a.hub_appointment_id.localeCompare(b.hub_appointment_id);
-    });
-
-    type Batch = { label: string; stop_ids: string[]; pickup_count: number };
-    const batches: Batch[] = [];
-    let current: Batch = { label: 'Lote 1', stop_ids: [], pickup_count: 0 };
-
-    for (const stop of ordered) {
-      if (stop.direction === 'pickup' && current.pickup_count >= capacity && current.stop_ids.length > 0) {
-        batches.push(current);
-        current = {
-          label: `Lote ${batches.length + 1}`,
-          stop_ids: [],
-          pickup_count: 0,
-        };
-      }
-      current.stop_ids.push(stop.hub_appointment_id);
-      if (stop.direction === 'pickup') current.pickup_count += 1;
+    if (capacity == null || capacity < 1) {
+      return res.status(422).json({
+        error:
+          'Informe capacity (pets por lote) ou selecione um veículo com capacidade cadastrada.',
+      });
     }
-    if (current.stop_ids.length > 0) batches.push(current);
+
+    const batches = partitionStopsIntoBatches(stops, {
+      capacity,
+      window_minutes,
+    });
 
     return res.json({
       capacity,
-      batches: batches.map(({ label, stop_ids, pickup_count }) => ({
+      window_minutes,
+      batches: batches.map(({ label, stop_ids, pickup_count, pet_count }) => ({
         label,
         stop_ids,
         pickup_count,
+        pet_count,
       })),
     });
   } catch (e) {

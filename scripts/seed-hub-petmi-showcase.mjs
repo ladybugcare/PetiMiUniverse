@@ -23,6 +23,7 @@
  *
  * Opcional:
  *   HUB_SEED_EMAIL=demo.cadmin@petmihub.com
+ *   HUB_STAFF_PASSWORD=…   — senha dos CSTAFF (default = HUB_SEED_PASSWORD)
  *   API_URL=http://localhost:3000
  *   SEED_FORCE=1
  */
@@ -214,6 +215,8 @@ const SHOWCASE = {
       job_title: 'Tosador(a)',
       professional_kind: 'groomer',
       agenda_color: '#f0642f',
+      hub_access_email: 'demo.banho@petmihub.com',
+      operational_areas: ['banho_tosa'],
     },
     pedro: {
       full_name: 'Dr. Pedro Vet',
@@ -222,18 +225,24 @@ const SHOWCASE = {
       crmv: '12345',
       crmv_uf: 'SP',
       agenda_color: '#2e7d32',
+      hub_access_email: 'demo.clinica@petmihub.com',
+      operational_areas: ['clinica'],
     },
     carla: {
       full_name: 'Carla Recepção',
       job_title: 'Recepção',
       professional_kind: 'reception',
       agenda_color: '#5c6bc0',
+      hub_access_email: 'demo.recepcao@petmihub.com',
+      operational_areas: ['recepcao', 'caixa'],
     },
     diego: {
       full_name: 'Diego Motorista',
       job_title: 'Motorista',
       professional_kind: 'driver',
       agenda_color: '#5d4037',
+      hub_access_email: 'demo.levatraz@petmihub.com',
+      operational_areas: ['leva_traz'],
     },
   },
 };
@@ -828,7 +837,7 @@ async function ensurePets(clinicId, authHeaders, g) {
   };
 }
 
-async function ensureStaff(clinicId, unitId, authHeaders, serviceTypes) {
+async function ensureStaff(clinicId, unitId, authHeaders, serviceTypes, staffPassword) {
   const { staff: list } = await hubGet('/staff', authHeaders, { clinic_id: clinicId });
   const created = {};
 
@@ -868,25 +877,146 @@ async function ensureStaff(clinicId, unitId, authHeaders, serviceTypes) {
   ];
 
   for (const [key, spec] of specs) {
-    let row = (list || []).find((s) => s.full_name === spec.full_name);
+    const {
+      hub_access_email,
+      operational_areas,
+      service_type_ids,
+      accepts_appointments,
+      ...profile
+    } = spec;
+
+    let row =
+      (list || []).find((s) => s.full_name === profile.full_name) ||
+      (list || []).find(
+        (s) =>
+          (s.hub_access_email || '').trim().toLowerCase() === hub_access_email.toLowerCase()
+      );
+
     if (!row) {
       const r = await hubPost('/staff', authHeaders, {
         clinic_id: clinicId,
         default_unit_id: unitId,
         active: true,
-        has_hub_access: false,
+        has_hub_access: true,
+        hub_access_email,
+        hub_access_role: 'CSTAFF',
+        operational_areas,
+        email: hub_access_email,
+        service_type_ids,
+        accepts_appointments,
         internal_notes: SEED_MARKER,
-        ...spec,
+        ...profile,
       });
       row = r.staff || r.member || r;
-      console.log('Equipe criada:', spec.full_name);
+      console.log('Equipe criada:', profile.full_name);
     } else {
-      console.log('Equipe existente:', spec.full_name);
+      console.log('Equipe existente:', profile.full_name);
+      const needsAccessPatch =
+        !row.has_hub_access ||
+        (row.hub_access_email || '').toLowerCase() !== hub_access_email.toLowerCase() ||
+        row.hub_access_role !== 'CSTAFF' ||
+        !row.default_unit_id;
+      if (needsAccessPatch || FORCE) {
+        const patched = await hubPatch(`/staff/${row.id}`, authHeaders, {
+          clinic_id: clinicId,
+          has_hub_access: true,
+          hub_access_email,
+          hub_access_role: 'CSTAFF',
+          operational_areas,
+          default_unit_id: unitId,
+          email: hub_access_email,
+          service_type_ids,
+          accepts_appointments,
+        });
+        row = patched.staff || patched.member || patched || row;
+        console.log('  acesso Hub ativado:', hub_access_email);
+      }
     }
+
+    await ensureStaffLogin(clinicId, authHeaders, row, {
+      email: hub_access_email,
+      password: staffPassword,
+      full_name: profile.full_name,
+    });
+
     created[key] = row;
   }
 
   return created;
+}
+
+function tokenFromInvite(payload) {
+  if (payload?.invitation?.token) return payload.invitation.token;
+  const url = payload?.invitation_url || '';
+  try {
+    return new URL(url).searchParams.get('token') || '';
+  } catch {
+    const m = url.match(/[?&]token=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+}
+
+async function tryLoginEmail(email, password) {
+  try {
+    await fetchJson(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    return true;
+  } catch (e) {
+    const msg = String(e.message || e).toLowerCase();
+    if (msg.includes('401') || msg.includes('invalid') || msg.includes('credencial')) return false;
+    throw e;
+  }
+}
+
+async function ensureStaffLogin(clinicId, authHeaders, staffRow, { email, password, full_name }) {
+  if (staffRow?.clinic_user_id) {
+    const ok = await tryLoginEmail(email, password);
+    if (ok) {
+      console.log('  conta Hub OK:', email);
+      return;
+    }
+    throw new Error(
+      `Funcionário ${full_name} (${email}) já tem conta, mas a senha não confere. Redefina no Supabase ou use HUB_STAFF_PASSWORD correta.`
+    );
+  }
+
+  const invite = await hubPost(`/staff/${staffRow.id}/invite`, authHeaders, {
+    clinic_id: clinicId,
+  });
+  const token = tokenFromInvite(invite);
+  if (!token) {
+    throw new Error(`Convite de ${email} não devolveu token.`);
+  }
+
+  try {
+    await fetchJson(`${API_URL}/api/hub/invitations/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token,
+        full_name,
+        password,
+        phone: '11988887777',
+      }),
+    });
+    console.log('  conta Hub criada:', email);
+  } catch (e) {
+    const msg = String(e.message || e);
+    if (msg.includes('409') || msg.toLowerCase().includes('já')) {
+      const ok = await tryLoginEmail(email, password);
+      if (ok) {
+        console.log('  conta Hub já existia:', email);
+        return;
+      }
+      throw new Error(
+        `Conta ${email} já existe, mas a senha não confere. Redefina no Supabase.`
+      );
+    }
+    throw e;
+  }
 }
 
 async function ensurePackages(clinicId, authHeaders, serviceTypes) {
@@ -1187,7 +1317,8 @@ async function main() {
   const serviceTypes = await ensureServiceTypes(clinicId, authHeaders);
   const guardians = await ensureGuardians(clinicId, authHeaders);
   const pets = await ensurePets(clinicId, authHeaders, guardians);
-  const staff = await ensureStaff(clinicId, unitId, authHeaders, serviceTypes);
+  const staffPassword = process.env.HUB_STAFF_PASSWORD || PASSWORD;
+  const staff = await ensureStaff(clinicId, unitId, authHeaders, serviceTypes, staffPassword);
   await ensurePackages(clinicId, authHeaders, serviceTypes);
   await ensureQuotes(clinicId, unitId, authHeaders, serviceTypes);
   await ensureAppointments(clinicId, unitId, authHeaders, {
@@ -1197,11 +1328,14 @@ async function main() {
     staff,
   });
 
-  console.log('\nConcluído. No Hub (login ' + EMAIL + ') verifique:');
-  console.log('  • Clínica PetMi / unidade Jardins');
-  console.log('  • Clientes — Marina/Rafael, Camila, Fernanda/Lucas, Beatriz/Carlos, Pata Empresa, PetCare Corp');
-  console.log('  • Pets — Thor, Luna, Mel, Rex, Nina, Bob, Mia, Pretinho, Dulce, Apollo, Kiwi, Pipoca, Ziggy, Amora');
-  console.log('  • Serviços, adicionais (banho/clínica/hotel/creche), pacotes, equipe, orçamentos e agenda');
+  console.log('\nConcluído. No Hub verifique:');
+  console.log('  • CADMIN —', EMAIL);
+  console.log('  • CSTAFF banho — demo.banho@petmihub.com');
+  console.log('  • CSTAFF clínica — demo.clinica@petmihub.com');
+  console.log('  • CSTAFF recepção — demo.recepcao@petmihub.com');
+  console.log('  • CSTAFF leva e traz — demo.levatraz@petmihub.com');
+  console.log('  • Senha dos funcionários: a mesma do CADMIN (ou HUB_STAFF_PASSWORD)');
+  console.log('  • Clientes, pets, serviços, adicionais, pacotes, agenda');
 }
 
 main().catch((e) => {

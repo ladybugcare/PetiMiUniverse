@@ -1401,7 +1401,12 @@
   margin-right: 0.35rem;
 }
 
-/* Monitoramento gerencial (posição inferida por status) */
+.hub-pickup-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 .hub-pickup-monitor {
   display: flex;
   flex-direction: column;

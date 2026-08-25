@@ -16,9 +16,10 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { hubPickupApi, type PickupDayBoardItem, type PickupRoute } from '../../api/hubPickupApi';
+import { hubPickupApi, type PickupDayBoardItem, type PickupRoute, type SuggestBatchesWindowMinutes } from '../../api/hubPickupApi';
 import { hubPickupVehiclesApi, type PickupVehicle } from '../../api/hubPickupVehiclesApi';
 import { hubStaffApi, type HubStaffMember } from '../../api/hubStaffApi';
+import { HubModal } from '../../components/HubModal';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { useAlert } from '../../components/AlertProvider';
@@ -148,6 +149,9 @@ const PickupRouteBuilder: React.FC<Props> = ({
   const [notes, setNotes] = useState(editingRoute?.notes ?? '');
   const [routeLabel, setRouteLabel] = useState(editingRoute?.label ?? '');
   const [busy, setBusy] = useState(false);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestWindow, setSuggestWindow] = useState<SuggestBatchesWindowMinutes>(15);
+  const [suggestCapacity, setSuggestCapacity] = useState('4');
   const [startKind, setStartKind] = useState<'clinic' | 'custom'>(
     editingRoute?.start_kind === 'custom' ? 'custom' : 'clinic',
   );
@@ -568,22 +572,55 @@ const PickupRouteBuilder: React.FC<Props> = ({
     }
   };
 
+  const openSuggestDialog = () => {
+    const poolLen = selected.length + available.length;
+    if (poolLen === 0) {
+      showError('Não há pernas para sugerir lotes.');
+      return;
+    }
+    if (vehicleCapacity != null) {
+      setSuggestCapacity(String(vehicleCapacity));
+    } else if (!suggestCapacity.trim()) {
+      setSuggestCapacity('4');
+    }
+    setSuggestOpen(true);
+  };
+
   const handleSuggestBatches = async () => {
     if (!clinicId) return;
-    const pool = [...selected, ...available.map((i) => ({
-      ...i,
-      _direction: (i.direction === 'delivery' ? 'delivery' : 'pickup') as 'pickup' | 'delivery',
-    }))];
+    const pool = [
+      ...selected,
+      ...available.map((i) => ({
+        ...i,
+        _direction: (i.direction === 'delivery' ? 'delivery' : 'pickup') as 'pickup' | 'delivery',
+      })),
+    ];
     if (pool.length === 0) {
       showError('Não há pernas para sugerir lotes.');
       return;
     }
+
+    const capacityFromVehicle = vehicleCapacity;
+    const capacityParsed = Number.parseInt(suggestCapacity, 10);
+    const capacity =
+      capacityFromVehicle != null && capacityFromVehicle >= 1
+        ? capacityFromVehicle
+        : Number.isFinite(capacityParsed) && capacityParsed >= 1
+          ? capacityParsed
+          : null;
+
+    if (capacity == null) {
+      showError('Informe a capacidade (pets por lote).');
+      return;
+    }
+
     setBusy(true);
     try {
       const suggestion = await hubPickupApi.suggestBatches({
         clinic_id: clinicId,
         vehicle_id: vehicleId || null,
-        capacity: vehicleCapacity ?? undefined,
+        capacity,
+        window_minutes: suggestWindow,
         stops: pool.map((s) => ({
           hub_appointment_id: s.appointment_id,
           direction: s._direction,
@@ -593,8 +630,12 @@ const PickupRouteBuilder: React.FC<Props> = ({
         })),
       });
 
+      setSuggestOpen(false);
+
       if (suggestion.batches.length <= 1) {
-        showSuccess('Um único lote já cabe na capacidade — nada a dividir.');
+        showSuccess(
+          `Um único lote já atende (janela ${suggestWindow === 0 ? 'exata' : `${suggestWindow} min`}, capacidade ${suggestion.capacity}).`,
+        );
         setBusy(false);
         return;
       }
@@ -637,7 +678,10 @@ const PickupRouteBuilder: React.FC<Props> = ({
         }
       }
 
-      showSuccess(`${suggestion.batches.length} lotes criados a partir da sugestão.`);
+      const windowLabel = suggestWindow === 0 ? 'exata' : `${suggestWindow} min`;
+      showSuccess(
+        `${suggestion.batches.length} lotes criados (janela ${windowLabel}, capacidade ${suggestion.capacity}).`,
+      );
       onSaved();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao sugerir lotes.');
@@ -647,6 +691,7 @@ const PickupRouteBuilder: React.FC<Props> = ({
   };
 
   return (
+    <>
     <HubSidePanel
       open={open}
       onClose={onClose}
@@ -668,12 +713,12 @@ const PickupRouteBuilder: React.FC<Props> = ({
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--ghost"
-              onClick={() => void handleSuggestBatches()}
+              onClick={openSuggestDialog}
               disabled={busy}
-              title="Cria vários lotes pela capacidade do veículo"
+              title="Agrupa por janela de horário e capacidade (pets por lote)"
             >
               {busy ? <Loader size={14} className="spin" aria-hidden /> : <Sparkles size={14} aria-hidden />}
-              Sugerir lotes
+              Sugerir lotes por horário
             </button>
           ) : null}
           <button
@@ -954,6 +999,116 @@ const PickupRouteBuilder: React.FC<Props> = ({
       )}
     </div>
     </HubSidePanel>
+
+    <HubModal
+      open={suggestOpen}
+      onClose={() => {
+        if (!busy) setSuggestOpen(false);
+      }}
+      title="Sugerir lotes por horário"
+      subtitle="Agrupa coleta e entrega pela janela escolhida e respeita a capacidade (1 pet por parada)."
+      size="lg"
+      footer={
+        <>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost"
+            onClick={() => setSuggestOpen(false)}
+            disabled={busy}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary"
+            onClick={() => void handleSuggestBatches()}
+            disabled={busy}
+          >
+            {busy ? <Loader size={14} className="spin" aria-hidden /> : <Sparkles size={14} aria-hidden />}
+            Gerar lotes
+          </button>
+        </>
+      }
+    >
+      <div className="hub-pickup-suggest">
+        <div className="hub-pickup-builder__field">
+          <span className="hub-pickup-builder__label" id="hub-pb-suggest-window">
+            Janela de horário
+          </span>
+          <div
+            className="hub-pickup-builder__start-seg"
+            role="radiogroup"
+            aria-labelledby="hub-pb-suggest-window"
+          >
+            {(
+              [
+                { value: 0 as const, label: 'Exato' },
+                { value: 15 as const, label: '15 min' },
+                { value: 30 as const, label: '30 min' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={suggestWindow === opt.value}
+                className={suggestWindow === opt.value ? 'hub-pickup-builder__start-seg--active' : ''}
+                onClick={() => setSuggestWindow(opt.value)}
+                disabled={busy}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="hub-pickup-builder__start-hint">
+            {suggestWindow === 0
+              ? 'Agrupa só paradas no mesmo minuto.'
+              : `Agrupa paradas dentro de blocos de ${suggestWindow} minutos.`}
+          </p>
+        </div>
+
+        <div className="hub-pickup-builder__field">
+          <label className="hub-pickup-builder__label" htmlFor="hub-pb-suggest-cap">
+            Capacidade (pets por lote)
+          </label>
+          {vehicleCapacity != null ? (
+            <>
+              <input
+                id="hub-pb-suggest-cap"
+                className="hub-clientes__input"
+                type="number"
+                min={1}
+                value={vehicleCapacity}
+                readOnly
+                disabled
+              />
+              <p className="hub-pickup-builder__start-hint">
+                Usando a capacidade do veículo selecionado
+                {selectedVehicle?.name ? ` (${selectedVehicle.name})` : ''}.
+              </p>
+            </>
+          ) : (
+            <>
+              <input
+                id="hub-pb-suggest-cap"
+                className="hub-clientes__input"
+                type="number"
+                min={1}
+                step={1}
+                value={suggestCapacity}
+                onChange={(e) => setSuggestCapacity(e.target.value)}
+                disabled={busy}
+                placeholder="Ex.: 4"
+              />
+              <p className="hub-pickup-builder__start-hint">
+                Sem veículo selecionado — informe quantos pets cabem em cada lote.
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    </HubModal>
+    </>
   );
 };
 

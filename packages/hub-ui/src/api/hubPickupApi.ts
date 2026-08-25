@@ -137,9 +137,17 @@ export type PickupRouteDetailResponse = {
   events?: PickupStopEvent[];
 };
 
+export type SuggestBatchesWindowMinutes = 0 | 15 | 30;
+
 export type SuggestBatchesResponse = {
   capacity: number;
-  batches: Array<{ label: string; stop_ids: string[]; pickup_count: number }>;
+  window_minutes: SuggestBatchesWindowMinutes;
+  batches: Array<{
+    label: string;
+    stop_ids: string[];
+    pickup_count: number;
+    pet_count: number;
+  }>;
 };
 
 // ─── API client ───────────────────────────────────────────────────────────
@@ -271,7 +279,8 @@ export const hubPickupApi = {
   suggestBatches(payload: {
     clinic_id: string;
     vehicle_id?: string | null;
-    capacity?: number;
+    capacity: number;
+    window_minutes: SuggestBatchesWindowMinutes;
     stops: Array<{
       hub_appointment_id: string;
       direction: 'pickup' | 'delivery';

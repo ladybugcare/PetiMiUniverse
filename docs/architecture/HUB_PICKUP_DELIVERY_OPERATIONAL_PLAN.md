@@ -139,11 +139,21 @@ Componentes: `HubPickupPage`, `PickupDayBoard`.
 | `PATCH` | `/pickup/stops/:id` | `stops.update` | Avançar/atualizar parada (grava evento) |
 | `POST` | `/pickup/stops` | `stops.update` | Criar/atualizar parada solta (sem rota) |
 | `GET` | `/pickup/my-route` | `routes.read` | Rota do dia do motorista autenticado |
+| `POST` | `/pickup/routes/suggest-batches` | `routes.manage` | Sugerir lotes por janela de horário + capacidade (não persiste) |
+
+### Sugestão de lotes (`suggest-batches`)
+
+- Body: `window_minutes` (`0` = mesmo minuto, `15`, `30`), `capacity` (obrigatória se sem veículo), `stops[]` com `starts_at`.
+- Heurística: ordena por horário → agrupa na janela → empacota até `capacity` (**1 pet por parada**, coleta e entrega).
+- Sem veículo e sem `capacity` → `422` (não há mais chute automático).
+- UI: diálogo no montador pede janela sempre; capacidade só editável sem veículo (com veículo usa a do carro).
 
 ---
 
 ## Arquivos-chave
 
+- `packages/hub-ui/src/pages/pickup/PickupRouteBuilder.tsx` — montagem de rota + sugerir lotes
+- `backend/src/modules/hub/hubPickupSuggestBatches.ts` — partição por janela/capacidade
 - `packages/hub-ui/src/pages/pickup/` — todos os componentes operacionais
 - `packages/hub-ui/src/pages/pickup/PickupRouteMonitorPage.tsx` — monitoramento gerencial
 - `packages/hub-ui/src/pages/pickup/inferDriverMapPosition.ts` — regra de posição inferida
