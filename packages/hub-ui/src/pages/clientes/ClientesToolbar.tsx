@@ -15,6 +15,12 @@ const STATUS_FILTER_OPTIONS: HubComboboxOption[] = [
   { value: 'inactive', label: 'Inativo' },
 ];
 
+const CARE_LOCATION_FILTER_OPTIONS: HubComboboxOption[] = [
+  { value: 'all', label: 'Local (todos)' },
+  { value: 'own_unit', label: 'Só unidade própria' },
+  { value: 'partner_clinic', label: 'Atendidos em parceira' },
+];
+
 type ClientesMainTab = 'tutores' | 'empresas';
 
 interface ClientesToolbarProps {
@@ -25,6 +31,8 @@ interface ClientesToolbarProps {
   onBondFilterChange: (v: 'all' | 'primary' | 'secondary') => void;
   statusFilter: 'all' | 'active' | 'inactive';
   onStatusFilterChange: (v: 'all' | 'active' | 'inactive') => void;
+  careLocationFilter: 'all' | 'own_unit' | 'partner_clinic';
+  onCareLocationFilterChange: (v: 'all' | 'own_unit' | 'partner_clinic') => void;
   onNewClient: () => void;
 }
 
@@ -36,6 +44,8 @@ export const ClientesToolbar: React.FC<ClientesToolbarProps> = ({
   onBondFilterChange,
   statusFilter,
   onStatusFilterChange,
+  careLocationFilter,
+  onCareLocationFilterChange,
   onNewClient,
 }) => {
   const isCompanyTab = mainTab === 'empresas';
@@ -92,6 +102,18 @@ export const ClientesToolbar: React.FC<ClientesToolbarProps> = ({
           allowCreate={false}
           clearable={false}
           ariaLabel="Status"
+        />
+        <HubSearchableCombobox
+          id="hub-clientes-toolbar-care-location"
+          className="hub-combobox--clientes"
+          options={CARE_LOCATION_FILTER_OPTIONS}
+          value={careLocationFilter}
+          onChange={(v) => onCareLocationFilterChange(v as 'all' | 'own_unit' | 'partner_clinic')}
+          placeholder="Local"
+          searchPlaceholder="Buscar…"
+          allowCreate={false}
+          clearable={false}
+          ariaLabel="Local de atendimento"
         />
         <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" disabled title="Em breve">
           <SlidersHorizontal size={16} />

@@ -8,6 +8,7 @@ Este diretório documenta a estratégia oficial para evoluir o monorepo **PetiMi
 |-----------|----------|
 | [PRODUCT_BOUNDARIES.md](./PRODUCT_BOUNDARIES.md) | Fronteiras entre platform, hub, vet-match, marketplace, petmi-id e admin |
 | [HUB_DOMAIN_MODEL.md](./HUB_DOMAIN_MODEL.md) | Modelo inicial de domínio do PetMi Hub (organização, unidades, staff, tutores, pets, agenda, atendimentos, timeline) |
+| [HUB_CARE_LOCATION_PARTNER_MVP.md](./HUB_CARE_LOCATION_PARTNER_MVP.md) | MVP: local de atendimento (unidade própria vs clínica parceira) |
 | [HUB_GUARDIAN_CRM_VISION.md](./HUB_GUARDIAN_CRM_VISION.md) | Visão temática: tutores como CRM + família do pet + fases de entrega (complemento ao domain model) |
 | [PERMISSIONS_ROADMAP.md](./PERMISSIONS_ROADMAP.md) | Permissões granulares por produto/módulo e migração a partir de roles atuais |
 | [FRONTEND_MODULARIZATION.md](./FRONTEND_MODULARIZATION.md) | Plano incremental de reorganização do frontend por produto |

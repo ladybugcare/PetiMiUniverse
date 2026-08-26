@@ -9,6 +9,10 @@ import { hubGuardiansApi, type HubGuardianPet } from '../../api/hubGuardiansApi'
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { isOperationalClinicalGroup, normalizeServiceGroupSlug, serviceGroupLabel } from '../../utils/serviceTypeSlug';
 import type { NewAppointmentInitial } from '../agenda/NewAppointmentModal';
+import {
+  CareLocationFields,
+  type CareLocationValue,
+} from '../../components/CareLocationFields';
 import { todayYmd } from './clinicalDisplay';
 import '../agenda/new-appointment-modal.css';
 
@@ -32,6 +36,7 @@ type Props = {
     hubServiceTypeId: string;
     entryKind: 'routine' | 'emergency';
     durationMinutes: number;
+    careLocation?: CareLocationValue;
   }) => Promise<void>;
   submitting: boolean;
 };
@@ -59,6 +64,10 @@ const ClinicWalkInPanel: React.FC<Props> = ({
   /** Rotina: atender já (encaixe na agenda) ou só abrir o fluxo de agendamento. */
   const [routineAgendaMode, setRoutineAgendaMode] = useState<'immediate' | 'schedule'>('immediate');
   const [clinicalServiceRows, setClinicalServiceRows] = useState<HubServiceType[]>([]);
+  const [careLocation, setCareLocation] = useState<CareLocationValue>({
+    care_location_kind: 'own_unit',
+    hub_partner_clinic_id: null,
+  });
 
   useEffect(() => {
     if (!open) {
@@ -71,6 +80,7 @@ const ClinicWalkInPanel: React.FC<Props> = ({
       setEntryKind('routine');
       setRoutineAgendaMode('immediate');
       setClinicalServiceRows([]);
+      setCareLocation({ care_location_kind: 'own_unit', hub_partner_clinic_id: null });
       return;
     }
     if (!clinicId) return;
@@ -208,6 +218,7 @@ const ClinicWalkInPanel: React.FC<Props> = ({
       hubServiceTypeId: serviceTypeId,
       entryKind,
       durationMinutes: dur,
+      careLocation,
     })
       .then(() => {
         setGuardianId('');
@@ -484,6 +495,13 @@ const ClinicWalkInPanel: React.FC<Props> = ({
               />
               <p className="nam-char-count">{complaint.length}/1000</p>
             </div>
+
+            <CareLocationFields
+              clinicId={clinicId}
+              value={careLocation}
+              onChange={setCareLocation}
+              idPrefix="walkin-care"
+            />
 
           </div>
         </div>

@@ -22,6 +22,8 @@ import ClinicWalkInPanel from './ClinicWalkInPanel';
 import ClinicAlertsBanner from './ClinicAlertsBanner';
 import StartEncounterModal from './StartEncounterModal';
 import type { NewAppointmentInitial } from '../agenda/NewAppointmentModal';
+import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
+import type { CareLocationValue } from '../../components/CareLocationFields';
 import '../agenda/new-appointment-modal.css';
 
 const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
@@ -162,6 +164,7 @@ const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = 
     hubServiceTypeId: string;
     entryKind: 'routine' | 'emergency';
     durationMinutes: number;
+    careLocation?: CareLocationValue;
   }) => {
     if (!clinicId) return;
     setCreatingWalkIn(true);
@@ -170,6 +173,7 @@ const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = 
       const endsAt = new Date(now.getTime() + payload.durationMinutes * 60_000);
       await hubAgendaApi.create({
         clinic_id: clinicId,
+        unit_id: getSelectedUnitId(),
         hub_service_type_id: payload.hubServiceTypeId,
         hub_staff_member_id: payload.staffId ?? null,
         pet_id: payload.petId ?? null,
@@ -180,6 +184,11 @@ const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = 
         notes: payload.complaint.trim() || null,
         title: payload.complaint.trim() ? payload.complaint.trim().slice(0, 200) : 'Atendimento clínico',
         appointment_kind: payload.entryKind === 'emergency' ? 'clinical_emergency' : 'clinical_walk_in',
+        care_location_kind: payload.careLocation?.care_location_kind ?? 'own_unit',
+        hub_partner_clinic_id:
+          payload.careLocation?.care_location_kind === 'partner_clinic'
+            ? payload.careLocation.hub_partner_clinic_id
+            : null,
       });
       setWalkInOpen(false);
       await load();

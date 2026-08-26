@@ -60,6 +60,7 @@ const HubGuardiansPage: React.FC = () => {
   const debouncedQ = useDebounced(searchQ, 350);
   const [bondFilter, setBondFilter] = useState<'all' | 'primary' | 'secondary'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [careLocationFilter, setCareLocationFilter] = useState<'all' | 'own_unit' | 'partner_clinic'>('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -101,6 +102,7 @@ const HubGuardiansPage: React.FC = () => {
         kind: kindParam,
         status: statusFilter,
         q: debouncedQ || undefined,
+        careLocationKind: careLocationFilter === 'all' ? undefined : careLocationFilter,
       });
       setGuardiansRaw(guardians);
     } catch (e: unknown) {
@@ -108,7 +110,7 @@ const HubGuardiansPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [clinicId, accessAllowed, kindParam, statusFilter, debouncedQ, showError]);
+  }, [clinicId, accessAllowed, kindParam, statusFilter, careLocationFilter, debouncedQ, showError]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -197,7 +199,7 @@ const HubGuardiansPage: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedQ, bondFilter, statusFilter, mainTab, kindParam]);
+  }, [debouncedQ, bondFilter, statusFilter, careLocationFilter, mainTab, kindParam]);
 
   const totalFiltered = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
@@ -393,6 +395,8 @@ const HubGuardiansPage: React.FC = () => {
           onBondFilterChange={setBondFilter}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
+          careLocationFilter={careLocationFilter}
+          onCareLocationFilterChange={setCareLocationFilter}
           onNewClient={openCreate}
         />
 

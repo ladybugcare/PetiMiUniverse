@@ -20,6 +20,7 @@ import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
 import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
+import { CareLocationBadge } from '../../components/CareLocationFields';
 import '../clientes/clientes.css';
 import {
   hubClinicalApi,
@@ -452,6 +453,10 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
               <div className="hub-cws-header__pet-text">
                 <div className="hub-cws-header__title-row">
                   <h1 className="hub-cws-header__pet-name">{pet?.name || 'Pet'}</h1>
+                  <CareLocationBadge
+                    care_location_kind={encounter.care_location_kind}
+                    partner_clinic={encounter.partner_clinic}
+                  />
                   <span className={`hub-cws-status ${statusUi.className}`}>{statusUi.label}</span>
                 </div>
                 {!hideFinancial ? (

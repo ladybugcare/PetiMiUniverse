@@ -45,6 +45,9 @@ export type HubEncounter = {
   id: string;
   clinic_id: string;
   unit_id: string | null;
+  care_location_kind?: 'own_unit' | 'partner_clinic';
+  hub_partner_clinic_id?: string | null;
+  partner_clinic?: { id: string; name: string } | null;
   /** Nullable para urgências abertas sem pet identificado. */
   pet_id: string | null;
   guardian_id: string | null;
@@ -84,6 +87,9 @@ export type DayBoardItem = {
   title?: string | null;
   notes?: string | null;
   status?: HubEncounterStatus;
+  care_location_kind?: 'own_unit' | 'partner_clinic' | string | null;
+  hub_partner_clinic_id?: string | null;
+  partner_clinic?: { id: string; name: string } | null;
   pet?: HubEncounterPet | null;
   guardian?: { id: string; full_name: string } | null;
   staff_member?: { id: string; full_name: string } | null;
@@ -768,6 +774,9 @@ export type HubClinicalExam = {
   requested_by: string | null;
   notes: string | null;
   metadata: Record<string, unknown>;
+  care_location_kind?: 'own_unit' | 'partner_clinic';
+  hub_partner_clinic_id?: string | null;
+  partner_clinic?: { id: string; name: string } | null;
   created_at: string;
   updated_at: string;
   requested_by_member?: { id: string; full_name: string } | null;
@@ -826,13 +835,71 @@ export type HubSpecialistReferral = {
 };
 
 export const hubClinicalExamsApi = {
-  list(clinicId: string, opts?: { petId?: string; caseId?: string; encounterId?: string; status?: HubClinicalExamStatus }) {
+  list(
+    clinicId: string,
+    opts?: {
+      petId?: string;
+      caseId?: string;
+      encounterId?: string;
+      status?: HubClinicalExamStatus;
+      careLocationKind?: 'own_unit' | 'partner_clinic';
+      partnerClinicId?: string;
+    },
+  ) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (opts?.petId) q.set('pet_id', opts.petId);
     if (opts?.caseId) q.set('hub_case_id', opts.caseId);
     if (opts?.encounterId) q.set('hub_encounter_id', opts.encounterId);
     if (opts?.status) q.set('status', opts.status);
+    if (opts?.careLocationKind) q.set('care_location_kind', opts.careLocationKind);
+    if (opts?.partnerClinicId) q.set('hub_partner_clinic_id', opts.partnerClinicId);
     return apiRequest(`${clinicalBase}/exams?${q}`) as Promise<{ exams: HubClinicalExam[] }>;
+  },
+  exportCsvUrl(
+    clinicId: string,
+    opts?: {
+      status?: HubClinicalExamStatus;
+      careLocationKind?: 'own_unit' | 'partner_clinic';
+      partnerClinicId?: string;
+      from?: string;
+      to?: string;
+    },
+  ) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.status) q.set('status', opts.status);
+    if (opts?.careLocationKind) q.set('care_location_kind', opts.careLocationKind);
+    if (opts?.partnerClinicId) q.set('hub_partner_clinic_id', opts.partnerClinicId);
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    return `${clinicalBase}/exams/export.csv?${q}`;
+  },
+  async downloadExportCsv(
+    clinicId: string,
+    opts?: {
+      status?: HubClinicalExamStatus;
+      careLocationKind?: 'own_unit' | 'partner_clinic';
+      partnerClinicId?: string;
+      from?: string;
+      to?: string;
+    },
+  ) {
+    const token = (await getSupabase().auth.getSession()).data.session?.access_token;
+    if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+    const path = hubClinicalExamsApi.exportCsvUrl(clinicId, opts);
+    const res = await fetch(`${getApiBaseUrl()}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string })?.error || 'Falha ao exportar exames');
+    }
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = 'exames.csv';
+    a.click();
+    URL.revokeObjectURL(objectUrl);
   },
   get(id: string, clinicId: string) {
     return apiRequest(`${clinicalBase}/exams/${id}?clinic_id=${encodeURIComponent(clinicId)}`) as Promise<{
@@ -857,6 +924,8 @@ export const hubClinicalExamsApi = {
     fasting_required?: boolean;
     collection_instructions?: string | null;
     notes?: string | null;
+    care_location_kind?: 'own_unit' | 'partner_clinic';
+    hub_partner_clinic_id?: string | null;
   }) {
     return apiRequest(`${clinicalBase}/exams`, {
       method: 'POST',
@@ -879,6 +948,8 @@ export const hubClinicalExamsApi = {
       fasting_required?: boolean;
       collection_instructions?: string | null;
       metadata?: Record<string, unknown>;
+      care_location_kind?: 'own_unit' | 'partner_clinic';
+      hub_partner_clinic_id?: string | null;
     },
   ) {
     return apiRequest(`${clinicalBase}/exams/${id}`, {

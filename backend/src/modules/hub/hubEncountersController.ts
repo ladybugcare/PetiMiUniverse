@@ -10,6 +10,12 @@ import {
   financialAdjustmentFlagsForAppointments,
 } from './hubComandasController';
 import { fetchHubPetsMapByIds, resolvePrimaryPetIdsByGuardians } from './hubDayBoardPets';
+import {
+  careLocationBodyFields,
+  careLocationKindSchema,
+  loadPartnerClinicMap,
+  resolveCareLocation,
+} from './hubCareLocation';
 
 /** Grava um snapshot versionado do documento clínico em hub_clinical_document_versions. */
 async function saveEncounterSnapshot(opts: {
@@ -124,6 +130,8 @@ const dayBoardQuerySchema = z
     from: z.string().datetime({ offset: true }).optional(),
     to: z.string().datetime({ offset: true }).optional(),
     unit_id: uuidStr.optional(),
+    care_location_kind: careLocationKindSchema.optional(),
+    hub_partner_clinic_id: uuidStr.optional(),
     status: encounterStatusSchema.optional(),
     hub_staff_member_id: z.string().optional(),
   })
@@ -159,6 +167,7 @@ const createEncounterSchema = z
     hub_case_id: uuidStr.optional().nullable(),
     create_new_case: z.boolean().optional(),
     encounter_type: encounterTypeSchema.optional().default('consultation'),
+    ...careLocationBodyFields,
   })
   .strict()
   .refine((d) => d.encounter_type === 'emergency' || !!d.pet_id, {
@@ -183,6 +192,8 @@ const patchEncounterSchema = z
     pet_id: uuidStr.optional().nullable(),
     hub_case_id: uuidStr.optional().nullable(),
     operational_phase: operationalPhaseSchema.optional(),
+    ...careLocationBodyFields,
+    unit_id: uuidStr.optional().nullable(),
   })
   .strict();
 
@@ -202,7 +213,7 @@ const amendEncounterSchema = z
 
 const ENCOUNTER_SELECT = `
   id, clinic_id, unit_id, pet_id, guardian_id, hub_appointment_id, hub_staff_member_id,
-  hub_case_id, encounter_type,
+  hub_case_id, encounter_type, care_location_kind, hub_partner_clinic_id,
   status, operational_phase, chief_complaint, summary_notes, anamnesis, physical_exam, diagnosis,
   started_at, completed_at, created_at, updated_at
 `;
@@ -244,6 +255,8 @@ async function createLinkedClinicalAgendaAppointment(params: {
   hub_service_type_id: string;
   chief_complaint: string | null;
   appointment_kind: ClinicalAgendaKind;
+  care_location_kind?: 'own_unit' | 'partner_clinic';
+  hub_partner_clinic_id?: string | null;
 }): Promise<string> {
   const { data: st, error: stErr } = await supabaseAdmin
     .from('hub_service_types')
@@ -266,6 +279,8 @@ async function createLinkedClinicalAgendaAppointment(params: {
   const insertAppt: Record<string, unknown> = {
     clinic_id: params.clinic_id,
     unit_id: params.unit_id,
+    care_location_kind: params.care_location_kind ?? 'own_unit',
+    hub_partner_clinic_id: params.hub_partner_clinic_id ?? null,
     hub_service_type_id: params.hub_service_type_id,
     hub_staff_member_id: params.hub_staff_member_id,
     pet_id: params.pet_id,
@@ -392,9 +407,16 @@ async function enrichEncounter(row: Record<string, unknown>) {
 
   const clinicId = row.clinic_id as string;
   const encId = row.id as string;
+  const partnerId = row.hub_partner_clinic_id as string | null;
   const adj = clinicId
     ? (await financialAdjustmentFlagsForEncounters(clinicId, [encId])).get(encId)
     : undefined;
+
+  let partnerClinic: { id: string; name: string } | null = null;
+  if (clinicId && partnerId) {
+    const map = await loadPartnerClinicMap(clinicId, [partnerId]);
+    partnerClinic = map.get(partnerId) ?? null;
+  }
 
   return {
     ...row,
@@ -404,6 +426,7 @@ async function enrichEncounter(row: Record<string, unknown>) {
     appointment: appt,
     service_type: serviceType,
     case: caseRes.data,
+    partner_clinic: partnerClinic,
     financial_adjustment_pending: adj?.financial_adjustment_pending ?? false,
     comanda_id: adj?.comanda_id ?? null,
   };
@@ -468,7 +491,7 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
   try {
     const parsed = dayBoardQuerySchema.safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const { clinic_id, unit_id, status, hub_staff_member_id } = parsed.data;
+    const { clinic_id, unit_id, care_location_kind, hub_partner_clinic_id, status, hub_staff_member_id } = parsed.data;
     const { from, to, dateYmd } = resolveDayBoardRange(parsed.data);
 
     const clinicalTypeIds = await getOperationalClinicalServiceTypeIds(clinic_id);
@@ -487,7 +510,7 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
     let apptQ = supabaseAdmin
       .from('hub_appointments')
       .select(
-        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, starts_at, ends_at, status, title, notes, appointment_kind, hub_service_type_id',
+        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, starts_at, ends_at, status, title, notes, appointment_kind, hub_service_type_id, care_location_kind, hub_partner_clinic_id',
       )
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
@@ -496,7 +519,12 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
       .gt('ends_at', from)
       .order('starts_at', { ascending: true });
 
-    if (unit_id) apptQ = apptQ.eq('unit_id', unit_id);
+    if (unit_id) {
+      // Inclui parceiras sem unit_id ou com a mesma unidade de origem.
+      apptQ = apptQ.or(`unit_id.eq.${unit_id},care_location_kind.eq.partner_clinic`);
+    }
+    if (care_location_kind) apptQ = apptQ.eq('care_location_kind', care_location_kind);
+    if (hub_partner_clinic_id) apptQ = apptQ.eq('hub_partner_clinic_id', hub_partner_clinic_id);
     if (hub_staff_member_id === '__na__') apptQ = apptQ.is('hub_staff_member_id', null);
     else if (hub_staff_member_id) apptQ = apptQ.eq('hub_staff_member_id', hub_staff_member_id);
 
@@ -509,7 +537,11 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
       .lte('started_at', to)
       .order('started_at', { ascending: true });
 
-    if (unit_id) encQ = encQ.eq('unit_id', unit_id);
+    if (unit_id) {
+      encQ = encQ.or(`unit_id.eq.${unit_id},care_location_kind.eq.partner_clinic`);
+    }
+    if (care_location_kind) encQ = encQ.eq('care_location_kind', care_location_kind);
+    if (hub_partner_clinic_id) encQ = encQ.eq('hub_partner_clinic_id', hub_partner_clinic_id);
     if (status) encQ = encQ.eq('status', status);
     if (hub_staff_member_id === '__na__') encQ = encQ.is('hub_staff_member_id', null);
     else if (hub_staff_member_id) encQ = encQ.eq('hub_staff_member_id', hub_staff_member_id);
@@ -592,7 +624,7 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
       if (!a.pet_id && a.guardian_id) guardiansMissingPet.add(a.guardian_id as string);
     }
 
-    const [petByGuardian, gusRes, staffRes] = await Promise.all([
+    const [petByGuardian, gusRes, staffRes, partnerMap] = await Promise.all([
       resolvePrimaryPetIdsByGuardians(clinic_id, guardiansMissingPet),
       guIds.size
         ? supabaseAdmin.from('hub_guardians').select('id, full_name').in('id', [...guIds])
@@ -600,6 +632,17 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
       staffIds.size
         ? supabaseAdmin.from('hub_staff_members').select('id, full_name').in('id', [...staffIds])
         : Promise.resolve({ data: [] }),
+      loadPartnerClinicMap(
+        clinic_id,
+        [
+          ...((appointments ?? []) as Record<string, unknown>[]).map(
+            (a) => a.hub_partner_clinic_id as string | null,
+          ),
+          ...((encounters ?? []) as Record<string, unknown>[]).map(
+            (e) => e.hub_partner_clinic_id as string | null,
+          ),
+        ].filter(Boolean) as string[],
+      ),
     ]);
 
     for (const pid of petByGuardian.values()) petIds.add(pid);
@@ -637,6 +680,11 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
           appointment_kind: a.appointment_kind,
           title: a.title,
           notes: a.notes,
+          care_location_kind: a.care_location_kind ?? 'own_unit',
+          hub_partner_clinic_id: a.hub_partner_clinic_id ?? null,
+          partner_clinic: a.hub_partner_clinic_id
+            ? partnerMap.get(a.hub_partner_clinic_id as string) ?? null
+            : null,
           service_type: stMap.get(a.hub_service_type_id as string) ?? null,
           pet: petId ? petMap.get(petId) : null,
           guardian: guardianId ? guMap.get(guardianId) : null,
@@ -833,17 +881,31 @@ export const createHubEncounter = async (req: Request, res: Response) => {
     }
 
     let effectiveApptId: string | null = b.hub_appointment_id ?? null;
+    const careKind = b.care_location_kind ?? 'own_unit';
+    const careResolved = await resolveCareLocation({
+      clinicId: b.clinic_id,
+      care_location_kind: careKind,
+      hub_partner_clinic_id: b.hub_partner_clinic_id ?? null,
+      unit_id: b.unit_id ?? null,
+      allowNullUnit: careKind === 'partner_clinic' || isEmergency,
+    });
+    if (!careResolved.ok) {
+      return res.status(400).json({ error: careResolved.error });
+    }
+
     if (b.link_agenda_slot && b.hub_service_type_id) {
       try {
         effectiveApptId = await createLinkedClinicalAgendaAppointment({
           clinic_id: b.clinic_id,
-          unit_id: b.unit_id ?? null,
+          unit_id: careResolved.value.unit_id,
           pet_id: b.pet_id ?? null,
           guardian_id: resolvedGuardianId,
           hub_staff_member_id: b.hub_staff_member_id ?? null,
           hub_service_type_id: b.hub_service_type_id,
           chief_complaint: b.chief_complaint ?? null,
           appointment_kind: encounterType === 'emergency' ? 'clinical_emergency' : 'clinical_walk_in',
+          care_location_kind: careResolved.value.care_location_kind,
+          hub_partner_clinic_id: careResolved.value.hub_partner_clinic_id,
         });
       } catch (slotErr: unknown) {
         return res.status(400).json({ error: (slotErr as Error).message || 'Erro ao criar encaixe na agenda' });
@@ -852,7 +914,9 @@ export const createHubEncounter = async (req: Request, res: Response) => {
 
     const insert = {
       clinic_id: b.clinic_id,
-      unit_id: b.unit_id ?? null,
+      unit_id: careResolved.value.unit_id,
+      care_location_kind: careResolved.value.care_location_kind,
+      hub_partner_clinic_id: careResolved.value.hub_partner_clinic_id,
       pet_id: b.pet_id ?? null,
       guardian_id: resolvedGuardianId,
       hub_appointment_id: effectiveApptId,
@@ -938,7 +1002,7 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
     const { data: appt, error: apptErr } = await supabaseAdmin
       .from('hub_appointments')
       .select(
-        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, appointment_kind, intake_hub_case_id, intake_create_new_case, intake_new_case_title',
+        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, appointment_kind, intake_hub_case_id, intake_create_new_case, intake_new_case_title, care_location_kind, hub_partner_clinic_id',
       )
       .eq('id', hub_appointment_id)
       .eq('clinic_id', clinic_id)
@@ -1015,6 +1079,8 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
       .insert({
         clinic_id,
         unit_id: apptRow.unit_id,
+        care_location_kind: (apptRow.care_location_kind as string) ?? 'own_unit',
+        hub_partner_clinic_id: (apptRow.hub_partner_clinic_id as string | null) ?? null,
         pet_id: petId,
         guardian_id: resolvedGuardianId,
         hub_appointment_id,
@@ -1071,7 +1137,9 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
 
     const { data: existingRow, error: exErr } = await supabaseAdmin
       .from('hub_encounters')
-      .select('id, pet_id, guardian_id, clinic_id, status, hub_case_id, operational_phase')
+      .select(
+        'id, pet_id, guardian_id, clinic_id, status, hub_case_id, operational_phase, unit_id, care_location_kind, hub_partner_clinic_id',
+      )
       .eq('id', id.data)
       .eq('clinic_id', b.clinic_id)
       .is('deleted_at', null)
@@ -1087,6 +1155,9 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
       status: string;
       hub_case_id: string | null;
       operational_phase: string | null;
+      unit_id: string | null;
+      care_location_kind: string | null;
+      hub_partner_clinic_id: string | null;
     };
 
     if (existing.status === 'completed') {
@@ -1179,6 +1250,39 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
     if (b.pet_id !== undefined) patch.pet_id = b.pet_id;
     if (b.hub_case_id !== undefined) patch.hub_case_id = b.hub_case_id;
     if (b.operational_phase !== undefined) patch.operational_phase = b.operational_phase;
+
+    if (
+      b.care_location_kind !== undefined ||
+      b.hub_partner_clinic_id !== undefined ||
+      b.unit_id !== undefined
+    ) {
+      const nextKind =
+        b.care_location_kind ??
+        ((existing.care_location_kind as 'own_unit' | 'partner_clinic' | null) ?? 'own_unit');
+      const nextPartner =
+        b.hub_partner_clinic_id !== undefined
+          ? b.hub_partner_clinic_id
+          : existing.hub_partner_clinic_id;
+      const nextUnit = b.unit_id !== undefined ? b.unit_id : existing.unit_id;
+      const careResolved = await resolveCareLocation({
+        clinicId: b.clinic_id,
+        care_location_kind: nextKind,
+        hub_partner_clinic_id: nextPartner,
+        unit_id: nextUnit,
+        existing: {
+          care_location_kind: (existing.care_location_kind as 'own_unit' | 'partner_clinic' | null) ?? 'own_unit',
+          hub_partner_clinic_id: existing.hub_partner_clinic_id,
+        },
+        allowNullUnit: nextKind === 'partner_clinic',
+        requireActivePartner: b.hub_partner_clinic_id !== undefined || b.care_location_kind === 'partner_clinic',
+      });
+      if (!careResolved.ok) {
+        return res.status(400).json({ error: careResolved.error });
+      }
+      patch.care_location_kind = careResolved.value.care_location_kind;
+      patch.hub_partner_clinic_id = careResolved.value.hub_partner_clinic_id;
+      patch.unit_id = careResolved.value.unit_id;
+    }
 
     const { data, error } = await supabaseAdmin
       .from('hub_encounters')

@@ -130,6 +130,12 @@ import {
   deleteTransportCage,
 } from '../hubPickupVehiclesController';
 import {
+  listHubPartnerClinics,
+  createHubPartnerClinic,
+  patchHubPartnerClinic,
+  deleteHubPartnerClinic,
+} from '../hubPartnerClinicsController';
+import {
   getHubGroomingSessionDrawer,
   postHubGroomingSessionExtra,
   patchHubGroomingAppointmentServiceLine,
@@ -151,6 +157,7 @@ import {
   createHubClinicalExam,
   patchHubClinicalExam,
   deleteHubClinicalExam,
+  exportHubClinicalExamsCsv,
 } from '../hubClinicalExamsController';
 import {
   issueExamOrderDocumentHandler,
@@ -391,6 +398,32 @@ router.patch(
   authenticateUser,
   requirePermission('hub.appointments.write'),
   patchHubClinicSettings
+);
+
+/* --- Clínicas parceiras (local de atendimento) --- */
+router.get(
+  '/partner-clinics',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubPartnerClinics,
+);
+router.post(
+  '/partner-clinics',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubPartnerClinic,
+);
+router.patch(
+  '/partner-clinics/:id',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  patchHubPartnerClinic,
+);
+router.delete(
+  '/partner-clinics/:id',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  deleteHubPartnerClinic,
 );
 
 router.get('/pets', authenticateUser, requirePermission('hub.pets.read'), listHubPets);
@@ -849,6 +882,12 @@ router.post('/clinical/timeline/notes', authenticateUser, requirePermission('hub
 
 /* --- Exames clínicos --- */
 router.get('/clinical/exams', authenticateUser, requirePermission('hub.clinic.read'), listHubClinicalExams);
+router.get(
+  '/clinical/exams/export.csv',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  exportHubClinicalExamsCsv,
+);
 router.get('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubClinicalExam);
 router.post('/clinical/exams', authenticateUser, requirePermission('hub.clinic.write'), createHubClinicalExam);
 router.patch('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubClinicalExam);

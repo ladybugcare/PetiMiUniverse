@@ -288,6 +288,45 @@ export const listHubGuardians = async (req: Request, res: Response) => {
     const kind = z.enum(['individual', 'company', 'all']).optional().safeParse(req.query.kind);
     const status = z.enum(['active', 'inactive', 'all']).optional().safeParse(req.query.status);
     const qRaw = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const careLocationKind = z
+      .enum(['own_unit', 'partner_clinic'])
+      .optional()
+      .safeParse(req.query.care_location_kind);
+    const partnerClinicId = uuidStr.safeParse(req.query.hub_partner_clinic_id);
+
+    let guardianIdsFilter: string[] | null = null;
+    if (
+      (careLocationKind.success && careLocationKind.data) ||
+      partnerClinicId.success
+    ) {
+      let encQ = supabaseAdmin
+        .from('hub_encounters')
+        .select('guardian_id')
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .not('guardian_id', 'is', null);
+      if (careLocationKind.success && careLocationKind.data) {
+        encQ = encQ.eq('care_location_kind', careLocationKind.data);
+      }
+      if (partnerClinicId.success) {
+        encQ = encQ.eq('hub_partner_clinic_id', partnerClinicId.data);
+      }
+      const { data: encRows, error: encErr } = await encQ;
+      if (encErr) {
+        console.error('[hub_guardians] list care_location filter', encErr);
+        return res.status(500).json({ error: 'Erro ao filtrar tutores por local' });
+      }
+      guardianIdsFilter = [
+        ...new Set(
+          (encRows ?? [])
+            .map((r: { guardian_id: string | null }) => r.guardian_id)
+            .filter(Boolean) as string[],
+        ),
+      ];
+      if (guardianIdsFilter.length === 0) {
+        return res.json({ guardians: [] });
+      }
+    }
 
     let query = supabaseAdmin
       .from('hub_guardians')
@@ -296,6 +335,9 @@ export const listHubGuardians = async (req: Request, res: Response) => {
       .is('deleted_at', null)
       .order('full_name', { ascending: true });
 
+    if (guardianIdsFilter) {
+      query = query.in('id', guardianIdsFilter);
+    }
     if (kind.success && kind.data && kind.data !== 'all') {
       query = query.eq('client_kind', kind.data);
     }

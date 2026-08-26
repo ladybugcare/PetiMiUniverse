@@ -8,6 +8,11 @@ import { HubDateField } from '../../components/HubDateField';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import {
+  CareLocationFields,
+  type CareLocationValue,
+} from '../../components/CareLocationFields';
+import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
+import {
   hubAgendaApi,
   type CreateHubAppointmentPayload,
   type CreateHubAppointmentBatchPetEntry,
@@ -282,6 +287,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [staffId, setStaffId] = useState('');
   const [resourceLabel, setResourceLabel] = useState('');
   const [status, setStatus] = useState<AgendaStatus>('confirmed');
+  const [careLocation, setCareLocation] = useState<CareLocationValue>({
+    care_location_kind: 'own_unit',
+    hub_partner_clinic_id: null,
+  });
 
   // ── Services ───────────────────────────────────────────────────────────────
   const [groupFilter, setGroupFilter] = useState('all');
@@ -562,6 +571,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setWalkInEmergency(false);
     setQuickRegisterOpen(false);
     setQuickRegisterPetsOnly(false);
+    setCareLocation({ care_location_kind: 'own_unit', hub_partner_clinic_id: null });
     initialPetIdRef.current = initial?.pet_id ?? null;
     if (isWalkIn) {
       const now = new Date();
@@ -1627,6 +1637,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         return;
       }
     }
+    if (
+      (isClinicalRoutine || isWalkIn) &&
+      careLocation.care_location_kind === 'partner_clinic' &&
+      !careLocation.hub_partner_clinic_id
+    ) {
+      setSaveError('Selecione a clínica parceira.');
+      return;
+    }
 
     const tierErr = validateAppointmentPorteOverride(
       pricingApptPorteTier.trim() || null,
@@ -1815,6 +1833,15 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           const nt = intakeNewCaseTitle.trim();
           if (nt) payload.intake_new_case_title = nt;
         }
+      }
+
+      if (isClinicalRoutine || isWalkIn) {
+        payload.unit_id = getSelectedUnitId();
+        payload.care_location_kind = careLocation.care_location_kind;
+        payload.hub_partner_clinic_id =
+          careLocation.care_location_kind === 'partner_clinic'
+            ? careLocation.hub_partner_clinic_id
+            : null;
       }
 
       if (!isWalkIn && withPickup && !isPrimaryLevaTraz) {
@@ -2517,6 +2544,15 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 </div>
               </div>
 
+              {clinicId ? (
+                <CareLocationFields
+                  clinicId={clinicId}
+                  value={careLocation}
+                  onChange={setCareLocation}
+                  idPrefix="nam-cr-care"
+                />
+              ) : null}
+
               <div className="nam-field">
                 <label className="nam-label" htmlFor="nam-cr-complaint">
                   Queixa principal
@@ -2790,6 +2826,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   </span>
                 </HubCheckbox>
               </div>
+            ) : null}
+            {isWalkIn && clinicId ? (
+              <CareLocationFields
+                clinicId={clinicId}
+                value={careLocation}
+                onChange={setCareLocation}
+                idPrefix="nam-wi-care"
+              />
             ) : null}
           </div>
         </div>

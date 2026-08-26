@@ -26,6 +26,12 @@ import {
   syncOpenComandasAfterAppointmentOperationalComplete,
 } from './hubComandasController';
 import { hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
+import {
+  careLocationBodyFields,
+  careLocationKindSchema,
+  loadPartnerClinicMap,
+  resolveCareLocation,
+} from './hubCareLocation';
 
 function validateLevaTrazServiceType(st: ServiceTypePricingRow | undefined): string | null {
   if (!st) return 'Tipo de serviço de Leva e Traz inválido.';
@@ -634,7 +640,9 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
   const petIds = [...new Set(rows.map((r) => r.pet_id).filter(Boolean))] as string[];
   const guIds = [...new Set(rows.map((r) => r.guardian_id).filter(Boolean))] as string[];
   const unitIds = [...new Set(rows.map((r) => r.unit_id).filter(Boolean))] as string[];
+  const partnerIds = [...new Set(rows.map((r) => r.hub_partner_clinic_id).filter(Boolean))] as string[];
   const apptIds = rows.map((r) => r.id as string);
+  const enrichClinicId = (rows[0]?.clinic_id as string | undefined) ?? null;
 
   const svcLinesRes = apptIds.length
     ? await supabaseAdmin
@@ -653,7 +661,7 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
     ]),
   ];
 
-  const [stRes, staffRes, petsRes, guRes, unitsRes, encRes] = await Promise.all([
+  const [stRes, staffRes, petsRes, guRes, unitsRes, encRes, partnerMap] = await Promise.all([
     stIds.length
       ? supabaseAdmin
           .from('hub_service_types')
@@ -679,6 +687,9 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
           .in('hub_appointment_id', apptIds)
           .is('deleted_at', null)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    enrichClinicId
+      ? loadPartnerClinicMap(enrichClinicId, partnerIds)
+      : Promise.resolve(new Map<string, { id: string; name: string }>()),
   ]);
 
   const clinicId = (rows[0]?.clinic_id as string) || '';
@@ -734,6 +745,9 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
     const pet = r.pet_id ? petMap.get(r.pet_id as string) : null;
     const gu = r.guardian_id ? guMap.get(r.guardian_id as string) : null;
     const un = r.unit_id ? unitMap.get(r.unit_id as string) : null;
+    const partner = r.hub_partner_clinic_id
+      ? partnerMap.get(r.hub_partner_clinic_id as string) ?? null
+      : null;
     const rawLines = svcByAppt.get(r.id as string) ?? [];
     const services = rawLines.map((l) => ({
       id: l.id as string,
@@ -769,6 +783,7 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       pet: pet ?? null,
       guardian: gu ?? null,
       unit: un ?? null,
+      partner_clinic: partner,
       services,
       hub_encounter_id: linked?.id ?? null,
       hub_encounter_status: linked?.status ?? null,
@@ -786,6 +801,8 @@ const listQuerySchema = z.object({
   from: z.string().datetime({ offset: true }),
   to: z.string().datetime({ offset: true }),
   unit_id: uuidStr.optional(),
+  care_location_kind: careLocationKindSchema.optional(),
+  hub_partner_clinic_id: uuidStr.optional(),
   hub_staff_member_id: z.union([uuidStr, z.literal('__na__')]).optional(),
   hub_service_type_id: uuidStr.optional(),
   service_group: z.string().trim().min(1).max(64).optional(),
@@ -906,6 +923,7 @@ const createAppointmentSchema = z
     allow_schedule_overlap: z.boolean().optional(),
     /** Agrupa vários agendamentos da mesma visita multi-pet. */
     visit_group_id: uuidStr.optional().nullable(),
+    ...careLocationBodyFields,
   })
   .strict();
 
@@ -957,6 +975,7 @@ const patchAppointmentSchema = z
     intake_create_new_case: z.boolean().optional(),
     intake_new_case_title: optionalTrim(200).optional().nullable(),
     extra_blocks: z.array(patchExtraBlockSchema).optional(),
+    ...careLocationBodyFields,
   })
   .strict();
 
@@ -974,6 +993,8 @@ function isStructuralAppointmentPatch(body: z.infer<typeof patchAppointmentSchem
   if (body.deleted === true) return false;
   return (
     body.unit_id !== undefined ||
+    body.care_location_kind !== undefined ||
+    body.hub_partner_clinic_id !== undefined ||
     body.hub_service_type_id !== undefined ||
     body.hub_staff_member_id !== undefined ||
     body.pet_id !== undefined ||
@@ -1181,7 +1202,7 @@ export const listHubAppointments = async (req: Request, res: Response) => {
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.flatten() });
     }
-    const { clinic_id, from, to, unit_id, hub_staff_member_id, hub_service_type_id, service_group, status, resource_label } =
+    const { clinic_id, from, to, unit_id, care_location_kind, hub_partner_clinic_id, hub_staff_member_id, hub_service_type_id, service_group, status, resource_label } =
       parsed.data;
 
     let typeIdsFilter: string[] | null = null;
@@ -1209,6 +1230,8 @@ export const listHubAppointments = async (req: Request, res: Response) => {
       .order('starts_at', { ascending: true });
 
     if (unit_id) q = q.eq('unit_id', unit_id);
+    if (care_location_kind) q = q.eq('care_location_kind', care_location_kind);
+    if (hub_partner_clinic_id) q = q.eq('hub_partner_clinic_id', hub_partner_clinic_id);
     if (hub_staff_member_id === '__na__') q = q.is('hub_staff_member_id', null);
     else if (hub_staff_member_id) q = q.eq('hub_staff_member_id', hub_staff_member_id);
     if (hub_service_type_id) q = q.eq('hub_service_type_id', hub_service_type_id);
@@ -1359,8 +1382,23 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Unidade inválida ou não pertence à clínica' });
     }
 
-    // Se a unidade não foi informada, tenta usar a unidade padrão da clínica
-    const resolvedUnitId: string | null = b.unit_id ?? (await resolveClinicDefaultUnitId(b.clinic_id));
+    const careKind = b.care_location_kind ?? 'own_unit';
+    // Unidade própria: usa a informada ou a padrão da clínica. Parceira: unit_id opcional (origem administrativa).
+    const resolvedUnitId: string | null =
+      careKind === 'partner_clinic'
+        ? (b.unit_id ?? null)
+        : (b.unit_id ?? (await resolveClinicDefaultUnitId(b.clinic_id)));
+
+    const careResolved = await resolveCareLocation({
+      clinicId: b.clinic_id,
+      care_location_kind: careKind,
+      hub_partner_clinic_id: b.hub_partner_clinic_id ?? null,
+      unit_id: resolvedUnitId,
+      allowNullUnit: careKind === 'partner_clinic',
+    });
+    if (!careResolved.ok) {
+      return res.status(400).json({ error: careResolved.error });
+    }
 
     // Validate service types for extra services
     const allServiceTypeIds = b.services ? b.services.map((s) => s.hub_service_type_id) : [];
@@ -1697,7 +1735,9 @@ export const createHubAppointment = async (req: Request, res: Response) => {
 
       const insert = {
         clinic_id: b.clinic_id,
-        unit_id: resolvedUnitId,
+        unit_id: careResolved.value.unit_id,
+        care_location_kind: careResolved.value.care_location_kind,
+        hub_partner_clinic_id: careResolved.value.hub_partner_clinic_id,
         hub_service_type_id: b.hub_service_type_id,
         hub_staff_member_id: b.hub_staff_member_id ?? null,
         pet_id: b.pet_id ?? null,
@@ -2158,13 +2198,49 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Unidade inválida' });
     }
 
-    const check = await assertNoScheduleConflict(b.clinic_id, [id], nextStaff, nextResource, nextUnit, starts, ends);
+    const nextCareKind =
+      b.care_location_kind ??
+      ((existing.care_location_kind as string | null | undefined) as 'own_unit' | 'partner_clinic' | undefined) ??
+      'own_unit';
+    const nextPartnerId =
+      b.hub_partner_clinic_id !== undefined
+        ? b.hub_partner_clinic_id
+        : ((existing.hub_partner_clinic_id as string | null | undefined) ?? null);
+    const careResolved = await resolveCareLocation({
+      clinicId: b.clinic_id,
+      care_location_kind: nextCareKind,
+      hub_partner_clinic_id: nextPartnerId,
+      unit_id: nextUnit,
+      existing: {
+        care_location_kind: (existing.care_location_kind as 'own_unit' | 'partner_clinic' | null) ?? 'own_unit',
+        hub_partner_clinic_id: (existing.hub_partner_clinic_id as string | null) ?? null,
+      },
+      allowNullUnit: nextCareKind === 'partner_clinic',
+      requireActivePartner: b.hub_partner_clinic_id !== undefined || b.care_location_kind === 'partner_clinic',
+    });
+    if (!careResolved.ok) {
+      return res.status(400).json({ error: careResolved.error });
+    }
+
+    const check = await assertNoScheduleConflict(
+      b.clinic_id,
+      [id],
+      nextStaff,
+      nextResource,
+      careResolved.value.unit_id,
+      starts,
+      ends,
+    );
     if (check.conflict) {
       return res.status(409).json({ error: check.reason });
     }
 
     const patch: Record<string, unknown> = {};
-    if (b.unit_id !== undefined) patch.unit_id = b.unit_id;
+    if (b.unit_id !== undefined || b.care_location_kind !== undefined || b.hub_partner_clinic_id !== undefined) {
+      patch.unit_id = careResolved.value.unit_id;
+      patch.care_location_kind = careResolved.value.care_location_kind;
+      patch.hub_partner_clinic_id = careResolved.value.hub_partner_clinic_id;
+    }
     if (b.hub_service_type_id !== undefined) patch.hub_service_type_id = b.hub_service_type_id;
     if (b.hub_staff_member_id !== undefined) patch.hub_staff_member_id = b.hub_staff_member_id;
     if (b.pet_id !== undefined) patch.pet_id = b.pet_id;

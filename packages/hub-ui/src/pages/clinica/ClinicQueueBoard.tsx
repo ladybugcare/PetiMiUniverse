@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import type { DayBoardItem } from '../../api/hubClinicalApi';
+import { CareLocationBadge } from '../../components/CareLocationFields';
 import { petAgeDetailedLabel } from '../pets/petAge';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -110,6 +111,10 @@ const ClinicQueueBoard: React.FC<Props> = ({ items, canWrite, onOpen, searchQ })
                           {apptKind === 'clinical_emergency' ? 'Urgência' : 'Encaixe clínico'}
                         </p>
                       ) : null}
+                      <CareLocationBadge
+                        care_location_kind={item.care_location_kind}
+                        partner_clinic={item.partner_clinic}
+                      />
                       {isUnidentified && !isClinicalEncaixe ? (
                         <p className="hub-clientes__pill hub-clinic-queue__pill--encaixe" style={{ marginTop: 6, marginBottom: 0 }}>
                           Urgência

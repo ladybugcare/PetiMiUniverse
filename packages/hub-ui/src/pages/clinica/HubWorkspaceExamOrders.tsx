@@ -18,6 +18,7 @@ import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 import { formatHubClinicalExamStatus } from './clinicalDisplay';
 import { buildExamOrderWhatsAppMessage, openExamOrderWhatsApp } from './hubExamOrderShareUtils';
+import { CareLocationBadge } from '../../components/CareLocationFields';
 
 const EXAM_ORDER_DISCLAIMERS = [
   'Documento gerado pelo PetMi Hub para validação de autenticidade. Não substitui guias oficiais de convênios ou laboratórios.',
@@ -322,9 +323,35 @@ export function HubWorkspaceExamOrders({
 
   return (
     <>
-      <p className="hub-clientes__muted" style={{ marginTop: 0, marginBottom: 12 }}>
-        Solicite exames e emita PDF com link validável. Após emitir, o item fica bloqueado para edição — reemita uma nova versão se necessário.
-      </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 12 }}>
+        <p className="hub-clientes__muted" style={{ margin: 0 }}>
+          Solicite exames e emita PDF com link validável. Após emitir, o item fica bloqueado para edição — reemita uma nova versão se necessário.
+          {encounter.care_location_kind === 'partner_clinic' ? (
+            <>
+              {' '}
+              <CareLocationBadge
+                care_location_kind={encounter.care_location_kind}
+                partner_clinic={encounter.partner_clinic}
+              />
+            </>
+          ) : null}
+        </p>
+        <button
+          type="button"
+          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+          onClick={() => {
+            void hubClinicalExamsApi
+              .downloadExportCsv(clinicId, {
+                careLocationKind: encounter.care_location_kind === 'partner_clinic' ? 'partner_clinic' : undefined,
+                partnerClinicId: encounter.hub_partner_clinic_id ?? undefined,
+              })
+              .then(() => showSuccess('CSV de exames baixado'))
+              .catch((e: unknown) => showError((e as Error)?.message || 'Erro ao exportar'));
+          }}
+        >
+          Exportar CSV
+        </button>
+      </div>
 
       {!readOnly ? (
         <div className="hub-clientes__form-stack" style={{ marginBottom: 16, maxWidth: 560 }}>
@@ -425,7 +452,11 @@ export function HubWorkspaceExamOrders({
                   return (
                     <tr key={ex.id}>
                       <td>
-                        <strong>{ex.exam_type}</strong>
+                        <strong>{ex.exam_type}</strong>{' '}
+                        <CareLocationBadge
+                          care_location_kind={ex.care_location_kind}
+                          partner_clinic={ex.partner_clinic}
+                        />
                         {ex.fasting_required ? (
                           <div className="hub-clientes__muted" style={{ fontSize: 12 }}>
                             Jejum necessário

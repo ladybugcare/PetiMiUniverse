@@ -1,0 +1,114 @@
+/* Clínicas parceiras — Configurações do Sistema */
+
+.hub-pc {
+  padding: 8px 4px 32px;
+  max-width: 780px;
+}
+
+.hub-pc__intro {
+  margin-bottom: 20px;
+}
+
+.hub-pc__intro-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  color: #2d1e1c;
+}
+
+.hub-pc__intro-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #7a6060;
+  max-width: 560px;
+}
+
+.hub-pc__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.hub-pc__inactive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #5c4545;
+}
+
+.hub-pc__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 16px;
+  color: #7a6060;
+  text-align: center;
+}
+
+.hub-pc__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hub-pc__card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #eadfd8;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.hub-pc__card--inactive {
+  opacity: 0.65;
+}
+
+.hub-pc__card-main strong {
+  font-size: 15px;
+  color: #2d1e1c;
+}
+
+.hub-pc__badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f3e8e0;
+  color: #7a6060;
+}
+
+.hub-pc__meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #7a6060;
+}
+
+.hub-pc__card-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.hub-pc__form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hub-pc__form .nam-label {
+  margin-top: 8px;
+}

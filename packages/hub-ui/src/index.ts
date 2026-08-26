@@ -56,6 +56,12 @@ export { hubPetsApi } from './api/hubPetsApi';
 export type { HubPet, HubPetGuardianRef } from './api/hubPetsApi';
 export { hubClinicSettingsApi } from './api/hubClinicSettingsApi';
 export type { HubClinicSettings, PatchHubClinicSettingsPayload } from './api/hubClinicSettingsApi';
+export { hubPartnerClinicsApi } from './api/hubPartnerClinicsApi';
+export type {
+  HubPartnerClinic,
+  CareLocationKind,
+  CareLocationPayload,
+} from './api/hubPartnerClinicsApi';
 export { hubServiceGroupsApi } from './api/hubServiceGroupsApi';
 export type { HubServiceGroupRow } from './api/hubServiceGroupsApi';
 export { hubStaffApi } from './api/hubStaffApi';

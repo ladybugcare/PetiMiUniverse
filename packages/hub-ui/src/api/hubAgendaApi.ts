@@ -61,6 +61,9 @@ export type HubAppointment = {
   id: string;
   clinic_id: string;
   unit_id: string | null;
+  care_location_kind?: 'own_unit' | 'partner_clinic';
+  hub_partner_clinic_id?: string | null;
+  partner_clinic?: { id: string; name: string } | null;
   hub_service_type_id: string;
   hub_staff_member_id: string | null;
   pet_id: string | null;
@@ -202,6 +205,8 @@ export type CreateHubAppointmentPayload = {
   /** Permite sobrepor outro slot (somente kinds walk-in). */
   allow_schedule_overlap?: boolean;
   visit_group_id?: string | null;
+  care_location_kind?: 'own_unit' | 'partner_clinic';
+  hub_partner_clinic_id?: string | null;
 };
 
 export type CreateHubAppointmentBatchPetEntry = {

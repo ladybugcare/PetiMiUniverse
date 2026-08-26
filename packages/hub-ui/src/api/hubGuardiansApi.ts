@@ -106,13 +106,21 @@ export type HubGuardianUpdatePayload = {
 function listUrl(
   clinicId: string,
   bustCache: boolean,
-  opts?: { kind?: 'individual' | 'company' | 'all'; status?: 'active' | 'inactive' | 'all'; q?: string }
+  opts?: {
+    kind?: 'individual' | 'company' | 'all';
+    status?: 'active' | 'inactive' | 'all';
+    q?: string;
+    careLocationKind?: 'own_unit' | 'partner_clinic';
+    partnerClinicId?: string;
+  }
 ): string {
   const q = new URLSearchParams({ clinic_id: clinicId });
   if (bustCache) q.set('_', String(Date.now()));
   if (opts?.kind && opts.kind !== 'all') q.set('kind', opts.kind);
   if (opts?.status && opts.status !== 'all') q.set('status', opts.status);
   if (opts?.q?.trim()) q.set('q', opts.q.trim());
+  if (opts?.careLocationKind) q.set('care_location_kind', opts.careLocationKind);
+  if (opts?.partnerClinicId) q.set('hub_partner_clinic_id', opts.partnerClinicId);
   return `${basePath}?${q.toString()}`;
 }
 
@@ -151,7 +159,13 @@ export const hubGuardiansApi = {
   async list(
     clinicId: string,
     bustCache = false,
-    opts?: { kind?: 'individual' | 'company' | 'all'; status?: 'active' | 'inactive' | 'all'; q?: string }
+    opts?: {
+      kind?: 'individual' | 'company' | 'all';
+      status?: 'active' | 'inactive' | 'all';
+      q?: string;
+      careLocationKind?: 'own_unit' | 'partner_clinic';
+      partnerClinicId?: string;
+    }
   ): Promise<{ guardians: HubGuardian[] }> {
     const res = (await apiRequest(listUrl(clinicId, bustCache, opts))) as {
       guardians: Record<string, unknown>[];
