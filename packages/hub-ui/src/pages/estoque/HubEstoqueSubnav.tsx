@@ -1,15 +1,17 @@
 import React from 'react';
 import { HubTabs } from '../../components/HubTabs';
 
+const BASE = '/hub/estoque';
+
 const links = [
-  { to: 'produtos', label: 'Produtos' },
-  { to: 'medicamentos', label: 'Medicamentos' },
-  { to: 'vacinas', label: 'Vacinas' },
-  { to: 'entradas', label: 'Entradas' },
-  { to: 'saidas', label: 'Saídas' },
-  { to: 'validade', label: 'Validade' },
-  { to: 'alertas', label: 'Alertas' },
-  { to: 'inventario', label: 'Inventário' },
+  { to: `${BASE}/produtos`, label: 'Produtos', end: true as const },
+  { to: `${BASE}/medicamentos`, label: 'Medicamentos' },
+  { to: `${BASE}/vacinas`, label: 'Vacinas' },
+  { to: `${BASE}/entradas`, label: 'Entradas' },
+  { to: `${BASE}/saidas`, label: 'Saídas' },
+  { to: `${BASE}/validade`, label: 'Validade' },
+  { to: `${BASE}/alertas`, label: 'Alertas' },
+  { to: `${BASE}/inventario`, label: 'Inventário' },
 ];
 
 const HubEstoqueSubnav: React.FC = () => {

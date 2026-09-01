@@ -23,6 +23,8 @@ const HubEstoqueRoutes: React.FC = () => {
         <Route path="validade" element={<HubEstoqueValidadePage />} />
         <Route path="alertas" element={<HubEstoqueAlertasPage />} />
         <Route path="inventario" element={<HubEstoqueInventarioPage />} />
+        {/* URLs inválidas (ex.: /produtos/produtos por links relativos antigos) */}
+        <Route path="*" element={<Navigate to="/hub/estoque/produtos" replace />} />
       </Route>
     </Routes>
   );
