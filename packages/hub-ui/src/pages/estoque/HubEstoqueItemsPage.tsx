@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
+import { AlertTriangle, Archive, Package, Pencil, Plus, Search } from 'lucide-react';
 import { getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import {
   hubInventoryApi,
@@ -9,20 +10,16 @@ import {
   type HubManufacturer,
   type HubSupplier,
 } from '../../api/hubInventoryApi';
-import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
-import { HubCheckbox } from '../../components/HubCheckbox';
-import { HubDateField } from '../../components/HubDateField';
-import { HubCancelButton } from '../../components/HubCancelButton';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
+import HubEstoqueItemDrawer, { type InventoryFormState } from './HubEstoqueItemDrawer';
 import '../clientes/clientes.css';
+import '../clientes/clientes-drawer.css';
 import '../pets/pets-page.css';
 import '../servicos/servicos-page.css';
 import './estoque.css';
-
-const MOBILE_MQ = '(max-width: 900px)';
 
 function formatMoneyNumberBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -63,32 +60,7 @@ function isLikelyUuid(s: string): boolean {
 
 type PanelMode = 'none' | 'create' | 'edit';
 
-type FormState = {
-  name: string;
-  ean: string;
-  unit_label: string;
-  manufacturer_id: string;
-  allow_fractional: boolean;
-  store_sku: string;
-  sale_purpose: string;
-  product_group: string;
-  default_supplier_id: string;
-  description: string;
-  cost_amount: string;
-  sale_amount: string;
-  supplier_discount_pct: string;
-  max_sale_discount_pct: string;
-  allow_price_override_on_sale: boolean;
-  generates_staff_commission: boolean;
-  min_stock_qty: string;
-  expiry_alert_policy: HubExpiryAlertPolicy;
-  initial_received_at: string;
-  initial_expiry_date: string;
-  initial_qty: string;
-  initial_lot_code: string;
-};
-
-const emptyForm = (): FormState => ({
+const emptyForm = (): InventoryFormState => ({
   name: '',
   ean: '',
   unit_label: '',
@@ -113,7 +85,7 @@ const emptyForm = (): FormState => ({
   initial_lot_code: '',
 });
 
-const fromRow = (t: HubInventoryItem): FormState => ({
+const fromRow = (t: HubInventoryItem): InventoryFormState => ({
   name: t.name,
   ean: t.ean ?? '',
   unit_label: t.unit_label ?? '',
@@ -156,19 +128,8 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
   const [manufacturers, setManufacturers] = useState<HubManufacturer[]>([]);
   const [search, setSearch] = useState('');
   const [panelMode, setPanelMode] = useState<PanelMode>('none');
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false,
-  );
-
-  useEffect(() => {
-    const mq = window.matchMedia(MOBILE_MQ);
-    const onChange = () => setIsMobile(mq.matches);
-    onChange();
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm());
+  const [form, setForm] = useState<InventoryFormState>(emptyForm());
   const [saving, setSaving] = useState(false);
 
   const searchRef = useRef(search);
@@ -494,478 +455,255 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
     );
   }
 
-  const showSidePanel = !isMobile || panelMode === 'create' || panelMode === 'edit';
+  const editingItem = editingId ? items.find((i) => i.id === editingId) : undefined;
+  const drawerOpen = panelMode !== 'none' && canWrite;
 
   return (
-    <div className="hub-clientes hub-servicos-page hub-estoque-page hub-pets-page">
-      <div className="hub-clientes__main">
-        <div className="hub-servicos__metrics" aria-live="polite">
-          <div className="hub-servicos__metric-card">
-            <div className="hub-servicos__metric-card__text">
-              <div className="hub-servicos__metric-label">Itens ({kindLabel(itemKind)})</div>
-              <div className="hub-servicos__metric-value">{loading ? '—' : metrics.total}</div>
+    <>
+      <div className="hub-clientes hub-servicos-page hub-estoque-page hub-pets-page hub-clientes-page--full-width">
+        <div className="hub-clientes__main">
+          <div className="hub-servicos-config__header">
+            <div>
+              <h1 className="hub-servicos-config__title">{kindLabel(itemKind)}</h1>
+              <p className="hub-clientes__muted hub-servicos-config__lead">
+                Cadastro e gestão de {kindLabel(itemKind).toLowerCase()}s no inventário da clínica.
+              </p>
             </div>
           </div>
-          <div className="hub-servicos__metric-card">
-            <div className="hub-servicos__metric-card__text">
-              <div className="hub-servicos__metric-label">Abaixo do mínimo</div>
-              <div className="hub-servicos__metric-value">{loading ? '—' : metrics.low}</div>
-            </div>
-          </div>
-        </div>
 
-        <div className="hub-servicos__toolbar">
-          <div className="hub-servicos__toolbar-row">
-            <div className="hub-servicos__search-wrap">
-              <input
-                type="search"
-                className="hub-servicos__search-input"
-                placeholder="Buscar por nome, EAN ou SKU…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void loadItems();
-                }}
-                aria-label="Buscar"
-              />
+          <div className="hub-servicos__metrics" aria-live="polite">
+            <div className="hub-servicos__metric-card">
+              <div className="hub-servicos__metric-card__text">
+                <div className="hub-servicos__metric-label">Total de itens</div>
+                <div className="hub-servicos__metric-value">
+                  {loading ? '—' : metrics.total.toLocaleString('pt-BR')}
+                </div>
+                <div className="hub-servicos__metric-sub">{kindLabel(itemKind)}s cadastrados</div>
+              </div>
+              <div className="hub-servicos__metric-icon" aria-hidden>
+                <Package size={22} strokeWidth={1.75} />
+              </div>
             </div>
-            {canWrite && (
-              <button type="button" className="hub-servicos__btn-primary-icon" onClick={openCreate}>
-                + Novo {kindLabel(itemKind).toLowerCase()}
-              </button>
-            )}
+            <div className="hub-servicos__metric-card">
+              <div className="hub-servicos__metric-card__text">
+                <div className="hub-servicos__metric-label">Abaixo do mínimo</div>
+                <div className="hub-servicos__metric-value">
+                  {loading ? '—' : metrics.low.toLocaleString('pt-BR')}
+                </div>
+                <div className="hub-servicos__metric-sub">Itens com estoque crítico</div>
+              </div>
+              <div
+                className={`hub-servicos__metric-icon${metrics.low > 0 ? '' : ' hub-servicos__metric-icon--muted'}`}
+                aria-hidden
+              >
+                <AlertTriangle size={22} strokeWidth={1.75} />
+              </div>
+            </div>
           </div>
-        </div>
 
-        {loading ? (
-          <HubLoading variant="block" label="Carregando itens…" />
-        ) : (
-          <>
-            <div className="hub-servicos__table-wrap hub-clientes__table-wrap--desktop">
-              <table className="hub-clientes__table">
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>EAN</th>
-                  <th>SKU</th>
-                  <th>Qtd</th>
-                  <th>Mín.</th>
-                  <th>Custo</th>
-                  <th>Venda</th>
-                  {canWrite ? <th className="hub-clientes__th-actions">Ações</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={canWrite ? 8 : 7} className="hub-clientes__muted" style={{ textAlign: 'center', padding: 24 }}>
-                      Nenhum item.
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((t) => (
-                    <tr
+          <div className="hub-servicos__toolbar">
+            <div className="hub-servicos__toolbar-row">
+              <div className="hub-servicos__search-wrap">
+                <div className="hub-servicos__search-field">
+                  <span className="hub-servicos__search-icon">
+                    <Search size={18} strokeWidth={2} aria-hidden />
+                  </span>
+                  <input
+                    type="search"
+                    className="hub-servicos__search-input"
+                    placeholder="Buscar por nome, EAN ou SKU…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void loadItems();
+                    }}
+                    aria-label="Buscar itens"
+                  />
+                </div>
+              </div>
+              {canWrite && (
+                <button type="button" className="hub-servicos__btn-primary-icon" onClick={openCreate}>
+                  <Plus size={18} strokeWidth={2.25} aria-hidden />
+                  Novo {kindLabel(itemKind).toLowerCase()}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {loading ? (
+            <HubLoading variant="block" label="Carregando itens…" />
+          ) : items.length === 0 ? (
+            <div className="hub-packages__empty">
+              <div className="hub-packages__empty-icon" aria-hidden>
+                <Package size={36} strokeWidth={1.5} />
+              </div>
+              <h2 className="hub-packages__empty-title">Nenhum {kindLabel(itemKind).toLowerCase()} cadastrado</h2>
+              <p className="hub-packages__empty-text">
+                Cadastre {kindLabel(itemKind).toLowerCase()}s para controlar quantidade, preços e alertas de estoque.
+              </p>
+              {canWrite && (
+                <button type="button" className="hub-servicos__btn-primary-icon" onClick={openCreate}>
+                  <Plus size={18} strokeWidth={2.25} aria-hidden />
+                  Criar primeiro {kindLabel(itemKind).toLowerCase()}
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="hub-servicos__table-wrap hub-clientes__table-wrap--desktop">
+                <table className="hub-clientes__table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>EAN</th>
+                      <th>SKU</th>
+                      <th>Qtd</th>
+                      <th>Mín.</th>
+                      <th className="hub-servicos__td-money">Custo</th>
+                      <th className="hub-servicos__td-money">Venda</th>
+                      {canWrite ? <th className="hub-clientes__th-actions">Ações</th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((t) => {
+                      const isLow =
+                        Number(t.min_stock_qty || 0) > 0 && (t.qty_on_hand ?? 0) < Number(t.min_stock_qty || 0);
+                      return (
+                        <tr
+                          key={t.id}
+                          className="hub-packages__row"
+                          onClick={() => {
+                            if (canWrite) openEdit(t);
+                          }}
+                          style={{ cursor: canWrite ? 'pointer' : 'default' }}
+                        >
+                          <td>
+                            <div className="hub-servicos__svc-cell">
+                              <div className="hub-servicos__svc-icon-ring hub-packages__icon-ring" aria-hidden>
+                                <Package size={22} strokeWidth={1.75} color="var(--hc-brand)" />
+                              </div>
+                              <div className="hub-servicos__metric-card__text">
+                                <div className="hub-servicos__svc-title">{t.name}</div>
+                                {t.product_group ? (
+                                  <div className="hub-servicos__svc-desc">{t.product_group}</div>
+                                ) : null}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="hub-clientes__muted" style={{ fontFamily: 'monospace', fontSize: 12 }}>
+                            {t.ean || '—'}
+                          </td>
+                          <td className="hub-clientes__muted" style={{ fontFamily: 'monospace', fontSize: 12 }}>
+                            {t.store_sku || '—'}
+                          </td>
+                          <td>
+                            <span
+                              className={`hub-clientes__pill ${
+                                isLow ? 'hub-clientes__pill--inactive' : 'hub-clientes__pill--active'
+                              }`}
+                            >
+                              {t.qty_on_hand ?? 0}
+                            </span>
+                          </td>
+                          <td>{t.min_stock_qty}</td>
+                          <td className="hub-servicos__td-money">{formatMoneyCurrencyBrl(Number(t.cost_amount))}</td>
+                          <td className="hub-servicos__td-money">{formatMoneyCurrencyBrl(Number(t.sale_amount))}</td>
+                          {canWrite ? (
+                            <td className="hub-clientes__td-actions" onClick={(e) => e.stopPropagation()}>
+                              <div className="hub-servicos__row-actions">
+                                <button
+                                  type="button"
+                                  className="hub-servicos__icon-btn"
+                                  title="Editar"
+                                  aria-label="Editar item"
+                                  onClick={() => openEdit(t)}
+                                >
+                                  <Pencil size={18} strokeWidth={2} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hub-servicos__icon-btn"
+                                  title="Arquivar"
+                                  aria-label="Arquivar item"
+                                  onClick={() => archiveItem(t)}
+                                >
+                                  <Archive size={18} strokeWidth={2} />
+                                </button>
+                              </div>
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="hub-clientes__mobile-list" aria-label="Lista de itens">
+                {items.map((t) => {
+                  const isLow =
+                    Number(t.min_stock_qty || 0) > 0 && (t.qty_on_hand ?? 0) < Number(t.min_stock_qty || 0);
+                  return (
+                    <button
                       key={t.id}
-                      className={canWrite ? undefined : undefined}
+                      type="button"
+                      className="hub-clientes__mobile-card"
                       onClick={() => {
                         if (canWrite) openEdit(t);
                       }}
-                      style={{ cursor: canWrite ? 'pointer' : 'default' }}
+                      disabled={!canWrite}
                     >
-                      <td>
-                        <strong>{t.name}</strong>
-                      </td>
-                      <td className="hub-clientes__muted" style={{ fontFamily: 'monospace', fontSize: 12 }}>
-                        {t.ean || '—'}
-                      </td>
-                      <td className="hub-clientes__muted" style={{ fontFamily: 'monospace', fontSize: 12 }}>
-                        {t.store_sku || '—'}
-                      </td>
-                      <td>{t.qty_on_hand ?? 0}</td>
-                      <td>{t.min_stock_qty}</td>
-                      <td>{formatMoneyCurrencyBrl(Number(t.cost_amount))}</td>
-                      <td>{formatMoneyCurrencyBrl(Number(t.sale_amount))}</td>
-                      {canWrite ? (
-                        <td className="hub-clientes__td-actions" onClick={(e) => e.stopPropagation()}>
-                          <button type="button" className="hub-clientes__link-btn" onClick={() => openEdit(t)}>
-                            Editar
-                          </button>
-                          <button type="button" className="hub-clientes__link-btn" onClick={() => archiveItem(t)}>
-                            Arquivar
-                          </button>
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="hub-clientes__mobile-list" aria-label="Lista de itens">
-            {items.length === 0 ? (
-              <p className="hub-clientes__muted hub-clientes__mobile-list-empty">Nenhum item.</p>
-            ) : (
-              items.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="hub-clientes__mobile-card"
-                  onClick={() => {
-                    if (canWrite) openEdit(t);
-                  }}
-                  disabled={!canWrite}
-                >
-                  <div className="hub-clientes__mobile-card-top">
-                    <div className="hub-clientes__mobile-card-main">
-                      <span className="hub-clientes__mobile-card-name">{t.name}</span>
-                      <span className="hub-clientes__muted hub-clientes__mobile-card-contact">
-                        {t.ean ? `EAN ${t.ean}` : 'Sem EAN'}
-                        {t.store_sku ? ` · SKU ${t.store_sku}` : ''}
-                      </span>
-                    </div>
-                    <span className="hub-clientes__pill hub-clientes__pill--active">
-                      {t.qty_on_hand ?? 0} un.
-                    </span>
-                  </div>
-                  <div className="hub-clientes__mobile-card-foot">
-                    <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
-                      Mín. {t.min_stock_qty}
-                    </span>
-                    <span className="hub-clientes__muted hub-clientes__mobile-card-pets">
-                      {formatMoneyCurrencyBrl(Number(t.sale_amount))}
-                    </span>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-          </>
-        )}
-
-        <p className="hub-estoque__encounter-note">
-          <strong>Integração com atendimentos:</strong> quando existir API de consultas/banho no Hub, as saídas{' '}
-          <code>encounter_out</code> poderão ser criadas automaticamente ao consumir material no atendimento (
-          <code>reference_type</code> / <code>reference_id</code>).
-        </p>
-      </div>
-
-      {showSidePanel ? (
-      <aside className="hub-clientes__panel">
-        <div className="hub-clientes__panel-scroll">
-          {panelMode === 'none' ? (
-            <p className="hub-clientes__muted" style={{ margin: 0 }}>
-              {canWrite ? 'Clique numa linha para editar ou crie um novo item.' : 'Sem permissão de escrita no inventário.'}
-            </p>
-          ) : !canWrite ? (
-            <p className="hub-clientes__muted">Sem permissão de escrita.</p>
-          ) : (
-            <form onSubmit={handleSave}>
-              <div className="hub-clientes__panel-header">
-                <h2 className="hub-clientes__form-title" style={{ margin: 0 }}>
-                  {panelMode === 'create' ? `Novo ${kindLabel(itemKind).toLowerCase()}` : 'Editar item'}
-                </h2>
-                <button type="button" className="hub-clientes__panel-close" aria-label="Fechar" onClick={closePanel}>
-                  ×
-                </button>
+                      <div className="hub-clientes__mobile-card-top">
+                        <div className="hub-clientes__mobile-card-main">
+                          <span className="hub-clientes__mobile-card-name">{t.name}</span>
+                          <span className="hub-clientes__muted hub-clientes__mobile-card-contact">
+                            {t.ean ? `EAN ${t.ean}` : 'Sem EAN'}
+                            {t.store_sku ? ` · SKU ${t.store_sku}` : ''}
+                          </span>
+                        </div>
+                        <span
+                          className={`hub-clientes__pill ${
+                            isLow ? 'hub-clientes__pill--inactive' : 'hub-clientes__pill--active'
+                          }`}
+                        >
+                          {t.qty_on_hand ?? 0} un.
+                        </span>
+                      </div>
+                      <div className="hub-clientes__mobile-card-foot">
+                        <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                          Mín. {t.min_stock_qty}
+                        </span>
+                        <span className="hub-clientes__muted hub-clientes__mobile-card-pets">
+                          {formatMoneyCurrencyBrl(Number(t.sale_amount))}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-
-              <h3 className="hub-servicos__form-section-title">Informações gerais</h3>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-ean">
-                  EAN / código de barras (opcional)
-                </label>
-                <input
-                  id="inv-ean"
-                  className="hub-clientes__input"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={form.ean}
-                  onChange={(e) => setForm((f) => ({ ...f, ean: e.target.value }))}
-                  placeholder="8 ou 13 dígitos"
-                />
-                <p className="hub-estoque__hint-ean">Leitor USB em modo teclado: coloque o foco aqui e escaneie.</p>
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-name">
-                  Nome do produto *
-                </label>
-                <input
-                  id="inv-name"
-                  className="hub-clientes__input"
-                  required
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-unit">
-                  Unidade de medida
-                </label>
-                <input
-                  id="inv-unit"
-                  className="hub-clientes__input"
-                  value={form.unit_label}
-                  onChange={(e) => setForm((f) => ({ ...f, unit_label: e.target.value }))}
-                  placeholder="Ex.: Unidade, Caixa, Litro"
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-manufacturer">
-                  Fabricante
-                </label>
-                <HubSearchableCombobox
-                  id="inv-manufacturer"
-                  className="hub-combobox--clientes"
-                  options={manufacturerOptions}
-                  value={form.manufacturer_id}
-                  onChange={(v) => void handleManufacturerComboboxChange(v)}
-                  placeholder="Selecionar ou buscar fabricante"
-                  searchPlaceholder="Buscar fabricante…"
-                  allowCreate={canWrite}
-                  createEntityLabel="fabricante"
-                  emptyResultsLabel="Nenhum fabricante encontrado"
-                  ariaLabel="Fabricante"
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <HubCheckbox
-                  checked={form.allow_fractional}
-                  onChange={(allow_fractional) => setForm((f) => ({ ...f, allow_fractional }))}
-                >
-                  Permite quantidades fracionadas
-                </HubCheckbox>
-              </div>
-
-              <h3 className="hub-servicos__form-section-title">Identificação e categorização</h3>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-sku">
-                  SKU da loja (opcional)
-                </label>
-                <input
-                  id="inv-sku"
-                  className="hub-clientes__input"
-                  value={form.store_sku}
-                  onChange={(e) => setForm((f) => ({ ...f, store_sku: e.target.value }))}
-                  placeholder="Ex.: PROD-001"
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-purpose">
-                  Finalidade
-                </label>
-                <input
-                  id="inv-purpose"
-                  className="hub-clientes__input"
-                  value={form.sale_purpose}
-                  onChange={(e) => setForm((f) => ({ ...f, sale_purpose: e.target.value }))}
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-group">
-                  Grupo de produto
-                </label>
-                <HubSearchableCombobox
-                  id="inv-group"
-                  className="hub-combobox--clientes"
-                  options={productGroupOptions}
-                  value={form.product_group}
-                  onChange={(v) => setForm((f) => ({ ...f, product_group: v }))}
-                  placeholder="Selecionar ou criar grupo"
-                  searchPlaceholder="Buscar ou escrever grupo…"
-                  allowCreate={canWrite}
-                  createEntityLabel="grupo de produto"
-                  emptyResultsLabel="Nenhum grupo encontrado"
-                  ariaLabel="Grupo de produto"
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-supplier">
-                  Fornecedor
-                </label>
-                <HubSearchableCombobox
-                  id="inv-supplier"
-                  className="hub-combobox--clientes"
-                  options={supplierOptions}
-                  value={form.default_supplier_id}
-                  onChange={(v) => void handleSupplierComboboxChange(v)}
-                  placeholder="Selecionar ou buscar fornecedor"
-                  searchPlaceholder="Buscar fornecedor…"
-                  allowCreate={canWrite}
-                  createEntityLabel="fornecedor"
-                  emptyResultsLabel="Nenhum fornecedor encontrado"
-                  ariaLabel="Fornecedor"
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-desc">
-                  Descrição
-                </label>
-                <textarea
-                  id="inv-desc"
-                  className="hub-clientes__textarea"
-                  rows={3}
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                />
-              </div>
-
-              <h3 className="hub-servicos__form-section-title">Preços (R$)</h3>
-              <div className="hub-servicos__price-grid">
-                <div>
-                  <label className="hub-clientes__label">Valor de custo *</label>
-                  <div className="hub-servicos__money-field">
-                    <span className="hub-servicos__money-prefix">R$</span>
-                    <input
-                      className="hub-clientes__input"
-                      required
-                      value={form.cost_amount}
-                      onChange={(e) => setForm((f) => ({ ...f, cost_amount: e.target.value }))}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="hub-clientes__label">Valor de venda *</label>
-                  <div className="hub-servicos__money-field">
-                    <span className="hub-servicos__money-prefix">R$</span>
-                    <input
-                      className="hub-clientes__input"
-                      required
-                      value={form.sale_amount}
-                      onChange={(e) => setForm((f) => ({ ...f, sale_amount: e.target.value }))}
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="hub-servicos__price-grid">
-                <div>
-                  <label className="hub-clientes__label">Desconto fornecedor (%)</label>
-                  <input
-                    className="hub-clientes__input"
-                    value={form.supplier_discount_pct}
-                    onChange={(e) => setForm((f) => ({ ...f, supplier_discount_pct: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="hub-clientes__label">Desconto máximo venda (%)</label>
-                  <input
-                    className="hub-clientes__input"
-                    value={form.max_sale_discount_pct}
-                    onChange={(e) => setForm((f) => ({ ...f, max_sale_discount_pct: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className="hub-clientes__field">
-                <HubCheckbox
-                  checked={form.allow_price_override_on_sale}
-                  onChange={(allow_price_override_on_sale) =>
-                    setForm((f) => ({ ...f, allow_price_override_on_sale }))
-                  }
-                >
-                  Permite alterar o preço durante a venda
-                </HubCheckbox>
-              </div>
-              <div className="hub-clientes__field">
-                <HubCheckbox
-                  checked={form.generates_staff_commission}
-                  onChange={(generates_staff_commission) =>
-                    setForm((f) => ({ ...f, generates_staff_commission }))
-                  }
-                >
-                  Gera comissão para funcionários
-                </HubCheckbox>
-              </div>
-
-              <h3 className="hub-servicos__form-section-title">Estoque</h3>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-min">
-                  Estoque mínimo
-                </label>
-                <input
-                  id="inv-min"
-                  className="hub-clientes__input"
-                  value={form.min_stock_qty}
-                  onChange={(e) => setForm((f) => ({ ...f, min_stock_qty: e.target.value }))}
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-alert">
-                  Alerta de vencimento
-                </label>
-                <select
-                  id="inv-alert"
-                  className="hub-clientes__select-input"
-                  value={form.expiry_alert_policy}
-                  onChange={(e) => setForm((f) => ({ ...f, expiry_alert_policy: e.target.value as HubExpiryAlertPolicy }))}
-                >
-                  <option value="none">Não avisar</option>
-                  <option value="d30">30 dias antes</option>
-                  <option value="d60">60 dias antes</option>
-                  <option value="d90">90 dias antes</option>
-                </select>
-              </div>
-
-              {panelMode === 'create' && (
-                <>
-                  <h3 className="hub-servicos__form-section-title">Lote inicial (opcional)</h3>
-                  <div className="hub-clientes__field">
-                    <HubDateField
-                      id="inv-recv"
-                      label="Data de entrada *"
-                      valueIso={form.initial_received_at}
-                      onChangeIso={(iso) =>
-                        setForm((f) => ({ ...f, initial_received_at: iso || new Date().toISOString().slice(0, 10) }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="hub-clientes__field">
-                    <HubDateField
-                      id="inv-exp"
-                      label="Data de validade"
-                      valueIso={form.initial_expiry_date}
-                      onChangeIso={(iso) => setForm((f) => ({ ...f, initial_expiry_date: iso }))}
-                    />
-                  </div>
-                  <div className="hub-clientes__field">
-                    <label className="hub-clientes__label" htmlFor="inv-iqty">
-                      Quantidade (se preenchida, &gt; 0)
-                    </label>
-                    <input
-                      id="inv-iqty"
-                      className="hub-clientes__input"
-                      value={form.initial_qty}
-                      onChange={(e) => setForm((f) => ({ ...f, initial_qty: e.target.value }))}
-                    />
-                  </div>
-                  <div className="hub-clientes__field">
-                    <label className="hub-clientes__label" htmlFor="inv-lot">
-                      Número do lote
-                    </label>
-                    <input
-                      id="inv-lot"
-                      className="hub-clientes__input"
-                      value={form.initial_lot_code}
-                      onChange={(e) => setForm((f) => ({ ...f, initial_lot_code: e.target.value }))}
-                    />
-                  </div>
-                </>
-              )}
-
-              <div className="hub-clientes__footer-btns" style={{ borderTop: '1px solid var(--hc-border)', paddingTop: 16, marginTop: 12 }}>
-                <div className="hub-clientes__btn-row">
-                  <button type="submit" className="hub-clientes__btn hub-clientes__btn--primary" disabled={saving}>
-                    {saving ? 'Salvando…' : 'Salvar'}
-                  </button>
-                  <HubCancelButton onClick={closePanel} />
-                </div>
-              </div>
-            </form>
+            </>
           )}
         </div>
-      </aside>
-      ) : null}
-    </div>
+      </div>
+
+      <HubEstoqueItemDrawer
+        open={drawerOpen}
+        onClose={closePanel}
+        mode={panelMode === 'edit' ? 'edit' : 'create'}
+        itemKind={itemKind}
+        form={form}
+        setForm={setForm}
+        saving={saving}
+        canWrite={canWrite}
+        editingItem={editingItem}
+        manufacturerOptions={manufacturerOptions}
+        supplierOptions={supplierOptions}
+        productGroupOptions={productGroupOptions}
+        onManufacturerChange={handleManufacturerComboboxChange}
+        onSupplierChange={handleSupplierComboboxChange}
+        onSubmit={handleSave}
+      />
+    </>
   );
 };
 

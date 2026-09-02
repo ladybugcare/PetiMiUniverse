@@ -4,6 +4,24 @@
   --hc-brand-hover: #d85526;
 }
 
+.hub-estoque-page.hub-clientes-page--full-width {
+  min-height: auto;
+}
+
+.hub-estoque-page.hub-clientes-page--full-width .hub-clientes__main {
+  padding-right: 0;
+}
+
+.hub-estoque-page .hub-servicos__metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .hub-estoque-page .hub-servicos__metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
 .hub-estoque-shell {
   display: flex;
   flex-direction: column;

@@ -64,7 +64,7 @@ const HubEstoqueAlertasPage: React.FC = () => {
   }
 
   return (
-    <div className="hub-clientes hub-servicos-page hub-estoque-page hub-pets-page">
+    <div className="hub-clientes hub-servicos-page hub-estoque-page hub-pets-page hub-clientes-page--full-width">
       <div className="hub-clientes__main">
         {loading ? (
           <HubLoading variant="block" label="Carregando alertas…" />
