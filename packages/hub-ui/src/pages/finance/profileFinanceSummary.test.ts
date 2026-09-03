@@ -48,6 +48,16 @@ describe('buildProfileFinanceSummary', () => {
     expect(summary.hasActivity).toBe(true);
   });
 
+  it('não conta comanda aberta já quitada no outstanding', () => {
+    const summary = buildProfileFinanceSummary(
+      [rv({ id: 'r1', status: 'paid', final_amount: 145, comanda_id: 'c1' })],
+      [{ id: 'c1', status: 'aberta', total_amount: 145, balance_due: 0, item_labels: ['Banho'] }],
+      { asOf },
+    );
+    expect(summary.outstandingTotal).toBe(0);
+    expect(summary.openComandasTotal).toBe(0);
+  });
+
   it('sem movimento fica zerado', () => {
     const summary = buildProfileFinanceSummary([], [], { asOf });
     expect(summary.outstandingTotal).toBe(0);

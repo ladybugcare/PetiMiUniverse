@@ -89,9 +89,8 @@ async function loadPrescriptionIssueContext(prescriptionId, clinicId) {
     if (!rx)
         return { ok: false, status: 404, error: 'Prescrição não encontrada' };
     const rxRow = rx;
-    if (!rxRow.hub_encounter_id) {
-        return { ok: false, status: 409, error: 'Receita validável exige prescrição vinculada a um atendimento' };
-    }
+    // Receita validável pode ser avulsa (sem atendimento): exige pet + veterinário responsável.
+    // hub_encounter_id / hub_case_id são opcionais e podem ser vinculados depois.
     if (!rxRow.pet_id) {
         return { ok: false, status: 409, error: 'Prescrição sem pet vinculado' };
     }

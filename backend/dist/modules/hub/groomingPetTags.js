@@ -1,13 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildGroomingDisplayTags = buildGroomingDisplayTags;
-const FLAG_LABEL_FALLBACK = {
-    allergy: 'Alergia',
-    aggressive: 'Reativo',
-    cardiac: 'Cardiopata',
-    diabetic: 'Diabetes',
-    epileptic: 'Epilepsia',
-};
+const hubPetHealthProfile_1 = require("./hubPetHealthProfile");
 function preferenceTagsFromNotes(notes) {
     if (!notes?.trim())
         return [];
@@ -21,11 +15,28 @@ function preferenceTagsFromNotes(notes) {
     }
     return out;
 }
-/** Tags para cards / drawer (flags clínicas + heurística em notas do pet). */
-function buildGroomingDisplayTags(flags, petNotes) {
-    const clinical_tags = flags.map((f) => ({
-        key: f.flag_key,
-        label: FLAG_LABEL_FALLBACK[f.flag_key] ?? String(f.label || f.flag_key),
-    }));
-    return [...clinical_tags, ...preferenceTagsFromNotes(petNotes)];
+/** Tags para cards / drawer (flags clínicas + comportamento + heurística em notas). */
+function buildGroomingDisplayTags(flags, petNotes, behaviorTags) {
+    const seen = new Set();
+    const out = [];
+    const push = (key, label) => {
+        if (seen.has(key))
+            return;
+        seen.add(key);
+        out.push({ key, label });
+    };
+    for (const f of flags) {
+        const fallback = hubPetHealthProfile_1.CLINICAL_FLAG_LABELS[f.flag_key];
+        push(f.flag_key, fallback ?? String(f.label || f.flag_key));
+    }
+    for (const tag of behaviorTags ?? []) {
+        const t = String(tag || '').trim();
+        if (!t)
+            continue;
+        push(`behavior:${t}`, hubPetHealthProfile_1.BEHAVIOR_TAG_LABELS[t] ?? t);
+    }
+    for (const pref of preferenceTagsFromNotes(petNotes)) {
+        push(pref.key, pref.label);
+    }
+    return out;
 }

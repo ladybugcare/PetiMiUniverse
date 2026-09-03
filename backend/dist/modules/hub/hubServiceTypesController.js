@@ -7,6 +7,7 @@ const serviceTypeCode_1 = require("./serviceTypeCode");
 const hubServiceTypesPricingMatrix_1 = require("./hubServiceTypesPricingMatrix");
 const hubServiceGroupsController_1 = require("./hubServiceGroupsController");
 const hubServiceAddonsController_1 = require("./hubServiceAddonsController");
+const hubSpecialPrices_1 = require("./hubSpecialPrices");
 const uuidStr = zod_1.z.string().uuid();
 /** Grupo operacional: valores pré-definidos (banho_tosa, …) ou slug personalizado normalizado. */
 const serviceGroupSchema = zod_1.z
@@ -357,7 +358,7 @@ const updateHubServiceType = async (req, res) => {
         }
         const { data: existing, error: fetchErr } = await supabase_1.supabaseAdmin
             .from('hub_service_types')
-            .select('id, clinic_id, code, name, code_locked, deleted_at, service_group, is_addon')
+            .select('id, clinic_id, code, name, code_locked, deleted_at, service_group, is_addon, sale_amount')
             .eq('id', id)
             .maybeSingle();
         if (fetchErr || !existing) {
@@ -504,9 +505,21 @@ const updateHubServiceType = async (req, res) => {
             data?.id) {
             await (0, hubServiceAddonsController_1.resyncAddonAvailabilityOnGroupChange)(clinic_id, id, service_group);
         }
+        const prevCatalogSale = roundMoney2(Number(existing.sale_amount) || 0);
+        const nextCatalogSale = roundMoney2(Number(data?.sale_amount) || 0);
+        let special_prices_sync;
+        if (prevCatalogSale !== nextCatalogSale) {
+            const sync = await (0, hubSpecialPrices_1.syncSpecialPricesOnCatalogChange)({
+                clinicId: clinic_id,
+                hubServiceTypeId: id,
+                previousCatalogSale: prevCatalogSale,
+                nextCatalogSale,
+            });
+            special_prices_sync = { reviewed: sync.reviewed, auto_adjusted: sync.autoAdjusted };
+        }
         const colorMap = await fetchGroupColorMap(clinic_id);
         const service_type = enrichRowsWithGroupColor(withDefaultPickupPriceScope([data]), colorMap)[0];
-        return res.json({ service_type });
+        return res.json({ service_type, special_prices_sync });
     }
     catch (e) {
         console.error('[hub_service_types] update', e);

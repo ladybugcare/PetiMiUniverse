@@ -1,9 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteHubClinicalExam = exports.patchHubClinicalExam = exports.createHubClinicalExam = exports.getHubClinicalExam = exports.listHubClinicalExams = void 0;
+exports.deleteHubClinicalExam = exports.patchHubClinicalExam = exports.createHubClinicalExam = exports.getHubClinicalExam = exports.exportHubClinicalExamsCsv = exports.listHubClinicalExams = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubClinicalTimelineController_1 = require("./hubClinicalTimelineController");
+const hubCareLocation_1 = require("./hubCareLocation");
 const uuidStr = zod_1.z.string().uuid();
 const examStatusSchema = zod_1.z.enum(['requested', 'collected', 'sent', 'result_received', 'completed', 'cancelled']);
 const labKindSchema = zod_1.z.enum(['internal', 'external']);
@@ -27,6 +28,7 @@ const createExamSchema = zod_1.z
     collection_instructions: zod_1.z.string().trim().max(4000).optional().nullable(),
     notes: zod_1.z.string().trim().max(4000).optional().nullable(),
     metadata: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional().default({}),
+    ...hubCareLocation_1.careLocationBodyFields,
 })
     .strict();
 const patchExamSchema = zod_1.z
@@ -49,6 +51,7 @@ const patchExamSchema = zod_1.z
     notes: zod_1.z.string().trim().max(4000).optional().nullable(),
     metadata: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional(),
     requested_by: uuidStr.optional().nullable(),
+    ...hubCareLocation_1.careLocationBodyFields,
 })
     .strict();
 const EXAM_SELECT = `
@@ -57,20 +60,52 @@ const EXAM_SELECT = `
   external_lab_name, external_order_code, external_result_url,
   urgency, clinical_indication, fasting_required, collection_instructions, document_status,
   status, requested_at, collected_at, result_at, result_text,
-  requested_by, notes, metadata, created_at, updated_at
+  requested_by, notes, metadata, care_location_kind, hub_partner_clinic_id,
+  created_at, updated_at
 `;
 async function enrichExam(row) {
     const requestedById = row.requested_by;
-    if (!requestedById)
-        return { ...row, requested_by_member: null };
-    const { data } = await supabase_1.supabaseAdmin
-        .from('hub_staff_members')
-        .select('id, full_name')
-        .eq('id', requestedById)
-        .maybeSingle();
-    return { ...row, requested_by_member: data };
+    const partnerId = row.hub_partner_clinic_id;
+    const clinicId = row.clinic_id;
+    const [staffRes, partnerMap] = await Promise.all([
+        requestedById
+            ? supabase_1.supabaseAdmin.from('hub_staff_members').select('id, full_name').eq('id', requestedById).maybeSingle()
+            : Promise.resolve({ data: null }),
+        partnerId && clinicId
+            ? (0, hubCareLocation_1.loadPartnerClinicMap)(clinicId, [partnerId])
+            : Promise.resolve(new Map()),
+    ]);
+    return {
+        ...row,
+        requested_by_member: staffRes.data,
+        partner_clinic: partnerId ? partnerMap.get(partnerId) ?? null : null,
+    };
 }
-/** GET /clinical/exams?clinic_id&pet_id?&hub_case_id?&hub_encounter_id?&status? */
+async function inheritCareLocationFromEncounter(clinicId, encounterId) {
+    if (!encounterId)
+        return null;
+    const { data } = await supabase_1.supabaseAdmin
+        .from('hub_encounters')
+        .select('care_location_kind, hub_partner_clinic_id')
+        .eq('id', encounterId)
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (!data)
+        return null;
+    const row = data;
+    return {
+        care_location_kind: row.care_location_kind ?? 'own_unit',
+        hub_partner_clinic_id: row.hub_partner_clinic_id ?? null,
+    };
+}
+function csvEscape(value) {
+    const s = value == null ? '' : String(value);
+    if (/[",\n\r]/.test(s))
+        return `"${s.replace(/"/g, '""')}"`;
+    return s;
+}
+/** GET /clinical/exams?clinic_id&pet_id?&hub_case_id?&hub_encounter_id?&status?&care_location_kind?&hub_partner_clinic_id? */
 const listHubClinicalExams = async (req, res) => {
     try {
         const clinic_id = uuidStr.safeParse(req.query.clinic_id);
@@ -103,10 +138,28 @@ const listHubClinicalExams = async (req, res) => {
             if (v.success)
                 q = q.eq('status', v.data);
         }
+        if (req.query.care_location_kind) {
+            const v = hubCareLocation_1.careLocationKindSchema.safeParse(req.query.care_location_kind);
+            if (v.success)
+                q = q.eq('care_location_kind', v.data);
+        }
+        if (req.query.hub_partner_clinic_id) {
+            const v = uuidStr.safeParse(req.query.hub_partner_clinic_id);
+            if (v.success)
+                q = q.eq('hub_partner_clinic_id', v.data);
+        }
         const { data, error } = await q;
         if (error)
             return res.status(500).json({ error: error.message });
-        return res.json({ exams: data ?? [] });
+        const rows = (data ?? []);
+        const partnerMap = await (0, hubCareLocation_1.loadPartnerClinicMap)(clinic_id.data, rows.map((r) => r.hub_partner_clinic_id).filter(Boolean));
+        const exams = rows.map((r) => ({
+            ...r,
+            partner_clinic: r.hub_partner_clinic_id
+                ? partnerMap.get(r.hub_partner_clinic_id) ?? null
+                : null,
+        }));
+        return res.json({ exams });
     }
     catch (e) {
         console.error('listHubClinicalExams', e);
@@ -114,6 +167,100 @@ const listHubClinicalExams = async (req, res) => {
     }
 };
 exports.listHubClinicalExams = listHubClinicalExams;
+/** GET /clinical/exams/export.csv */
+const exportHubClinicalExamsCsv = async (req, res) => {
+    try {
+        const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+        if (!clinic_id.success)
+            return res.status(400).json({ error: 'clinic_id obrigatório' });
+        let q = supabase_1.supabaseAdmin
+            .from('hub_clinical_exams')
+            .select(EXAM_SELECT)
+            .eq('clinic_id', clinic_id.data)
+            .is('deleted_at', null)
+            .order('requested_at', { ascending: false })
+            .limit(2000);
+        if (req.query.status) {
+            const v = examStatusSchema.safeParse(req.query.status);
+            if (v.success)
+                q = q.eq('status', v.data);
+        }
+        if (req.query.care_location_kind) {
+            const v = hubCareLocation_1.careLocationKindSchema.safeParse(req.query.care_location_kind);
+            if (v.success)
+                q = q.eq('care_location_kind', v.data);
+        }
+        if (req.query.hub_partner_clinic_id) {
+            const v = uuidStr.safeParse(req.query.hub_partner_clinic_id);
+            if (v.success)
+                q = q.eq('hub_partner_clinic_id', v.data);
+        }
+        if (typeof req.query.from === 'string' && req.query.from) {
+            q = q.gte('requested_at', req.query.from);
+        }
+        if (typeof req.query.to === 'string' && req.query.to) {
+            q = q.lte('requested_at', req.query.to);
+        }
+        const { data, error } = await q;
+        if (error)
+            return res.status(500).json({ error: error.message });
+        const rows = (data ?? []);
+        const petIds = [...new Set(rows.map((r) => r.pet_id).filter(Boolean))];
+        const guIds = [...new Set(rows.map((r) => r.guardian_id).filter(Boolean))];
+        const partnerIds = rows.map((r) => r.hub_partner_clinic_id).filter(Boolean);
+        const [petsRes, gusRes, partnerMap] = await Promise.all([
+            petIds.length
+                ? supabase_1.supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds)
+                : Promise.resolve({ data: [] }),
+            guIds.length
+                ? supabase_1.supabaseAdmin.from('hub_guardians').select('id, full_name').in('id', guIds)
+                : Promise.resolve({ data: [] }),
+            (0, hubCareLocation_1.loadPartnerClinicMap)(clinic_id.data, partnerIds),
+        ]);
+        const petMap = new Map((petsRes.data ?? []).map((p) => [p.id, p.name]));
+        const guMap = new Map((gusRes.data ?? []).map((g) => [g.id, g.full_name]));
+        const header = [
+            'requested_at',
+            'exam_type',
+            'status',
+            'pet_name',
+            'guardian_name',
+            'care_location_kind',
+            'partner_clinic_name',
+            'lab_kind',
+            'lab_name',
+            'result_at',
+        ];
+        const lines = [header.join(',')];
+        for (const r of rows) {
+            const kind = r.care_location_kind ?? 'own_unit';
+            const partnerName = kind === 'partner_clinic' && r.hub_partner_clinic_id
+                ? partnerMap.get(r.hub_partner_clinic_id)?.name ?? ''
+                : '';
+            lines.push([
+                csvEscape(r.requested_at),
+                csvEscape(r.exam_type),
+                csvEscape(r.status),
+                csvEscape(petMap.get(r.pet_id) ?? ''),
+                csvEscape(r.guardian_id ? guMap.get(r.guardian_id) ?? '' : ''),
+                csvEscape(kind),
+                csvEscape(partnerName),
+                csvEscape(r.lab_kind),
+                csvEscape(r.lab_name ?? r.external_lab_name ?? ''),
+                csvEscape(r.result_at ?? ''),
+            ].join(','));
+        }
+        const body = `\uFEFF${lines.join('\n')}`;
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="exames.csv"');
+        return res.status(200).send(body);
+    }
+    catch (e) {
+        console.error('exportHubClinicalExamsCsv', e);
+        return res.status(500).json({ error: e?.message || 'Erro ao exportar exames' });
+    }
+};
+exports.exportHubClinicalExamsCsv = exportHubClinicalExamsCsv;
 /** GET /clinical/exams/:id */
 const getHubClinicalExam = async (req, res) => {
     try {
@@ -149,6 +296,21 @@ const createHubClinicalExam = async (req, res) => {
         if (!parsed.success)
             return res.status(400).json({ error: parsed.error.flatten() });
         const b = parsed.data;
+        const inherited = await inheritCareLocationFromEncounter(b.clinic_id, b.hub_encounter_id);
+        const careKind = b.care_location_kind ?? inherited?.care_location_kind ?? 'own_unit';
+        const partnerId = b.hub_partner_clinic_id !== undefined
+            ? b.hub_partner_clinic_id
+            : (inherited?.hub_partner_clinic_id ?? null);
+        const careResolved = await (0, hubCareLocation_1.resolveCareLocation)({
+            clinicId: b.clinic_id,
+            care_location_kind: careKind,
+            hub_partner_clinic_id: partnerId,
+            unit_id: null,
+            allowNullUnit: true,
+        });
+        if (!careResolved.ok) {
+            return res.status(400).json({ error: careResolved.error });
+        }
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_clinical_exams')
             .insert({
@@ -170,6 +332,8 @@ const createHubClinicalExam = async (req, res) => {
             collection_instructions: b.collection_instructions ?? null,
             notes: b.notes ?? null,
             metadata: b.metadata,
+            care_location_kind: careResolved.value.care_location_kind,
+            hub_partner_clinic_id: careResolved.value.hub_partner_clinic_id,
             status: 'requested',
             document_status: 'active',
         })
@@ -190,7 +354,8 @@ const createHubClinicalExam = async (req, res) => {
             body: b.lab_kind === 'external' ? `Laboratório: ${b.external_lab_name ?? b.lab_name ?? '—'}` : null,
             created_by: b.requested_by ?? null,
         });
-        return res.status(201).json({ exam });
+        const enriched = await enrichExam(exam);
+        return res.status(201).json({ exam: enriched });
     }
     catch (e) {
         console.error('createHubClinicalExam', e);
@@ -210,7 +375,7 @@ const patchHubClinicalExam = async (req, res) => {
         const b = parsed.data;
         const { data: current } = await supabase_1.supabaseAdmin
             .from('hub_clinical_exams')
-            .select('status, document_status, pet_id, hub_case_id, hub_encounter_id, exam_type, clinic_id')
+            .select('status, document_status, pet_id, hub_case_id, hub_encounter_id, exam_type, clinic_id, care_location_kind, hub_partner_clinic_id')
             .eq('id', id.data)
             .eq('clinic_id', b.clinic_id)
             .is('deleted_at', null)
@@ -270,6 +435,26 @@ const patchHubClinicalExam = async (req, res) => {
             patch.metadata = b.metadata;
         if (b.requested_by !== undefined)
             patch.requested_by = b.requested_by;
+        if (b.care_location_kind !== undefined || b.hub_partner_clinic_id !== undefined) {
+            const nextKind = b.care_location_kind ??
+                (c.care_location_kind ?? 'own_unit');
+            const nextPartner = b.hub_partner_clinic_id !== undefined
+                ? b.hub_partner_clinic_id
+                : (c.hub_partner_clinic_id ?? null);
+            const careResolved = await (0, hubCareLocation_1.resolveCareLocation)({
+                clinicId: b.clinic_id,
+                care_location_kind: nextKind,
+                hub_partner_clinic_id: nextPartner,
+                unit_id: null,
+                allowNullUnit: true,
+                requireActivePartner: b.hub_partner_clinic_id !== undefined || b.care_location_kind === 'partner_clinic',
+            });
+            if (!careResolved.ok) {
+                return res.status(400).json({ error: careResolved.error });
+            }
+            patch.care_location_kind = careResolved.value.care_location_kind;
+            patch.hub_partner_clinic_id = careResolved.value.hub_partner_clinic_id;
+        }
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_clinical_exams')
             .update(patch)
@@ -282,7 +467,6 @@ const patchHubClinicalExam = async (req, res) => {
             return res.status(500).json({ error: error.message });
         if (!data)
             return res.status(404).json({ error: 'Exame não encontrado' });
-        // Grava marco na timeline quando o resultado chega
         if (b.status === 'result_received' || b.status === 'completed') {
             const prevStatus = c.status;
             if (prevStatus !== b.status) {

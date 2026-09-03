@@ -124,6 +124,45 @@
   border-bottom: 1px solid var(--ag-border);
 }
 
+.hub-agenda__series-ending-banner {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  color: #92400e;
+  font-size: 14px;
+}
+
+.hub-agenda__series-ending-banner-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+}
+
+.hub-agenda__series-ending-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-agenda__series-ending-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hub-agenda__series-ending-more {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
 .hub-agenda__view-switch {
   display: inline-flex;
   border-radius: 10px;
@@ -1822,6 +1861,16 @@
   border-radius: 10px;
   color: #991b1b;
   font-size: 13px;
+}
+
+.hub-agenda-appt-panel__alert--info {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.hub-agenda-appt-panel__alert--info .hub-btn {
+  margin-top: 10px;
 }
 
 .hub-agenda-appt-panel__clinic-action {

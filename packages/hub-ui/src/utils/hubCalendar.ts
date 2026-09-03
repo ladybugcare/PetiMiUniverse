@@ -44,6 +44,43 @@ export function getMonthGrid(viewYear: number, viewMonth0: number): CalendarCell
 
 export const WEEKDAY_LABELS_PT = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'] as const;
 
+export const MONTH_LABELS_PT = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+] as const;
+
+export const MONTH_LABELS_SHORT_PT = [
+  'Jan',
+  'Fev',
+  'Mar',
+  'Abr',
+  'Mai',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Set',
+  'Out',
+  'Nov',
+  'Dez',
+] as const;
+
+/** Anos disponíveis no calendário (nascimento de tutores/equipe e datas futuras da agenda). */
+export const DATE_PICKER_YEAR_MIN = 1900;
+
+export function datePickerYearMax(now = new Date()): number {
+  return now.getFullYear() + 15;
+}
+
 export function formatMonthYearPt(viewYear: number, viewMonth0: number): string {
   const label = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(
     new Date(viewYear, viewMonth0, 1),

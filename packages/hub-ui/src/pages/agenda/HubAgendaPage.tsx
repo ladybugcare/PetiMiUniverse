@@ -17,6 +17,7 @@ import {
   type HubAgendaCalendarBlock,
   type HubAppointment,
   type HubAppointmentStatus,
+  type HubSeriesEndingSoon,
   type ListHubAppointmentsParams,
 } from '../../api/hubAgendaApi';
 import { hubStaffApi } from '../../api/hubStaffApi';
@@ -61,7 +62,7 @@ import {
   enrichAgendaCardsForGrid,
   isPartnerCareLocation,
 } from './agendaModel';
-import { mapHubAppointmentToAgenda } from './mapHubAgenda';
+import { mapHubAppointmentToAgenda, buildSeriesRenewalInitial } from './mapHubAgenda';
 import { findExtraBlockChildren } from './extraBlockAgendaUtils';
 import { AgendaAppointmentCard } from './AgendaAppointmentCard';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
@@ -168,6 +169,7 @@ const HubAgendaPage: React.FC = () => {
 
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
+  const [seriesEndingSoon, setSeriesEndingSoon] = useState<HubSeriesEndingSoon[]>([]);
   const [rawList, setRawList] = useState<AgendaAppointment[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
   const [pollTick, setPollTick] = useState(0);
@@ -188,6 +190,7 @@ const HubAgendaPage: React.FC = () => {
   const [agendaStartModalItem, setAgendaStartModalItem] = useState<DayBoardItem | null>(null);
   const [agendaStarting, setAgendaStarting] = useState(false);
   const consumedQuoteRef = useRef<string | null>(null);
+  const consumedPetCreateRef = useRef<string | null>(null);
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false,
   );
@@ -274,6 +277,55 @@ const HubAgendaPage: React.FC = () => {
     },
     [],
   );
+
+  /** Perfil do pet → ação rápida “Agendar”: abre o painel com tutor e pet preenchidos. */
+  useEffect(() => {
+    const st = location.state as {
+      openPetCreate?: boolean;
+      petAppointmentInitial?: NewAppointmentInitial;
+    } | null;
+    const petIdParam = searchParams.get('petId');
+    const guardianIdParam = searchParams.get('guardianId');
+    const prefillDateParam = searchParams.get('prefillDate');
+    const requestedByState = Boolean(st?.openPetCreate && st.petAppointmentInitial);
+    const requestedByUrl = searchParams.get('openCreate') === '1' && Boolean(petIdParam);
+    if ((!requestedByState && !requestedByUrl) || !clinicId || !canWrite) return;
+    if (consumedPetCreateRef.current === location.key) return;
+    consumedPetCreateRef.current = location.key;
+
+    const initial: NewAppointmentInitial = {
+      ...(st?.petAppointmentInitial ?? {}),
+      date: st?.petAppointmentInitial?.date ?? prefillDateParam ?? toYmd(new Date()),
+      pet_id: st?.petAppointmentInitial?.pet_id ?? petIdParam,
+      guardian_id: st?.petAppointmentInitial?.guardian_id ?? guardianIdParam,
+    };
+    if (initial.date) {
+      const date = parseYmd(initial.date);
+      if (date) {
+        setCursorDate(startOfDay(date));
+        setView('day');
+      }
+    }
+    openCreateModal(initial);
+    const next = new URLSearchParams(searchParams);
+    next.delete('openCreate');
+    next.delete('petId');
+    next.delete('guardianId');
+    next.delete('prefillDate');
+    navigate(`${location.pathname}${next.toString() ? `?${next.toString()}` : ''}`, {
+      replace: true,
+      state: null,
+    });
+  }, [
+    location.state,
+    location.key,
+    location.pathname,
+    searchParams,
+    clinicId,
+    canWrite,
+    openCreateModal,
+    navigate,
+  ]);
 
   /** Fluxo Clínica → «Agendar na agenda»: abre o modal de novo agendamento com dados pré-preenchidos. */
   useEffect(() => {
@@ -649,6 +701,22 @@ const HubAgendaPage: React.FC = () => {
     if (!clinicId || permLoading || !accessAllowed) return;
     let cancelled = false;
     (async () => {
+      try {
+        const { series } = await hubAgendaApi.listSeriesEndingSoon({ clinic_id: clinicId });
+        if (!cancelled) setSeriesEndingSoon(series ?? []);
+      } catch {
+        if (!cancelled) setSeriesEndingSoon([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, permLoading, accessAllowed, reloadToken]);
+
+  useEffect(() => {
+    if (!clinicId || permLoading || !accessAllowed) return;
+    let cancelled = false;
+    (async () => {
       setRemoteLoading(true);
       try {
         const params: ListHubAppointmentsParams = {
@@ -856,6 +924,20 @@ const HubAgendaPage: React.FC = () => {
     if (!selected) return [];
     return findExtraBlockChildren(selected, allAppointments);
   }, [selected, allAppointments]);
+
+  const seriesEndingMap = useMemo(() => {
+    const m = new Map<string, HubSeriesEndingSoon>();
+    for (const s of seriesEndingSoon) m.set(s.series_id, s);
+    return m;
+  }, [seriesEndingSoon]);
+
+  const renewSeries = useCallback(
+    (series: HubSeriesEndingSoon) => {
+      const sampleAppt = allAppointments.find((a) => a.id === series.sample_appointment_id) ?? null;
+      openCreateModal(buildSeriesRenewalInitial(series, sampleAppt));
+    },
+    [allAppointments, openCreateModal],
+  );
 
   const goNow = useCallback(() => {
     const n = new Date();
@@ -1505,6 +1587,41 @@ const HubAgendaPage: React.FC = () => {
             </div>
           ) : null}
 
+          {seriesEndingSoon.length > 0 ? (
+            <div className="hub-agenda__series-ending-banner" role="status">
+              <div className="hub-agenda__series-ending-banner-head">
+                <strong>Séries recorrentes a terminar</strong>
+                <span className="hub-clientes__muted">
+                  {seriesEndingSoon.length} série(s) precisam de renovação em breve.
+                </span>
+              </div>
+              <ul className="hub-agenda__series-ending-list">
+                {seriesEndingSoon.slice(0, 3).map((s) => (
+                  <li key={s.series_id} className="hub-agenda__series-ending-item">
+                    <span>
+                      A série de {s.title?.trim() || 'agendamento'} termina em breve ({s.remaining_count}{' '}
+                      {s.remaining_count === 1 ? 'restante' : 'restantes'}).
+                    </span>
+                    {canWrite ? (
+                      <button
+                        type="button"
+                        className="hub-btn hub-btn--secondary hub-btn--sm"
+                        onClick={() => renewSeries(s)}
+                      >
+                        Renovar
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              {seriesEndingSoon.length > 3 ? (
+                <p className="hub-clientes__muted hub-agenda__series-ending-more">
+                  e mais {seriesEndingSoon.length - 3} série(s)
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="hub-agenda__toolbar">
             <div className="hub-agenda__view-switch" role="tablist" aria-label="Tipo de vista">
               {(['day', 'week', 'month'] as const).map((v) => (
@@ -2001,6 +2118,17 @@ const HubAgendaPage: React.FC = () => {
             serviceTypes={fullSvcTypes}
             onUpdated={handleAppointmentUpdated}
             extraBlockChildren={selectedExtraBlockChildren}
+            seriesEndingInfo={
+              selected.series_id ? seriesEndingMap.get(selected.series_id) ?? null : null
+            }
+            onRenewSeries={
+              canWrite && selected.series_id && seriesEndingMap.has(selected.series_id)
+                ? () => {
+                    const info = seriesEndingMap.get(selected.series_id!);
+                    if (info) renewSeries(info);
+                  }
+                : undefined
+            }
           />
         ) : null}
       </div>

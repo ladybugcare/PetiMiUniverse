@@ -13,7 +13,6 @@ import {
   type HubEncounterOperationalPhase,
   type VetCockpitPatientContext,
 } from '../../../api/hubClinicalApi';
-import { hubAgendaApi } from '../../../api/hubAgendaApi';
 import { useMyStaffMember } from '../../../hooks/useMyStaffMember';
 import { redirectAwayFromHub } from '../../../utils/redirectAwayFromHub';
 import { getSelectedUnitId } from '../../../utils/useSelectedUnitId';
@@ -297,14 +296,6 @@ const HubVetCockpitPage: React.FC = () => {
     [navigate],
   );
 
-  const openAgendaForWalkIn = useCallback(
-    (initial: NewAppointmentInitial) => {
-      setWalkInOpen(false);
-      navigate('/hub/appointments?openWalkIn=1', { state: { walkInInitial: initial } });
-    },
-    [navigate],
-  );
-
   const createWalkIn = async (payload: {
     petId?: string | null;
     guardianId?: string | null;
@@ -318,21 +309,15 @@ const HubVetCockpitPage: React.FC = () => {
     if (!clinicId) return;
     setCreatingWalkIn(true);
     try {
-      const now = new Date();
-      const endsAt = new Date(now.getTime() + payload.durationMinutes * 60_000);
-      await hubAgendaApi.create({
+      await hubEncountersApi.checkIn({
         clinic_id: clinicId,
         unit_id: getSelectedUnitId(),
         hub_service_type_id: payload.hubServiceTypeId,
         hub_staff_member_id: payload.staffId ?? staffId ?? null,
         pet_id: payload.petId ?? null,
         guardian_id: payload.guardianId ?? null,
-        starts_at: now.toISOString(),
-        ends_at: endsAt.toISOString(),
-        status: 'checked_in',
-        notes: payload.complaint.trim() || null,
-        title: payload.complaint.trim() ? payload.complaint.trim().slice(0, 200) : 'Atendimento clínico',
-        appointment_kind: payload.entryKind === 'emergency' ? 'clinical_emergency' : 'clinical_walk_in',
+        chief_complaint: payload.complaint.trim() || null,
+        encounter_type: payload.entryKind === 'emergency' ? 'emergency' : 'consultation',
         care_location_kind: payload.careLocation?.care_location_kind ?? 'own_unit',
         hub_partner_clinic_id:
           payload.careLocation?.care_location_kind === 'partner_clinic'
@@ -340,7 +325,7 @@ const HubVetCockpitPage: React.FC = () => {
             : null,
       });
       setWalkInOpen(false);
-      showSuccess('Entrada registrada na fila');
+      showSuccess('Encaixe registrado na agenda e na fila');
       await loadQueue();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao registrar entrada na fila');
@@ -542,7 +527,6 @@ const HubVetCockpitPage: React.FC = () => {
         onClose={() => setWalkInOpen(false)}
         onSubmit={createWalkIn}
         onScheduleAgenda={openAgendaForScheduling}
-        onWalkInAgenda={openAgendaForWalkIn}
         submitting={creatingWalkIn}
       />
     </div>

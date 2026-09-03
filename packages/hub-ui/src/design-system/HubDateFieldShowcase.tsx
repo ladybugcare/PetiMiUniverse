@@ -13,7 +13,8 @@ export const HubDateFieldShowcase: React.FC = () => {
       </h2>
       <p className="hub-ds__section-desc">
         Data em formato brasileiro (dd/mm/aaaa). Valor em ISO (<code>YYYY-MM-DD</code>). Calendário
-        popover para seleção, botão <strong>Hoje</strong> e digitação manual — paleta Hub (terracota).
+        popover com escolha de mês e ano, botão <strong>Hoje</strong> e digitação manual — paleta Hub
+        (terracota).
       </p>
 
       <div className="hub-ds__card">

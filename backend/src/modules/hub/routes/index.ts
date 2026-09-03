@@ -83,6 +83,7 @@ import { getHubSubscriptionPlans } from '../hubSubscriptionController.js';
 import {
   listHubAppointments,
   getHubAppointmentsStatsByServiceGroup,
+  listHubSeriesEndingSoon,
   createHubAppointment,
   createHubAppointmentBatch,
   patchHubAppointment,
@@ -108,6 +109,7 @@ import {
   getHubEncountersDayBoard,
   listHubEncounters,
   getHubEncounter,
+  checkInHubClinicalWalkIn,
   createHubEncounter,
   openHubEncounterFromAppointment,
   patchHubEncounter,
@@ -282,6 +284,13 @@ import {
   getHubFinancePaymentMethodSettings,
   patchHubFinancePaymentMethodSettings,
 } from '../hubFinancialController';
+import {
+  postHubChargeBundle,
+  listHubChargeBundles,
+  getHubChargeBundle,
+  patchHubChargeBundleMarkSent,
+  getHubChargeBundlePdf,
+} from '../hubChargeBundlesController';
 import {
   postHubComandaOpen,
   getHubComandaDetail,
@@ -794,6 +803,12 @@ router.get(
   requirePermission('hub.appointments.read'),
   getHubAppointmentsStatsByServiceGroup
 );
+router.get(
+  '/appointments/series-ending-soon',
+  authenticateUser,
+  requirePermission('hub.appointments.read'),
+  listHubSeriesEndingSoon
+);
 router.get('/appointments', authenticateUser, requirePermission('hub.appointments.read'), listHubAppointments);
 router.post('/appointments', authenticateUser, requirePermission('hub.appointments.write'), createHubAppointment);
 router.post('/appointments/batch', authenticateUser, requirePermission('hub.appointments.write'), createHubAppointmentBatch);
@@ -841,6 +856,12 @@ router.get(
 );
 router.get('/encounters', authenticateUser, requirePermission('hub.clinic.read'), listHubEncounters);
 router.get('/encounters/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubEncounter);
+router.post(
+  '/encounters/check-in',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  checkInHubClinicalWalkIn
+);
 router.post('/encounters', authenticateUser, requirePermission('hub.clinic.write'), createHubEncounter);
 router.post(
   '/encounters/open-from-appointment',
@@ -1441,6 +1462,36 @@ router.post(
   authenticateUser,
   requirePermission('hub.cash.receive'),
   postHubFinanceReceivablePayment
+);
+router.post(
+  '/finance/charge-bundles',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  postHubChargeBundle
+);
+router.get(
+  '/finance/charge-bundles',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  listHubChargeBundles
+);
+router.get(
+  '/finance/charge-bundles/:id',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubChargeBundle
+);
+router.patch(
+  '/finance/charge-bundles/:id/mark-sent',
+  authenticateUser,
+  requirePermission('hub.receivables.create'),
+  patchHubChargeBundleMarkSent
+);
+router.get(
+  '/finance/charge-bundles/:id/pdf',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubChargeBundlePdf
 );
 router.post(
   '/finance/payments/:id/reverse',

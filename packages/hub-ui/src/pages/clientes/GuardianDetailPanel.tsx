@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { usePermissions } from '@petimi/web-core';
 import {
   X,
@@ -17,8 +17,20 @@ import {
   Cat,
   Dog,
   ChevronRight,
+  FileText,
+  Stethoscope,
 } from 'lucide-react';
 import type { HubGuardian, HubGuardianPet } from '../../api/hubGuardiansApi';
+import {
+  hubClinicalCasesApi,
+  hubEncountersApi,
+  type HubClinicalCase,
+  type HubEncounter,
+  type HubEncounterStatus,
+  type HubEncounterType,
+} from '../../api/hubClinicalApi';
+import { hubAgendaApi, type HubAppointment, type HubAppointmentStatus } from '../../api/hubAgendaApi';
+import { hubQuotesApi, type HubQuote, type HubQuoteStatus } from '../../api/hubQuotesApi';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { formatBrTaxIdDisplay } from '../../utils/formatBrTaxId';
 import { formatGuardianAddress } from './formatters';
@@ -49,13 +61,77 @@ import { formatDueDateShort } from '../finance/dueDateTone';
 import { buildProfileFinanceSummary } from '../finance/profileFinanceSummary';
 import { buildBatchChargeItems } from '../finance/batchChargeItems';
 import { BatchChargeDrawer } from '../finance/BatchChargeDrawer';
+import { ChargeBundleHistorySection } from '../finance/ChargeBundleHistorySection';
 import { SpecialPricesSection } from '../../components/SpecialPricesSection';
 import '../../components/hub-profile.css';
 import '../finance/hub-finance-page.css';
+import '../pets/pets-page.css';
 import './clientes.css';
 
 type DetailTab = 'resumo' | 'pets' | 'historico' | 'financeiro';
 type ProfileLayout = 'panel' | 'page';
+type GuardianEncounter = HubEncounter & { petName: string };
+type GuardianClinicalCase = HubClinicalCase & { petName: string };
+
+const HISTORY_PREVIEW_LIMIT = 5;
+
+function encounterStatusLabel(status: HubEncounterStatus | string): string {
+  if (status === 'waiting') return 'Aguardando';
+  if (status === 'in_progress') return 'Em atendimento';
+  if (status === 'completed') return 'Finalizado';
+  if (status === 'cancelled') return 'Cancelado';
+  return status;
+}
+
+function encounterTypeLabel(type: HubEncounterType | string): string {
+  if (type === 'consultation') return 'Consulta';
+  if (type === 'return') return 'Retorno';
+  if (type === 'emergency') return 'Emergência';
+  if (type === 'procedure') return 'Procedimento';
+  return type;
+}
+
+function caseStatusLabel(status: HubClinicalCase['status']): string {
+  if (status === 'active') return 'Ativo';
+  if (status === 'monitoring') return 'Monitoramento';
+  if (status === 'resolved') return 'Resolvido';
+  if (status === 'cancelled') return 'Cancelado';
+  return status;
+}
+
+function appointmentStatusLabel(status: HubAppointmentStatus): string {
+  if (status === 'pending_confirm') return 'Aguardando confirmação';
+  if (status === 'confirmed') return 'Confirmado';
+  if (status === 'checked_in') return 'Check-in realizado';
+  if (status === 'in_progress') return 'Em andamento';
+  if (status === 'done') return 'Concluído';
+  if (status === 'cancelled') return 'Cancelado';
+  if (status === 'paid') return 'Pago';
+  return status;
+}
+
+function quoteStatusLabel(status: HubQuoteStatus): string {
+  if (status === 'draft') return 'Rascunho';
+  if (status === 'sent') return 'Enviado';
+  if (status === 'awaiting_return') return 'Aguardando retorno';
+  if (status === 'accepted') return 'Aceito';
+  if (status === 'expired') return 'Expirado';
+  if (status === 'cancelled') return 'Cancelado';
+  return status;
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function historyTimestamp(value: string | null | undefined): number {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
 
 function speciesKind(species: string): 'dog' | 'cat' | 'other' {
   const s = species.trim().toLowerCase();
@@ -114,6 +190,9 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   const navigate = useNavigate();
   const { hasPermission } = usePermissions();
   const canFinancialRead = hasPermission('hub.financial.read');
+  const canClinicRead = hasPermission('hub.clinic.read');
+  const canAppointmentsRead = hasPermission('hub.appointments.read');
+  const canQuotesRead = hasPermission('hub.quotes.read');
   const isPage = layout === 'page';
   const [tab, setTab] = useState<DetailTab>(initialTab);
   const [comandas, setComandas] = useState<Array<Record<string, unknown>>>([]);
@@ -129,6 +208,11 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   /** Pet de contexto opcional — comanda manual não exige pet (itens podem ser só do tutor). */
   const [comandaPetId, setComandaPetId] = useState('');
   const [showBatchCharge, setShowBatchCharge] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyEncounters, setHistoryEncounters] = useState<GuardianEncounter[]>([]);
+  const [historyCases, setHistoryCases] = useState<GuardianClinicalCase[]>([]);
+  const [historyAppointments, setHistoryAppointments] = useState<HubAppointment[]>([]);
+  const [historyQuotes, setHistoryQuotes] = useState<HubQuote[]>([]);
 
   const addr = formatGuardianAddress(guardian);
   const since = guardian.created_at
@@ -165,8 +249,100 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   }, [clinicId, guardian.id]);
 
   useEffect(() => {
-    if (tab === 'financeiro' || tab === 'resumo') void loadFinanceiro();
+    if (tab === 'financeiro' || tab === 'resumo' || tab === 'historico') void loadFinanceiro();
   }, [tab, loadFinanceiro]);
+
+  useEffect(() => {
+    if ((tab !== 'resumo' && tab !== 'historico') || !clinicId) return;
+
+    let cancelled = false;
+    setHistoryLoading(true);
+
+    const clinicalPromise = canClinicRead
+      ? Promise.all(
+          pets.map(async (pet) => {
+            const [encountersResult, casesResult] = await Promise.allSettled([
+              hubEncountersApi.listByPet(clinicId, pet.id),
+              hubClinicalCasesApi.list(clinicId, { petId: pet.id }),
+            ]);
+            return {
+              encounters:
+                encountersResult.status === 'fulfilled'
+                  ? (encountersResult.value.encounters ?? []).map((encounter) => ({
+                      ...encounter,
+                      petName: encounter.pet?.name || pet.name,
+                    }))
+                  : [],
+              cases:
+                casesResult.status === 'fulfilled'
+                  ? (casesResult.value.cases ?? []).map((clinicalCase) => ({
+                      ...clinicalCase,
+                      petName: clinicalCase.pet?.name || pet.name,
+                    }))
+                  : [],
+            };
+          }),
+        )
+      : Promise.resolve([]);
+
+    const now = new Date();
+    const oneYearAgo = new Date(now);
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    const appointmentsPromise = canAppointmentsRead
+      ? hubAgendaApi
+          .list({ clinic_id: clinicId, from: oneYearAgo.toISOString(), to: now.toISOString() })
+          .then((response) => response.appointments.filter((appointment) => appointment.guardian_id === guardian.id))
+          .catch(() => [] as HubAppointment[])
+      : Promise.resolve([] as HubAppointment[]);
+
+    const quotesPromise = canQuotesRead
+      ? hubQuotesApi
+          .list(clinicId)
+          .then((response) => response.quotes.filter((quote) => quote.guardian_id === guardian.id))
+          .catch(() => [] as HubQuote[])
+      : Promise.resolve([] as HubQuote[]);
+
+    void Promise.all([clinicalPromise, appointmentsPromise, quotesPromise])
+      .then(([clinicalByPet, appointments, quotes]) => {
+        if (cancelled) return;
+        setHistoryEncounters(
+          clinicalByPet
+            .flatMap((result) => result.encounters)
+            .sort(
+              (a, b) =>
+                historyTimestamp(b.completed_at || b.started_at) -
+                historyTimestamp(a.completed_at || a.started_at),
+            ),
+        );
+        setHistoryCases(
+          clinicalByPet
+            .flatMap((result) => result.cases)
+            .sort((a, b) => historyTimestamp(b.opened_at) - historyTimestamp(a.opened_at)),
+        );
+        setHistoryAppointments(
+          [...appointments].sort((a, b) => historyTimestamp(b.starts_at) - historyTimestamp(a.starts_at)),
+        );
+        setHistoryQuotes(
+          [...quotes].sort((a, b) => historyTimestamp(b.updated_at) - historyTimestamp(a.updated_at)),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canAppointmentsRead,
+    canClinicRead,
+    canQuotesRead,
+    clinicId,
+    guardian.id,
+    pets,
+    tab,
+  ]);
 
   const financeSummary = useMemo(
     () => buildProfileFinanceSummary(receivables, comandas),
@@ -272,6 +448,55 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
     }
   };
 
+  const renderRecentEncounters = () => {
+    if (historyLoading) {
+      return <HubLoading variant="inline" label="Carregando atendimentos…" size="sm" />;
+    }
+    if (!canClinicRead) {
+      return (
+        <div className="hub-clientes__empty-state">
+          Os atendimentos ficam disponíveis para perfis com acesso ao módulo clínico.
+        </div>
+      );
+    }
+    if (historyEncounters.length === 0) {
+      return (
+        <div className="hub-clientes__empty-state">
+          <Stethoscope size={18} strokeWidth={1.75} aria-hidden />
+          Nenhum atendimento registrado para os pets deste cliente.
+        </div>
+      );
+    }
+    return (
+      <>
+        <ul className="hub-pets-detail__history-list">
+          {historyEncounters.slice(0, 3).map((encounter) => (
+            <li key={encounter.id} className="hub-pets-detail__history-row">
+              <Link
+                to={`/hub/clinica/atendimentos/${encounter.id}`}
+                className="hub-pets-detail__history-row-title"
+              >
+                {encounterTypeLabel(encounter.encounter_type)} · {encounterStatusLabel(encounter.status)}
+              </Link>
+              <p className="hub-pets-detail__history-row-meta">
+                {encounter.petName} · {encounter.chief_complaint || encounter.summary_notes || 'Sem descrição'} ·{' '}
+                {formatDateTime(encounter.completed_at || encounter.started_at)}
+              </p>
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          className="hub-clientes__link-btn"
+          style={{ marginTop: 10 }}
+          onClick={() => setTab('historico')}
+        >
+          Ver histórico completo
+        </button>
+      </>
+    );
+  };
+
   const renderResumoPage = () => (
     <>
       <section className="hub-meu-perfil__panel">
@@ -306,10 +531,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
             <p className="hub-meu-perfil__panel-sub">Histórico recente de serviços.</p>
           </div>
         </header>
-        <div className="hub-clientes__empty-state">
-          Nenhum atendimento registrado neste cliente. Após agendar e concluir serviços no Hub, o histórico resumido
-          será mostrado aqui.
-        </div>
+        {renderRecentEncounters()}
       </section>
     </>
   );
@@ -368,10 +590,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
         <h3 className="hub-clientes__section-title" style={{ marginBottom: 8 }}>
           Últimos atendimentos
         </h3>
-        <div className="hub-clientes__empty-state">
-          Nenhum atendimento registrado neste cliente. Após agendar e concluir serviços no Hub, o histórico resumido
-          será mostrado aqui.
-        </div>
+        {renderRecentEncounters()}
       </div>
     </>
   );
@@ -381,11 +600,195 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   );
 
   const renderHistoricoTab = () => {
-    const inner = (
-      <div className="hub-clientes__empty-state">
-        O histórico clínico e operacional por cliente estará disponível quando o módulo de atendimentos estiver ligado
-        à ficha.
-      </div>
+    const recentComandas = [...comandas]
+      .sort(
+        (a, b) =>
+          historyTimestamp(String(b.updated_at ?? b.opened_at ?? b.created_at ?? '')) -
+          historyTimestamp(String(a.updated_at ?? a.opened_at ?? a.created_at ?? '')),
+      )
+      .slice(0, HISTORY_PREVIEW_LIMIT);
+    const previewEncounters = historyEncounters.slice(0, HISTORY_PREVIEW_LIMIT);
+    const previewCases = historyCases.slice(0, HISTORY_PREVIEW_LIMIT);
+    const previewAppointments = historyAppointments.slice(0, HISTORY_PREVIEW_LIMIT);
+    const previewQuotes = historyQuotes.slice(0, HISTORY_PREVIEW_LIMIT);
+    const hasModuleHistory =
+      historyEncounters.length > 0 ||
+      historyCases.length > 0 ||
+      historyAppointments.length > 0 ||
+      historyQuotes.length > 0 ||
+      recentComandas.length > 0;
+
+    const inner = historyLoading || finLoading ? (
+      <HubLoading variant="inline" label="Carregando histórico do cliente…" size="sm" />
+    ) : (
+      <>
+        {!hasModuleHistory ? (
+          <div className="hub-pets-detail__historico-empty hub-pets-detail__historico-empty--compact">
+            <div className="hub-pets-detail__historico-empty-icon" aria-hidden>
+              <FileText size={28} strokeWidth={1.5} />
+            </div>
+            <div>
+              <h3 className="hub-pets-detail__historico-empty-title">Nenhuma atividade registrada</h3>
+              <p className="hub-pets-detail__historico-empty-text">
+                Atendimentos, agendamentos, orçamentos e movimentações financeiras aparecerão aqui.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {historyAppointments.length > 0 ? (
+          <section className="hub-pets-detail__history-section">
+            <div className="hub-pets-detail__history-section-head">
+              <h4 className="hub-clientes__label">Agendamentos</h4>
+              <Link to="/hub/agenda" className="hub-pets-detail__ver-mais">
+                Ver agenda
+              </Link>
+            </div>
+            <ul className="hub-pets-detail__history-list">
+              {previewAppointments.map((appointment) => {
+                const date = appointment.starts_at.slice(0, 10);
+                const title =
+                  appointment.title ||
+                  appointment.service_type?.name ||
+                  appointment.services[0]?.service_type?.name ||
+                  'Agendamento';
+                return (
+                  <li key={appointment.id} className="hub-pets-detail__history-row">
+                    <Link
+                      to={`/hub/agenda?date=${encodeURIComponent(date)}`}
+                      className="hub-pets-detail__history-row-title"
+                    >
+                      {title} · {appointmentStatusLabel(appointment.status)}
+                    </Link>
+                    <p className="hub-pets-detail__history-row-meta">
+                      {appointment.pet?.name || 'Tutor'} · {formatDateTime(appointment.starts_at)}
+                      {appointment.staff_member?.full_name ? ` · ${appointment.staff_member.full_name}` : ''}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
+
+        {historyEncounters.length > 0 ? (
+          <section className="hub-pets-detail__history-section">
+            <div className="hub-pets-detail__history-section-head">
+              <h4 className="hub-clientes__label">Atendimentos</h4>
+            </div>
+            <ul className="hub-pets-detail__history-list">
+              {previewEncounters.map((encounter) => (
+                <li key={encounter.id} className="hub-pets-detail__history-row">
+                  <Link
+                    to={`/hub/clinica/atendimentos/${encounter.id}`}
+                    className="hub-pets-detail__history-row-title"
+                  >
+                    {encounterTypeLabel(encounter.encounter_type)} · {encounterStatusLabel(encounter.status)}
+                  </Link>
+                  <p className="hub-pets-detail__history-row-meta">
+                    {encounter.petName} · {encounter.chief_complaint || encounter.summary_notes || 'Sem descrição'} ·{' '}
+                    {formatDateTime(encounter.completed_at || encounter.started_at)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {historyCases.length > 0 ? (
+          <section className="hub-pets-detail__history-section">
+            <div className="hub-pets-detail__history-section-head">
+              <h4 className="hub-clientes__label">Casos clínicos</h4>
+            </div>
+            <ul className="hub-pets-detail__history-list">
+              {previewCases.map((clinicalCase) => (
+                <li key={clinicalCase.id} className="hub-pets-detail__history-row">
+                  <Link
+                    to={`/hub/clinica/casos/${clinicalCase.id}`}
+                    className="hub-pets-detail__history-row-title"
+                  >
+                    {clinicalCase.title} · {caseStatusLabel(clinicalCase.status)}
+                  </Link>
+                  <p className="hub-pets-detail__history-row-meta">
+                    {clinicalCase.petName} · Aberto em {formatDateTime(clinicalCase.opened_at)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {historyQuotes.length > 0 ? (
+          <section className="hub-pets-detail__history-section">
+            <div className="hub-pets-detail__history-section-head">
+              <h4 className="hub-clientes__label">Orçamentos</h4>
+              <Link to="/hub/orcamentos" className="hub-pets-detail__ver-mais">
+                Ver orçamentos
+              </Link>
+            </div>
+            <ul className="hub-pets-detail__history-list">
+              {previewQuotes.map((quote) => (
+                <li key={quote.id} className="hub-pets-detail__history-row">
+                  <Link to={`/hub/orcamentos/${quote.id}`} className="hub-pets-detail__history-row-title">
+                    Orçamento · {quoteStatusLabel(quote.status)}
+                  </Link>
+                  <p className="hub-pets-detail__history-row-meta">
+                    {formatBrl(quote.total_amount)} · Atualizado em {formatDateTime(quote.updated_at)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {recentComandas.length > 0 ? (
+          <section className="hub-pets-detail__history-section">
+            <div className="hub-pets-detail__history-section-head">
+              <h4 className="hub-clientes__label">Movimentações financeiras</h4>
+              <button type="button" className="hub-clientes__link-btn" onClick={goToFinanceiroTab}>
+                Ver financeiro
+              </button>
+            </div>
+            <ul className="hub-pets-detail__history-list">
+              {recentComandas.map((comanda) => {
+                const href = resolveComandaProfileHref(comanda, { canFinancialRead });
+                const openedAt = formatComandaListOpenedAt(comanda);
+                return (
+                  <li key={String(comanda.id)} className="hub-pets-detail__history-row">
+                    <button
+                      type="button"
+                      className="hub-clientes__link-btn hub-pets-detail__history-row-title"
+                      onClick={() => navigate(href)}
+                    >
+                      {formatComandaListTitle(comanda)} · {formatBrl(Number(comanda.total_amount ?? 0))}
+                    </button>
+                    <p className="hub-pets-detail__history-row-meta">
+                      {formatComandaListPets(comanda, pets)}
+                      {openedAt ? ` · ${openedAt}` : ''}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
+
+        <section className="hub-pets-detail__history-section" style={{ marginBottom: 0 }}>
+          <div className="hub-pets-detail__history-section-head">
+            <h4 className="hub-clientes__label">Cadastro</h4>
+          </div>
+          <ul className="hub-pets-detail__history-list">
+            <li className="hub-pets-detail__history-row">
+              <p className="hub-pets-detail__history-row-title hub-pets-detail__history-row-title--static">
+                Cliente cadastrado
+              </p>
+              <p className="hub-pets-detail__history-row-meta">
+                {formatDateTime(guardian.created_at)} · {pets.length} {pets.length === 1 ? 'pet vinculado' : 'pets vinculados'}
+              </p>
+            </li>
+          </ul>
+        </section>
+      </>
     );
 
     if (isPage) {
@@ -394,7 +797,9 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
           <header className="hub-meu-perfil__panel-head">
             <div>
               <h2 className="hub-meu-perfil__panel-title">Histórico</h2>
-              <p className="hub-meu-perfil__panel-sub">Atendimentos e interações anteriores.</p>
+              <p className="hub-meu-perfil__panel-sub">
+                Atendimentos, agenda, orçamentos e movimentações do cliente.
+              </p>
             </div>
           </header>
           {inner}
@@ -402,7 +807,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
       );
     }
 
-    return inner;
+    return <div className="hub-clientes__section">{inner}</div>;
   };
 
   const renderFinanceiroTab = () => {
@@ -540,7 +945,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
                           </span>
                         </button>
                         <span className="hub-clientes__fin-row-amount">
-                          {formatBrl(Number(c.total_amount ?? 0))}
+                          {formatBrl(Number(c.balance_due ?? c.total_amount ?? 0))}
                         </span>
                         {charge.kind !== 'none' && (
                           <button
@@ -672,6 +1077,12 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
                 Nenhum lançamento financeiro encontrado para este tutor.
               </p>
             ) : null}
+
+            <ChargeBundleHistorySection
+              guardianId={guardian.id}
+              guardianName={guardian.full_name}
+              onChanged={() => void loadFinanceiro()}
+            />
           </>
         )}
       </>
@@ -763,6 +1174,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
         setShowBatchCharge(false);
         void loadFinanceiro();
       }}
+      onBundleCreated={(id) => navigate(`/hub/financeiro/cobranca-lote/${id}/pronto-para-envio`)}
     />
   );
 

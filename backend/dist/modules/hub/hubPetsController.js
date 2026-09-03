@@ -1,9 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateHubPet = exports.createHubPet = exports.listHubPets = void 0;
+exports.listHubPetProfileChanges = exports.updateHubPet = exports.createHubPet = exports.listHubPets = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubServiceTypesPricingMatrix_1 = require("./hubServiceTypesPricingMatrix");
+const hubPetHealthProfile_1 = require("./hubPetHealthProfile");
 const uuidStr = zod_1.z.string().uuid();
 const optionalDate = zod_1.z
     .union([zod_1.z.string().length(0), zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/)])
@@ -13,6 +14,17 @@ const sexSchema = zod_1.z.enum(['M', 'F', 'U']).optional().nullable();
 const petSizeTierSchema = zod_1.z.enum(['mini', 'pequeno', 'medio', 'grande', 'gigante']);
 const petCoatTypeSchema = zod_1.z.enum(hubServiceTypesPricingMatrix_1.COAT_TYPE_VALUES).optional().nullable();
 const behaviorTagsSchema = zod_1.z.array(zod_1.z.string().trim().min(1).max(100)).max(20).optional().nullable();
+const profileSourceSchema = zod_1.z.enum(['wizard', 'clinic', 'grooming', 'boarding', 'pets_form']).optional();
+const tagsModeSchema = zod_1.z.enum(['replace', 'union']).optional();
+const clinicalFlagKeySchema = zod_1.z.enum(['allergy', 'cardiac', 'aggressive', 'diabetic', 'epileptic', 'other']);
+const clinicalFlagsSchema = zod_1.z
+    .array(zod_1.z.object({
+    flag_key: clinicalFlagKeySchema,
+    label: zod_1.z.string().trim().min(1).max(120).optional(),
+    notes: zod_1.z.string().trim().max(2000).optional().nullable(),
+}))
+    .max(12)
+    .optional();
 const createHubPetBodySchema = zod_1.z.object({
     clinic_id: uuidStr,
     name: zod_1.z.string().trim().min(1).max(200),
@@ -27,6 +39,11 @@ const createHubPetBodySchema = zod_1.z.object({
     coat_type: petCoatTypeSchema,
     primary_guardian_id: uuidStr,
     secondary_guardian_id: uuidStr.optional().nullable(),
+    neutered: zod_1.z.boolean().nullable().optional(),
+    profile_source: profileSourceSchema,
+    behavior_tags_mode: tagsModeSchema,
+    clinical_flags: clinicalFlagsSchema,
+    clinical_flags_mode: tagsModeSchema,
 });
 const updateHubPetBodySchema = zod_1.z.object({
     clinic_id: uuidStr,
@@ -43,8 +60,16 @@ const updateHubPetBodySchema = zod_1.z.object({
     archived: zod_1.z.boolean().optional(),
     primary_guardian_id: uuidStr.optional(),
     secondary_guardian_id: uuidStr.optional().nullable(),
+    neutered: zod_1.z.boolean().nullable().optional(),
+    profile_source: profileSourceSchema,
+    behavior_tags_mode: tagsModeSchema,
+    clinical_flags: clinicalFlagsSchema,
+    clinical_flags_mode: tagsModeSchema,
 });
-const HUB_PET_SELECT_COLUMNS = 'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, size_tier, coat_color, coat_type, created_at, updated_at';
+const HUB_PET_SELECT_COLUMNS = 'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, neutered, size_tier, coat_color, coat_type, created_at, updated_at';
+function actorUserId(req) {
+    return req.user?.id ?? null;
+}
 async function guardianActiveInClinic(guardianId, clinicId) {
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_guardians')
@@ -132,7 +157,11 @@ const createHubPet = async (req, res) => {
         if (!body.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         }
-        const { clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, size_tier, coat_color, coat_type, primary_guardian_id, secondary_guardian_id, } = body.data;
+        const { clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, size_tier, coat_color, coat_type, primary_guardian_id, secondary_guardian_id, neutered, profile_source, behavior_tags_mode, clinical_flags, clinical_flags_mode, } = body.data;
+        const source = (0, hubPetHealthProfile_1.resolveProfileSource)(profile_source);
+        const tagsMode = (0, hubPetHealthProfile_1.resolveTagsMode)(source, behavior_tags_mode);
+        const nextTags = (0, hubPetHealthProfile_1.mergeBehaviorTags)([], behavior_tags ?? [], tagsMode);
+        const neuteredRes = (0, hubPetHealthProfile_1.resolveNeutered)(null, neutered, source);
         if (!(await guardianActiveInClinic(primary_guardian_id, clinic_id))) {
             return res.status(400).json({ error: 'Tutor principal inválido ou não pertence à clínica' });
         }
@@ -152,7 +181,8 @@ const createHubPet = async (req, res) => {
             sex: sex ?? null,
             birth_date: birth_date ?? null,
             notes: notes ?? null,
-            behavior_tags: behavior_tags ?? [],
+            behavior_tags: nextTags,
+            neutered: neuteredRes.next,
             size_tier,
             coat_color: coat_color ?? null,
             coat_type: coat_type ?? null,
@@ -178,6 +208,44 @@ const createHubPet = async (req, res) => {
             console.error('[hub_pets] create links', linkErr);
             await supabase_1.supabaseAdmin.from('hub_pets').delete().eq('id', pet.id);
             return res.status(500).json({ error: 'Erro ao associar tutores ao pet' });
+        }
+        const actor = actorUserId(req);
+        if (neuteredRes.applied || neuteredRes.conflict) {
+            await (0, hubPetHealthProfile_1.insertProfileChange)({
+                clinicId: clinic_id,
+                petId: pet.id,
+                field: 'neutered',
+                oldValue: null,
+                newValue: { value: neutered, applied: neuteredRes.applied, conflict: neuteredRes.conflict },
+                source,
+                actorUserId: actor,
+            });
+        }
+        if (nextTags.length > 0) {
+            await (0, hubPetHealthProfile_1.insertProfileChange)({
+                clinicId: clinic_id,
+                petId: pet.id,
+                field: 'behavior_tags',
+                oldValue: [],
+                newValue: nextTags,
+                source,
+                actorUserId: actor,
+            });
+        }
+        if (clinical_flags !== undefined) {
+            try {
+                await (0, hubPetHealthProfile_1.syncClinicalFlags)({
+                    clinicId: clinic_id,
+                    petId: pet.id,
+                    incoming: clinical_flags,
+                    mode: (0, hubPetHealthProfile_1.resolveTagsMode)(source, clinical_flags_mode),
+                    source,
+                    actorUserId: actor,
+                });
+            }
+            catch (flagErr) {
+                console.error('[hub_pets] create flags', flagErr);
+            }
         }
         return res.status(201).json({
             pet: {
@@ -206,7 +274,7 @@ const updateHubPet = async (req, res) => {
         if (!body.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         }
-        const { clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, archived, primary_guardian_id, secondary_guardian_id, size_tier, coat_color, coat_type, } = body.data;
+        const { clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, archived, primary_guardian_id, secondary_guardian_id, size_tier, coat_color, coat_type, neutered, profile_source, behavior_tags_mode, clinical_flags, clinical_flags_mode, } = body.data;
         if (name === undefined &&
             species === undefined &&
             breed === undefined &&
@@ -219,12 +287,14 @@ const updateHubPet = async (req, res) => {
             coat_type === undefined &&
             archived === undefined &&
             primary_guardian_id === undefined &&
-            secondary_guardian_id === undefined) {
+            secondary_guardian_id === undefined &&
+            neutered === undefined &&
+            clinical_flags === undefined) {
             return res.status(400).json({ error: 'Nenhum campo para atualizar' });
         }
         const { data: existing, error: fetchErr } = await supabase_1.supabaseAdmin
             .from('hub_pets')
-            .select('id, clinic_id')
+            .select('id, clinic_id, neutered, behavior_tags')
             .eq('id', id)
             .maybeSingle();
         if (fetchErr || !existing) {
@@ -250,14 +320,48 @@ const updateHubPet = async (req, res) => {
             patch.birth_date = birth_date;
         if (notes !== undefined)
             patch.notes = notes;
-        if (behavior_tags !== undefined)
-            patch.behavior_tags = behavior_tags ?? [];
         if (size_tier !== undefined)
             patch.size_tier = size_tier;
         if (coat_color !== undefined)
             patch.coat_color = coat_color;
         if (coat_type !== undefined)
             patch.coat_type = coat_type;
+        const source = (0, hubPetHealthProfile_1.resolveProfileSource)(profile_source);
+        const actor = actorUserId(req);
+        const currentTags = Array.isArray(existing.behavior_tags) ? existing.behavior_tags : [];
+        const currentNeutered = existing.neutered === true || existing.neutered === false ? existing.neutered : null;
+        if (neutered !== undefined) {
+            const neuteredRes = (0, hubPetHealthProfile_1.resolveNeutered)(currentNeutered, neutered, source);
+            if (neuteredRes.applied)
+                patch.neutered = neuteredRes.next;
+            if (neuteredRes.applied || neuteredRes.conflict) {
+                await (0, hubPetHealthProfile_1.insertProfileChange)({
+                    clinicId: clinic_id,
+                    petId: id,
+                    field: 'neutered',
+                    oldValue: currentNeutered,
+                    newValue: { value: neutered, applied: neuteredRes.applied, conflict: neuteredRes.conflict },
+                    source,
+                    actorUserId: actor,
+                });
+            }
+        }
+        if (behavior_tags !== undefined) {
+            const tagsMode = (0, hubPetHealthProfile_1.resolveTagsMode)(source, behavior_tags_mode);
+            const nextTags = (0, hubPetHealthProfile_1.mergeBehaviorTags)(currentTags, behavior_tags, tagsMode);
+            if (JSON.stringify(currentTags) !== JSON.stringify(nextTags)) {
+                patch.behavior_tags = nextTags;
+                await (0, hubPetHealthProfile_1.insertProfileChange)({
+                    clinicId: clinic_id,
+                    petId: id,
+                    field: 'behavior_tags',
+                    oldValue: currentTags,
+                    newValue: nextTags,
+                    source,
+                    actorUserId: actor,
+                });
+            }
+        }
         if (primary_guardian_id !== undefined) {
             if (!(await guardianActiveInClinic(primary_guardian_id, clinic_id))) {
                 return res.status(400).json({ error: 'Tutor principal inválido ou não pertence à clínica' });
@@ -303,6 +407,22 @@ const updateHubPet = async (req, res) => {
                 return res.status(500).json({ error: 'Erro ao atualizar pet' });
             }
         }
+        if (clinical_flags !== undefined) {
+            try {
+                await (0, hubPetHealthProfile_1.syncClinicalFlags)({
+                    clinicId: clinic_id,
+                    petId: id,
+                    incoming: clinical_flags,
+                    mode: (0, hubPetHealthProfile_1.resolveTagsMode)(source, clinical_flags_mode),
+                    source,
+                    actorUserId: actor,
+                });
+            }
+            catch (flagErr) {
+                console.error('[hub_pets] update flags', flagErr);
+                return res.status(500).json({ error: 'Erro ao atualizar alertas clínicos' });
+            }
+        }
         const { data: pet, error: finalErr } = await supabase_1.supabaseAdmin
             .from('hub_pets')
             .select(`${HUB_PET_SELECT_COLUMNS}, deleted_at`)
@@ -346,3 +466,42 @@ const updateHubPet = async (req, res) => {
     }
 };
 exports.updateHubPet = updateHubPet;
+const listHubPetProfileChanges = async (req, res) => {
+    try {
+        const idParsed = uuidStr.safeParse(req.params.id);
+        const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+        if (!idParsed.success)
+            return res.status(400).json({ error: 'id inválido' });
+        if (!clinicParsed.success) {
+            return res.status(400).json({ error: 'clinic_id é obrigatório e deve ser UUID' });
+        }
+        const petId = idParsed.data;
+        const clinic_id = clinicParsed.data;
+        const { data: pet, error: petErr } = await supabase_1.supabaseAdmin
+            .from('hub_pets')
+            .select('id')
+            .eq('id', petId)
+            .eq('clinic_id', clinic_id)
+            .is('deleted_at', null)
+            .maybeSingle();
+        if (petErr || !pet)
+            return res.status(404).json({ error: 'Pet não encontrado' });
+        const { data, error } = await supabase_1.supabaseAdmin
+            .from('hub_pet_profile_changes')
+            .select('id, pet_id, field, old_value, new_value, source, actor_user_id, created_at')
+            .eq('clinic_id', clinic_id)
+            .eq('pet_id', petId)
+            .order('created_at', { ascending: false })
+            .limit(80);
+        if (error) {
+            console.error('[hub_pets] profile-changes', error);
+            return res.status(500).json({ error: 'Erro ao listar histórico da ficha' });
+        }
+        return res.json({ changes: data ?? [] });
+    }
+    catch (e) {
+        console.error('[hub_pets] profile-changes', e);
+        return res.status(500).json({ error: 'Erro interno' });
+    }
+};
+exports.listHubPetProfileChanges = listHubPetProfileChanges;

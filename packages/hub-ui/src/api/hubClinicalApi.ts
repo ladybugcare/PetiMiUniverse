@@ -321,6 +321,23 @@ export const hubEncountersApi = {
       encounter: HubEncounter;
     }>;
   },
+  checkIn(payload: {
+    clinic_id: string;
+    unit_id?: string | null;
+    pet_id?: string | null;
+    guardian_id?: string | null;
+    hub_staff_member_id?: string | null;
+    hub_service_type_id: string;
+    chief_complaint?: string | null;
+    encounter_type?: 'consultation' | 'emergency';
+    care_location_kind?: 'own_unit' | 'partner_clinic';
+    hub_partner_clinic_id?: string | null;
+  }) {
+    return apiRequest(`${encBase}/check-in`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ appointment_id: string }>;
+  },
   openFromAppointment(
     clinicId: string,
     hubAppointmentId: string,

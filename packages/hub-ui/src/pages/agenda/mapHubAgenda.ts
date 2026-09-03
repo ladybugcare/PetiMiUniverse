@@ -1,4 +1,4 @@
-import type { HubAppointment } from '../../api/hubAgendaApi';
+import type { HubAppointment, HubSeriesEndingSoon } from '../../api/hubAgendaApi';
 import type { AgendaAppointment, AgendaStatus } from './agendaModel';
 import { computeDisplayServiceLabel } from './agendaModel';
 import type { NewAppointmentInitial } from './NewAppointmentModal';
@@ -152,5 +152,56 @@ export function mapAgendaToAppointmentInitial(appt: AgendaAppointment): NewAppoi
       name: s.name,
       duration_minutes: s.durationMin,
     })),
+  };
+}
+
+export function nextSeriesOccurrenceStart(
+  lastStartsAt: Date,
+  kind: string,
+  intervalValue: number,
+): Date {
+  const next = new Date(lastStartsAt.getTime());
+  const n = Math.max(1, Math.floor(intervalValue) || 1);
+  if (kind === 'daily') next.setDate(next.getDate() + n);
+  else if (kind === 'monthly') next.setMonth(next.getMonth() + n);
+  else next.setDate(next.getDate() + n * 7);
+  return next;
+}
+
+/** Prefill do modal de criação para renovar uma série (nova série, não estende a antiga). */
+export function buildSeriesRenewalInitial(
+  series: HubSeriesEndingSoon,
+  sampleAppt: AgendaAppointment | null,
+): NewAppointmentInitial {
+  const last = sampleAppt?.start ?? new Date(series.last_starts_at);
+  const durationMs = sampleAppt
+    ? Math.max(15 * 60_000, sampleAppt.end.getTime() - sampleAppt.start.getTime())
+    : 60 * 60_000;
+  const nextStart = nextSeriesOccurrenceStart(last, series.kind, series.interval_value);
+  const nextEnd = new Date(nextStart.getTime() + durationMs);
+  const kind =
+    series.kind === 'daily' || series.kind === 'monthly' || series.kind === 'weekly'
+      ? series.kind
+      : 'weekly';
+  const occurrences =
+    series.occurrences != null && series.occurrences >= 2 ? Math.min(52, series.occurrences) : 4;
+  const base = sampleAppt
+    ? mapAgendaToAppointmentInitial(sampleAppt)
+    : {
+        guardian_id: series.guardian_id,
+        pet_id: series.pet_id,
+        title: series.title,
+      };
+
+  return {
+    ...base,
+    date: toYmd(nextStart),
+    starts_at: nextStart.toISOString(),
+    ends_at: nextEnd.toISOString(),
+    suggest_recurrence: {
+      occurrences,
+      kind,
+      interval_value: Math.max(1, series.interval_value || 1),
+    },
   };
 }

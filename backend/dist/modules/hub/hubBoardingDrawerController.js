@@ -78,7 +78,7 @@ const getHubBoardingReservationDrawer = async (req, res) => {
             flag_key: String(f.flag_key),
             label: String(f.label || ''),
         }));
-        const clinicalTags = (0, groomingPetTags_1.buildGroomingDisplayTags)(flags, pet?.notes ?? null);
+        const clinicalTags = (0, groomingPetTags_1.buildGroomingDisplayTags)(flags, pet?.notes ?? null, pet?.behavior_tags);
         const dailyLogs = logsRes.data ?? [];
         return res.json({
             reservation,

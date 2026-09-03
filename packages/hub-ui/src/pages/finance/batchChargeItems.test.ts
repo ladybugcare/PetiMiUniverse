@@ -57,6 +57,25 @@ describe('buildBatchChargeItems', () => {
     expect(items[0]).toMatchObject({ kind: 'comanda', title: 'Tosa', amount: 145 });
   });
 
+  it('não reinsere comanda aberta já quitada (balance_due 0)', () => {
+    const items = buildBatchChargeItems(
+      [rv({ id: 'r-paid', status: 'paid', final_amount: 100, comanda_id: 'c1' })],
+      [{ id: 'c1', status: 'aberta', total_amount: 100, balance_due: 0, guardian_id: 'g1', item_labels: ['Banho'] }],
+      { asOf },
+    );
+    expect(items).toHaveLength(0);
+  });
+
+  it('usa balance_due da comanda aberta quando enrich trouxe o saldo', () => {
+    const items = buildBatchChargeItems(
+      [],
+      [{ id: 'c3', status: 'aberta', total_amount: 200, balance_due: 40, guardian_id: 'g1', item_labels: ['Hotel'] }],
+      { asOf },
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].amount).toBe(40);
+  });
+
   it('soma valores selecionados', () => {
     const items = buildBatchChargeItems(
       [

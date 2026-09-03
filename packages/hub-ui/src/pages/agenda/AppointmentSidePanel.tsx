@@ -16,7 +16,7 @@ import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
 import { useAlert } from '../../components/AlertProvider';
-import { hubAgendaApi, type HubAppointment } from '../../api/hubAgendaApi';
+import { hubAgendaApi, type HubAppointment, type HubSeriesEndingSoon } from '../../api/hubAgendaApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import {
@@ -72,6 +72,8 @@ export type AppointmentSidePanelProps = {
   serviceTypes: HubServiceType[];
   onUpdated: (appointment: HubAppointment) => void;
   extraBlockChildren?: AgendaAppointment[];
+  seriesEndingInfo?: HubSeriesEndingSoon | null;
+  onRenewSeries?: () => void;
 };
 
 export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
@@ -95,6 +97,8 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
   serviceTypes,
   onUpdated,
   extraBlockChildren = [],
+  seriesEndingInfo = null,
+  onRenewSeries,
 }) => {
   const { showError } = useAlert();
   const clinicId = getStoredClinicId();
@@ -607,6 +611,22 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
                 Notas financeiras <span className="hub-agenda__internal-badge">interno</span>
               </h3>
               <div className="nam-quick-card hub-agenda-appt-panel__card nam-quick-card--pre">{appt.financial_notes}</div>
+            </div>
+          ) : null}
+
+          {seriesEndingInfo ? (
+            <div className="nam-section hub-agenda-appt-panel__alert hub-agenda-appt-panel__alert--info">
+              <h3 className="nam-section-title">Série recorrente a terminar</h3>
+              <p>
+                Restam {seriesEndingInfo.remaining_count}{' '}
+                {seriesEndingInfo.remaining_count === 1 ? 'ocorrência' : 'ocorrências'} nesta série. Renove para
+                continuar o agendamento recorrente.
+              </p>
+              {canWrite && onRenewSeries ? (
+                <button type="button" className="hub-btn hub-btn--secondary" onClick={onRenewSeries}>
+                  Renovar série
+                </button>
+              ) : null}
             </div>
           ) : null}
 

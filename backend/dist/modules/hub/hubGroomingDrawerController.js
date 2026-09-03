@@ -161,7 +161,7 @@ const getHubGroomingSessionDrawer = async (req, res) => {
                 .order('created_at', { ascending: true }),
         ]);
         const pet = petRes.data;
-        const allTags = (0, groomingPetTags_1.buildGroomingDisplayTags)((flagsRes.data ?? []), pet?.notes);
+        const allTags = (0, groomingPetTags_1.buildGroomingDisplayTags)((flagsRes.data ?? []), pet?.notes, pet?.behavior_tags);
         const checklist = (0, groomingChecklistDefaults_1.mergeGroomingChecklistState)(session.checklist, templateItems);
         let appointment_lines = [];
         let parentIds = [];

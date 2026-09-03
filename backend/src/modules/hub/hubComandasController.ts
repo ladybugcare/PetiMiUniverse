@@ -458,7 +458,7 @@ async function refreshComandaFinancialStatus(
   await supabaseAdmin.from('hub_comandas').update({ financial_status: financial }).eq('id', comandaId).eq('clinic_id', clinicId);
 }
 
-/** Fecha comanda aberta quando saldo quitado, sem itens em aberto e operação concluída. */
+/** Fecha comanda aberta quando saldo quitado e sem itens em aberto. */
 export async function tryAutoCloseComanda(comandaId: string, clinicId: string): Promise<boolean> {
   const { data: comandaRow, error } = await supabaseAdmin
     .from('hub_comandas')
@@ -472,10 +472,9 @@ export async function tryAutoCloseComanda(comandaId: string, clinicId: string): 
   const detail = await getHubComandaDetailPayload(comandaId, clinicId);
   const stillOpenItems = (detail.open_item_ids as string[]).length > 0;
   const balAfter = Number(detail.balance_due ?? 0);
-  const opComplete = Boolean(detail.operational_complete);
   const total = Number(comandaRow.total_amount ?? 0);
   // Não fecha comanda vazia (ex.: manual aberta sem itens ainda).
-  if (stillOpenItems || balAfter > 0.02 || !opComplete || total <= 0.02) return false;
+  if (stillOpenItems || balAfter > 0.02 || total <= 0.02) return false;
 
   const now = new Date().toISOString();
   const { error: closeErr } = await supabaseAdmin
@@ -4263,6 +4262,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
         const items = (detail.items as Record<string, unknown>[]).filter(
           (it) => (detail.open_item_ids as string[]).includes(it.id as string)
         );
+        const unitId = (detail.comanda as Record<string, unknown>).unit_id as string | null;
 
         if (items.length === 0) {
           if (action === 'leave_pending' && canHandoffExistingReceivables(detail)) {
@@ -4276,14 +4276,92 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
                 error: (handoffErr as Error).message ?? 'Erro ao enviar ao financeiro',
               });
             }
+          } else if (action === 'receive_now') {
+            const bal = Number((detail as { balance_due?: number }).balance_due ?? 0);
+            const activeRecIds = (detail.active_receivable_ids as string[] | undefined) ?? [];
+            if (bal <= 0.02) {
+              await tryAutoCloseComanda(comandaId, clinic_id);
+              results.push({ comanda_id: comandaId, receivable_ids: activeRecIds });
+            } else if (activeRecIds.length > 0 && payment_method) {
+              // Já faturada: liquidar recebíveis em aberto (sem recriar linhas).
+              const paidIds: string[] = [];
+              let payError: string | null = null;
+              for (const rid of activeRecIds) {
+                const { data: rec } = await supabaseAdmin
+                  .from('hub_receivables')
+                  .select('id, status, final_amount, unit_id')
+                  .eq('id', rid)
+                  .maybeSingle();
+                if (!rec || rec.status === 'cancelled' || rec.status === 'paid') continue;
+                const { data: pays } = await supabaseAdmin.from('hub_payments').select('amount').eq('receivable_id', rid);
+                const paidSoFar = round2((pays ?? []).reduce((a, row) => a + Number(row.amount ?? 0), 0));
+                const due = round2(Math.max(0, Number(rec.final_amount ?? 0) - paidSoFar));
+                if (due <= 0.009) continue;
+
+                let validatedCashSessionId: string | null = null;
+                if (payment_method === 'cash') {
+                  if (!cash_session_id) {
+                    payError = 'Abra o caixa para receber em dinheiro.';
+                    break;
+                  }
+                  validatedCashSessionId = cash_session_id;
+                } else {
+                  validatedCashSessionId = await resolvePaymentCashSessionId(
+                    clinic_id,
+                    (rec.unit_id as string | null) ?? null,
+                    unitId,
+                  );
+                }
+
+                const { error: payInsErr } = await supabaseAdmin.from('hub_payments').insert({
+                  clinic_id,
+                  receivable_id: rid,
+                  cash_session_id: validatedCashSessionId,
+                  amount: due,
+                  payment_method,
+                  installments: 1,
+                  payment_date: new Date().toISOString(),
+                  notes: null,
+                  created_by_user_id: userId,
+                  payment_timing,
+                });
+                if (payInsErr) {
+                  payError = payInsErr.message;
+                  break;
+                }
+                await supabaseAdmin.from('hub_receivables').update({ status: 'paid' }).eq('id', rid);
+                paidIds.push(rid);
+              }
+              if (payError) {
+                results.push({ comanda_id: comandaId, receivable_ids: paidIds, error: payError });
+              } else if (paidIds.length === 0) {
+                results.push({
+                  comanda_id: comandaId,
+                  receivable_ids: [],
+                  error: 'Não há saldo em aberto para receber nesta comanda',
+                });
+              } else {
+                await tryAutoCloseComanda(comandaId, clinic_id);
+                results.push({ comanda_id: comandaId, receivable_ids: paidIds });
+              }
+            } else {
+              results.push({
+                comanda_id: comandaId,
+                receivable_ids: [],
+                error: 'Não há itens em aberto para faturar',
+              });
+            }
           } else {
-            results.push({ comanda_id: comandaId, receivable_ids: [] });
+            results.push({
+              comanda_id: comandaId,
+              receivable_ids: [],
+              error: action === 'leave_pending' ? 'Não há itens em aberto para enviar ao financeiro' : undefined,
+            });
           }
           continue;
         }
 
         const guardianId = (detail.comanda as Record<string, unknown>).guardian_id as string;
-        const unitId = (detail.comanda as Record<string, unknown>).unit_id as string | null;
         const subtotal = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
         const manualSourceId = randomUUID();
 

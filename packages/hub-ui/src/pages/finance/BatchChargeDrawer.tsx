@@ -41,19 +41,25 @@ export type BatchChargeDrawerProps = {
   /** Pré-seleciona estes ids ao abrir. Default: todos. */
   initialSelectedIds?: string[];
   guardianName?: string;
+  /** Ação inicial ao abrir (ex.: dar baixa a partir do histórico). */
+  initialAction?: BatchAction;
   onClose: () => void;
   onDone: () => void;
+  /** Após criar lote «Enviar cobrança», navega para pronto-para-envio. */
+  onBundleCreated?: (bundleId: string) => void;
 };
 
-type BatchAction = Extract<CheckoutDrawerBillingAction, 'receive_now' | 'leave_pending'>;
+type BatchAction = 'receive_now' | 'leave_pending' | 'send_charge';
 
 export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
   open,
   items,
   initialSelectedIds,
   guardianName,
+  initialAction,
   onClose,
   onDone,
+  onBundleCreated,
 }) => {
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
@@ -73,8 +79,8 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
         ? initialSelectedIds
         : items.map((i) => i.id);
     setSelectedIds(new Set(initial.filter((id) => items.some((i) => i.id === id))));
-    setAction('receive_now');
-  }, [open, items, initialSelectedIds]);
+    setAction(initialAction ?? 'receive_now');
+  }, [open, items, initialSelectedIds, initialAction]);
 
   useEffect(() => {
     if (!open || !clinicId || !unitId) return;
@@ -178,6 +184,13 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
       }
     }
 
+    if (action === 'send_charge') {
+      if (!dueDate) {
+        showError('Informe o vencimento do lote.');
+        return;
+      }
+    }
+
     if (action === 'receive_now') {
       if (!paymentMethod) {
         showError('Selecione a forma de pagamento.');
@@ -194,6 +207,63 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
     let okCount = 0;
 
     try {
+      if (action === 'send_charge') {
+        const guardianId = assertSameGuardian(selectedItems);
+        if (!guardianId) {
+          showError('Não foi possível identificar o tutor deste lote.');
+          return;
+        }
+
+        const receivableIdSet = new Set<string>();
+        for (const it of selectedReceivables) {
+          if (it.receivableId) receivableIdSet.add(it.receivableId);
+        }
+
+        if (selectedComandas.length > 0) {
+          const comandaIds = selectedComandas.map((i) => i.comandaId!).filter(Boolean);
+          const res = await hubComandaApi.checkoutBulk({
+            clinic_id: clinicId,
+            unit_id: unitId,
+            comanda_ids: comandaIds,
+            action: 'leave_pending',
+            due_date: dueDate,
+          });
+          for (const r of res.results) {
+            if (r.error) errors.push(r.error);
+            else for (const rid of r.receivable_ids ?? []) receivableIdSet.add(rid);
+          }
+        }
+
+        if (receivableIdSet.size === 0) {
+          showError(errors[0] || 'Nenhum recebível disponível para agrupar.');
+          return;
+        }
+        if (errors.length > 0 && receivableIdSet.size === 0) {
+          showError(errors[0] || 'Erro ao preparar comandas para o lote.');
+          return;
+        }
+
+        const { bundle } = await hubFinancialApi.createChargeBundle({
+          clinic_id: clinicId,
+          guardian_id: guardianId,
+          unit_id: unitId,
+          receivable_ids: [...receivableIdSet],
+          due_date: dueDate,
+        });
+
+        if (errors.length > 0) {
+          showSuccess('Lote criado com avisos — confira os itens enviados.');
+          showError(errors.slice(0, 2).join('\n'));
+        } else {
+          showSuccess('Cobrança agrupada pronta para envio.');
+        }
+
+        onDone();
+        onClose();
+        onBundleCreated?.(bundle.id);
+        return;
+      }
+
       if (action === 'leave_pending') {
         const comandaIds = selectedComandas.map((i) => i.comandaId!).filter(Boolean);
         const res = await hubComandaApi.checkoutBulk({
@@ -220,7 +290,9 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
           });
           for (const r of res.results) {
             if (r.error) errors.push(`${r.comanda_id.slice(0, 8)}…: ${r.error}`);
-            else okCount += 1;
+            else if (!r.receivable_ids?.length && action === 'receive_now') {
+              errors.push(`${r.comanda_id.slice(0, 8)}…: nenhum pagamento registrado nesta comanda`);
+            } else okCount += 1;
           }
         }
         for (const it of selectedReceivables) {
@@ -270,6 +342,7 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
 
   const actionTabs: Array<{ value: BatchAction; label: string }> = [
     { value: 'receive_now', label: 'Receber agora' },
+    { value: 'send_charge', label: 'Enviar cobrança' },
     ...(canLeavePending || action === 'leave_pending'
       ? [{ value: 'leave_pending' as const, label: 'Enviar ao financeiro' }]
       : []),
@@ -291,7 +364,13 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
           onClick={() => void onSubmit()}
           disabled={submitting || selectedItems.length === 0}
         >
-          {submitting ? 'Processando…' : action === 'leave_pending' ? 'Enviar selecionadas' : 'Cobrar selecionadas'}
+          {submitting
+            ? 'Processando…'
+            : action === 'leave_pending'
+              ? 'Enviar selecionadas'
+              : action === 'send_charge'
+                ? 'Gerar cobrança agrupada'
+                : 'Cobrar selecionadas'}
         </button>
       </div>
     </div>
@@ -376,7 +455,7 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
             <CheckoutDrawerActionTabs
               action={action}
               onActionChange={(a) => {
-                if (a === 'receive_now' || a === 'leave_pending') setAction(a);
+                if (a === 'receive_now' || a === 'leave_pending' || a === 'send_charge') setAction(a);
               }}
               tabs={actionTabs}
             />
@@ -410,7 +489,11 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
             ) : (
               <div style={{ marginTop: 12 }}>
                 <HubDateField id="batch-due-date" label="Vencimento" valueIso={dueDate} onChangeIso={setDueDate} />
-                {selectedReceivables.length > 0 ? (
+                {action === 'send_charge' ? (
+                  <p className="hub-clientes__muted" style={{ marginTop: 8 }}>
+                    Gera um PDF e link únicos com todas as cobranças selecionadas. Comandas abertas viram recebíveis antes de entrar no lote.
+                  </p>
+                ) : selectedReceivables.length > 0 ? (
                   <p className="hub-clientes__muted" style={{ marginTop: 8 }}>
                     Remova os recebíveis da seleção para enviar só comandas abertas ao financeiro.
                   </p>

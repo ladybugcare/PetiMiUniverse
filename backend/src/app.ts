@@ -34,6 +34,7 @@ import workProofRoutes from './routes/workProof.js';
 import hubRoutes from './modules/hub/routes/index.js';
 import publicQuotesRoutes from './modules/hub/routes/publicQuotes.js';
 import publicComandasRoutes from './modules/hub/routes/publicComandas.js';
+import publicChargeBundlesRoutes from './modules/hub/routes/publicChargeBundles.js';
 import publicPrescriptionsRoutes from './modules/hub/routes/publicPrescriptions.js';
 import publicExamReferralsRoutes from './modules/hub/routes/publicExamReferrals.js';
 
@@ -226,6 +227,7 @@ app.use('/api', workProofRoutes);
 app.use('/api/hub', hubRoutes);
 app.use('/api/public', publicQuotesRoutes);
 app.use('/api/public', publicComandasRoutes);
+app.use('/api/public', publicChargeBundlesRoutes);
 app.use('/api/public', publicPrescriptionsRoutes);
 app.use('/api/public', publicExamReferralsRoutes);
 app.use('/health', healthRoutes);

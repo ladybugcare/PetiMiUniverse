@@ -10,4 +10,5 @@ exports.comandaOriginSchema = zod_1.z.enum([
     'manual',
     'boarding_reservation',
     'package',
+    'series_invoice',
 ]);

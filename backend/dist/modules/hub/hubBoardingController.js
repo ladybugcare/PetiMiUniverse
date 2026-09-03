@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getHubBoardingCalendar = exports.getHubBoardingOccupancy = exports.patchHubBoardingUnitSettings = exports.getHubBoardingUnitSettings = exports.patchHubBoardingReservation = exports.createHubBoardingReservation = exports.openHubBoardingReservationFromAppointment = exports.getHubBoardingDayBoard = void 0;
 const supabase_1 = require("../../config/supabase");
 const hubComandasController_1 = require("./hubComandasController");
+const hubNotifyEvents_1 = require("./hubNotifyEvents");
 const groomingPetTags_1 = require("./groomingPetTags");
 const hubDayBoardPets_1 = require("./hubDayBoardPets");
 const boardingOperational_1 = require("./boardingOperational");
@@ -177,7 +178,7 @@ const getHubBoardingDayBoard = async (req, res) => {
             if (!pid)
                 return [];
             const petRow = petMap.get(pid);
-            return (0, groomingPetTags_1.buildGroomingDisplayTags)(flagsByPet.get(pid) ?? [], petRow?.notes ?? null);
+            return (0, groomingPetTags_1.buildGroomingDisplayTags)(flagsByPet.get(pid) ?? [], petRow?.notes ?? null, petRow?.behavior_tags ?? null);
         };
         const nowMs = Date.now();
         const items = [];
@@ -341,6 +342,13 @@ const openHubBoardingReservationFromAppointment = async (req, res) => {
             .update({ status: 'in_progress' })
             .eq('id', hub_appointment_id)
             .eq('clinic_id', clinic_id);
+        void (0, hubNotifyEvents_1.notifyHubBoardingCheckin)({
+            clinicId: clinic_id,
+            unitId: appt.unit_id ?? null,
+            petId: appt.pet_id,
+            reservationId: created.id,
+            excludeUserIds: req.user?.id ? [req.user.id] : undefined,
+        });
         return res.status(201).json({ reservation: created, created: true });
     }
     catch (e) {
@@ -363,6 +371,14 @@ const createHubBoardingReservation = async (req, res) => {
             .single();
         if (insErr)
             return res.status(500).json({ error: insErr.message });
+        const reservation = created;
+        void (0, hubNotifyEvents_1.notifyHubBoardingCheckin)({
+            clinicId: clinic_id,
+            unitId: reservation.unit_id ?? null,
+            petId: reservation.pet_id ?? null,
+            reservationId: reservation.id,
+            excludeUserIds: req.user?.id ? [req.user.id] : undefined,
+        });
         return res.status(201).json({ reservation: created });
     }
     catch (e) {
@@ -385,7 +401,7 @@ const patchHubBoardingReservation = async (req, res) => {
         // Busca reserva atual para validar transição
         const { data: current, error: fetchErr } = await supabase_1.supabaseAdmin
             .from('hub_boarding_reservations')
-            .select('id, status, hub_appointment_id')
+            .select('id, status, hub_appointment_id, unit_id, pet_id')
             .eq('id', id)
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
@@ -441,6 +457,21 @@ const patchHubBoardingReservation = async (req, res) => {
         }
         if (newStatus === 'checked_out') {
             void (0, hubComandasController_1.syncOpenComandasAfterBoardingCheckedOut)(clinic_id, id);
+        }
+        const previousStatus = current.status;
+        if (newStatus && newStatus !== previousStatus) {
+            const reservation = current;
+            const notifyArgs = {
+                clinicId: clinic_id,
+                unitId: reservation.unit_id,
+                petId: reservation.pet_id,
+                reservationId: id,
+                excludeUserIds: req.user?.id ? [req.user.id] : undefined,
+            };
+            if (newStatus === 'checked_in')
+                void (0, hubNotifyEvents_1.notifyHubBoardingCheckin)(notifyArgs);
+            if (newStatus === 'checked_out')
+                void (0, hubNotifyEvents_1.notifyHubBoardingCheckout)(notifyArgs);
         }
         return res.json({ reservation: updated });
     }

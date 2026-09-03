@@ -175,6 +175,24 @@ const createEncounterSchema = z
     path: ['pet_id'],
   });
 
+const checkInClinicalWalkInSchema = z
+  .object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr.optional().nullable(),
+    pet_id: uuidStr.optional().nullable(),
+    guardian_id: uuidStr.optional().nullable(),
+    hub_staff_member_id: uuidStr.optional().nullable(),
+    hub_service_type_id: uuidStr,
+    chief_complaint: z.string().trim().max(4000).optional().nullable(),
+    encounter_type: z.enum(['consultation', 'emergency']).optional().default('consultation'),
+    ...careLocationBodyFields,
+  })
+  .strict()
+  .refine((d) => d.encounter_type === 'emergency' || !!d.pet_id, {
+    message: 'pet_id é obrigatório para atendimentos não-emergência',
+    path: ['pet_id'],
+  });
+
 const operationalPhaseSchema = z.union([z.enum(['awaiting_exams', 'exams_returned']), z.null()]);
 
 const patchEncounterSchema = z
@@ -246,7 +264,7 @@ async function assertOperationalClinicalServiceType(clinicId: string, serviceTyp
 type ClinicalAgendaKind = 'clinical_walk_in' | 'clinical_emergency';
 
 /** Cria agendamento «encaixe» na agenda principal e retorna o id (com linha em hub_appointment_services). */
-async function createLinkedClinicalAgendaAppointment(params: {
+async function createClinicalAgendaAppointment(params: {
   clinic_id: string;
   unit_id: string | null;
   pet_id: string | null;
@@ -255,6 +273,7 @@ async function createLinkedClinicalAgendaAppointment(params: {
   hub_service_type_id: string;
   chief_complaint: string | null;
   appointment_kind: ClinicalAgendaKind;
+  status?: 'checked_in' | 'in_progress';
   care_location_kind?: 'own_unit' | 'partner_clinic';
   hub_partner_clinic_id?: string | null;
 }): Promise<string> {
@@ -287,7 +306,7 @@ async function createLinkedClinicalAgendaAppointment(params: {
     guardian_id: params.guardian_id,
     starts_at: start.toISOString(),
     ends_at: end.toISOString(),
-    status: 'in_progress',
+    status: params.status ?? 'in_progress',
     resource_label: null,
     notes: cc.length > 0 ? cc : null,
     appointment_kind: params.appointment_kind,
@@ -788,6 +807,80 @@ export const getHubEncounter = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Registra um encaixe clínico na fila sem iniciar o atendimento.
+ * A escolha/criação do caso clínico continua no fluxo "Iniciar atendimento".
+ */
+export const checkInHubClinicalWalkIn = async (req: Request, res: Response) => {
+  try {
+    const parsed = checkInClinicalWalkInSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const b = parsed.data;
+    const isEmergency = b.encounter_type === 'emergency';
+
+    if (!(await assertOperationalClinicalServiceType(b.clinic_id, b.hub_service_type_id))) {
+      return res.status(400).json({
+        error: 'O tipo de serviço deve ser da área Clínica, Internação ou Cirurgia.',
+      });
+    }
+
+    let resolvedGuardianId: string | null = b.guardian_id ?? null;
+    if (b.pet_id) {
+      if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Pet inválido' });
+      }
+      if (!resolvedGuardianId) {
+        resolvedGuardianId = await fetchPrimaryGuardianIdForPet(b.pet_id);
+      }
+      if (!resolvedGuardianId && !isEmergency) {
+        return res.status(400).json({
+          error:
+            'É obrigatório ter um tutor responsável cadastrado e selecionado. Vincule o tutor ao pet na ficha do cliente ou escolha o tutor antes de registrar o encaixe.',
+        });
+      }
+      if (resolvedGuardianId) {
+        if (!(await guardianInClinic(b.clinic_id, resolvedGuardianId))) {
+          return res.status(400).json({ error: 'Tutor inválido para esta clínica' });
+        }
+        if (!(await guardianLinkedToPet(b.pet_id, resolvedGuardianId))) {
+          return res.status(400).json({ error: 'O tutor informado não está vinculado a este pet' });
+        }
+      }
+    }
+
+    const careKind = b.care_location_kind ?? 'own_unit';
+    const careResolved = await resolveCareLocation({
+      clinicId: b.clinic_id,
+      care_location_kind: careKind,
+      hub_partner_clinic_id: b.hub_partner_clinic_id ?? null,
+      unit_id: b.unit_id ?? null,
+      allowNullUnit: careKind === 'partner_clinic' || isEmergency,
+    });
+    if (!careResolved.ok) {
+      return res.status(400).json({ error: careResolved.error });
+    }
+
+    const appointmentId = await createClinicalAgendaAppointment({
+      clinic_id: b.clinic_id,
+      unit_id: careResolved.value.unit_id,
+      pet_id: b.pet_id ?? null,
+      guardian_id: resolvedGuardianId,
+      hub_staff_member_id: b.hub_staff_member_id ?? null,
+      hub_service_type_id: b.hub_service_type_id,
+      chief_complaint: b.chief_complaint ?? null,
+      appointment_kind: isEmergency ? 'clinical_emergency' : 'clinical_walk_in',
+      status: 'checked_in',
+      care_location_kind: careResolved.value.care_location_kind,
+      hub_partner_clinic_id: careResolved.value.hub_partner_clinic_id,
+    });
+
+    return res.status(201).json({ appointment_id: appointmentId });
+  } catch (e: unknown) {
+    console.error('checkInHubClinicalWalkIn', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao registrar encaixe clínico' });
+  }
+};
+
 export const createHubEncounter = async (req: Request, res: Response) => {
   try {
     const parsed = createEncounterSchema.safeParse(req.body);
@@ -895,7 +988,7 @@ export const createHubEncounter = async (req: Request, res: Response) => {
 
     if (b.link_agenda_slot && b.hub_service_type_id) {
       try {
-        effectiveApptId = await createLinkedClinicalAgendaAppointment({
+        effectiveApptId = await createClinicalAgendaAppointment({
           clinic_id: b.clinic_id,
           unit_id: careResolved.value.unit_id,
           pet_id: b.pet_id ?? null,

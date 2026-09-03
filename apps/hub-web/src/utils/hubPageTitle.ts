@@ -63,8 +63,10 @@ export function hubPageTitleFromPath(pathname: string): string {
   if (/^\/hub\/clinica\/atendimentos\/[^/]+$/.test(pathname)) return 'Clínica — Atendimento';
   if (/^\/hub\/clientes\/[^/]+$/.test(pathname)) return 'Cliente';
   if (/^\/hub\/orcamentos\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Orçamento — Pronto para envio';
+  if (/^\/hub\/financeiro\/cobranca-lote\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Cobrança — Pronto para envio';
   if (/^\/hub\/caixa\/comanda\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Comanda — Pronto para envio';
   if (/^\/hub\/caixa\/comanda\/[^/]+$/.test(pathname)) return 'Comanda';
+  if (/^\/cobranca\//.test(pathname)) return 'Cobrança (público)';
   if (/^\/comanda\//.test(pathname)) return 'Comanda (público)';
   if (/^\/receita\//.test(pathname)) return 'Receita (público)';
   if (pathname === '/validar-receita') return 'Validar receita';

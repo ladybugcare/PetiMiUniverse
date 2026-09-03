@@ -91,7 +91,7 @@ export function CheckoutDrawerSection({ title, hint, children }: CheckoutDrawerS
   );
 }
 
-export type CheckoutDrawerBillingAction = 'receive_now' | 'leave_pending' | 'cancel';
+export type CheckoutDrawerBillingAction = 'receive_now' | 'leave_pending' | 'cancel' | 'send_charge';
 
 export type CheckoutDrawerActionTabsProps = {
   action: CheckoutDrawerBillingAction;

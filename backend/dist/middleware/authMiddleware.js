@@ -114,7 +114,7 @@ const checkClinicAccess = async (user_id, clinic_id) => {
     }
 };
 exports.checkClinicAccess = checkClinicAccess;
-// Middleware to require specific permission
+// Middleware to require specific permission (ou qualquer uma da lista).
 const requirePermission = (permission) => {
     return async (req, res, next) => {
         try {
@@ -127,8 +127,15 @@ const requirePermission = (permission) => {
             if (!clinic_id) {
                 return res.status(400).json({ error: 'clinic_id não fornecido' });
             }
-            const hasPermission = await (0, exports.checkPermission)(user_id, clinic_id, permission);
-            if (!hasPermission) {
+            const perms = Array.isArray(permission) ? permission : [permission];
+            let ok = false;
+            for (const p of perms) {
+                if (await (0, exports.checkPermission)(user_id, clinic_id, p)) {
+                    ok = true;
+                    break;
+                }
+            }
+            if (!ok) {
                 return res.status(403).json({ error: 'Permissão negada' });
             }
             next();

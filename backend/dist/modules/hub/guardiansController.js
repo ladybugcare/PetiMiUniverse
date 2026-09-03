@@ -83,7 +83,7 @@ async function fetchPetsByGuardianIds(clinicId, guardianIds) {
         return map;
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_pet_guardians')
-        .select('guardian_id, role, hub_pets(id, name, species, size_tier, coat_type, birth_date, clinic_id, deleted_at)')
+        .select('guardian_id, role, hub_pets(id, name, species, breed, sex, size_tier, coat_type, coat_color, birth_date, clinic_id, deleted_at)')
         .in('guardian_id', guardianIds);
     if (error || !data) {
         console.error('[hub_guardians] fetchPetsByGuardianIds', error);
@@ -101,9 +101,12 @@ async function fetchPetsByGuardianIds(clinicId, guardianIds) {
             id: pet.id,
             name: pet.name,
             species: pet.species,
+            breed: pet.breed?.trim() || null,
+            sex: pet.sex ?? null,
             role: row.role,
             size_tier: pet.size_tier || 'medio',
             coat_type: pet.coat_type ?? null,
+            coat_color: pet.coat_color?.trim() || null,
             birth_date: pet.birth_date ?? null,
         });
         map.set(row.guardian_id, list);
@@ -237,12 +240,49 @@ const listHubGuardians = async (req, res) => {
         const kind = zod_1.z.enum(['individual', 'company', 'all']).optional().safeParse(req.query.kind);
         const status = zod_1.z.enum(['active', 'inactive', 'all']).optional().safeParse(req.query.status);
         const qRaw = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+        const careLocationKind = zod_1.z
+            .enum(['own_unit', 'partner_clinic'])
+            .optional()
+            .safeParse(req.query.care_location_kind);
+        const partnerClinicId = uuidStr.safeParse(req.query.hub_partner_clinic_id);
+        let guardianIdsFilter = null;
+        if ((careLocationKind.success && careLocationKind.data) ||
+            partnerClinicId.success) {
+            let encQ = supabase_1.supabaseAdmin
+                .from('hub_encounters')
+                .select('guardian_id')
+                .eq('clinic_id', clinic_id)
+                .is('deleted_at', null)
+                .not('guardian_id', 'is', null);
+            if (careLocationKind.success && careLocationKind.data) {
+                encQ = encQ.eq('care_location_kind', careLocationKind.data);
+            }
+            if (partnerClinicId.success) {
+                encQ = encQ.eq('hub_partner_clinic_id', partnerClinicId.data);
+            }
+            const { data: encRows, error: encErr } = await encQ;
+            if (encErr) {
+                console.error('[hub_guardians] list care_location filter', encErr);
+                return res.status(500).json({ error: 'Erro ao filtrar tutores por local' });
+            }
+            guardianIdsFilter = [
+                ...new Set((encRows ?? [])
+                    .map((r) => r.guardian_id)
+                    .filter(Boolean)),
+            ];
+            if (guardianIdsFilter.length === 0) {
+                return res.json({ guardians: [] });
+            }
+        }
         let query = supabase_1.supabaseAdmin
             .from('hub_guardians')
             .select(GUARDIAN_SELECT)
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
             .order('full_name', { ascending: true });
+        if (guardianIdsFilter) {
+            query = query.in('id', guardianIdsFilter);
+        }
         if (kind.success && kind.data && kind.data !== 'all') {
             query = query.eq('client_kind', kind.data);
         }

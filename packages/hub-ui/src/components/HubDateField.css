@@ -219,6 +219,74 @@
   color: var(--hub-date-text);
 }
 
+.hub-date-picker__caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hub-date-picker__caption-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hub-date-text);
+  cursor: pointer;
+}
+
+.hub-date-picker__caption-btn:hover {
+  background: #f5f0eb;
+}
+
+.hub-date-picker__nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.hub-date-picker__choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  min-height: 196px;
+}
+
+.hub-date-picker__choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hub-date-text);
+  cursor: pointer;
+}
+
+.hub-date-picker__choice:hover {
+  background: rgba(200, 106, 77, 0.12);
+}
+
+.hub-date-picker__choice--selected {
+  background: var(--hub-date-border-focus);
+  color: #fff;
+}
+
+.hub-date-picker__choice--selected:hover {
+  background: #a85a40;
+}
+
 .hub-date-picker__nav {
   display: flex;
   flex-direction: column;
@@ -239,7 +307,7 @@
   padding: 0;
 }
 
-.hub-date-picker__nav-btn:hover {
+.hub-date-picker__nav-btn:hover:not(:disabled) {
   background: #f5f0eb;
   color: var(--hub-date-text);
 }

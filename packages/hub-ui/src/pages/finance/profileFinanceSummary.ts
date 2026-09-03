@@ -5,6 +5,7 @@ import {
   isReceivablePayable,
   type ComandaListPreview,
 } from './comandaListPreview';
+import { openComandaOutstanding } from './batchChargeItems';
 import { resolveDueDateTone, type DueDateTone } from './dueDateTone';
 
 export type ProfileFinanceNextDue = {
@@ -58,10 +59,12 @@ export function buildProfileFinanceSummary(
   const openComandas = comandas.filter((c) => String(c.status ?? '') === 'aberta');
   const openWithoutReceivable = openComandas.filter((c) => {
     const id = String(c.id);
-    return !receivables.some((rv) => rv.comanda_id === id && isReceivablePayable(rv.status));
+    if (receivables.some((rv) => rv.comanda_id === id && isReceivablePayable(rv.status))) return false;
+    // Já quitada mas ainda aberta operacionalmente: não conta no “o que deve”.
+    return openComandaOutstanding(c) > 0.009;
   });
   const openComandasTotal = openWithoutReceivable.reduce(
-    (sum, c) => sum + Math.max(0, Number(c.total_amount ?? 0)),
+    (sum, c) => sum + openComandaOutstanding(c),
     0,
   );
 

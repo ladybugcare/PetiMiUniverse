@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef,
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import type { HubComboboxOption } from './HubSearchableCombobox';
+import { computeComboboxFloating, type ComboboxFloatingRect } from './hubComboboxFloating';
 import './HubSearchableCombobox.css';
 
 export type HubMultiSelectComboboxProps = {
@@ -27,8 +28,6 @@ function norm(s: string): string {
   return s.trim().toLowerCase();
 }
 
-type FloatingRect = { top: number; left: number; width: number; maxHeight: number };
-
 export const HubMultiSelectCombobox: React.FC<HubMultiSelectComboboxProps> = ({
   id,
   className = '',
@@ -52,7 +51,7 @@ export const HubMultiSelectCombobox: React.FC<HubMultiSelectComboboxProps> = ({
   const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [floating, setFloating] = useState<FloatingRect | null>(null);
+  const [floating, setFloating] = useState<ComboboxFloatingRect | null>(null);
 
   const selectedSet = useMemo(() => new Set(value), [value]);
 
@@ -81,20 +80,7 @@ export const HubMultiSelectCombobox: React.FC<HubMultiSelectComboboxProps> = ({
   const updateFloating = useCallback(() => {
     const root = rootRef.current;
     if (!root) return;
-    const rect = root.getBoundingClientRect();
-    const margin = 8;
-    const vh = window.innerHeight;
-    const vw = window.innerWidth;
-    const width = Math.max(rect.width, 200);
-    let left = rect.left;
-    if (left + width > vw - margin) {
-      left = Math.max(margin, vw - margin - width);
-    }
-    if (left < margin) left = margin;
-    const gap = 4;
-    const top = rect.bottom + gap;
-    const maxHeight = Math.min(360, Math.max(140, vh - top - margin));
-    setFloating({ top, left, width, maxHeight });
+    setFloating(computeComboboxFloating(root.getBoundingClientRect()));
   }, []);
 
   useLayoutEffect(() => {
@@ -106,9 +92,14 @@ export const HubMultiSelectCombobox: React.FC<HubMultiSelectComboboxProps> = ({
     const onWin = () => updateFloating();
     window.addEventListener('resize', onWin);
     window.addEventListener('scroll', onWin, true);
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', onWin);
+    vv?.addEventListener('scroll', onWin);
     return () => {
       window.removeEventListener('resize', onWin);
       window.removeEventListener('scroll', onWin, true);
+      vv?.removeEventListener('resize', onWin);
+      vv?.removeEventListener('scroll', onWin);
     };
   }, [open, updateFloating]);
 
@@ -166,6 +157,7 @@ export const HubMultiSelectCombobox: React.FC<HubMultiSelectComboboxProps> = ({
       style={{
         position: 'fixed',
         top: floating.top,
+        bottom: floating.bottom,
         left: floating.left,
         width: floating.width,
         maxHeight: floating.maxHeight,

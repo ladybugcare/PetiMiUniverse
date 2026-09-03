@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.advanceHubGroomingSession = exports.listHubGroomingSessionEvents = exports.postHubGroomingSessionEvent = exports.patchHubGroomingSession = exports.createHubGroomingSession = exports.openHubGroomingSessionFromAppointment = exports.getHubGroomingDayBoard = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
-const notificationsController_1 = require("../../controllers/notificationsController");
+const hubNotifyEvents_1 = require("./hubNotifyEvents");
 const groomingStages_1 = require("./groomingStages");
 const groomingPetTags_1 = require("./groomingPetTags");
 const hubComandasController_1 = require("./hubComandasController");
@@ -376,7 +376,7 @@ const getHubGroomingDayBoard = async (req, res) => {
             if (!pid)
                 return [];
             const petRow = petMap.get(pid);
-            return (0, groomingPetTags_1.buildGroomingDisplayTags)(flagsByPet.get(pid) ?? [], petRow?.notes ?? null);
+            return (0, groomingPetTags_1.buildGroomingDisplayTags)(flagsByPet.get(pid) ?? [], petRow?.notes ?? null, petRow?.behavior_tags ?? null);
         };
         const nowMs = Date.now();
         const items = [];
@@ -673,55 +673,6 @@ const patchSessionSchema = zod_1.z
 })
     .strict();
 /** PATCH /grooming/sessions/:id */
-async function notifyUnitStaffPetReady(opts) {
-    try {
-        let staffQuery = supabase_1.supabaseAdmin
-            .from('hub_staff_members')
-            .select('clinic_user_id')
-            .eq('clinic_id', opts.clinicId)
-            .eq('has_hub_access', true)
-            .not('clinic_user_id', 'is', null)
-            .is('deleted_at', null);
-        if (opts.unitId) {
-            staffQuery = staffQuery.eq('default_unit_id', opts.unitId);
-        }
-        const { data: staff } = await staffQuery;
-        if (!staff?.length)
-            return;
-        const clinicUserIds = staff.map((s) => s.clinic_user_id).filter(Boolean);
-        if (!clinicUserIds.length)
-            return;
-        const { data: clinicUsers } = await supabase_1.supabaseAdmin
-            .from('clinic_users')
-            .select('user_id')
-            .in('id', clinicUserIds);
-        if (!clinicUsers?.length)
-            return;
-        let petName = 'Pet';
-        if (opts.petId) {
-            const { data: petRow } = await supabase_1.supabaseAdmin
-                .from('hub_pets')
-                .select('name')
-                .eq('id', opts.petId)
-                .maybeSingle();
-            if (petRow?.name)
-                petName = String(petRow.name);
-        }
-        const pet = petName;
-        await Promise.all(clinicUsers.map((cu) => (0, notificationsController_1.createNotification)({
-            user_id: cu.user_id,
-            type: 'hub_pet_ready',
-            title: 'Pet pronto para retirada',
-            message: `${pet} já está pronto(a) para retirada.`,
-            link: `/hub/banho-tosa`,
-            entity_type: 'grooming_session',
-            entity_id: opts.sessionId,
-        })));
-    }
-    catch (e) {
-        console.error('notifyUnitStaffPetReady', e);
-    }
-}
 const patchHubGroomingSession = async (req, res) => {
     try {
         const id = uuidStr.safeParse(req.params.id);
@@ -825,11 +776,13 @@ const patchHubGroomingSession = async (req, res) => {
                 void (0, hubComandasController_1.syncOpenComandasAfterGroomingClosed)(b.clinic_id, id.data);
             }
             if (b.grooming_stage === 'ready') {
-                void notifyUnitStaffPetReady({
+                // Recepção e caixa atendem o tutor; quem concluiu o banho não precisa do aviso.
+                void (0, hubNotifyEvents_1.notifyHubPetReady)({
                     clinicId: b.clinic_id,
                     unitId: current.unit_id,
                     petId: current.pet_id,
                     sessionId: id.data,
+                    excludeUserIds: req.user?.id ? [req.user.id] : undefined,
                 });
             }
         }

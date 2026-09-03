@@ -119,6 +119,54 @@ export type HubFinanceReceivableDetail = HubFinanceReceivable & {
   balance_amount?: number;
 };
 
+export type HubChargeBundleStatus = 'open' | 'partially_paid' | 'paid' | 'cancelled';
+
+export type HubChargeBundleItem = {
+  receivable_id: string;
+  sort_order: number;
+  title: string;
+  balance_amount: number;
+  final_amount: number;
+  due_date: string | null;
+  status: string;
+  pet_names: string[];
+  pet_ids?: string[];
+};
+
+export type HubChargeBundle = {
+  id: string;
+  clinic_id: string;
+  guardian_id: string;
+  unit_id: string | null;
+  due_date: string | null;
+  public_token: string;
+  notes: string | null;
+  status: HubChargeBundleStatus;
+  total_amount: number;
+  balance_due?: number;
+  paid_amount?: number;
+  created_at: string;
+  sent_at?: string | null;
+  cancelled_at?: string | null;
+  guardian?: { id: string; full_name: string; phone?: string | null; email?: string | null } | null;
+  unit?: { id: string; name?: string | null; nickname?: string | null } | null;
+  items?: HubChargeBundleItem[];
+};
+
+export type HubPublicChargeBundleResponse = {
+  bundle: {
+    id: string;
+    due_date: string | null;
+    total_amount: number;
+    balance_due: number;
+    paid_amount?: number;
+    notes?: string | null;
+    clinic?: { name: string | null; photo_url?: string | null } | null;
+    guardian?: { full_name?: string; phone?: string | null; email?: string | null } | null;
+    items: HubChargeBundleItem[];
+  };
+};
+
 export type HubFinanceDashboardSummary = {
   period: { from: string; to: string };
   pending_billing_count: number;
@@ -1139,6 +1187,56 @@ export const hubFinancialApi = {
   }): Promise<{ package: Record<string, unknown> }> {
     return apiRequest(`${base}/packages`, { method: 'POST', body: JSON.stringify(body) }) as Promise<{ package: Record<string, unknown> }>;
   },
+
+  async createChargeBundle(body: {
+    clinic_id: string;
+    guardian_id: string;
+    unit_id?: string | null;
+    receivable_ids: string[];
+    due_date?: string | null;
+    notes?: string | null;
+  }): Promise<{ bundle: HubChargeBundle }> {
+    return apiRequest(`${base}/charge-bundles`, { method: 'POST', body: JSON.stringify(body) }) as Promise<{
+      bundle: HubChargeBundle;
+    }>;
+  },
+
+  async listChargeBundles(
+    clinicId: string,
+    opts?: { guardian_id?: string; status?: HubChargeBundleStatus; limit?: number },
+  ): Promise<{ bundles: HubChargeBundle[] }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.guardian_id) q.set('guardian_id', opts.guardian_id);
+    if (opts?.status) q.set('status', opts.status);
+    if (opts?.limit) q.set('limit', String(opts.limit));
+    return apiRequest(`${base}/charge-bundles?${q}`) as Promise<{ bundles: HubChargeBundle[] }>;
+  },
+
+  async getChargeBundle(bundleId: string, clinicId: string): Promise<{ bundle: HubChargeBundle }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${base}/charge-bundles/${encodeURIComponent(bundleId)}?${q}`) as Promise<{
+      bundle: HubChargeBundle;
+    }>;
+  },
+
+  async markChargeBundleSent(bundleId: string, clinicId: string): Promise<{ bundle: { id: string; sent_at: string } }> {
+    return apiRequest(`${base}/charge-bundles/${encodeURIComponent(bundleId)}/mark-sent`, {
+      method: 'PATCH',
+      body: JSON.stringify({ clinic_id: clinicId }),
+    }) as Promise<{ bundle: { id: string; sent_at: string } }>;
+  },
+
+  chargeBundlePublicLink(token: string): string {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${origin}/cobranca/${token}`;
+  },
+
+  async fetchPublicChargeBundle(token: string): Promise<HubPublicChargeBundleResponse> {
+    const res = await fetch(`${getApiBaseUrl()}/api/public/charge-bundles/${encodeURIComponent(token)}`);
+    const data = (await res.json().catch(() => ({}))) as HubPublicChargeBundleResponse & { error?: string };
+    if (!res.ok) throw new Error(data.error || 'Não foi possível carregar a cobrança');
+    return data;
+  },
 };
 
 async function fetchHubPaymentReceiptPdfBlob(paymentId: string, clinicId: string): Promise<Blob> {
@@ -1157,5 +1255,29 @@ export async function openHubPaymentReceiptPdf(paymentId: string, clinicId: stri
   const blob = await fetchHubPaymentReceiptPdfBlob(paymentId, clinicId);
   const objectUrl = URL.createObjectURL(blob);
   window.open(objectUrl, '_blank', 'noopener,noreferrer');
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+}
+
+async function fetchHubChargeBundlePdfBlob(bundleId: string, clinicId: string): Promise<Blob> {
+  const token = (await getSupabase().auth.getSession()).data.session?.access_token;
+  if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+  const url = `${getApiBaseUrl()}${base}/charge-bundles/${encodeURIComponent(bundleId)}/pdf?${new URLSearchParams({ clinic_id: clinicId })}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string })?.error || 'Falha ao gerar PDF');
+  }
+  return res.blob();
+}
+
+export async function downloadHubChargeBundlePdf(bundleId: string, clinicId: string): Promise<void> {
+  const blob = await fetchHubChargeBundlePdfBlob(bundleId, clinicId);
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = `cobranca-lote-${bundleId.slice(0, 8)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
 }

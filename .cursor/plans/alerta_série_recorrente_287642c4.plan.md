@@ -4,19 +4,19 @@ overview: Alertar na Agenda quando uma série de agendamentos recorrentes estive
 todos:
   - id: api-ending-soon
     content: GET /appointments/series-ending-soon + helper de agregação + rota + teste
-    status: pending
+    status: completed
   - id: api-client
     content: Tipos e listSeriesEndingSoon em hubAgendaApi.ts
-    status: pending
+    status: completed
   - id: agenda-banner
     content: Fetch + banner + CTA Renovar em HubAgendaPage
-    status: pending
+    status: completed
   - id: side-panel-alert
     content: Alerta + CTA no AppointmentSidePanel quando series_id está ending-soon
-    status: pending
+    status: completed
   - id: renew-prefill
     content: Helper de prefill (mapAgenda + suggest_recurrence) compartilhado entre banner e painel
-    status: pending
+    status: completed
 isProject: false
 ---
 

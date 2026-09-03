@@ -1,4 +1,4 @@
-import type { HubFinanceDayBoardItem, HubFinanceReceivable } from '../../api/hubFinancialApi';
+import type { HubFinanceDayBoardItem, HubFinanceReceivable, HubChargeBundleItem } from '../../api/hubFinancialApi';
 import {
   formatComandaListPets,
   formatComandaListTitle,
@@ -28,6 +28,16 @@ function receivableOutstanding(rv: HubFinanceReceivable): number {
   const balance = (rv as HubFinanceReceivable & { balance_amount?: number }).balance_amount;
   if (typeof balance === 'number' && Number.isFinite(balance)) return Math.max(0, balance);
   return Math.max(0, Number(rv.final_amount ?? 0));
+}
+
+/** Saldo cobrável de comanda aberta: preferir balance_due (enrich); senão total. */
+export function openComandaOutstanding(comanda: Record<string, unknown>): number {
+  const balance = comanda.balance_due;
+  if (typeof balance === 'number' && Number.isFinite(balance)) return Math.max(0, balance);
+  if (typeof balance === 'string' && balance.trim() !== '' && Number.isFinite(Number(balance))) {
+    return Math.max(0, Number(balance));
+  }
+  return Math.max(0, Number(comanda.total_amount ?? 0));
 }
 
 function toneRank(tone: DueDateTone): number {
@@ -95,7 +105,10 @@ export function buildBatchChargeItems(
     if (String(c.status ?? '') !== 'aberta') continue;
     const id = String(c.id ?? '');
     if (!id || payableComandaIds.has(id)) continue;
-    const amount = Math.max(0, Number(c.total_amount ?? 0));
+    // Comanda já liquidada (recebível pago) pode permanecer aberta até a operação
+    // concluir — não pode voltar ao lote pelo total cheio.
+    const amount = openComandaOutstanding(c);
+    if (amount <= 0.009) continue;
     const preview = c as ComandaListPreview;
     out.push({
       kind: 'comanda',
@@ -162,4 +175,23 @@ export function dayBoardItemToBatchChargeItem(item: HubFinanceDayBoardItem): Bat
     petLabel: item.pet?.name ?? 'Tutor',
     guardianId: item.guardian_id ?? item.guardian?.id ?? null,
   };
+}
+
+/** Converte itens ainda pagáveis de um lote enviado em linhas do drawer de cobrança. */
+export function batchChargeItemsFromBundleItems(items: HubChargeBundleItem[]): BatchChargeItem[] {
+  return items
+    .filter((it) => it.balance_amount > 0.009 && ['pending', 'partially_paid'].includes(it.status))
+    .map((it) => ({
+      kind: 'receivable' as const,
+      id: it.receivable_id,
+      comandaId: null,
+      receivableId: it.receivable_id,
+      title: it.title,
+      amount: it.balance_amount,
+      dueDate: it.due_date,
+      tone: resolveDueDateTone(it.due_date, { status: it.status }).tone,
+      petLabel: it.pet_names.length ? it.pet_names.join(', ') : 'Tutor',
+      guardianId: null,
+    }))
+    .sort(sortBatchItems);
 }

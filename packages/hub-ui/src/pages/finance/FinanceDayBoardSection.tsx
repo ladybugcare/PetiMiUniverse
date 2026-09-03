@@ -433,6 +433,7 @@ export function FinanceDayBoardSection({
           setSelectedKeys(new Set());
           void loadDayBoard();
         }}
+        onBundleCreated={(id) => navigate(`/hub/financeiro/cobranca-lote/${id}/pronto-para-envio`)}
       />
     </>
   );

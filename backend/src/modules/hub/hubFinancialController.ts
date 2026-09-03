@@ -27,6 +27,7 @@ import {
 } from './hubFinancialDayBoard';
 import { financeSourceTypeSchema, receivableSourceTypeSchema } from './hubFinanceSchemas';
 import { notifyHubPaymentDue } from './hubNotifyEvents';
+import { syncChargeBundleStatusForReceivable } from './hubChargeBundlesService';
 import { applyPackageCoverageToEstimate, hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
 import { findSeriesInvoiceCoverageForAppointments } from './hubSeriesBillingService';
 
@@ -1166,6 +1167,8 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
         reason: 'partial',
       });
     }
+
+    void syncChargeBundleStatusForReceivable(receivableId, clinic_id);
 
     const { data: paymentRow } = await supabaseAdmin.from('hub_payments').select('*').eq('id', pay.id).single();
     return res.status(201).json({ payment: paymentRow, receivable_status: nextStatus });

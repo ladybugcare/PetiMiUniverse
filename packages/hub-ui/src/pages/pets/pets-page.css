@@ -529,6 +529,660 @@
   gap: 8px;
 }
 
+/* Ficha visual de saúde e comportamento no perfil do pet */
+.hub-pet-care {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hub-pet-care__overview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #cce8d9;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f2fbf6 0%, #fbfefd 100%);
+}
+
+.hub-pet-care__overview--attention {
+  border-color: #f2cec4;
+  background: linear-gradient(135deg, #fff5f2 0%, #fffaf8 100%);
+}
+
+.hub-pet-care__overview-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #258252;
+  background: #dff3e8;
+}
+
+.hub-pet-care__overview--attention .hub-pet-care__overview-icon {
+  color: #b94a38;
+  background: #fbe1da;
+}
+
+.hub-pet-care__overview-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hub-pet-care__overview-copy strong {
+  color: #3d2f2c;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.hub-pet-care__overview-copy span {
+  color: #7a6a66;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hub-pet-care__overview-stats {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.hub-pet-care__overview-stats span {
+  padding: 6px 9px;
+  border: 1px solid rgba(74, 59, 58, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.75);
+  color: #7a6a66;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.hub-pet-care__overview-stats strong {
+  color: #3d2f2c;
+  font-size: 13px;
+}
+
+.hub-pet-care__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hub-pet-care__card {
+  position: relative;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.hub-pet-care__card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: #e56b55;
+}
+
+.hub-pet-care__card--behavior::before {
+  background: #e8a23c;
+}
+
+.hub-pet-care__card-head {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.hub-pet-care__card-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #b94a38;
+  background: #fff0ec;
+}
+
+.hub-pet-care__card--behavior .hub-pet-care__card-icon {
+  color: #a7620b;
+  background: #fff5df;
+}
+
+.hub-pet-care__card-head h3,
+.hub-pet-care__history-head h3 {
+  margin: 0;
+  color: #3d2f2c;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.hub-pet-care__card-head p,
+.hub-pet-care__history-head p {
+  margin: 2px 0 0;
+  color: #8a7772;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hub-pet-care__count {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  color: #8a5b50;
+  background: #f7efeb;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hub-pet-care__card .hub-clinic-alert-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #f2c7bd;
+  border-radius: 999px;
+}
+
+.hub-pet-care__empty {
+  min-height: 38px;
+  padding: 9px 10px;
+  border: 1px dashed #ded4cf;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  color: #7a6a66;
+  background: #fcfaf9;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hub-pet-care__empty svg {
+  flex-shrink: 0;
+  color: #7c9d87;
+}
+
+.hub-pet-care__card--behavior .hub-pet-care__empty svg {
+  color: #c18a36;
+}
+
+.hub-pet-care__history {
+  padding: 15px 16px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 12px;
+  background: #fcfaf9;
+}
+
+.hub-pet-care__history-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.hub-pet-care__history-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--hc-brand, #c86a4d);
+  background: rgba(200, 106, 77, 0.11);
+}
+
+.hub-pet-care__history .hub-pet-profile-history {
+  position: relative;
+  padding: 0 0 0 20px;
+  list-style: none;
+}
+
+.hub-pet-care__history .hub-pet-profile-history::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 5px;
+  width: 1px;
+  background: #ddcec8;
+}
+
+.hub-pet-care__history .hub-pet-profile-history li {
+  position: relative;
+}
+
+.hub-pet-care__history .hub-pet-profile-history li::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: -19px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid #fcfaf9;
+  border-radius: 50%;
+  background: var(--hc-brand, #c86a4d);
+  box-shadow: 0 0 0 1px rgba(200, 106, 77, 0.25);
+}
+
+.hub-pet-care__history > .hub-clientes__muted {
+  padding: 10px 12px;
+  border: 1px dashed #ded4cf;
+  border-radius: 9px;
+  background: #fff;
+  font-size: 12px;
+}
+
+.hub-pet-care__panel-head {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.hub-pet-care__panel-sub {
+  margin: 4px 0 0;
+  color: var(--hc-text-muted, #8e6e67);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hub-pet-care--compact .hub-pet-care__overview {
+  align-items: flex-start;
+}
+
+.hub-pet-care--compact .hub-pet-care__overview-stats {
+  display: none;
+}
+
+.hub-pet-care--compact .hub-pet-care__grid {
+  grid-template-columns: 1fr;
+}
+
+/* Estatística do atendimento predominante */
+.hub-pet-frequency {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #eadbd3;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fffaf7 0%, #fff 65%);
+}
+
+.hub-pet-frequency__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--hc-brand, #c86a4d);
+  background: rgba(200, 106, 77, 0.12);
+}
+
+.hub-pet-frequency__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-pet-frequency__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hub-pet-frequency__eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  color: #9a6b5d;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hub-pet-frequency__top h3 {
+  margin: 0;
+  color: #3d2f2c;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.hub-pet-frequency__number {
+  color: var(--hc-brand, #c86a4d);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.hub-pet-frequency__bar {
+  height: 7px;
+  margin-top: 14px;
+  border-radius: 999px;
+  background: #f0e6e1;
+  overflow: hidden;
+}
+
+.hub-pet-frequency__bar span {
+  display: block;
+  height: 100%;
+  min-width: 7px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--hc-brand, #c86a4d), #e69a72);
+}
+
+.hub-pet-frequency__summary {
+  margin: 7px 0 0;
+  color: #7a6a66;
+  font-size: 12px;
+}
+
+.hub-pet-frequency__latest {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 16px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #eee3dd;
+  color: #7a6a66;
+  font-size: 12px;
+}
+
+.hub-pet-frequency__latest .hub-clientes__link {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.hub-pet-frequency--compact {
+  gap: 12px;
+  padding: 14px;
+}
+
+.hub-pet-frequency--compact .hub-pet-frequency__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+}
+
+.hub-pet-frequency--compact .hub-pet-frequency__top h3 {
+  font-size: 16px;
+}
+
+.hub-pet-frequency--compact .hub-pet-frequency__number {
+  font-size: 24px;
+}
+
+.hub-pet-frequency__empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px dashed #dfd4cf;
+  border-radius: 11px;
+  color: #6f5e59;
+  background: #fcfaf9;
+}
+
+.hub-pet-frequency__empty-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #9a7568;
+  background: #f2eae6;
+}
+
+.hub-pet-frequency__empty strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #4a3b3a;
+  font-size: 13px;
+}
+
+.hub-pet-frequency__empty p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Próximos compromissos no perfil do pet */
+.hub-pet-appointments {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hub-pet-appointments__item {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 12px;
+  color: inherit;
+  background: #fff;
+  text-decoration: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.hub-pet-appointments__item:hover {
+  border-color: rgba(200, 106, 77, 0.48);
+  box-shadow: 0 5px 16px rgba(74, 59, 58, 0.08);
+  transform: translateY(-1px);
+}
+
+.hub-pet-appointments__date {
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--hc-brand, #c86a4d);
+  background: #fff2ec;
+  text-align: center;
+}
+
+.hub-pet-appointments__date strong {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.hub-pet-appointments__date span {
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hub-pet-appointments__body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hub-pet-appointments__title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.hub-pet-appointments__title-row > strong {
+  overflow: hidden;
+  color: #3d2f2c;
+  font-size: 14px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-pet-appointments__next {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--hc-brand, #c86a4d);
+  background: rgba(200, 106, 77, 0.11);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hub-pet-appointments__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: #7a6a66;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-pet-appointments__meta svg {
+  flex-shrink: 0;
+  color: #a58a80;
+}
+
+.hub-pet-appointments__status {
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #70615c;
+  background: #f2eeec;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hub-pet-appointments__status--confirmed,
+.hub-pet-appointments__status--paid {
+  color: #24764c;
+  background: #e3f5eb;
+}
+
+.hub-pet-appointments__status--pending_confirm {
+  color: #9a610b;
+  background: #fff2d8;
+}
+
+.hub-pet-appointments__status--checked_in,
+.hub-pet-appointments__status--in_progress {
+  color: #375e9a;
+  background: #e8f0fc;
+}
+
+.hub-pet-appointments__chevron {
+  color: #b9aaa4;
+  transition: transform 0.15s ease;
+}
+
+.hub-pet-appointments__item:hover .hub-pet-appointments__chevron {
+  color: var(--hc-brand, #c86a4d);
+  transform: translateX(2px);
+}
+
+.hub-pet-appointments__more {
+  margin: 0;
+  padding: 3px 4px 0;
+  color: #8a7772;
+  font-size: 11px;
+  text-align: right;
+}
+
+.hub-pet-appointments__empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  border: 1px dashed #ddd1cb;
+  border-radius: 11px;
+  color: #8d7167;
+  background: #fcfaf9;
+}
+
+.hub-pet-appointments__empty > svg {
+  flex-shrink: 0;
+  color: var(--hc-brand, #c86a4d);
+}
+
+.hub-pet-appointments__empty--error > svg {
+  color: #b94a38;
+}
+
+.hub-pet-appointments__empty strong {
+  display: block;
+  color: #4a3b3a;
+  font-size: 13px;
+}
+
+.hub-pet-appointments__empty p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hub-pet-appointments__empty .hub-clientes__link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.hub-pet-appointments--compact .hub-pet-appointments__item {
+  grid-template-columns: 46px minmax(0, 1fr) 16px;
+  gap: 10px;
+  padding: 10px;
+}
+
+.hub-pet-appointments--compact .hub-pet-appointments__date {
+  width: 46px;
+  height: 48px;
+  border-radius: 10px;
+}
+
+.hub-pet-appointments--compact .hub-pet-appointments__date strong {
+  font-size: 18px;
+}
+
+.hub-pet-appointments--compact .hub-pet-appointments__status {
+  grid-column: 2;
+  width: fit-content;
+}
+
+.hub-pet-appointments--compact .hub-pet-appointments__chevron {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+}
+
 .hub-pets-detail__empty-inline {
   padding: 14px 16px;
   text-align: left;
@@ -937,5 +1591,64 @@ a.hub-pets-detail__history-row-title:hover {
 
   .hub-pets-detail__info-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hub-pet-care__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-pet-care__overview {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .hub-pet-care__overview-stats {
+    width: 100%;
+    padding-left: 50px;
+  }
+}
+
+@media (max-width: 520px) {
+  .hub-pet-care__overview-stats {
+    padding-left: 0;
+  }
+
+  .hub-pet-care__overview-stats span {
+    flex: 1;
+    text-align: center;
+  }
+
+  .hub-pet-frequency {
+    padding: 14px;
+  }
+
+  .hub-pet-frequency__icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .hub-pet-frequency__latest {
+    flex-direction: column;
+  }
+
+  .hub-pet-appointments__item {
+    grid-template-columns: 46px minmax(0, 1fr) 16px;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .hub-pet-appointments__date {
+    width: 46px;
+    height: 48px;
+  }
+
+  .hub-pet-appointments__status {
+    grid-column: 2;
+    width: fit-content;
+  }
+
+  .hub-pet-appointments__chevron {
+    grid-column: 3;
+    grid-row: 1 / span 2;
   }
 }

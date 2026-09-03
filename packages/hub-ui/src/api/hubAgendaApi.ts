@@ -123,6 +123,22 @@ export type ListHubAppointmentsParams = {
   resource_label?: string;
 };
 
+export type HubSeriesEndingSoon = {
+  series_id: string;
+  remaining_count: number;
+  last_starts_at: string;
+  kind: 'daily' | 'weekly' | 'monthly' | string;
+  interval_value: number;
+  days_of_week: number[] | null;
+  day_of_month: number | null;
+  until_date: string | null;
+  occurrences: number | null;
+  sample_appointment_id: string;
+  pet_id: string | null;
+  guardian_id: string | null;
+  title: string | null;
+};
+
 export type HubAppointmentRecurrenceRule = {
   kind: 'daily' | 'weekly' | 'monthly';
   interval_value?: number;
@@ -295,6 +311,19 @@ function calendarBlocksUrl(clinicId: string, from: string, to: string): string {
 }
 
 export const hubAgendaApi = {
+  async listSeriesEndingSoon(p: {
+    clinic_id: string;
+    max_remaining?: number;
+    within_days?: number;
+  }): Promise<{ series: HubSeriesEndingSoon[] }> {
+    const q = new URLSearchParams({ clinic_id: p.clinic_id });
+    if (p.max_remaining != null) q.set('max_remaining', String(p.max_remaining));
+    if (p.within_days != null) q.set('within_days', String(p.within_days));
+    return apiRequest(`${basePath}/series-ending-soon?${q.toString()}`) as Promise<{
+      series: HubSeriesEndingSoon[];
+    }>;
+  },
+
   async list(p: ListHubAppointmentsParams): Promise<{ appointments: HubAppointment[]; range: { from: string; to: string } }> {
     return apiRequest(listAppointmentsUrl(p)) as Promise<{
       appointments: HubAppointment[];

@@ -6,7 +6,7 @@ exports.resolvePrimaryPetIdsByGuardians = resolvePrimaryPetIdsByGuardians;
 exports.coalesceAppointmentPetId = coalesceAppointmentPetId;
 const supabase_1 = require("../../config/supabase");
 /** Colunas estáveis para painéis operacionais (sem avatar_url — migration opcional). */
-exports.HUB_DAY_BOARD_PET_SELECT = 'id, name, species, breed, size_tier, birth_date, coat_type, notes';
+exports.HUB_DAY_BOARD_PET_SELECT = 'id, name, species, breed, size_tier, birth_date, coat_type, notes, behavior_tags';
 async function fetchHubPetsMapByIds(petIds) {
     const uniq = [...new Set([...petIds].filter((id) => Boolean(id)))];
     if (uniq.length === 0)

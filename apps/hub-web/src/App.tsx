@@ -32,6 +32,7 @@ import {
   HubComandaPage,
   HubComandaFinancePage,
   HubComandaReadyToSendPage,
+  HubChargeBundleReadyToSendPage,
   HubFinanceiroPage,
   HubDashboardPage,
   HubRelatoriosPage,
@@ -53,6 +54,7 @@ import HubClinicaPerfilPage from './pages/HubClinicaPerfilPage';
 import HubDesignSystemPage from './pages/HubDesignSystemPage';
 import PublicQuotePage from './pages/PublicQuotePage';
 import PublicComandaPage from './pages/PublicComandaPage';
+import PublicChargeBundlePage from './pages/PublicChargeBundlePage';
 import PublicPrescriptionPage from './pages/PublicPrescriptionPage';
 import ValidatePrescriptionPage from './pages/ValidatePrescriptionPage';
 import PublicExamOrderPage from './pages/PublicExamOrderPage';
@@ -96,6 +98,7 @@ const router = createBrowserRouter(
       <Route path="/email-confirmed" element={<HubEmailConfirmedPage />} />
       <Route path="/orcamento/:token" element={<PublicQuotePage />} />
       <Route path="/comanda/:token" element={<PublicComandaPage />} />
+      <Route path="/cobranca/:token" element={<PublicChargeBundlePage />} />
       <Route path="/receita/:token" element={<PublicPrescriptionPage />} />
       <Route path="/validar-receita" element={<ValidatePrescriptionPage />} />
       <Route path="/solicitacao-exame/:token" element={<PublicExamOrderPage />} />
@@ -134,6 +137,7 @@ const router = createBrowserRouter(
         <Route path="financeiro" element={<HubFinanceiroPage />} />
         <Route path="financeiro/comanda/:id" element={<HubComandaFinancePage />} />
         <Route path="financeiro/comanda/:id/pronto-para-envio" element={<HubComandaReadyToSendPage />} />
+        <Route path="financeiro/cobranca-lote/:bundleId/pronto-para-envio" element={<HubChargeBundleReadyToSendPage />} />
         <Route path="caixa" element={<HubCaixaPage />} />
         <Route path="caixa/comanda/:id" element={<HubComandaPage />} />
         <Route path="caixa/comanda/:id/pronto-para-envio" element={<HubComandaReadyToSendPage />} />

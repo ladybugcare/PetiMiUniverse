@@ -24,6 +24,10 @@ import {
   Bird,
   Cat,
   Dog,
+  AlertTriangle,
+  CheckCircle2,
+  HeartPulse,
+  History,
 } from 'lucide-react';
 import { usePermissions } from '@petimi/web-core';
 import type { HubPet, HubPetProfileChange } from '../../api/hubPetsApi';
@@ -57,6 +61,11 @@ import {
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { hubFinancialApi, type HubFinanceReceivable } from '../../api/hubFinancialApi';
 import { hubPackagesApi, type HubPackageBalance } from '../../api/hubPackagesApi';
+import {
+  hubAgendaApi,
+  type HubAppointment,
+  type HubAppointmentStatus,
+} from '../../api/hubAgendaApi';
 import { PetBehaviorTagsDisplay } from './PetBehaviorTagsDisplay';
 import { PetProfileHistoryList } from './PetProfileHistoryList';
 import { neuteredLabel } from './petClinicalFlags';
@@ -78,7 +87,9 @@ import { formatDueDateShort } from '../finance/dueDateTone';
 import { buildProfileFinanceSummary } from '../finance/profileFinanceSummary';
 import { buildBatchChargeItems } from '../finance/batchChargeItems';
 import { BatchChargeDrawer } from '../finance/BatchChargeDrawer';
+import { ChargeBundleHistorySection } from '../finance/ChargeBundleHistorySection';
 import { SpecialPricesSection } from '../../components/SpecialPricesSection';
+import { appointmentDrillHref } from '../finance/hubRelatoriosLinks';
 import '../../components/hub-profile.css';
 import '../clinica/clinica-page.css';
 import '../clientes/clientes.css';
@@ -88,6 +99,7 @@ type PetDetailTab = 'resumo' | 'historico_saude' | 'servicos' | 'financeiro';
 type ProfileLayout = 'panel' | 'page';
 
 const HISTORICO_PREVIEW_LIMIT = 3;
+const UPCOMING_APPOINTMENTS_LIMIT = 3;
 
 interface PetDetailPanelProps {
   pet: HubPet;
@@ -144,6 +156,14 @@ function formatDateBR(iso: string | null): string {
   return `${d}/${m}/${y}`;
 }
 
+function todayYmd(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function InfoPair({ label, value }: { label: string; value: string }) {
   return (
     <div className="hub-pets-detail__info-pair">
@@ -185,6 +205,25 @@ function encounterWhenLabel(e: HubEncounter): string {
   return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+function appointmentStatusLabel(status: HubAppointmentStatus): string {
+  if (status === 'pending_confirm') return 'Aguardando confirmação';
+  if (status === 'confirmed') return 'Confirmado';
+  if (status === 'checked_in') return 'Check-in realizado';
+  if (status === 'in_progress') return 'Em andamento';
+  if (status === 'done') return 'Concluído';
+  if (status === 'paid') return 'Pago';
+  return 'Cancelado';
+}
+
+function appointmentTitle(appointment: HubAppointment): string {
+  return (
+    appointment.title ||
+    appointment.service_type?.name ||
+    appointment.services[0]?.service_type?.name ||
+    'Agendamento'
+  );
+}
+
 function sortEncountersRecent(list: HubEncounter[]): HubEncounter[] {
   return [...list].sort((a, b) => {
     const ta = new Date(a.started_at || a.completed_at || 0).getTime();
@@ -221,6 +260,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   const { hasPermission } = usePermissions();
   const canClinicWrite = hasPermission('hub.clinic.write');
   const canFinancialRead = hasPermission('hub.financial.read');
+  const canAppointmentsRead = hasPermission('hub.appointments.read');
   const isPage = layout === 'page';
   const [tab, setTab] = useState<PetDetailTab>('resumo');
   const [moreOpen, setMoreOpen] = useState(false);
@@ -247,6 +287,9 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   const [prescriptions, setPrescriptions] = useState<HubPrescription[]>([]);
   const [vaccinations, setVaccinations] = useState<HubVaccination[]>([]);
   const [clinicalHistoryLoading, setClinicalHistoryLoading] = useState(false);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<HubAppointment[]>([]);
+  const [appointmentsLoading, setAppointmentsLoading] = useState(false);
+  const [appointmentsError, setAppointmentsError] = useState(false);
 
   useEffect(() => {
     if (!clinicId) {
@@ -308,6 +351,54 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
     };
   }, [clinicId, pet.id]);
 
+  useEffect(() => {
+    if (tab !== 'resumo' || !clinicId || !canAppointmentsRead) {
+      setUpcomingAppointments([]);
+      setAppointmentsError(false);
+      return;
+    }
+
+    let cancelled = false;
+    const now = new Date();
+    const horizon = new Date(now);
+    horizon.setDate(horizon.getDate() + 180);
+    setAppointmentsLoading(true);
+    setAppointmentsError(false);
+
+    void hubAgendaApi
+      .list({
+        clinic_id: clinicId,
+        from: now.toISOString(),
+        to: horizon.toISOString(),
+      })
+      .then(({ appointments }) => {
+        if (cancelled) return;
+        setUpcomingAppointments(
+          appointments
+            .filter(
+              (appointment) =>
+                appointment.pet_id === pet.id &&
+                appointment.status !== 'cancelled' &&
+                !appointment.parent_appointment_id &&
+                new Date(appointment.starts_at).getTime() >= now.getTime(),
+            )
+            .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()),
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setUpcomingAppointments([]);
+        setAppointmentsError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setAppointmentsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, clinicId, pet.id, canAppointmentsRead]);
+
   const [startingEncounter, setStartingEncounter] = useState(false);
 
   const loadPackageBalances = useCallback(async () => {
@@ -366,6 +457,27 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
     () => buildProfileFinanceSummary(receivables, comandas),
     [receivables, comandas],
   );
+
+  const frequentEncounter = useMemo(() => {
+    const validEncounters = encounters.filter((encounter) => encounter.status !== 'cancelled');
+    if (validEncounters.length === 0) return null;
+
+    const counts = new Map<string, number>();
+    validEncounters.forEach((encounter) => {
+      counts.set(encounter.encounter_type, (counts.get(encounter.encounter_type) ?? 0) + 1);
+    });
+
+    const [type, count] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+    const latest = validEncounters.find((encounter) => encounter.encounter_type === type) ?? validEncounters[0];
+
+    return {
+      type,
+      count,
+      total: validEncounters.length,
+      percentage: Math.round((count / validEncounters.length) * 100),
+      latest,
+    };
+  }, [encounters]);
 
   const batchChargeItems = useMemo(
     () => buildBatchChargeItems(receivables, comandas),
@@ -512,9 +624,34 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
     else navigate(`/hub/pets/${pet.id}`);
   };
 
+  const petScheduleState = {
+    openPetCreate: true,
+    petAppointmentInitial: {
+      date: todayYmd(),
+      pet_id: pet.id,
+      pet_name: pet.name,
+      guardian_id: pet.primary_guardian?.guardian_id ?? null,
+      guardian_name: pet.primary_guardian?.guardian_name ?? null,
+    },
+  };
+  const petScheduleParams = new URLSearchParams({
+    openCreate: '1',
+    petId: pet.id,
+    prefillDate: todayYmd(),
+  });
+  if (pet.primary_guardian?.guardian_id) {
+    petScheduleParams.set('guardianId', pet.primary_guardian.guardian_id);
+  }
+  const petScheduleHref = `/hub/appointments?${petScheduleParams.toString()}`;
+
   const quickActions = (
     <div className="hub-pets-detail__quick-actions">
-      <Link to="/hub/appointments" className="hub-pets-detail__quick-item hub-pets-detail__quick-link" title="Agendar">
+      <Link
+        to={petScheduleHref}
+        state={petScheduleState}
+        className="hub-pets-detail__quick-item hub-pets-detail__quick-link"
+        title={`Agendar para ${pet.name}`}
+      >
         <span className="hub-clientes__icon-btn">
           <CalendarClock size={18} strokeWidth={1.75} aria-hidden />
         </span>
@@ -599,6 +736,257 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
     </div>
   );
 
+  const renderHealthProfile = (compact = false) => {
+    if (healthLoading) {
+      return <HubLoading variant="block" label="Carregando ficha…" />;
+    }
+
+    const behaviorCount = pet.behavior_tags?.length ?? 0;
+    const alertCount = clinicalFlags.length;
+
+    return (
+      <div className={`hub-pet-care${compact ? ' hub-pet-care--compact' : ''}`}>
+        <div className={`hub-pet-care__overview ${alertCount > 0 ? 'hub-pet-care__overview--attention' : ''}`}>
+          <span className="hub-pet-care__overview-icon" aria-hidden>
+            {alertCount > 0 ? <AlertTriangle size={22} /> : <CheckCircle2 size={22} />}
+          </span>
+          <div className="hub-pet-care__overview-copy">
+            <strong>{alertCount > 0 ? `${alertCount} alerta${alertCount === 1 ? '' : 's'} para atenção` : 'Sem alertas clínicos ativos'}</strong>
+            <span>Informações essenciais para cuidar de {pet.name} com segurança.</span>
+          </div>
+          <div className="hub-pet-care__overview-stats" aria-label="Resumo da ficha">
+            <span><strong>{alertCount}</strong> clínico{alertCount === 1 ? '' : 's'}</span>
+            <span><strong>{behaviorCount}</strong> comportamento{behaviorCount === 1 ? '' : 's'}</span>
+          </div>
+        </div>
+
+        <div className="hub-pet-care__grid">
+          <section className="hub-pet-care__card hub-pet-care__card--health">
+            <header className="hub-pet-care__card-head">
+              <span className="hub-pet-care__card-icon" aria-hidden>
+                <HeartPulse size={20} />
+              </span>
+              <div>
+                <h3>Saúde</h3>
+                <p>Alertas clínicos permanentes</p>
+              </div>
+              <span className="hub-pet-care__count">{alertCount}</span>
+            </header>
+            {alertCount > 0 ? (
+              <div className="hub-clinic-pet-header__alerts">
+                {clinicalFlags.map((flag) => (
+                  <span key={flag.flag_key} className="hub-clinic-alert-chip">
+                    <AlertTriangle size={13} aria-hidden />
+                    {flag.label}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="hub-pet-care__empty">
+                <CheckCircle2 size={17} aria-hidden />
+                <span>Nenhum cuidado clínico especial registrado.</span>
+              </div>
+            )}
+          </section>
+
+          <section className="hub-pet-care__card hub-pet-care__card--behavior">
+            <header className="hub-pet-care__card-head">
+              <span className="hub-pet-care__card-icon" aria-hidden>
+                <Dog size={20} />
+              </span>
+              <div>
+                <h3>Comportamento</h3>
+                <p>Preferências e pontos de atenção</p>
+              </div>
+              <span className="hub-pet-care__count">{behaviorCount}</span>
+            </header>
+            {behaviorCount > 0 ? (
+              <PetBehaviorTagsDisplay tags={pet.behavior_tags ?? []} />
+            ) : (
+              <div className="hub-pet-care__empty">
+                <Dog size={17} aria-hidden />
+                <span>Nenhuma observação de comportamento registrada.</span>
+              </div>
+            )}
+          </section>
+        </div>
+
+        <section className="hub-pet-care__history">
+          <header className="hub-pet-care__history-head">
+            <span className="hub-pet-care__history-icon" aria-hidden>
+              <History size={18} />
+            </span>
+            <div>
+              <h3>Histórico da ficha</h3>
+              <p>Atualizações feitas pelas equipes de atendimento.</p>
+            </div>
+          </header>
+          <PetProfileHistoryList changes={profileChanges} />
+        </section>
+      </div>
+    );
+  };
+
+  const renderFrequentEncounter = (compact = false) => {
+    if (clinicalHistoryLoading) {
+      return <HubLoading variant="inline" label="Calculando estatística…" size="sm" />;
+    }
+
+    if (!frequentEncounter) {
+      return (
+        <div className="hub-pets-detail__empty-inline hub-pet-frequency__empty">
+          <span className="hub-pet-frequency__empty-icon" aria-hidden>
+            <Stethoscope size={20} />
+          </span>
+          <div>
+            <strong>Estatística ainda indisponível</strong>
+            <p>Ela aparecerá depois do primeiro atendimento clínico deste pet.</p>
+          </div>
+        </div>
+      );
+    }
+
+    const { type, count, total, percentage, latest } = frequentEncounter;
+
+    return (
+      <div className={`hub-pet-frequency${compact ? ' hub-pet-frequency--compact' : ''}`}>
+        <div className="hub-pet-frequency__icon" aria-hidden>
+          <Stethoscope size={24} />
+        </div>
+        <div className="hub-pet-frequency__content">
+          <div className="hub-pet-frequency__top">
+            <div>
+              <span className="hub-pet-frequency__eyebrow">Mais frequente</span>
+              <h3>{encounterTypeLabel(type)}</h3>
+            </div>
+            <strong className="hub-pet-frequency__number">{count}</strong>
+          </div>
+          <div
+            className="hub-pet-frequency__bar"
+            role="progressbar"
+            aria-label={`Participação de ${encounterTypeLabel(type)}`}
+            aria-valuenow={percentage}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <span style={{ width: `${percentage}%` }} />
+          </div>
+          <p className="hub-pet-frequency__summary">
+            {count} de {total} atendimento{total === 1 ? '' : 's'} · {percentage}% do histórico
+          </p>
+          <div className="hub-pet-frequency__latest">
+            <span>Mais recente em {encounterWhenLabel(latest)}</span>
+            <Link to={`/hub/clinica/atendimentos/${latest.id}`} className="hub-clientes__link">
+              Abrir atendimento →
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderUpcomingAppointments = (compact = false) => {
+    if (!canAppointmentsRead) {
+      return (
+        <div className="hub-pet-appointments__empty">
+          <CalendarClock size={20} aria-hidden />
+          <div>
+            <strong>Agenda indisponível</strong>
+            <p>Seu perfil não tem permissão para visualizar compromissos.</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (appointmentsLoading) {
+      return <HubLoading variant="inline" label="Carregando compromissos…" size="sm" />;
+    }
+
+    if (appointmentsError) {
+      return (
+        <div className="hub-pet-appointments__empty hub-pet-appointments__empty--error">
+          <AlertTriangle size={20} aria-hidden />
+          <div>
+            <strong>Não foi possível carregar a agenda</strong>
+            <p>Tente novamente ao reabrir o perfil.</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (upcomingAppointments.length === 0) {
+      return (
+        <div className="hub-pet-appointments__empty">
+          <CalendarClock size={22} aria-hidden />
+          <div>
+            <strong>Nenhum compromisso futuro</strong>
+            <p>{pet.name} está com a agenda livre nos próximos meses.</p>
+            <Link to={petScheduleHref} state={petScheduleState} className="hub-clientes__link">
+              Agendar compromisso →
+            </Link>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={`hub-pet-appointments${compact ? ' hub-pet-appointments--compact' : ''}`}>
+        {upcomingAppointments.slice(0, UPCOMING_APPOINTMENTS_LIMIT).map((appointment, index) => {
+          const startsAt = new Date(appointment.starts_at);
+          const endsAt = new Date(appointment.ends_at);
+          const validDate = !Number.isNaN(startsAt.getTime());
+          const timeLabel = validDate
+            ? startsAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+            : 'Horário indefinido';
+          const endTimeLabel = !Number.isNaN(endsAt.getTime())
+            ? endsAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+            : null;
+
+          return (
+            <Link
+              key={appointment.id}
+              to={appointmentDrillHref(appointment.id, appointment.starts_at)}
+              className="hub-pet-appointments__item"
+            >
+              <span className="hub-pet-appointments__date" aria-hidden>
+                <strong>{validDate ? startsAt.toLocaleDateString('pt-BR', { day: '2-digit' }) : '—'}</strong>
+                <span>{validDate ? startsAt.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '') : ''}</span>
+              </span>
+              <span className="hub-pet-appointments__body">
+                <span className="hub-pet-appointments__title-row">
+                  <strong>{appointmentTitle(appointment)}</strong>
+                  {index === 0 ? <span className="hub-pet-appointments__next">Próximo</span> : null}
+                </span>
+                <span className="hub-pet-appointments__meta">
+                  <CalendarClock size={14} aria-hidden />
+                  {validDate ? startsAt.toLocaleDateString('pt-BR', { weekday: 'long' }) : 'Data indefinida'}
+                  {' · '}
+                  {timeLabel}{endTimeLabel ? ` às ${endTimeLabel}` : ''}
+                </span>
+                {appointment.staff_member?.full_name ? (
+                  <span className="hub-pet-appointments__meta">
+                    <User size={14} aria-hidden />
+                    {appointment.staff_member.full_name}
+                  </span>
+                ) : null}
+              </span>
+              <span className={`hub-pet-appointments__status hub-pet-appointments__status--${appointment.status}`}>
+                {appointmentStatusLabel(appointment.status)}
+              </span>
+              <ChevronRight className="hub-pet-appointments__chevron" size={18} aria-hidden />
+            </Link>
+          );
+        })}
+        {upcomingAppointments.length > UPCOMING_APPOINTMENTS_LIMIT ? (
+          <p className="hub-pet-appointments__more">
+            +{upcomingAppointments.length - UPCOMING_APPOINTMENTS_LIMIT} compromisso
+            {upcomingAppointments.length - UPCOMING_APPOINTMENTS_LIMIT === 1 ? '' : 's'} na agenda
+          </p>
+        ) : null}
+      </div>
+    );
+  };
+
   const renderResumoPage = () => (
     <>
       <section className="hub-meu-perfil__panel">
@@ -633,39 +1021,14 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
             <h2 className="hub-meu-perfil__panel-title">Saúde e comportamento</h2>
             <p className="hub-meu-perfil__panel-sub">Ficha permanente compartilhada com clínica, banho e tosa e hotel.</p>
           </div>
+          {canWrite ? (
+            <button type="button" className="hub-meu-perfil__btn-outline" onClick={onStartEdit}>
+              <Pencil size={16} strokeWidth={2} aria-hidden />
+              Editar ficha
+            </button>
+          ) : null}
         </header>
-        {healthLoading ? (
-          <HubLoading variant="block" label="Carregando ficha…" />
-        ) : (
-          <>
-            {clinicalFlags.length > 0 ? (
-              <div className="hub-clinic-pet-header__alerts" style={{ marginBottom: 12 }}>
-                {clinicalFlags.map((f) => (
-                  <span key={f.flag_key} className="hub-clinic-alert-chip">
-                    {f.label}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="hub-clientes__muted" style={{ margin: '0 0 12px' }}>
-                Nenhum alerta clínico ativo.
-              </p>
-            )}
-            {(pet.behavior_tags?.length ?? 0) > 0 ? (
-              <PetBehaviorTagsDisplay tags={pet.behavior_tags ?? []} />
-            ) : (
-              <p className="hub-clientes__muted" style={{ margin: 0 }}>
-                Sem tags de comportamento.
-              </p>
-            )}
-            <div style={{ marginTop: 16 }}>
-              <h3 className="hub-meu-perfil__panel-title" style={{ fontSize: 15, marginBottom: 8 }}>
-                Histórico da ficha
-              </h3>
-              <PetProfileHistoryList changes={profileChanges} />
-            </div>
-          </>
-        )}
+        {renderHealthProfile()}
       </section>
 
       {renderFinanceSummaryBlock(true)}
@@ -673,43 +1036,27 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
       <section className="hub-meu-perfil__panel">
         <header className="hub-meu-perfil__panel-head">
           <div>
-            <h2 className="hub-meu-perfil__panel-title">Último atendimento</h2>
-            <p className="hub-meu-perfil__panel-sub">Serviço mais recente realizado.</p>
+            <h2 className="hub-meu-perfil__panel-title">Atendimento mais frequente</h2>
+            <p className="hub-meu-perfil__panel-sub">Tipo de atendimento predominante no histórico deste pet.</p>
           </div>
         </header>
-        {clinicalHistoryLoading ? (
-          <HubLoading variant="inline" label="Carregando atendimento…" size="sm" />
-        ) : encounters[0] ? (
-          <div>
-            <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600 }}>
-              {encounterTypeLabel(encounters[0].encounter_type)} · {encounterStatusLabel(encounters[0].status)}
-            </p>
-            <p className="hub-clientes__muted" style={{ margin: '0 0 8px', fontSize: 13 }}>
-              {encounters[0].chief_complaint || encounters[0].summary_notes || 'Sem descrição'}
-              {' · '}
-              {encounterWhenLabel(encounters[0])}
-            </p>
-            <Link to={`/hub/clinica/atendimentos/${encounters[0].id}`} className="hub-clientes__link">
-              Abrir atendimento →
-            </Link>
-          </div>
-        ) : (
-          <div className="hub-clientes__empty-state hub-pets-detail__empty-inline">
-            Ainda não há atendimentos associados a este pet.
-          </div>
-        )}
+        {renderFrequentEncounter()}
       </section>
 
       <section className="hub-meu-perfil__panel">
         <header className="hub-meu-perfil__panel-head">
           <div>
             <h2 className="hub-meu-perfil__panel-title">Próximos compromissos</h2>
-            <p className="hub-meu-perfil__panel-sub">Agendamentos futuros.</p>
+            <p className="hub-meu-perfil__panel-sub">Agenda de cuidados dos próximos 180 dias.</p>
           </div>
+          {canAppointmentsRead ? (
+            <Link to="/hub/appointments" className="hub-meu-perfil__btn-outline">
+              <Calendar size={16} aria-hidden />
+              Ver agenda
+            </Link>
+          ) : null}
         </header>
-        <div className="hub-clientes__empty-state hub-pets-detail__empty-inline">
-          Sem marcações futuras. Os próximos agendamentos serão listados aqui.
-        </div>
+        {renderUpcomingAppointments()}
       </section>
 
       {pet.secondary_guardian?.guardian_name ? (
@@ -771,39 +1118,19 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
 
       <div className="hub-clientes__section">
         <div className="hub-clientes__contact-card">
-          <h3 className="hub-clientes__contact-card-title" style={{ marginBottom: 12 }}>
-            Saúde e comportamento
-          </h3>
-          {healthLoading ? (
-            <HubLoading variant="block" label="Carregando ficha…" />
-          ) : (
-            <>
-              {clinicalFlags.length > 0 ? (
-                <div className="hub-clinic-pet-header__alerts" style={{ marginBottom: 12 }}>
-                  {clinicalFlags.map((f) => (
-                    <span key={f.flag_key} className="hub-clinic-alert-chip">
-                      {f.label}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="hub-clientes__muted" style={{ margin: '0 0 10px' }}>
-                  Nenhum alerta clínico ativo.
-                </p>
-              )}
-              {(pet.behavior_tags?.length ?? 0) > 0 ? (
-                <PetBehaviorTagsDisplay tags={pet.behavior_tags ?? []} />
-              ) : (
-                <p className="hub-clientes__muted" style={{ margin: 0 }}>
-                  Sem tags de comportamento.
-                </p>
-              )}
-              <div style={{ marginTop: 14 }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Histórico da ficha</h4>
-                <PetProfileHistoryList changes={profileChanges} />
-              </div>
-            </>
-          )}
+          <div className="hub-clientes__contact-card-head hub-pet-care__panel-head">
+            <div>
+              <h3 className="hub-clientes__contact-card-title">Saúde e comportamento</h3>
+              <p className="hub-pet-care__panel-sub">Cuidados compartilhados entre as equipes.</p>
+            </div>
+            {canWrite ? (
+              <button type="button" className="hub-clientes__link-btn hub-clientes__link-btn--with-icon" onClick={onStartEdit}>
+                <Pencil size={15} strokeWidth={2} aria-hidden />
+                Editar
+              </button>
+            ) : null}
+          </div>
+          {renderHealthProfile(true)}
         </div>
       </div>
 
@@ -812,29 +1139,9 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
       <div className="hub-clientes__section">
         <div className="hub-clientes__contact-card">
           <h3 className="hub-clientes__contact-card-title" style={{ marginBottom: 12 }}>
-            Último atendimento
+            Atendimento mais frequente
           </h3>
-          {clinicalHistoryLoading ? (
-            <HubLoading variant="inline" label="Carregando…" size="sm" />
-          ) : encounters[0] ? (
-            <div>
-              <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600 }}>
-                {encounterTypeLabel(encounters[0].encounter_type)} · {encounterStatusLabel(encounters[0].status)}
-              </p>
-              <p className="hub-clientes__muted" style={{ margin: '0 0 8px', fontSize: 13 }}>
-                {encounters[0].chief_complaint || encounters[0].summary_notes || 'Sem descrição'}
-                {' · '}
-                {encounterWhenLabel(encounters[0])}
-              </p>
-              <Link to={`/hub/clinica/atendimentos/${encounters[0].id}`} className="hub-clientes__link">
-                Abrir atendimento →
-              </Link>
-            </div>
-          ) : (
-            <div className="hub-clientes__empty-state hub-pets-detail__empty-inline">
-              Ainda não há atendimentos associados a este pet.
-            </div>
-          )}
+          {renderFrequentEncounter(true)}
         </div>
       </div>
 
@@ -842,13 +1149,13 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
         <div className="hub-clientes__contact-card">
           <div className="hub-clientes__contact-card-head" style={{ marginBottom: 10 }}>
             <h3 className="hub-clientes__contact-card-title">Próximos compromissos</h3>
-            <span className="hub-clientes__link-btn" style={{ opacity: 0.45, cursor: 'default', pointerEvents: 'none' }}>
-              Ver todos
-            </span>
+            {canAppointmentsRead ? (
+              <Link to="/hub/appointments" className="hub-clientes__link-btn">
+                Ver agenda
+              </Link>
+            ) : null}
           </div>
-          <div className="hub-clientes__empty-state hub-pets-detail__empty-inline">
-            Sem marcações futuras. Os próximos agendamentos serão listados aqui.
-          </div>
+          {renderUpcomingAppointments(true)}
         </div>
       </div>
 
@@ -1284,7 +1591,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
                           </span>
                         </button>
                         <span className="hub-clientes__fin-row-amount">
-                          {formatBrl(Number(c.total_amount ?? 0))}
+                          {formatBrl(Number(c.balance_due ?? c.total_amount ?? 0))}
                         </span>
                         {charge.kind !== 'none' && (
                           <button
@@ -1412,6 +1719,15 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
                 Nenhum lançamento financeiro encontrado para este pet.
               </p>
             ) : null}
+
+            {pet.primary_guardian?.guardian_id ? (
+              <ChargeBundleHistorySection
+                guardianId={pet.primary_guardian.guardian_id}
+                guardianName={pet.primary_guardian.guardian_name ?? undefined}
+                petId={pet.id}
+                onChanged={() => void loadFinanceiro()}
+              />
+            ) : null}
           </>
         )}
       </>
@@ -1504,6 +1820,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
         setShowBatchCharge(false);
         void loadFinanceiro();
       }}
+      onBundleCreated={(id) => navigate(`/hub/financeiro/cobranca-lote/${id}/pronto-para-envio`)}
     />
   );
 

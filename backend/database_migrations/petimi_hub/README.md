@@ -220,3 +220,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 100. **`100_create_hub_series_invoices.sql`** — Faturamento periódico de séries: colunas de cobrança em `hub_appointment_series`; tabelas `hub_series_invoices` + `hub_series_invoice_items`; amplia `hub_comandas.origin_type` com `series_invoice`. Executar depois de `013` e `039`.
 
 101. **`101_alter_notifications_hub_ops_types.sql`** — Amplia `notifications_type_check` com os avisos operacionais internos do Hub (`hub_payment_due`, `hub_cancellation_pending`, `hub_stock_alert`, `hub_boarding_checkin`, `hub_boarding_checkout`), direcionados por área operacional via `hubNotifyStaff`. Executar depois do item 53.
+
+102. **`102_create_hub_charge_bundles.sql`** — Cobrança agrupada: `hub_charge_bundles` + `hub_charge_bundle_items` (lote persistente com link/PDF públicos e histórico para baixa). Executar depois de `hub_receivables` e `hub_guardians`.

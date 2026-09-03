@@ -195,12 +195,20 @@ export type {
   HubFinanceTicketAverageReport,
   HubFinanceTopServicesReport,
   HubFinanceAgingReport,
+  HubChargeBundle,
+  HubChargeBundleItem,
+  HubChargeBundleStatus,
+  HubPublicChargeBundleResponse,
 } from './api/hubFinancialApi';
 export { default as HubCaixaPage } from './pages/finance/HubCaixaPage';
 export { default as HubComandaPage } from './pages/finance/HubComandaPage';
 export { default as HubComandaFinancePage } from './pages/finance/HubComandaFinancePage';
 export { default as HubComandaReadyToSendPage } from './pages/finance/HubComandaReadyToSendPage';
+export { default as HubChargeBundleReadyToSendPage } from './pages/finance/HubChargeBundleReadyToSendPage';
 export { HubComandaPublicView } from './pages/finance/HubComandaPublicView';
+export { HubChargeBundlePublicView } from './pages/finance/HubChargeBundlePublicView';
+export type { HubChargeBundlePublicPayload, HubChargeBundlePublicViewProps } from './pages/finance/HubChargeBundlePublicView';
+export { ChargeBundleHistorySection } from './pages/finance/ChargeBundleHistorySection';
 export { default as HubFinanceiroPage } from './pages/finance/HubFinanceiroPage';
 export { default as HubDashboardPage } from './pages/finance/HubDashboardPage';
 export { default as HubRelatoriosPage } from './pages/finance/HubRelatoriosPage';

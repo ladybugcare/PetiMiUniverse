@@ -14,6 +14,8 @@ const hubClinicalTimelineController_1 = require("./hubClinicalTimelineController
 const hubClinicalCasesController_1 = require("./hubClinicalCasesController");
 const prescriptionValidation_1 = require("./prescriptionValidation");
 const prescriptionDocumentIssue_1 = require("./prescriptionDocumentIssue");
+const hubInventoryStockUtils_js_1 = require("./hubInventoryStockUtils.js");
+const hubPetHealthProfile_1 = require("./hubPetHealthProfile");
 const uuidStr = zod_1.z.string().uuid();
 // ── Pet clinical flags ───────────────────────────────────────────────────────
 const flagKeySchema = zod_1.z.enum(['allergy', 'cardiac', 'aggressive', 'diabetic', 'epileptic', 'other']);
@@ -45,44 +47,30 @@ const upsertHubPetClinicalFlag = async (req, res) => {
         label: zod_1.z.string().trim().min(1).max(120),
         notes: zod_1.z.string().trim().max(2000).optional().nullable(),
         active: zod_1.z.boolean().optional(),
+        profile_source: zod_1.z.enum(['wizard', 'clinic', 'grooming', 'boarding', 'pets_form']).optional(),
     })
         .safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
-    const { data: existing } = await supabase_1.supabaseAdmin
-        .from('hub_pet_clinical_flags')
-        .select('id')
-        .eq('pet_id', b.pet_id)
-        .eq('flag_key', b.flag_key)
-        .is('deleted_at', null)
-        .maybeSingle();
-    if (existing) {
-        const { data, error } = await supabase_1.supabaseAdmin
-            .from('hub_pet_clinical_flags')
-            .update({ label: b.label, notes: b.notes ?? null, active: b.active ?? true })
-            .eq('id', existing.id)
-            .select('*')
-            .single();
-        if (error)
-            return res.status(500).json({ error: error.message });
-        return res.json({ flag: data });
+    try {
+        const result = await (0, hubPetHealthProfile_1.applyClinicalFlagUpsert)({
+            clinicId: b.clinic_id,
+            petId: b.pet_id,
+            flagKey: b.flag_key,
+            label: b.label,
+            notes: b.notes ?? null,
+            active: b.active,
+            source: (0, hubPetHealthProfile_1.resolveProfileSource)(b.profile_source),
+            actorUserId: req.user?.id ?? null,
+        });
+        if (result.created)
+            return res.status(201).json({ flag: result.flag, noop: false });
+        return res.json({ flag: result.flag, noop: result.noop });
     }
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('hub_pet_clinical_flags')
-        .insert({
-        clinic_id: b.clinic_id,
-        pet_id: b.pet_id,
-        flag_key: b.flag_key,
-        label: b.label,
-        notes: b.notes ?? null,
-        active: b.active ?? true,
-    })
-        .select('*')
-        .single();
-    if (error)
-        return res.status(500).json({ error: error.message });
-    return res.status(201).json({ flag: data });
+    catch (e) {
+        return res.status(500).json({ error: e?.message || 'Erro ao salvar alerta clínico' });
+    }
 };
 exports.upsertHubPetClinicalFlag = upsertHubPetClinicalFlag;
 // ── Encounter events (evolução) ─────────────────────────────────────────────
@@ -383,6 +371,9 @@ const patchHubPrescription = async (req, res) => {
         clinic_id: uuidStr,
         notes: zod_1.z.string().trim().max(4000).optional().nullable(),
         hub_staff_member_id: uuidStr.optional().nullable(),
+        /** Vínculo clínico posterior (permitido mesmo após emissão). */
+        hub_case_id: uuidStr.optional().nullable(),
+        hub_encounter_id: uuidStr.optional().nullable(),
         items: zod_1.z.array(prescriptionItemInputSchema).min(1).optional(),
     })
         .safeParse(req.body);
@@ -391,12 +382,16 @@ const patchHubPrescription = async (req, res) => {
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
-    if (b.notes === undefined && !b.items) {
-        return res.status(400).json({ error: 'Informe items e/ou notes para atualizar' });
+    const hasContentEdit = b.notes !== undefined || b.items !== undefined || b.hub_staff_member_id !== undefined;
+    const hasLinkEdit = b.hub_case_id !== undefined || b.hub_encounter_id !== undefined;
+    if (!hasContentEdit && !hasLinkEdit) {
+        return res.status(400).json({
+            error: 'Informe items, notes, hub_staff_member_id e/ou vínculo (hub_case_id / hub_encounter_id)',
+        });
     }
     const { data: rx, error: rxErr } = await supabase_1.supabaseAdmin
         .from('hub_prescriptions')
-        .select('id, status, clinic_id')
+        .select('id, status, clinic_id, pet_id')
         .eq('id', id.data)
         .eq('clinic_id', b.clinic_id)
         .is('deleted_at', null)
@@ -407,14 +402,58 @@ const patchHubPrescription = async (req, res) => {
         return res.status(404).json({ error: 'Prescrição não encontrada' });
     if (rx.status === 'cancelled')
         return res.status(409).json({ error: 'Prescrição cancelada não pode ser editada' });
-    if (rx.status === 'issued') {
-        return res.status(409).json({ error: 'Prescrição já emitida; não é possível editar sem reemitir nova versão' });
+    if (rx.status === 'issued' && hasContentEdit) {
+        return res.status(409).json({
+            error: 'Prescrição já emitida; não é possível editar conteúdo sem reemitir nova versão (vínculo a caso/atendimento ainda é permitido)',
+        });
+    }
+    if (b.hub_case_id) {
+        const { data: caseRow } = await supabase_1.supabaseAdmin
+            .from('hub_clinical_cases')
+            .select('id, pet_id')
+            .eq('id', b.hub_case_id)
+            .eq('clinic_id', b.clinic_id)
+            .is('deleted_at', null)
+            .maybeSingle();
+        if (!caseRow)
+            return res.status(400).json({ error: 'Caso clínico inválido' });
+        if (caseRow.pet_id !== rx.pet_id) {
+            return res.status(400).json({ error: 'Caso clínico não pertence a este pet' });
+        }
+    }
+    if (b.hub_encounter_id) {
+        const { data: encRow } = await supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .select('id, pet_id, hub_case_id')
+            .eq('id', b.hub_encounter_id)
+            .eq('clinic_id', b.clinic_id)
+            .is('deleted_at', null)
+            .maybeSingle();
+        if (!encRow)
+            return res.status(400).json({ error: 'Atendimento inválido' });
+        if (encRow.pet_id !== rx.pet_id) {
+            return res.status(400).json({ error: 'Atendimento não pertence a este pet' });
+        }
     }
     const rowUpdates = {};
     if (b.notes !== undefined)
         rowUpdates.notes = b.notes;
     if (b.hub_staff_member_id !== undefined)
         rowUpdates.hub_staff_member_id = b.hub_staff_member_id;
+    if (b.hub_case_id !== undefined)
+        rowUpdates.hub_case_id = b.hub_case_id;
+    if (b.hub_encounter_id !== undefined) {
+        rowUpdates.hub_encounter_id = b.hub_encounter_id;
+        if (b.hub_case_id === undefined && b.hub_encounter_id) {
+            const { data: encCase } = await supabase_1.supabaseAdmin
+                .from('hub_encounters')
+                .select('hub_case_id')
+                .eq('id', b.hub_encounter_id)
+                .maybeSingle();
+            if (encCase?.hub_case_id)
+                rowUpdates.hub_case_id = encCase.hub_case_id;
+        }
+    }
     if (b.items) {
         const { error: delErr } = await supabase_1.supabaseAdmin.from('hub_prescription_items').delete().eq('prescription_id', id.data);
         if (delErr)
@@ -708,31 +747,30 @@ const createHubVaccination = async (req, res) => {
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
-    let stockMovementId = null;
-    // Baixa de estoque: vacina aplicada na clínica com item de estoque vinculado
+    let inventoryItem = null;
+    let inventoryLot = null;
+    let priceSnapshot = null;
     if (b.source === 'in_clinic' && b.hub_inventory_item_id) {
-        const { data: mvmt, error: mvmtErr } = await supabase_1.supabaseAdmin
-            .from('hub_stock_movements')
-            .insert({
-            clinic_id: b.clinic_id,
-            hub_inventory_item_id: b.hub_inventory_item_id,
-            hub_inventory_lot_id: b.hub_inventory_lot_id ?? null,
-            movement_type: 'encounter_out',
-            quantity: 1,
-            unit: 'dose',
-            notes: `Vacina aplicada: ${b.vaccine_name}`,
-            hub_encounter_id: b.hub_encounter_id ?? null,
-        })
-            .select('id')
-            .single();
-        if (!mvmtErr && mvmt) {
-            stockMovementId = mvmt.id;
+        if (!b.hub_inventory_lot_id) {
+            return res.status(400).json({ error: 'Lote de estoque é obrigatório para vacina aplicada na clínica.' });
         }
-        else if (mvmtErr) {
-            console.error('createHubVaccination: erro ao baixar estoque', mvmtErr.message);
+        inventoryItem = await (0, hubInventoryStockUtils_js_1.assertClinicInventoryItem)(b.clinic_id, b.hub_inventory_item_id);
+        if (!inventoryItem || !inventoryItem.active) {
+            return res.status(400).json({ error: 'Item de estoque de vacina inválido ou inativo.' });
         }
+        inventoryLot = await (0, hubInventoryStockUtils_js_1.assertClinicInventoryLot)(b.clinic_id, b.hub_inventory_lot_id);
+        if (!inventoryLot || inventoryLot.item_id !== b.hub_inventory_item_id) {
+            return res.status(400).json({ error: 'Lote inválido para o item de vacina selecionado.' });
+        }
+        const stockErr = await (0, hubInventoryStockUtils_js_1.validateLotStockForOut)(b.clinic_id, b.hub_inventory_item_id, b.hub_inventory_lot_id, 1);
+        if (stockErr)
+            return res.status(400).json({ error: stockErr });
+        priceSnapshot = Number(inventoryItem.sale_amount);
     }
-    const { data, error } = await supabase_1.supabaseAdmin
+    const batchNumber = b.batch_number?.trim() ||
+        (inventoryLot?.lot_code?.trim() ? inventoryLot.lot_code.trim() : null);
+    const expiryDate = b.expiry_date ?? inventoryLot?.expiry_date ?? null;
+    const { data: inserted, error: insertErr } = await supabase_1.supabaseAdmin
         .from('hub_vaccination_records')
         .insert({
         clinic_id: b.clinic_id,
@@ -740,7 +778,7 @@ const createHubVaccination = async (req, res) => {
         hub_encounter_id: b.hub_encounter_id ?? null,
         hub_case_id: b.hub_case_id ?? null,
         vaccine_name: b.vaccine_name,
-        batch_number: b.batch_number ?? null,
+        batch_number: batchNumber,
         administered_at: b.administered_at,
         next_dose_at: b.next_dose_at ?? null,
         hub_staff_member_id: b.hub_staff_member_id ?? null,
@@ -749,13 +787,42 @@ const createHubVaccination = async (req, res) => {
         manufacturer: b.manufacturer ?? null,
         hub_inventory_item_id: b.hub_inventory_item_id ?? null,
         hub_inventory_lot_id: b.hub_inventory_lot_id ?? null,
-        expiry_date: b.expiry_date ?? null,
-        stock_movement_id: stockMovementId,
+        expiry_date: expiryDate,
+        price: priceSnapshot,
+        stock_movement_id: null,
     })
         .select('*')
         .single();
-    if (error)
-        return res.status(500).json({ error: error.message });
+    if (insertErr || !inserted)
+        return res.status(500).json({ error: insertErr?.message || 'Erro ao registrar vacinação.' });
+    const vaccinationId = inserted.id;
+    let data = inserted;
+    if (b.source === 'in_clinic' && b.hub_inventory_item_id && b.hub_inventory_lot_id) {
+        const movement = await (0, hubInventoryStockUtils_js_1.createEncounterStockOut)({
+            clinicId: b.clinic_id,
+            itemId: b.hub_inventory_item_id,
+            lotId: b.hub_inventory_lot_id,
+            qty: 1,
+            notes: `Vacina aplicada: ${b.vaccine_name}`,
+            referenceType: 'vaccination',
+            referenceId: vaccinationId,
+            createdBy: req.user?.id ?? null,
+        });
+        if ('error' in movement) {
+            await supabase_1.supabaseAdmin.from('hub_vaccination_records').delete().eq('id', vaccinationId);
+            return res.status(400).json({ error: movement.error });
+        }
+        const { data: updated, error: patchErr } = await supabase_1.supabaseAdmin
+            .from('hub_vaccination_records')
+            .update({ stock_movement_id: movement.id })
+            .eq('id', vaccinationId)
+            .select('*')
+            .single();
+        if (patchErr || !updated) {
+            return res.status(500).json({ error: patchErr?.message || 'Erro ao vincular baixa de estoque.' });
+        }
+        data = updated;
+    }
     void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
         clinic_id: b.clinic_id,
         pet_id: b.pet_id,
