@@ -33,6 +33,45 @@
   color: var(--hc-text-muted, #8e6e67);
 }
 
+.vet-cockpit-day-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: var(--hc-radius, 12px);
+  background: var(--hc-bg-subtle, #faf7f5);
+  border: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.vet-cockpit-day-actions__label {
+  margin-right: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.vet-cockpit-ops-sections {
+  margin-top: 24px;
+  margin-bottom: 24px;
+}
+
+.vet-cockpit-ops-sections .hub-clinic-section__header svg {
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.hub-clinic-hospital--embedded .hub-clinic-section-title:first-of-type {
+  margin-top: 0;
+}
+
+.hub-clinic-hospital__embedded-beds {
+  margin-bottom: 8px;
+}
+
 .vet-cockpit-summary {
   margin-bottom: 16px;
 }
@@ -307,6 +346,12 @@
 .vet-cockpit-panel__pet-line {
   margin: 6px 0 0;
   color: var(--hub-muted, #64748b);
+}
+
+.vet-cockpit-panel__prontuario-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.875rem;
 }
 
 .vet-cockpit-panel__meta {

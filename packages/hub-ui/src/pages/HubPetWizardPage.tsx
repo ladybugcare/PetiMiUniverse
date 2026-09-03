@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
 import { hubGuardiansApi, type HubGuardian } from '../api/hubGuardiansApi';
 import { hubPetsApi } from '../api/hubPetsApi';
@@ -9,10 +9,12 @@ import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
 import type { CoatTypeValue } from '../utils/hubServiceTypesPricingMatrix';
 import { useAlert } from '../components/AlertProvider';
 import { HubCancelButton } from '../components/HubCancelButton';
+import { HubLoading } from '../components/HubLoading';
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import './pets/pets-page.css';
 import './pets/wizard/pet-wizard.css';
 import { initialPetWizardState, type PetWizardState, WIZARD_STEPS } from './pets/wizard/types';
+import { petToWizardState } from './pets/wizard/petToWizardState';
 import { prefillPetWizardFromQuotePet } from './orcamentos/quoteToPetWizardPrefill';
 import {
   clearManualQuoteConversion,
@@ -26,9 +28,17 @@ import { PetWizardStepHealth } from './pets/wizard/steps/PetWizardStepHealth';
 import { PetWizardStepGuardians } from './pets/wizard/steps/PetWizardStepGuardians';
 import { PetWizardStepDocs } from './pets/wizard/steps/PetWizardStepDocs';
 
+function hubSafeReturnTo(raw: string | null, fallback: string): string {
+  if (!raw || !raw.startsWith('/hub/')) return fallback;
+  if (raw.startsWith('//') || raw.includes('://')) return fallback;
+  return raw;
+}
+
 const HubPetWizardPage: React.FC = () => {
   const navigate = useNavigate();
+  const { petId: editPetId } = useParams<{ petId?: string }>();
   const [searchParams] = useSearchParams();
+  const isEdit = Boolean(editPetId);
   const { showError, showSuccess } = useAlert();
   const { user, role: authRole } = useAuth();
   const { loading: permLoading, hasPermission } = usePermissions();
@@ -42,6 +52,7 @@ const HubPetWizardPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const photoBlobRef = useRef<string | null>(null);
+  const [editLoading, setEditLoading] = useState(isEdit);
 
   const accessAllowed = hasPermission('hub.pets.write');
 
@@ -86,20 +97,55 @@ const HubPetWizardPage: React.FC = () => {
 
   const canWriteQuotes = hasPermission('hub.quotes.write');
 
-  const fromQuote = searchParams.get('fromQuote')?.trim() || '';
+  const fromQuote = isEdit ? '' : searchParams.get('fromQuote')?.trim() || '';
   const petIndexRaw = searchParams.get('petIndex');
   const petIndex = Math.max(0, Number.parseInt(petIndexRaw || '0', 10) || 0);
   const guardianIdParam = searchParams.get('guardianId')?.trim() || '';
-  const preId = guardianIdParam;
+  const returnTo = hubSafeReturnTo(
+    searchParams.get('returnTo'),
+    isEdit && editPetId ? `/hub/pets/${editPetId}` : '/hub/pets',
+  );
+  const preId = isEdit ? '' : guardianIdParam;
   const prefillApplied = useRef<string | null>(null);
   useEffect(() => {
     prefillApplied.current = null;
   }, [preId]);
 
   useEffect(() => {
+    if (isEdit) return;
     setActiveStep(0);
     setMaxReached(0);
-  }, [petIndex, fromQuote]);
+  }, [petIndex, fromQuote, isEdit]);
+
+  useEffect(() => {
+    if (!isEdit || !clinicId || !editPetId || !accessAllowed) return;
+    let cancelled = false;
+    void (async () => {
+      setEditLoading(true);
+      try {
+        const { pets } = await hubPetsApi.list(clinicId, true);
+        if (cancelled) return;
+        const found = pets.find((p) => p.id === editPetId) ?? null;
+        if (!found) {
+          showError('Pet não encontrado.');
+          navigate('/hub/pets', { replace: true });
+          return;
+        }
+        setState(petToWizardState(found));
+        setMaxReached(WIZARD_STEPS.length - 1);
+      } catch (e: unknown) {
+        if (!cancelled) {
+          showError((e as Error)?.message || 'Erro ao carregar pet');
+          navigate('/hub/pets', { replace: true });
+        }
+      } finally {
+        if (!cancelled) setEditLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEdit, clinicId, editPetId, accessAllowed, showError, navigate]);
 
   useEffect(() => {
     if (fromQuote && clinicId && petIndex === 0) {
@@ -164,7 +210,7 @@ const HubPetWizardPage: React.FC = () => {
       if (!state.species.trim()) return 'Indique a espécie.';
       if (!state.isSRD && !state.breed.trim()) return 'Indique a raça ou active SRD.';
       if (!state.sex) return 'selecione o sexo.';
-      if (!state.neutered) return 'Indique se o pet é castrado.';
+      if (!isEdit && !state.neutered) return 'Indique se o pet é castrado.';
       if (!state.birth_date.trim()) return 'Indique a data de nascimento.';
     }
     if (step === 2) {
@@ -195,7 +241,7 @@ const HubPetWizardPage: React.FC = () => {
       return;
     }
     if (!clinicId || !canWrite) return;
-    if (fromQuote && !guardianIdParam) {
+    if (!isEdit && fromQuote && !guardianIdParam) {
       showError('Fluxo do orçamento incompleto: falta o tutor. Volte a Clientes.');
       return;
     }
@@ -211,13 +257,12 @@ const HubPetWizardPage: React.FC = () => {
       const notesVal = obsParts.length ? obsParts.join('\n\n') : null;
       const sizeTier = resolvePetBodyPorteForApi(state.size || '', state.species.trim(), state.isSRD ? '' : state.breed.trim());
 
-      const { pet } = await hubPetsApi.create({
+      const payload = {
         clinic_id: clinicId,
         name: state.name.trim(),
         species: state.species.trim(),
         breed: breedVal,
         sex: sexVal,
-        birth_date: state.birth_date.trim() || undefined,
         notes: notesVal,
         size_tier: sizeTier,
         coat_color: state.coatColor.trim() || null,
@@ -225,6 +270,21 @@ const HubPetWizardPage: React.FC = () => {
         primary_guardian_id: state.primary_guardian_id,
         secondary_guardian_id: sec,
         behavior_tags: state.behaviorTags.length ? state.behaviorTags : null,
+      };
+
+      if (isEdit && editPetId) {
+        await hubPetsApi.update(editPetId, {
+          ...payload,
+          birth_date: state.birth_date.trim() || null,
+        });
+        showSuccess('Pet atualizado');
+        navigate(returnTo);
+        return;
+      }
+
+      const { pet } = await hubPetsApi.create({
+        ...payload,
+        birth_date: state.birth_date.trim() || undefined,
       });
 
       if (fromQuote && guardianIdParam) {
@@ -273,7 +333,7 @@ const HubPetWizardPage: React.FC = () => {
       showSuccess('Pet criado com sucesso');
       navigate('/hub/pets', { replace: false });
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao criar pet');
+      showError((e as Error)?.message || (isEdit ? 'Erro ao atualizar pet' : 'Erro ao criar pet'));
     } finally {
       setSubmitting(false);
     }
@@ -287,10 +347,10 @@ const HubPetWizardPage: React.FC = () => {
     return <Navigate to="/hub/pets" replace />;
   }
 
-  if (permLoading || !accessAllowed) {
+  if (permLoading || !accessAllowed || editLoading) {
     return (
       <div className="hub-clientes hub-pets-page" style={{ padding: 24 }}>
-        Carregando…
+        <HubLoading label={isEdit ? 'Carregando pet…' : 'Carregando…'} />
       </div>
     );
   }
@@ -313,7 +373,7 @@ const HubPetWizardPage: React.FC = () => {
   const stepContent = () => {
     switch (activeStep) {
       case 0:
-        return <PetWizardStepBasics state={state} update={update} photoPreview={photoPreview} onPhotoChange={onPhotoChange} />;
+        return <PetWizardStepBasics state={state} update={update} photoPreview={photoPreview} onPhotoChange={onPhotoChange} isEdit={isEdit} />;
       case 1:
         return <PetWizardStepHealth />;
       case 2:
@@ -337,7 +397,12 @@ const HubPetWizardPage: React.FC = () => {
           </p>
         </div>
       ) : null}
-      <PetWizardStepper activeStep={activeStep} maxReached={maxReached} onSelect={setActiveStep} />
+      <PetWizardStepper
+        activeStep={activeStep}
+        maxReached={maxReached}
+        onSelect={setActiveStep}
+        ariaLabel={isEdit ? 'Passos da edição' : 'Passos do cadastro'}
+      />
 
       <div className="pet-wizard__middle">
         <div className="pet-wizard__grid">
@@ -355,7 +420,7 @@ const HubPetWizardPage: React.FC = () => {
       </div>
 
       <footer className="pet-wizard__footer">
-        <HubCancelButton onClick={() => navigate('/hub/pets')} />
+        <HubCancelButton onClick={() => navigate(isEdit ? returnTo : '/hub/pets')} />
         <div className="pet-wizard__footer-right">
           {activeStep > 0 && (
             <button type="button" className="pet-wizard__btn pet-wizard__btn--outline" onClick={goBack}>
@@ -364,25 +429,32 @@ const HubPetWizardPage: React.FC = () => {
             </button>
           )}
           {!isLast ? (
-            <button type="button" className="pet-wizard__btn pet-wizard__btn--primary" onClick={goNext}>
+            <button
+              type="button"
+              className={`pet-wizard__btn ${isEdit ? 'pet-wizard__btn--outline' : 'pet-wizard__btn--primary'}`}
+              onClick={goNext}
+            >
               Próximo
               <ChevronRight size={18} strokeWidth={2} aria-hidden />
             </button>
-          ) : (
+          ) : null}
+          {isEdit || isLast ? (
             <button
               type="button"
               className="pet-wizard__btn pet-wizard__btn--primary"
               disabled={submitting}
               onClick={() => void handleSubmit()}
             >
-              {submitting ? 'Salvando…' : (
+              {submitting ? 'Salvando…' : isEdit ? (
+                'Salvar alterações'
+              ) : (
                 <>
                   Concluir cadastro
                   <ChevronRight size={18} strokeWidth={2} aria-hidden />
                 </>
               )}
             </button>
-          )}
+          ) : null}
         </div>
       </footer>
     </div>

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   useAuth,
   getStoredClinicId,
@@ -24,6 +24,8 @@ import '../components/hub-profile.css';
 
 const HubGuardianDetailPage: React.FC = () => {
   const { guardianId } = useParams<{ guardianId: string }>();
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'pets' ? 'pets' : undefined;
   const navigate = useNavigate();
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
@@ -171,6 +173,8 @@ const HubGuardianDetailPage: React.FC = () => {
           clinicId={clinicId}
           unitId={unitId}
           canCreateReceivable={hasPermission('hub.receivables.create')}
+          canWritePets={hasPermission('hub.pets.write')}
+          initialTab={initialTab}
         />
       )}
     </div>

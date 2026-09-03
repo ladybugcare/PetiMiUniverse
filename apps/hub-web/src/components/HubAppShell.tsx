@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { HubUnitProvider } from '../contexts/HubUnitContext';
-import { HubCashSessionProvider } from '../contexts/HubCashSessionContext';
-import { useCaixaExitGuard } from '../hooks/useCaixaExitGuard';
+import { HubCaixaExitGuard } from './HubCaixaExitGuard';
 import HubSidebar from './HubSidebar';
 import HubTopHeader from './HubTopHeader';
 import HubUnitIncompleteBanner from './HubUnitIncompleteBanner';
@@ -10,14 +8,16 @@ import HubCashOpenBanner from './HubCashOpenBanner';
 
 const MOBILE_MQ = '(max-width: 900px)';
 
-const HubAppShellInner: React.FC = () => {
+/**
+ * Shell visual do Hub.
+ * Providers (unidade / sessão de caixa) ficam em App (`HubAuthenticatedLayout`).
+ */
+const HubAppShell: React.FC = () => {
   const { pathname } = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false,
   );
-
-  const { ExitGuardModal } = useCaixaExitGuard();
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);
@@ -58,7 +58,7 @@ const HubAppShellInner: React.FC = () => {
 
   return (
     <div className="hub-app-shell">
-      <ExitGuardModal />
+      <HubCaixaExitGuard />
       {isMobile && isSidebarOpen && (
         <button
           type="button"
@@ -83,13 +83,5 @@ const HubAppShellInner: React.FC = () => {
     </div>
   );
 };
-
-const HubAppShell: React.FC = () => (
-  <HubUnitProvider>
-    <HubCashSessionProvider>
-      <HubAppShellInner />
-    </HubCashSessionProvider>
-  </HubUnitProvider>
-);
 
 export default HubAppShell;

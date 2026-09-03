@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Check,
@@ -37,6 +37,7 @@ import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { HubWorkspacePrescriptions } from './HubWorkspacePrescriptions';
 import { HubWorkspaceExamOrders } from './HubWorkspaceExamOrders';
 import { HubWorkspaceSpecialistReferrals } from './HubWorkspaceSpecialistReferrals';
+import { HubWorkspaceVaccinations } from '../../components/clinical/HubWorkspaceVaccinations';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import {
@@ -45,7 +46,6 @@ import {
   formatEventTitle,
   formatHubClinicalExamStatus,
   attachmentPublicUrl,
-  todayYmd,
 } from './clinicalDisplay';
 import { petAgeDetailedLabel } from '../pets/petAge';
 import { useDebouncedSave } from '../../hooks/useDebouncedSave';
@@ -95,7 +95,6 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   hideFinancial = false,
 }) => {
   const navigate = useNavigate();
-  const location = useLocation();
   const clinicId = getStoredClinicId();
   const { showError, showSuccess } = useAlert();
   const { hasPermission } = usePermissions();
@@ -117,14 +116,8 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   const [evolutionDrawerOpen, setEvolutionDrawerOpen] = useState(false);
   const [activeNav, setActiveNav] = useState(initialSection || 'sec-resumo');
 
-  const backTo =
-    (location.state as { from?: string } | null)?.from === 'cockpit'
-      ? '/hub/clinica'
-      : '/hub/clinica/atendimentos';
-  const backLabel =
-    (location.state as { from?: string } | null)?.from === 'cockpit'
-      ? 'Voltar ao consultório'
-      : 'Voltar à fila';
+  const backTo = '/hub/clinica';
+  const backLabel = 'Voltar ao consultório';
 
   useEffect(() => {
     if (initialSection) {
@@ -1128,94 +1121,6 @@ function HubEncounterGuardianPicker({
         </p>
       ) : null}
     </div>
-  );
-}
-
-function HubWorkspaceVaccinations({
-  encounter,
-  clinicId,
-  readOnly,
-  onClinicalRefresh,
-}: {
-  encounter: HubEncounter;
-  clinicId: string;
-  readOnly: boolean;
-  onClinicalRefresh?: () => void;
-}) {
-  const { showError } = useAlert();
-  const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
-  const [vaccine, setVaccine] = useState('');
-  const [batch, setBatch] = useState('');
-
-  useEffect(() => {
-    void hubClinicalApi.listVaccinations(clinicId, encounter.pet_id ?? undefined).then((r) => setItems(r.vaccinations ?? []));
-  }, [clinicId, encounter.pet_id]);
-
-  const add = async () => {
-    if (!vaccine.trim()) return;
-    try {
-      await hubClinicalApi.createVaccination({
-        clinic_id: clinicId,
-        pet_id: encounter.pet_id ?? '',
-        hub_encounter_id: encounter.id,
-        hub_case_id: encounter.hub_case_id ?? undefined,
-        vaccine_name: vaccine,
-        batch_number: batch || undefined,
-        administered_at: todayYmd(),
-      });
-      setVaccine('');
-      setBatch('');
-      const r = await hubClinicalApi.listVaccinations(clinicId, encounter.pet_id ?? undefined);
-      setItems(r.vaccinations ?? []);
-      onClinicalRefresh?.();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao registar vacina');
-    }
-  };
-
-  const vacRows = items.filter(
-    (v) =>
-      v.hub_encounter_id === encounter.id || (!!encounter.hub_case_id && v.hub_case_id === encounter.hub_case_id),
-  );
-
-  return (
-    <>
-      {!readOnly && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-          <input placeholder="Vacina" value={vaccine} onChange={(e) => setVaccine(e.target.value)} />
-          <input placeholder="Lote" value={batch} onChange={(e) => setBatch(e.target.value)} />
-          <button type="button" className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm" onClick={() => void add()}>
-            Registrar
-          </button>
-        </div>
-      )}
-      {vacRows.length === 0 ? (
-        <p className="hub-clientes__muted" style={{ marginBottom: 0 }}>
-          Nenhuma vacina registrada neste atendimento ou caso.
-        </p>
-      ) : (
-        <div className="hub-cws-vaccine-table-wrap">
-          <table className="hub-cws-vaccine-table">
-            <thead>
-              <tr>
-                <th>Vacina</th>
-                <th>Lote</th>
-                <th>Data</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vacRows.map((v) => (
-                <tr key={String(v.id)}>
-                  <td>{String(v.vaccine_name)}</td>
-                  <td>{String(v.batch_number ?? '—')}</td>
-                  <td>{String(v.administered_at || '').slice(0, 10)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
   );
 }
 

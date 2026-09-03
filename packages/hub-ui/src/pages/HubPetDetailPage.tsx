@@ -8,39 +8,13 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import { useAlert } from '../components/AlertProvider';
-import { HubCancelButton } from '../components/HubCancelButton';
 import { HubLoading } from '../components/HubLoading';
 import { getSelectedUnitId } from '../utils/useSelectedUnitId';
-import { hubGuardiansApi, type HubGuardian } from '../api/hubGuardiansApi';
 import { hubPetsApi, type HubPet } from '../api/hubPetsApi';
-import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
-import type { CoatTypeValue, PetBodyPorteValue } from '../utils/hubServiceTypesPricingMatrix';
 import './clientes/clientes.css';
 import './pets/pets-page.css';
 import '../components/hub-profile.css';
 import { PetDetailPanel } from './pets/PetDetailPanel';
-import { PetForm } from './pets/PetForm';
-import { emptyPetForm, type PetFormValues } from './pets/PetFormValues';
-
-function petToForm(p: HubPet): PetFormValues {
-  const st = p.size_tier;
-  const sizeOk = st && (['mini', 'pequeno', 'medio', 'grande', 'gigante'] as const).includes(st as PetBodyPorteValue);
-  return {
-    name: p.name,
-    species: p.species,
-    breed: p.breed || '',
-    isSRD: !(p.breed && String(p.breed).trim()),
-    sex: (p.sex as PetFormValues['sex']) || '',
-    birth_date: p.birth_date || '',
-    notes: p.notes || '',
-    behaviorTags: p.behavior_tags ?? [],
-    size_tier: sizeOk ? (st as PetFormValues['size_tier']) : '',
-    coat_color: p.coat_color || '',
-    coat_type: p.coat_type ? (p.coat_type as CoatTypeValue) : '',
-    primary_guardian_id: p.primary_guardian?.guardian_id || '',
-    secondary_guardian_id: p.secondary_guardian?.guardian_id || '',
-  };
-}
 
 const HubPetDetailPage: React.FC = () => {
   const { petId } = useParams<{ petId: string }>();
@@ -53,11 +27,7 @@ const HubPetDetailPage: React.FC = () => {
   const canWrite = hasPermission('hub.pets.write');
 
   const [loading, setLoading] = useState(true);
-  const [guardians, setGuardians] = useState<HubGuardian[]>([]);
   const [pet, setPet] = useState<HubPet | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState<PetFormValues>(emptyPetForm);
-  const [submitting, setSubmitting] = useState(false);
 
   const accessAllowed = hasPermission('hub.pets.read');
 
@@ -65,14 +35,8 @@ const HubPetDetailPage: React.FC = () => {
     if (!clinicId || !petId || !accessAllowed) return;
     setLoading(true);
     try {
-      const [{ pets }, { guardians: gs }] = await Promise.all([
-        hubPetsApi.list(clinicId, true),
-        hubGuardiansApi.list(clinicId, true),
-      ]);
-      const found = pets.find((p) => p.id === petId) ?? null;
-      setPet(found);
-      setGuardians(gs);
-      if (found) setForm(petToForm(found));
+      const { pets } = await hubPetsApi.list(clinicId, true);
+      setPet(pets.find((p) => p.id === petId) ?? null);
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar pet');
       setPet(null);
@@ -91,58 +55,6 @@ const HubPetDetailPage: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!clinicId || !petId || !canWrite) return;
-    if (!form.name.trim() || !form.species.trim()) {
-      showError('Nome e espécie são obrigatórios');
-      return;
-    }
-    if (!form.primary_guardian_id) {
-      showError('Tutor principal é obrigatório');
-      return;
-    }
-    if (!form.isSRD && !form.breed.trim()) {
-      showError('Indique a raça ou marque SRD.');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const sexVal = form.sex === '' ? null : form.sex;
-      const sec =
-        form.secondary_guardian_id && form.secondary_guardian_id !== form.primary_guardian_id
-          ? form.secondary_guardian_id
-          : null;
-      const sizeTier = resolvePetBodyPorteForApi(
-        form.size_tier || '',
-        form.species.trim(),
-        form.isSRD ? '' : form.breed.trim(),
-      );
-      await hubPetsApi.update(petId, {
-        clinic_id: clinicId,
-        name: form.name.trim(),
-        species: form.species.trim(),
-        breed: form.isSRD ? null : form.breed.trim() || null,
-        sex: sexVal,
-        birth_date: form.birth_date.trim() || null,
-        notes: form.notes.trim() || null,
-        behavior_tags: form.behaviorTags.length ? form.behaviorTags : null,
-        size_tier: sizeTier,
-        coat_color: form.coat_color.trim() || null,
-        coat_type: form.coat_type || null,
-        primary_guardian_id: form.primary_guardian_id,
-        secondary_guardian_id: sec,
-      });
-      showSuccess('Pet atualizado');
-      setEditing(false);
-      await load();
-    } catch (err: unknown) {
-      showError((err as Error)?.message || 'Erro ao salvar');
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const handleArchivePet = useCallback(() => {
     if (!clinicId || !petId || !pet || !canWrite) return;
@@ -198,44 +110,19 @@ const HubPetDetailPage: React.FC = () => {
         </button>
       </div>
 
-      {editing ? (
-        <div className="hub-meu-perfil__panel" style={{ maxWidth: 1100, margin: '0 auto' }}>
-          <header className="hub-meu-perfil__panel-head">
-            <div>
-              <h2 className="hub-meu-perfil__panel-title">Editar pet</h2>
-              <p className="hub-meu-perfil__panel-sub">Atualize a ficha do pet.</p>
-            </div>
-          </header>
-          <PetForm
-            key={`edit-${pet.id}`}
-            value={form}
-            onChange={setForm}
-            onSubmit={handleSubmit}
-            submitting={submitting}
-            canWrite={canWrite}
-            guardians={guardians}
-            isEdit
-            title=""
-          />
-          <div style={{ marginTop: 12 }}>
-            <HubCancelButton onClick={() => setEditing(false)} />
-          </div>
-        </div>
-      ) : (
-        <PetDetailPanel
-          layout="page"
-          pet={pet}
-          onClose={() => navigate('/hub/pets')}
-          onStartEdit={() => setEditing(true)}
-          onOpenInNewPage={() => {}}
-          hideNewPageButton
-          onArchive={canWrite ? handleArchivePet : undefined}
-          canWrite={canWrite}
-          clinicId={clinicId}
-          unitId={unitId}
-          canCreateReceivable={hasPermission('hub.receivables.create')}
-        />
-      )}
+      <PetDetailPanel
+        layout="page"
+        pet={pet}
+        onClose={() => navigate('/hub/pets')}
+        onStartEdit={() => navigate(`/hub/pets/${pet.id}/editar`)}
+        onOpenInNewPage={() => {}}
+        hideNewPageButton
+        onArchive={canWrite ? handleArchivePet : undefined}
+        canWrite={canWrite}
+        clinicId={clinicId}
+        unitId={unitId}
+        canCreateReceivable={hasPermission('hub.receivables.create')}
+      />
     </div>
   );
 };

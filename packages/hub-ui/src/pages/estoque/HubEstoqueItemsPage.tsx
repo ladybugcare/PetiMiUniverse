@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Archive, Package, Pencil, Plus, Search } from 'lucide-react';
 import { getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import {
@@ -126,7 +126,8 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
   const [items, setItems] = useState<HubInventoryItem[]>([]);
   const [suppliers, setSuppliers] = useState<HubSupplier[]>([]);
   const [manufacturers, setManufacturers] = useState<HubManufacturer[]>([]);
-  const [search, setSearch] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
   const [panelMode, setPanelMode] = useState<PanelMode>('none');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<InventoryFormState>(emptyForm());
@@ -148,6 +149,24 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
       setLoading(false);
     }
   }, [clinicId, itemKind, showError]);
+
+  const onSearchChange = useCallback((value: string) => {
+    setSearch(value);
+  }, []);
+
+  const runSearch = useCallback(() => {
+    const value = searchRef.current.trim();
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set('q', value);
+        else next.delete('q');
+        return next;
+      },
+      { replace: true },
+    );
+    void loadItems();
+  }, [loadItems, setSearchParams]);
 
   const loadRefs = useCallback(async () => {
     if (!clinicId) return;
@@ -173,10 +192,14 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
     void loadRefs();
   }, [clinicId, accessAllowed, loadRefs]);
 
+  // Deep link /hub/estoque?q=… (ex.: relatórios) e reload ao mudar o parâmetro.
   useEffect(() => {
     if (!clinicId || !accessAllowed) return;
+    const q = searchParams.get('q') ?? '';
+    setSearch(q);
+    searchRef.current = q;
     void loadItems();
-  }, [clinicId, accessAllowed, loadItems]);
+  }, [clinicId, accessAllowed, loadItems, searchParams]);
 
   const metrics = useMemo(() => {
     const total = items.length;
@@ -513,9 +536,9 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                     className="hub-servicos__search-input"
                     placeholder="Buscar por nome, EAN ou SKU…"
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => onSearchChange(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') void loadItems();
+                      if (e.key === 'Enter') runSearch();
                     }}
                     aria-label="Buscar itens"
                   />

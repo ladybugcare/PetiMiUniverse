@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { useAlert } from '../../../components/AlertProvider';
 import { HubLoading } from '../../../components/HubLoading';
@@ -13,10 +13,17 @@ import {
   type HubEncounterOperationalPhase,
   type VetCockpitPatientContext,
 } from '../../../api/hubClinicalApi';
+import { hubAgendaApi } from '../../../api/hubAgendaApi';
 import { useMyStaffMember } from '../../../hooks/useMyStaffMember';
 import { redirectAwayFromHub } from '../../../utils/redirectAwayFromHub';
+import { getSelectedUnitId } from '../../../utils/useSelectedUnitId';
 import { dayRangeIsoLocal } from '../../agenda/agendaFilters';
+import type { NewAppointmentInitial } from '../../agenda/NewAppointmentModal';
+import type { CareLocationValue } from '../../../components/CareLocationFields';
 import StartEncounterModal from '../StartEncounterModal';
+import ClinicWalkInPanel from '../ClinicWalkInPanel';
+import HubClinicHospitalPage from '../HubClinicHospitalPage';
+import HubClinicSurgeriesPage from '../HubClinicSurgeriesPage';
 import VetCockpitHeader from './VetCockpitHeader';
 import VetCockpitQueue from './VetCockpitQueue';
 import VetCockpitPatientPanel, { type VetCockpitDrawerSection } from './VetCockpitPatientPanel';
@@ -36,6 +43,7 @@ const POLL_MS = 30_000;
 
 const HubVetCockpitPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { showError, showSuccess } = useAlert();
   const { role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
@@ -53,6 +61,14 @@ const HubVetCockpitPage: React.FC = () => {
   const [startingEncounter, setStartingEncounter] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [phaseBusy, setPhaseBusy] = useState(false);
+  const [walkInOpen, setWalkInOpen] = useState(false);
+  const [creatingWalkIn, setCreatingWalkIn] = useState(false);
+  const [admitOpen, setAdmitOpen] = useState(false);
+  const [surgeryCreateOpen, setSurgeryCreateOpen] = useState(false);
+  const [hospSectionOpen, setHospSectionOpen] = useState(true);
+  const [surgSectionOpen, setSurgSectionOpen] = useState(true);
+  const [opsPresetPetId, setOpsPresetPetId] = useState<string | null>(null);
+  const [opsPresetCaseId, setOpsPresetCaseId] = useState<string | null>(null);
   const [badgeHints, setBadgeHints] = useState<
     Record<string, { examsAvailable?: boolean; rxDraft?: boolean; hospitalized?: boolean }>
   >({});
@@ -82,6 +98,31 @@ const HubVetCockpitPage: React.FC = () => {
     if (permLoading) return;
     if (!accessAllowed) redirectAwayFromHub(authRole as AppRole);
   }, [permLoading, accessAllowed, authRole]);
+
+  /** Links de Internar/Cirurgia chegam no Consultório com ?admit=1 ou ?surgery=1. */
+  useEffect(() => {
+    const wantAdmit = searchParams.get('admit') === '1';
+    const wantSurgery = searchParams.get('surgery') === '1';
+    if (!wantAdmit && !wantSurgery) return;
+    const qPet = searchParams.get('pet_id');
+    const qCase = searchParams.get('hub_case_id');
+    if (qPet) setOpsPresetPetId(qPet);
+    if (qCase) setOpsPresetCaseId(qCase);
+    if (wantAdmit) {
+      setAdmitOpen(true);
+      setHospSectionOpen(true);
+    }
+    if (wantSurgery) {
+      setSurgeryCreateOpen(true);
+      setSurgSectionOpen(true);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('admit');
+    next.delete('surgery');
+    next.delete('pet_id');
+    next.delete('hub_case_id');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!clinicId || !accessAllowed) return;
@@ -246,6 +287,69 @@ const HubVetCockpitPage: React.FC = () => {
     });
   };
 
+  const openAgendaForScheduling = useCallback(
+    (initial: NewAppointmentInitial) => {
+      setWalkInOpen(false);
+      navigate('/hub/appointments', {
+        state: { openClinicalCreate: true, clinicalIntakeInitial: initial },
+      });
+    },
+    [navigate],
+  );
+
+  const openAgendaForWalkIn = useCallback(
+    (initial: NewAppointmentInitial) => {
+      setWalkInOpen(false);
+      navigate('/hub/appointments?openWalkIn=1', { state: { walkInInitial: initial } });
+    },
+    [navigate],
+  );
+
+  const createWalkIn = async (payload: {
+    petId?: string | null;
+    guardianId?: string | null;
+    staffId?: string | null;
+    complaint: string;
+    hubServiceTypeId: string;
+    entryKind: 'routine' | 'emergency';
+    durationMinutes: number;
+    careLocation?: CareLocationValue;
+  }) => {
+    if (!clinicId) return;
+    setCreatingWalkIn(true);
+    try {
+      const now = new Date();
+      const endsAt = new Date(now.getTime() + payload.durationMinutes * 60_000);
+      await hubAgendaApi.create({
+        clinic_id: clinicId,
+        unit_id: getSelectedUnitId(),
+        hub_service_type_id: payload.hubServiceTypeId,
+        hub_staff_member_id: payload.staffId ?? staffId ?? null,
+        pet_id: payload.petId ?? null,
+        guardian_id: payload.guardianId ?? null,
+        starts_at: now.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: 'checked_in',
+        notes: payload.complaint.trim() || null,
+        title: payload.complaint.trim() ? payload.complaint.trim().slice(0, 200) : 'Atendimento clínico',
+        appointment_kind: payload.entryKind === 'emergency' ? 'clinical_emergency' : 'clinical_walk_in',
+        care_location_kind: payload.careLocation?.care_location_kind ?? 'own_unit',
+        hub_partner_clinic_id:
+          payload.careLocation?.care_location_kind === 'partner_clinic'
+            ? payload.careLocation.hub_partner_clinic_id
+            : null,
+      });
+      setWalkInOpen(false);
+      showSuccess('Entrada registrada na fila');
+      await loadQueue();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao registrar entrada na fila');
+      throw e;
+    } finally {
+      setCreatingWalkIn(false);
+    }
+  };
+
   if (permLoading || !accessAllowed) {
     return (
       <div className="vet-cockpit-page__pad">
@@ -311,6 +415,37 @@ const HubVetCockpitPage: React.FC = () => {
         ) : null}
       </div>
 
+      {canWrite ? (
+        <div className="vet-cockpit-day-actions" role="group" aria-label="Operação do dia">
+          <span className="vet-cockpit-day-actions__label">Operação do dia</span>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary"
+            disabled={!linked}
+            title={!linked ? 'Vincule seu usuário a um profissional na Equipe' : undefined}
+            onClick={() => setWalkInOpen(true)}
+          >
+            Novo atendimento
+          </button>
+          <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => {
+            setOpsPresetPetId(null);
+            setOpsPresetCaseId(null);
+            setAdmitOpen(true);
+            setHospSectionOpen(true);
+          }}>
+            Internar
+          </button>
+          <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => {
+            setOpsPresetPetId(null);
+            setOpsPresetCaseId(null);
+            setSurgeryCreateOpen(true);
+            setSurgSectionOpen(true);
+          }}>
+            Nova cirurgia
+          </button>
+        </div>
+      ) : null}
+
       <VetCockpitHeader summary={summary} dateLabel={`Hoje: ${summary.total} atendimentos`} />
       <div className="vet-cockpit-layout">
         <VetCockpitQueue
@@ -332,9 +467,63 @@ const HubVetCockpitPage: React.FC = () => {
             const encId = selected?.encounter_id ?? patientContext?.encounter?.id;
             if (encId) openEncounter(encId, section);
           }}
+          onAdmit={() => {
+            setOpsPresetPetId(selected?.pet_id ?? patientContext?.pet?.id ?? null);
+            setOpsPresetCaseId(patientContext?.encounter?.hub_case_id ?? null);
+            setAdmitOpen(true);
+            setHospSectionOpen(true);
+          }}
           onComplete={() => void handleComplete()}
           onSetOperationalPhase={(phase) => void handleSetOperationalPhase(phase)}
         />
+      </div>
+
+      <div className="hub-clinic-sections vet-cockpit-ops-sections">
+        <section className="hub-clinic-section">
+          <button
+            type="button"
+            className="hub-clinic-section__header"
+            aria-expanded={hospSectionOpen}
+            onClick={() => setHospSectionOpen((v) => !v)}
+          >
+            <span className="hub-clinic-section__title">Internações ativas</span>
+            <ChevronDown size={18} style={{ transform: hospSectionOpen ? 'rotate(180deg)' : undefined }} aria-hidden />
+          </button>
+          {hospSectionOpen ? (
+            <div className="hub-clinic-section__body">
+              <HubClinicHospitalPage
+                embedded
+                admitOpen={admitOpen}
+                onAdmitOpenChange={setAdmitOpen}
+                presetPetId={opsPresetPetId}
+                presetCaseId={opsPresetCaseId}
+              />
+            </div>
+          ) : null}
+        </section>
+
+        <section className="hub-clinic-section">
+          <button
+            type="button"
+            className="hub-clinic-section__header"
+            aria-expanded={surgSectionOpen}
+            onClick={() => setSurgSectionOpen((v) => !v)}
+          >
+            <span className="hub-clinic-section__title">Cirurgias (agendadas / em andamento)</span>
+            <ChevronDown size={18} style={{ transform: surgSectionOpen ? 'rotate(180deg)' : undefined }} aria-hidden />
+          </button>
+          {surgSectionOpen ? (
+            <div className="hub-clinic-section__body">
+              <HubClinicSurgeriesPage
+                embedded
+                createOpen={surgeryCreateOpen}
+                onCreateOpenChange={setSurgeryCreateOpen}
+                presetPetId={opsPresetPetId}
+                presetCaseId={opsPresetCaseId}
+              />
+            </div>
+          ) : null}
+        </section>
       </div>
 
       <StartEncounterModal
@@ -344,6 +533,17 @@ const HubVetCockpitPage: React.FC = () => {
         onClose={() => setStartModalItem(null)}
         onStart={handleStartEncounter}
         starting={startingEncounter}
+      />
+
+      <ClinicWalkInPanel
+        open={walkInOpen}
+        clinicId={clinicId}
+        defaultStaffId={staffId}
+        onClose={() => setWalkInOpen(false)}
+        onSubmit={createWalkIn}
+        onScheduleAgenda={openAgendaForScheduling}
+        onWalkInAgenda={openAgendaForWalkIn}
+        submitting={creatingWalkIn}
       />
     </div>
   );

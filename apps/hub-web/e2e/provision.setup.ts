@@ -19,6 +19,7 @@ import {
 } from './helpers/users';
 import {
   ensureAgendaScenarios,
+  ensureCaixaClinicAppointment,
   ensureGuardianPet,
   ensureServiceCatalog,
   ensureTodayPickupAppointment,
@@ -372,6 +373,14 @@ setup('provisiona CADMIN, clínica, CSTAFF e dados operacionais', async () => {
     catalog.pickupId,
   );
   await ensureAgendaScenarios(token, clinicId, unitId, guardianId, petId, catalog);
+  await ensureCaixaClinicAppointment(
+    token,
+    clinicId,
+    unitId,
+    guardianId,
+    petId,
+    catalog.clinicId,
+  );
 
   const file: E2EUsersFile = {
     cadmin: { email: cadminEmail, password, fullName: E2E_CADMIN.fullName },

@@ -81,7 +81,21 @@ const navSections: NavSection[] = [
       { to: '/hub/estoque', label: 'Estoque', icon: Package, permission: 'hub.inventory.read' },
       { to: '/hub/servicos', label: 'Serviços', icon: Briefcase, permission: 'hub.service_types.read' },
       { to: '/hub/equipe', label: 'Equipe', icon: UserSquare2, permission: 'hub.staff.read' },
-      { to: '/hub/relatorios', label: 'Relatórios', icon: BarChart3, permission: 'hub.financial.read' },
+      {
+        to: '/hub/relatorios',
+        label: 'Relatórios',
+        icon: BarChart3,
+        permission: [
+          'hub.reports.read',
+          'hub.financial.read',
+          'hub.inventory.read',
+          'hub.guardians.read',
+          'hub.appointments.read',
+          'boarding.reservations.read',
+          'grooming.queue.read',
+          'hub.clinic.read',
+        ],
+      },
     ],
   },
   {

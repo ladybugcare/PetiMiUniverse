@@ -88,9 +88,12 @@ export type HubGuardianPetRow = {
   id: string;
   name: string;
   species: string;
+  breed: string | null;
+  sex: string | null;
   role: 'primary' | 'secondary';
   size_tier: string;
   coat_type: string | null;
+  coat_color: string | null;
   birth_date: string | null;
 };
 
@@ -103,7 +106,9 @@ async function fetchPetsByGuardianIds(
 
   const { data, error } = await supabaseAdmin
     .from('hub_pet_guardians')
-    .select('guardian_id, role, hub_pets(id, name, species, size_tier, coat_type, birth_date, clinic_id, deleted_at)')
+    .select(
+      'guardian_id, role, hub_pets(id, name, species, breed, sex, size_tier, coat_type, coat_color, birth_date, clinic_id, deleted_at)'
+    )
     .in('guardian_id', guardianIds);
 
   if (error || !data) {
@@ -115,8 +120,11 @@ async function fetchPetsByGuardianIds(
     id: string;
     name: string;
     species: string;
+    breed: string | null;
+    sex: string | null;
     size_tier: string;
     coat_type: string | null;
+    coat_color: string | null;
     birth_date: string | null;
     clinic_id: string;
     deleted_at: string | null;
@@ -137,9 +145,12 @@ async function fetchPetsByGuardianIds(
       id: pet.id,
       name: pet.name,
       species: pet.species,
+      breed: pet.breed?.trim() || null,
+      sex: pet.sex ?? null,
       role: row.role as 'primary' | 'secondary',
       size_tier: pet.size_tier || 'medio',
       coat_type: pet.coat_type ?? null,
+      coat_color: pet.coat_color?.trim() || null,
       birth_date: pet.birth_date ?? null,
     });
     map.set(row.guardian_id, list);

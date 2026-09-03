@@ -5,11 +5,17 @@ type Props = {
   activeStep: number;
   maxReached: number;
   onSelect: (i: number) => void;
+  ariaLabel?: string;
 };
 
-export const PetWizardStepper: React.FC<Props> = ({ activeStep, maxReached, onSelect }) => {
+export const PetWizardStepper: React.FC<Props> = ({
+  activeStep,
+  maxReached,
+  onSelect,
+  ariaLabel = 'Passos do cadastro',
+}) => {
   return (
-    <div className="pet-wizard__stepper" role="tablist" aria-label="Passos do cadastro">
+    <div className="pet-wizard__stepper" role="tablist" aria-label={ariaLabel}>
       {WIZARD_STEPS.map((label, i) => {
         const isActive = i === activeStep;
         const isDone = i < activeStep;

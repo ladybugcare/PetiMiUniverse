@@ -1,11 +1,13 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import '../pages/clientes/clientes.css';
 
 export type HubTabNavItem = {
   to: string;
   label: string;
   end?: boolean;
+  /** Se definido, decide se a aba fica ativa (ex.: rotas filhas do Consultório). */
+  isActivePath?: (pathname: string) => boolean;
 };
 
 export type HubTabButtonItem = {
@@ -47,6 +49,7 @@ export const HubTabs: React.FC<HubTabsProps> = ({
   variant = 'page',
   className = '',
 }) => {
+  const { pathname } = useLocation();
   const isDetail = variant === 'detail';
   const containerClass = [
     isDetail ? 'hub-clientes__detail-tabs' : 'hub-clientes__tabs',
@@ -72,7 +75,16 @@ export const HubTabs: React.FC<HubTabsProps> = ({
       {items.map((item) => {
         if (isNavItem(item)) {
           return (
-            <NavLink key={item.to} to={item.to} end={item.end} className={navTabClassName}>
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                navTabClassName({
+                  isActive: item.isActivePath ? item.isActivePath(pathname) : isActive,
+                })
+              }
+            >
               {item.label}
             </NavLink>
           );

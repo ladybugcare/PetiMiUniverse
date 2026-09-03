@@ -6,11 +6,18 @@ export type HubPartnerClinic = {
   id: string;
   clinic_id: string;
   name: string;
-  city?: string | null;
-  address_line?: string | null;
   phone?: string | null;
   notes?: string | null;
   is_active: boolean;
+  postal_code?: string | null;
+  state?: string | null;
+  city?: string | null;
+  district?: string | null;
+  street?: string | null;
+  street_number?: string | null;
+  complement?: string | null;
+  /** Legado — preferir street/street_number. */
+  address_line?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -18,11 +25,17 @@ export type HubPartnerClinic = {
 export type CreateHubPartnerClinicPayload = {
   clinic_id: string;
   name: string;
-  city?: string | null;
-  address_line?: string | null;
   phone?: string | null;
   notes?: string | null;
   is_active?: boolean;
+  postal_code?: string | null;
+  state?: string | null;
+  city?: string | null;
+  district?: string | null;
+  street?: string | null;
+  street_number?: string | null;
+  complement?: string | null;
+  address_line?: string | null;
 };
 
 export type PatchHubPartnerClinicPayload = Partial<Omit<CreateHubPartnerClinicPayload, 'clinic_id'>> & {
@@ -35,6 +48,31 @@ export type CareLocationPayload = {
   care_location_kind?: CareLocationKind;
   hub_partner_clinic_id?: string | null;
 };
+
+/** Formata endereço estruturado (mesmo padrão de tutores). */
+export function formatPartnerClinicAddress(p: {
+  street?: string | null;
+  street_number?: string | null;
+  complement?: string | null;
+  district?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  address_line?: string | null;
+}): string {
+  const parts: string[] = [];
+  if (p.street) {
+    parts.push([p.street, p.street_number].filter(Boolean).join(', '));
+  } else if (p.address_line) {
+    parts.push(p.address_line);
+  }
+  if (p.complement) parts.push(p.complement);
+  if (p.district) parts.push(p.district);
+  const cityState = [p.city, p.state].filter(Boolean).join(' / ');
+  if (cityState) parts.push(cityState);
+  if (p.postal_code) parts.push(`CEP ${p.postal_code}`);
+  return parts.join(' · ');
+}
 
 export const hubPartnerClinicsApi = {
   list(clinicId: string, opts?: { includeInactive?: boolean }) {

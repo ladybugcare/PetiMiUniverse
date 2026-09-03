@@ -72,17 +72,40 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
     ? new Date(openedAt).toISOString().slice(0, 10) < ymdToday()
     : false;
 
+  const value: HubCashSessionContextValue = {
+    cashSession,
+    isOpen,
+    openedAt,
+    isPreviousDay,
+    pendingBillingCount,
+    loading,
+    refresh,
+  };
+
   return (
-    <HubCashSessionContext.Provider
-      value={{ cashSession, isOpen, openedAt, isPreviousDay, pendingBillingCount, loading, refresh }}
-    >
-      {children}
-    </HubCashSessionContext.Provider>
+    <HubCashSessionContext.Provider value={value}>{children}</HubCashSessionContext.Provider>
   );
+};
+
+const FALLBACK_CASH_SESSION: HubCashSessionContextValue = {
+  cashSession: null,
+  isOpen: false,
+  openedAt: null,
+  isPreviousDay: false,
+  pendingBillingCount: 0,
+  loading: false,
+  refresh: async () => undefined,
 };
 
 export function useHubCashSession(): HubCashSessionContextValue {
   const ctx = useContext(HubCashSessionContext);
-  if (!ctx) throw new Error('useHubCashSession deve ser usado dentro de HubCashSessionProvider');
+  if (!ctx) {
+    // Evita derrubar o app (ex.: HMR com identidade de contexto desatualizada).
+    // Em uso normal o Provider sempre envolve o shell.
+    if (typeof console !== 'undefined') {
+      console.warn('useHubCashSession: contexto ausente — usando fallback (verifique HubCashSessionProvider).');
+    }
+    return FALLBACK_CASH_SESSION;
+  }
   return ctx;
 }

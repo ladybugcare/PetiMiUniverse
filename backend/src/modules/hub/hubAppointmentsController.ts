@@ -1229,7 +1229,10 @@ export const listHubAppointments = async (req: Request, res: Response) => {
       .gt('ends_at', from)
       .order('starts_at', { ascending: true });
 
-    if (unit_id) q = q.eq('unit_id', unit_id);
+    if (unit_id) {
+      // Inclui atendimentos em clínica parceira (sem unit_id), como na fila clínica.
+      q = q.or(`unit_id.eq.${unit_id},care_location_kind.eq.partner_clinic`);
+    }
     if (care_location_kind) q = q.eq('care_location_kind', care_location_kind);
     if (hub_partner_clinic_id) q = q.eq('hub_partner_clinic_id', hub_partner_clinic_id);
     if (hub_staff_member_id === '__na__') q = q.is('hub_staff_member_id', null);

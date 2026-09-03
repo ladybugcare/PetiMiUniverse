@@ -20,6 +20,8 @@ type Props = {
   open: boolean;
   clinicId: string;
   onClose: () => void;
+  /** Pré-seleciona o profissional (ex.: usuário logado no consultório). */
+  defaultStaffId?: string | null;
   /** Abre a agenda principal em modo encaixe (recepção unificada). */
   onWalkInAgenda?: (initial: NewAppointmentInitial) => void;
   /** Abre a agenda para agendamento futuro (consulta de rotina). */
@@ -45,6 +47,7 @@ const ClinicWalkInPanel: React.FC<Props> = ({
   open,
   clinicId,
   onClose,
+  defaultStaffId,
   onSubmit,
   onScheduleAgenda,
   onWalkInAgenda,
@@ -84,8 +87,11 @@ const ClinicWalkInPanel: React.FC<Props> = ({
       return;
     }
     if (!clinicId) return;
-    void hubStaffApi.list(clinicId).then((r) => setStaff(r.staff ?? []));
-  }, [open, clinicId]);
+    void hubStaffApi.list(clinicId).then((r) => {
+      setStaff(r.staff ?? []);
+      if (defaultStaffId) setStaffId(defaultStaffId);
+    });
+  }, [open, clinicId, defaultStaffId]);
 
   useEffect(() => {
     if (!open || !clinicId) return;

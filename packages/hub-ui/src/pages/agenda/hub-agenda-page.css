@@ -612,6 +612,22 @@
   );
 }
 
+.hub-agenda-card--partner {
+  border-style: dashed;
+  border-color: rgba(91, 61, 138, 0.45);
+}
+
+.hub-agenda-card__badge--partner {
+  padding: 0;
+  background: transparent;
+}
+
+.hub-agenda-card__badge--partner .hub-care-loc-badge {
+  max-width: 140px;
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
 .hub-agenda-card--week {
   height: auto;
   min-height: 0;

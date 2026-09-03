@@ -204,3 +204,9 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 82. **`082_create_hub_platform_subscriptions.sql`** — Assinatura SaaS do Hub: `hub_platform_plans`, `hub_platform_modules`, `clinic_hub_subscriptions`; seed do Programa Beta + módulos; backfill de clínicas existentes. Ver [HUB_PLATFORM_SUBSCRIPTION_PLAN.md](../../docs/architecture/HUB_PLATFORM_SUBSCRIPTION_PLAN.md).
 
 83. **`083_alter_hub_pickup_stops_in_transit.sql`** — Adiciona status `in_transit` em `hub_pickup_stops` (pet a bordo / a caminho da clínica, exclusivo para coletas). Adiciona índice único para paradas soltas (`hub_pickup_route_id IS NULL`) por agendamento. Executar depois do item 12c.
+
+94. **`094_alter_hub_partner_clinics_address.sql`** — Campos de endereço em clínicas parceiras (local de atendimento). Executar depois do item 93.
+
+95. **`095_alter_hub_vaccination_records_price.sql`** — Coluna `price` em `hub_vaccination_records` (snapshot de venda para comanda). Executar depois de `025i_create_hub_prescriptions_vaccinations.sql`. Ver [`docs/onboarding/matilha-vacinacao-estoque.md`](../../docs/onboarding/matilha-vacinacao-estoque.md).
+
+96. **`096_create_hub_report_email_schedules.sql`** — Tabela `hub_report_email_schedules` (envio semanal de relatórios por e-mail). Executar depois de `clinics` / `units`.

@@ -23,11 +23,20 @@
 .hub-clinic-shell--tabs > .hub-clientes__tabs {
   flex: 0 0 auto;
   flex-wrap: wrap;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  gap: 4px 8px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.hub-clinic-shell--tabs > .hub-clientes__tabs a.hub-clientes__tab {
+  font-size: 0.95rem;
+  padding: 10px 14px 12px;
 }
 
 .hub-clinic-shell--tabs > .hub-clientes__tabs a.hub-clientes__tab--active {
   border-bottom-color: var(--hc-brand, #c86a4d);
+  font-weight: 700;
 }
 
 .hub-clinic-shell__main {
@@ -525,16 +534,159 @@
 
 .hub-clinic-records {
   min-height: calc(100vh - 160px);
+  gap: 0;
+}
+
+.hub-clinic-records__list-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hub-clinic-records__list-intro {
+  padding: 0 4px 12px;
+}
+
+.hub-clinic-records__list-kicker {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__list-hint {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.hub-clinic-records__list-toolbar {
+  margin-bottom: 12px;
+}
+
+.hub-clinic-records__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  width: 100%;
+}
+
+.hub-clinic-records__search svg {
+  flex-shrink: 0;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__search input {
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-clinic-records__table-wrap {
+  flex: 1;
+}
+
+.hub-clinic-records__pet-cell {
+  font-weight: 600;
+}
+
+.hub-clinic-records__detail {
+  width: min(460px, 42vw);
+  border-left: none;
+}
+
+.hub-clinic-records__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 28px 8px;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clinic-records__empty > p {
+  margin: 0;
+  max-width: 28rem;
+  line-height: 1.45;
+}
+
+.hub-clinic-records__empty svg {
+  color: var(--hc-text-muted, #8e6e67);
+  margin-bottom: 4px;
 }
 
 .hub-clinic-records__header {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.hub-clinic-records__header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .hub-clinic-records__pet-name {
   margin: 0 0 4px;
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 700;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clinic-records__pet-meta {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.hub-clinic-records__stat {
+  padding: 10px 8px;
+  border-radius: 10px;
+  background: var(--hc-bg-subtle, #faf7f5);
+  border: 1px solid var(--hc-border, #e8ddd8);
+  text-align: center;
+}
+
+.hub-clinic-records__stat-value {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--hc-text, #4a3b3a);
+  line-height: 1.2;
+}
+
+.hub-clinic-records__stat-label {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.hub-clinic-records__actions .hub-clientes__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
 }
 
 .hub-clinic-records__tabs {
@@ -546,6 +698,12 @@
   padding-left: 18px;
   font-size: 14px;
   line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  .hub-clinic-records__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .hub-clinic-timeline__body {

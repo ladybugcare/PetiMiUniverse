@@ -37,7 +37,24 @@ const EVENT_KIND_LABEL: Record<HubHospitalizationEventKind, string> = {
   note: 'Nota',
 };
 
-const HubClinicHospitalPage: React.FC = () => {
+export type HubClinicHospitalPageProps = {
+  /** Lista embutida no Consultório (sem toolbar primária de admissão). */
+  embedded?: boolean;
+  /** Controle externo do painel "Internar pet". */
+  admitOpen?: boolean;
+  onAdmitOpenChange?: (open: boolean) => void;
+  /** Prefill ao abrir a partir do Consultório / links. */
+  presetPetId?: string | null;
+  presetCaseId?: string | null;
+};
+
+const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
+  embedded = false,
+  admitOpen: admitOpenProp,
+  onAdmitOpenChange,
+  presetPetId,
+  presetCaseId,
+}) => {
   const clinicId = getStoredClinicId();
   const { showError, showSuccess } = useAlert();
   const { hasPermission } = usePermissions();
@@ -48,7 +65,13 @@ const HubClinicHospitalPage: React.FC = () => {
   const [beds, setBeds] = useState<HubHospitalBed[]>([]);
   const [hosp, setHosp] = useState<HubHospitalization[]>([]);
   const [bedCode, setBedCode] = useState('');
-  const [admitOpen, setAdmitOpen] = useState(false);
+  const [admitOpenInternal, setAdmitOpenInternal] = useState(false);
+  const admitControlled = admitOpenProp !== undefined;
+  const admitOpen = admitControlled ? Boolean(admitOpenProp) : admitOpenInternal;
+  const setAdmitOpen = (open: boolean) => {
+    onAdmitOpenChange?.(open);
+    if (!admitControlled) setAdmitOpenInternal(open);
+  };
   const [pets, setPets] = useState<HubPet[]>([]);
   const [petId, setPetId] = useState('');
   const [bedId, setBedId] = useState('');
@@ -98,15 +121,20 @@ const HubClinicHospitalPage: React.FC = () => {
     void hubPetsApi.list(clinicId).then((r) => setPets(r.pets ?? [])).catch(() => setPets([]));
   }, [clinicId, admitOpen]);
 
-  // Pre-fill from query params (?pet_id=...&hub_case_id=...)
+  // Prefill: props do Consultório ou query em rota legada standalone.
   useEffect(() => {
+    if (presetPetId) setPetId(presetPetId);
+    if (presetCaseId) setCaseLink({ hub_case_id: presetCaseId });
+  }, [presetPetId, presetCaseId, admitOpen]);
+
+  useEffect(() => {
+    if (embedded) return;
     const qPet = searchParams.get('pet_id');
     const qCase = searchParams.get('hub_case_id');
-    if (qPet || qCase) {
-      setAdmitOpen(true);
-      if (qPet) setPetId(qPet);
-      if (qCase) setCaseLink({ hub_case_id: qCase });
-    }
+    if (!qPet && !qCase) return;
+    setAdmitOpen(true);
+    if (qPet) setPetId(qPet);
+    if (qCase) setCaseLink({ hub_case_id: qCase });
   }, []);
 
   const openEvents = async (hospId: string) => {
@@ -251,8 +279,8 @@ const HubClinicHospitalPage: React.FC = () => {
   }
 
   return (
-    <div className="hub-clinic-hospital">
-      {canWrite && (
+    <div className={`hub-clinic-hospital${embedded ? ' hub-clinic-hospital--embedded' : ''}`}>
+      {canWrite && !embedded && (
         <div className="hub-clientes__toolbar">
           <input
             className="hub-clientes__input hub-clinic-hospital__bed-input"
@@ -269,6 +297,20 @@ const HubClinicHospitalPage: React.FC = () => {
         </div>
       )}
 
+      {canWrite && embedded ? (
+        <div className="hub-clientes__toolbar hub-clinic-hospital__embedded-beds">
+          <input
+            className="hub-clientes__input hub-clinic-hospital__bed-input"
+            placeholder="Código do leito"
+            value={bedCode}
+            onChange={(e) => setBedCode(e.target.value)}
+          />
+          <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm" onClick={() => void addBed()}>
+            Adicionar leito
+          </button>
+        </div>
+      ) : null}
+
       <h3 className="hub-clinic-section-title">Mapa de leitos</h3>
       <div className="hub-clinic-beds-grid">
         {beds.map((b) => {
@@ -283,7 +325,7 @@ const HubClinicHospitalPage: React.FC = () => {
         {beds.length === 0 && <p className="hub-clientes__muted">Nenhum leito configurado.</p>}
       </div>
 
-      <h3 className="hub-clinic-section-title">Internações ativas</h3>
+      {!embedded ? <h3 className="hub-clinic-section-title">Internações ativas</h3> : null}
       <div className="hub-clientes__table-wrap">
         <table className="hub-clientes__table">
           <thead>

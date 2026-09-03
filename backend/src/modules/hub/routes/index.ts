@@ -61,7 +61,19 @@ import {
   listHubExpiringLots,
   listHubLowStock,
   listHubInventoryLots,
+  getHubInventoryMovementsReport,
+  getHubInventoryAbcReport,
+  getHubInventoryTurnoverReport,
 } from '../hubInventoryController';
+import { getHubAbsentClientsReport, getHubNoShowsReport, getHubBoardingOccupancySeriesReport, getHubClientCohortsReport, getHubBirthdaysReport, getHubGroomingProductivityReport, getHubVaccinesDueReport } from '../hubReportsController';
+import { postHubReportExportPdf } from '../hubReportExportPdf';
+import {
+  listHubReportEmailSchedules,
+  createHubReportEmailSchedule,
+  patchHubReportEmailSchedule,
+  deleteHubReportEmailSchedule,
+  runHubReportEmailSchedule,
+} from '../hubReportEmailSchedulesController';
 import { listHubStaff, getHubStaff, createHubStaff, patchHubStaff, inviteHubStaff, linkHubStaffAccount, getHubStaffPendingInvite } from '../hubStaffController';
 import { postHubStaffPhoto } from '../hubStaffPhotoController';
 import { postHubClinicProfilePhoto, postHubUserProfilePhoto } from '../hubProfilePhotoController.js';
@@ -248,6 +260,10 @@ import {
   getHubFinanceTicketAverageReport,
   getHubFinanceTopServicesReport,
   getHubFinanceAgingReport,
+  getHubFinanceSalesAdjustmentsReport,
+  getHubFinanceCommissionsReport,
+  getHubFinanceTopClientsReport,
+  getHubFinancePackagesReport,
   listHubFinanceExpenses,
   postHubFinanceExpense,
   postHubFinanceCashMovement,
@@ -585,6 +601,103 @@ router.post('/inventory/movements', authenticateUser, requirePermission('hub.inv
 router.get('/inventory/lots', authenticateUser, requirePermission('hub.inventory.read'), listHubInventoryLots);
 router.get('/inventory/lots/expiring', authenticateUser, requirePermission('hub.inventory.read'), listHubExpiringLots);
 router.get('/inventory/reports/low-stock', authenticateUser, requirePermission('hub.inventory.read'), listHubLowStock);
+router.get(
+  '/inventory/reports/movements',
+  authenticateUser,
+  requirePermission('hub.inventory.read'),
+  getHubInventoryMovementsReport
+);
+router.get(
+  '/inventory/reports/abc',
+  authenticateUser,
+  requirePermission('hub.inventory.read'),
+  getHubInventoryAbcReport
+);
+router.get(
+  '/inventory/reports/turnover',
+  authenticateUser,
+  requirePermission('hub.inventory.read'),
+  getHubInventoryTurnoverReport
+);
+
+router.get(
+  '/reports/absent-clients',
+  authenticateUser,
+  requirePermission('hub.guardians.read'),
+  getHubAbsentClientsReport
+);
+router.get(
+  '/reports/no-shows',
+  authenticateUser,
+  requirePermission('hub.appointments.read'),
+  getHubNoShowsReport
+);
+router.get(
+  '/reports/boarding-occupancy',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingOccupancySeriesReport
+);
+router.get(
+  '/reports/client-cohorts',
+  authenticateUser,
+  requirePermission('hub.guardians.read'),
+  getHubClientCohortsReport
+);
+router.get(
+  '/reports/birthdays',
+  authenticateUser,
+  requirePermission('hub.guardians.read'),
+  getHubBirthdaysReport
+);
+router.get(
+  '/reports/grooming-productivity',
+  authenticateUser,
+  requirePermission('grooming.queue.read'),
+  getHubGroomingProductivityReport
+);
+router.get(
+  '/reports/vaccines-due',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  getHubVaccinesDueReport
+);
+router.post(
+  '/reports/export-pdf',
+  authenticateUser,
+  requirePermission(['hub.reports.read', 'hub.financial.read', 'hub.inventory.read', 'hub.guardians.read']),
+  postHubReportExportPdf
+);
+router.get(
+  '/reports/email-schedules',
+  authenticateUser,
+  requirePermission(['hub.reports.read', 'hub.financial.read']),
+  listHubReportEmailSchedules
+);
+router.post(
+  '/reports/email-schedules',
+  authenticateUser,
+  requirePermission(['hub.reports.read', 'hub.financial.read']),
+  createHubReportEmailSchedule
+);
+router.patch(
+  '/reports/email-schedules/:id',
+  authenticateUser,
+  requirePermission(['hub.reports.read', 'hub.financial.read']),
+  patchHubReportEmailSchedule
+);
+router.delete(
+  '/reports/email-schedules/:id',
+  authenticateUser,
+  requirePermission(['hub.reports.read', 'hub.financial.read']),
+  deleteHubReportEmailSchedule
+);
+router.post(
+  '/reports/email-schedules/:id/run',
+  authenticateUser,
+  requirePermission(['hub.reports.read', 'hub.financial.read']),
+  runHubReportEmailSchedule
+);
 
 /* --- Equipe / Staff --- */
 router.get('/staff', authenticateUser, requirePermission('hub.staff.read'), listHubStaff);
@@ -1358,6 +1471,30 @@ router.get(
   authenticateUser,
   requirePermission('hub.financial.read'),
   getHubFinanceAgingReport
+);
+router.get(
+  '/finance/reports/sales-adjustments',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceSalesAdjustmentsReport
+);
+router.get(
+  '/finance/reports/commissions',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceCommissionsReport
+);
+router.get(
+  '/finance/reports/top-clients',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceTopClientsReport
+);
+router.get(
+  '/finance/reports/packages',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinancePackagesReport
 );
 router.get(
   '/finance/expenses',

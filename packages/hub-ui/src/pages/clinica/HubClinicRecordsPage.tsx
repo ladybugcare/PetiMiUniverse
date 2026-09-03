@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { BedDouble, FileSearch, Scissors, Stethoscope } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
@@ -59,6 +60,7 @@ const HubClinicRecordsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [newFlagKey, setNewFlagKey] = useState('allergy');
   const [newFlagLabel, setNewFlagLabel] = useState('');
+  const [startingEncounter, setStartingEncounter] = useState(false);
 
   useEffect(() => {
     if (!clinicId || !canRead) return;
@@ -71,11 +73,16 @@ const HubClinicRecordsPage: React.FC = () => {
 
   const filteredPets = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return pets;
-    return pets.filter((p) => p.name.toLowerCase().includes(q));
+    const list = q ? pets.filter((p) => p.name.toLowerCase().includes(q)) : pets;
+    return [...list].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }, [pets, search]);
 
   const selectedPet = pets.find((p) => p.id === selectedId);
+
+  const activeCasesCount = useMemo(
+    () => cases.filter((c) => c.status === 'active' || c.status === 'monitoring').length,
+    [cases],
+  );
 
   const loadPetClinical = useCallback(async () => {
     if (!clinicId || !selectedId) return;
@@ -133,25 +140,46 @@ const HubClinicRecordsPage: React.FC = () => {
     }
   };
 
+  const startEncounterFromRecord = async () => {
+    if (!clinicId || !selectedId || !canWrite) return;
+    setStartingEncounter(true);
+    try {
+      const { encounter } = await hubEncountersApi.create({ clinic_id: clinicId, pet_id: selectedId });
+      navigate(`/hub/clinica/atendimentos/${encounter.id}`, { state: { from: 'cockpit' } });
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao iniciar atendimento');
+    } finally {
+      setStartingEncounter(false);
+    }
+  };
+
   if (!canRead) {
     return <p className="hub-clientes__muted hub-clinic-page__pad">Sem permissão para prontuários.</p>;
   }
 
   return (
     <div className="hub-clientes hub-clinic-records">
-      <div className="hub-clientes__main">
-        <div className="hub-clientes__toolbar">
-          <div className="hub-clientes__search">
+      <div className="hub-clientes__main hub-clinic-records__list-pane">
+        <header className="hub-clinic-records__list-intro">
+          <p className="hub-clinic-records__list-kicker">Arquivo clínico</p>
+          <p className="hub-clientes__muted hub-clinic-records__list-hint">
+            Busque o pet para ver histórico, casos, receitas e alertas.
+          </p>
+        </header>
+        <div className="hub-clientes__toolbar hub-clinic-records__list-toolbar">
+          <div className="hub-clientes__search hub-clinic-records__search">
+            <FileSearch size={16} aria-hidden />
             <input
               type="search"
-              placeholder="Buscar pet…"
+              placeholder="Buscar pet pelo nome…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              aria-label="Buscar pet"
             />
           </div>
         </div>
-        <div className="hub-clientes__table-wrap">
-          <table className="hub-clientes__table">
+        <div className="hub-clientes__table-wrap hub-clinic-records__table-wrap">
+          <table className="hub-clientes__table hub-clinic-records__table">
             <thead>
               <tr>
                 <th>Pet</th>
@@ -163,7 +191,7 @@ const HubClinicRecordsPage: React.FC = () => {
               {filteredPets.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="hub-clientes__muted" style={{ textAlign: 'center', padding: 28 }}>
-                    Nenhum pet encontrado.
+                    {search.trim() ? 'Nenhum pet encontrado com esse nome.' : 'Nenhum pet cadastrado.'}
                   </td>
                 </tr>
               ) : (
@@ -173,7 +201,9 @@ const HubClinicRecordsPage: React.FC = () => {
                     className={selectedId === p.id ? 'hub-clientes__row--selected' : undefined}
                     onClick={() => setSelectedId(p.id)}
                   >
-                    <td>{p.name}</td>
+                    <td>
+                      <span className="hub-clinic-records__pet-cell">{p.name}</span>
+                    </td>
                     <td>{p.species}</td>
                     <td>{petAgeDetailedLabel(p.birth_date ?? null)}</td>
                   </tr>
@@ -184,20 +214,41 @@ const HubClinicRecordsPage: React.FC = () => {
         </div>
       </div>
 
-      <aside className="hub-clientes__panel">
+      <aside className="hub-clientes__panel hub-clinic-records__detail">
         <div className="hub-clientes__panel-scroll">
           {!selectedPet ? (
-            <div className="hub-clientes__empty-state">Selecione um pet para ver o prontuário.</div>
+            <div className="hub-clinic-records__empty">
+              <FileSearch size={28} aria-hidden />
+              <p>Selecione um pet na lista para abrir o prontuário.</p>
+              <p className="hub-clientes__muted">
+                A operação do dia (fila, internar, cirurgia) fica em{' '}
+                <Link to="/hub/clinica" className="hub-clientes__link">
+                  Consultório
+                </Link>
+                .
+              </p>
+            </div>
           ) : loading ? (
             <HubLoading variant="block" label="Carregando prontuário…" />
           ) : (
             <>
               <header className="hub-clinic-records__header">
-                <h2 className="hub-clinic-records__pet-name">{selectedPet.name}</h2>
-                <p className="hub-clientes__muted">
-                  {selectedPet.species}
-                  {selectedPet.breed ? ` · ${selectedPet.breed}` : ''}
-                </p>
+                <div className="hub-clinic-records__header-top">
+                  <div>
+                    <p className="hub-clinic-records__list-kicker">Prontuário</p>
+                    <h2 className="hub-clinic-records__pet-name">{selectedPet.name}</h2>
+                    <p className="hub-clinic-records__pet-meta">
+                      {[
+                        selectedPet.species,
+                        selectedPet.breed,
+                        petAgeDetailedLabel(selectedPet.birth_date ?? null),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  </div>
+                </div>
+
                 {flags.length > 0 ? (
                   <div className="hub-clinic-pet-header__alerts">
                     {flags.map((f) => (
@@ -207,28 +258,58 @@ const HubClinicRecordsPage: React.FC = () => {
                     ))}
                   </div>
                 ) : null}
+
+                <div className="hub-clinic-records__stats" aria-label="Resumo do prontuário">
+                  <div className="hub-clinic-records__stat">
+                    <span className="hub-clinic-records__stat-value">{activeCasesCount}</span>
+                    <span className="hub-clinic-records__stat-label">Casos ativos</span>
+                  </div>
+                  <div className="hub-clinic-records__stat">
+                    <span className="hub-clinic-records__stat-value">{encounters.length}</span>
+                    <span className="hub-clinic-records__stat-label">Atendimentos</span>
+                  </div>
+                  <div className="hub-clinic-records__stat">
+                    <span className="hub-clinic-records__stat-value">{prescriptions.length}</span>
+                    <span className="hub-clinic-records__stat-label">Prescrições</span>
+                  </div>
+                  <div className="hub-clinic-records__stat">
+                    <span className="hub-clinic-records__stat-value">{flags.length}</span>
+                    <span className="hub-clinic-records__stat-label">Alertas</span>
+                  </div>
+                </div>
+
                 {canWrite ? (
-                  <button
-                    type="button"
-                    className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                    onClick={() => {
-                      if (!clinicId) return;
-                      void hubEncountersApi
-                        .create({ clinic_id: clinicId, pet_id: selectedId })
-                        .then(({ encounter }) => navigate(`/hub/clinica/atendimentos/${encounter.id}`))
-                        .catch((e: unknown) =>
-                          showError((e as Error)?.message || 'Erro ao iniciar atendimento'),
-                        );
-                    }}
-                  >
-                    Novo atendimento
-                  </button>
+                  <div className="hub-clinic-records__actions" role="group" aria-label="Ações a partir do prontuário">
+                    <button
+                      type="button"
+                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                      disabled={startingEncounter}
+                      onClick={() => void startEncounterFromRecord()}
+                    >
+                      <Stethoscope size={14} aria-hidden />
+                      {startingEncounter ? 'Abrindo…' : 'Iniciar atendimento'}
+                    </button>
+                    <Link
+                      to={`/hub/clinica?admit=1&pet_id=${encodeURIComponent(selectedId)}`}
+                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                    >
+                      <BedDouble size={14} aria-hidden />
+                      Internar
+                    </Link>
+                    <Link
+                      to={`/hub/clinica?surgery=1&pet_id=${encodeURIComponent(selectedId)}`}
+                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                    >
+                      <Scissors size={14} aria-hidden />
+                      Cirurgia
+                    </Link>
+                  </div>
                 ) : null}
               </header>
 
               <HubTabs
                 className="hub-clinic-records__tabs"
-                ariaLabel="Prontuário do pet"
+                ariaLabel="Seções do prontuário"
                 variant="page"
                 activeId={tab}
                 onTabChange={(id) => setTab(id as TabId)}

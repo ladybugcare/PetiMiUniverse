@@ -51,6 +51,7 @@ const HubGuardiansPage: React.FC = () => {
   const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.guardians.write');
+  const canWritePets = hasPermission('hub.pets.write');
 
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<HubGuardianStats | null>(null);
@@ -272,10 +273,8 @@ const HubGuardiansPage: React.FC = () => {
 
   const openInNewPage = useCallback(() => {
     if (!selectedGuardian) return;
-    const path = `/hub/clientes/${selectedGuardian.id}`;
-    const url = `${window.location.origin}${path}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  }, [selectedGuardian]);
+    navigate(`/hub/clientes/${selectedGuardian.id}`);
+  }, [selectedGuardian, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -447,6 +446,7 @@ const HubGuardiansPage: React.FC = () => {
         quoteConvShort={quoteConvShort}
         linkGuardianId={linkGuardianId || undefined}
         onContinueToPets={continueToPetsWithExistingGuardian}
+        canWritePets={canWritePets}
       />
     </div>
   );

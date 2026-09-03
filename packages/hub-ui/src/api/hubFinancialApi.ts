@@ -279,6 +279,291 @@ export type HubFinanceAgingReport = {
   buckets: Record<string, { count: number; total: number }>;
 };
 
+export type HubFinanceSalesAdjustmentsReport = {
+  period: { from: string; to: string };
+  sales: {
+    receivables_count: number;
+    total: number;
+    by_status: Record<string, { count: number; total: number }>;
+  };
+  adjustments: {
+    count: number;
+    total: number;
+    by_type: Record<string, { count: number; total: number }>;
+    items: Array<{
+      id: string;
+      receivable_id: string;
+      adjustment_type: string;
+      amount: number;
+      reason: string | null;
+      created_at: string;
+      guardian_name: string | null;
+    }>;
+  };
+};
+
+export type HubAbsentClientsReport = {
+  as_of: string;
+  days: number;
+  cutoff: string;
+  unit_id: string | null;
+  summary: {
+    absent_count: number;
+    never_attended_count: number;
+    active_guardians_scanned: number;
+  };
+  items: Array<{
+    guardian_id: string;
+    full_name: string;
+    phone: string | null;
+    email: string | null;
+    last_activity_at: string | null;
+    last_activity_source: 'appointment' | 'receivable' | null;
+    days_absent: number | null;
+    never_attended: boolean;
+  }>;
+};
+
+export type HubFinanceCommissionsReport = {
+  period: { from: string; to: string };
+  summary: {
+    receivables_count: number;
+    lines_with_commission: number;
+    total_commission: number;
+    total_sales: number;
+  };
+  by_service: Array<{
+    service_id: string;
+    name: string;
+    lines_count: number;
+    sales_total: number;
+    commission_total: number;
+  }>;
+  by_staff: Array<{
+    staff_id: string;
+    name: string;
+    lines_count: number;
+    sales_total: number;
+    commission_total: number;
+  }>;
+  items: Array<{
+    receivable_id: string;
+    line_id: string;
+    description: string;
+    service_name: string | null;
+    staff_name: string | null;
+    line_total: number;
+    commission_amount: number;
+    basis: string | null;
+    rate: number | null;
+  }>;
+};
+
+export type HubFinanceTopClientsReport = {
+  period: { from: string; to: string };
+  summary: {
+    clients_with_payments: number;
+    total_revenue: number;
+  };
+  items: Array<{
+    rank: number;
+    guardian_id: string;
+    full_name: string;
+    phone: string | null;
+    payments_count: number;
+    total: number;
+    share_pct: number;
+  }>;
+};
+
+export type HubClientCohortsReport = {
+  period: { from: string; to: string };
+  unit_id: string | null;
+  summary: {
+    new_clients_count: number;
+    recurring_count: number;
+    first_purchase_count: number;
+  };
+  new_clients: Array<{
+    guardian_id: string;
+    full_name: string;
+    phone: string | null;
+    email: string | null;
+    created_at: string;
+    client_status: string | null;
+  }>;
+  recurring: Array<{
+    guardian_id: string;
+    full_name: string;
+    phone: string | null;
+    receivables_count: number;
+    total: number;
+  }>;
+  first_purchase: Array<{
+    guardian_id: string;
+    full_name: string;
+    phone: string | null;
+    receivables_count: number;
+    total: number;
+  }>;
+};
+
+export type HubBirthdaysReport = {
+  as_of: string;
+  days: number;
+  until: string;
+  summary: { total: number; guardians: number; pets: number };
+  items: Array<{
+    kind: 'guardian' | 'pet';
+    id: string;
+    name: string;
+    birth_date: string;
+    next_birthday: string;
+    days_until: number;
+    phone: string | null;
+    guardian_id: string | null;
+    guardian_name: string | null;
+    species: string | null;
+  }>;
+};
+
+export type HubGroomingProductivityReport = {
+  period: { from: string; to: string };
+  unit_id: string | null;
+  summary: {
+    closed_sessions: number;
+    staff_count: number;
+    avg_duration_min: number | null;
+  };
+  by_staff: Array<{
+    staff_id: string | null;
+    staff_name: string;
+    closed_count: number;
+    avg_duration_min: number | null;
+  }>;
+  by_day: Array<{
+    date: string;
+    staff_id: string | null;
+    staff_name: string;
+    closed_count: number;
+  }>;
+};
+
+export type HubVaccinesDueReport = {
+  as_of: string;
+  days: number;
+  until: string;
+  summary: { total: number; overdue: number; upcoming: number };
+  items: Array<{
+    id: string;
+    pet_id: string;
+    pet_name: string;
+    species: string | null;
+    vaccine_name: string;
+    administered_at: string;
+    next_dose_at: string;
+    days_until: number;
+    overdue: boolean;
+    source: string | null;
+    batch_number: string | null;
+    guardian_id: string | null;
+    guardian_name: string | null;
+    phone: string | null;
+  }>;
+};
+
+export type HubFinancePackagesReport = {
+  period: { from: string; to: string };
+  expiring_until: string;
+  summary: {
+    purchased_lines: number;
+    sessions_sold: number;
+    sessions_redeemed: number;
+    active_with_balance: number;
+    expiring_soon: number;
+  };
+  purchased: Array<{
+    id: string;
+    package_name: string | null;
+    service_name: string | null;
+    guardian_id: string;
+    guardian_name: string | null;
+    pet_name: string | null;
+    sessions_total: number;
+    sessions_remaining: number;
+    purchased_at: string | null;
+    expires_at: string | null;
+  }>;
+  active: Array<{
+    id: string;
+    package_name: string | null;
+    service_name: string | null;
+    guardian_id: string;
+    guardian_name: string | null;
+    pet_name: string | null;
+    sessions_total: number;
+    sessions_remaining: number;
+    purchased_at: string | null;
+    expires_at: string | null;
+  }>;
+  expiring: Array<{
+    id: string;
+    package_name: string | null;
+    service_name: string | null;
+    guardian_id: string;
+    guardian_name: string | null;
+    pet_name: string | null;
+    sessions_total: number;
+    sessions_remaining: number;
+    purchased_at: string | null;
+    expires_at: string | null;
+  }>;
+};
+
+export type HubNoShowsReport = {
+  period: { from: string; to: string };
+  unit_id: string | null;
+  summary: {
+    total_no_shows: number;
+    boarding_no_shows: number;
+    appointment_implied_no_shows: number;
+    attended_count: number;
+    rate_pct: number;
+  };
+  items: Array<{
+    id: string;
+    source: 'boarding' | 'appointment';
+    kind_label: string;
+    when_at: string;
+    guardian_name: string | null;
+    phone: string | null;
+    pet_name: string | null;
+    status: string;
+  }>;
+};
+
+export type HubBoardingOccupancySeriesReport = {
+  period: { from: string; to: string };
+  unit_id: string | null;
+  capacity: { hotel_max: number | null; daycare_max: number | null };
+  summary: {
+    peak_hotel: number;
+    peak_daycare: number;
+    avg_hotel_pct: number | null;
+    avg_daycare_pct: number | null;
+    days_count: number;
+  };
+  days: Array<{
+    date: string;
+    hotel_current: number;
+    hotel_max: number | null;
+    hotel_pct: number | null;
+    daycare_current: number;
+    daycare_max: number | null;
+    daycare_pct: number | null;
+  }>;
+};
+
 export const hubFinancialApi = {
   async getPendingBillingCount(clinicId: string, unitId?: string | null): Promise<number> {
     const q = new URLSearchParams({ clinic_id: clinicId });
@@ -543,6 +828,125 @@ export const hubFinancialApi = {
     const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
     if (opts?.as_of) q.set('as_of', opts.as_of);
     return apiRequest(`${base}/reports/aging?${q}`) as Promise<HubFinanceAgingReport>;
+  },
+
+  async getSalesAdjustmentsReport(
+    clinicId: string,
+    unitId: string,
+    opts?: { days?: number; from?: string; to?: string }
+  ): Promise<HubFinanceSalesAdjustmentsReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    return apiRequest(`${base}/reports/sales-adjustments?${q}`) as Promise<HubFinanceSalesAdjustmentsReport>;
+  },
+
+  async getAbsentClientsReport(
+    clinicId: string,
+    opts?: { days?: number; unit_id?: string | null }
+  ): Promise<HubAbsentClientsReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.unit_id) q.set('unit_id', opts.unit_id);
+    return apiRequest(`/api/hub/reports/absent-clients?${q}`) as Promise<HubAbsentClientsReport>;
+  },
+
+  async getCommissionsReport(
+    clinicId: string,
+    unitId: string,
+    opts?: { days?: number; from?: string; to?: string }
+  ): Promise<HubFinanceCommissionsReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    return apiRequest(`${base}/reports/commissions?${q}`) as Promise<HubFinanceCommissionsReport>;
+  },
+
+  async getTopClientsReport(
+    clinicId: string,
+    unitId: string,
+    opts?: { days?: number; from?: string; to?: string; limit?: number }
+  ): Promise<HubFinanceTopClientsReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    if (opts?.limit != null) q.set('limit', String(opts.limit));
+    return apiRequest(`${base}/reports/top-clients?${q}`) as Promise<HubFinanceTopClientsReport>;
+  },
+
+  async getPackagesReport(
+    clinicId: string,
+    opts?: { days?: number; from?: string; to?: string; expiring_days?: number }
+  ): Promise<HubFinancePackagesReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    if (opts?.expiring_days != null) q.set('expiring_days', String(opts.expiring_days));
+    return apiRequest(`${base}/reports/packages?${q}`) as Promise<HubFinancePackagesReport>;
+  },
+
+  async getClientCohortsReport(
+    clinicId: string,
+    opts?: { days?: number; from?: string; to?: string; unit_id?: string | null }
+  ): Promise<HubClientCohortsReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    if (opts?.unit_id) q.set('unit_id', opts.unit_id);
+    return apiRequest(`/api/hub/reports/client-cohorts?${q}`) as Promise<HubClientCohortsReport>;
+  },
+
+  async getBirthdaysReport(clinicId: string, opts?: { days?: number }): Promise<HubBirthdaysReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    return apiRequest(`/api/hub/reports/birthdays?${q}`) as Promise<HubBirthdaysReport>;
+  },
+
+  async getGroomingProductivityReport(
+    clinicId: string,
+    opts?: { days?: number; from?: string; to?: string; unit_id?: string | null }
+  ): Promise<HubGroomingProductivityReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    if (opts?.unit_id) q.set('unit_id', opts.unit_id);
+    return apiRequest(`/api/hub/reports/grooming-productivity?${q}`) as Promise<HubGroomingProductivityReport>;
+  },
+
+  async getVaccinesDueReport(clinicId: string, opts?: { days?: number }): Promise<HubVaccinesDueReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    return apiRequest(`/api/hub/reports/vaccines-due?${q}`) as Promise<HubVaccinesDueReport>;
+  },
+
+  async getNoShowsReport(
+    clinicId: string,
+    opts?: { days?: number; from?: string; to?: string; unit_id?: string | null }
+  ): Promise<HubNoShowsReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    if (opts?.unit_id) q.set('unit_id', opts.unit_id);
+    return apiRequest(`/api/hub/reports/no-shows?${q}`) as Promise<HubNoShowsReport>;
+  },
+
+  async getBoardingOccupancySeriesReport(
+    clinicId: string,
+    opts?: { days?: number; from?: string; to?: string; unit_id?: string | null }
+  ): Promise<HubBoardingOccupancySeriesReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    if (opts?.unit_id) q.set('unit_id', opts.unit_id);
+    return apiRequest(`/api/hub/reports/boarding-occupancy?${q}`) as Promise<HubBoardingOccupancySeriesReport>;
   },
 
   async listExpenses(

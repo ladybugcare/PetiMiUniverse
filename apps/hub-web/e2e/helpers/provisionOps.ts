@@ -41,6 +41,7 @@ export const E2E_AGENDA_TITLES = {
   series: '[E2E] Série semanal',
   seriesLt: '[E2E] Série L&T',
   extraBlock: '[E2E] Com bloco extra',
+  caixaClinic: '[E2E] Consulta caixa',
 } as const;
 
 export function todayYmdSaoPaulo(): string {
@@ -130,7 +131,12 @@ export async function ensureServiceCatalog(token: string, clinicId: string) {
     service_group: 'leva_traz',
     duration: 30,
   });
-  return { bathId: bath.id, tosaId: tosa.id, pickupId: pickup.id };
+  const clinic = await ensureServiceType(token, clinicId, existing, {
+    name: 'Consulta E2E',
+    service_group: 'clinica',
+    duration: 30,
+  });
+  return { bathId: bath.id, tosaId: tosa.id, pickupId: pickup.id, clinicId: clinic.id };
 }
 
 export async function ensureGuardianPet(
@@ -281,7 +287,7 @@ export async function ensureTodayPickupAppointment(
   });
 }
 
-type AgendaCatalog = { bathId: string; tosaId: string; pickupId: string };
+type AgendaCatalog = { bathId: string; tosaId: string; pickupId: string; clinicId?: string };
 
 export async function ensureAgendaScenarios(
   token: string,
@@ -397,4 +403,33 @@ export async function ensureAgendaScenarios(
       ],
     });
   }
+}
+
+/** Agendamento clínico do dia para o day board do Caixa (segunda origem além do banho). */
+export async function ensureCaixaClinicAppointment(
+  token: string,
+  clinicId: string,
+  unitId: string,
+  guardianId: string,
+  petId: string,
+  clinicServiceId: string,
+) {
+  const ymd = todayYmdSaoPaulo();
+  const dayRows = await listAppointmentsInRange(token, clinicId, ymd, addDaysYmdSaoPaulo(ymd, 1));
+  const existing = findPrincipalWithTitle(dayRows, E2E_AGENDA_TITLES.caixaClinic);
+  if (existing) return;
+
+  await createAppointment(token, {
+    clinic_id: clinicId,
+    unit_id: unitId,
+    hub_service_type_id: clinicServiceId,
+    pet_id: petId,
+    guardian_id: guardianId,
+    starts_at: saoPauloIso(ymd, 12, 0),
+    ends_at: saoPauloIso(ymd, 12, 30),
+    status: 'confirmed',
+    title: E2E_AGENDA_TITLES.caixaClinic,
+    notes: '[e2e] consulta para day board do caixa',
+    services: [{ hub_service_type_id: clinicServiceId, duration_minutes: 30 }],
+  });
 }

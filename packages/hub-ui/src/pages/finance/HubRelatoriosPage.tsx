@@ -1,188 +1,281 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo } from 'react';
+import { Navigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
+import { HubRelatoriosCatalog } from './HubRelatoriosCatalog';
+import { HubRelatoriosEmailSchedules } from './HubRelatoriosEmailSchedules';
+import { HubRelatoriosFinanceOverview } from './HubRelatoriosFinanceOverview';
+import { HubRelatoriosPendingPayments } from './HubRelatoriosPendingPayments';
+import { HubRelatoriosSalesAdjustments } from './HubRelatoriosSalesAdjustments';
+import { HubRelatoriosCommissions } from './HubRelatoriosCommissions';
+import { HubRelatoriosUnbilled } from './HubRelatoriosUnbilled';
+import { HubRelatoriosCashFlow } from './HubRelatoriosCashFlow';
+import { HubRelatoriosTopClients } from './HubRelatoriosTopClients';
+import { HubRelatoriosClientCohorts } from './HubRelatoriosClientCohorts';
+import { HubRelatoriosBirthdays } from './HubRelatoriosBirthdays';
+import { HubRelatoriosPackages } from './HubRelatoriosPackages';
+import { HubRelatoriosStockPosition } from './HubRelatoriosStockPosition';
+import { HubRelatoriosStockMovements } from './HubRelatoriosStockMovements';
+import { HubRelatoriosStockAbc } from './HubRelatoriosStockAbc';
+import { HubRelatoriosStockTurnover } from './HubRelatoriosStockTurnover';
+import { HubRelatoriosAbsentClients } from './HubRelatoriosAbsentClients';
+import { HubRelatoriosNoShows } from './HubRelatoriosNoShows';
+import { HubRelatoriosBoardingOccupancy } from './HubRelatoriosBoardingOccupancy';
+import { HubRelatoriosGroomingProductivity } from './HubRelatoriosGroomingProductivity';
+import { HubRelatoriosVaccinesDue } from './HubRelatoriosVaccinesDue';
+import { HubRelatoriosPeriodToolbar } from './HubRelatoriosPeriodToolbar';
 import {
-  hubFinancialApi,
-  type HubFinanceAgingReport,
-  type HubFinanceRevenueReport,
-  type HubFinanceTicketAverageReport,
-  type HubFinanceTopServicesReport,
-} from '../../api/hubFinancialApi';
-import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+  HUB_REPORTS,
+  parseHubReportId,
+  reportAllowed,
+  type HubReportId,
+} from './hubRelatoriosConfig';
+import {
+  parseReportPeriodFromSearch,
+  type HubReportPeriod,
+} from './hubRelatoriosPeriod';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
-import { paymentMethodLabel } from '../../utils/hubPaymentMethods';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './hub-finance-page.css';
 
-function formatBrl(n: number): string {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
+function writePeriodToParams(next: URLSearchParams, period: HubReportPeriod) {
+  if (period.mode === 'range') {
+    next.set('from', period.from);
+    next.set('to', period.to);
+    next.delete('days');
+  } else {
+    next.set('days', String(period.days));
+    next.delete('from');
+    next.delete('to');
+  }
 }
-
-const AGING_LABELS: Record<string, string> = {
-  no_due_date: 'Sem vencimento',
-  not_due: 'A vencer',
-  overdue_1_30: 'Vencidos 1-30 dias',
-  overdue_31_60: 'Vencidos 31-60 dias',
-  overdue_61_plus: 'Vencidos 61+ dias',
-};
 
 const HubRelatoriosPage: React.FC = () => {
   const { hasPermission, loading: permLoading } = usePermissions();
-  const { showError } = useAlert();
+  const [searchParams, setSearchParams] = useSearchParams();
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
-  const [days, setDays] = useState(30);
-  const [loading, setLoading] = useState(false);
-  const [revenue, setRevenue] = useState<HubFinanceRevenueReport | null>(null);
-  const [ticket, setTicket] = useState<HubFinanceTicketAverageReport | null>(null);
-  const [topServices, setTopServices] = useState<HubFinanceTopServicesReport | null>(null);
-  const [aging, setAging] = useState<HubFinanceAgingReport | null>(null);
+  const reportId = parseHubReportId(searchParams.get('relatorio'));
 
-  const loadReports = useCallback(async () => {
-    if (!clinicId || !unitId) return;
-    setLoading(true);
-    try {
-      const [rev, tic, top] = await Promise.all([
-        hubFinancialApi.getRevenueReport(clinicId, unitId, { days }),
-        hubFinancialApi.getTicketAverageReport(clinicId, unitId, { days }),
-        hubFinancialApi.getTopServicesReport(clinicId, unitId, { days }),
-      ]);
-      const ag = await hubFinancialApi.getAgingReport(clinicId, unitId, { as_of: rev.period.to });
-      setRevenue(rev);
-      setTicket(tic);
-      setTopServices(top);
-      setAging(ag);
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao carregar relatórios');
-    } finally {
-      setLoading(false);
-    }
-  }, [clinicId, unitId, days, showError]);
+  const canReports = hasPermission('hub.reports.read');
+  const canFinancial = hasPermission('hub.financial.read');
+  const canInventory = hasPermission('hub.inventory.read');
+  const canGuardians = hasPermission('hub.guardians.read');
+  const canAppointments = hasPermission('hub.appointments.read');
+  const canBoarding = hasPermission('boarding.reservations.read');
+  const canGrooming = hasPermission('grooming.queue.read');
+  const canClinic = hasPermission('hub.clinic.read');
+  const canAccess =
+    canReports ||
+    canFinancial ||
+    canInventory ||
+    canGuardians ||
+    canAppointments ||
+    canBoarding ||
+    canGrooming ||
+    canClinic;
+
+  const activeReport = useMemo(() => {
+    if (!reportId) return null;
+    const def = HUB_REPORTS.find((r) => r.id === reportId);
+    if (!def || !reportAllowed(hasPermission, def.permission)) return null;
+    return def;
+  }, [reportId, hasPermission]);
+
+  const period = useMemo(() => {
+    const absent = activeReport?.periodFilter === 'absent';
+    const lookahead = activeReport?.periodFilter === 'lookahead';
+    return parseReportPeriodFromSearch(searchParams, { absent, lookahead });
+  }, [searchParams, activeReport]);
+
+  const periodInvalid =
+    period.mode === 'range' && period.from > period.to;
+
+  const setReport = useCallback(
+    (id: HubReportId | null) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (id) {
+          next.set('relatorio', id);
+          const def = HUB_REPORTS.find((r) => r.id === id);
+          if (def?.periodFilter === 'absent') {
+            next.delete('from');
+            next.delete('to');
+            const d = Number(next.get('days') || '60');
+            next.set('days', String([30, 60, 90, 180].includes(d) ? d : 60));
+          } else if (def?.periodFilter === 'lookahead') {
+            next.delete('from');
+            next.delete('to');
+            const d = Number(next.get('days') || '30');
+            next.set('days', String([7, 14, 30, 60].includes(d) ? d : 30));
+          } else if (def?.periodFilter === 'standard') {
+            if (!next.get('from') && !next.get('to') && !next.get('days')) {
+              next.set('days', '30');
+            }
+          }
+        } else {
+          next.delete('relatorio');
+        }
+        return next;
+      });
+    },
+    [setSearchParams],
+  );
+
+  const setPeriod = useCallback(
+    (nextPeriod: HubReportPeriod) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        writePeriodToParams(next, nextPeriod);
+        return next;
+      });
+    },
+    [setSearchParams],
+  );
 
   useEffect(() => {
-    if (permLoading || !hasPermission('hub.financial.read')) return;
-    void loadReports();
-  }, [permLoading, hasPermission, loadReports]);
+    if (permLoading) return;
+    if (reportId && !activeReport) {
+      setReport(null);
+    }
+  }, [permLoading, reportId, activeReport, setReport]);
 
-  if (!permLoading && !hasPermission('hub.financial.read')) {
+  if (!permLoading && !canAccess) {
     return <Navigate to="/hub/clientes" replace />;
   }
 
-  if (!clinicId || !unitId) {
+  if (!clinicId) {
     return (
       <div className="hub-clientes hub-servicos-page hub-finance-page">
         <div className="hub-clientes__main">
-          <p className="hub-clientes__muted">Selecione uma unidade no cabeçalho.</p>
+          <p className="hub-clientes__muted">Selecione uma clínica no cabeçalho.</p>
         </div>
       </div>
     );
   }
 
+  const needsUnit = activeReport?.requiresUnit;
+  const periodFilter = activeReport?.periodFilter;
+
   return (
-    <div className="hub-clientes hub-servicos-page hub-finance-page">
+    <div className="hub-clientes hub-servicos-page hub-finance-page hub-relatorios-page">
       <div className="hub-clientes__main">
         <div className="hub-clientes__title-block">
-          <h1 className="hub-clientes__title">Relatórios</h1>
+          {activeReport ? (
+            <button type="button" className="hub-relatorios__back" onClick={() => setReport(null)}>
+              <ArrowLeft size={18} aria-hidden />
+              Voltar ao catálogo
+            </button>
+          ) : null}
+          <h1 className="hub-clientes__title">{activeReport ? activeReport.title : 'Relatórios'}</h1>
           <p className="hub-clientes__subtitle">
-            Visão financeira mínima do MVP: faturamento, ticket médio, serviços mais vendidos e inadimplência.
+            {activeReport
+              ? activeReport.description
+              : 'Central de relatórios: financeiro, estoque, clientes e operação.'}
           </p>
         </div>
 
-        <div className="hub-clientes__toolbar">
-          <div className="hub-servicos__filter-field">
-            <span className="hub-clientes__label">Período</span>
-            <select
-              className="hub-clientes__select-input"
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-            >
-              <option value={7}>Últimos 7 dias</option>
-              <option value={30}>Últimos 30 dias</option>
-              <option value={90}>Últimos 90 dias</option>
-            </select>
-          </div>
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary"
-            onClick={() => void loadReports()}
-          >
-            Atualizar
-          </button>
-        </div>
+        {!activeReport ? (
+          <>
+            <HubRelatoriosCatalog hasPermission={hasPermission} onSelectReport={setReport} />
+            {canReports || canFinancial ? (
+              <HubRelatoriosEmailSchedules clinicId={clinicId} unitId={unitId} />
+            ) : null}
+          </>
+        ) : (
+          <>
+            {periodFilter ? (
+              <HubRelatoriosPeriodToolbar
+                variant={periodFilter}
+                period={period}
+                onChange={setPeriod}
+              />
+            ) : null}
 
-        {loading ? <HubLoading variant="block" label="Carregando relatórios…" /> : null}
+            {needsUnit && !unitId ? (
+              <p className="hub-clientes__muted">Selecione uma unidade no cabeçalho para ver este relatório.</p>
+            ) : null}
 
-        <div className="hub-servicos__metrics" style={{ marginBottom: 24 }}>
-          <div className="hub-servicos__metric-card">
-            <div className="hub-servicos__metric-card__text">
-              <div className="hub-servicos__metric-label">Faturamento recebido</div>
-              <div className="hub-servicos__metric-value">{formatBrl(revenue?.total ?? 0)}</div>
-              <div className="hub-servicos__metric-sub">
-                {revenue ? `${revenue.period.from} a ${revenue.period.to}` : 'Sem dados'}
-              </div>
-            </div>
-          </div>
-          <div className="hub-servicos__metric-card">
-            <div className="hub-servicos__metric-card__text">
-              <div className="hub-servicos__metric-label">Ticket médio</div>
-              <div className="hub-servicos__metric-value">{formatBrl(ticket?.ticket_average ?? 0)}</div>
-              <div className="hub-servicos__metric-sub">{ticket?.receivables_count ?? 0} recebíveis no período</div>
-            </div>
-          </div>
-        </div>
+            {periodInvalid ? (
+              <p className="hub-clientes__muted">Ajuste o intervalo de datas para carregar o relatório.</p>
+            ) : null}
 
-        <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">Faturamento por forma de pagamento</h2>
-          <div className="hub-finance-page__report-list">
-            {Object.entries(revenue?.by_method ?? {}).length === 0 ? (
-              <p className="hub-clientes__muted">Sem pagamentos recebidos no período.</p>
-            ) : (
-              Object.entries(revenue?.by_method ?? {}).map(([method, total]) => (
-                <div key={method} className="hub-finance-page__report-row">
-                  <span>{paymentMethodLabel(method)}</span>
-                  <strong>{formatBrl(total)}</strong>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
+            {!periodInvalid && activeReport.id === 'finance-overview' && unitId ? (
+              <HubRelatoriosFinanceOverview clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
 
-        <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">Serviços mais vendidos</h2>
-          <div className="hub-finance-page__report-list">
-            {topServices?.items.length ? (
-              topServices.items.map((item) => (
-                <div key={item.service_id} className="hub-finance-page__report-row">
-                  <span>
-                    {item.name} · {item.quantity} venda(s)
-                  </span>
-                  <strong>{formatBrl(item.total)}</strong>
-                </div>
-              ))
-            ) : (
-              <p className="hub-clientes__muted">Sem linhas de serviço no período.</p>
-            )}
-          </div>
-        </section>
+            {!periodInvalid && activeReport.id === 'pending-payments' && unitId ? (
+              <HubRelatoriosPendingPayments clinicId={clinicId} unitId={unitId} />
+            ) : null}
 
-        <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">Aging de recebíveis</h2>
-          <p className="hub-clientes__muted" style={{ marginBottom: 8 }}>
-            Base <strong>{aging?.as_of ?? '—'}</strong> (fim do período de faturamento, alinhado ao intervalo acima).
-          </p>
-          <div className="hub-finance-page__report-list">
-            {Object.entries(aging?.buckets ?? {}).map(([bucket, value]) => (
-              <div key={bucket} className="hub-finance-page__report-row">
-                <span>
-                  {AGING_LABELS[bucket] ?? bucket} · {value.count}
-                </span>
-                <strong>{formatBrl(value.total)}</strong>
-              </div>
-            ))}
-          </div>
-        </section>
+            {!periodInvalid && activeReport.id === 'sales-adjustments' && unitId ? (
+              <HubRelatoriosSalesAdjustments clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'commissions' && unitId ? (
+              <HubRelatoriosCommissions clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'unbilled' && unitId ? (
+              <HubRelatoriosUnbilled clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'cash-flow' && unitId ? (
+              <HubRelatoriosCashFlow clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'top-clients' && unitId ? (
+              <HubRelatoriosTopClients clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'client-cohorts' ? (
+              <HubRelatoriosClientCohorts clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'birthdays' && period.mode === 'preset' ? (
+              <HubRelatoriosBirthdays clinicId={clinicId} days={period.days} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'packages' ? (
+              <HubRelatoriosPackages clinicId={clinicId} period={period} />
+            ) : null}
+
+            {activeReport.id === 'stock-position' ? <HubRelatoriosStockPosition clinicId={clinicId} /> : null}
+
+            {!periodInvalid && activeReport.id === 'stock-movements' ? (
+              <HubRelatoriosStockMovements clinicId={clinicId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'stock-abc' ? (
+              <HubRelatoriosStockAbc clinicId={clinicId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'stock-turnover' ? (
+              <HubRelatoriosStockTurnover clinicId={clinicId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'absent-clients' && period.mode === 'preset' ? (
+              <HubRelatoriosAbsentClients clinicId={clinicId} unitId={unitId} days={period.days} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'no-shows' ? (
+              <HubRelatoriosNoShows clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'boarding-occupancy' ? (
+              <HubRelatoriosBoardingOccupancy clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'grooming-productivity' ? (
+              <HubRelatoriosGroomingProductivity clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'vaccines-due' && period.mode === 'preset' ? (
+              <HubRelatoriosVaccinesDue clinicId={clinicId} days={period.days} />
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );

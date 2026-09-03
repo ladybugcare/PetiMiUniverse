@@ -38,7 +38,7 @@ export default defineConfig({
     },
     {
       name: 'authenticated',
-      testMatch: /(?:auth\.login|pickup|equipe|clientes|pets|agenda|modulos|veiculos|acessos)\.spec\.ts/,
+      testMatch: /(?:auth\.login|pickup|equipe|clientes|pets|agenda|modulos|veiculos|acessos|caixa)\.spec\.ts/,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },

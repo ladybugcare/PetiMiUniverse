@@ -21,6 +21,7 @@ import {
   STATUS_OPTIONS,
   canEditAgendaAppointment,
   formatHm,
+  isPartnerCareLocation,
   serviceGroupLabel,
   type AgendaAppointment,
   type AgendaStatus,
@@ -377,7 +378,11 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
             </div>
             <div className="nam-readonly-kv">
               <span className="hub-clientes__muted">Unidade</span>
-              <span>{appt.unitName}</span>
+              <span>
+                {isPartnerCareLocation(appt)
+                  ? `Parceira${appt.partnerClinic?.name ? `: ${appt.partnerClinic.name}` : ''}`
+                  : appt.unitName}
+              </span>
             </div>
             <div className="nam-readonly-kv">
               <span className="hub-clientes__muted">Tipo</span>

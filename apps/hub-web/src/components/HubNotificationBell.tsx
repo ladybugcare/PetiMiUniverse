@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@petimi/web-core';
 import {
   hubGetNotifications,
@@ -12,15 +13,34 @@ import { getHubUserId } from '../utils/hubUserDisplay';
 
 const vetBase = (import.meta.env.VITE_VET_WEB_URL || '').replace(/\/$/, '');
 
-function openNotificationLink(link: string | undefined): void {
+/** Navega na mesma aba — nunca abre popup/nova aba. */
+function goToNotificationLink(link: string | undefined, navigate: (to: string) => void): void {
   if (!link) return;
+
   if (/^https?:\/\//i.test(link)) {
-    window.open(link, '_blank', 'noopener,noreferrer');
+    try {
+      const url = new URL(link);
+      if (url.origin === window.location.origin) {
+        navigate(`${url.pathname}${url.search}${url.hash}`);
+        return;
+      }
+    } catch {
+      /* URL inválida — cai no assign abaixo */
+    }
+    window.location.assign(link);
     return;
   }
-  if (!vetBase) return;
+
   const path = link.startsWith('/') ? link : `/${link}`;
-  window.open(`${vetBase}${path}`, '_blank', 'noopener,noreferrer');
+  if (path.startsWith('/hub')) {
+    navigate(path);
+    return;
+  }
+  if (!vetBase) {
+    navigate(path);
+    return;
+  }
+  window.location.assign(`${vetBase}${path}`);
 }
 
 function relativeTime(iso: string): string {
@@ -33,10 +53,11 @@ function relativeTime(iso: string): string {
   if (mins < 60) return `${mins}m atrás`;
   if (hours < 24) return `${hours}h atrás`;
   if (days < 7) return `${days}d atrás`;
-  return date.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 }
 
 const HubNotificationBell: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const userId = getHubUserId(user);
   const [open, setOpen] = useState(false);
@@ -116,7 +137,7 @@ const HubNotificationBell: React.FC = () => {
       /* ignore */
     }
     setOpen(false);
-    openNotificationLink(n.link);
+    goToNotificationLink(n.link, navigate);
   };
 
   const markAll = async () => {

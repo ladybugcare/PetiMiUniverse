@@ -82,6 +82,76 @@ export interface HubInventoryLotRow {
   item: { name: string; item_kind: HubItemKind } | null;
 }
 
+export type HubInventoryMovementsReport = {
+  period: { from: string; to: string };
+  summary: {
+    movements_count: number;
+    qty_in: number;
+    qty_out: number;
+    by_type: Record<string, { count: number; qty: number; label: string }>;
+  };
+  items: Array<{
+    id: string;
+    item_id: string;
+    item_name: string;
+    item_kind: string | null;
+    unit_label: string | null;
+    lot_id: string | null;
+    movement_type: string;
+    movement_label: string;
+    direction: 'in' | 'out' | 'unknown';
+    qty: number;
+    unit_cost: number | null;
+    notes: string | null;
+    created_at: string;
+  }>;
+};
+
+export type HubInventoryAbcReport = {
+  period: { from: string; to: string };
+  summary: {
+    items_count: number;
+    total_consumption_value: number;
+    class_a: number;
+    class_b: number;
+    class_c: number;
+  };
+  items: Array<{
+    rank: number;
+    item_id: string;
+    name: string;
+    item_kind: string | null;
+    unit_label: string | null;
+    qty_out: number;
+    consumption_value: number;
+    share_pct: number;
+    cumulative_pct: number;
+    abc_class: 'A' | 'B' | 'C';
+  }>;
+};
+
+export type HubInventoryTurnoverReport = {
+  period: { from: string; to: string };
+  period_days: number;
+  summary: {
+    items_count: number;
+    with_outflow: number;
+    avg_turnover: number | null;
+  };
+  items: Array<{
+    item_id: string;
+    name: string;
+    item_kind: string;
+    unit_label: string | null;
+    qty_on_hand: number;
+    qty_in: number;
+    qty_out: number;
+    avg_stock: number;
+    turnover_rate: number | null;
+    days_of_cover: number | null;
+  }>;
+};
+
 export const hubInventoryApi = {
   suppliers: {
     list(clinicId: string) {
@@ -193,9 +263,17 @@ export const hubInventoryApi = {
     },
   },
   movements: {
-    list(clinicId: string, direction: 'all' | 'in' | 'out' = 'all', itemId?: string) {
+    list(
+      clinicId: string,
+      direction: 'all' | 'in' | 'out' = 'all',
+      itemId?: string,
+      opts?: { from?: string; to?: string; days?: number }
+    ) {
       const p = new URLSearchParams({ clinic_id: clinicId, direction });
       if (itemId) p.set('item_id', itemId);
+      if (opts?.from) p.set('from', opts.from);
+      if (opts?.to) p.set('to', opts.to);
+      if (opts?.days != null) p.set('days', String(opts.days));
       return apiRequest(`${base}/movements?${p}`) as Promise<{ movements: HubStockMovement[] }>;
     },
     create(payload: {
@@ -226,6 +304,28 @@ export const hubInventoryApi = {
   reports: {
     lowStock(clinicId: string) {
       return apiRequest(`${base}/reports/low-stock?clinic_id=${encodeURIComponent(clinicId)}`) as Promise<{ items: HubInventoryItem[] }>;
+    },
+    movements(clinicId: string, opts?: { days?: number; from?: string; to?: string; direction?: 'all' | 'in' | 'out' }) {
+      const p = new URLSearchParams({ clinic_id: clinicId });
+      if (opts?.days != null) p.set('days', String(opts.days));
+      if (opts?.from) p.set('from', opts.from);
+      if (opts?.to) p.set('to', opts.to);
+      if (opts?.direction) p.set('direction', opts.direction);
+      return apiRequest(`${base}/reports/movements?${p}`) as Promise<HubInventoryMovementsReport>;
+    },
+    abc(clinicId: string, opts?: { days?: number; from?: string; to?: string }) {
+      const p = new URLSearchParams({ clinic_id: clinicId });
+      if (opts?.days != null) p.set('days', String(opts.days));
+      if (opts?.from) p.set('from', opts.from);
+      if (opts?.to) p.set('to', opts.to);
+      return apiRequest(`${base}/reports/abc?${p}`) as Promise<HubInventoryAbcReport>;
+    },
+    turnover(clinicId: string, opts?: { days?: number; from?: string; to?: string }) {
+      const p = new URLSearchParams({ clinic_id: clinicId });
+      if (opts?.days != null) p.set('days', String(opts.days));
+      if (opts?.from) p.set('from', opts.from);
+      if (opts?.to) p.set('to', opts.to);
+      return apiRequest(`${base}/reports/turnover?${p}`) as Promise<HubInventoryTurnoverReport>;
     },
   },
 };

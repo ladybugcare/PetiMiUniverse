@@ -5,8 +5,7 @@ import '../clientes/clientes.css';
 import './clinica-page.css';
 
 /**
- * Casco único da Clínica: abas do módulo sempre visíveis
- * (Consultório, Operação clínica, Pacientes, …), inclusive no consultório.
+ * Casco único da Clínica: abas Consultório (operação do dia) e Prontuários (arquivo).
  */
 const HubClinicShell: React.FC = () => {
   return (

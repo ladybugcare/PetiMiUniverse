@@ -50,6 +50,9 @@ export type AgendaAppointment = {
   unitName: string;
   /** UUID da unidade (agenda Hub); usado em checkout/caixa. */
   unitId?: string | null;
+  care_location_kind?: 'own_unit' | 'partner_clinic';
+  hub_partner_clinic_id?: string | null;
+  partnerClinic?: { id: string; name: string } | null;
   petName: string;
   guardianName: string;
   start: Date;
@@ -101,6 +104,12 @@ export type AgendaAppointment = {
   visitGroupSize?: number;
   visitGroupLabel?: string;
 };
+
+export function isPartnerCareLocation(
+  appt: Pick<AgendaAppointment, 'care_location_kind'>,
+): boolean {
+  return appt.care_location_kind === 'partner_clinic';
+}
 
 const EDITABLE_AGENDA_STATUSES: AgendaStatus[] = ['pending_confirm', 'confirmed'];
 

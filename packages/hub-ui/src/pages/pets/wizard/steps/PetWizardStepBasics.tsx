@@ -39,9 +39,10 @@ type Props = {
   update: (p: Partial<PetWizardState>) => void;
   photoPreview: string | null;
   onPhotoChange: (file: File | null) => void;
+  isEdit?: boolean;
 };
 
-export const PetWizardStepBasics: React.FC<Props> = ({ state, update, photoPreview, onPhotoChange }) => {
+export const PetWizardStepBasics: React.FC<Props> = ({ state, update, photoPreview, onPhotoChange, isEdit = false }) => {
   const age = petAgeLabel(state.birth_date || null);
   const speciesTrim = state.species.trim();
 
@@ -76,7 +77,11 @@ export const PetWizardStepBasics: React.FC<Props> = ({ state, update, photoPrevi
         </span>
         <div>
           <h3 className="pet-wizard__block-title">Informações básicas</h3>
-          <p className="pet-wizard__block-sub">Os dados abaixo são essenciais para o cadastro do pet.</p>
+          <p className="pet-wizard__block-sub">
+            {isEdit
+              ? 'Revise e atualize os dados do pet.'
+              : 'Os dados abaixo são essenciais para o cadastro do pet.'}
+          </p>
         </div>
       </div>
 

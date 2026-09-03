@@ -21,6 +21,12 @@ import {
   loadPrescriptionDocumentForPdf,
   recordPrescriptionDocumentEvent,
 } from './prescriptionDocumentIssue';
+import {
+  assertClinicInventoryItem,
+  assertClinicInventoryLot,
+  createEncounterStockOut,
+  validateLotStockForOut,
+} from './hubInventoryStockUtils.js';
 
 const uuidStr = z.string().uuid();
 
@@ -717,32 +723,38 @@ export const createHubVaccination = async (req: Request, res: Response) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
 
-  let stockMovementId: string | null = null;
+  let inventoryItem: Awaited<ReturnType<typeof assertClinicInventoryItem>> = null;
+  let inventoryLot: Awaited<ReturnType<typeof assertClinicInventoryLot>> = null;
+  let priceSnapshot: number | null = null;
 
-  // Baixa de estoque: vacina aplicada na clínica com item de estoque vinculado
   if (b.source === 'in_clinic' && b.hub_inventory_item_id) {
-    const { data: mvmt, error: mvmtErr } = await supabaseAdmin
-      .from('hub_stock_movements')
-      .insert({
-        clinic_id: b.clinic_id,
-        hub_inventory_item_id: b.hub_inventory_item_id,
-        hub_inventory_lot_id: b.hub_inventory_lot_id ?? null,
-        movement_type: 'encounter_out',
-        quantity: 1,
-        unit: 'dose',
-        notes: `Vacina aplicada: ${b.vaccine_name}`,
-        hub_encounter_id: b.hub_encounter_id ?? null,
-      })
-      .select('id')
-      .single();
-    if (!mvmtErr && mvmt) {
-      stockMovementId = (mvmt as { id: string }).id;
-    } else if (mvmtErr) {
-      console.error('createHubVaccination: erro ao baixar estoque', mvmtErr.message);
+    if (!b.hub_inventory_lot_id) {
+      return res.status(400).json({ error: 'Lote de estoque é obrigatório para vacina aplicada na clínica.' });
     }
+    inventoryItem = await assertClinicInventoryItem(b.clinic_id, b.hub_inventory_item_id);
+    if (!inventoryItem || !inventoryItem.active) {
+      return res.status(400).json({ error: 'Item de estoque de vacina inválido ou inativo.' });
+    }
+    inventoryLot = await assertClinicInventoryLot(b.clinic_id, b.hub_inventory_lot_id);
+    if (!inventoryLot || inventoryLot.item_id !== b.hub_inventory_item_id) {
+      return res.status(400).json({ error: 'Lote inválido para o item de vacina selecionado.' });
+    }
+    const stockErr = await validateLotStockForOut(
+      b.clinic_id,
+      b.hub_inventory_item_id,
+      b.hub_inventory_lot_id,
+      1,
+    );
+    if (stockErr) return res.status(400).json({ error: stockErr });
+    priceSnapshot = Number(inventoryItem.sale_amount);
   }
 
-  const { data, error } = await supabaseAdmin
+  const batchNumber =
+    b.batch_number?.trim() ||
+    (inventoryLot?.lot_code?.trim() ? inventoryLot.lot_code.trim() : null);
+  const expiryDate = b.expiry_date ?? inventoryLot?.expiry_date ?? null;
+
+  const { data: inserted, error: insertErr } = await supabaseAdmin
     .from('hub_vaccination_records')
     .insert({
       clinic_id: b.clinic_id,
@@ -750,7 +762,7 @@ export const createHubVaccination = async (req: Request, res: Response) => {
       hub_encounter_id: b.hub_encounter_id ?? null,
       hub_case_id: b.hub_case_id ?? null,
       vaccine_name: b.vaccine_name,
-      batch_number: b.batch_number ?? null,
+      batch_number: batchNumber,
       administered_at: b.administered_at,
       next_dose_at: b.next_dose_at ?? null,
       hub_staff_member_id: b.hub_staff_member_id ?? null,
@@ -759,12 +771,43 @@ export const createHubVaccination = async (req: Request, res: Response) => {
       manufacturer: b.manufacturer ?? null,
       hub_inventory_item_id: b.hub_inventory_item_id ?? null,
       hub_inventory_lot_id: b.hub_inventory_lot_id ?? null,
-      expiry_date: b.expiry_date ?? null,
-      stock_movement_id: stockMovementId,
+      expiry_date: expiryDate,
+      price: priceSnapshot,
+      stock_movement_id: null,
     })
     .select('*')
     .single();
-  if (error) return res.status(500).json({ error: error.message });
+  if (insertErr || !inserted) return res.status(500).json({ error: insertErr?.message || 'Erro ao registrar vacinação.' });
+
+  const vaccinationId = (inserted as { id: string }).id;
+  let data: Record<string, unknown> = inserted as Record<string, unknown>;
+
+  if (b.source === 'in_clinic' && b.hub_inventory_item_id && b.hub_inventory_lot_id) {
+    const movement = await createEncounterStockOut({
+      clinicId: b.clinic_id,
+      itemId: b.hub_inventory_item_id,
+      lotId: b.hub_inventory_lot_id,
+      qty: 1,
+      notes: `Vacina aplicada: ${b.vaccine_name}`,
+      referenceType: 'vaccination',
+      referenceId: vaccinationId,
+      createdBy: (req as { user?: { id?: string } }).user?.id ?? null,
+    });
+    if ('error' in movement) {
+      await supabaseAdmin.from('hub_vaccination_records').delete().eq('id', vaccinationId);
+      return res.status(400).json({ error: movement.error });
+    }
+    const { data: updated, error: patchErr } = await supabaseAdmin
+      .from('hub_vaccination_records')
+      .update({ stock_movement_id: movement.id })
+      .eq('id', vaccinationId)
+      .select('*')
+      .single();
+    if (patchErr || !updated) {
+      return res.status(500).json({ error: patchErr?.message || 'Erro ao vincular baixa de estoque.' });
+    }
+    data = updated as Record<string, unknown>;
+  }
 
   void recordTimelineEvent({
     clinic_id: b.clinic_id,

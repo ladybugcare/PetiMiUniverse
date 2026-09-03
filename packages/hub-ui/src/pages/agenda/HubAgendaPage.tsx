@@ -5,7 +5,7 @@ import {
   ChevronRight,
   Search,
 } from 'lucide-react';
-import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
+import { apiRequest, useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
@@ -59,6 +59,7 @@ import {
   parseStaffWorkHours,
   canEditAgendaAppointment,
   enrichAgendaCardsForGrid,
+  isPartnerCareLocation,
 } from './agendaModel';
 import { mapHubAppointmentToAgenda } from './mapHubAgenda';
 import { findExtraBlockChildren } from './extraBlockAgendaUtils';
@@ -170,6 +171,7 @@ const HubAgendaPage: React.FC = () => {
   const [rawList, setRawList] = useState<AgendaAppointment[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
   const [pollTick, setPollTick] = useState(0);
+  const [clinicUnits, setClinicUnits] = useState<{ id: string; name: string }[]>([]);
   const [staffOptions, setStaffOptions] = useState<{ id: string; name: string; role: string; hasLogin: boolean }[]>([]);
   const [fullStaff, setFullStaff] = useState<HubStaffMember[]>([]);
   const [serviceTypes, setServiceTypes] = useState<{ id: string; name: string }[]>([]);
@@ -240,7 +242,22 @@ const HubAgendaPage: React.FC = () => {
     setDetailOpen(false);
     setSelectedId(null);
     setDetailMode('view');
-  }, []);
+    setSearchParams((prev) => {
+      if (!prev.has('appointment_id')) return prev;
+      const next = new URLSearchParams(prev);
+      next.delete('appointment_id');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  /** Deep link: /hub/appointments?appointment_id=…&date=YYYY-MM-DD */
+  useEffect(() => {
+    const id = searchParams.get('appointment_id');
+    if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return;
+    const d = parseYmd(searchParams.get('date'));
+    if (d) setCursorDate(startOfDay(d));
+    openAppointmentDetail(id);
+  }, [searchParams, openAppointmentDetail]);
 
   const handleAppointmentUpdated = useCallback((_appointment: HubAppointment) => {
     bumpReload();
@@ -539,6 +556,32 @@ const HubAgendaPage: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
+        const r = (await apiRequest(
+          `/units/clinic/${encodeURIComponent(clinicId)}?activeOnly=true`,
+        )) as { units?: { id: string; name: string }[] };
+        if (cancelled) return;
+        setClinicUnits(r.units ?? []);
+      } catch {
+        if (!cancelled) setClinicUnits([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, permLoading, accessAllowed]);
+
+  useEffect(() => {
+    if (!clinicUnits.length) return;
+    if (unitFilter === 'all' || unitFilter === '__partner__' || isUuid(unitFilter)) return;
+    const match = clinicUnits.find((u) => u.name === unitFilter);
+    if (match) setUnitFilter(match.id);
+  }, [clinicUnits, unitFilter]);
+
+  useEffect(() => {
+    if (!clinicId || permLoading || !accessAllowed) return;
+    let cancelled = false;
+    (async () => {
+      try {
         const { service_types } = await hubServiceTypesApi.list(clinicId);
         if (cancelled) return;
         const active = (service_types ?? []).filter((st) => !st.deleted_at && st.active !== false);
@@ -607,7 +650,8 @@ const HubAgendaPage: React.FC = () => {
           from: rangeIso.from,
           to: rangeIso.to,
         };
-        if (unitFilter !== 'all') params.unit_id = unitFilter;
+        if (unitFilter === '__partner__') params.care_location_kind = 'partner_clinic';
+        else if (unitFilter !== 'all' && isUuid(unitFilter)) params.unit_id = unitFilter;
         if (professionalFilter === '__na__') params.hub_staff_member_id = '__na__';
         else if (professionalFilter !== 'all') params.hub_staff_member_id = professionalFilter;
         if (groupFilter !== 'all') params.service_group = groupFilter;
@@ -657,11 +701,21 @@ const HubAgendaPage: React.FC = () => {
     return () => window.clearInterval(id);
   }, [clinicId, permLoading, accessAllowed, bumpPoll]);
 
-  const unitOptions = useMemo(() => {
-    const s = new Set<string>();
-    for (const a of allAppointments) s.add(a.unitName);
-    return ['all', ...Array.from(s).sort()];
-  }, [allAppointments]);
+  const unitComboOptions = useMemo((): HubComboboxOption[] => {
+    const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todas' }];
+    for (const u of clinicUnits) {
+      rows.push({ value: u.id, label: u.name });
+    }
+    rows.push({ value: '__partner__', label: 'Clínica parceira' });
+    if (unitFilter !== 'all' && !rows.some((o) => o.value === unitFilter)) {
+      const fromAppt = allAppointments.find((a) => a.unitId === unitFilter);
+      rows.push({
+        value: unitFilter,
+        label: fromAppt?.unitName && fromAppt.unitName !== '—' ? fromAppt.unitName : unitFilter,
+      });
+    }
+    return rows;
+  }, [clinicUnits, unitFilter, allAppointments]);
 
   const resourceOptions = useMemo(() => {
     const s = new Set<string>();
@@ -671,17 +725,6 @@ const HubAgendaPage: React.FC = () => {
     }
     return ['all', ...Array.from(s).sort()];
   }, [allAppointments]);
-
-  const unitComboOptions = useMemo((): HubComboboxOption[] => {
-    const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todas' }];
-    for (const u of unitOptions.filter((x) => x !== 'all')) {
-      rows.push({ value: u, label: u });
-    }
-    if (unitFilter !== 'all' && !rows.some((o) => o.value === unitFilter)) {
-      rows.push({ value: unitFilter, label: unitFilter });
-    }
-    return rows;
-  }, [unitOptions, unitFilter]);
 
   const professionalComboOptions = useMemo((): HubComboboxOption[] => {
     const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todos' }];
@@ -755,7 +798,16 @@ const HubAgendaPage: React.FC = () => {
   const filtered = useMemo(() => {
     const q = searchQ.trim().toLowerCase();
     return allAppointments.filter((a) => {
-      if (unitFilter !== 'all' && a.unitName !== unitFilter) return false;
+      if (unitFilter !== 'all') {
+        if (unitFilter === '__partner__') {
+          if (!isPartnerCareLocation(a)) return false;
+        } else if (!isPartnerCareLocation(a)) {
+          const unitMatch = isUuid(unitFilter)
+            ? a.unitId === unitFilter
+            : a.unitName === unitFilter;
+          if (!unitMatch) return false;
+        }
+      }
       if (professionalFilter !== 'all') {
         if (professionalFilter === '__na__') {
           if (a.professionalId !== null) return false;
@@ -771,7 +823,7 @@ const HubAgendaPage: React.FC = () => {
         if (a.hub_service_type_id !== serviceTypeFilter) return false;
       }
       if (q) {
-        const blob = `${a.petName} ${a.guardianName} ${a.serviceName} ${a.professionalName}`.toLowerCase();
+        const blob = `${a.petName} ${a.guardianName} ${a.serviceName} ${a.professionalName} ${a.partnerClinic?.name ?? ''}`.toLowerCase();
         if (!blob.includes(q)) return false;
       }
       return true;

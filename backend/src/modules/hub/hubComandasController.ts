@@ -1095,19 +1095,41 @@ async function buildComandaItemsFromEncounter(
   // 2. Vaccinations applied in-clinic during this encounter
   const { data: vaxRows } = await supabaseAdmin
     .from('hub_vaccination_records')
-    .select('id, vaccine_name, hub_inventory_item_id, price')
+    .select('id, vaccine_name, hub_inventory_item_id, hub_inventory_lot_id, price')
     .eq('hub_encounter_id', encounterId)
     .eq('source', 'in_clinic')
     .is('deleted_at', null);
+  const vaxItemIds = [
+    ...new Set(
+      (vaxRows ?? [])
+        .map((v) => (v as Record<string, unknown>).hub_inventory_item_id as string | null)
+        .filter(Boolean) as string[],
+    ),
+  ];
+  const vaxPriceByItemId = new Map<string, number>();
+  if (vaxItemIds.length > 0) {
+    const { data: invItems } = await supabaseAdmin
+      .from('hub_inventory_items')
+      .select('id, sale_amount')
+      .in('id', vaxItemIds);
+    for (const row of invItems ?? []) {
+      const r = row as { id: string; sale_amount: number };
+      vaxPriceByItemId.set(r.id, Number(r.sale_amount));
+    }
+  }
   for (const vax of vaxRows ?? []) {
     const vaxRow = vax as Record<string, unknown>;
-    const amount = typeof vaxRow.price === 'number' ? vaxRow.price : 0;
+    const itemId = vaxRow.hub_inventory_item_id as string | null;
+    let amount = typeof vaxRow.price === 'number' ? vaxRow.price : 0;
+    if ((!amount || amount <= 0) && itemId) {
+      amount = vaxPriceByItemId.get(itemId) ?? 0;
+    }
     allItems.push({
       pet_id: petId,
-      item_kind: 'service',
+      item_kind: 'product',
       hub_service_type_id: null,
-      hub_inventory_item_id: vaxRow.hub_inventory_item_id as string | null,
-      hub_inventory_lot_id: null,
+      hub_inventory_item_id: itemId,
+      hub_inventory_lot_id: (vaxRow.hub_inventory_lot_id as string | null) ?? null,
       description: `Vacina: ${String(vaxRow.vaccine_name || 'Vacina')}`,
       quantity: 1,
       unit_amount: amount,

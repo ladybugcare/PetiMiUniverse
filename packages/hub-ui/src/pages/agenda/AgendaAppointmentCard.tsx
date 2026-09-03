@@ -7,6 +7,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
+import { CareLocationBadge } from '../../components/CareLocationFields';
 import { resolveServiceAccentColor } from '../../utils/serviceTypeSlug';
 import {
   type AgendaAppointment,
@@ -15,6 +16,7 @@ import {
   agendaCardSizeFromHeight,
   formatHm,
   guardianFirstName,
+  isPartnerCareLocation,
 } from './agendaModel';
 
 export type AgendaAppointmentCardVariant = 'day' | 'week';
@@ -108,6 +110,17 @@ function CardBadges({
     );
   }
 
+  if (isPartnerCareLocation(appt)) {
+    badges.push(
+      <span key="partner" className="hub-agenda-card__badge hub-agenda-card__badge--partner">
+        <CareLocationBadge
+          care_location_kind={appt.care_location_kind}
+          partner_clinic={appt.partnerClinic ?? null}
+        />
+      </span>,
+    );
+  }
+
   if (badges.length === 0) return null;
   return <div className="hub-agenda-card__badges">{badges}</div>;
 }
@@ -156,6 +169,7 @@ export function AgendaAppointmentCard({
     `hub-agenda-card--${size}`,
     selected ? 'hub-agenda-card--selected' : '',
     a.conflict ? 'hub-agenda-card--conflict' : '',
+    isPartnerCareLocation(a) ? 'hub-agenda-card--partner' : '',
   ]
     .filter(Boolean)
     .join(' ');

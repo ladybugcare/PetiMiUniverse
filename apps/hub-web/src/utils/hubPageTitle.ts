@@ -14,9 +14,9 @@ const ROUTES: { path: string; title: string }[] = [
   { path: '/hub/configuracoes-sistema/templates-mensagem', title: 'Configurações — Templates de Mensagem' },
   { path: '/hub/configuracoes-sistema/servicos-funcoes', title: 'Configurações — Serviços e Funções' },
   { path: '/hub/configuracoes-sistema', title: 'Configurações do Sistema' },
-  { path: '/hub/clinica/atendimentos', title: 'Clínica — Operação clínica' },
+  { path: '/hub/clinica/atendimentos', title: 'Clínica — Consultório' },
   { path: '/hub/clinica/consultorio', title: 'Clínica — Consultório' },
-  { path: '/hub/clinica/prontuarios', title: 'Clínica — Pacientes' },
+  { path: '/hub/clinica/prontuarios', title: 'Clínica — Prontuários' },
   { path: '/hub/clinica/evolucoes', title: 'Clínica — Evoluções' },
   { path: '/hub/clinica/prescricoes', title: 'Clínica — Prescrições' },
   { path: '/hub/clinica/vacinas', title: 'Clínica — Vacinas' },
@@ -57,6 +57,7 @@ const ROUTES: { path: string; title: string }[] = [
 const ROUTES_BY_SPECIFICITY = [...ROUTES].sort((a, b) => b.path.length - a.path.length);
 
 export function hubPageTitleFromPath(pathname: string): string {
+  if (/^\/hub\/pets\/[^/]+\/editar$/.test(pathname)) return 'Editar pet';
   if (/^\/hub\/clinica\/atendimentos\/[^/]+$/.test(pathname)) return 'Clínica — Atendimento';
   if (/^\/hub\/clientes\/[^/]+$/.test(pathname)) return 'Cliente';
   if (/^\/hub\/orcamentos\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Orçamento — Pronto para envio';

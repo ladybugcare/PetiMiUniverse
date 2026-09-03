@@ -2,41 +2,59 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Building2, Edit2, Plus, Trash2 } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import {
+  formatPartnerClinicAddress,
   hubPartnerClinicsApi,
   type HubPartnerClinic,
 } from '../../api/hubPartnerClinicsApi';
 import { useAlert } from '../../components/AlertProvider';
 import { HubSidePanel } from '../../components/HubSidePanel';
+import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
+import { formatBrPhoneFromApi } from '../../utils/formatBrPhone';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './hub-partner-clinics.css';
 
 type FormState = {
   name: string;
-  city: string;
-  address_line: string;
   phone: string;
   notes: string;
   is_active: boolean;
+  postal_code: string;
+  state: string;
+  city: string;
+  district: string;
+  street: string;
+  street_number: string;
+  complement: string;
 };
 
 const emptyForm = (): FormState => ({
   name: '',
-  city: '',
-  address_line: '',
   phone: '',
   notes: '',
   is_active: true,
+  postal_code: '',
+  state: '',
+  city: '',
+  district: '',
+  street: '',
+  street_number: '',
+  complement: '',
 });
 
 function formFromRow(row: HubPartnerClinic): FormState {
   return {
     name: row.name,
-    city: row.city ?? '',
-    address_line: row.address_line ?? '',
-    phone: row.phone ?? '',
+    phone: formatBrPhoneFromApi(row.phone),
     notes: row.notes ?? '',
     is_active: row.is_active,
+    postal_code: row.postal_code ?? '',
+    state: row.state ?? '',
+    city: row.city ?? '',
+    district: row.district ?? '',
+    street: row.street || row.address_line || '',
+    street_number: row.street_number ?? '',
+    complement: row.complement ?? '',
   };
 }
 
@@ -102,6 +120,31 @@ const HubPartnerClinicsPage: React.FC = () => {
     setEditing(null);
   };
 
+  const onCepBlur = useCallback(async () => {
+    const cep = form.postal_code.replace(/\D/g, '');
+    if (cep.length !== 8) return;
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const j = (await r.json()) as {
+        erro?: boolean;
+        localidade?: string;
+        uf?: string;
+        bairro?: string;
+        logradouro?: string;
+      };
+      if (j.erro) return;
+      setForm((f) => ({
+        ...f,
+        city: j.localidade || f.city,
+        state: j.uf || f.state,
+        district: j.bairro || f.district,
+        street: j.logradouro || f.street,
+      }));
+    } catch {
+      /* ignore */
+    }
+  }, [form.postal_code]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clinicId || !canWrite) return;
@@ -115,11 +158,16 @@ const HubPartnerClinicsPage: React.FC = () => {
       const payload = {
         clinic_id: clinicId,
         name,
-        city: form.city.trim() || null,
-        address_line: form.address_line.trim() || null,
         phone: form.phone.trim() || null,
         notes: form.notes.trim() || null,
         is_active: form.is_active,
+        postal_code: form.postal_code.trim() || null,
+        state: form.state.trim().toUpperCase() || null,
+        city: form.city.trim() || null,
+        district: form.district.trim() || null,
+        street: form.street.trim() || null,
+        street_number: form.street_number.trim() || null,
+        complement: form.complement.trim() || null,
       };
       if (editing) {
         await hubPartnerClinicsApi.patch(editing.id, payload);
@@ -190,30 +238,35 @@ const HubPartnerClinicsPage: React.FC = () => {
         </div>
       ) : (
         <ul className="hub-pc__list">
-          {rows.map((row) => (
-            <li key={row.id} className={`hub-pc__card${!row.is_active ? ' hub-pc__card--inactive' : ''}`}>
-              <div className="hub-pc__card-main">
-                <strong>{row.name}</strong>
-                {!row.is_active ? <span className="hub-pc__badge">Inativa</span> : null}
-                <p className="hub-pc__meta">
-                  {[row.city, row.phone].filter(Boolean).join(' · ') || 'Sem cidade/telefone'}
-                </p>
-                {row.address_line ? <p className="hub-pc__meta">{row.address_line}</p> : null}
-              </div>
-              {canWrite ? (
-                <div className="hub-pc__card-actions">
-                  <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => openEdit(row)}>
-                    <Edit2 size={15} />
-                    Editar
-                  </button>
-                  <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => void removeRow(row)}>
-                    <Trash2 size={15} />
-                    Remover
-                  </button>
+          {rows.map((row) => {
+            const address = formatPartnerClinicAddress(row);
+            return (
+              <li key={row.id} className={`hub-pc__card${!row.is_active ? ' hub-pc__card--inactive' : ''}`}>
+                <div className="hub-pc__card-main">
+                  <strong>{row.name}</strong>
+                  {!row.is_active ? <span className="hub-pc__badge">Inativa</span> : null}
+                  <p className="hub-pc__meta">
+                    {[row.city && row.state ? `${row.city} / ${row.state}` : row.city || row.state, row.phone]
+                      .filter(Boolean)
+                      .join(' · ') || 'Sem cidade/telefone'}
+                  </p>
+                  {address ? <p className="hub-pc__meta">{address}</p> : null}
                 </div>
-              ) : null}
-            </li>
-          ))}
+                {canWrite ? (
+                  <div className="hub-pc__card-actions">
+                    <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => openEdit(row)}>
+                      <Edit2 size={15} />
+                      Editar
+                    </button>
+                    <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => void removeRow(row)}>
+                      <Trash2 size={15} />
+                      Remover
+                    </button>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -242,38 +295,112 @@ const HubPartnerClinicsPage: React.FC = () => {
             maxLength={200}
           />
 
-          <label className="nam-label" htmlFor="pc-city">
-            Cidade
-          </label>
-          <input
-            id="pc-city"
-            className="nam-input"
-            value={form.city}
-            onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-            maxLength={120}
-          />
-
-          <label className="nam-label" htmlFor="pc-address">
-            Endereço
-          </label>
-          <input
-            id="pc-address"
-            className="nam-input"
-            value={form.address_line}
-            onChange={(e) => setForm((f) => ({ ...f, address_line: e.target.value }))}
-            maxLength={400}
-          />
-
           <label className="nam-label" htmlFor="pc-phone">
             Telefone
           </label>
-          <input
+          <HubBrPhoneInput
             id="pc-phone"
             className="nam-input"
             value={form.phone}
-            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-            maxLength={40}
+            onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
           />
+
+          <p className="hub-pc__section-title">Endereço</p>
+
+          <div className="hub-pc__row2">
+            <div className="hub-pc__field">
+              <label className="nam-label" htmlFor="pc-cep">
+                CEP
+              </label>
+              <input
+                id="pc-cep"
+                className="nam-input"
+                value={form.postal_code}
+                onChange={(e) => setForm((f) => ({ ...f, postal_code: e.target.value }))}
+                onBlur={() => void onCepBlur()}
+                placeholder="00000-000"
+                maxLength={16}
+              />
+            </div>
+            <div className="hub-pc__field">
+              <label className="nam-label" htmlFor="pc-state">
+                Estado
+              </label>
+              <input
+                id="pc-state"
+                className="nam-input"
+                value={form.state}
+                onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
+                placeholder="UF"
+                maxLength={2}
+              />
+            </div>
+          </div>
+
+          <div className="hub-pc__row2">
+            <div className="hub-pc__field">
+              <label className="nam-label" htmlFor="pc-city">
+                Cidade
+              </label>
+              <input
+                id="pc-city"
+                className="nam-input"
+                value={form.city}
+                onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                maxLength={120}
+              />
+            </div>
+            <div className="hub-pc__field">
+              <label className="nam-label" htmlFor="pc-district">
+                Bairro
+              </label>
+              <input
+                id="pc-district"
+                className="nam-input"
+                value={form.district}
+                onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
+                maxLength={120}
+              />
+            </div>
+          </div>
+
+          <label className="nam-label" htmlFor="pc-street">
+            Endereço (logradouro)
+          </label>
+          <input
+            id="pc-street"
+            className="nam-input"
+            value={form.street}
+            onChange={(e) => setForm((f) => ({ ...f, street: e.target.value }))}
+            maxLength={200}
+          />
+
+          <div className="hub-pc__row2">
+            <div className="hub-pc__field">
+              <label className="nam-label" htmlFor="pc-number">
+                Número
+              </label>
+              <input
+                id="pc-number"
+                className="nam-input"
+                value={form.street_number}
+                onChange={(e) => setForm((f) => ({ ...f, street_number: e.target.value }))}
+                maxLength={32}
+              />
+            </div>
+            <div className="hub-pc__field">
+              <label className="nam-label" htmlFor="pc-complement">
+                Complemento
+              </label>
+              <input
+                id="pc-complement"
+                className="nam-input"
+                value={form.complement}
+                onChange={(e) => setForm((f) => ({ ...f, complement: e.target.value }))}
+                maxLength={120}
+              />
+            </div>
+          </div>
 
           <label className="nam-label" htmlFor="pc-notes">
             Notas

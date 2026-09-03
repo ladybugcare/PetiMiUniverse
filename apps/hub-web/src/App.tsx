@@ -44,6 +44,8 @@ import HubAcceptInvitationPage from './pages/HubAcceptInvitationPage';
 import HubInviteSignUpPage from './pages/HubInviteSignUpPage';
 import HubClinicOnboardingPage from './pages/HubClinicOnboardingPage';
 import HubAppShell from './components/HubAppShell';
+import { HubUnitProvider } from './contexts/HubUnitContext';
+import { HubCashSessionProvider } from './contexts/HubCashSessionContext';
 import HubOnboardingGuard from './routes/HubOnboardingGuard';
 import HubMeuPerfilPage from './pages/HubMeuPerfilPage';
 import HubClinicaPerfilPage from './pages/HubClinicaPerfilPage';
@@ -68,6 +70,17 @@ function PickupRouteMonitorViewPage() {
   const { routeId } = useParams<{ routeId: string }>();
   if (!routeId) return <p style={{ padding: '1rem' }}>ID de rota inválido.</p>;
   return <PickupRouteMonitorPage routeId={routeId} />;
+}
+
+/** Providers do hub autenticado — ficam fora do shell visual para o contexto sempre envolver o Outlet. */
+function HubAuthenticatedLayout() {
+  return (
+    <HubUnitProvider>
+      <HubCashSessionProvider>
+        <HubAppShell />
+      </HubCashSessionProvider>
+    </HubUnitProvider>
+  );
 }
 
 /** Data router — necessário para useBlocker (guard de saída do caixa). */
@@ -103,7 +116,7 @@ const router = createBrowserRouter(
         element={
           <HubProtectedRoute>
             <HubOnboardingGuard>
-              <HubAppShell />
+              <HubAuthenticatedLayout />
             </HubOnboardingGuard>
           </HubProtectedRoute>
         }
@@ -114,6 +127,7 @@ const router = createBrowserRouter(
         <Route path="clientes" element={<HubGuardiansPage />} />
         <Route path="clientes/:guardianId" element={<HubGuardianDetailPage />} />
         <Route path="pets/novo" element={<HubPetWizardPage />} />
+        <Route path="pets/:petId/editar" element={<HubPetWizardPage />} />
         <Route path="pets/:petId" element={<HubPetDetailPage />} />
         <Route path="pets" element={<HubPetsPage />} />
         <Route path="financeiro" element={<HubFinanceiroPage />} />
@@ -134,7 +148,7 @@ const router = createBrowserRouter(
         <Route path="estoque/*" element={<HubEstoqueRoutes />} />
         <Route path="equipe" element={<HubStaffPage />} />
         <Route path="relatorios" element={<HubRelatoriosPage />} />
-        <Route path="encounters" element={<Navigate to="/hub/clinica/atendimentos" replace />} />
+        <Route path="encounters" element={<Navigate to="/hub/clinica" replace />} />
         <Route path="meu-perfil" element={<HubMeuPerfilPage />} />
         <Route path="perfil-clinica" element={<HubClinicaPerfilPage />} />
         <Route path="design-system" element={<HubDesignSystemPage />} />

@@ -112,6 +112,7 @@ export type ListHubAppointmentsParams = {
   from: string;
   to: string;
   unit_id?: string;
+  care_location_kind?: 'own_unit' | 'partner_clinic';
   hub_staff_member_id?: string;
   hub_service_type_id?: string;
   service_group?: string;
@@ -267,6 +268,7 @@ function listAppointmentsUrl(p: ListHubAppointmentsParams): string {
     to: p.to,
   });
   if (p.unit_id) q.set('unit_id', p.unit_id);
+  if (p.care_location_kind) q.set('care_location_kind', p.care_location_kind);
   if (p.hub_staff_member_id) q.set('hub_staff_member_id', p.hub_staff_member_id);
   if (p.hub_service_type_id) q.set('hub_service_type_id', p.hub_service_type_id);
   if (p.service_group) q.set('service_group', p.service_group);

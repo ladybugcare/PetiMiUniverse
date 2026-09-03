@@ -112,3 +112,31 @@
 .hub-pc__form .nam-label {
   margin-top: 8px;
 }
+
+.hub-pc__section-title {
+  margin: 16px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #2d1e1c;
+  padding-top: 8px;
+  border-top: 1px solid #eadfd8;
+}
+
+.hub-pc__row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.hub-pc__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+@media (max-width: 520px) {
+  .hub-pc__row2 {
+    grid-template-columns: 1fr;
+  }
+}

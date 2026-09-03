@@ -177,6 +177,8 @@ export type HubPrescription = {
   items: HubPrescriptionItem[];
 };
 
+export type HubVaccinationSource = 'in_clinic' | 'external';
+
 export type HubVaccination = {
   id: string;
   vaccine_name: string;
@@ -185,6 +187,13 @@ export type HubVaccination = {
   next_dose_at?: string | null;
   hub_encounter_id?: string | null;
   hub_case_id?: string | null;
+  source?: HubVaccinationSource | null;
+  hub_inventory_item_id?: string | null;
+  hub_inventory_lot_id?: string | null;
+  expiry_date?: string | null;
+  price?: number | null;
+  stock_movement_id?: string | null;
+  notes?: string | null;
 };
 
 export type HubClinicalAttachment = {
@@ -610,6 +619,11 @@ export const hubClinicalApi = {
     next_dose_at?: string | null;
     hub_staff_member_id?: string | null;
     notes?: string | null;
+    source?: HubVaccinationSource;
+    hub_inventory_item_id?: string | null;
+    hub_inventory_lot_id?: string | null;
+    expiry_date?: string | null;
+    manufacturer?: string | null;
   }) {
     return apiRequest(`${clinicalBase}/vaccinations`, { method: 'POST', body: JSON.stringify(payload) });
   },

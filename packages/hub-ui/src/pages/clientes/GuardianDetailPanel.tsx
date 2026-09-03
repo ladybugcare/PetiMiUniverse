@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   X,
   ExternalLink,
@@ -17,6 +17,7 @@ import type { HubGuardian, HubGuardianPet } from '../../api/hubGuardiansApi';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { formatGuardianAddress } from './formatters';
 import { GuardianDetailQuickActions } from './GuardianDetailQuickActions';
+import { GuardianPetsTab } from './GuardianPetsTab';
 import { HubTabs } from '../../components/HubTabs';
 import { HubProfileInfoCell } from '../../components/HubProfileInfoCell';
 import { HubProfileAvatar, profileInitials } from '../../components/HubProfileAvatar';
@@ -43,6 +44,8 @@ interface GuardianDetailPanelProps {
   clinicId?: string | null;
   unitId?: string | null;
   canCreateReceivable?: boolean;
+  canWritePets?: boolean;
+  initialTab?: DetailTab;
 }
 
 function formatBrl(n: number): string {
@@ -63,10 +66,12 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   clinicId,
   unitId,
   canCreateReceivable = false,
+  canWritePets = false,
+  initialTab = 'resumo',
 }) => {
   const navigate = useNavigate();
   const isPage = layout === 'page';
-  const [tab, setTab] = useState<DetailTab>('resumo');
+  const [tab, setTab] = useState<DetailTab>(initialTab);
   const [comandas, setComandas] = useState<Array<Record<string, unknown>>>([]);
   const [receivables, setReceivables] = useState<HubFinanceReceivable[]>([]);
   const [finLoading, setFinLoading] = useState(false);
@@ -254,41 +259,9 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
     </>
   );
 
-  const renderPetsTab = () => {
-    const inner =
-      pets.length === 0 ? (
-        <div className="hub-clientes__empty-state">Este cliente ainda não tem pets associados.</div>
-      ) : (
-        <ul className="hub-clientes__pet-list">
-          {pets.map((p) => (
-            <li key={`${p.id}-${p.role}`} className="hub-clientes__pet-list-item">
-              <Link to={`/hub/pets/${p.id}`} className="hub-clientes__pet-list-link">
-                {p.name}
-              </Link>
-              <span className="hub-clientes__muted hub-clientes__pet-list-meta">
-                {p.species} · {p.role === 'primary' ? 'Principal' : 'Co-tutor'}
-              </span>
-            </li>
-          ))}
-        </ul>
-      );
-
-    if (isPage) {
-      return (
-        <section className="hub-meu-perfil__panel">
-          <header className="hub-meu-perfil__panel-head">
-            <div>
-              <h2 className="hub-meu-perfil__panel-title">Pets</h2>
-              <p className="hub-meu-perfil__panel-sub">{pets.length} pet(s) vinculado(s) a este cliente.</p>
-            </div>
-          </header>
-          {inner}
-        </section>
-      );
-    }
-
-    return <div className="hub-clientes__section">{inner}</div>;
-  };
+  const renderPetsTab = () => (
+    <GuardianPetsTab pets={pets} guardianId={guardian.id} canWritePets={canWritePets} isPage={isPage} />
+  );
 
   const renderHistoricoTab = () => {
     const inner = (
@@ -572,7 +545,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
                 type="button"
                 className="hub-clientes__btn hub-clientes__btn--ghost"
                 onClick={onOpenInNewPage}
-                title="Abrir o perfil completo numa nova página"
+                title="Abrir o perfil completo"
               >
                 <ExternalLink size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
                 Ver perfil completo

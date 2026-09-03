@@ -103,7 +103,13 @@ const HubCaixaPage: React.FC = () => {
   const [dayBoardItems, setDayBoardItems] = useState<HubFinanceDayBoardItem[]>([]);
   const [dayBoardDate, setDayBoardDate] = useState(() => ymdToday());
   const [dayBoardBusy, setDayBoardBusy] = useState(false);
-  const [atendimentosStatusFilter, setAtendimentosStatusFilter] = useState<'all' | 'sem_comanda' | 'comanda_aberta' | 'a_receber' | 'recebido'>('all');
+  const [atendimentosStatusFilter, setAtendimentosStatusFilter] = useState<'all' | 'sem_comanda' | 'comanda_aberta' | 'a_receber' | 'recebido'>(() => {
+    const status = searchParams.get('status');
+    if (status === 'sem_comanda' || status === 'comanda_aberta' || status === 'a_receber' || status === 'recebido') {
+      return status;
+    }
+    return 'all';
+  });
   const [dayBoardSearch, setDayBoardSearch] = useState('');
 
   // Drawers
@@ -184,6 +190,19 @@ const HubCaixaPage: React.FC = () => {
       void loadDayBoard(dateParam);
     }
   }, [searchParams, clinicId, unitId, dayBoardDate, loadDayBoard]);
+
+  useEffect(() => {
+    const status = searchParams.get('status');
+    if (
+      status === 'sem_comanda' ||
+      status === 'comanda_aberta' ||
+      status === 'a_receber' ||
+      status === 'recebido' ||
+      status === 'all'
+    ) {
+      setAtendimentosStatusFilter(status === 'all' ? 'all' : status);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!clinicId) return;

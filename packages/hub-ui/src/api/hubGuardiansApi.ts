@@ -9,9 +9,12 @@ export interface HubGuardianPet {
   id: string;
   name: string;
   species: string;
+  breed: string | null;
+  sex: 'M' | 'F' | 'U' | null;
   role: 'primary' | 'secondary';
   size_tier: string;
   coat_type: string | null;
+  coat_color: string | null;
   birth_date: string | null;
 }
 

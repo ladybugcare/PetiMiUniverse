@@ -33,6 +33,7 @@ type Props = {
   phaseBusy: boolean;
   onStartConsultation: () => void;
   onOpenRecord: (section?: VetCockpitDrawerSection) => void;
+  onAdmit?: () => void;
   onComplete: () => void;
   onSetOperationalPhase: (phase: HubEncounterOperationalPhase | null) => void;
 };
@@ -46,6 +47,7 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
   phaseBusy,
   onStartConsultation,
   onOpenRecord,
+  onAdmit,
   onComplete,
   onSetOperationalPhase,
 }) => {
@@ -87,6 +89,14 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
             .filter(Boolean)
             .join(' • ')}
         </p>
+        {pet.id ? (
+          <Link
+            to={`/hub/clinica/prontuarios?petId=${encodeURIComponent(pet.id)}`}
+            className="hub-clientes__link vet-cockpit-panel__prontuario-link"
+          >
+            Abrir prontuário completo →
+          </Link>
+        ) : null}
         <div className="vet-cockpit-panel__meta">
           <div>
             <span className="vet-cockpit-panel__k">Tutor</span>
@@ -267,16 +277,12 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
               <FileText size={18} aria-hidden />
               Gerar documento
             </button>
-            <Link
-              to={`/hub/clinica/internacoes?${new URLSearchParams({
-                ...(item.pet_id ? { pet_id: item.pet_id } : {}),
-                ...(context.encounter?.hub_case_id ? { hub_case_id: context.encounter.hub_case_id } : {}),
-              }).toString()}`}
-              className="vet-cockpit-action-btn vet-cockpit-action-btn--link"
-            >
-              <BedDouble size={18} aria-hidden />
-              Internar
-            </Link>
+            {onAdmit ? (
+              <button type="button" className="vet-cockpit-action-btn" onClick={onAdmit}>
+                <BedDouble size={18} aria-hidden />
+                Internar
+              </button>
+            ) : null}
         {inProgress ? (
           <>
             {opPhase !== 'awaiting_exams' ? (

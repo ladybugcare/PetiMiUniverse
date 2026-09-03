@@ -485,7 +485,7 @@ const HubClinicCasePage: React.FC = () => {
           {canWrite && clinicalCase && (
             <div style={{ marginBottom: 12 }}>
               <Link
-                to={`/hub/clinica/internacoes?pet_id=${encodeURIComponent(clinicalCase.pet_id)}&hub_case_id=${encodeURIComponent(clinicalCase.id)}`}
+                to={`/hub/clinica?admit=1&pet_id=${encodeURIComponent(clinicalCase.pet_id)}&hub_case_id=${encodeURIComponent(clinicalCase.id)}`}
                 className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
                 style={{ textDecoration: 'none', display: 'inline-block' }}
               >
@@ -515,7 +515,7 @@ const HubClinicCasePage: React.FC = () => {
           {canWrite && clinicalCase && (
             <div style={{ marginBottom: 12 }}>
               <Link
-                to={`/hub/clinica/cirurgias?pet_id=${encodeURIComponent(clinicalCase.pet_id)}&hub_case_id=${encodeURIComponent(clinicalCase.id)}`}
+                to={`/hub/clinica?surgery=1&pet_id=${encodeURIComponent(clinicalCase.pet_id)}&hub_case_id=${encodeURIComponent(clinicalCase.id)}`}
                 className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
                 style={{ textDecoration: 'none', display: 'inline-block' }}
               >

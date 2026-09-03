@@ -61,7 +61,7 @@ class MockQueryBuilder {
   private filters: Filter[] = [];
   private orderSpec: { col: string; ascending: boolean } | null = null;
   private limitN: number | null = null;
-  private op: 'select' | 'insert' | 'update' | 'upsert' = 'select';
+  private op: 'select' | 'insert' | 'update' | 'upsert' | 'delete' = 'select';
   private payload: Row | Row[] | null = null;
   private countOnly = false;
   private upsertConflict: string | null = null;
@@ -88,6 +88,11 @@ class MockQueryBuilder {
   update(payload: Row): this {
     this.op = 'update';
     this.payload = payload;
+    return this;
+  }
+
+  delete(): this {
+    this.op = 'delete';
     return this;
   }
 
@@ -255,6 +260,21 @@ class MockQueryBuilder {
       }
       this.state.tables[this.table] = table;
       return { data: updated, error: null };
+    }
+
+    if (this.op === 'delete') {
+      const table = this.rows();
+      const kept: Row[] = [];
+      const removed: Row[] = [];
+      for (const row of table) {
+        if (this.filters.every((f) => matchesFilter(row, f))) {
+          removed.push(row);
+        } else {
+          kept.push(row);
+        }
+      }
+      this.state.tables[this.table] = kept;
+      return { data: removed, error: null };
     }
 
     const filtered = this.finalize(this.applyFilters(this.rows()));

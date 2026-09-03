@@ -829,7 +829,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
                 type="button"
                 className="hub-clientes__btn hub-clientes__btn--ghost"
                 onClick={openFullPage}
-                title="Abrir o perfil completo numa nova página"
+                title="Abrir o perfil completo"
               >
                 <ExternalLink size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
                 Ver perfil completo

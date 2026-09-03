@@ -5,28 +5,43 @@ import { assertPartnerClinicInClinic } from './hubCareLocation';
 
 const uuidStr = z.string().uuid();
 
+const optionalTrim = (max: number) => z.string().trim().max(max).optional().nullable();
+
 const createSchema = z.object({
   clinic_id: uuidStr,
   name: z.string().trim().min(1).max(200),
-  city: z.string().trim().max(120).optional().nullable(),
-  address_line: z.string().trim().max(400).optional().nullable(),
-  phone: z.string().trim().max(40).optional().nullable(),
-  notes: z.string().trim().max(2000).optional().nullable(),
+  phone: optionalTrim(40),
+  notes: optionalTrim(2000),
   is_active: z.boolean().optional().default(true),
+  postal_code: optionalTrim(16),
+  state: optionalTrim(2),
+  city: optionalTrim(120),
+  district: optionalTrim(120),
+  street: optionalTrim(200),
+  street_number: optionalTrim(32),
+  complement: optionalTrim(120),
+  /** Legado — aceito, mas preferir street. */
+  address_line: optionalTrim(400),
 });
 
 const patchSchema = z.object({
   clinic_id: uuidStr,
   name: z.string().trim().min(1).max(200).optional(),
-  city: z.string().trim().max(120).optional().nullable(),
-  address_line: z.string().trim().max(400).optional().nullable(),
-  phone: z.string().trim().max(40).optional().nullable(),
-  notes: z.string().trim().max(2000).optional().nullable(),
+  phone: optionalTrim(40),
+  notes: optionalTrim(2000),
   is_active: z.boolean().optional(),
+  postal_code: optionalTrim(16),
+  state: optionalTrim(2),
+  city: optionalTrim(120),
+  district: optionalTrim(120),
+  street: optionalTrim(200),
+  street_number: optionalTrim(32),
+  complement: optionalTrim(120),
+  address_line: optionalTrim(400),
 });
 
 const PARTNER_SELECT =
-  'id, clinic_id, name, city, address_line, phone, notes, is_active, created_at, updated_at';
+  'id, clinic_id, name, phone, notes, is_active, postal_code, state, city, district, street, street_number, complement, address_line, created_at, updated_at';
 
 export const listHubPartnerClinics = async (req: Request, res: Response) => {
   try {

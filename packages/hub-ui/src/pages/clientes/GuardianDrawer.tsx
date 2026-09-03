@@ -32,6 +32,7 @@ export type GuardianDrawerProps = {
   quoteConvShort?: string;
   linkGuardianId?: string;
   onContinueToPets?: () => void;
+  canWritePets?: boolean;
 };
 
 const GUARDIAN_FORM_ID = 'hub-guardian-drawer-form';
@@ -55,6 +56,7 @@ export const GuardianDrawer: React.FC<GuardianDrawerProps> = ({
   quoteConvShort,
   linkGuardianId,
   onContinueToPets,
+  canWritePets = false,
 }) => {
   const isCompany = useMemo(() => {
     if (mode === 'detail' && guardian) return guardian.client_kind === 'company';
@@ -181,6 +183,7 @@ export const GuardianDrawer: React.FC<GuardianDrawerProps> = ({
             hideNewPageButton
             hideHeader
             hideFooter
+            canWritePets={canWritePets}
           />
         ) : mode === 'quote_review' ? (
           <>

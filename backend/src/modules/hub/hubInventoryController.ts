@@ -552,6 +552,24 @@ export const listHubStockMovements = async (req: Request, res: Response) => {
     const clinic_id = parsed.data;
     const direction = (req.query.direction as string) || 'all';
     const itemId = req.query.item_id as string | undefined;
+    const fromRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(req.query.from);
+    const toRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(req.query.to);
+    const daysParsed = z.coerce.number().int().min(1).max(366).safeParse(req.query.days);
+
+    let fromIso: string | null = null;
+    let toIso: string | null = null;
+    if (fromRaw.success && toRaw.success) {
+      if (fromRaw.data > toRaw.data) return res.status(400).json({ error: 'from não pode ser maior que to' });
+      fromIso = `${fromRaw.data}T00:00:00.000Z`;
+      toIso = `${toRaw.data}T23:59:59.999Z`;
+    } else if (daysParsed.success) {
+      const to = new Date();
+      const toYmd = to.toISOString().slice(0, 10);
+      const fromDt = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate() - (daysParsed.data - 1)));
+      const fromYmd = fromDt.toISOString().slice(0, 10);
+      fromIso = `${fromYmd}T00:00:00.000Z`;
+      toIso = `${toYmd}T23:59:59.999Z`;
+    }
 
     let q = supabaseAdmin
       .from('hub_stock_movements')
@@ -563,6 +581,8 @@ export const listHubStockMovements = async (req: Request, res: Response) => {
     if (itemId && uuidStr.safeParse(itemId).success) {
       q = q.eq('item_id', itemId);
     }
+    if (fromIso) q = q.gte('created_at', fromIso);
+    if (toIso) q = q.lte('created_at', toIso);
 
     const { data, error } = await q;
     if (error) {
@@ -578,6 +598,115 @@ export const listHubStockMovements = async (req: Request, res: Response) => {
     return res.json({ movements: rows });
   } catch (e) {
     console.error('[hub_inventory] list movements', e);
+    return res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+const MOVEMENT_TYPE_LABELS: Record<string, string> = {
+  initial_in: 'Saldo inicial',
+  purchase_in: 'Compra',
+  adjustment_in: 'Ajuste (+)',
+  adjustment_out: 'Ajuste (−)',
+  sale_out: 'Venda',
+  encounter_out: 'Consumo clínico',
+};
+
+/** Relatório de entradas e saídas no período, com nomes de itens e totais. */
+export const getHubInventoryMovementsReport = async (req: Request, res: Response) => {
+  try {
+    const clinic = uuidStr.safeParse(req.query.clinic_id);
+    if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
+    const clinic_id = clinic.data;
+    const direction = (req.query.direction as string) || 'all';
+    const fromRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(req.query.from);
+    const toRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(req.query.to);
+    const daysParsed = z.coerce.number().int().min(1).max(366).safeParse(req.query.days);
+
+    let fromYmd: string;
+    let toYmd: string;
+    if (fromRaw.success && toRaw.success) {
+      if (fromRaw.data > toRaw.data) return res.status(400).json({ error: 'from não pode ser maior que to' });
+      fromYmd = fromRaw.data;
+      toYmd = toRaw.data;
+    } else {
+      const n = daysParsed.success ? daysParsed.data : 30;
+      const to = new Date();
+      toYmd = to.toISOString().slice(0, 10);
+      const fromDt = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate() - (n - 1)));
+      fromYmd = fromDt.toISOString().slice(0, 10);
+    }
+    const fromIso = `${fromYmd}T00:00:00.000Z`;
+    const toIso = `${toYmd}T23:59:59.999Z`;
+
+    const { data, error } = await supabaseAdmin
+      .from('hub_stock_movements')
+      .select(
+        'id, clinic_id, item_id, lot_id, movement_type, qty, unit_cost, notes, created_at, item:hub_inventory_items(id, name, item_kind, unit_label)'
+      )
+      .eq('clinic_id', clinic_id)
+      .gte('created_at', fromIso)
+      .lte('created_at', toIso)
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (error) {
+      console.error('[hub_inventory] movements report', error);
+      return res.status(500).json({ error: 'Erro ao carregar relatório de movimentos' });
+    }
+
+    let rows = data ?? [];
+    if (direction === 'in') {
+      rows = rows.filter((r) => movementSign(r.movement_type as string) > 0);
+    } else if (direction === 'out') {
+      rows = rows.filter((r) => movementSign(r.movement_type as string) < 0);
+    }
+
+    const by_type: Record<string, { count: number; qty: number; label: string }> = {};
+    let qty_in = 0;
+    let qty_out = 0;
+    const items = rows.map((r) => {
+      const type = String(r.movement_type ?? '');
+      const sign = movementSign(type);
+      const qty = Number(r.qty ?? 0);
+      const cur = by_type[type] ?? { count: 0, qty: 0, label: MOVEMENT_TYPE_LABELS[type] ?? type };
+      cur.count += 1;
+      cur.qty += qty;
+      by_type[type] = cur;
+      if (sign > 0) qty_in += qty;
+      else if (sign < 0) qty_out += qty;
+      const itemEmb = r.item as
+        | { id: string; name: string; item_kind: string; unit_label: string | null }
+        | { id: string; name: string; item_kind: string; unit_label: string | null }[]
+        | null;
+      const item = Array.isArray(itemEmb) ? itemEmb[0] ?? null : itemEmb;
+      return {
+        id: r.id as string,
+        item_id: r.item_id as string,
+        item_name: item?.name ?? '—',
+        item_kind: item?.item_kind ?? null,
+        unit_label: item?.unit_label ?? null,
+        lot_id: (r.lot_id as string | null) ?? null,
+        movement_type: type,
+        movement_label: MOVEMENT_TYPE_LABELS[type] ?? type,
+        direction: sign > 0 ? 'in' : sign < 0 ? 'out' : 'unknown',
+        qty,
+        unit_cost: r.unit_cost != null ? Number(r.unit_cost) : null,
+        notes: (r.notes as string | null) ?? null,
+        created_at: r.created_at as string,
+      };
+    });
+
+    return res.json({
+      period: { from: fromYmd, to: toYmd },
+      summary: {
+        movements_count: items.length,
+        qty_in,
+        qty_out,
+        by_type,
+      },
+      items,
+    });
+  } catch (e) {
+    console.error('[hub_inventory] movements report', e);
     return res.status(500).json({ error: 'Erro interno' });
   }
 };
@@ -787,6 +916,262 @@ export const listHubInventoryLots = async (req: Request, res: Response) => {
     return res.json({ lots: enriched });
   } catch (e) {
     console.error('[hub_inventory] list lots', e);
+    return res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+function parseInventoryReportPeriod(q: {
+  days?: unknown;
+  from?: unknown;
+  to?: unknown;
+}): { ok: true; fromYmd: string; toYmd: string } | { ok: false; error: string } {
+  const fromRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(q.from);
+  const toRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(q.to);
+  if (fromRaw.success && toRaw.success) {
+    if (fromRaw.data > toRaw.data) return { ok: false, error: 'from não pode ser maior que to' };
+    return { ok: true, fromYmd: fromRaw.data, toYmd: toRaw.data };
+  }
+  const days = z.coerce.number().int().min(1).max(366).safeParse(q.days);
+  const n = days.success ? days.data : 30;
+  const to = new Date();
+  const toYmd = to.toISOString().slice(0, 10);
+  const fromDt = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate() - (n - 1)));
+  const fromYmd = fromDt.toISOString().slice(0, 10);
+  return { ok: true, fromYmd, toYmd };
+}
+
+function round2inv(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** Curva ABC por valor de consumo (saídas × custo) no período. */
+export const getHubInventoryAbcReport = async (req: Request, res: Response) => {
+  try {
+    const clinic = uuidStr.safeParse(req.query.clinic_id);
+    if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
+    const clinic_id = clinic.data;
+    const period = parseInventoryReportPeriod(req.query);
+    if (!period.ok) return res.status(400).json({ error: period.error });
+    const { fromYmd, toYmd } = period;
+    const fromIso = `${fromYmd}T00:00:00.000Z`;
+    const toIso = `${toYmd}T23:59:59.999Z`;
+
+    const { data: movs, error } = await supabaseAdmin
+      .from('hub_stock_movements')
+      .select('item_id, movement_type, qty, unit_cost')
+      .eq('clinic_id', clinic_id)
+      .gte('created_at', fromIso)
+      .lte('created_at', toIso)
+      .limit(20000);
+    if (error) return res.status(500).json({ error: error.message });
+
+    const consumption = new Map<string, { qty_out: number; value: number }>();
+    for (const m of movs ?? []) {
+      const type = String(m.movement_type ?? '');
+      if (movementSign(type) >= 0) continue;
+      const itemId = m.item_id as string;
+      const qty = Number(m.qty ?? 0);
+      const unitCost = m.unit_cost != null ? Number(m.unit_cost) : null;
+      const cur = consumption.get(itemId) ?? { qty_out: 0, value: 0 };
+      cur.qty_out += qty;
+      if (unitCost != null) cur.value += qty * unitCost;
+      consumption.set(itemId, cur);
+    }
+
+    const itemIds = [...consumption.keys()];
+    const itemMeta = new Map<
+      string,
+      { name: string; item_kind: string; cost_amount: number | null; unit_label: string | null }
+    >();
+    if (itemIds.length > 0) {
+      const chunk = 500;
+      for (let i = 0; i < itemIds.length; i += chunk) {
+        const slice = itemIds.slice(i, i + chunk);
+        const { data: items, error: iErr } = await supabaseAdmin
+          .from('hub_inventory_items')
+          .select('id, name, item_kind, cost_amount, unit_label')
+          .in('id', slice)
+          .is('deleted_at', null);
+        if (iErr) return res.status(500).json({ error: iErr.message });
+        for (const it of items ?? []) {
+          itemMeta.set(it.id as string, {
+            name: String(it.name ?? ''),
+            item_kind: String(it.item_kind ?? ''),
+            cost_amount: it.cost_amount != null ? Number(it.cost_amount) : null,
+            unit_label: (it.unit_label as string | null) ?? null,
+          });
+        }
+      }
+    }
+
+    const ranked = itemIds
+      .map((id) => {
+        const c = consumption.get(id)!;
+        const meta = itemMeta.get(id);
+        let value = c.value;
+        if (value <= 0 && meta?.cost_amount != null) {
+          value = c.qty_out * meta.cost_amount;
+        }
+        return {
+          item_id: id,
+          name: meta?.name ?? '—',
+          item_kind: meta?.item_kind ?? null,
+          unit_label: meta?.unit_label ?? null,
+          qty_out: round2inv(c.qty_out),
+          consumption_value: round2inv(value),
+        };
+      })
+      .filter((r) => r.qty_out > 0)
+      .sort((a, b) => b.consumption_value - a.consumption_value || b.qty_out - a.qty_out);
+
+    const totalValue = ranked.reduce((acc, r) => acc + r.consumption_value, 0);
+    let cumulative = 0;
+    const items = ranked.map((r, idx) => {
+      cumulative += r.consumption_value;
+      const share_pct = totalValue > 0 ? round2inv((r.consumption_value / totalValue) * 100) : 0;
+      const cumulative_pct = totalValue > 0 ? round2inv((cumulative / totalValue) * 100) : 0;
+      let abc_class: 'A' | 'B' | 'C' = 'C';
+      if (cumulative_pct <= 80) abc_class = 'A';
+      else if (cumulative_pct <= 95) abc_class = 'B';
+      return {
+        rank: idx + 1,
+        ...r,
+        share_pct,
+        cumulative_pct,
+        abc_class,
+      };
+    });
+
+    return res.json({
+      period: { from: fromYmd, to: toYmd },
+      summary: {
+        items_count: items.length,
+        total_consumption_value: round2inv(totalValue),
+        class_a: items.filter((i) => i.abc_class === 'A').length,
+        class_b: items.filter((i) => i.abc_class === 'B').length,
+        class_c: items.filter((i) => i.abc_class === 'C').length,
+      },
+      items: items.slice(0, 500),
+    });
+  } catch (e) {
+    console.error('[hub_inventory] abc report', e);
+    return res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+/** Giro de estoque: saídas no período vs saldo atual / cobertura em dias. */
+export const getHubInventoryTurnoverReport = async (req: Request, res: Response) => {
+  try {
+    const clinic = uuidStr.safeParse(req.query.clinic_id);
+    if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
+    const clinic_id = clinic.data;
+    const period = parseInventoryReportPeriod(req.query);
+    if (!period.ok) return res.status(400).json({ error: period.error });
+    const { fromYmd, toYmd } = period;
+    const fromIso = `${fromYmd}T00:00:00.000Z`;
+    const toIso = `${toYmd}T23:59:59.999Z`;
+    const periodDays = Math.max(
+      1,
+      Math.floor(
+        (Date.parse(`${toYmd}T12:00:00Z`) - Date.parse(`${fromYmd}T12:00:00Z`)) / 86_400_000
+      ) + 1
+    );
+
+    const { data: movs, error } = await supabaseAdmin
+      .from('hub_stock_movements')
+      .select('item_id, movement_type, qty')
+      .eq('clinic_id', clinic_id)
+      .gte('created_at', fromIso)
+      .lte('created_at', toIso)
+      .limit(20000);
+    if (error) return res.status(500).json({ error: error.message });
+
+    const periodNet = new Map<string, { qty_in: number; qty_out: number }>();
+    for (const m of movs ?? []) {
+      const type = String(m.movement_type ?? '');
+      const sign = movementSign(type);
+      const itemId = m.item_id as string;
+      const qty = Number(m.qty ?? 0);
+      const cur = periodNet.get(itemId) ?? { qty_in: 0, qty_out: 0 };
+      if (sign > 0) cur.qty_in += qty;
+      else if (sign < 0) cur.qty_out += qty;
+      periodNet.set(itemId, cur);
+    }
+
+    const { byItem } = await computeBalances(clinic_id);
+    const itemIds = [...new Set([...periodNet.keys(), ...byItem.keys()])];
+
+    const itemMeta = new Map<string, { name: string; item_kind: string; unit_label: string | null }>();
+    if (itemIds.length > 0) {
+      const chunk = 500;
+      for (let i = 0; i < itemIds.length; i += chunk) {
+        const slice = itemIds.slice(i, i + chunk);
+        const { data: items, error: iErr } = await supabaseAdmin
+          .from('hub_inventory_items')
+          .select('id, name, item_kind, unit_label, active')
+          .in('id', slice)
+          .is('deleted_at', null);
+        if (iErr) return res.status(500).json({ error: iErr.message });
+        for (const it of items ?? []) {
+          if (it.active === false) continue;
+          itemMeta.set(it.id as string, {
+            name: String(it.name ?? ''),
+            item_kind: String(it.item_kind ?? ''),
+            unit_label: (it.unit_label as string | null) ?? null,
+          });
+        }
+      }
+    }
+
+    const rows = [...itemMeta.keys()]
+      .map((id) => {
+        const net = periodNet.get(id) ?? { qty_in: 0, qty_out: 0 };
+        const qty_on_hand = round2inv(byItem.get(id) ?? 0);
+        const opening = round2inv(qty_on_hand - (net.qty_in - net.qty_out));
+        const avg_stock = round2inv((Math.max(opening, 0) + Math.max(qty_on_hand, 0)) / 2);
+        const qty_out = round2inv(net.qty_out);
+        const turnover =
+          avg_stock > 0 ? round2inv(qty_out / avg_stock) : qty_out > 0 ? null : 0;
+        const daily_out = qty_out / periodDays;
+        const days_of_cover =
+          daily_out > 0 ? round2inv(Math.max(qty_on_hand, 0) / daily_out) : qty_on_hand > 0 ? null : 0;
+        const meta = itemMeta.get(id)!;
+        return {
+          item_id: id,
+          name: meta.name,
+          item_kind: meta.item_kind,
+          unit_label: meta.unit_label,
+          qty_on_hand,
+          qty_in: round2inv(net.qty_in),
+          qty_out,
+          avg_stock,
+          turnover_rate: turnover,
+          days_of_cover,
+        };
+      })
+      .filter((r) => r.qty_out > 0 || r.qty_on_hand > 0)
+      .sort((a, b) => (b.turnover_rate ?? 0) - (a.turnover_rate ?? 0));
+
+    return res.json({
+      period: { from: fromYmd, to: toYmd },
+      period_days: periodDays,
+      summary: {
+        items_count: rows.length,
+        with_outflow: rows.filter((r) => r.qty_out > 0).length,
+        avg_turnover:
+          rows.filter((r) => r.turnover_rate != null).length > 0
+            ? round2inv(
+                rows
+                  .filter((r) => r.turnover_rate != null)
+                  .reduce((acc, r) => acc + (r.turnover_rate as number), 0) /
+                  rows.filter((r) => r.turnover_rate != null).length
+              )
+            : null,
+      },
+      items: rows.slice(0, 500),
+    });
+  } catch (e) {
+    console.error('[hub_inventory] turnover report', e);
     return res.status(500).json({ error: 'Erro interno' });
   }
 };

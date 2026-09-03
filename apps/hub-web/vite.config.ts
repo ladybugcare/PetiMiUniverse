@@ -19,6 +19,8 @@ export default defineConfig(({ mode }) => ({
     alias: {
       '@petimi/web-core': path.resolve(__dirname, '../../packages/web-core/src'),
       '@petimi/hub-ui': path.resolve(__dirname, '../../packages/hub-ui/src'),
+      react: path.join(reactRoot),
+      'react-dom': path.dirname(require.resolve('react-dom/package.json')),
       'react/jsx-runtime': path.join(
         reactRoot,
         mode === 'development'

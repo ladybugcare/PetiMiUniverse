@@ -35,7 +35,22 @@ type DetailPanel = {
   tab: 'pre_op' | 'procedure' | 'team' | 'post_op';
 };
 
-const HubClinicSurgeriesPage: React.FC = () => {
+export type HubClinicSurgeriesPageProps = {
+  /** Lista embutida no Consultório (sem botão primário de criação). */
+  embedded?: boolean;
+  createOpen?: boolean;
+  onCreateOpenChange?: (open: boolean) => void;
+  presetPetId?: string | null;
+  presetCaseId?: string | null;
+};
+
+const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
+  embedded = false,
+  createOpen: createOpenProp,
+  onCreateOpenChange,
+  presetPetId,
+  presetCaseId,
+}) => {
   const clinicId = getStoredClinicId();
   const { showError, showSuccess } = useAlert();
   const { hasPermission } = usePermissions();
@@ -43,7 +58,13 @@ const HubClinicSurgeriesPage: React.FC = () => {
   const canRead = hasPermission('hub.clinic.read');
   const canWrite = hasPermission('hub.clinic.write');
   const [rows, setRows] = useState<HubSurgery[]>([]);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpenInternal, setCreateOpenInternal] = useState(false);
+  const createControlled = createOpenProp !== undefined;
+  const createOpen = createControlled ? Boolean(createOpenProp) : createOpenInternal;
+  const setCreateOpen = (open: boolean) => {
+    onCreateOpenChange?.(open);
+    if (!createControlled) setCreateOpenInternal(open);
+  };
   const [detail, setDetail] = useState<DetailPanel | null>(null);
   const [pets, setPets] = useState<HubPet[]>([]);
 
@@ -94,15 +115,20 @@ const HubClinicSurgeriesPage: React.FC = () => {
     setDetailRaw(JSON.stringify(val, null, 2));
   }, [detail?.tab, detail?.surgery.id]);
 
-  // Pre-fill from query params (?pet_id=...&hub_case_id=...)
+  // Prefill: props do Consultório ou query em rota legada standalone.
   useEffect(() => {
+    if (presetPetId) setPetId(presetPetId);
+    if (presetCaseId) setCaseLink({ hub_case_id: presetCaseId });
+  }, [presetPetId, presetCaseId, createOpen]);
+
+  useEffect(() => {
+    if (embedded) return;
     const qPet = searchParams.get('pet_id');
     const qCase = searchParams.get('hub_case_id');
-    if (qPet || qCase) {
-      setCreateOpen(true);
-      if (qPet) setPetId(qPet);
-      if (qCase) setCaseLink({ hub_case_id: qCase });
-    }
+    if (!qPet && !qCase) return;
+    setCreateOpen(true);
+    if (qPet) setPetId(qPet);
+    if (qCase) setCaseLink({ hub_case_id: qCase });
   }, []);
 
   const petOptions: HubComboboxOption[] = useMemo(
@@ -212,13 +238,18 @@ const HubClinicSurgeriesPage: React.FC = () => {
 
   const canSubmitCreate = !!petId && !!title.trim() && !submitting && isCaseLinkResolved(caseLink, hasActiveCases);
 
+  const visibleRows = useMemo(() => {
+    if (!embedded) return rows;
+    return rows.filter((s) => s.status === 'scheduled' || s.status === 'in_progress');
+  }, [rows, embedded]);
+
   if (!canRead) {
     return <p className="hub-clientes__muted hub-clinic-page__pad">Sem permissão.</p>;
   }
 
   return (
-    <div className="hub-clinic-surgeries">
-      {canWrite && (
+    <div className={`hub-clinic-surgeries${embedded ? ' hub-clinic-surgeries--embedded' : ''}`}>
+      {canWrite && !embedded && (
         <div className="hub-clientes__toolbar">
           <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={() => setCreateOpen(true)}>
             Nova cirurgia
@@ -240,14 +271,14 @@ const HubClinicSurgeriesPage: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {visibleRows.length === 0 ? (
               <tr>
                 <td colSpan={7} className="hub-clientes__muted" style={{ textAlign: 'center', padding: 28 }}>
-                  Nenhuma cirurgia registrada.
+                  {embedded ? 'Nenhuma cirurgia em andamento ou agendada.' : 'Nenhuma cirurgia registrada.'}
                 </td>
               </tr>
             ) : (
-              rows.map((s) => (
+              visibleRows.map((s) => (
                 <tr key={s.id}>
                   <td>
                     <button
@@ -437,7 +468,7 @@ const HubClinicSurgeriesPage: React.FC = () => {
             {/* CTA pós-op: disponível em andamento ou concluída */}
             {canWrite && (detail.surgery.status === 'in_progress' || detail.surgery.status === 'completed') && (
               <Link
-                to={`/hub/clinica/internacoes?pet_id=${encodeURIComponent(detail.surgery.pet_id)}${detail.surgery.hub_case_id ? `&hub_case_id=${encodeURIComponent(detail.surgery.hub_case_id)}` : ''}`}
+                to={`/hub/clinica?admit=1&pet_id=${encodeURIComponent(detail.surgery.pet_id)}${detail.surgery.hub_case_id ? `&hub_case_id=${encodeURIComponent(detail.surgery.hub_case_id)}` : ''}`}
                 className="hub-clientes__btn hub-clientes__btn--ghost"
                 style={{ marginBottom: 8, display: 'inline-block', textDecoration: 'none', textAlign: 'center' }}
               >
