@@ -212,7 +212,7 @@ export const hubComandaApi = {
     status?: 'aberta' | 'fechada' | 'cancelada';
     hub_case_id?: string;
     cancellation_pending?: boolean;
-    /** Quando true, inclui guardian/pet/paid_total em cada comanda. */
+    /** Quando true, inclui guardian/pet/pets/item_labels/paid_total em cada comanda. */
     enrich?: boolean;
   }): Promise<{ comandas: Array<Record<string, unknown>> }> {
     const q = new URLSearchParams({ clinic_id: params.clinic_id });

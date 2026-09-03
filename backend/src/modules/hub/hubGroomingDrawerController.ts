@@ -172,7 +172,8 @@ export const getHubGroomingSessionDrawer = async (req: Request, res: Response) =
     const pet = petRes.data;
     const allTags = buildGroomingDisplayTags(
       (flagsRes.data ?? []) as Array<{ flag_key: string; label: string }>,
-      (pet as { notes?: string } | null)?.notes,
+      (pet as { notes?: string; behavior_tags?: string[] | null } | null)?.notes,
+      (pet as { behavior_tags?: string[] | null } | null)?.behavior_tags,
     );
 
     const checklist = mergeGroomingChecklistState(

@@ -7,16 +7,9 @@ import { HubRelatoriosExportButton } from './HubRelatoriosExportButton';
 import { HubRelatoriosEmpty } from './HubRelatoriosEmpty';
 import { makeReportExporters } from './hubRelatoriosExport';
 import { guardianDrillHref, receivableDrillHref } from './hubRelatoriosLinks';
-import { daysOverdue, formatBrl, formatDateBr } from './hubRelatoriosUtils';
-
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  quote: 'Orçamento',
-  appointment: 'Agendamento',
-  encounter: 'Atendimento',
-  grooming_session: 'Banho e tosa',
-  boarding_reservation: 'Hotel & Creche',
-  manual: 'Manual',
-};
+import { daysOverdue, formatBrl } from './hubRelatoriosUtils';
+import { formatReceivableListTitle } from './comandaListPreview';
+import { ReceivableDueBadge } from './ReceivableDueBadge';
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Pendente',
@@ -77,10 +70,10 @@ export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPayments
     clinicId,
     title: 'Pagamentos pendentes',
     slug: 'pagamentos-pendentes',
-    headers: ['Cliente', 'Origem', 'Status', 'Vencimento', 'Dias atraso', 'Valor'],
+    headers: ['Cliente', 'Serviços', 'Status', 'Vencimento', 'Dias atraso', 'Valor'],
     rows: rows.map((r) => [
       r.guardian?.full_name,
-      SOURCE_TYPE_LABELS[r.source_type] ?? r.source_type,
+      formatReceivableListTitle(r),
       STATUS_LABELS[r.status] ?? r.status,
       r.due_date,
       r.overdue_days,
@@ -139,9 +132,8 @@ export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPayments
             <thead>
               <tr>
                 <th>Cliente</th>
-                <th>Origem</th>
-                <th>Status</th>
-                <th>Vencimento</th>
+                <th>Serviços</th>
+                <th>Status / Vencimento</th>
                 <th className="hub-finance-page__th-num">Valor</th>
               </tr>
             </thead>
@@ -172,18 +164,10 @@ export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPayments
                       '—'
                     )}
                   </td>
-                  <td>{SOURCE_TYPE_LABELS[row.source_type] ?? row.source_type}</td>
+                  <td>{formatReceivableListTitle(row)}</td>
                   <td>
-                    <span
-                      className={`hub-clientes__pill${
-                        row.overdue_days != null ? ' hub-finance-page__pill--warning' : ''
-                      }`}
-                    >
-                      {STATUS_LABELS[row.status] ?? row.status}
-                      {row.overdue_days != null ? ` · ${row.overdue_days}d` : ''}
-                    </span>
+                    <ReceivableDueBadge dueDate={row.due_date} status={row.status} />
                   </td>
-                  <td>{formatDateBr(row.due_date)}</td>
                   <td className="hub-finance-page__td-num">{formatBrl(Number(row.final_amount ?? 0))}</td>
                 </tr>
               ))}

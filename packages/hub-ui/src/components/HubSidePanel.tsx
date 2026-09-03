@@ -10,6 +10,8 @@ export type HubSidePanelProps = {
   /** Ícone à esquerda do título (ex.: calendário no agendamento). */
   titleIcon?: React.ReactNode;
   subtitle?: string;
+  /** Ações à direita do título, antes do fechar (ex.: editar). */
+  headerActions?: React.ReactNode;
   /** Conteúdo do rodapé (botões de ação). */
   footer?: React.ReactNode;
   /** Conteúdo lateral direito (aside), dentro do painel. */
@@ -36,6 +38,7 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
   title,
   titleIcon,
   subtitle,
+  headerActions,
   footer,
   aside,
   size = 'default',
@@ -101,14 +104,17 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
               </div>
             </div>
           </div>
-          <button
-            className="hub-side-panel__close"
-            onClick={onClose}
-            aria-label="Fechar"
-            type="button"
-          >
-            <X size={18} />
-          </button>
+          <div className="hub-side-panel__header-actions">
+            {headerActions}
+            <button
+              className="hub-side-panel__close"
+              onClick={onClose}
+              aria-label="Fechar"
+              type="button"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="hub-side-panel__body">

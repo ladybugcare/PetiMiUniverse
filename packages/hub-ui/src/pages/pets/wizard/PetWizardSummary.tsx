@@ -1,110 +1,141 @@
 import React from 'react';
-import { Bookmark, Lightbulb } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Bird, Cat, Dog, Footprints, Lightbulb } from 'lucide-react';
+import type { HubGuardianPet } from '../../../api/hubGuardiansApi';
 import type { PetWizardState } from './types';
 import { petAgeLabel } from '../petAge';
-import {
-  COAT_TYPE_LABELS,
-  COAT_TYPE_VALUES,
-  PET_BODY_PORTE_VALUES,
-  PORTE_LABELS,
-  type CoatTypeValue,
-  type PetBodyPorteValue,
-} from '../../../utils/hubServiceTypesPricingMatrix';
 
-function sexLabel(s: string): string {
+function sexLabel(s: HubGuardianPet['sex'] | PetWizardState['sex']): string {
   if (s === 'M') return 'Macho';
   if (s === 'F') return 'Fêmea';
   if (s === 'U') return 'Indefinido';
   return '—';
 }
 
-type Row = { k: string; v: string };
+function speciesKind(species: string): 'dog' | 'cat' | 'other' {
+  const s = species.trim().toLowerCase();
+  if (/gato|cat|felin/.test(s)) return 'cat';
+  if (/c[aã]o|dog|canin/.test(s)) return 'dog';
+  return 'other';
+}
+
+function SpeciesIcon({ species }: { species: string }) {
+  const kind = speciesKind(species);
+  const props = { size: 16, strokeWidth: 2, 'aria-hidden': true as const };
+  if (kind === 'cat') return <Cat {...props} />;
+  if (kind === 'dog') return <Dog {...props} />;
+  return <Bird {...props} />;
+}
 
 type Props = {
   state: PetWizardState;
   photoPreview: string | null;
   primaryName: string;
-  secondaryName: string;
-  onSaveLater?: () => void;
-  saveLaterDisabled?: boolean;
+  guardianPets: HubGuardianPet[];
+  guardianPetsLoading: boolean;
+  /** Em edição, oculta o pet atual da lista de irmãos. */
+  excludePetId?: string | null;
 };
 
 export const PetWizardSummary: React.FC<Props> = ({
   state,
   photoPreview,
   primaryName,
-  secondaryName,
-  onSaveLater,
-  saveLaterDisabled = true,
+  guardianPets,
+  guardianPetsLoading,
+  excludePetId = null,
 }) => {
-  const rows: Row[] = [
-    { k: 'Nome', v: state.name || '—' },
-    { k: 'Apelido', v: state.nickname || '—' },
-    { k: 'Espécie', v: state.species || '—' },
-    { k: 'Raça', v: state.isSRD ? 'SRD' : state.breed || '—' },
-    { k: 'Sexo', v: sexLabel(state.sex) },
-    { k: 'Castrado(a)', v: state.neutered === 'Y' ? 'Sim' : state.neutered === 'N' ? 'Não' : '—' },
-    { k: 'Nascimento', v: state.birth_date || '—' },
-    { k: 'Idade', v: petAgeLabel(state.birth_date || null) },
-    { k: 'Cor', v: state.coatColor || '—' },
-    {
-      k: 'Pelagem',
-      v:
-        state.coatType && COAT_TYPE_VALUES.includes(state.coatType as CoatTypeValue)
-          ? COAT_TYPE_LABELS[state.coatType as CoatTypeValue]
-          : '—',
-    },
-    {
-      k: 'Porte',
-      v:
-        state.size && PET_BODY_PORTE_VALUES.includes(state.size as PetBodyPorteValue)
-          ? PORTE_LABELS[state.size as PetBodyPorteValue]
-          : '—',
-    },
-    { k: 'Peso', v: state.weightKg ? `${state.weightKg} kg` : '—' },
-    { k: 'Altura', v: state.heightCm ? `${state.heightCm} cm` : '—' },
-    { k: 'Microchip', v: state.microchip || '—' },
-    { k: 'Como nos conheceu', v: state.referralSource || '—' },
-    { k: 'Outros locais', v: state.visitsOther === 'Y' ? 'Sim' : state.visitsOther === 'N' ? 'Não' : '—' },
-    { k: 'Tutor principal', v: primaryName || '—' },
-    { k: 'Tutor secundário', v: secondaryName || '—' },
-  ];
+  const hasGuardian = Boolean(state.primary_guardian_id);
+  const draftName = state.name.trim() || 'Pet em cadastro';
+  const draftBreed = state.isSRD ? 'SRD' : state.breed.trim() || null;
+  const draftMeta = [state.species.trim() || null, draftBreed, state.sex ? sexLabel(state.sex) : null]
+    .filter(Boolean)
+    .join(' · ');
+
+  const siblings = excludePetId
+    ? guardianPets.filter((p) => p.id !== excludePetId)
+    : guardianPets;
 
   return (
     <aside className="pet-wizard__aside">
       <div className="pet-wizard__summary">
-        <div className="pet-wizard__summary-preview" aria-hidden>
-          {photoPreview ? (
-            <img src={photoPreview} alt="" />
+        <div className="pet-wizard__summary-draft">
+          <div className="pet-wizard__summary-preview pet-wizard__summary-preview--sm" aria-hidden>
+            {photoPreview ? (
+              <img src={photoPreview} alt="" />
+            ) : (
+              <span className="pet-wizard__summary-preview-placeholder">
+                <Footprints size={22} strokeWidth={1.75} />
+              </span>
+            )}
+          </div>
+          <div className="pet-wizard__summary-draft-text">
+            <p className="pet-wizard__summary-draft-label">Cadastrando agora</p>
+            <h3 className="pet-wizard__summary-draft-name">{draftName}</h3>
+            {draftMeta ? <p className="pet-wizard__summary-draft-meta">{draftMeta}</p> : null}
+          </div>
+        </div>
+
+        <div className="pet-wizard__guardian-pets">
+          <h3 className="pet-wizard__summary-title pet-wizard__summary-title--left">
+            {hasGuardian && primaryName
+              ? `Pets de ${primaryName}`
+              : 'Pets do tutor'}
+            {hasGuardian && !guardianPetsLoading ? (
+              <span className="pet-wizard__guardian-pets-count">{siblings.length}</span>
+            ) : null}
+          </h3>
+
+          {!hasGuardian ? (
+            <p className="pet-wizard__guardian-pets-empty">
+              Selecione o tutor principal para ver os pets já cadastrados.
+            </p>
+          ) : guardianPetsLoading ? (
+            <p className="pet-wizard__guardian-pets-empty">Carregando pets…</p>
+          ) : siblings.length === 0 ? (
+            <p className="pet-wizard__guardian-pets-empty">
+              {excludePetId && guardianPets.some((p) => p.id === excludePetId)
+                ? 'Nenhum outro pet cadastrado para este tutor.'
+                : 'Nenhum pet cadastrado para este tutor ainda.'}
+            </p>
           ) : (
-            <span className="pet-wizard__summary-preview-placeholder">Sem foto</span>
+            <ul className="pet-wizard__guardian-pets-list">
+              {siblings.map((p) => {
+                const meta = [
+                  p.species,
+                  p.breed || null,
+                  p.sex ? sexLabel(p.sex) : null,
+                  petAgeLabel(p.birth_date),
+                ]
+                  .filter((x) => x && x !== '—')
+                  .join(' · ');
+                return (
+                  <li key={p.id} className="pet-wizard__guardian-pets-item">
+                    <span className="pet-wizard__guardian-pets-icon" aria-hidden>
+                      <SpeciesIcon species={p.species} />
+                    </span>
+                    <div className="pet-wizard__guardian-pets-body">
+                      <Link to={`/hub/pets/${p.id}`} className="pet-wizard__guardian-pets-name">
+                        {p.name}
+                      </Link>
+                      {meta ? <p className="pet-wizard__guardian-pets-meta">{meta}</p> : null}
+                      {p.role === 'secondary' ? (
+                        <span className="pet-wizard__guardian-pets-role">Co-tutor</span>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
-        <h3 className="pet-wizard__summary-title">Resumo do pet</h3>
-        <ul className="pet-wizard__summary-list">
-          {rows.map((r) => (
-            <li key={r.k}>
-              <span className="pet-wizard__summary-k">{r.k}</span>
-              <span className="pet-wizard__summary-v">{r.v}</span>
-            </li>
-          ))}
-        </ul>
+
         <div className="pet-wizard__tip" role="note">
           <Lightbulb className="pet-wizard__tip-icon" size={18} strokeWidth={2} aria-hidden />
           <p className="pet-wizard__tip-text">
-            Dica: Preencher corretamente os dados do pet ajuda a personalizar atendimentos e cuidados.
+            Confira a lista para evitar cadastros duplicados quando o tutor já tem vários pets.
           </p>
         </div>
-        <button
-          type="button"
-          className="pet-wizard__summary-save-later"
-          disabled={saveLaterDisabled}
-          title="Rascunhos serão suportados em uma versão futura"
-          onClick={onSaveLater}
-        >
-          <Bookmark size={18} strokeWidth={2} aria-hidden />
-          Salvar e continuar depois
-        </button>
       </div>
     </aside>
   );

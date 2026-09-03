@@ -1,6 +1,7 @@
 import React from 'react';
 import { Ban, Coins, FilePlus2, MessageCircle, Pencil, Receipt, SendHorizonal } from 'lucide-react';
 import type { HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
+import { HubCheckbox } from '../../components/HubCheckbox';
 import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
 import {
   canCaixaCheckoutDayBoardItem,
@@ -10,6 +11,8 @@ import {
   isDayBoardViewOnly,
   resolveDayBoardCheckoutLabel,
 } from './hubComandaEditUtils';
+import { isDayBoardBatchSelectable } from './batchChargeItems';
+import { ReceivableDueBadge } from './ReceivableDueBadge';
 
 export const STATUS_OP_LABEL: Record<string, string> = {
   pending_confirm: 'Aguardando confirmação',
@@ -41,11 +44,14 @@ export function ComandaStatusBadge({ billing }: { billing: HubFinanceDayBoardIte
   if (billing.receivable_status === 'paid') {
     return <span className="hub-clientes__pill hub-dayboard__pill--paid">Pago</span>;
   }
-  if (billing.receivable_status === 'pending') {
-    return <span className="hub-clientes__pill hub-dayboard__pill--pending">Pendente</span>;
-  }
-  if (billing.receivable_status === 'partially_paid') {
-    return <span className="hub-clientes__pill hub-dayboard__pill--partial">Parcialmente pago</span>;
+  if (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid') {
+    return (
+      <ReceivableDueBadge
+        dueDate={billing.due_date}
+        status={billing.receivable_status}
+        showDate
+      />
+    );
   }
   if (billing.comanda_id && billing.comanda_status === 'aberta') {
     return <span className="hub-clientes__pill hub-dayboard__pill--open">Comanda aberta</span>;
@@ -68,7 +74,16 @@ export type FinanceDayBoardTableProps = {
   onShareComanda: (item: HubFinanceDayBoardItem) => void;
   onRowClick?: (item: HubFinanceDayBoardItem) => void;
   busy: boolean;
+  /** Multi-seleção (só Financeiro). Keys: `origin_type:origin_id`. */
+  selectionEnabled?: boolean;
+  selectedKeys?: Set<string>;
+  onToggleSelect?: (item: HubFinanceDayBoardItem) => void;
+  onToggleSelectAllSelectable?: () => void;
 };
+
+function itemKey(item: HubFinanceDayBoardItem): string {
+  return `${item.origin_type}:${item.origin_id}`;
+}
 
 export function FinanceDayBoardTable({
   mode,
@@ -85,14 +100,34 @@ export function FinanceDayBoardTable({
   onShareComanda,
   onRowClick,
   busy,
+  selectionEnabled = false,
+  selectedKeys,
+  onToggleSelect,
+  onToggleSelectAllSelectable,
 }: FinanceDayBoardTableProps) {
   const isCaixa = mode === 'caixa';
+  const selectableItems = selectionEnabled ? items.filter(isDayBoardBatchSelectable) : [];
+  const allSelectableSelected =
+    selectableItems.length > 0 && selectableItems.every((it) => selectedKeys?.has(itemKey(it)));
+  const someSelectableSelected =
+    selectableItems.some((it) => selectedKeys?.has(itemKey(it))) && !allSelectableSelected;
 
   return (
     <div className="hub-clientes__table-wrap">
       <table className="hub-clientes__table hub-dayboard__table">
         <thead>
           <tr>
+            {selectionEnabled ? (
+              <th className="hub-dayboard__th-check">
+                <HubCheckbox
+                  checked={allSelectableSelected}
+                  indeterminate={someSelectableSelected}
+                  onChange={() => onToggleSelectAllSelectable?.()}
+                  disabled={busy || selectableItems.length === 0}
+                  ariaLabel="Selecionar todas as cobranças elegíveis"
+                />
+              </th>
+            ) : null}
             <th>Pet</th>
             <th>Serviços</th>
             <th>Tutor</th>
@@ -138,6 +173,23 @@ export function FinanceDayBoardTable({
                 className={rowClickable ? 'hub-dayboard__row-click' : undefined}
                 onClick={rowClickable ? () => onRowClick!(item) : undefined}
               >
+                {selectionEnabled ? (
+                  <td
+                    className="hub-dayboard__td-check"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {isDayBoardBatchSelectable(item) ? (
+                      <HubCheckbox
+                        checked={Boolean(selectedKeys?.has(itemKey(item)))}
+                        onChange={() => onToggleSelect?.(item)}
+                        disabled={busy}
+                        ariaLabel={`Selecionar ${item.pet?.name ?? item.origin_label}`}
+                      />
+                    ) : (
+                      <span className="hub-clientes__muted">—</span>
+                    )}
+                  </td>
+                ) : null}
                 <td>
                   {item.pet?.name ? (
                     <div className="hub-clientes__tutor-cell">
@@ -150,7 +202,11 @@ export function FinanceDayBoardTable({
                 </td>
                 <td>
                   <div className="hub-dayboard__services-wrap">
-                    {item.has_package_balance ? (
+                    {item.coverage_kind === 'series_invoice' || item.series_invoice_comanda_id ? (
+                      <span className="hub-clientes__pill hub-dayboard__pill--open" style={{ marginRight: 6 }}>
+                        Fatura
+                      </span>
+                    ) : item.has_package_balance || item.coverage_kind === 'package' ? (
                       <span className="hub-clientes__pill hub-dayboard__pill--open" style={{ marginRight: 6 }}>
                         Pacote
                       </span>
@@ -161,6 +217,17 @@ export function FinanceDayBoardTable({
                     <span className="hub-dayboard__services-cell" title={serviceNames}>
                       {serviceNames}
                     </span>
+                    {(item.has_package_balance || item.coverage_kind === 'package') &&
+                    Number(item.estimated_amount ?? 0) <= 0.009 ? (
+                      <span className="hub-clientes__muted" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
+                        Coberto por pacote
+                      </span>
+                    ) : null}
+                    {item.coverage_kind === 'series_invoice' ? (
+                      <span className="hub-clientes__muted" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
+                        Coberto por fatura
+                      </span>
+                    ) : null}
                   </div>
                 </td>
                 <td>{item.guardian?.full_name ?? <span className="hub-clientes__muted">—</span>}</td>
@@ -177,8 +244,16 @@ export function FinanceDayBoardTable({
                       <button
                         type="button"
                         className="hub-dayboard__action-btn"
-                        title="Abrir comanda"
-                        aria-label="Abrir comanda"
+                        title={
+                          item.has_package_balance || item.coverage_kind === 'package'
+                            ? 'Abrir comanda com pacote'
+                            : 'Abrir comanda'
+                        }
+                        aria-label={
+                          item.has_package_balance || item.coverage_kind === 'package'
+                            ? 'Abrir comanda com pacote'
+                            : 'Abrir comanda'
+                        }
                         disabled={busy}
                         onClick={() => onOpenComanda(item)}
                       >

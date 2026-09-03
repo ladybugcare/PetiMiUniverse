@@ -10,6 +10,7 @@ import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
 import AddressAutocomplete from '../components/AddressAutocomplete';
+import { formatCNPJ } from '../utils/validators';
 
 const CreateUnitPage: React.FC = () => {
   const navigate = useNavigate();
@@ -40,9 +41,10 @@ const CreateUnitPage: React.FC = () => {
   const clinicId = clinicUser?.clinic_id || user?.user_metadata?.clinic_id || user?.id;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [name]: name === 'cnpj' ? formatCNPJ(value) : value,
     });
   };
 

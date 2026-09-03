@@ -5,6 +5,7 @@ jest.mock('../../../config/supabase', () =>
 import { configureSupabaseMock, getMockSupabaseClient } from '../../../__tests__/helpers/supabaseTestDouble';
 import {
   createEncounterStockOut,
+  createSaleStockOut,
   validateLotStockForOut,
 } from '../hubInventoryStockUtils';
 
@@ -85,5 +86,99 @@ describe('hubInventoryStockUtils', () => {
       qty: 1,
       reference_type: 'vaccination',
     });
+  });
+
+  it('createSaleStockOut registra sale_out com colunas corretas', async () => {
+    stockFixture([
+      {
+        clinic_id: CLINIC_ID,
+        item_id: ITEM_ID,
+        lot_id: LOT_ID,
+        movement_type: 'purchase_in',
+        qty: 5,
+      },
+    ]);
+    const refId = 'dddddddd-dddd-4ddd-8ddd-dddddddd0002';
+    const result = await createSaleStockOut({
+      clinicId: CLINIC_ID,
+      itemId: ITEM_ID,
+      lotId: LOT_ID,
+      qty: 2,
+      notes: 'Venda na comanda',
+      referenceType: 'hub_comanda_item',
+      referenceId: refId,
+    });
+    expect('id' in result).toBe(true);
+    if ('error' in result) return;
+    const rows = getMockSupabaseClient()._state.tables.hub_stock_movements ?? [];
+    const out = rows.find((r) => r.movement_type === 'sale_out');
+    expect(out).toMatchObject({
+      item_id: ITEM_ID,
+      lot_id: LOT_ID,
+      qty: 2,
+      reference_type: 'hub_comanda_item',
+      reference_id: refId,
+    });
+  });
+
+  it('createSaleStockOut é idempotente para a mesma referência', async () => {
+    stockFixture([
+      {
+        clinic_id: CLINIC_ID,
+        item_id: ITEM_ID,
+        lot_id: LOT_ID,
+        movement_type: 'purchase_in',
+        qty: 5,
+      },
+    ]);
+    const refId = 'dddddddd-dddd-4ddd-8ddd-dddddddd0003';
+    const first = await createSaleStockOut({
+      clinicId: CLINIC_ID,
+      itemId: ITEM_ID,
+      lotId: LOT_ID,
+      qty: 1,
+      referenceType: 'hub_comanda_item',
+      referenceId: refId,
+    });
+    expect('id' in first).toBe(true);
+    const second = await createSaleStockOut({
+      clinicId: CLINIC_ID,
+      itemId: ITEM_ID,
+      lotId: LOT_ID,
+      qty: 1,
+      referenceType: 'hub_comanda_item',
+      referenceId: refId,
+    });
+    expect('id' in second).toBe(true);
+    if ('error' in second || 'error' in first) return;
+    expect(second.skipped).toBe(true);
+    expect(second.id).toBe(first.id);
+    const outs = (getMockSupabaseClient()._state.tables.hub_stock_movements ?? []).filter(
+      (r) => r.movement_type === 'sale_out',
+    );
+    expect(outs).toHaveLength(1);
+  });
+
+  it('createSaleStockOut falha com saldo insuficiente', async () => {
+    stockFixture([
+      {
+        clinic_id: CLINIC_ID,
+        item_id: ITEM_ID,
+        lot_id: LOT_ID,
+        movement_type: 'purchase_in',
+        qty: 1,
+      },
+    ]);
+    const result = await createSaleStockOut({
+      clinicId: CLINIC_ID,
+      itemId: ITEM_ID,
+      lotId: LOT_ID,
+      qty: 3,
+      referenceType: 'hub_comanda_item',
+      referenceId: 'dddddddd-dddd-4ddd-8ddd-dddddddd0004',
+    });
+    expect('error' in result).toBe(true);
+    if (!('error' in result)) return;
+    expect(result.error).toMatch(/insuficiente/i);
   });
 });

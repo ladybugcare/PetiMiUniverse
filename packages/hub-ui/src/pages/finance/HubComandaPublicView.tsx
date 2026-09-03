@@ -3,6 +3,7 @@ import { Calendar, ClipboardList, CreditCard, Dog, FileText, Mail, MapPin, Messa
 import type { HubComandaItem, HubPublicComandaPet } from '../../api/hubComandaApi';
 import { sizeTierLabelPt, clientNotesSectionTitle } from '../orcamentos/hubQuoteViewUtils';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
+import { formatBrTaxIdDisplay } from '../../utils/formatBrTaxId';
 import {
   PublicDocCardTitle,
   PublicDocFieldLabel,
@@ -113,7 +114,7 @@ export const HubComandaPublicView: React.FC<HubComandaPublicViewProps> = ({ payl
                 {guardian.tax_id ? (
                   <>
                     <PublicDocFieldLabel icon={CreditCard}>CPF</PublicDocFieldLabel>
-                    <dd>{guardian.tax_id}</dd>
+                    <dd>{formatBrTaxIdDisplay(guardian.tax_id)}</dd>
                   </>
                 ) : null}
                 {guardian.email ? (

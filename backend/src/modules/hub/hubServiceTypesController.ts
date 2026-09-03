@@ -20,7 +20,7 @@ import {
   resyncAddonAvailabilityOnGroupChange,
   seedAddonAvailabilityForNewService,
 } from './hubServiceAddonsController';
-
+import { syncSpecialPricesOnCatalogChange } from './hubSpecialPrices';
 const uuidStr = z.string().uuid();
 
 /** Grupo operacional: valores pré-definidos (banho_tosa, …) ou slug personalizado normalizado. */
@@ -471,7 +471,7 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
 
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from('hub_service_types')
-      .select('id, clinic_id, code, name, code_locked, deleted_at, service_group, is_addon')
+      .select('id, clinic_id, code, name, code_locked, deleted_at, service_group, is_addon, sale_amount')
       .eq('id', id)
       .maybeSingle();
 
@@ -623,13 +623,26 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       await resyncAddonAvailabilityOnGroupChange(clinic_id, id, service_group);
     }
 
+    const prevCatalogSale = roundMoney2(Number((existing as { sale_amount?: number }).sale_amount) || 0);
+    const nextCatalogSale = roundMoney2(Number((data as { sale_amount?: number } | null)?.sale_amount) || 0);
+    let special_prices_sync: { reviewed: number; auto_adjusted: number } | undefined;
+    if (prevCatalogSale !== nextCatalogSale) {
+      const sync = await syncSpecialPricesOnCatalogChange({
+        clinicId: clinic_id,
+        hubServiceTypeId: id,
+        previousCatalogSale: prevCatalogSale,
+        nextCatalogSale,
+      });
+      special_prices_sync = { reviewed: sync.reviewed, auto_adjusted: sync.autoAdjusted };
+    }
+
     const colorMap = await fetchGroupColorMap(clinic_id);
     const service_type = enrichRowsWithGroupColor(
       withDefaultPickupPriceScope([data as ServiceTypeRow]),
       colorMap,
     )[0];
 
-    return res.json({ service_type });
+    return res.json({ service_type, special_prices_sync });
   } catch (e) {
     console.error('[hub_service_types] update', e);
     return res.status(500).json({ error: 'Erro interno' });

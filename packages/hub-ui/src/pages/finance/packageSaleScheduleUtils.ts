@@ -49,12 +49,21 @@ export function primaryServicesFromPackageItems(items: HubPackageItem[]) {
   }));
 }
 
+/** Sessões principais do pacote (máximo entre itens não-addon; fallback sessions nos itens). */
+export function primaryPackageSessionCount(items: HubPackageItem[]): number {
+  const main = items.filter((it) => !it.is_addon);
+  const source = main.length ? main : items;
+  const maxQty = source.reduce((m, it) => Math.max(m, Number(it.quantity) || 0), 0);
+  return Math.max(1, maxQty);
+}
+
 export function buildNewAppointmentInitialFromPackageSale(
   line: PackageSaleLineContext,
   ctx: PackageSaleScheduleContext,
   dateYmd: string,
 ): NewAppointmentInitial {
   const services = primaryServicesFromPackageItems(line.packageItems);
+  const sessions = primaryPackageSessionCount(line.packageItems);
   const remainingLines = ctx.lines.slice(1);
   const otherSummary = remainingLines
     .map((ln) => `${ln.petName} (${ln.packageName})`)
@@ -73,6 +82,14 @@ export function buildNewAppointmentInitialFromPackageSale(
         ? `Pacote vendido na comanda. Agende também: ${otherSummary}.`
         : `Pacote vendido na comanda #${ctx.comandaId.slice(0, 8).toUpperCase()}.`,
     financial_notes: `Origem: venda de pacote (${line.packageName})`,
+    suggest_recurrence:
+      sessions >= 2
+        ? { occurrences: sessions, kind: 'weekly', interval_value: 1 }
+        : null,
+    package_balance_hint:
+      sessions >= 2
+        ? `Pacote «${line.packageName}»: ${sessions} sessões — a repetição já veio com ${sessions} ocorrências. Ajuste a frequência se precisar.`
+        : `Pacote «${line.packageName}»: 1 sessão restante.`,
   };
 }
 

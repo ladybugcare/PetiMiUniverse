@@ -16,7 +16,7 @@ import {
   getHubGuardianStats,
   getHubGuardianById,
 } from '../guardiansController';
-import { listHubPets, createHubPet, updateHubPet } from '../hubPetsController';
+import { listHubPets, createHubPet, updateHubPet, listHubPetProfileChanges } from '../hubPetsController';
 import {
   listHubServiceTypes,
   createHubServiceType,
@@ -91,6 +91,13 @@ import {
   deleteHubAgendaCalendarBlock,
 } from '../hubAppointmentsController';
 import { getHubClinicSettings, patchHubClinicSettings } from '../hubClinicSettingsController';
+import {
+  listHubSpecialPrices,
+  resolveHubSpecialPrice,
+  createHubSpecialPrice,
+  patchHubSpecialPrice,
+  approveHubSpecialPrice,
+} from '../hubSpecialPricesController';
 import {
   listHubProspects,
   getHubProspect,
@@ -306,6 +313,10 @@ import {
   getHubPetPackageBalances,
 } from '../hubPackagesController';
 import {
+  postHubSeriesInvoiceIssue,
+  postHubSeriesInvoiceRunJob,
+} from '../hubSeriesBillingController';
+import {
   listHubCommissionRules,
   postHubCommissionRule,
   patchHubCommissionRule,
@@ -416,6 +427,38 @@ router.patch(
   patchHubClinicSettings
 );
 
+/* --- Preços especiais (pet / tutor / plano família) --- */
+router.get(
+  '/special-prices',
+  authenticateUser,
+  requirePermission(['hub.appointments.read', 'hub.financial.read', 'hub.pets.read']),
+  listHubSpecialPrices
+);
+router.get(
+  '/special-prices/resolve',
+  authenticateUser,
+  requirePermission(['hub.appointments.read', 'hub.financial.read', 'hub.pets.read']),
+  resolveHubSpecialPrice
+);
+router.post(
+  '/special-prices',
+  authenticateUser,
+  requirePermission(['hub.appointments.write', 'hub.financial.write', 'hub.pets.write']),
+  createHubSpecialPrice
+);
+router.patch(
+  '/special-prices/:id',
+  authenticateUser,
+  requirePermission(['hub.appointments.write', 'hub.financial.write', 'hub.pets.write']),
+  patchHubSpecialPrice
+);
+router.post(
+  '/special-prices/:id/approve',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  approveHubSpecialPrice
+);
+
 /* --- Clínicas parceiras (local de atendimento) --- */
 router.get(
   '/partner-clinics',
@@ -446,7 +489,19 @@ router.get('/pets', authenticateUser, requirePermission('hub.pets.read'), listHu
 
 router.post('/pets', authenticateUser, requirePermission('hub.pets.write'), createHubPet);
 
-router.patch('/pets/:id', authenticateUser, requirePermission('hub.pets.write'), updateHubPet);
+router.get(
+  '/pets/:id/profile-changes',
+  authenticateUser,
+  requirePermission(['hub.pets.read', 'hub.clinic.read']),
+  listHubPetProfileChanges,
+);
+
+router.patch(
+  '/pets/:id',
+  authenticateUser,
+  requirePermission(['hub.pets.write', 'hub.clinic.write']),
+  updateHubPet,
+);
 
 router.get(
   '/service-types',
@@ -1037,13 +1092,18 @@ router.get(
 router.get(
   '/clinical/pet-flags',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission(['hub.clinic.read', 'hub.pets.read']),
   listHubPetClinicalFlags
 );
 router.post(
   '/clinical/pet-flags',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission([
+    'hub.clinic.write',
+    'hub.pets.write',
+    'grooming.queue.manage',
+    'boarding.reservations.manage',
+  ]),
   upsertHubPetClinicalFlag
 );
 router.get(
@@ -1555,6 +1615,18 @@ router.patch(
   authenticateUser,
   requirePermission('hub.financial.write'),
   patchHubPackage
+);
+router.post(
+  '/finance/series-invoices/issue',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubSeriesInvoiceIssue
+);
+router.post(
+  '/finance/series-invoices/run-job',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubSeriesInvoiceRunJob
 );
 router.get(
   '/guardians/:guardianId/package-balances',

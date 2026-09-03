@@ -8,9 +8,9 @@ export type PetWizardState = {
   notes: string;
   primary_guardian_id: string;
   secondary_guardian_id: string;
-  /** Campos só UI (não persistidos na API atual). */
   nickname: string;
   isSRD: boolean;
+  /** Castrado — persistido em hub_pets.neutered. */
   neutered: '' | 'Y' | 'N';
   coatColor: string;
   coatType: string;
@@ -21,8 +21,11 @@ export type PetWizardState = {
   referralSource: string;
   visitsOther: '' | 'Y' | 'N';
   otherObservations: string;
-  /** Tags de comportamento (passo 4) — enviadas como behavior_tags na API. */
+  /** Tags de comportamento (passo 2) — enviadas como behavior_tags na API. */
   behaviorTags: string[];
+  /** Flags clínicas (passo 2) — mesmas chaves da clínica. */
+  clinicalFlagKeys: string[];
+  allergyDetail: string;
 };
 
 export const initialPetWizardState = (): PetWizardState => ({
@@ -47,11 +50,13 @@ export const initialPetWizardState = (): PetWizardState => ({
   visitsOther: '',
   otherObservations: '',
   behaviorTags: [],
+  clinicalFlagKeys: [],
+  allergyDetail: '',
 });
 
 export const WIZARD_STEPS = [
   'Informações básicas',
-  'Saúde e comportamento',
   'Responsáveis',
+  'Saúde e comportamento',
   'Documentos e observações',
 ] as const;

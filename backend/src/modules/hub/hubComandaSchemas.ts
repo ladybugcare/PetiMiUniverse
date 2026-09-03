@@ -8,4 +8,5 @@ export const comandaOriginSchema = z.enum([
   'manual',
   'boarding_reservation',
   'package',
+  'series_invoice',
 ]);

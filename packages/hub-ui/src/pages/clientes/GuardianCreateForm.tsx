@@ -3,7 +3,9 @@ import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubDateField } from '../../components/HubDateField';
 import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
+import { HubBrTaxIdInput } from '../../components/HubBrTaxIdInput';
 import { formatBrPhoneFromApi } from '../../utils/formatBrPhone';
+import { formatBrTaxIdFromApi } from '../../utils/formatBrTaxId';
 import { brDateToIso, isoDateToBr } from './formatters';
 
 export type GuardianFormValues = {
@@ -198,11 +200,11 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
 
       <div className="hub-clientes__field">
         <label className="hub-clientes__label">CPF / CNPJ *</label>
-        <input
+        <HubBrTaxIdInput
           className="hub-clientes__input"
           value={value.tax_id}
-          onChange={(e) => patch({ tax_id: e.target.value })}
-          placeholder="Obrigatório"
+          onChange={(tax_id) => patch({ tax_id })}
+          placeholder="000.000.000-00"
           required
           aria-required
         />
@@ -416,7 +418,7 @@ export function guardianToFormValues(g: {
     client_kind: (g.client_kind as 'individual' | 'company') || 'individual',
     legal_name: g.legal_name || '',
     email: g.email || '',
-    tax_id: g.tax_id || '',
+    tax_id: formatBrTaxIdFromApi(g.tax_id),
     id_doc_type: g.id_doc_type || '',
     id_doc_number: g.id_doc_number || '',
     birth_date_br: isoDateToBr(g.birth_date),

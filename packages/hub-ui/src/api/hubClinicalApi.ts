@@ -105,6 +105,7 @@ export type HubPetClinicalFlag = {
   flag_key: string;
   label: string;
   notes?: string | null;
+  active?: boolean;
 };
 
 export type HubEncounterEvent = {
@@ -476,6 +477,7 @@ export const hubClinicalApi = {
     label: string;
     notes?: string | null;
     active?: boolean;
+    profile_source?: 'wizard' | 'clinic' | 'grooming' | 'boarding' | 'pets_form';
   }) {
     return apiRequest(`${clinicalBase}/pet-flags`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<{
       flag: HubPetClinicalFlag;
@@ -543,6 +545,9 @@ export const hubClinicalApi = {
       clinic_id: string;
       notes?: string | null;
       hub_staff_member_id?: string | null;
+      /** Vínculo posterior — permitido mesmo após emissão. */
+      hub_case_id?: string | null;
+      hub_encounter_id?: string | null;
       items?: Array<{
         medication_name: string;
         presentation?: string | null;

@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
-import { Copy, Ban } from 'lucide-react';
+import { Copy, Ban, Receipt } from 'lucide-react';
 import type { AgendaStatus } from './agendaModel';
 
 export type PanelAction = {
   key: string;
   label: string;
-  variant?: 'primary' | 'secondary' | 'menu';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'menu';
   icon?: ReactNode;
   onClick: () => void;
   disabled?: boolean;
@@ -23,6 +23,7 @@ export function buildPanelActions(
     onComplete: () => void;
     onOpenCheckout: () => void;
     onOpenComanda: () => void;
+    onViewComanda: () => void;
     onOpenInClinic: () => void;
     onOpenInGrooming: () => void;
     onOpenInBoarding: () => void;
@@ -31,31 +32,52 @@ export function buildPanelActions(
   },
   operationalModule?: OperationalModule | null,
   canOpenComanda?: boolean,
-): { primary: PanelAction | null; secondary: PanelAction | null; menu: PanelAction[] } {
+  existingComandaId?: string | null,
+  canViewComanda?: boolean,
+): { primary: PanelAction | null; comanda: PanelAction | null; utilities: PanelAction[] } {
   const dup: PanelAction = {
     key: 'duplicate',
     label: 'Duplicar',
-    variant: 'menu',
-    icon: <Copy size={14} />,
+    variant: 'ghost',
+    icon: <Copy size={16} />,
     onClick: handlers.onDuplicate,
     disabled: !canWrite,
   };
   const cancel: PanelAction = {
     key: 'cancel',
     label: 'Cancelar',
-    variant: 'menu',
-    icon: <Ban size={14} />,
+    variant: 'ghost',
+    icon: <Ban size={16} />,
     onClick: handlers.onCancel,
     disabled: !canWrite,
   };
-  const openComandaAction: PanelAction | null = canOpenComanda
+
+  const hasOpenComanda = Boolean(existingComandaId);
+  const canSeeComanda = hasOpenComanda && (canViewComanda || canOpenComanda);
+
+  const comandaAction: PanelAction | null = canSeeComanda
     ? {
-        key: 'open-comanda',
-        label: 'Abrir comanda (antecipado)',
-        variant: 'menu',
-        onClick: handlers.onOpenComanda,
+        key: 'view-comanda',
+        label: 'Ver comanda',
+        variant: 'secondary',
+        icon: <Receipt size={16} />,
+        onClick: handlers.onViewComanda,
       }
-    : null;
+    : canOpenComanda
+      ? {
+          key: 'open-comanda',
+          label: 'Abrir comanda',
+          variant: 'secondary',
+          icon: <Receipt size={16} />,
+          onClick: handlers.onOpenComanda,
+        }
+      : null;
+
+  /** Cancelar + Duplicar à vista (direita), nunca no menu ⋯. */
+  const utilities = (extra: PanelAction[] = []): PanelAction[] => {
+    if (!canWrite) return extra;
+    return [cancel, dup, ...extra];
+  };
 
   const operationalPrimary: PanelAction | null =
     operationalModule === 'clinical'
@@ -72,16 +94,16 @@ export function buildPanelActions(
         primary: canWrite
           ? { key: 'confirm', label: 'Confirmar', variant: 'primary', onClick: handlers.onConfirm }
           : null,
-        secondary: null,
-        menu: [dup, cancel, ...(openComandaAction ? [openComandaAction] : [])],
+        comanda: comandaAction,
+        utilities: utilities(),
       };
     case 'confirmed':
       return {
         primary: canWrite
           ? { key: 'checkin', label: 'Check-in', variant: 'primary', onClick: handlers.onCheckIn }
           : null,
-        secondary: canWrite ? dup : null,
-        menu: [cancel, ...(openComandaAction ? [openComandaAction] : [])],
+        comanda: comandaAction,
+        utilities: utilities(),
       };
     case 'checked_in':
       return {
@@ -90,8 +112,8 @@ export function buildPanelActions(
           : canWrite
             ? { key: 'complete', label: 'Concluir', variant: 'primary', onClick: handlers.onComplete }
             : null,
-        secondary: null,
-        menu: [cancel, ...(openComandaAction ? [openComandaAction] : [])],
+        comanda: comandaAction,
+        utilities: utilities(),
       };
     case 'in_progress':
       return {
@@ -100,33 +122,45 @@ export function buildPanelActions(
           : canWrite
             ? { key: 'complete', label: 'Concluir', variant: 'primary', onClick: handlers.onComplete }
             : null,
-        secondary: null,
-        menu: [cancel, ...(openComandaAction ? [openComandaAction] : [])],
+        comanda: comandaAction,
+        utilities: utilities(),
       };
     case 'done':
       return {
-        primary: canOpenComanda
-          ? { key: 'open-comanda', label: 'Abrir comanda', variant: 'primary', onClick: handlers.onOpenComanda }
-          : canWrite
-            ? dup
+        primary: canSeeComanda
+          ? {
+              key: 'view-comanda',
+              label: 'Ver comanda',
+              variant: 'primary',
+              icon: <Receipt size={16} />,
+              onClick: handlers.onViewComanda,
+            }
+          : canOpenComanda
+            ? {
+                key: 'open-comanda',
+                label: 'Abrir comanda',
+                variant: 'primary',
+                icon: <Receipt size={16} />,
+                onClick: handlers.onOpenComanda,
+              }
             : null,
-        secondary: canWrite && canOpenComanda ? dup : null,
-        menu: [],
+        comanda: null,
+        utilities: canWrite ? [dup] : [],
       };
     case 'paid':
       return {
-        primary: canWrite ? { ...dup, variant: 'primary' as const } : null,
-        secondary: null,
-        menu: [],
+        primary: canWrite ? { ...dup, variant: 'primary' as const, icon: undefined } : null,
+        comanda: null,
+        utilities: [],
       };
     case 'cancelled':
       return {
-        primary: canWrite ? { ...dup, variant: 'primary' as const } : null,
-        secondary: null,
-        menu: [],
+        primary: canWrite ? { ...dup, variant: 'primary' as const, icon: undefined } : null,
+        comanda: null,
+        utilities: [],
       };
     default:
-      return { primary: null, secondary: null, menu: [] };
+      return { primary: null, comanda: null, utilities: [] };
   }
 }
 

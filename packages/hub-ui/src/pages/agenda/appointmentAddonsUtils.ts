@@ -11,6 +11,19 @@ export type AppointmentServiceChip = {
   name: string;
   duration_minutes: number;
   pricing_variant?: HubQuotePricingVariant | null;
+  /** Valor absoluto deste agendamento (opcional). */
+  sale_amount_override?: number | null;
+  /** Salvar como preço especial do pet/tutor. */
+  persist_special_price?: boolean;
+  persist_special_scope?: 'pet' | 'guardian';
+  /** Metadados de preview (não enviados à API). */
+  special_price_hint?: {
+    catalog_sale: number;
+    special_sale: number;
+    scope: 'pet' | 'guardian' | 'family_plan';
+    family_total?: number;
+    family_pet_count?: number;
+  } | null;
 };
 
 function fmtBrl(n: number): string {

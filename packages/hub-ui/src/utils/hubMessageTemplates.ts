@@ -12,7 +12,8 @@ export type MessageTemplateKey =
   | 'pet_on_the_way'
   | 'appointment_reminder'
   | 'exam_order_share'
-  | 'specialist_referral_share';
+  | 'specialist_referral_share'
+  | 'prescription_share';
 
 type TemplateVars = Partial<{
   tutor: string | null;
@@ -29,6 +30,7 @@ export const DEFAULT_TEMPLATES: Record<MessageTemplateKey, string> = {
   appointment_reminder: 'Olá {tutor}! Lembrete do horário do {pet} em {data} às {hora}.',
   exam_order_share: 'Olá {tutor}! Segue a solicitação de exames do {pet}: {link}',
   specialist_referral_share: 'Olá {tutor}! Segue o encaminhamento do {pet} para especialista: {link}',
+  prescription_share: 'Olá {tutor}! Segue a receita do {pet}: {link}',
 };
 
 export const TEMPLATE_LABELS: Record<MessageTemplateKey, string> = {
@@ -37,6 +39,7 @@ export const TEMPLATE_LABELS: Record<MessageTemplateKey, string> = {
   appointment_reminder: 'Lembrete de consulta',
   exam_order_share: 'Solicitação de exames (WhatsApp)',
   specialist_referral_share: 'Encaminhamento a especialista (WhatsApp)',
+  prescription_share: 'Receita veterinária (WhatsApp)',
 };
 
 /** Placeholders que o operador pode inserir em cada template. */
@@ -46,6 +49,7 @@ export const TEMPLATE_VARS: Record<MessageTemplateKey, readonly string[]> = {
   appointment_reminder: ['tutor', 'pet', 'data', 'hora'],
   exam_order_share: ['tutor', 'pet', 'link'],
   specialist_referral_share: ['tutor', 'pet', 'link'],
+  prescription_share: ['tutor', 'pet', 'link'],
 };
 
 export const TEMPLATE_PLACEHOLDER_HINTS: Record<MessageTemplateKey, string> = {
@@ -54,6 +58,7 @@ export const TEMPLATE_PLACEHOLDER_HINTS: Record<MessageTemplateKey, string> = {
   appointment_reminder: 'Variáveis disponíveis: {tutor}, {pet}, {data}, {hora}',
   exam_order_share: 'Variáveis: {tutor}, {pet}, {link}',
   specialist_referral_share: 'Variáveis: {tutor}, {pet}, {link}',
+  prescription_share: 'Variáveis: {tutor}, {pet}, {link}',
 };
 
 /**
@@ -90,9 +95,9 @@ export function renderTemplate(
   return text.replace(/\{[^}]+\}/g, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-/** Templates clínicos de compartilhamento (exames / encaminhamentos). */
+/** Templates clínicos de compartilhamento (exames / encaminhamentos / receitas). */
 export function renderClinicalShareTemplate(
-  key: 'exam_order_share' | 'specialist_referral_share',
+  key: 'exam_order_share' | 'specialist_referral_share' | 'prescription_share',
   vars: Pick<TemplateVars, 'tutor' | 'pet' | 'link'>,
   overrides?: Record<string, string>,
 ): string {

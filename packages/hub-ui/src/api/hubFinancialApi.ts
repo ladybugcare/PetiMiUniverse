@@ -30,6 +30,7 @@ export type HubFinanceDayBoardBilling = {
   receivable_status: 'pending' | 'partially_paid' | 'paid' | null;
   finance_handoff_at?: string | null;
   active_receivable_id?: string | null;
+  due_date?: string | null;
 };
 
 export type HubFinanceDayBoardItem = {
@@ -47,6 +48,8 @@ export type HubFinanceDayBoardItem = {
   services: { name: string; amount: number }[];
   billing: HubFinanceDayBoardBilling;
   has_package_balance?: boolean;
+  coverage_kind?: 'none' | 'package' | 'series_invoice';
+  series_invoice_comanda_id?: string | null;
 };
 
 export type HubFinanceReceivable = {
@@ -597,6 +600,43 @@ export const hubFinancialApi = {
       items?: HubFinanceDayBoardItem[];
     };
     return res.items ?? [];
+  },
+
+  async issueSeriesInvoice(body: {
+    clinic_id: string;
+    series_id: string;
+    ref_ymd?: string;
+    force?: boolean;
+  }): Promise<{
+    series_invoice_id: string;
+    comanda_id: string;
+    receivable_id: string | null;
+    total_amount: number;
+    occurrence_count: number;
+    already_issued?: boolean;
+  }> {
+    return apiRequest(`${base}/series-invoices/issue`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{
+      series_invoice_id: string;
+      comanda_id: string;
+      receivable_id: string | null;
+      total_amount: number;
+      occurrence_count: number;
+      already_issued?: boolean;
+    }>;
+  },
+
+  async runSeriesInvoiceJob(body?: { clinic_id?: string; ref_ymd?: string }): Promise<{
+    issued: number;
+    skipped: number;
+    errors: string[];
+  }> {
+    return apiRequest(`${base}/series-invoices/run-job`, {
+      method: 'POST',
+      body: JSON.stringify(body ?? {}),
+    }) as Promise<{ issued: number; skipped: number; errors: string[] }>;
   },
 
   async listReceivables(

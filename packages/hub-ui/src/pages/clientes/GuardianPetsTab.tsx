@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Pencil, Plus } from 'lucide-react';
+import { Bird, Cat, Dog, Pencil, Plus } from 'lucide-react';
 import type { HubGuardianPet } from '../../api/hubGuardiansApi';
 import { profileInitials } from '../../components/HubProfileAvatar';
 import { petAgeDetailedLabel } from '../pets/petAge';
@@ -18,6 +18,8 @@ type Props = {
   isPage: boolean;
 };
 
+type SpeciesKind = 'dog' | 'cat' | 'other';
+
 function sexLabel(sex: HubGuardianPet['sex']): string | null {
   if (sex === 'M') return 'Macho';
   if (sex === 'F') return 'Fêmea';
@@ -25,21 +27,35 @@ function sexLabel(sex: HubGuardianPet['sex']): string | null {
   return null;
 }
 
-function petFacts(p: HubGuardianPet): { label: string; value: string }[] {
-  const facts: { label: string; value: string }[] = [];
+function speciesKind(species: string): SpeciesKind {
+  const s = species.trim().toLowerCase();
+  if (/gato|cat|felin/.test(s)) return 'cat';
+  if (/c[aã]o|dog|canin/.test(s)) return 'dog';
+  return 'other';
+}
+
+function SpeciesIcon({ kind }: { kind: SpeciesKind }) {
+  const props = { size: 18, strokeWidth: 2, 'aria-hidden': true as const };
+  if (kind === 'cat') return <Cat {...props} />;
+  if (kind === 'dog') return <Dog {...props} />;
+  return <Bird {...props} />;
+}
+
+function petChips(p: HubGuardianPet): string[] {
+  const chips: string[] = [];
   const age = petAgeDetailedLabel(p.birth_date);
-  if (age !== '—') facts.push({ label: 'Idade', value: age });
+  if (age !== '—') chips.push(age);
   const sex = sexLabel(p.sex);
-  if (sex) facts.push({ label: 'Sexo', value: sex });
+  if (sex) chips.push(sex);
   const porte = PORTE_LABELS[p.size_tier as PetBodyPorteValue];
-  if (porte) facts.push({ label: 'Porte', value: porte });
+  if (porte) chips.push(porte);
   const coat =
     p.coat_type && COAT_TYPE_LABELS[p.coat_type as CoatTypeValue]
       ? COAT_TYPE_LABELS[p.coat_type as CoatTypeValue]
       : null;
-  if (coat) facts.push({ label: 'Pelagem', value: coat });
-  if (p.coat_color?.trim()) facts.push({ label: 'Cor', value: p.coat_color.trim() });
-  return facts;
+  if (coat) chips.push(coat);
+  if (p.coat_color?.trim()) chips.push(p.coat_color.trim());
+  return chips;
 }
 
 function addPetHref(guardianId: string): string {
@@ -69,23 +85,42 @@ const AddPetButton: React.FC<{ guardianId: string; variant: 'page' | 'panel' }> 
 export const GuardianPetsTab: React.FC<Props> = ({ pets, guardianId, canWritePets, isPage }) => {
   const list =
     pets.length === 0 ? (
-      <div className="hub-clientes__empty-state">Este cliente ainda não tem pets associados.</div>
+      <div className="hub-clientes__pet-empty">
+        <span className="hub-clientes__pet-empty-icon" aria-hidden>
+          <Dog size={28} strokeWidth={1.75} />
+        </span>
+        <p className="hub-clientes__pet-empty-title">Nenhum pet vinculado</p>
+        <p className="hub-clientes__pet-empty-text">
+          Cadastre o primeiro pet deste cliente para agendar serviços e manter a ficha em dia.
+        </p>
+        {canWritePets ? (
+          <Link
+            to={addPetHref(guardianId)}
+            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+          >
+            <Plus size={16} strokeWidth={2} aria-hidden />
+            Adicionar pet
+          </Link>
+        ) : null}
+      </div>
     ) : (
       <ul className="hub-clientes__pet-list">
         {pets.map((p) => {
           const breed = p.breed?.trim() || 'SRD';
-          const facts = petFacts(p);
+          const chips = petChips(p);
+          const kind = speciesKind(p.species);
           return (
-            <li key={`${p.id}-${p.role}`} className="hub-clientes__pet-list-item">
-              <span className="hub-clientes__avatar hub-clientes__pet-list-avatar" aria-hidden>
-                {profileInitials(p.name)}
-              </span>
-              <div className="hub-clientes__pet-list-body">
-                <div className="hub-clientes__pet-list-top">
-                  <div className="hub-clientes__pet-list-title-row">
-                    <Link to={`/hub/pets/${p.id}`} className="hub-clientes__pet-list-link">
-                      {p.name}
-                    </Link>
+            <li key={`${p.id}-${p.role}`} className={`hub-clientes__pet-card hub-clientes__pet-card--${kind}`}>
+              <Link to={`/hub/pets/${p.id}`} className="hub-clientes__pet-card-main" aria-label={`Abrir ficha de ${p.name}`}>
+                <span className={`hub-clientes__avatar hub-clientes__pet-card-avatar hub-clientes__pet-card-avatar--${kind}`} aria-hidden>
+                  <span className="hub-clientes__pet-card-avatar-initials">{profileInitials(p.name)}</span>
+                  <span className="hub-clientes__pet-card-avatar-badge">
+                    <SpeciesIcon kind={kind} />
+                  </span>
+                </span>
+                <div className="hub-clientes__pet-card-body">
+                  <div className="hub-clientes__pet-card-title-row">
+                    <span className="hub-clientes__pet-card-name">{p.name}</span>
                     <span
                       className={`hub-clientes__tag ${
                         p.role === 'primary' ? 'hub-clientes__tag--primary' : 'hub-clientes__tag--secondary'
@@ -94,31 +129,36 @@ export const GuardianPetsTab: React.FC<Props> = ({ pets, guardianId, canWritePet
                       {p.role === 'primary' ? 'Principal' : 'Co-tutor'}
                     </span>
                   </div>
-                  {canWritePets ? (
-                    <Link
-                      to={editPetHref(p.id, guardianId)}
-                      className="hub-clientes__link-btn hub-clientes__link-btn--with-icon hub-clientes__pet-list-edit"
-                      aria-label={`Editar ${p.name}`}
-                    >
-                      <Pencil size={15} strokeWidth={2} aria-hidden />
-                      Editar
-                    </Link>
+                  <p className="hub-clientes__pet-card-meta">
+                    <span className="hub-clientes__pet-card-species">{p.species}</span>
+                    <span className="hub-clientes__pet-card-dot" aria-hidden>
+                      ·
+                    </span>
+                    <span>{breed}</span>
+                  </p>
+                  {chips.length > 0 ? (
+                    <ul className="hub-clientes__pet-card-chips" aria-label={`Detalhes de ${p.name}`}>
+                      {chips.map((chip) => (
+                        <li key={chip} className="hub-clientes__pet-card-chip">
+                          {chip}
+                        </li>
+                      ))}
+                    </ul>
                   ) : null}
                 </div>
-                <p className="hub-clientes__muted hub-clientes__pet-list-meta">
-                  {[p.species, breed].filter(Boolean).join(' · ')}
-                </p>
-                {facts.length > 0 ? (
-                  <dl className="hub-clientes__pet-facts">
-                    {facts.map((f) => (
-                      <div key={f.label} className="hub-clientes__pet-fact">
-                        <dt className="hub-clientes__pet-fact-label">{f.label}</dt>
-                        <dd className="hub-clientes__pet-fact-value">{f.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                ) : null}
-              </div>
+              </Link>
+              {canWritePets ? (
+                <div className="hub-clientes__pet-card-actions">
+                  <Link
+                    to={editPetHref(p.id, guardianId)}
+                    className="hub-clientes__pet-card-action hub-clientes__pet-card-action--edit"
+                    title="Editar"
+                    aria-label={`Editar ${p.name}`}
+                  >
+                    <Pencil size={16} strokeWidth={2} aria-hidden />
+                  </Link>
+                </div>
+              ) : null}
             </li>
           );
         })}
@@ -139,7 +179,7 @@ export const GuardianPetsTab: React.FC<Props> = ({ pets, guardianId, canWritePet
                   : `${pets.length} pets vinculados a este cliente.`}
             </p>
           </div>
-          {canWritePets ? <AddPetButton guardianId={guardianId} variant="page" /> : null}
+          {canWritePets && pets.length > 0 ? <AddPetButton guardianId={guardianId} variant="page" /> : null}
         </header>
         {list}
       </section>
@@ -150,7 +190,7 @@ export const GuardianPetsTab: React.FC<Props> = ({ pets, guardianId, canWritePet
     <div className="hub-clientes__section">
       <div className="hub-clientes__section-head hub-clientes__pet-toolbar">
         <h3 className="hub-clientes__contact-card-title">Pets</h3>
-        {canWritePets ? <AddPetButton guardianId={guardianId} variant="panel" /> : null}
+        {canWritePets && pets.length > 0 ? <AddPetButton guardianId={guardianId} variant="panel" /> : null}
       </div>
       {list}
     </div>

@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { notifyLowStockIfCrossed } from './hubInventoryStockAlerts';
 import { parseOptionalEan } from './inventoryEan';
 
 const uuidStr = z.string().uuid();
@@ -56,7 +57,7 @@ export async function computeBalances(clinicId: string) {
 async function assertClinicItem(clinicId: string, itemId: string) {
   const { data, error } = await supabaseAdmin
     .from('hub_inventory_items')
-    .select('id, clinic_id, deleted_at')
+    .select('id, clinic_id, deleted_at, name, min_stock_qty')
     .eq('id', itemId)
     .maybeSingle();
   if (error || !data || data.clinic_id !== clinicId || data.deleted_at) {
@@ -64,6 +65,7 @@ async function assertClinicItem(clinicId: string, itemId: string) {
   }
   return data;
 }
+
 
 async function assertClinicLot(clinicId: string, lotId: string) {
   const { data, error } = await supabaseAdmin
@@ -722,7 +724,8 @@ export const createHubStockMovement = async (req: Request, res: Response) => {
     const sign = movementSign(d.movement_type);
     if (sign === 0) return res.status(400).json({ error: 'Tipo de movimento inválido' });
 
-    const { byLot } = await computeBalances(d.clinic_id);
+    const { byLot, byItem } = await computeBalances(d.clinic_id);
+    const qtyBefore = byItem.get(d.item_id) ?? 0;
     let lotId: string | null = d.lot_id ?? null;
 
     if (sign < 0) {
@@ -788,6 +791,18 @@ export const createHubStockMovement = async (req: Request, res: Response) => {
       console.error('[hub_inventory] create movement', movErr);
       return res.status(500).json({ error: 'Erro ao criar movimento' });
     }
+
+    if (sign < 0) {
+      void notifyLowStockIfCrossed({
+        clinicId: d.clinic_id,
+        itemId: d.item_id,
+        itemName: String(item.name ?? 'Item'),
+        minQty: Number(item.min_stock_qty ?? 0),
+        qtyBefore,
+        qtyAfter: qtyBefore - d.qty,
+      });
+    }
+
     return res.status(201).json({ movement: mov });
   } catch (e) {
     console.error('[hub_inventory] create movement', e);

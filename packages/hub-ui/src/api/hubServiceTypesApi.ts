@@ -101,10 +101,16 @@ export const hubServiceTypesApi = {
       pickup_price_scope?: 'round_trip' | 'per_leg';
       is_addon?: boolean;
     }
-  ): Promise<{ service_type: HubServiceType }> {
+  ): Promise<{
+    service_type: HubServiceType;
+    special_prices_sync?: { reviewed: number; auto_adjusted: number };
+  }> {
     return apiRequest(`${basePath}/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
-    }) as Promise<{ service_type: HubServiceType }>;
+    }) as Promise<{
+      service_type: HubServiceType;
+      special_prices_sync?: { reviewed: number; auto_adjusted: number };
+    }>;
   },
 };

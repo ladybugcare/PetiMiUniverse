@@ -10,6 +10,7 @@ import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import { useAlert } from '../components/AlertProvider';
 import { HubTabs } from '../components/HubTabs';
 import { HubLoading } from '../components/HubLoading';
+import { getSelectedUnitId } from '../utils/useSelectedUnitId';
 import { hubGuardiansApi, type HubGuardian, type HubGuardianStats } from '../api/hubGuardiansApi';
 import './clientes/clientes.css';
 import './clientes/clientes-drawer.css';
@@ -50,8 +51,10 @@ const HubGuardiansPage: React.FC = () => {
   const { user, role: authRole } = useAuth();
   const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
+  const unitId = getSelectedUnitId();
   const canWrite = hasPermission('hub.guardians.write');
   const canWritePets = hasPermission('hub.pets.write');
+  const canCreateReceivable = hasPermission('hub.receivables.create');
 
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<HubGuardianStats | null>(null);
@@ -447,6 +450,9 @@ const HubGuardiansPage: React.FC = () => {
         linkGuardianId={linkGuardianId || undefined}
         onContinueToPets={continueToPetsWithExistingGuardian}
         canWritePets={canWritePets}
+        clinicId={clinicId}
+        unitId={unitId}
+        canCreateReceivable={canCreateReceivable}
       />
     </div>
   );

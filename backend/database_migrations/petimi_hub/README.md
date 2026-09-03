@@ -210,3 +210,13 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 95. **`095_alter_hub_vaccination_records_price.sql`** — Coluna `price` em `hub_vaccination_records` (snapshot de venda para comanda). Executar depois de `025i_create_hub_prescriptions_vaccinations.sql`. Ver [`docs/onboarding/matilha-vacinacao-estoque.md`](../../docs/onboarding/matilha-vacinacao-estoque.md).
 
 96. **`096_create_hub_report_email_schedules.sql`** — Tabela `hub_report_email_schedules` (envio semanal de relatórios por e-mail). Executar depois de `clinics` / `units`.
+
+97. **`097_alter_hub_pets_health_profile.sql`** — Coluna `hub_pets.neutered` e tabela de auditoria `hub_pet_profile_changes` (ficha permanente de saúde/comportamento). Executar depois de `002` / `002a` (`hub_pets`) e `025g` (`hub_pet_clinical_flags`).
+
+98. **`098_alter_hub_comandas_pet_id.sql`** — Coluna `hub_comandas.pet_id` (pet de contexto ao abrir comanda pelo perfil do pet / origem com um pet). Executar depois de `039_create_hub_comandas.sql` e `002` (`hub_pets`).
+
+99. **`099_create_hub_special_prices.sql`** — Preços especiais por pet, tutor ou plano família (`hub_special_prices` + `hub_special_price_pets`), com aprovação e aviso de reajuste de catálogo; colunas `pricing_source` / `special_price_id` em `hub_appointment_services`. Executar depois de `003` (`hub_service_types`), `001`/`002` (tutores/pets) e `015` (`hub_appointment_services`).
+
+100. **`100_create_hub_series_invoices.sql`** — Faturamento periódico de séries: colunas de cobrança em `hub_appointment_series`; tabelas `hub_series_invoices` + `hub_series_invoice_items`; amplia `hub_comandas.origin_type` com `series_invoice`. Executar depois de `013` e `039`.
+
+101. **`101_alter_notifications_hub_ops_types.sql`** — Amplia `notifications_type_check` com os avisos operacionais internos do Hub (`hub_payment_due`, `hub_cancellation_pending`, `hub_stock_alert`, `hub_boarding_checkin`, `hub_boarding_checkout`), direcionados por área operacional via `hubNotifyStaff`. Executar depois do item 53.

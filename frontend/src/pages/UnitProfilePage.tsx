@@ -17,6 +17,7 @@ import { useAuth } from '../AuthContext';
 import UnitProfileVetView from '../components/UnitProfileVetView';
 import UnitProfileAdminView from '../components/UnitProfileAdminView';
 import AddressAutocomplete from '../components/AddressAutocomplete';
+import { formatCNPJ as maskCnpjInput } from '../utils/validators';
 
 const UnitProfilePage: React.FC = () => {
   const { unitId } = useParams<{ unitId?: string }>();
@@ -109,7 +110,7 @@ const UnitProfilePage: React.FC = () => {
       setFormData({
         name: unitData.name,
         nickname: unitData.nickname || '',
-        cnpj: unitData.cnpj || '',
+        cnpj: maskCnpjInput(unitData.cnpj || ''),
         address: unitData.address,
         city: unitData.city,
         state: unitData.state,
@@ -196,7 +197,7 @@ const UnitProfilePage: React.FC = () => {
       setFormData({
         name: unit.name,
         nickname: unit.nickname || '',
-        cnpj: unit.cnpj || '',
+        cnpj: maskCnpjInput(unit.cnpj || ''),
         address: unit.address,
         city: unit.city,
         state: unit.state,
@@ -236,7 +237,7 @@ const UnitProfilePage: React.FC = () => {
 
   const formatCNPJ = (cnpj?: string) => {
     if (!cnpj) return 'N/A';
-    return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    return maskCnpjInput(cnpj) || cnpj;
   };
 
   const formatPhone = (phone?: string) => {
@@ -503,8 +504,9 @@ const UnitProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.cnpj}
-                    onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
-                    placeholder="Opcional"
+                    onChange={(e) => setFormData({ ...formData, cnpj: maskCnpjInput(e.target.value) })}
+                    placeholder="00.000.000/0000-00"
+                    maxLength={18}
                     style={styles.input}
                   />
                 ) : (
@@ -780,9 +782,10 @@ const UnitProfilePage: React.FC = () => {
                 <input
                   type="text"
                   value={formData.cnpj}
-                  onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, cnpj: maskCnpjInput(e.target.value) })}
                   style={styles.input}
-                  placeholder="Opcional"
+                  placeholder="00.000.000/0000-00"
+                  maxLength={18}
                 />
               ) : (
                 <p style={styles.infoValue}>{formatCNPJ(unit.cnpj)}</p>

@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { usePermissions } from '@petimi/web-core';
 import {
   X,
   ExternalLink,
@@ -12,9 +13,14 @@ import {
   Coins,
   User,
   Building2,
+  Bird,
+  Cat,
+  Dog,
+  ChevronRight,
 } from 'lucide-react';
 import type { HubGuardian, HubGuardianPet } from '../../api/hubGuardiansApi';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
+import { formatBrTaxIdDisplay } from '../../utils/formatBrTaxId';
 import { formatGuardianAddress } from './formatters';
 import { GuardianDetailQuickActions } from './GuardianDetailQuickActions';
 import { GuardianPetsTab } from './GuardianPetsTab';
@@ -22,13 +28,49 @@ import { HubTabs } from '../../components/HubTabs';
 import { HubProfileInfoCell } from '../../components/HubProfileInfoCell';
 import { HubProfileAvatar, profileInitials } from '../../components/HubProfileAvatar';
 import { HubLoading } from '../../components/HubLoading';
+import { ProfileFinanceSummaryCard } from '../../components/ProfileFinanceSummaryCard';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { hubFinancialApi, type HubFinanceReceivable } from '../../api/hubFinancialApi';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
+import { HubComandaReceivableDrawer } from '../finance/HubComandaReceivableDrawer';
+import {
+  formatComandaListOpenedAt,
+  formatComandaListPets,
+  formatComandaListTitle,
+  formatComandaOriginLabel,
+  formatReceivableListTitle,
+  isReceivablePayable,
+  resolveComandaProfileChargeAction,
+  resolveComandaProfileHref,
+  resolveReceivableProfileHref,
+} from '../finance/comandaListPreview';
+import { ReceivableDueBadge } from '../finance/ReceivableDueBadge';
+import { formatDueDateShort } from '../finance/dueDateTone';
+import { buildProfileFinanceSummary } from '../finance/profileFinanceSummary';
+import { buildBatchChargeItems } from '../finance/batchChargeItems';
+import { BatchChargeDrawer } from '../finance/BatchChargeDrawer';
+import { SpecialPricesSection } from '../../components/SpecialPricesSection';
 import '../../components/hub-profile.css';
+import '../finance/hub-finance-page.css';
+import './clientes.css';
 
 type DetailTab = 'resumo' | 'pets' | 'historico' | 'financeiro';
 type ProfileLayout = 'panel' | 'page';
+
+function speciesKind(species: string): 'dog' | 'cat' | 'other' {
+  const s = species.trim().toLowerCase();
+  if (/gato|cat|felin/.test(s)) return 'cat';
+  if (/c[aã]o|dog|canin/.test(s)) return 'dog';
+  return 'other';
+}
+
+function PetSpeciesIcon({ species }: { species: string }) {
+  const kind = speciesKind(species);
+  const props = { size: 15, strokeWidth: 2, 'aria-hidden': true as const };
+  if (kind === 'cat') return <Cat {...props} />;
+  if (kind === 'dog') return <Dog {...props} />;
+  return <Bird {...props} />;
+}
 
 interface GuardianDetailPanelProps {
   guardian: HubGuardian;
@@ -70,13 +112,23 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   initialTab = 'resumo',
 }) => {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canFinancialRead = hasPermission('hub.financial.read');
   const isPage = layout === 'page';
   const [tab, setTab] = useState<DetailTab>(initialTab);
   const [comandas, setComandas] = useState<Array<Record<string, unknown>>>([]);
   const [receivables, setReceivables] = useState<HubFinanceReceivable[]>([]);
   const [finLoading, setFinLoading] = useState(false);
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
+  const [receivableDrawer, setReceivableDrawer] = useState<{
+    comandaId: string;
+    receivableIds: string[];
+    selectedReceivableId: string;
+  } | null>(null);
   const [openingComanda, setOpeningComanda] = useState(false);
+  /** Pet de contexto opcional — comanda manual não exige pet (itens podem ser só do tutor). */
+  const [comandaPetId, setComandaPetId] = useState('');
+  const [showBatchCharge, setShowBatchCharge] = useState(false);
 
   const addr = formatGuardianAddress(guardian);
   const since = guardian.created_at
@@ -113,18 +165,102 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   }, [clinicId, guardian.id]);
 
   useEffect(() => {
-    if (tab === 'financeiro') void loadFinanceiro();
+    if (tab === 'financeiro' || tab === 'resumo') void loadFinanceiro();
   }, [tab, loadFinanceiro]);
+
+  const financeSummary = useMemo(
+    () => buildProfileFinanceSummary(receivables, comandas),
+    [receivables, comandas],
+  );
+
+  const batchChargeItems = useMemo(
+    () => buildBatchChargeItems(receivables, comandas),
+    [receivables, comandas],
+  );
+
+  const goToFinanceiroTab = () => setTab('financeiro');
+
+  const openSingleChargeItem = (item: (typeof batchChargeItems)[number]) => {
+    if (item.kind === 'receivable' && item.comandaId && item.receivableId) {
+      setReceivableDrawer({
+        comandaId: item.comandaId,
+        receivableIds: [item.receivableId],
+        selectedReceivableId: item.receivableId,
+      });
+      return;
+    }
+    if (item.kind === 'comanda' && item.comandaId) {
+      setCheckoutComandaId(item.comandaId);
+    }
+  };
+
+  const handleSummaryCharge = () => {
+    if (!canCreateReceivable) {
+      goToFinanceiroTab();
+      return;
+    }
+    if (batchChargeItems.length === 0) {
+      goToFinanceiroTab();
+      return;
+    }
+    if (batchChargeItems.length === 1) {
+      openSingleChargeItem(batchChargeItems[0]);
+      return;
+    }
+    setShowBatchCharge(true);
+  };
+
+  const renderFinanceSummaryBlock = (asPageSection: boolean) => {
+    const card = (
+      <ProfileFinanceSummaryCard
+        summary={financeSummary}
+        loading={finLoading}
+        emptyLabel="Ainda não há movimentos financeiros associados a este cliente no Hub. Quando existir faturamento ou pagamentos por atendimento, o resumo aparecerá aqui."
+        onOpenFinanceiro={goToFinanceiroTab}
+        onCharge={financeSummary.outstandingTotal > 0 && canCreateReceivable ? handleSummaryCharge : null}
+      />
+    );
+    if (asPageSection) {
+      return (
+        <section className="hub-meu-perfil__panel">
+          <header className="hub-meu-perfil__panel-head">
+            <div>
+              <h2 className="hub-meu-perfil__panel-title">Resumo financeiro</h2>
+              <p className="hub-meu-perfil__panel-sub">Saldo em aberto de todos os pets deste cliente.</p>
+            </div>
+          </header>
+          {card}
+        </section>
+      );
+    }
+    return (
+      <div className="hub-clientes__section">
+        <h3 className="hub-clientes__section-title" style={{ marginBottom: 8 }}>
+          Resumo financeiro
+        </h3>
+        {card}
+      </div>
+    );
+  };
+
+  const singlePetId = pets.length === 1 ? pets[0].id : null;
+
+  useEffect(() => {
+    // 1 pet → pré-seleciona; vários ou nenhum → sem pet (cobrança do tutor), selecionável se houver lista.
+    setComandaPetId(singlePetId ?? '');
+  }, [guardian.id, singlePetId]);
 
   const handleOpenComandaManual = async () => {
     if (!clinicId) return;
     setOpeningComanda(true);
     try {
+      const resolvedPetId = comandaPetId.trim() || singlePetId || '';
       const detail = await hubComandaApi.openComanda({
         clinic_id: clinicId,
         origin_type: 'manual',
         guardian_id: guardian.id,
         unit_id: unitId ?? undefined,
+        ...(resolvedPetId ? { pet_id: resolvedPetId } : {}),
         manual_lines: [],
       });
       const comandaId = (detail.comanda as Record<string, unknown>).id as string;
@@ -154,25 +290,14 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
           <HubProfileInfoCell icon={Mail} label="E-mail" value={guardian.email || '—'} />
           <HubProfileInfoCell icon={MapPin} label="Endereço" value={addr} />
           <HubProfileInfoCell icon={Info} label="Origem" value={guardian.lead_source || '—'} />
-          <HubProfileInfoCell icon={User} label={taxLabel} value={guardian.tax_id || '—'} />
+          <HubProfileInfoCell icon={User} label={taxLabel} value={formatBrTaxIdDisplay(guardian.tax_id)} />
           {isCompany && guardian.legal_name ? (
             <HubProfileInfoCell icon={Building2} label="Razão social" value={guardian.legal_name} />
           ) : null}
         </div>
       </section>
 
-      <section className="hub-meu-perfil__panel">
-        <header className="hub-meu-perfil__panel-head">
-          <div>
-            <h2 className="hub-meu-perfil__panel-title">Resumo financeiro</h2>
-            <p className="hub-meu-perfil__panel-sub">Movimentos e saldo do cliente.</p>
-          </div>
-        </header>
-        <div className="hub-clientes__empty-state">
-          Ainda não há movimentos financeiros associados a este cliente no Hub. Quando existir faturação ou pagamentos
-          por atendimento, o resumo aparecerá aqui.
-        </div>
-      </section>
+      {renderFinanceSummaryBlock(true)}
 
       <section className="hub-meu-perfil__panel">
         <header className="hub-meu-perfil__panel-head">
@@ -237,15 +362,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
         </div>
       </div>
 
-      <div className="hub-clientes__section">
-        <h3 className="hub-clientes__section-title" style={{ marginBottom: 8 }}>
-          Resumo financeiro
-        </h3>
-        <div className="hub-clientes__empty-state">
-          Ainda não há movimentos financeiros associados a este cliente no Hub. Quando existir faturação ou pagamentos
-          por atendimento, o resumo aparecerá aqui.
-        </div>
-      </div>
+      {renderFinanceSummaryBlock(false)}
 
       <div className="hub-clientes__section">
         <h3 className="hub-clientes__section-title" style={{ marginBottom: 8 }}>
@@ -289,19 +406,94 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   };
 
   const renderFinanceiroTab = () => {
+    const openComandas = comandas.filter((c) => c.status === 'aberta');
+    const selectedPet = pets.find((p) => p.id === comandaPetId) ?? null;
+    const composeHint = selectedPet
+      ? `Itens novos entram vinculados a ${selectedPet.name}.`
+      : pets.length > 0
+        ? 'Sem pet: itens entram como cobrança do tutor (taxa, produto avulso, etc.).'
+        : 'Comanda vinculada a este tutor.';
+
     const inner = (
       <>
+        {clinicId ? (
+          <div style={{ marginBottom: 20 }}>
+            <SpecialPricesSection
+              clinicId={clinicId}
+              guardianId={guardian.id}
+              guardianPets={pets.map((p) => ({ id: p.id, name: p.name }))}
+              canWrite={canWritePets || canCreateReceivable || canFinancialRead}
+            />
+          </div>
+        ) : null}
         {canCreateReceivable && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-              disabled={openingComanda}
-              onClick={() => void handleOpenComandaManual()}
-            >
-              <FilePlus2 size={14} strokeWidth={2} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-              {openingComanda ? 'Abrindo…' : 'Abrir comanda'}
-            </button>
+          <div className="hub-clientes__fin-compose">
+            <div className="hub-clientes__fin-compose-head">
+              <div>
+                <h3 className="hub-clientes__fin-compose-title">Nova comanda</h3>
+                <p className="hub-clientes__fin-compose-sub">{composeHint}</p>
+              </div>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                disabled={openingComanda}
+                onClick={() => void handleOpenComandaManual()}
+              >
+                <FilePlus2 size={14} strokeWidth={2} aria-hidden />
+                {openingComanda ? 'Abrindo…' : 'Abrir comanda'}
+              </button>
+            </div>
+
+            {batchChargeItems.length >= 2 ? (
+              <div style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                  onClick={() => setShowBatchCharge(true)}
+                >
+                  <Coins size={14} strokeWidth={2} aria-hidden />
+                  Cobrar em conjunto ({batchChargeItems.length})
+                </button>
+              </div>
+            ) : null}
+
+            {pets.length > 0 ? (
+              <div
+                className="hub-clientes__fin-pet-picker"
+                role="radiogroup"
+                aria-label="Pet da comanda (opcional)"
+              >
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!comandaPetId}
+                  className={`hub-clientes__fin-pet-chip${!comandaPetId ? ' hub-clientes__fin-pet-chip--active' : ''}`}
+                  disabled={openingComanda}
+                  onClick={() => setComandaPetId('')}
+                >
+                  <User size={15} strokeWidth={2} aria-hidden />
+                  Só tutor
+                </button>
+                {pets.map((p) => {
+                  const active = comandaPetId === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      className={`hub-clientes__fin-pet-chip${active ? ' hub-clientes__fin-pet-chip--active' : ''}`}
+                      disabled={openingComanda}
+                      onClick={() => setComandaPetId(p.id)}
+                      title={p.species || p.name}
+                    >
+                      <PetSpeciesIcon species={p.species} />
+                      <span className="hub-clientes__fin-pet-chip-name">{p.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -309,81 +501,176 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
           <HubLoading variant="inline" label="Carregando financeiro…" size="sm" />
         ) : (
           <>
-            {comandas.filter((c) => c.status === 'aberta').length > 0 && (
-              <section style={{ marginBottom: 20 }}>
-                <h4 className="hub-clientes__label" style={{ marginBottom: 8 }}>
+            {openComandas.length > 0 && (
+              <section className="hub-clientes__fin-section">
+                <h4 className="hub-clientes__fin-section-title">
                   Comandas abertas
+                  <span className="hub-clientes__fin-section-count">{openComandas.length}</span>
                 </h4>
-                {comandas
-                  .filter((c) => c.status === 'aberta')
-                  .map((c) => (
-                    <div
-                      key={String(c.id)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        padding: '6px 0',
-                        borderBottom: '1px solid var(--hc-border,#e8ddd8)',
-                      }}
-                    >
-                      <span style={{ flex: 1, fontSize: 13 }}>
-                        {String(c.origin_type ?? '—')}
-                        <span className="hub-clientes__muted" style={{ marginLeft: 6, fontSize: 12 }}>
-                          {c.opened_at ? new Date(String(c.opened_at)).toLocaleDateString('pt-BR') : ''}
-                        </span>
-                      </span>
-                      <span style={{ fontSize: 13, fontWeight: 500 }}>{formatBrl(Number(c.total_amount ?? 0))}</span>
-                      {canCreateReceivable && (
+                <ul className="hub-clientes__fin-list">
+                  {openComandas.map((c) => {
+                    const title = formatComandaListTitle(c);
+                    const petsLabel = formatComandaListPets(c, pets);
+                    const opened = formatComandaListOpenedAt(c);
+                    const originLabel = formatComandaOriginLabel(c.origin_type);
+                    const href = resolveComandaProfileHref(c, { canFinancialRead });
+                    const charge = resolveComandaProfileChargeAction(c, receivables, {
+                      canCreateReceivable,
+                      canFinancialRead,
+                    });
+                    return (
+                      <li key={String(c.id)} className="hub-clientes__fin-row">
                         <button
                           type="button"
-                          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                          onClick={() => setCheckoutComandaId(String(c.id))}
-                          title="Receber"
+                          className="hub-clientes__fin-row-main"
+                          onClick={() => navigate(href)}
+                          title={href.includes('/financeiro/') ? 'Abrir no financeiro' : 'Abrir no caixa'}
                         >
-                          <Coins size={13} strokeWidth={2} />
+                          <span className="hub-clientes__fin-row-title">{title}</span>
+                          <span className="hub-clientes__fin-row-meta">
+                            <span className="hub-clientes__fin-row-origin">{originLabel}</span>
+                            <span aria-hidden> · </span>
+                            <span>{petsLabel}</span>
+                            {opened ? (
+                              <>
+                                <span aria-hidden> · </span>
+                                <span>{opened}</span>
+                              </>
+                            ) : null}
+                          </span>
                         </button>
-                      )}
-                    </div>
-                  ))}
+                        <span className="hub-clientes__fin-row-amount">
+                          {formatBrl(Number(c.total_amount ?? 0))}
+                        </span>
+                        {charge.kind !== 'none' && (
+                          <button
+                            type="button"
+                            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-clientes__fin-row-action"
+                            onClick={() => {
+                              if (charge.kind === 'checkout_drawer') {
+                                setCheckoutComandaId(charge.comandaId);
+                              } else if (charge.kind === 'receivable_drawer') {
+                                setReceivableDrawer({
+                                  comandaId: charge.comandaId,
+                                  receivableIds: [charge.receivableId],
+                                  selectedReceivableId: charge.receivableId,
+                                });
+                              } else if (charge.kind === 'navigate') {
+                                navigate(charge.href);
+                              }
+                            }}
+                            title={
+                              charge.kind === 'receivable_drawer' || charge.kind === 'navigate'
+                                ? 'Registrar pagamento'
+                                : 'Receber'
+                            }
+                            aria-label={
+                              charge.kind === 'receivable_drawer' || charge.kind === 'navigate'
+                                ? 'Registrar pagamento'
+                                : 'Receber'
+                            }
+                          >
+                            <Coins size={14} strokeWidth={2} />
+                          </button>
+                        )}
+                        <ChevronRight
+                          className="hub-clientes__fin-row-chevron"
+                          size={16}
+                          strokeWidth={2}
+                          aria-hidden
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
               </section>
             )}
 
             {receivables.length > 0 ? (
-              <section>
-                <h4 className="hub-clientes__label" style={{ marginBottom: 8 }}>
+              <section className="hub-clientes__fin-section">
+                <h4 className="hub-clientes__fin-section-title">
                   Recebíveis
+                  <span className="hub-clientes__fin-section-count">{Math.min(receivables.length, 20)}</span>
                 </h4>
-                {receivables.slice(0, 20).map((rv) => (
-                  <div
-                    key={rv.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 0',
-                      borderBottom: '1px solid var(--hc-border,#e8ddd8)',
-                      fontSize: 13,
-                    }}
-                  >
-                    <span style={{ flex: 1 }}>
-                      {rv.source_type}
-                      <span className="hub-clientes__muted" style={{ marginLeft: 6, fontSize: 12 }}>
-                        {rv.due_date ? `venc. ${new Date(rv.due_date).toLocaleDateString('pt-BR')}` : ''}
-                      </span>
-                    </span>
-                    <span
-                      className={`hub-dayboard__badge ${rv.status === 'paid' ? 'hub-dayboard__badge--received' : rv.status === 'pending' ? 'hub-dayboard__badge--pending' : 'hub-dayboard__badge--none'}`}
-                      style={{ textTransform: 'capitalize' }}
-                    >
-                      {rv.status === 'paid' ? 'Pago' : rv.status === 'pending' ? 'Pendente' : rv.status}
-                    </span>
-                    <span style={{ fontWeight: 500 }}>{formatBrl(rv.final_amount)}</span>
-                  </div>
-                ))}
+                <ul className="hub-clientes__fin-list">
+                  {receivables.slice(0, 20).map((rv) => {
+                    const href = resolveReceivableProfileHref(rv, { canFinancialRead });
+                    const payable = isReceivablePayable(rv.status);
+                    const canPay =
+                      payable &&
+                      canCreateReceivable &&
+                      Boolean(rv.comanda_id) &&
+                      Boolean(unitId);
+                    const linkedComanda = rv.comanda_id
+                      ? comandas.find((c) => String(c.id) === rv.comanda_id) ?? null
+                      : null;
+                    const title = formatReceivableListTitle(rv, linkedComanda);
+                    const originLabel = formatComandaOriginLabel(rv.source_type);
+                    const petsLabel = linkedComanda
+                      ? formatComandaListPets(linkedComanda, pets)
+                      : 'Tutor';
+                    const rowMain = (
+                      <>
+                        <span className="hub-clientes__fin-row-title">{title}</span>
+                        <span className="hub-clientes__fin-row-meta">
+                          <span className="hub-clientes__fin-row-origin">{originLabel}</span>
+                          <span aria-hidden> · </span>
+                          <span>{petsLabel}</span>
+                          <span aria-hidden> · </span>
+                          <span>{formatDueDateShort(rv.due_date)}</span>
+                        </span>
+                      </>
+                    );
+                    return (
+                      <li key={rv.id} className="hub-clientes__fin-row">
+                        {href ? (
+                          <button
+                            type="button"
+                            className="hub-clientes__fin-row-main"
+                            onClick={() => navigate(href)}
+                            title="Abrir no financeiro"
+                          >
+                            {rowMain}
+                          </button>
+                        ) : (
+                          <div className="hub-clientes__fin-row-main">{rowMain}</div>
+                        )}
+                        <ReceivableDueBadge dueDate={rv.due_date} status={rv.status} showDate={false} />
+                        <span className="hub-clientes__fin-row-amount">{formatBrl(rv.final_amount)}</span>
+                        {canPay && rv.comanda_id ? (
+                          <button
+                            type="button"
+                            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-clientes__fin-row-action"
+                            onClick={() =>
+                              setReceivableDrawer({
+                                comandaId: rv.comanda_id!,
+                                receivableIds: [rv.id],
+                                selectedReceivableId: rv.id,
+                              })
+                            }
+                            title="Registrar pagamento"
+                            aria-label="Registrar pagamento"
+                          >
+                            <Coins size={14} strokeWidth={2} />
+                          </button>
+                        ) : null}
+                        {href ? (
+                          <ChevronRight
+                            className="hub-clientes__fin-row-chevron"
+                            size={16}
+                            strokeWidth={2}
+                            aria-hidden
+                          />
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
               </section>
-            ) : comandas.length === 0 ? (
-              <p className="hub-clientes__muted">Nenhum lançamento financeiro encontrado para este tutor.</p>
+            ) : openComandas.length === 0 && comandas.length === 0 ? (
+              <p className="hub-clientes__muted hub-clientes__fin-empty">
+                Nenhum lançamento financeiro encontrado para este tutor.
+              </p>
             ) : null}
           </>
         )}
@@ -410,7 +697,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   const tabs = (
     <HubTabs
       variant="detail"
-      ariaLabel="Detalhe do tutor"
+      ariaLabel="Detalhe do cliente"
       activeId={tab}
       onTabChange={(id) => setTab(id as DetailTab)}
       items={[
@@ -446,6 +733,38 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
         }}
       />
     ) : null;
+
+  const receivablePanel =
+    receivableDrawer && clinicId ? (
+      <HubComandaReceivableDrawer
+        key={`${receivableDrawer.comandaId}-${receivableDrawer.selectedReceivableId}`}
+        open
+        onClose={() => setReceivableDrawer(null)}
+        comandaId={receivableDrawer.comandaId}
+        receivableIds={receivableDrawer.receivableIds}
+        selectedReceivableId={receivableDrawer.selectedReceivableId}
+        onSelectReceivable={(id) =>
+          setReceivableDrawer((prev) => (prev ? { ...prev, selectedReceivableId: id } : prev))
+        }
+        onRefreshComanda={() => {
+          void loadFinanceiro();
+        }}
+        highlightPayment
+      />
+    ) : null;
+
+  const batchChargePanel = (
+    <BatchChargeDrawer
+      open={showBatchCharge}
+      items={batchChargeItems}
+      guardianName={guardian.full_name}
+      onClose={() => setShowBatchCharge(false)}
+      onDone={() => {
+        setShowBatchCharge(false);
+        void loadFinanceiro();
+      }}
+    />
+  );
 
   if (isPage) {
     return (
@@ -492,6 +811,8 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
           </div>
         </div>
         {financeDrawer}
+        {receivablePanel}
+        {batchChargePanel}
       </>
     );
   }
@@ -533,12 +854,14 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
       {tabs}
       {tabContent}
       {financeDrawer}
+      {receivablePanel}
+      {batchChargePanel}
 
       {!hideFooter ? (
         <div className="hub-clientes__footer-btns">
           <div className="hub-clientes__btn-row">
             <button type="button" className="hub-clientes__btn hub-clientes__btn--outline" onClick={onStartEdit}>
-              Editar tutor
+              {isCompany ? 'Editar empresa' : 'Editar tutor'}
             </button>
             {!hideNewPageButton && (
               <button

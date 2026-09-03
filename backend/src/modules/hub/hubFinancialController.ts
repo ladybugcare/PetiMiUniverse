@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { computeBalances } from './hubInventoryController';
 import { streamPaymentReceiptPdf } from './hubPaymentReceiptPdf';
-import { fetchOpenComandaOriginKeysExported } from './hubComandasController';
+import { fetchOpenComandaOriginKeysExported, tryAutoCloseComanda } from './hubComandasController';
 import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
 import {
   assertPaymentMethodInList,
@@ -26,7 +26,9 @@ import {
   pickActiveReceivableId,
 } from './hubFinancialDayBoard';
 import { financeSourceTypeSchema, receivableSourceTypeSchema } from './hubFinanceSchemas';
-import { hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
+import { notifyHubPaymentDue } from './hubNotifyEvents';
+import { applyPackageCoverageToEstimate, hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
+import { findSeriesInvoiceCoverageForAppointments } from './hubSeriesBillingService';
 
 const uuidStr = z.string().uuid();
 
@@ -689,6 +691,32 @@ const createReceivableBodySchema = z
   })
   .strict();
 
+/**
+ * Cobrança nascida vencida (ex.: dívida antiga lançada manualmente) já entra como
+ * pendência para o caixa/financeiro. Varredura periódica de vencidos fica para depois.
+ */
+function maybeNotifyOverdueReceivable(opts: {
+  clinicId: string;
+  unitId: string | null;
+  receivableId: string;
+  guardianId: string | null;
+  amount: number;
+  dueDate: string | null;
+}): void {
+  if (!opts.dueDate) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (opts.dueDate >= today) return;
+  void notifyHubPaymentDue({
+    clinicId: opts.clinicId,
+    unitId: opts.unitId,
+    receivableId: opts.receivableId,
+    guardianId: opts.guardianId,
+    amount: opts.amount,
+    dueDate: opts.dueDate,
+    reason: 'overdue',
+  });
+}
+
 export const postHubFinanceReceivable = async (req: Request, res: Response) => {
   try {
     const parsed = createReceivableBodySchema.safeParse(req.body);
@@ -757,6 +785,15 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
         await supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
         return res.status(500).json({ error: lnErr.message });
       }
+      maybeNotifyOverdueReceivable({
+        clinicId: clinic_id,
+        unitId: unit_id ?? null,
+        receivableId,
+        guardianId: guardian_id ?? null,
+        amount: subtotal,
+        dueDate: due_date ?? null,
+      });
+
       const detail = await buildReceivableDetail(receivableId, clinic_id);
       return res.status(201).json({ receivable: detail });
     }
@@ -1017,7 +1054,7 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
 
     const { data: rec, error: rErr } = await supabaseAdmin
       .from('hub_receivables')
-      .select('id, clinic_id, unit_id, comanda_id, status, final_amount')
+      .select('id, clinic_id, unit_id, comanda_id, guardian_id, due_date, status, final_amount')
       .eq('id', receivableId)
       .maybeSingle();
     if (rErr || !rec || rec.clinic_id !== clinic_id) return res.status(404).json({ error: 'Recebível não encontrado' });
@@ -1106,6 +1143,29 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
     if (paid >= finalAmt - 0.009) nextStatus = 'paid';
 
     await supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', receivableId);
+
+    // Mesmo fluxo do checkout: com saldo quitado, encerra a comanda aberta vinculada.
+    // Sem isso, o recebível some do resumo e a dívida “volta” como comanda aberta.
+    if (rec.comanda_id) {
+      try {
+        await tryAutoCloseComanda(rec.comanda_id as string, clinic_id);
+      } catch (closeErr) {
+        console.error('postHubFinanceReceivablePayment tryAutoCloseComanda', rec.comanda_id, closeErr);
+      }
+    }
+
+    // Saldo remanescente é dívida em aberto: caixa e financeiro precisam saber.
+    if (nextStatus === 'partially_paid') {
+      void notifyHubPaymentDue({
+        clinicId: clinic_id,
+        unitId: rec.unit_id as string | null,
+        receivableId,
+        guardianId: rec.guardian_id as string | null,
+        amount: round2(finalAmt - paid),
+        dueDate: rec.due_date as string | null,
+        reason: 'partial',
+      });
+    }
 
     const { data: paymentRow } = await supabaseAdmin.from('hub_payments').select('*').eq('id', pay.id).single();
     return res.status(201).json({ payment: paymentRow, receivable_status: nextStatus });
@@ -2476,22 +2536,30 @@ async function fetchBillingStatusBatch(
   // Carrega recebíveis ativos por source_key e comanda_id
   const { data: receivables } = await supabaseAdmin
     .from('hub_receivables')
-    .select('id, source_type, source_id, comanda_id, status')
+    .select('id, source_type, source_id, comanda_id, status, due_date')
     .eq('clinic_id', clinicId)
     .is('deleted_at', null)
     .neq('status', 'cancelled');
 
-  const receivableRowsBySourceKey = new Map<string, Array<{ id: string; status: string }>>();
-  const receivableRowsByComandaId = new Map<string, Array<{ id: string; status: string }>>();
+  const receivableRowsBySourceKey = new Map<string, Array<{ id: string; status: string; due_date: string | null }>>();
+  const receivableRowsByComandaId = new Map<string, Array<{ id: string; status: string; due_date: string | null }>>();
 
-  const pushReceivable = (map: Map<string, Array<{ id: string; status: string }>>, mapKey: string, row: { id: string; status: string }) => {
+  const pushReceivable = (
+    map: Map<string, Array<{ id: string; status: string; due_date: string | null }>>,
+    mapKey: string,
+    row: { id: string; status: string; due_date: string | null },
+  ) => {
     const list = map.get(mapKey) ?? [];
     list.push(row);
     map.set(mapKey, list);
   };
 
   for (const r of receivables ?? []) {
-    const row = { id: r.id as string, status: String(r.status) };
+    const row = {
+      id: r.id as string,
+      status: String(r.status),
+      due_date: (r.due_date as string | null) ?? null,
+    };
     pushReceivable(receivableRowsBySourceKey, `${r.source_type as string}:${r.source_id as string}`, row);
     if (r.comanda_id) {
       pushReceivable(receivableRowsByComandaId, r.comanda_id as string, row);
@@ -2501,7 +2569,7 @@ async function fetchBillingStatusBatch(
   for (const { origin_type, origin_id } of originKeys) {
     const key = `${origin_type}:${origin_id}`;
     const comanda = comandaByKey.get(key) ?? null;
-    const rowsById = new Map<string, { id: string; status: string }>();
+    const rowsById = new Map<string, { id: string; status: string; due_date: string | null }>();
     for (const row of receivableRowsBySourceKey.get(key) ?? []) rowsById.set(row.id, row);
     if (comanda) {
       for (const row of receivableRowsByComandaId.get(comanda.id) ?? []) rowsById.set(row.id, row);
@@ -2510,13 +2578,16 @@ async function fetchBillingStatusBatch(
     const statuses = receivableRows.map((r) => r.status);
     const receivable_status = aggregateReceivableStatus(statuses);
     const has_receivable = statuses.length > 0;
+    const activeId = pickActiveReceivableId(receivableRows);
+    const activeRow = activeId ? receivableRows.find((r) => r.id === activeId) : undefined;
     result.set(key, {
       comanda_id: comanda?.id ?? null,
       comanda_status: comanda?.status ?? null,
       has_receivable,
       receivable_status,
       finance_handoff_at: comanda?.finance_handoff_at ?? null,
-      active_receivable_id: pickActiveReceivableId(receivableRows),
+      active_receivable_id: activeId,
+      due_date: activeRow?.due_date ?? null,
     });
   }
   return result;
@@ -2593,6 +2664,9 @@ type DayBoardItem = {
   services: { name: string; amount: number }[];
   billing: DayBoardBilling;
   has_package_balance?: boolean;
+  /** none | package | series_invoice */
+  coverage_kind?: 'none' | 'package' | 'series_invoice';
+  series_invoice_comanda_id?: string | null;
 };
 
 const dayBoardQuerySchema = z
@@ -2722,6 +2796,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           receivable_status: null,
           finance_handoff_at: null,
           active_receivable_id: null,
+          due_date: null,
         },
       });
     }
@@ -2771,6 +2846,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           receivable_status: null,
           finance_handoff_at: null,
           active_receivable_id: null,
+          due_date: null,
         },
       });
     }
@@ -2820,6 +2896,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           receivable_status: null,
           finance_handoff_at: null,
           active_receivable_id: null,
+          due_date: null,
         },
       });
     }
@@ -2888,6 +2965,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           receivable_status: null,
           finance_handoff_at: null,
           active_receivable_id: null,
+          due_date: null,
         },
       });
     }
@@ -2901,29 +2979,72 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
     }
 
     const clinicBalances = await listActivePackageBalances({ clinicId: clinic_id });
+    const appointmentIds = items.filter((i) => i.origin_type === 'appointment').map((i) => i.origin_id);
+    const seriesCoverage = await findSeriesInvoiceCoverageForAppointments(appointmentIds);
+
     for (const item of items) {
-      const serviceTypeIds = item.services
-        .map((_, idx) => {
-          const apptRow = (apptRows ?? []).find((r) => r.id === item.origin_id);
-          const svcs = (apptRow?.appointment_services as Array<{ hub_service_type_id?: string }> | null) ?? [];
-          return svcs[idx]?.hub_service_type_id ?? null;
-        })
-        .filter(Boolean) as string[];
-      if (!serviceTypeIds.length && item.origin_type === 'appointment') {
+      item.coverage_kind = 'none';
+      item.series_invoice_comanda_id = null;
+
+      const invCov = item.origin_type === 'appointment' ? seriesCoverage.get(item.origin_id) : undefined;
+      if (invCov && invCov.comanda_id) {
+        item.coverage_kind = 'series_invoice';
+        item.series_invoice_comanda_id = invCov.comanda_id;
+        item.has_package_balance = false;
+        item.estimated_amount = 0;
+        item.services = item.services.map((s) => ({ ...s, amount: 0 }));
+        // Preferir comanda da fatura no badge de cobrança se ainda não houver billing da ocorrência
+        if (!item.billing.comanda_id) {
+          item.billing = {
+            ...item.billing,
+            comanda_id: invCov.comanda_id,
+            comanda_status: item.billing.comanda_status ?? 'aberta',
+          };
+        }
+        continue;
+      }
+
+      const serviceTypeIds: string[] = [];
+      if (item.origin_type === 'appointment') {
         const apptRow = (apptRows ?? []).find((r) => r.id === item.origin_id);
-        const primary = apptRow?.hub_service_type_id as string | null;
-        if (primary) serviceTypeIds.push(primary);
         const svcs = (apptRow?.appointment_services as Array<{ hub_service_type_id?: string }> | null) ?? [];
         for (const s of svcs) {
           if (s.hub_service_type_id) serviceTypeIds.push(s.hub_service_type_id);
         }
+        if (!serviceTypeIds.length) {
+          const primary = apptRow?.hub_service_type_id as string | null;
+          if (primary) serviceTypeIds.push(primary);
+        }
+      } else {
+        for (let idx = 0; idx < item.services.length; idx++) {
+          const apptRow = (apptRows ?? []).find((r) => r.id === item.origin_id);
+          const svcs = (apptRow?.appointment_services as Array<{ hub_service_type_id?: string }> | null) ?? [];
+          const st = svcs[idx]?.hub_service_type_id;
+          if (st) serviceTypeIds.push(st);
+        }
       }
-      item.has_package_balance = hasPackageBalanceForServices(
+
+      const coveredByPkg = hasPackageBalanceForServices(
         clinicBalances,
         item.guardian_id,
         item.pet_id,
         [...new Set(serviceTypeIds)]
       );
+      item.has_package_balance = coveredByPkg;
+
+      if (coveredByPkg && item.services.length > 0) {
+        const adj = applyPackageCoverageToEstimate({
+          balances: clinicBalances,
+          guardianId: item.guardian_id,
+          petId: item.pet_id,
+          serviceTypeIds,
+          services: item.services,
+          estimatedAmount: item.estimated_amount,
+        });
+        item.services = adj.services;
+        item.estimated_amount = adj.estimated_amount;
+        if (adj.covered) item.coverage_kind = 'package';
+      }
     }
 
     let filteredItems = items;

@@ -23,6 +23,8 @@ export { HubBrDateInput } from './components/HubBrDateInput';
 export type { HubBrDateInputProps } from './components/HubBrDateInput';
 export { HubBrPhoneInput } from './components/HubBrPhoneInput';
 export type { HubBrPhoneInputProps } from './components/HubBrPhoneInput';
+export { HubBrTaxIdInput } from './components/HubBrTaxIdInput';
+export type { HubBrTaxIdInputProps } from './components/HubBrTaxIdInput';
 export { HubDesignSystemShowcase } from './design-system/HubDesignSystemShowcase';
 export { HubModal } from './components/HubModal';
 export type { HubModalProps, HubModalSize } from './components/HubModal';
@@ -81,6 +83,7 @@ export { default as HubEstoqueRoutes } from './pages/estoque/HubEstoqueRoutes';
 export { default as HubStaffPage } from './pages/equipe/HubStaffPage';
 export { default as HubAgendaPage } from './pages/agenda/HubAgendaPage';
 export { default as HubClinicRoutes } from './pages/clinica/HubClinicRoutes';
+export { default as HubStandalonePrescriptionPage } from './pages/clinica/HubStandalonePrescriptionPage';
 export { default as HubGroomingQueuePage } from './pages/grooming/HubGroomingQueuePage';
 export { hubGroomingApi } from './api/hubGroomingApi';
 export type { GroomingDayBoardItem, GroomingDayBoardResponse } from './api/hubGroomingApi';
@@ -204,6 +207,15 @@ export { default as HubRelatoriosPage } from './pages/finance/HubRelatoriosPage'
 export { maskTaxIdForList } from './utils/maskTaxId';
 export { buildWhatsappLink, normalizeBrPhone } from './utils/whatsappLink';
 export { formatBrPhoneInput, formatBrPhoneFromApi, formatBrPhoneDisplay, digitsOnlyBrPhone } from './utils/formatBrPhone';
+export {
+  formatBrTaxIdInput,
+  formatBrTaxIdFromApi,
+  formatBrTaxIdDisplay,
+  formatBrCpfInput,
+  formatBrCnpjInput,
+  digitsOnlyBrTaxId,
+} from './utils/formatBrTaxId';
+export type { BrTaxIdMode } from './utils/formatBrTaxId';
 export { renderTemplate, DEFAULT_TEMPLATES, TEMPLATE_LABELS, TEMPLATE_PLACEHOLDER_HINTS, TEMPLATE_VARS } from './utils/hubMessageTemplates';
 export type { MessageTemplateKey } from './utils/hubMessageTemplates';
 export { useMessageTemplates } from './utils/useMessageTemplates';

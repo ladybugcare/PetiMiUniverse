@@ -105,6 +105,10 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
   const guardian = comandaRow ? extractGuardian(comandaRow) : null;
   const pets = payload ? extractPets(payload) : [];
   const allowedGuardians = (payload?.allowed_guardians ?? []) as HubComandaAllowedGuardian[];
+  const defaultPetId =
+    (comandaRow?.pet_id as string | null | undefined) ??
+    (pets.length === 1 ? pets[0].id : null) ??
+    null;
   const receivableIds = mode === 'financeiro' ? (payload?.active_receivable_ids ?? []) : [];
   const selectedReceivableId = mode === 'financeiro' ? (searchParams.get('receivable_id') ?? '') : '';
 
@@ -283,6 +287,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
             hub_inventory_item_id: isProduct ? it.hub_inventory_item_id ?? undefined : undefined,
             hub_inventory_lot_id: isProduct ? it.hub_inventory_lot_id ?? undefined : undefined,
             item_kind: isProduct ? ('product' as const) : ('service' as const),
+            ...(defaultPetId ? { pet_id: defaultPetId } : {}),
           };
         }),
       });

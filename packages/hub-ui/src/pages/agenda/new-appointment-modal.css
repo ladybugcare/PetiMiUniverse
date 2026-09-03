@@ -483,6 +483,33 @@
   padding: 8px 0;
 }
 
+.nam-staff-compat-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff8f0;
+  border: 1px solid #f0d9c0;
+  color: #8a5a2b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.nam-staff-compat-warn svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.nam-edit-staff-priority {
+  margin-bottom: 4px;
+}
+
+.nam-edit-staff-priority .nam-section-title {
+  margin-bottom: 8px;
+}
+
 /* Chips */
 .nam-chips {
   margin-top: 10px;
@@ -740,15 +767,21 @@
 
 .nam-service-card__addons-compact {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   flex-wrap: wrap;
   gap: 6px 8px;
   margin: 0;
 }
 
+.nam-service-card__addons-compact .nam-service-card__section-label {
+  margin: 0;
+  line-height: 1.3;
+}
+
 .nam-service-card__addons-empty {
   font-size: 12px;
   color: #9b9590;
+  line-height: 1.3;
 }
 
 .nam-multi-pet-visits {

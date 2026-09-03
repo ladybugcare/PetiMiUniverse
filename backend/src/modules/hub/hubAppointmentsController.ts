@@ -23,15 +23,23 @@ import {
 import {
   maybeFlagComandaCancellationPending,
   financialAdjustmentFlagsForAppointments,
+  openComandaIdsForAppointments,
   syncOpenComandasAfterAppointmentOperationalComplete,
 } from './hubComandasController';
 import { hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
+import { normalizeSeriesBillingForInsert } from './hubSeriesBillingService';
 import {
   careLocationBodyFields,
   careLocationKindSchema,
   loadPartnerClinicMap,
   resolveCareLocation,
 } from './hubCareLocation';
+import {
+  resolveSpecialPricesForServices,
+  type PricingSource,
+  type ResolvedSpecialPrice,
+} from './hubSpecialPrices';
+import { upsertSpecialPriceFromAppointment } from './hubSpecialPricesController';
 
 function validateLevaTrazServiceType(st: ServiceTypePricingRow | undefined): string | null {
   if (!st) return 'Tipo de serviço de Leva e Traz inválido.';
@@ -406,6 +414,9 @@ function normalizeCreateServiceLines(b: {
     pricing_porte_tier?: string | null;
     pricing_coat_type?: string | null;
     pricing_variant?: HubQuotePricingVariantInput | null;
+    sale_amount_override?: number | null;
+    persist_special_price?: boolean;
+    persist_special_scope?: 'pet' | 'guardian';
   }>;
 }): Array<{
   hub_service_type_id: string;
@@ -413,6 +424,9 @@ function normalizeCreateServiceLines(b: {
   pricing_porte_tier?: string | null;
   pricing_coat_type?: string | null;
   pricing_variant?: HubQuotePricingVariantInput | null;
+  sale_amount_override?: number | null;
+  persist_special_price?: boolean;
+  persist_special_scope?: 'pet' | 'guardian';
 }> {
   if (b.services && b.services.length > 0) {
     return b.services.map((s) => ({
@@ -421,6 +435,9 @@ function normalizeCreateServiceLines(b: {
       pricing_porte_tier: s.pricing_porte_tier ?? null,
       pricing_coat_type: s.pricing_coat_type ?? null,
       pricing_variant: s.pricing_variant ?? null,
+      sale_amount_override: s.sale_amount_override ?? null,
+      persist_special_price: s.persist_special_price === true,
+      persist_special_scope: s.persist_special_scope ?? 'pet',
     }));
   }
   return [
@@ -450,6 +467,8 @@ function buildServiceLineSnapshots(params: {
   puppyMaxMonths: number;
   appointmentOverride: string | null;
   appointmentCoatOverride: string | null;
+  /** Preços especiais ativos (pet / tutor / família), já resolvidos. */
+  specialByServiceId?: Map<string, ResolvedSpecialPrice>;
 }): Array<{
   hub_service_type_id: string;
   duration_minutes: number;
@@ -459,8 +478,19 @@ function buildServiceLineSnapshots(params: {
   cost_amount_applied: number;
   sale_amount_applied: number;
   pricing_variant: HubQuotePricingVariantInput | null;
+  pricing_source: PricingSource;
+  special_price_id: string | null;
 }> {
-  const { lines, stMap, pet, appointmentYmd, puppyMaxMonths, appointmentOverride, appointmentCoatOverride } = params;
+  const {
+    lines,
+    stMap,
+    pet,
+    appointmentYmd,
+    puppyMaxMonths,
+    appointmentOverride,
+    appointmentCoatOverride,
+    specialByServiceId,
+  } = params;
   return lines.map((line, idx) => {
     const st = stMap.get(line.hub_service_type_id);
     if (!st) {
@@ -479,14 +509,29 @@ function buildServiceLineSnapshots(params: {
       overrideCoatType: effCoat,
       pricing_variant: line.pricing_variant ?? undefined,
     });
-    const sale =
-      line.sale_amount_override != null && Number.isFinite(line.sale_amount_override)
-        ? roundMoney2(line.sale_amount_override)
-        : r.sale;
-    const cost =
-      line.cost_amount_override != null && Number.isFinite(line.cost_amount_override)
-        ? roundMoney2(line.cost_amount_override)
-        : r.cost;
+    const special = specialByServiceId?.get(line.hub_service_type_id) ?? null;
+
+    let sale = r.sale;
+    let cost = r.cost;
+    let pricing_source: PricingSource = 'catalog';
+    let special_price_id: string | null = null;
+
+    if (special) {
+      sale = special.sale_amount;
+      if (special.cost_amount != null) cost = special.cost_amount;
+      pricing_source = special.pricing_source;
+      special_price_id = special.special_price_id;
+    }
+
+    if (line.sale_amount_override != null && Number.isFinite(line.sale_amount_override)) {
+      sale = roundMoney2(line.sale_amount_override);
+      pricing_source = 'manual';
+      // Mantém special_price_id se o manual veio de um acordo persistido na mesma request.
+    }
+    if (line.cost_amount_override != null && Number.isFinite(line.cost_amount_override)) {
+      cost = roundMoney2(line.cost_amount_override);
+    }
+
     return {
       hub_service_type_id: line.hub_service_type_id,
       duration_minutes: line.duration_minutes,
@@ -496,8 +541,29 @@ function buildServiceLineSnapshots(params: {
       cost_amount_applied: cost,
       sale_amount_applied: sale,
       pricing_variant: r.pricing_variant,
+      pricing_source,
+      special_price_id,
     };
   });
+}
+
+function appointmentServiceInsertRows(
+  appointmentId: string,
+  snapRows: ReturnType<typeof buildServiceLineSnapshots>
+) {
+  return snapRows.map((row) => ({
+    appointment_id: appointmentId,
+    hub_service_type_id: row.hub_service_type_id,
+    duration_minutes: row.duration_minutes,
+    order_index: row.order_index,
+    pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+    pricing_coat_type_applied: row.pricing_coat_type_applied,
+    cost_amount_applied: row.cost_amount_applied,
+    sale_amount_applied: row.sale_amount_applied,
+    pricing_variant: row.pricing_variant as unknown as Record<string, unknown> | null,
+    pricing_source: row.pricing_source,
+    special_price_id: row.special_price_id,
+  }));
 }
 
 async function refreshSnapshotsForAppointment(
@@ -507,6 +573,7 @@ async function refreshSnapshotsForAppointment(
   petId: string | null,
   pricingPorteTier: string | null,
   pricingCoatType: string | null,
+  guardianId?: string | null,
 ): Promise<void> {
   const { data: lines, error: le } = await supabaseAdmin
     .from('hub_appointment_services')
@@ -519,6 +586,30 @@ async function refreshSnapshotsForAppointment(
   const pet = await fetchPetPricingFields(clinicId, petId);
   const { pet_puppy_max_months } = await getOrCreateHubClinicSettings(clinicId);
   const ymd = startsAt.slice(0, 10);
+
+  let resolvedGuardianId = guardianId ?? null;
+  if (!resolvedGuardianId && petId) {
+    const { data: appt } = await supabaseAdmin
+      .from('hub_appointments')
+      .select('guardian_id')
+      .eq('id', appointmentId)
+      .maybeSingle();
+    resolvedGuardianId = (appt as { guardian_id?: string | null } | null)?.guardian_id ?? null;
+  }
+
+  const catalogSaleByServiceId = new Map<string, number>();
+  for (const [sid, st] of stMap) {
+    catalogSaleByServiceId.set(sid, roundMoney2(Number(st.sale_amount) || 0));
+  }
+  const specialByServiceId = await resolveSpecialPricesForServices({
+    clinicId,
+    petId,
+    guardianId: resolvedGuardianId,
+    hubServiceTypeIds: ids,
+    onDateYmd: ymd,
+    catalogSaleByServiceId,
+  });
+
   const normLines = (lines as { hub_service_type_id: string; duration_minutes: number; pricing_variant?: unknown }[]).map((l) => ({
     hub_service_type_id: l.hub_service_type_id,
     duration_minutes: l.duration_minutes,
@@ -534,6 +625,7 @@ async function refreshSnapshotsForAppointment(
     puppyMaxMonths: pet_puppy_max_months,
     appointmentOverride: pricingPorteTier,
     appointmentCoatOverride: pricingCoatType,
+    specialByServiceId,
   });
   for (let i = 0; i < lines.length; i++) {
     const row = lines[i] as { id: string };
@@ -547,6 +639,8 @@ async function refreshSnapshotsForAppointment(
         cost_amount_applied: s.cost_amount_applied,
         sale_amount_applied: s.sale_amount_applied,
         pricing_variant: s.pricing_variant as unknown as Record<string, unknown> | null,
+        pricing_source: s.pricing_source,
+        special_price_id: s.special_price_id,
       })
       .eq('id', row.id);
   }
@@ -672,7 +766,10 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       ? supabaseAdmin.from('hub_staff_members').select('id, full_name, agenda_color').in('id', staffIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     petIds.length
-      ? supabaseAdmin.from('hub_pets').select('id, name, size_tier, coat_type, birth_date').in('id', petIds)
+      ? supabaseAdmin
+          .from('hub_pets')
+          .select('id, name, species, breed, size_tier, coat_type, birth_date, behavior_tags')
+          .in('id', petIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     guIds.length
       ? supabaseAdmin.from('hub_guardians').select('id, full_name').in('id', guIds)
@@ -733,9 +830,15 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
     svcByAppt.set(apptId, arr);
   }
 
-  const adjustmentFlags = clinicId
-    ? await financialAdjustmentFlagsForAppointments(clinicId, apptIds)
-    : new Map<string, { financial_adjustment_pending: boolean; comanda_id: string | null }>();
+  const [adjustmentFlags, openComandaByAppt] = clinicId
+    ? await Promise.all([
+        financialAdjustmentFlagsForAppointments(clinicId, apptIds),
+        openComandaIdsForAppointments(clinicId, apptIds),
+      ])
+    : [
+        new Map<string, { financial_adjustment_pending: boolean; comanda_id: string | null }>(),
+        new Map<string, string>(),
+      ];
 
   const clinicBalances = clinicId ? await listActivePackageBalances({ clinicId }) : [];
 
@@ -788,7 +891,7 @@ async function enrichAppointments(rows: Record<string, unknown>[]): Promise<Enri
       hub_encounter_id: linked?.id ?? null,
       hub_encounter_status: linked?.status ?? null,
       financial_adjustment_pending: adj?.financial_adjustment_pending ?? false,
-      comanda_id: adj?.comanda_id ?? null,
+      comanda_id: openComandaByAppt.get(r.id as string) ?? adj?.comanda_id ?? null,
       has_package_balance: hasPackageBalance,
     };
   });
@@ -838,6 +941,11 @@ const serviceLineSchema = z.object({
   pricing_porte_tier: optionalPricingPorte.optional(),
   pricing_coat_type: optionalPricingCoat.optional(),
   pricing_variant: linePricingVariantSchema,
+  /** Valor absoluto para este agendamento (opcional). */
+  sale_amount_override: z.number().finite().min(0).max(99_999_999.99).optional().nullable(),
+  /** Se true, persiste o override como preço especial (pet ou tutor). */
+  persist_special_price: z.boolean().optional(),
+  persist_special_scope: z.enum(['pet', 'guardian']).optional(),
 });
 
 const pickupBlockSchema = z.object({
@@ -881,6 +989,12 @@ const recurrenceSchema = z.object({
   day_of_month: z.number().int().min(1).max(31).optional().nullable(),
   until_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   occurrences: z.number().int().positive().max(MAX_OCCURRENCES).optional().nullable(),
+  billing_mode: z.enum(['per_occurrence', 'periodic_invoice']).optional().default('per_occurrence'),
+  invoice_issue_rule: z.enum(['fixed_day', 'first_business_day']).optional().nullable(),
+  invoice_issue_day: z.number().int().min(1).max(28).optional().nullable(),
+  invoice_due_rule: z.enum(['same_day', 'plus_days', 'fixed_day']).optional().nullable(),
+  invoice_due_day: z.number().int().min(1).max(28).optional().nullable(),
+  invoice_due_plus_days: z.number().int().min(0).max(90).optional().nullable(),
 });
 
 const createAppointmentSchema = z
@@ -1504,6 +1618,57 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       return res.status(400).json({ error: valErr.error });
     }
 
+    // Preços especiais ativos + persistência opcional a partir da agenda
+    const catalogSaleByServiceId = new Map<string, number>();
+    for (const [sid, st] of stMap) {
+      catalogSaleByServiceId.set(sid, roundMoney2(Number(st.sale_amount) || 0));
+    }
+    const specialByServiceId = await resolveSpecialPricesForServices({
+      clinicId: b.clinic_id,
+      petId: b.pet_id ?? null,
+      guardianId: b.guardian_id ?? null,
+      hubServiceTypeIds: normLines.map((l) => l.hub_service_type_id),
+      onDateYmd: b.starts_at.slice(0, 10),
+      catalogSaleByServiceId,
+    });
+
+    const userId = req.user?.id;
+    if (userId && b.pet_id) {
+      for (const line of normLines) {
+        if (
+          line.persist_special_price &&
+          line.sale_amount_override != null &&
+          Number.isFinite(line.sale_amount_override)
+        ) {
+          const up = await upsertSpecialPriceFromAppointment({
+            clinicId: b.clinic_id,
+            userId,
+            scope: line.persist_special_scope === 'guardian' ? 'guardian' : 'pet',
+            petId: b.pet_id,
+            guardianId: b.guardian_id ?? null,
+            hubServiceTypeId: line.hub_service_type_id,
+            saleAmount: line.sale_amount_override,
+          });
+          if ('error' in up) {
+            return res.status(400).json({ error: up.error });
+          }
+          // Se aprovado automaticamente, passa a valer no snapshot desta ocorrência
+          if (up.status === 'active') {
+            specialByServiceId.set(line.hub_service_type_id, {
+              special_price_id: up.special_price_id,
+              scope: line.persist_special_scope === 'guardian' ? 'guardian' : 'pet',
+              sale_amount: roundMoney2(line.sale_amount_override),
+              cost_amount: null,
+              catalog_sale: catalogSaleByServiceId.get(line.hub_service_type_id) ?? null,
+              pricing_source:
+                line.persist_special_scope === 'guardian' ? 'special_guardian' : 'special_pet',
+              notes: null,
+            });
+          }
+        }
+      }
+    }
+
     let pickupPricingBase: {
       ltId: string;
       kmVariant: HubQuotePricingVariantInput | null;
@@ -1616,6 +1781,31 @@ export const createHubAppointment = async (req: Request, res: Response) => {
 
     if (b.recurrence) {
       const rule = b.recurrence;
+      const billingFields = normalizeSeriesBillingForInsert({
+        billing_mode: rule.billing_mode ?? 'per_occurrence',
+        invoice_issue_rule: rule.invoice_issue_rule,
+        invoice_issue_day: rule.invoice_issue_day,
+        invoice_due_rule: rule.invoice_due_rule,
+        invoice_due_day: rule.invoice_due_day,
+        invoice_due_plus_days: rule.invoice_due_plus_days,
+      });
+
+      if (billingFields.billing_mode === 'periodic_invoice') {
+        const svcIds = normLines.map((l) => l.hub_service_type_id);
+        if (b.guardian_id && svcIds.length) {
+          const balances = await listActivePackageBalances({
+            clinicId: b.clinic_id,
+            guardianId: b.guardian_id,
+          });
+          if (hasPackageBalanceForServices(balances, b.guardian_id, b.pet_id ?? null, svcIds)) {
+            return res.status(409).json({
+              error:
+                'Este pet tem saldo de pacote para o serviço. Use a baixa de pacote em vez de fatura em série, ou cobre por ocorrência.',
+            });
+          }
+        }
+      }
+
       const { data: seriesRow, error: serErr } = await supabaseAdmin
         .from('hub_appointment_series')
         .insert({
@@ -1627,11 +1817,35 @@ export const createHubAppointment = async (req: Request, res: Response) => {
           start_date: b.starts_at.slice(0, 10),
           until_date: rule.until_date ?? null,
           occurrences: rule.occurrences ?? null,
+          ...billingFields,
         })
         .select('id')
         .single();
-      if (serErr) return res.status(500).json({ error: serErr.message });
-      seriesId = (seriesRow as { id: string }).id;
+      if (serErr) {
+        // Migration 100 ainda não aplicada: cria série sem colunas de billing
+        if (String(serErr.message || '').includes('billing_mode')) {
+          const { data: fallback, error: fbErr } = await supabaseAdmin
+            .from('hub_appointment_series')
+            .insert({
+              clinic_id: b.clinic_id,
+              kind: rule.kind,
+              interval_value: rule.interval_value ?? 1,
+              days_of_week: rule.days_of_week ?? null,
+              day_of_month: rule.day_of_month ?? null,
+              start_date: b.starts_at.slice(0, 10),
+              until_date: rule.until_date ?? null,
+              occurrences: rule.occurrences ?? null,
+            })
+            .select('id')
+            .single();
+          if (fbErr) return res.status(500).json({ error: fbErr.message });
+          seriesId = (fallback as { id: string }).id;
+        } else {
+          return res.status(500).json({ error: serErr.message });
+        }
+      } else {
+        seriesId = (seriesRow as { id: string }).id;
+      }
       occurrenceDates = generateOccurrenceDates(b.starts_at.slice(0, 10), rule as RecurrenceRule);
     } else {
       occurrenceDates = [b.starts_at.slice(0, 10)];
@@ -1808,21 +2022,12 @@ export const createHubAppointment = async (req: Request, res: Response) => {
           puppyMaxMonths: puppy.pet_puppy_max_months,
           appointmentOverride: apptOverride,
           appointmentCoatOverride: apptCoatOverride,
+          specialByServiceId,
         });
       } catch (e) {
         return res.status(500).json({ error: (e as Error).message });
       }
-      const svcInsert = snapRows.map((row) => ({
-        appointment_id: apptId,
-        hub_service_type_id: row.hub_service_type_id,
-        duration_minutes: row.duration_minutes,
-        order_index: row.order_index,
-        pricing_porte_tier_applied: row.pricing_porte_tier_applied,
-        pricing_coat_type_applied: row.pricing_coat_type_applied,
-        cost_amount_applied: row.cost_amount_applied,
-        sale_amount_applied: row.sale_amount_applied,
-        pricing_variant: row.pricing_variant as unknown as Record<string, unknown> | null,
-      }));
+      const svcInsert = appointmentServiceInsertRows(apptId, snapRows);
       const { error: svcErr } = await supabaseAdmin.from('hub_appointment_services').insert(svcInsert);
       if (svcErr) return res.status(500).json({ error: svcErr.message });
 
@@ -2672,7 +2877,7 @@ export const createHubAppointmentBatch = async (req: Request, res: Response) => 
           visit_group_id: visitGroupId,
         };
 
-        const fakeReq = { body } as Request;
+        const fakeReq = { body, user: req.user } as Request;
         let statusCode = 201;
         let responseBody: Record<string, unknown> = {};
         const fakeRes = {

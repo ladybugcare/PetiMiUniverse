@@ -551,4 +551,130 @@ describe('Matriz Caixa — open → checkout por origem', () => {
       expect(payments[0].cash_session_id == null).toBe(true);
     });
   });
+
+  describe('manual + produto (venda balcão)', () => {
+    const INV_ITEM_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0099';
+    const INV_LOT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0099';
+
+    function productStockTables(purchaseQty: number) {
+      return baseFinanceTables({
+        hub_inventory_items: [
+          {
+            id: INV_ITEM_ID,
+            clinic_id: TEST_CLINIC_ID,
+            name: 'Coleira',
+            sale_amount: 45,
+            cost_amount: 20,
+            deleted_at: null,
+            active: true,
+          },
+        ],
+        hub_inventory_lots: [
+          {
+            id: INV_LOT_ID,
+            clinic_id: TEST_CLINIC_ID,
+            item_id: INV_ITEM_ID,
+            lot_code: 'L-BALCAO',
+            expiry_date: null,
+          },
+        ],
+        hub_stock_movements: [
+          {
+            clinic_id: TEST_CLINIC_ID,
+            item_id: INV_ITEM_ID,
+            lot_id: INV_LOT_ID,
+            movement_type: 'purchase_in',
+            qty: purchaseQty,
+          },
+        ],
+      });
+    }
+
+    it('checkout com produto+lote gera sale_out', async () => {
+      configureSupabaseMock({ tables: productStockTables(5) });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'manual',
+        guardian_id: TEST_GUARDIAN_ID,
+        unit_id: TEST_UNIT_ID,
+        manual_lines: [],
+      });
+      expect(open.status).toBe(201);
+      const comandaId = open.body.comanda.id as string;
+
+      const add = await request(app)
+        .post(`/api/hub/comandas/${comandaId}/items`)
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          items: [
+            {
+              description: 'Coleira',
+              quantity: 2,
+              unit_amount: 45,
+              item_kind: 'product',
+              hub_inventory_item_id: INV_ITEM_ID,
+              hub_inventory_lot_id: INV_LOT_ID,
+            },
+          ],
+        });
+      expect(add.status).toBe(201);
+
+      const pay = await checkoutReceiveNow(comandaId, 90);
+      expect(pay.status).toBe(201);
+      expect(pay.body.receivable_ids?.length).toBeGreaterThanOrEqual(1);
+
+      const movements = getMockSupabaseClient()._state.tables.hub_stock_movements ?? [];
+      const saleOuts = movements.filter((m) => m.movement_type === 'sale_out');
+      expect(saleOuts).toHaveLength(1);
+      expect(saleOuts[0]).toMatchObject({
+        item_id: INV_ITEM_ID,
+        lot_id: INV_LOT_ID,
+        qty: 2,
+        reference_type: 'hub_comanda_item',
+      });
+    });
+
+    it('checkout com estoque insuficiente retorna 400 sem recebível', async () => {
+      configureSupabaseMock({ tables: productStockTables(1) });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'manual',
+        guardian_id: TEST_GUARDIAN_ID,
+        unit_id: TEST_UNIT_ID,
+        manual_lines: [],
+      });
+      expect(open.status).toBe(201);
+      const comandaId = open.body.comanda.id as string;
+
+      const add = await request(app)
+        .post(`/api/hub/comandas/${comandaId}/items`)
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          items: [
+            {
+              description: 'Coleira',
+              quantity: 3,
+              unit_amount: 45,
+              item_kind: 'product',
+              hub_inventory_item_id: INV_ITEM_ID,
+              hub_inventory_lot_id: INV_LOT_ID,
+            },
+          ],
+        });
+      expect(add.status).toBe(201);
+
+      const pay = await checkoutReceiveNow(comandaId, 135);
+      expect(pay.status).toBe(400);
+      expect(pay.body.error).toMatch(/insuficiente/i);
+
+      const receivables = getMockSupabaseClient()._state.tables.hub_receivables ?? [];
+      expect(receivables).toHaveLength(0);
+      const saleOuts = (getMockSupabaseClient()._state.tables.hub_stock_movements ?? []).filter(
+        (m) => m.movement_type === 'sale_out',
+      );
+      expect(saleOuts).toHaveLength(0);
+    });
+  });
 });

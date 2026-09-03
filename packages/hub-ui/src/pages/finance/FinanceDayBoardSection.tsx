@@ -1,11 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Coins } from 'lucide-react';
 import { hubFinancialApi, type HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
 import { HubViewDateToolbar, type HubViewMode } from '../../components/HubViewDateToolbar';
 import { formatYmd, parseIsoYmd, todayYmd } from '../../utils/hubCalendar';
 import { addDays, startOfWeekMonday } from '../agenda/agendaModel';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
 import { HubComandaReceivableDrawer } from './HubComandaReceivableDrawer';
+import { BatchChargeDrawer } from './BatchChargeDrawer';
+import {
+  assertSameGuardian,
+  dayBoardItemToBatchChargeItem,
+  isDayBoardBatchSelectable,
+  type BatchChargeItem,
+} from './batchChargeItems';
 import { FinanceDayBoardTable } from './FinanceDayBoardTable';
 import { HubLoading } from '../../components/HubLoading';
 import { useAlert } from '../../components/AlertProvider';
@@ -97,6 +105,11 @@ export function FinanceDayBoardSection({
   const [dayBoardSearch, setDayBoardSearch] = useState('');
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
   const [receivableDrawer, setReceivableDrawer] = useState<ReceivableDrawerState | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
+  const [showBatchCharge, setShowBatchCharge] = useState(false);
+  const [batchItems, setBatchItems] = useState<BatchChargeItem[]>([]);
+
+  const itemKey = (item: HubFinanceDayBoardItem) => `${item.origin_type}:${item.origin_id}`;
 
   const loadDayBoard = useCallback(
     async (dateOverride?: string, viewOverride?: HubViewMode) => {
@@ -122,6 +135,10 @@ export function FinanceDayBoardSection({
   useEffect(() => {
     void loadDayBoard();
   }, [loadDayBoard]);
+
+  useEffect(() => {
+    setSelectedKeys(new Set());
+  }, [dayBoardDate, view, statusFilter, dayBoardSearch]);
 
   const dayBoardFiltered = useMemo(() => {
     const searchTerm = normalizeText(dayBoardSearch.trim());
@@ -222,6 +239,68 @@ export function FinanceDayBoardSection({
         ? 'Nenhum atendimento com cobrança relevante nesta semana nesta unidade.'
         : 'Nenhum atendimento com cobrança relevante neste mês nesta unidade.';
 
+  const selectedItems = useMemo(
+    () => dayBoardFiltered.filter((it) => selectedKeys.has(itemKey(it))),
+    [dayBoardFiltered, selectedKeys],
+  );
+
+  const toggleSelect = (item: HubFinanceDayBoardItem) => {
+    const key = itemKey(item);
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleSelectAllSelectable = () => {
+    const selectable = dayBoardFiltered.filter(isDayBoardBatchSelectable);
+    const allOn = selectable.length > 0 && selectable.every((it) => selectedKeys.has(itemKey(it)));
+    if (allOn) {
+      setSelectedKeys(new Set());
+      return;
+    }
+    setSelectedKeys(new Set(selectable.map(itemKey)));
+  };
+
+  const openBatchFromSelection = () => {
+    if (!canCreateReceivable) {
+      showError('Sem permissão para cobrar.');
+      return;
+    }
+    const items = selectedItems
+      .map(dayBoardItemToBatchChargeItem)
+      .filter((x): x is BatchChargeItem => Boolean(x));
+    if (items.length === 0) {
+      showError('Selecione ao menos uma cobrança elegível.');
+      return;
+    }
+    try {
+      assertSameGuardian(items);
+    } catch (e) {
+      showError((e as Error).message);
+      return;
+    }
+    if (items.length === 1) {
+      const only = items[0];
+      if (only.kind === 'receivable' && only.comandaId && only.receivableId) {
+        setReceivableDrawer({
+          comandaId: only.comandaId,
+          receivableIds: [only.receivableId],
+          selectedReceivableId: only.receivableId,
+        });
+        return;
+      }
+      if (only.comandaId) {
+        setCheckoutComandaId(only.comandaId);
+        return;
+      }
+    }
+    setBatchItems(items);
+    setShowBatchCharge(true);
+  };
+
   return (
     <>
       <HubViewDateToolbar
@@ -259,6 +338,29 @@ export function FinanceDayBoardSection({
         ))}
       </div>
 
+      {selectedKeys.size > 0 && canCreateReceivable ? (
+        <div className="hub-batch-charge__toolbar">
+          <span className="hub-clientes__muted">{selectedKeys.size} selecionada(s)</span>
+          <div className="hub-batch-charge__footer-actions">
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+              onClick={() => setSelectedKeys(new Set())}
+            >
+              Limpar
+            </button>
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+              onClick={openBatchFromSelection}
+            >
+              <Coins size={14} strokeWidth={2} aria-hidden />
+              Cobrar {selectedKeys.size}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {dayBoardBusy ? (
         <HubLoading variant="block" label="Carregando atendimentos…" />
       ) : dayBoardFiltered.length === 0 ? (
@@ -276,6 +378,10 @@ export function FinanceDayBoardSection({
           onCancelReceivable={onCancelReceivableFromBoard}
           onRowClick={onViewComanda}
           busy={dayBoardBusy}
+          selectionEnabled={canCreateReceivable}
+          selectedKeys={selectedKeys}
+          onToggleSelect={toggleSelect}
+          onToggleSelectAllSelectable={toggleSelectAllSelectable}
         />
       )}
 
@@ -314,6 +420,20 @@ export function FinanceDayBoardSection({
           }}
         />
       )}
+
+      <BatchChargeDrawer
+        open={showBatchCharge}
+        items={batchItems}
+        guardianName={
+          selectedItems.find((it) => it.guardian?.full_name)?.guardian?.full_name ?? undefined
+        }
+        onClose={() => setShowBatchCharge(false)}
+        onDone={() => {
+          setShowBatchCharge(false);
+          setSelectedKeys(new Set());
+          void loadDayBoard();
+        }}
+      />
     </>
   );
 }

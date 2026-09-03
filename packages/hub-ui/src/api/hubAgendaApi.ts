@@ -37,9 +37,12 @@ export type HubAppointmentStaffRef = {
 
 export type HubAppointmentPetRef = {
   name: string;
+  species?: string | null;
+  breed?: string | null;
   size_tier?: string;
   coat_type?: string | null;
   birth_date?: string | null;
+  behavior_tags?: string[] | null;
 };
 export type HubAppointmentGuardianRef = { full_name: string };
 export type HubAppointmentUnitRef = { name: string };
@@ -127,6 +130,12 @@ export type HubAppointmentRecurrenceRule = {
   day_of_month?: number | null;
   until_date?: string | null;
   occurrences?: number | null;
+  billing_mode?: 'per_occurrence' | 'periodic_invoice';
+  invoice_issue_rule?: 'fixed_day' | 'first_business_day' | null;
+  invoice_issue_day?: number | null;
+  invoice_due_rule?: 'same_day' | 'plus_days' | 'fixed_day' | null;
+  invoice_due_day?: number | null;
+  invoice_due_plus_days?: number | null;
 };
 
 export type HubAppointmentPricingVariant = {
@@ -188,6 +197,9 @@ export type CreateHubAppointmentPayload = {
     pricing_porte_tier?: string | null;
     pricing_coat_type?: string | null;
     pricing_variant?: HubAppointmentPricingVariant | null;
+    sale_amount_override?: number | null;
+    persist_special_price?: boolean;
+    persist_special_scope?: 'pet' | 'guardian';
   }>;
   pricing_porte_tier?: string | null;
   pricing_coat_type?: string | null;

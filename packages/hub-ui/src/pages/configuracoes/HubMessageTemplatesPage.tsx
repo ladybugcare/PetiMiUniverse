@@ -25,7 +25,7 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
   },
   {
     label: 'Clínico',
-    keys: ['exam_order_share', 'specialist_referral_share'],
+    keys: ['exam_order_share', 'specialist_referral_share', 'prescription_share'],
   },
 ];
 
@@ -35,6 +35,7 @@ const PREVIEW_VARS: Record<MessageTemplateKey, Record<string, string>> = {
   appointment_reminder: { tutor: 'Ana', pet: 'Mel', data: '28/06/2026', hora: '14h30' },
   exam_order_share: { tutor: 'Maria', pet: 'Thor', link: 'https://hub.petimi.app/solicitacao-exame/abc123' },
   specialist_referral_share: { tutor: 'Maria', pet: 'Thor', link: 'https://hub.petimi.app/encaminhamento/abc123' },
+  prescription_share: { tutor: 'Maria', pet: 'Thor', link: 'https://hub.petimi.app/receita/abc123' },
 };
 
 function insertAtCursor(

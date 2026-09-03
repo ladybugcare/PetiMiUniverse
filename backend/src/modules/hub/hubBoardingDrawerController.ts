@@ -84,7 +84,11 @@ export const getHubBoardingReservationDrawer = async (req: Request, res: Respons
       flag_key: String(f.flag_key),
       label: String(f.label || ''),
     }));
-    const clinicalTags = buildGroomingDisplayTags(flags, (pet as { notes?: string | null } | null)?.notes ?? null);
+    const clinicalTags = buildGroomingDisplayTags(
+      flags,
+      (pet as { notes?: string | null; behavior_tags?: string[] | null } | null)?.notes ?? null,
+      (pet as { behavior_tags?: string[] | null } | null)?.behavior_tags,
+    );
     const dailyLogs = logsRes.data ?? [];
 
     return res.json({

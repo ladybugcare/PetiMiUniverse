@@ -7,7 +7,7 @@ import {
   type BoardingDrawerResponse,
   type BoardingDailyLog,
 } from '../../api/hubBoardingApi';
-import { getStoredClinicId } from '@petimi/web-core';
+import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { PORTE_LABELS, type PetBodyPorteValue } from '../../utils/hubServiceTypesPricingMatrix';
 import { BOARDING_STAGE_LABELS, getBoardingItemStage } from './boardingStages';
 import { useAlert } from '../../components/AlertProvider';
@@ -20,6 +20,7 @@ import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryAp
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { useNavigate } from 'react-router-dom';
 import { shouldShowBoardingBillingButton } from './boardingBillingUi';
+import { PetOperationalAddAlert } from '../pets/PetOperationalAddAlert';
 
 function formatDate(iso?: string | null): string {
   if (!iso) return '—';
@@ -73,6 +74,8 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
   onUpdated,
 }) => {
   const clinicId = getStoredClinicId();
+  const { hasPermission } = usePermissions();
+  const canAddPetAlert = hasPermission('boarding.reservations.manage');
   const templateOverrides = useMessageTemplates();
   const { showError, showSuccess } = useAlert();
   const navigate = useNavigate();
@@ -342,9 +345,9 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
       </div>
 
       {/* Flags clínicas */}
-      {clinicalTags.length > 0 && (
-        <div className="hub-drawer-section">
-          <h4 className="hub-drawer-section__title">Alertas do pet</h4>
+      <div className="hub-drawer-section">
+        <h4 className="hub-drawer-section__title">Alertas do pet</h4>
+        {clinicalTags.length > 0 ? (
           <div className="hub-clinic-queue__card-tags">
             {clinicalTags.map((tag) => (
               <span key={tag.key} className="hub-clientes__pill hub-clientes__pill--alert">
@@ -352,8 +355,26 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
               </span>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="hub-clientes__muted" style={{ margin: 0 }}>
+            Nenhum alerta na ficha.
+          </p>
+        )}
+        {canAddPetAlert && clinicId && item.pet_id ? (
+          <PetOperationalAddAlert
+            clinicId={clinicId}
+            petId={item.pet_id}
+            source="boarding"
+            existingFlagKeys={clinicalTags
+              .map((t) => t.key)
+              .filter((k) => !k.startsWith('behavior:') && k !== 'no_dryer')}
+            onAdded={() => {
+              void loadDrawer();
+              onUpdated?.();
+            }}
+          />
+        ) : null}
+      </div>
 
       {/* Observações do tutor */}
       {pet?.notes && (

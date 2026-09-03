@@ -10,51 +10,8 @@ import {
   type HubNotification,
 } from '../services/hubNotificationsApi';
 import { getHubUserId } from '../utils/hubUserDisplay';
-
-const vetBase = (import.meta.env.VITE_VET_WEB_URL || '').replace(/\/$/, '');
-
-/** Navega na mesma aba — nunca abre popup/nova aba. */
-function goToNotificationLink(link: string | undefined, navigate: (to: string) => void): void {
-  if (!link) return;
-
-  if (/^https?:\/\//i.test(link)) {
-    try {
-      const url = new URL(link);
-      if (url.origin === window.location.origin) {
-        navigate(`${url.pathname}${url.search}${url.hash}`);
-        return;
-      }
-    } catch {
-      /* URL inválida — cai no assign abaixo */
-    }
-    window.location.assign(link);
-    return;
-  }
-
-  const path = link.startsWith('/') ? link : `/${link}`;
-  if (path.startsWith('/hub')) {
-    navigate(path);
-    return;
-  }
-  if (!vetBase) {
-    navigate(path);
-    return;
-  }
-  window.location.assign(`${vetBase}${path}`);
-}
-
-function relativeTime(iso: string): string {
-  const date = new Date(iso);
-  const diffMs = Date.now() - date.getTime();
-  const mins = Math.floor(diffMs / 60000);
-  const hours = Math.floor(diffMs / 3600000);
-  const days = Math.floor(diffMs / 86400000);
-  if (mins < 1) return 'Agora';
-  if (mins < 60) return `${mins}m atrás`;
-  if (hours < 24) return `${hours}h atrás`;
-  if (days < 7) return `${days}d atrás`;
-  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-}
+import { goToNotificationLink, notificationRelativeTime } from '../utils/hubNotificationNav';
+import { hubNotificationVisual } from '../utils/hubNotificationVisuals';
 
 const HubNotificationBell: React.FC = () => {
   const navigate = useNavigate();
@@ -151,6 +108,11 @@ const HubNotificationBell: React.FC = () => {
     }
   };
 
+  const seeAll = () => {
+    setOpen(false);
+    navigate('/hub/notificacoes');
+  };
+
   if (!userId) return null;
 
   return (
@@ -178,24 +140,46 @@ const HubNotificationBell: React.FC = () => {
                 <p>Nenhuma notificação</p>
               </div>
             ) : (
-              list.map((n) => (
-                <button
-                  key={n.id}
-                  type="button"
-                  className={`hub-notify__item${n.read ? '' : ' hub-notify__item--unread'}`}
-                  onClick={() => void onItemClick(n)}
-                >
-                  <div className="hub-notify__item-body">
-                    <div className="hub-notify__item-top">
-                      <span className="hub-notify__item-title">{n.title}</span>
-                      {!n.read && <span className="hub-notify__dot" />}
+              list.map((n) => {
+                const { Icon, label, color, tint } = hubNotificationVisual(n.type);
+                return (
+                  <button
+                    key={n.id}
+                    type="button"
+                    className={`hub-notify__item${n.read ? '' : ' hub-notify__item--unread'}`}
+                    onClick={() => void onItemClick(n)}
+                  >
+                    <div className="hub-notify__item-body">
+                      <span
+                        className="hub-notify__item-icon"
+                        style={{ background: tint, color }}
+                        aria-hidden
+                      >
+                        <Icon size={16} strokeWidth={1.9} />
+                      </span>
+                      <div className="hub-notify__item-content">
+                        <div className="hub-notify__item-top">
+                          <span className="hub-notify__item-title">{n.title}</span>
+                          {!n.read && <span className="hub-notify__dot" />}
+                        </div>
+                        <p className="hub-notify__msg">{n.message}</p>
+                        <span className="hub-notify__meta">
+                          <span className="hub-notify__kind" style={{ color }}>
+                            {label}
+                          </span>
+                          <span className="hub-notify__time">{notificationRelativeTime(n.created_at)}</span>
+                        </span>
+                      </div>
                     </div>
-                    <p className="hub-notify__msg">{n.message}</p>
-                    <span className="hub-notify__time">{relativeTime(n.created_at)}</span>
-                  </div>
-                </button>
-              ))
+                  </button>
+                );
+              })
             )}
+          </div>
+          <div className="hub-notify__foot">
+            <button type="button" className="hub-notify__see-all" onClick={seeAll}>
+              Ver todas
+            </button>
           </div>
         </div>
       )}

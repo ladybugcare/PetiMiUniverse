@@ -23,6 +23,7 @@ import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { renderTemplate } from '../../utils/hubMessageTemplates';
 import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
+import { PetOperationalAddAlert } from '../pets/PetOperationalAddAlert';
 
 const ADVANCE_LABEL: Partial<Record<GroomingStage, string>> = {
   scheduled: 'Check-in',
@@ -349,6 +350,19 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
               </span>
             ))}
           </div>
+        ) : null}
+
+        {(canWrite || canPauseQueue) && clinicId && item.pet_id ? (
+          <PetOperationalAddAlert
+            clinicId={clinicId}
+            petId={item.pet_id}
+            source="grooming"
+            existingFlagKeys={tags.map((t) => t.key).filter((k) => !k.startsWith('behavior:') && k !== 'no_dryer')}
+            onAdded={() => {
+              void refreshDrawer();
+              onSessionUpdated?.();
+            }}
+          />
         ) : null}
 
         <section className="hub-grooming-drawer__section">

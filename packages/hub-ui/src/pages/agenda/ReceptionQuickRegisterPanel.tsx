@@ -4,6 +4,7 @@ import type { HubClientKind } from '../../api/hubGuardiansApi';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
+import { HubBrTaxIdInput } from '../../components/HubBrTaxIdInput';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
@@ -466,14 +467,14 @@ export const ReceptionQuickRegisterPanel: React.FC<Props> = ({
                   <label className="nam-label" htmlFor="rqr-tax">
                     {isCompany ? 'CNPJ' : 'CPF'}
                   </label>
-                  <input
+                  <HubBrTaxIdInput
                     id="rqr-tax"
                     className="nam-input"
+                    mode={isCompany ? 'cnpj' : 'cpf'}
                     value={taxId}
-                    onChange={(e) => setTaxId(e.target.value)}
+                    onChange={setTaxId}
                     onBlur={() => void checkDuplicateGuardian()}
-                    placeholder={isCompany ? 'CNPJ' : 'CPF'}
-                    inputMode="numeric"
+                    placeholder={isCompany ? '00.000.000/0000-00' : '000.000.000-00'}
                   />
                 </div>
               </div>

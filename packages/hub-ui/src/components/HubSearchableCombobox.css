@@ -278,6 +278,22 @@
   margin-top: 2px;
 }
 
+.hub-combobox--multi .hub-combobox__trigger--multi .hub-combobox__trigger-actions {
+  margin-top: 2px;
+}
+
+/* Placeholder vazio: ícone, texto e seta no mesmo eixo (como o combobox simples) */
+.hub-combobox--multi .hub-combobox__trigger--multi-empty {
+  align-items: center;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.hub-combobox--multi .hub-combobox__trigger--multi-empty .hub-combobox__trigger-leading,
+.hub-combobox--multi .hub-combobox__trigger--multi-empty .hub-combobox__trigger-actions {
+  margin-top: 0;
+}
+
 .hub-combobox__multi-tags {
   display: flex;
   flex-wrap: wrap;

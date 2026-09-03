@@ -320,8 +320,22 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
     try {
       const payload = buildPayload();
       if (isEdit && id) {
-        await hubServiceTypesApi.update(id, { ...payload, code_locked: form.code_locked });
-        showSuccess(isAddon ? 'Adicional atualizado' : 'Serviço atualizado');
+        const updated = await hubServiceTypesApi.update(id, { ...payload, code_locked: form.code_locked });
+        const sync = updated.special_prices_sync;
+        if (sync && (sync.reviewed > 0 || sync.auto_adjusted > 0)) {
+          const parts: string[] = [];
+          if (sync.auto_adjusted > 0) {
+            parts.push(`${sync.auto_adjusted} preço(s) especial(is) reajustado(s) automaticamente`);
+          }
+          if (sync.reviewed > 0) {
+            parts.push(
+              `${sync.reviewed} preço(s) especial(is) marcados para revisão (catálogo mudou — não sobem sozinhos)`
+            );
+          }
+          showSuccess(parts.join('. ') + '.');
+        } else {
+          showSuccess(isAddon ? 'Adicional atualizado' : 'Serviço atualizado');
+        }
       } else {
         const created = await hubServiceTypesApi.create(payload);
         const newId = created.service_type?.id;

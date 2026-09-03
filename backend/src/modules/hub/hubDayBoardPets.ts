@@ -2,7 +2,7 @@ import { supabaseAdmin } from '../../config/supabase';
 
 /** Colunas estáveis para painéis operacionais (sem avatar_url — migration opcional). */
 export const HUB_DAY_BOARD_PET_SELECT =
-  'id, name, species, breed, size_tier, birth_date, coat_type, notes';
+  'id, name, species, breed, size_tier, birth_date, coat_type, notes, behavior_tags';
 
 export type HubDayBoardPetRow = {
   id: string;
@@ -13,6 +13,7 @@ export type HubDayBoardPetRow = {
   birth_date?: string | null;
   coat_type?: string | null;
   notes?: string | null;
+  behavior_tags?: string[] | null;
 };
 
 export async function fetchHubPetsMapByIds(

@@ -78,6 +78,13 @@ export function mapHubAppointmentToAgenda(row: HubAppointment): AgendaAppointmen
     partnerClinic: row.partner_clinic ?? null,
     petName,
     guardianName: gu?.full_name ?? '—',
+    petSpecies: pet?.species ?? null,
+    petBreed: pet?.breed ?? null,
+    petSizeTier: pet?.size_tier ?? null,
+    petCoatType: pet?.coat_type ?? null,
+    petBehaviorTags: Array.isArray(pet?.behavior_tags)
+      ? (pet.behavior_tags as string[]).filter((t) => typeof t === 'string' && t.trim())
+      : [],
     petId: row.pet_id,
     guardianId: row.guardian_id,
     start: new Date(row.starts_at),

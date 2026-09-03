@@ -1,10 +1,4 @@
-const FLAG_LABEL_FALLBACK: Record<string, string> = {
-  allergy: 'Alergia',
-  aggressive: 'Reativo',
-  cardiac: 'Cardiopata',
-  diabetic: 'Diabetes',
-  epileptic: 'Epilepsia',
-};
+import { BEHAVIOR_TAG_LABELS, CLINICAL_FLAG_LABELS } from './hubPetHealthProfile';
 
 function preferenceTagsFromNotes(notes?: string | null): Array<{ key: string; label: string }> {
   if (!notes?.trim()) return [];
@@ -21,14 +15,32 @@ function preferenceTagsFromNotes(notes?: string | null): Array<{ key: string; la
   return out;
 }
 
-/** Tags para cards / drawer (flags clínicas + heurística em notas do pet). */
+/** Tags para cards / drawer (flags clínicas + comportamento + heurística em notas). */
 export function buildGroomingDisplayTags(
   flags: Array<{ flag_key: string; label: string }>,
   petNotes?: string | null,
+  behaviorTags?: string[] | null,
 ): Array<{ key: string; label: string }> {
-  const clinical_tags = flags.map((f) => ({
-    key: f.flag_key,
-    label: FLAG_LABEL_FALLBACK[f.flag_key] ?? String(f.label || f.flag_key),
-  }));
-  return [...clinical_tags, ...preferenceTagsFromNotes(petNotes)];
+  const seen = new Set<string>();
+  const out: Array<{ key: string; label: string }> = [];
+
+  const push = (key: string, label: string) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ key, label });
+  };
+
+  for (const f of flags) {
+    const fallback = CLINICAL_FLAG_LABELS[f.flag_key as keyof typeof CLINICAL_FLAG_LABELS];
+    push(f.flag_key, fallback ?? String(f.label || f.flag_key));
+  }
+  for (const tag of behaviorTags ?? []) {
+    const t = String(tag || '').trim();
+    if (!t) continue;
+    push(`behavior:${t}`, BEHAVIOR_TAG_LABELS[t] ?? t);
+  }
+  for (const pref of preferenceTagsFromNotes(petNotes)) {
+    push(pref.key, pref.label);
+  }
+  return out;
 }

@@ -19,6 +19,7 @@ const ROUTES: { path: string; title: string }[] = [
   { path: '/hub/clinica/prontuarios', title: 'Clínica — Prontuários' },
   { path: '/hub/clinica/evolucoes', title: 'Clínica — Evoluções' },
   { path: '/hub/clinica/prescricoes', title: 'Clínica — Prescrições' },
+  { path: '/hub/clinica/receitas/nova', title: 'Clínica — Nova receita' },
   { path: '/hub/clinica/vacinas', title: 'Clínica — Vacinas' },
   { path: '/hub/clinica/exames', title: 'Clínica — Exames' },
   { path: '/hub/clinica/internacoes', title: 'Clínica — Internações' },
@@ -50,6 +51,7 @@ const ROUTES: { path: string; title: string }[] = [
   { path: '/hub/equipe', title: 'Equipe' },
   { path: '/hub/relatorios', title: 'Relatórios' },
   { path: '/hub/encounters', title: 'Atendimentos' },
+  { path: '/hub/notificacoes', title: 'Notificações' },
   { path: '/hub/meu-perfil', title: 'Meu Perfil' },
   { path: '/hub/perfil-clinica', title: 'Perfil da Clínica' },
 ];

@@ -18,21 +18,20 @@ import {
   type HubVaccination,
   type HubClinicalAttachment,
 } from '../../api/hubClinicalApi';
-import { hubPetsApi, type HubPet } from '../../api/hubPetsApi';
+import { hubPetsApi, type HubPet, type HubPetProfileChange } from '../../api/hubPetsApi';
 import { formatPrescriptionLine } from './clinicalDisplay';
 import { HubPrescriptionHistoryList } from '../../components/clinical/HubPrescriptionHistoryList';
 import { petAgeDetailedLabel } from '../pets/petAge';
+import { PetBehaviorTagsPicker } from '../pets/PetBehaviorTagsPicker';
+import { PetBehaviorTagsDisplay } from '../pets/PetBehaviorTagsDisplay';
+import { PetProfileHistoryList } from '../pets/PetProfileHistoryList';
+import { PET_CLINICAL_FLAG_OPTIONS, defaultClinicalFlagLabel, neuteredLabel } from '../pets/petClinicalFlags';
+import { behaviorTagLabel } from '../pets/petBehaviorTags';
+import '../clientes/clientes.css';
+import '../pets/pets-page.css';
+import './clinica-page.css';
 
 type TabId = 'casos' | 'timeline' | 'prescricoes' | 'vacinas' | 'exames' | 'flags';
-
-const FLAG_OPTIONS: { key: string; label: string }[] = [
-  { key: 'allergy', label: 'Alergia' },
-  { key: 'cardiac', label: 'Cardiopata' },
-  { key: 'aggressive', label: 'Agressivo' },
-  { key: 'diabetic', label: 'Diabético' },
-  { key: 'epileptic', label: 'Epiléptico' },
-  { key: 'other', label: 'Outro' },
-];
 
 const HubClinicRecordsPage: React.FC = () => {
   const clinicId = getStoredClinicId();
@@ -42,6 +41,7 @@ const HubClinicRecordsPage: React.FC = () => {
   const { hasPermission } = usePermissions();
   const canRead = hasPermission('hub.clinic.read');
   const canWrite = hasPermission('hub.clinic.write');
+  const canWritePets = hasPermission('hub.pets.write') || canWrite;
 
   const initialPetId = searchParams.get('petId') || '';
   const initialTab = (searchParams.get('tab') as TabId) || 'casos';
@@ -54,6 +54,7 @@ const HubClinicRecordsPage: React.FC = () => {
   const [cases, setCases] = useState<HubClinicalCase[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<HubClinicalTimelineEvent[]>([]);
   const [flags, setFlags] = useState<HubPetClinicalFlag[]>([]);
+  const [profileChanges, setProfileChanges] = useState<HubPetProfileChange[]>([]);
   const [prescriptions, setPrescriptions] = useState<HubPrescription[]>([]);
   const [vaccinations, setVaccinations] = useState<HubVaccination[]>([]);
   const [attachments, setAttachments] = useState<HubClinicalAttachment[]>([]);
@@ -61,6 +62,7 @@ const HubClinicRecordsPage: React.FC = () => {
   const [newFlagKey, setNewFlagKey] = useState('allergy');
   const [newFlagLabel, setNewFlagLabel] = useState('');
   const [startingEncounter, setStartingEncounter] = useState(false);
+  const [savingFicha, setSavingFicha] = useState(false);
 
   useEffect(() => {
     if (!clinicId || !canRead) return;
@@ -95,6 +97,7 @@ const HubClinicRecordsPage: React.FC = () => {
       hubClinicalApi.listPrescriptions(clinicId, selectedId),
       hubClinicalApi.listVaccinations(clinicId, selectedId),
       hubClinicalApi.listAttachments(clinicId, { petId: selectedId }),
+      hubPetsApi.listProfileChanges(clinicId, selectedId),
     ]);
     const pick = <T,>(i: number, fallback: T): T => {
       const r = results[i];
@@ -107,6 +110,7 @@ const HubClinicRecordsPage: React.FC = () => {
     setPrescriptions(pick(4, { prescriptions: [] }).prescriptions ?? []);
     setVaccinations(pick(5, { vaccinations: [] }).vaccinations ?? []);
     setAttachments(pick(6, { attachments: [] }).attachments ?? []);
+    setProfileChanges(pick(7, { changes: [] }).changes ?? []);
 
     const failed = results
       .map((r, i) => (r.status === 'rejected' ? i : -1))
@@ -131,12 +135,55 @@ const HubClinicRecordsPage: React.FC = () => {
         pet_id: selectedId,
         flag_key: newFlagKey,
         label: newFlagLabel.trim(),
+        profile_source: 'clinic',
       });
       setNewFlagLabel('');
       await loadPetClinical();
       showSuccess('Alerta clínico salvo');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao salvar alerta');
+    }
+  };
+
+  const removeFlag = async (flag: HubPetClinicalFlag) => {
+    if (!clinicId || !selectedId || !canWrite) return;
+    try {
+      await hubClinicalApi.upsertPetFlag({
+        clinic_id: clinicId,
+        pet_id: selectedId,
+        flag_key: flag.flag_key,
+        label: flag.label || defaultClinicalFlagLabel(flag.flag_key),
+        notes: flag.notes ?? null,
+        active: false,
+        profile_source: 'clinic',
+      });
+      await loadPetClinical();
+      showSuccess('Alerta removido da ficha');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao remover alerta');
+    }
+  };
+
+  const saveHealthFicha = async (patch: {
+    neutered?: boolean | null;
+    behavior_tags?: string[] | null;
+  }) => {
+    if (!clinicId || !selectedId || !canWritePets) return;
+    setSavingFicha(true);
+    try {
+      const { pet } = await hubPetsApi.update(selectedId, {
+        clinic_id: clinicId,
+        ...patch,
+        behavior_tags_mode: 'replace',
+        profile_source: 'clinic',
+      });
+      setPets((prev) => prev.map((p) => (p.id === pet.id ? { ...p, ...pet } : p)));
+      await loadPetClinical();
+      showSuccess('Ficha atualizada');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao atualizar ficha');
+    } finally {
+      setSavingFicha(false);
     }
   };
 
@@ -249,11 +296,16 @@ const HubClinicRecordsPage: React.FC = () => {
                   </div>
                 </div>
 
-                {flags.length > 0 ? (
+                {flags.length > 0 || (selectedPet.behavior_tags?.length ?? 0) > 0 ? (
                   <div className="hub-clinic-pet-header__alerts">
                     {flags.map((f) => (
                       <span key={f.flag_key} className="hub-clinic-alert-chip">
                         {f.label}
+                      </span>
+                    ))}
+                    {(selectedPet.behavior_tags ?? []).map((t) => (
+                      <span key={`b-${t}`} className="hub-clinic-alert-chip">
+                        {behaviorTagLabel(t)}
                       </span>
                     ))}
                   </div>
@@ -439,12 +491,55 @@ const HubClinicRecordsPage: React.FC = () => {
 
               {tab === 'flags' && (
                 <div className="hub-clinic-records__flags">
+                  <div className="hub-clientes__form-stack" style={{ marginBottom: 16 }}>
+                    <label className="hub-clientes__label">Castrado(a)</label>
+                    <p className="hub-clientes__muted" style={{ margin: '0 0 8px', fontSize: 13 }}>
+                      Atual: {neuteredLabel(selectedPet.neutered)}
+                    </p>
+                    {canWritePets ? (
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"
+                          disabled={savingFicha || selectedPet.neutered === true}
+                          onClick={() => void saveHealthFicha({ neutered: true })}
+                        >
+                          Sim
+                        </button>
+                        <button
+                          type="button"
+                          className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"
+                          disabled={savingFicha || selectedPet.neutered === false}
+                          onClick={() => void saveHealthFicha({ neutered: false })}
+                        >
+                          Não
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <h4 style={{ margin: '0 0 8px', fontSize: 14 }}>Alertas clínicos</h4>
                   <ul className="hub-clinic-records__list">
-                    {flags.map((f) => (
-                      <li key={f.flag_key}>
-                        {f.label} <span className="hub-clientes__muted">({f.flag_key})</span>
-                      </li>
-                    ))}
+                    {flags.length === 0 ? (
+                      <li className="hub-clientes__muted">Nenhum alerta ativo.</li>
+                    ) : (
+                      flags.map((f) => (
+                        <li key={f.flag_key} style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>
+                            {f.label} <span className="hub-clientes__muted">({f.flag_key})</span>
+                          </span>
+                          {canWrite ? (
+                            <button
+                              type="button"
+                              className="hub-clientes__link-btn"
+                              onClick={() => void removeFlag(f)}
+                            >
+                              Remover
+                            </button>
+                          ) : null}
+                        </li>
+                      ))
+                    )}
                   </ul>
                   {canWrite ? (
                     <div className="hub-clientes__form-stack" style={{ marginTop: 16 }}>
@@ -454,7 +549,7 @@ const HubClinicRecordsPage: React.FC = () => {
                         value={newFlagKey}
                         onChange={(e) => setNewFlagKey(e.target.value)}
                       >
-                        {FLAG_OPTIONS.map((o) => (
+                        {PET_CLINICAL_FLAG_OPTIONS.map((o) => (
                           <option key={o.key} value={o.key}>
                             {o.label}
                           </option>
@@ -476,6 +571,23 @@ const HubClinicRecordsPage: React.FC = () => {
                       </button>
                     </div>
                   ) : null}
+
+                  <h4 style={{ margin: '20px 0 8px', fontSize: 14 }}>Comportamento</h4>
+                  {canWritePets ? (
+                    <PetBehaviorTagsPicker
+                      value={selectedPet.behavior_tags ?? []}
+                      onChange={(behaviorTags) =>
+                        void saveHealthFicha({ behavior_tags: behaviorTags.length ? behaviorTags : [] })
+                      }
+                      variant="hub-pets-behavior"
+                      disabled={savingFicha}
+                    />
+                  ) : (
+                    <PetBehaviorTagsDisplay tags={selectedPet.behavior_tags ?? []} />
+                  )}
+
+                  <h4 style={{ margin: '20px 0 8px', fontSize: 14 }}>Histórico da ficha</h4>
+                  <PetProfileHistoryList changes={profileChanges} />
                 </div>
               )}
             </>

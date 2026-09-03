@@ -112,7 +112,7 @@ export function isOriginOperationallyComplete(originType: string, operationalSta
   }
 }
 
-/** Comanda quitada e serviço concluído — mesma regra de `paid_and_complete` no backend. */
+/** Comanda quitada e serviço concluído — espelha `paid_and_complete` no day board (recebível pago + origem concluída). */
 export function isDayBoardPaidAndComplete(item: HubFinanceDayBoardItem): boolean {
   const { billing } = item;
   if (billing.receivable_status !== 'paid') return false;

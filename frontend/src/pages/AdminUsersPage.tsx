@@ -9,7 +9,7 @@ import { vetsApi, Vet } from '../services/vetsApi';
 import { freelancersApi, Freelancer } from '../services/freelancersApi';
 import { adminApi, CreateUserData } from '../services/adminApi';
 import { useAlert } from '../hooks/useAlert';
-import { formatCRMV } from '../utils/validators';
+import { formatCRMV, formatCNPJ } from '../utils/validators';
 import { Eye, EyeOff, Edit, Trash2, UserCog, Truck, UserPlus, Plus, Shield, Users, Building2, Stethoscope, MessageCircle } from 'lucide-react';
 import colors from '../styles/colors';
 import { messagesApi } from '../services/messagesApi';
@@ -1269,10 +1269,11 @@ const AdminUsersPage: React.FC = () => {
                                 type="text"
                                 value={createUserFormData.cnpj || ''}
                                 onChange={(e) =>
-                                  setCreateUserFormData({ ...createUserFormData, cnpj: e.target.value })
+                                  setCreateUserFormData({ ...createUserFormData, cnpj: formatCNPJ(e.target.value) })
                                 }
                                 style={styles.input}
                                 placeholder="00.000.000/0000-00"
+                                maxLength={18}
                               />
                             </div>
                             <select

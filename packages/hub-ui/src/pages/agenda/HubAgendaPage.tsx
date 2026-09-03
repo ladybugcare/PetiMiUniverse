@@ -333,14 +333,20 @@ const HubAgendaPage: React.FC = () => {
     }
     if (!skipOpen) {
       openCreateModal(initial);
+      const occ = initial.suggest_recurrence?.occurrences;
       if (remainingLines.length > 0) {
         const otherSummary = remainingLines.map((ln) => `${ln.petName} (${ln.packageName})`).join(', ');
         showInfo(
-          `Pacote «${packageName}»: o primeiro item já veio pré-selecionado. Agende também: ${otherSummary}.`,
+          `Pacote «${packageName}»: o primeiro item já veio pré-selecionado${occ && occ >= 2 ? ` com ${occ} ocorrências` : ''}. Agende também: ${otherSummary}.`,
           'Pacotes',
         );
       } else {
-        showInfo('Agenda aberta com dados da venda do pacote.', 'Pacotes');
+        showInfo(
+          occ && occ >= 2
+            ? `Agenda aberta com repetição de ${occ} ocorrências (saldo do pacote). Ajuste a frequência se quiser.`
+            : 'Agenda aberta com dados da venda do pacote.',
+          'Pacotes',
+        );
       }
     }
 
@@ -1161,28 +1167,70 @@ const HubAgendaPage: React.FC = () => {
     [clinicId, canCreateReceivable, filtered, allAppointments, unitFilter, showError],
   );
 
-  /** Abre (ou cria) a comanda para um agendamento — pagamento antecipado. Não faz checkout imediato. */
+  /** Abre (ou cria) a comanda para um agendamento — pagamento antecipado — e vai à ficha para cobrar. */
   const handleOpenComanda = useCallback(
     async (appointmentId: string) => {
       if (!clinicId || !canCreateReceivable) return;
+      const appt =
+        filtered.find((x) => x.id === appointmentId) ??
+        allAppointments.find((x) => x.id === appointmentId) ??
+        null;
+      const unitResolved = appt?.unitId ?? (isUuid(unitFilter) ? unitFilter : null) ?? getSelectedUnitId();
       try {
-        await hubComandaApiAgenda.openComanda({
+        const detail = await hubComandaApiAgenda.openComanda({
           clinic_id: clinicId,
           origin_type: 'appointment',
           origin_id: appointmentId,
+          unit_id: unitResolved,
         });
-        showSuccess('Comanda aberta. Acesse o Caixa para realizar o recebimento.');
+        const comandaId = (detail.comanda as Record<string, unknown> | undefined)?.id as string | undefined;
+        showSuccess('Comanda aberta.');
         bumpReload();
+        if (comandaId) {
+          navigate(`/hub/caixa/comanda/${comandaId}`);
+          return;
+        }
       } catch (e: unknown) {
         const msg = (e as Error)?.message ?? '';
         if (msg.includes('Já existe comanda aberta')) {
-          showSuccess('Comanda já está aberta para este agendamento.');
+          try {
+            const existing = await hubComandaApiAgenda.getComandaByOrigin({
+              clinic_id: clinicId,
+              origin_type: 'appointment',
+              origin_id: appointmentId,
+            });
+            const comandaId = (existing.comanda as Record<string, unknown> | undefined)?.id as string | undefined;
+            if (comandaId) {
+              navigate(`/hub/caixa/comanda/${comandaId}`);
+              return;
+            }
+          } catch {
+            /* fall through */
+          }
+          showError('Já existe uma comanda aberta para este agendamento.');
         } else {
           showError(msg || 'Erro ao abrir comanda');
         }
       }
     },
-    [clinicId, canCreateReceivable, showSuccess, showError, bumpReload],
+    [
+      clinicId,
+      canCreateReceivable,
+      filtered,
+      allAppointments,
+      unitFilter,
+      showSuccess,
+      showError,
+      bumpReload,
+      navigate,
+    ],
+  );
+
+  const handleViewComanda = useCallback(
+    (comandaId: string) => {
+      navigate(`/hub/caixa/comanda/${comandaId}`);
+    },
+    [navigate],
   );
 
   const checkoutUnitId = useMemo(() => {
@@ -1944,6 +1992,7 @@ const HubAgendaPage: React.FC = () => {
             onDuplicate={duplicateSelectedAppointment}
             onCancel={requestCancelSelected}
             onOpenComanda={canCreateReceivable ? handleOpenComanda : undefined}
+            onViewComanda={canCreateReceivable || canViewFinancial ? handleViewComanda : undefined}
             onOpenInClinic={canClinicWrite ? handleOpenInClinic : undefined}
             onOpenInGrooming={canGroomingWrite ? handleOpenInGrooming : undefined}
             onOpenInBoarding={canBoardingWrite ? handleOpenInBoarding : undefined}

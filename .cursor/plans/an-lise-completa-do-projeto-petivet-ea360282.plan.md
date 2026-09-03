@@ -1,4 +1,37 @@
-<!-- ea360282-9aec-4e07-a8f7-6674338fed48 77ece892-1403-4bdb-bf3d-57cf9e8f223c -->
+---
+name: Plano de Correção de Gaps de Lógica - PetMi Vet
+overview: ""
+todos:
+  - id: b56043ff-ce08-4fbf-9817-d119a13ac6dc
+    content: Remover lógica duplicada de filled_positions em applicationsController.ts (linhas 538-572), deixando apenas validação. O trigger SQL já atualiza automaticamente.
+    status: pending
+  - id: 55811af3-deff-4580-865a-5df5c7ffbb0a
+    content: Atualizar trigger SQL para decrementar filled_positions quando status muda de 'approved' para 'canceled_by_vet' ou outros status finais
+    status: pending
+  - id: 8c66b812-0387-4be2-b153-2749d47029bf
+    content: Modificar calculateDemandStatus para usar demand.filled_positions como fonte de verdade ao invés de contagem em tempo real
+    status: pending
+  - id: a1f9f55b-37f8-4dc7-824c-f5c7ded0dfc6
+    content: Adicionar validação atômica de vagas antes de aprovar, usando contagem real de aplicações aprovadas ao invés de filled_positions
+    status: pending
+  - id: fa69d813-ac14-4f5d-94ae-22f2eefba251
+    content: "Unificar controllers reviewUnit: remover método de adminController.ts e manter apenas units/reviewUnit.ts, atualizando rotas"
+    status: pending
+  - id: 3344ef5b-6dba-46f2-be79-e1e4477e13c8
+    content: Adicionar validação de transições válidas em updateDemandStatus usando DemandLifecycleService ou validação específica para demandas
+    status: pending
+  - id: a33c69bd-ecaa-426c-8851-d5e2051aa83c
+    content: Migrar todos os controllers de position_applications para demand_applications, começando por demandsController.ts, unitsController.ts, reportsController.ts e statisticsController.ts
+    status: pending
+  - id: 3b167e73-015c-4e2a-9194-9d11a9699c46
+    content: Criar função syncFilledPositions em DemandLifecycleService para recalcular e corrigir inconsistências quando necessário
+    status: pending
+  - id: 659ee050-4acf-47ad-8532-1b00c5efca6e
+    content: Adicionar documentação e comentários explicando que clínica só ativa quando unidade principal (is_main) é aprovada
+    status: pending
+isProject: false
+---
+
 # Plano de Correção de Gaps de Lógica - PetMi Vet
 
 ## Estratégia Geral
@@ -786,15 +819,3 @@ static async syncFilledPositions(demandId: string): Promise<void> {
 
 - **Mitigação:** Rodar `syncFilledPositions` em todas as demandas após deploy
 - **Mitigação:** Comparar resultados antes/depois em staging
-
-### To-dos
-
-- [ ] Remover lógica duplicada de filled_positions em applicationsController.ts (linhas 538-572), deixando apenas validação. O trigger SQL já atualiza automaticamente.
-- [ ] Atualizar trigger SQL para decrementar filled_positions quando status muda de 'approved' para 'canceled_by_vet' ou outros status finais
-- [ ] Modificar calculateDemandStatus para usar demand.filled_positions como fonte de verdade ao invés de contagem em tempo real
-- [ ] Adicionar validação atômica de vagas antes de aprovar, usando contagem real de aplicações aprovadas ao invés de filled_positions
-- [ ] Unificar controllers reviewUnit: remover método de adminController.ts e manter apenas units/reviewUnit.ts, atualizando rotas
-- [ ] Adicionar validação de transições válidas em updateDemandStatus usando DemandLifecycleService ou validação específica para demandas
-- [ ] Migrar todos os controllers de position_applications para demand_applications, começando por demandsController.ts, unitsController.ts, reportsController.ts e statisticsController.ts
-- [ ] Criar função syncFilledPositions em DemandLifecycleService para recalcular e corrigir inconsistências quando necessário
-- [ ] Adicionar documentação e comentários explicando que clínica só ativa quando unidade principal (is_main) é aprovada

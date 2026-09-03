@@ -15,6 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { clinicsApi } from '../src/services/clinicsApi';
+import { formatCNPJ } from '../src/utils/validators';
 import EmailStatusModal from '../components/EmailStatusModal';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -44,7 +45,7 @@ const ClinicSignUpScreen = () => {
   const handleChange = (field: keyof typeof initialFormValues) => (value: string) => {
     setForm((current) => ({
       ...current,
-      [field]: value,
+      [field]: field === 'cnpj' ? formatCNPJ(value) : value,
     }));
   };
 

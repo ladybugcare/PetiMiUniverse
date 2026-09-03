@@ -10,6 +10,7 @@ export type PetFormValues = {
   birth_date: string;
   notes: string;
   behaviorTags: string[];
+  neutered: '' | 'Y' | 'N';
   /** Porte corporal (mini…gigante); vazio resolve para sugestão por raça ou médio no envio. */
   size_tier: '' | PetBodyPorteValue;
   coat_color: string;
@@ -27,6 +28,7 @@ export const emptyPetForm: PetFormValues = {
   birth_date: '',
   notes: '',
   behaviorTags: [],
+  neutered: '',
   size_tier: '',
   coat_color: '',
   coat_type: '',

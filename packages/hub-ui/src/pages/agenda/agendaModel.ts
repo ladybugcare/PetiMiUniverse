@@ -55,6 +55,12 @@ export type AgendaAppointment = {
   partnerClinic?: { id: string; name: string } | null;
   petName: string;
   guardianName: string;
+  /** Dados padrão do pet (porte, pelagem, comportamento…) quando a API enriquece. */
+  petSpecies?: string | null;
+  petBreed?: string | null;
+  petSizeTier?: string | null;
+  petCoatType?: string | null;
+  petBehaviorTags?: string[];
   start: Date;
   end: Date;
   status: AgendaStatus;

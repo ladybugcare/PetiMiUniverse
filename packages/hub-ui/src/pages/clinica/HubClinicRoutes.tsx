@@ -5,6 +5,7 @@ import HubVetCockpitPage from './vet-cockpit/HubVetCockpitPage';
 import HubClinicalWorkspacePage from './HubClinicalWorkspacePage';
 import HubClinicRecordsPage from './HubClinicRecordsPage';
 import HubClinicCasePage from './HubClinicCasePage';
+import HubStandalonePrescriptionPage from './HubStandalonePrescriptionPage';
 
 /** Rotas legadas → prontuário com aba */
 function LegacyProntuarioRedirect({ tab }: { tab: string }) {
@@ -33,6 +34,7 @@ const HubClinicRoutes: React.FC = () => {
         <Route path="atendimentos/:encounterId" element={<HubClinicalWorkspacePage />} />
         <Route path="prontuarios" element={<HubClinicRecordsPage />} />
         <Route path="casos/:caseId" element={<HubClinicCasePage />} />
+        <Route path="receitas/nova" element={<HubStandalonePrescriptionPage />} />
         <Route path="evolucoes" element={<LegacyProntuarioRedirect tab="timeline" />} />
         <Route path="prescricoes" element={<LegacyProntuarioRedirect tab="prescricoes" />} />
         <Route path="vacinas" element={<LegacyProntuarioRedirect tab="vacinas" />} />

@@ -1,0 +1,271 @@
+/* Formulário de novo acordo — Preços especiais */
+
+.hub-special-prices__form-title {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #3d2f2c;
+}
+
+.hub-special-prices__locked-meta {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3d2f2c;
+  line-height: 1.4;
+}
+
+.hub-special-prices__scope {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 0;
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid var(--hc-border, #e8e4e0);
+  background: #f6f1ee;
+}
+
+.hub-special-prices__scope--stack {
+  grid-template-columns: 1fr;
+  gap: 3px;
+}
+
+.hub-special-prices__scope-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hc-muted, #6b6560);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.25;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.hub-special-prices__scope--stack .hub-special-prices__scope-btn {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.hub-special-prices__scope-btn:hover:not(.hub-special-prices__scope-btn--active) {
+  color: var(--hc-text, #2d2a28);
+}
+
+.hub-special-prices__scope-btn--active {
+  background: #fff;
+  color: var(--hc-text, #2d2a28);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.hub-special-prices__scope-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #7a6a66;
+}
+
+/* Lista de acordos — alinhada ao histórico do perfil */
+.hub-special-prices__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.hub-special-prices__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--hc-border, #efe6e1);
+}
+
+.hub-special-prices__row:last-child {
+  border-bottom: none;
+}
+
+.hub-special-prices__row--inactive {
+  background: #faf8f7;
+}
+
+.hub-special-prices__row--inactive .hub-special-prices__row-title,
+.hub-special-prices__row--inactive .hub-special-prices__row-amount {
+  color: #8a7d78;
+}
+
+.hub-special-prices__row--editing {
+  background: #fff8f4;
+  box-shadow: inset 3px 0 0 var(--hc-brand, #c86a4d);
+}
+
+.hub-special-prices__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  background: #fff;
+  color: #6b554f;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.hub-special-prices__icon-btn:hover:not(:disabled) {
+  border-color: var(--hc-brand, #c86a4d);
+  color: var(--hc-brand, #c86a4d);
+  background: #fff4ef;
+}
+
+.hub-special-prices__icon-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-special-prices__row-main {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.hub-special-prices__row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 2px;
+}
+
+.hub-special-prices__row-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: #3d2f2c;
+  line-height: 1.35;
+}
+
+.hub-special-prices__row-meta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #7a6a66;
+}
+
+.hub-special-prices__row-warn {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #9a6700;
+}
+
+.hub-special-prices__row-aside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.hub-special-prices__row-price {
+  text-align: right;
+}
+
+.hub-special-prices__row-amount {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #3d2f2c;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.hub-special-prices__row-share {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #7a6a66;
+}
+
+.hub-special-prices__switch {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  background: #d6d0cb;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.15s ease;
+}
+
+.hub-special-prices__switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s ease;
+}
+
+.hub-special-prices__switch--on {
+  background: var(--hc-brand, #c86a4d);
+}
+
+.hub-special-prices__switch--on::after {
+  transform: translateX(18px);
+}
+
+.hub-special-prices__switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-special-prices__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.hub-special-prices__badge--pending {
+  background: #fff4e0;
+  color: #9a6700;
+}
+
+.hub-special-prices__badge--scope {
+  background: #f3eeea;
+  color: #6b554f;
+}
+
+.hub-special-prices__badge--pet {
+  background: #fff4ef;
+  color: #c2410c;
+}

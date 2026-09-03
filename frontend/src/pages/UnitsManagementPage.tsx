@@ -11,6 +11,7 @@ import { Unit, CreateUnitData } from '../types/units';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
+import { formatCNPJ } from '../utils/validators';
 
 const UnitsManagementPage: React.FC = () => {
   const navigate = useNavigate();
@@ -57,7 +58,7 @@ const UnitsManagementPage: React.FC = () => {
       setFormData({
         name: unit.name,
         nickname: unit.nickname || '',
-        cnpj: unit.cnpj || '',
+        cnpj: formatCNPJ(unit.cnpj || ''),
         address: unit.address,
         city: unit.city,
         state: unit.state,
@@ -96,9 +97,10 @@ const UnitsManagementPage: React.FC = () => {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [name]: name === 'cnpj' ? formatCNPJ(value) : value,
     });
   };
 

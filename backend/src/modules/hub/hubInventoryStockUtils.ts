@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../../config/supabase.js';
 import { computeBalances } from './hubInventoryController.js';
+import { notifyLowStockIfCrossed } from './hubInventoryStockAlerts.js';
 
 export type EncounterStockOutParams = {
   clinicId: string;
@@ -52,11 +53,12 @@ export async function validateLotStockForOut(
   itemId: string,
   lotId: string,
   qty: number,
+  precomputedBalances?: Awaited<ReturnType<typeof computeBalances>>,
 ): Promise<string | null> {
   const lot = await assertClinicInventoryLot(clinicId, lotId);
   if (!lot) return 'Lote inválido para esta clínica.';
   if (lot.item_id !== itemId) return 'Lote não pertence ao item de estoque selecionado.';
-  const { byLot } = await computeBalances(clinicId);
+  const { byLot } = precomputedBalances ?? (await computeBalances(clinicId));
   const available = byLot.get(lotId) ?? 0;
   if (available < qty) {
     return `Quantidade insuficiente no lote (disponível: ${available}).`;
@@ -64,12 +66,37 @@ export async function validateLotStockForOut(
   return null;
 }
 
-/** Registra saída de estoque vinculada a atendimento/vacinação. */
-export async function createEncounterStockOut(
+type StockOutMovementType = 'encounter_out' | 'sale_out';
+
+async function createStockOutMovement(
+  movementType: StockOutMovementType,
   params: EncounterStockOutParams,
-): Promise<{ id: string } | { error: string }> {
+): Promise<{ id: string; skipped?: boolean } | { error: string }> {
   const qty = params.qty ?? 1;
-  const stockErr = await validateLotStockForOut(params.clinicId, params.itemId, params.lotId, qty);
+
+  const { data: existing } = await supabaseAdmin
+    .from('hub_stock_movements')
+    .select('id')
+    .eq('clinic_id', params.clinicId)
+    .eq('movement_type', movementType)
+    .eq('reference_type', params.referenceType)
+    .eq('reference_id', params.referenceId)
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) {
+    return { id: existing.id as string, skipped: true };
+  }
+
+  const balances = await computeBalances(params.clinicId);
+  const qtyBefore = balances.byItem.get(params.itemId) ?? 0;
+
+  const stockErr = await validateLotStockForOut(
+    params.clinicId,
+    params.itemId,
+    params.lotId,
+    qty,
+    balances,
+  );
   if (stockErr) return { error: stockErr };
 
   const { data: mov, error: movErr } = await supabaseAdmin
@@ -78,7 +105,7 @@ export async function createEncounterStockOut(
       clinic_id: params.clinicId,
       item_id: params.itemId,
       lot_id: params.lotId,
-      movement_type: 'encounter_out',
+      movement_type: movementType,
       qty,
       notes: params.notes ?? null,
       reference_type: params.referenceType,
@@ -91,5 +118,29 @@ export async function createEncounterStockOut(
   if (movErr || !mov) {
     return { error: movErr?.message || 'Erro ao registrar baixa de estoque.' };
   }
+
+  void notifyLowStockIfCrossed({
+    clinicId: params.clinicId,
+    itemId: params.itemId,
+    qtyBefore,
+    qtyAfter: qtyBefore - qty,
+  });
+
   return { id: (mov as { id: string }).id };
+}
+
+/** Registra saída de estoque vinculada a atendimento/vacinação. */
+export async function createEncounterStockOut(
+  params: EncounterStockOutParams,
+): Promise<{ id: string; skipped?: boolean } | { error: string }> {
+  return createStockOutMovement('encounter_out', params);
+}
+
+export type SaleStockOutParams = EncounterStockOutParams;
+
+/** Registra saída de estoque por venda (comanda / recebível). */
+export async function createSaleStockOut(
+  params: SaleStockOutParams,
+): Promise<{ id: string; skipped?: boolean } | { error: string }> {
+  return createStockOutMovement('sale_out', params);
 }

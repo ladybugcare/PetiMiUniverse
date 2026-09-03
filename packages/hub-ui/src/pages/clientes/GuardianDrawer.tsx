@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Building2, User } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
+import { formatBrTaxIdDisplay } from '../../utils/formatBrTaxId';
 import {
   GuardianCreateForm,
   type GuardianFormValues,
@@ -33,6 +34,9 @@ export type GuardianDrawerProps = {
   linkGuardianId?: string;
   onContinueToPets?: () => void;
   canWritePets?: boolean;
+  clinicId?: string | null;
+  unitId?: string | null;
+  canCreateReceivable?: boolean;
 };
 
 const GUARDIAN_FORM_ID = 'hub-guardian-drawer-form';
@@ -57,6 +61,9 @@ export const GuardianDrawer: React.FC<GuardianDrawerProps> = ({
   linkGuardianId,
   onContinueToPets,
   canWritePets = false,
+  clinicId = null,
+  unitId = null,
+  canCreateReceivable = false,
 }) => {
   const isCompany = useMemo(() => {
     if (mode === 'detail' && guardian) return guardian.client_kind === 'company';
@@ -183,6 +190,10 @@ export const GuardianDrawer: React.FC<GuardianDrawerProps> = ({
             hideNewPageButton
             hideHeader
             hideFooter
+            layout="panel"
+            clinicId={clinicId}
+            unitId={unitId}
+            canCreateReceivable={canCreateReceivable}
             canWritePets={canWritePets}
           />
         ) : mode === 'quote_review' ? (
@@ -214,7 +225,7 @@ export const GuardianDrawer: React.FC<GuardianDrawerProps> = ({
               </div>
               <div>
                 <dt>CPF / CNPJ</dt>
-                <dd>{form.tax_id?.trim() || '—'}</dd>
+                <dd>{formatBrTaxIdDisplay(form.tax_id)}</dd>
               </div>
               <div>
                 <dt>E-mail</dt>

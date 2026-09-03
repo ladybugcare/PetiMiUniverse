@@ -13,6 +13,7 @@ type Props = {
   onChange: (next: string[]) => void;
   /** Prefixo de classe CSS: 'pet-wizard' ou 'hub-pets-behavior'. */
   variant?: 'pet-wizard' | 'hub-pets-behavior';
+  disabled?: boolean;
 };
 
 function chipClassName(variant: Props['variant'], key: string, selected: boolean): string {
@@ -22,10 +23,16 @@ function chipClassName(variant: Props['variant'], key: string, selected: boolean
   return `${base} ${base}--on ${base}--${level}`;
 }
 
-export const PetBehaviorTagsPicker: React.FC<Props> = ({ value, onChange, variant = 'pet-wizard' }) => {
+export const PetBehaviorTagsPicker: React.FC<Props> = ({
+  value,
+  onChange,
+  variant = 'pet-wizard',
+  disabled = false,
+}) => {
   const [customInput, setCustomInput] = useState('');
 
   const toggle = (key: string) => {
+    if (disabled) return;
     if (value.includes(key)) {
       onChange(value.filter((t) => t !== key));
     } else {
@@ -34,10 +41,12 @@ export const PetBehaviorTagsPicker: React.FC<Props> = ({ value, onChange, varian
   };
 
   const removeCustom = (key: string) => {
+    if (disabled) return;
     onChange(value.filter((t) => t !== key));
   };
 
   const addCustom = () => {
+    if (disabled) return;
     const trimmed = customInput.trim();
     if (!trimmed) return;
     if (value.includes(trimmed)) {
@@ -71,6 +80,7 @@ export const PetBehaviorTagsPicker: React.FC<Props> = ({ value, onChange, varian
               type="button"
               className={chipClassName(variant, def.key, selected)}
               aria-pressed={selected}
+              disabled={disabled}
               onClick={() => toggle(def.key)}
             >
               {def.label}
@@ -113,6 +123,7 @@ export const PetBehaviorTagsPicker: React.FC<Props> = ({ value, onChange, varian
           onChange={(e) => setCustomInput(e.target.value)}
           placeholder="Outro comportamento ou alerta…"
           maxLength={100}
+          disabled={disabled}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
@@ -120,7 +131,7 @@ export const PetBehaviorTagsPicker: React.FC<Props> = ({ value, onChange, varian
             }
           }}
         />
-        <button type="button" className={btnClass} onClick={addCustom} disabled={!customInput.trim()}>
+        <button type="button" className={btnClass} onClick={addCustom} disabled={disabled || !customInput.trim()}>
           <Plus size={16} strokeWidth={2.25} aria-hidden />
           Adicionar
         </button>

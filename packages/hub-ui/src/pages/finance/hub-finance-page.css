@@ -1807,6 +1807,33 @@
   border: 1px solid var(--hc-border, #e8ddd8);
 }
 
+/* Vencimento: verde a vencer · amarelo próximo · vermelho vencido */
+.hub-due-tone {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.hub-due-tone--ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.hub-due-tone--soon {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.hub-due-tone--overdue {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .hub-dayboard__toggle {
   display: inline-flex;
   border: 1px solid var(--hc-border, #e8ddd8);
@@ -3209,4 +3236,121 @@ h3.hub-caixa-page__card-title {
   margin: 4px 20px 16px;
   border: 0;
   border-top: 1px solid rgba(74, 59, 58, 0.12);
+}
+
+/* Cobrança em conjunto */
+.hub-batch-charge {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hub-batch-charge__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.hub-batch-charge__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.hub-batch-charge__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.hub-batch-charge__row:last-child {
+  border-bottom: none;
+}
+
+.hub-batch-charge__row--on {
+  background: #fff8f4;
+}
+
+.hub-batch-charge__row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.hub-batch-charge__row-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-batch-charge__row-meta {
+  font-size: 12px;
+  color: var(--hc-text-muted, #8e6e67);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.hub-batch-charge__row-amount {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-batch-charge__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.hub-batch-charge__footer-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hub-batch-charge__footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hub-batch-charge__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 10px;
+  background: #fff8f4;
+}
+
+.hub-dayboard__th-check,
+.hub-dayboard__td-check {
+  width: 36px;
+  text-align: center;
+  vertical-align: middle;
 }

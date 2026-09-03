@@ -14,6 +14,7 @@ import { getUserRole, getStoredClinicId } from '../utils/authHelpers';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { statisticsApi, ClinicStats } from '../services/statisticsApi';
 import AddressAutocomplete from '../components/AddressAutocomplete';
+import { formatCNPJ } from '../utils/validators';
 
 const ClinicProfilePage: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
@@ -90,7 +91,7 @@ const ClinicProfilePage: React.FC = () => {
       setFormData({
         name: clinicData.name,
         address: clinicData.address,
-        cnpj: clinicData.cnpj,
+        cnpj: formatCNPJ(clinicData.cnpj || ''),
       });
 
       // Carregar estatísticas apenas se for o próprio perfil
@@ -125,7 +126,7 @@ const ClinicProfilePage: React.FC = () => {
     setFormData({
       name: clinic!.name,
       address: clinic!.address,
-      cnpj: clinic!.cnpj,
+      cnpj: formatCNPJ(clinic!.cnpj || ''),
     });
     setIsEditing(false);
   };
@@ -406,11 +407,13 @@ const ClinicProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.cnpj}
-                    onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, cnpj: formatCNPJ(e.target.value) })}
                     style={styles.input}
+                    placeholder="00.000.000/0000-00"
+                    maxLength={18}
                   />
                 ) : (
-                  <p style={styles.value}>{clinic.cnpj}</p>
+                  <p style={styles.value}>{formatCNPJ(clinic.cnpj) || clinic.cnpj}</p>
                 )}
               </div>
 
@@ -534,11 +537,13 @@ const ClinicProfilePage: React.FC = () => {
                 <input
                   type="text"
                   value={formData.cnpj}
-                  onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, cnpj: formatCNPJ(e.target.value) })}
                   style={styles.input}
+                  placeholder="00.000.000/0000-00"
+                  maxLength={18}
                 />
               ) : (
-                <p style={styles.value}>{clinic.cnpj}</p>
+                <p style={styles.value}>{formatCNPJ(clinic.cnpj) || clinic.cnpj}</p>
               )}
             </div>
 

@@ -31,6 +31,7 @@ describe('hubFinancialDayBoard', () => {
           receivable_status: 'pending',
           finance_handoff_at: '2026-06-04T12:00:00.000Z',
           active_receivable_id: 'r1',
+        due_date: null,
         })
       ).toBe(true);
     });
@@ -44,6 +45,7 @@ describe('hubFinancialDayBoard', () => {
           receivable_status: 'pending',
           finance_handoff_at: null,
           active_receivable_id: 'r1',
+        due_date: null,
         })
       ).toBe(true);
     });
@@ -57,6 +59,7 @@ describe('hubFinancialDayBoard', () => {
           receivable_status: null,
           finance_handoff_at: null,
           active_receivable_id: null,
+        due_date: null,
         })
       ).toBe(false);
     });

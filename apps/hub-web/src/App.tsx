@@ -48,6 +48,7 @@ import { HubUnitProvider } from './contexts/HubUnitContext';
 import { HubCashSessionProvider } from './contexts/HubCashSessionContext';
 import HubOnboardingGuard from './routes/HubOnboardingGuard';
 import HubMeuPerfilPage from './pages/HubMeuPerfilPage';
+import HubNotificationsPage from './pages/HubNotificationsPage';
 import HubClinicaPerfilPage from './pages/HubClinicaPerfilPage';
 import HubDesignSystemPage from './pages/HubDesignSystemPage';
 import PublicQuotePage from './pages/PublicQuotePage';
@@ -149,6 +150,7 @@ const router = createBrowserRouter(
         <Route path="equipe" element={<HubStaffPage />} />
         <Route path="relatorios" element={<HubRelatoriosPage />} />
         <Route path="encounters" element={<Navigate to="/hub/clinica" replace />} />
+        <Route path="notificacoes" element={<HubNotificationsPage />} />
         <Route path="meu-perfil" element={<HubMeuPerfilPage />} />
         <Route path="perfil-clinica" element={<HubClinicaPerfilPage />} />
         <Route path="design-system" element={<HubDesignSystemPage />} />

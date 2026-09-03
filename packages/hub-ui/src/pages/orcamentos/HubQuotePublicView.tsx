@@ -28,6 +28,7 @@ import {
   staffStatusLabel,
 } from './hubQuoteViewUtils';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
+import { formatBrTaxIdDisplay } from '../../utils/formatBrTaxId';
 import {
   PublicDocCardTitle,
   PublicDocFieldLabel,
@@ -155,7 +156,7 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
                 {prospect.tax_id ? (
                   <>
                     <PublicDocFieldLabel icon={CreditCard}>CPF</PublicDocFieldLabel>
-                    <dd>{prospect.tax_id}</dd>
+                    <dd>{formatBrTaxIdDisplay(prospect.tax_id)}</dd>
                   </>
                 ) : null}
                 {prospect.email ? (

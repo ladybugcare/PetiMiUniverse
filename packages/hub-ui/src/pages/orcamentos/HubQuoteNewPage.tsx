@@ -14,6 +14,7 @@ import { hubProspectsApi } from '../../api/hubProspectsApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import HubQuoteWorkspace, { type HubQuoteCreateContext } from './HubQuoteWorkspace';
 import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
+import { HubBrTaxIdInput } from '../../components/HubBrTaxIdInput';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import type { HubQuote } from '../../api/hubQuotesApi';
 import '../clientes/clientes.css';
@@ -186,10 +187,10 @@ const HubQuoteNewPage: React.FC = () => {
                 </div>
                 <div className="hub-orcamento-novo__field">
                   <label className="hub-orcamento-novo__label">CPF / CNPJ *</label>
-                  <input
+                  <HubBrTaxIdInput
                     className="hub-orcamento-novo__input"
                     value={inline.tax_id}
-                    onChange={(e) => setInline((s) => ({ ...s, tax_id: e.target.value }))}
+                    onChange={(tax_id) => setInline((s) => ({ ...s, tax_id }))}
                   />
                 </div>
                 <div className="hub-orcamento-novo__field">

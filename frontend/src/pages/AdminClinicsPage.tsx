@@ -13,6 +13,7 @@ import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
+import { formatCNPJ } from '../utils/validators';
 
 interface Clinic {
   id: string;
@@ -243,7 +244,7 @@ const AdminClinicsPage: React.FC = () => {
 
   const handleEdit = (clinic: Clinic) => {
     setSelectedClinic(clinic);
-    setEditFormData(clinic);
+    setEditFormData({ ...clinic, cnpj: formatCNPJ(clinic.cnpj || '') });
     setShowEditModal(true);
   };
 
@@ -934,8 +935,10 @@ const AdminClinicsPage: React.FC = () => {
                       <input
                         type="text"
                         value={editFormData.cnpj || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, cnpj: e.target.value })}
+                        onChange={(e) => setEditFormData({ ...editFormData, cnpj: formatCNPJ(e.target.value) })}
                         style={styles.input}
+                        placeholder="00.000.000/0000-00"
+                        maxLength={18}
                       />
                     </div>
                     <div style={styles.formGroup}>

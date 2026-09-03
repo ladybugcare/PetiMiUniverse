@@ -9,10 +9,12 @@ import request from 'supertest';
 import app from '../../../app';
 import { configureSupabaseMock, getMockSupabaseClient } from '../../../__tests__/helpers/supabaseTestDouble';
 import {
+  activePrescriptionRow,
   issuedDocumentRow,
   prescriptionIssueFixture,
   RX_CLINIC_ID,
   RX_DOC_ID,
+  RX_PET_ID,
   RX_PRESCRIPTION_ID,
   RX_PUBLIC_TOKEN,
 } from '../../../__tests__/helpers/fixtures/prescription';
@@ -64,6 +66,56 @@ describe('API clínica — receita validável (integração)', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/emitida/i);
+  });
+
+  it('POST documents emite receita avulsa sem atendimento', async () => {
+    configureSupabaseMock(
+      prescriptionIssueFixture({
+        hub_prescriptions: [activePrescriptionRow({ hub_encounter_id: null, encounter: null })],
+      }),
+    );
+
+    const res = await request(app)
+      .post(`/api/hub/clinical/prescriptions/${RX_PRESCRIPTION_ID}/documents`)
+      .send({ clinic_id: RX_CLINIC_ID });
+
+    expect(res.status).toBe(201);
+    expect(res.body.document.validation_code).toMatch(/^RX-/);
+  });
+
+  it('PATCH permite vincular hub_case_id após emissão', async () => {
+    const RX_CASE_ID = '22222222-2222-4222-8222-222222222222';
+    configureSupabaseMock({
+      tables: {
+        ...prescriptionIssueFixture().tables,
+        hub_prescriptions: [
+          {
+            ...activePrescriptionRow({ hub_encounter_id: null, encounter: null }),
+            status: 'issued',
+          },
+        ],
+        hub_prescription_documents: [issuedDocumentRow()],
+        hub_clinical_cases: [
+          {
+            id: RX_CASE_ID,
+            clinic_id: RX_CLINIC_ID,
+            pet_id: RX_PET_ID,
+            title: 'Caso teste',
+            deleted_at: null,
+          },
+        ],
+      },
+    });
+
+    const res = await request(app)
+      .patch(`/api/hub/clinical/prescriptions/${RX_PRESCRIPTION_ID}`)
+      .send({
+        clinic_id: RX_CLINIC_ID,
+        hub_case_id: RX_CASE_ID,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.prescription.hub_case_id).toBe(RX_CASE_ID);
   });
 
   it('POST revoke exige motivo com ao menos 10 caracteres', async () => {

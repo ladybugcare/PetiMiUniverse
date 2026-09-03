@@ -1,5 +1,6 @@
 import type { HubQuote, HubQuoteProspectEmbed } from '../../api/hubQuotesApi';
 import { formatBrPhoneFromApi } from '../../utils/formatBrPhone';
+import { formatBrTaxIdFromApi } from '../../utils/formatBrTaxId';
 import { emptyGuardianForm, type GuardianFormValues } from '../clientes/GuardianCreateForm';
 
 function embedOne<T>(x: T | T[] | null | undefined): T | null {
@@ -15,7 +16,7 @@ export function quoteProspectToGuardianFormValues(quote: HubQuote, prospect: Hub
     full_name: prospect.full_name?.trim() || '',
     phone: formatBrPhoneFromApi(prospect.phone),
     email: (prospect.email ?? '').trim(),
-    tax_id: (prospect.tax_id ?? '').trim(),
+    tax_id: formatBrTaxIdFromApi(prospect.tax_id),
     lead_source: 'Orçamento',
     notes: `Orçamento #${refShort}`,
   };

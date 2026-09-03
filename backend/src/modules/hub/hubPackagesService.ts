@@ -605,6 +605,47 @@ export function hasPackageBalanceForServices(
   return false;
 }
 
+/**
+ * Zera valores de serviços cobertos por saldo (FIFO simulado por item).
+ * Retorna novo estimated e services com amounts ajustados.
+ */
+export function applyPackageCoverageToEstimate(input: {
+  balances: Awaited<ReturnType<typeof listActivePackageBalances>>;
+  guardianId: string | null;
+  petId: string | null;
+  serviceTypeIds: string[];
+  services: { name: string; amount: number }[];
+  estimatedAmount: number;
+}): { estimated_amount: number; services: { name: string; amount: number }[]; covered: boolean } {
+  if (!input.guardianId || !input.services.length) {
+    return { estimated_amount: input.estimatedAmount, services: input.services, covered: false };
+  }
+  const remainingByBalance = new Map<string, number>();
+  for (const b of input.balances) {
+    remainingByBalance.set(b.id as string, Number(b.sessions_remaining ?? 0));
+  }
+  let covered = false;
+  const services = input.services.map((svc, idx) => {
+    const stId = input.serviceTypeIds[idx];
+    if (!stId) return svc;
+    for (const b of input.balances) {
+      if (String(b.guardian_id) !== input.guardianId) continue;
+      if (String(b.hub_service_type_id) !== stId) continue;
+      const balPet = b.pet_id as string | null;
+      if (balPet && input.petId && balPet !== input.petId) continue;
+      if (balPet && !input.petId) continue;
+      const left = remainingByBalance.get(b.id as string) ?? 0;
+      if (left <= 0) continue;
+      remainingByBalance.set(b.id as string, left - 1);
+      covered = true;
+      return { ...svc, amount: 0 };
+    }
+    return svc;
+  });
+  const estimated_amount = Math.round(services.reduce((s, x) => s + Number(x.amount ?? 0), 0) * 100) / 100;
+  return { estimated_amount, services, covered };
+}
+
 export async function eligibleBalancesForComandaItem(input: {
   clinicId: string;
   guardianId: string;
@@ -625,4 +666,72 @@ export async function eligibleBalancesForComandaItem(input: {
     if (balVariant && !pricingVariantsEqual(balVariant, input.pricingVariant)) return false;
     return true;
   });
+}
+
+type AutoApplyComandaItem = {
+  pet_id: string | null;
+  item_kind: string;
+  hub_service_type_id: string | null;
+  description: string;
+  unit_amount: number;
+  line_total: number;
+  origin_type: string | null;
+  origin_id: string | null;
+  package_balance_id?: string | null;
+  [key: string]: unknown;
+};
+
+/**
+ * Aplica saldo de pacote elegível (FIFO por expires_at) em linhas de serviço sem cobertura.
+ * Mutua `items` in-place; zera valor e anexa descrição "— Pacote …".
+ * `excludeAppointmentIdsCoveredByInvoice`: não aplica pacote se a ocorrência já está em fatura de série.
+ */
+export async function autoApplyEligiblePackagesToItems<T extends AutoApplyComandaItem>(input: {
+  clinicId: string;
+  guardianId: string;
+  items: T[];
+  /** Resolve pricing_variant por item (ex.: appointment_service). */
+  resolvePricingVariant?: (item: T) => Promise<HubQuotePricingVariantInput | null>;
+  skipIfAlreadyCovered?: (item: T) => boolean | Promise<boolean>;
+}): Promise<{ appliedCount: number; subtotal: number }> {
+  const usedBalanceIds: string[] = [];
+  let appliedCount = 0;
+
+  for (const it of input.items) {
+    if (it.package_balance_id) continue;
+    if (it.item_kind !== 'service') continue;
+    const serviceTypeId = it.hub_service_type_id;
+    if (!serviceTypeId) continue;
+    if (input.skipIfAlreadyCovered && (await input.skipIfAlreadyCovered(it))) continue;
+
+    const pricingVariant = input.resolvePricingVariant
+      ? await input.resolvePricingVariant(it)
+      : null;
+
+    const balance = await findEligiblePackageBalance({
+      clinicId: input.clinicId,
+      guardianId: input.guardianId,
+      petId: it.pet_id,
+      hubServiceTypeId: serviceTypeId,
+      pricingVariant,
+      excludeBalanceIds: usedBalanceIds,
+    });
+    if (!balance) continue;
+
+    const pkgEmbed = balance.hub_packages as { name?: string } | { name?: string }[] | null;
+    const pkgName = Array.isArray(pkgEmbed) ? pkgEmbed[0]?.name : pkgEmbed?.name;
+    const remaining = Number(balance.sessions_remaining ?? 0);
+    const baseDesc = String(it.description ?? '').split(' — Pacote')[0].trim();
+    it.description = `${baseDesc} — Pacote ${pkgName ?? ''} (${remaining} restantes)`.trim();
+    it.unit_amount = 0;
+    it.line_total = 0;
+    it.package_balance_id = balance.id as string;
+    usedBalanceIds.push(balance.id as string);
+    appliedCount += 1;
+  }
+
+  const subtotal = Math.round(
+    input.items.reduce((s, it) => s + Number(it.line_total ?? 0), 0) * 100
+  ) / 100;
+  return { appliedCount, subtotal };
 }

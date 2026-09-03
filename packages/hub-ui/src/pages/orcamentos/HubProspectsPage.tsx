@@ -13,6 +13,7 @@ import { hubProspectsApi, type HubProspect } from '../../api/hubProspectsApi';
 import { maskTaxIdForList } from '../../utils/maskTaxId';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
+import { HubBrTaxIdInput } from '../../components/HubBrTaxIdInput';
 import '../clientes/clientes.css';
 import '../pets/pets-page.css';
 import '../servicos/servicos-page.css';
@@ -73,7 +74,7 @@ const HubProspectsPage: React.FC = () => {
     const tax_id = form.tax_id.trim();
     const phone = form.phone.trim();
     if (!full_name || !tax_id || !phone) {
-      showError('Preencha nome, CPF e telefone.');
+      showError('Preencha nome, CPF/CNPJ e telefone.');
       return;
     }
     setCreating(true);
@@ -217,11 +218,11 @@ const HubProspectsPage: React.FC = () => {
               />
             </div>
             <div className="hub-clientes__field">
-              <label className="hub-clientes__label">CPF *</label>
-              <input
+              <label className="hub-clientes__label">CPF / CNPJ *</label>
+              <HubBrTaxIdInput
                 className="hub-clientes__input"
                 value={form.tax_id}
-                onChange={(e) => setForm((f) => ({ ...f, tax_id: e.target.value }))}
+                onChange={(tax_id) => setForm((f) => ({ ...f, tax_id }))}
               />
             </div>
             <div className="hub-clientes__field">

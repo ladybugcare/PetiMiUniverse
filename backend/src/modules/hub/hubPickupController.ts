@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { fetchHubPetsMapByIds, resolvePrimaryPetIdsByGuardians } from './hubDayBoardPets';
 import { syncOpenComandasAfterAppointmentOperationalComplete } from './hubComandasController';
+import { notifyHubPetOnTheWay } from './hubNotifyEvents';
 import { partitionStopsIntoBatches } from './hubPickupSuggestBatches';
 
 const uuidStr = z.string().uuid();
@@ -274,6 +275,44 @@ const VALID_STOP_TRANSITIONS: Record<string, string[]> = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Avisa a recepção que o pet embarcou e está a caminho da clínica.
+ * Só vale para coletas (`pickup`): na entrega o pet está voltando para casa.
+ */
+async function notifyPetOnTheWayForStop(opts: {
+  clinicId: string;
+  stopId: string;
+  direction: string;
+  appointmentId: string | null;
+  actorUserId?: string | null;
+  petId?: string | null;
+}): Promise<void> {
+  if (opts.direction !== 'pickup') return;
+  try {
+    let petId = opts.petId ?? null;
+    let unitId: string | null = null;
+    if (opts.appointmentId) {
+      const { data: appt } = await supabaseAdmin
+        .from('hub_appointments')
+        .select('pet_id, unit_id')
+        .eq('id', opts.appointmentId)
+        .eq('clinic_id', opts.clinicId)
+        .maybeSingle();
+      petId = petId ?? ((appt?.pet_id as string | null) ?? null);
+      unitId = (appt?.unit_id as string | null) ?? null;
+    }
+    await notifyHubPetOnTheWay({
+      clinicId: opts.clinicId,
+      unitId,
+      petId,
+      stopId: opts.stopId,
+      excludeUserIds: opts.actorUserId ? [opts.actorUserId] : undefined,
+    });
+  } catch (e) {
+    console.error('[hubPickupController] notifyPetOnTheWayForStop', e);
+  }
+}
 
 function dayBoundsFromYmdSaoPaulo(dateYmd: string): { from: string; to: string } {
   const from = new Date(`${dateYmd}T00:00:00-03:00`);
@@ -1456,6 +1495,16 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
       }
     }
 
+    if (newStatus === 'in_transit' && newStatus !== cur.status) {
+      void notifyPetOnTheWayForStop({
+        clinicId: clinic_id,
+        stopId: id,
+        direction: cur.direction,
+        appointmentId: cur.hub_appointment_id,
+        actorUserId: req.user?.id ?? null,
+      });
+    }
+
     // Auto-concluir rota se todas as paradas estiverem concluídas ou com falha
     if (newStatus && ['completed', 'failed'].includes(newStatus) && cur.hub_pickup_route_id) {
       const { data: remainingStops } = await supabaseAdmin
@@ -1609,6 +1658,17 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
     }
     if (status === 'completed') {
       void syncOpenComandasAfterAppointmentOperationalComplete(clinic_id, hub_appointment_id);
+    }
+
+    if (status === 'in_transit' && statusChanged) {
+      void notifyPetOnTheWayForStop({
+        clinicId: clinic_id,
+        stopId: String(stop.id),
+        direction,
+        appointmentId: hub_appointment_id,
+        actorUserId: req.user?.id ?? null,
+        petId: a.pet_id,
+      });
     }
 
     return res.status(existing ? 200 : 201).json({ stop });

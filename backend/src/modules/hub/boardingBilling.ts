@@ -135,6 +135,8 @@ export type DayBoardBilling = {
   receivable_status: 'pending' | 'partially_paid' | 'paid' | null;
   finance_handoff_at: string | null;
   active_receivable_id: string | null;
+  /** Vencimento do recebível ativo (pendente/parcial), quando houver. */
+  due_date: string | null;
 };
 
 export function isBilledViaComandaHandoff(billing: DayBoardBilling): boolean {

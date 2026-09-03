@@ -109,6 +109,11 @@
     justify-content: center;
     min-height: 44px;
   }
+
+  .hub-side-panel__footer .hub-agenda-appt-panel__footer-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
 }
 
 .hub-side-panel__header {
@@ -158,6 +163,33 @@
   margin: 2px 0 0;
   font-size: 13px;
   color: #6b6560;
+}
+
+.hub-side-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.hub-side-panel__header-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  color: #6b6560;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.hub-side-panel__header-btn:hover {
+  background: #f5f0eb;
+  color: #1a1714;
 }
 
 .hub-side-panel__close {

@@ -1,5 +1,12 @@
 /* Layout de perfil (Meu Perfil / Cliente / Pet) — compartilhado no hub-ui */
 .hub-meu-perfil {
+  /* Mesmos tokens do side panel / .hub-clientes (botões hub-clientes__btn). */
+  --hc-brand: #c86a4d;
+  --hc-brand-hover: #a85a40;
+  --hc-text: #4a3b3a;
+  --hc-text-muted: #8e6e67;
+  --hc-border: #e5dcd6;
+  --hc-card: #ffffff;
   max-width: 1100px;
   margin: 0 auto;
   display: grid;

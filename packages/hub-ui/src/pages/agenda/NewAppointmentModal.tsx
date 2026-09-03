@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, ChevronUp, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock, Zap } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { HubSidePanel } from '../../components/HubSidePanel';
@@ -23,6 +24,7 @@ import {
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { hubClinicalCasesApi, type HubClinicalCase } from '../../api/hubClinicalApi';
 import { hubClinicSettingsApi } from '../../api/hubClinicSettingsApi';
+import { hubSpecialPricesApi } from '../../api/hubSpecialPricesApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
 import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
 import { hubServiceAddonsApi } from '../../api/hubServiceAddonsApi';
@@ -133,6 +135,13 @@ export type NewAppointmentInitial = {
   source_quote_id?: string | null;
   /** Pré-marca urgência no modo encaixe (fluxo operacional → agenda). */
   walk_in_emergency?: boolean;
+  /** Pré-ativa recorrência (ex.: agendar saldo de pacote). */
+  suggest_recurrence?: {
+    occurrences: number;
+    kind?: 'daily' | 'weekly' | 'monthly';
+    interval_value?: number;
+  } | null;
+  package_balance_hint?: string | null;
   extra_blocks?: Array<{
     appointment_id?: string;
     starts_at?: string;
@@ -191,6 +200,12 @@ type RecurrenceForm = {
   end_kind: 'until' | 'occurrences';
   until_date: string;
   occurrences: number;
+  billing_mode: 'per_occurrence' | 'periodic_invoice';
+  invoice_issue_rule: 'fixed_day' | 'first_business_day';
+  invoice_issue_day: number;
+  invoice_due_rule: 'same_day' | 'plus_days' | 'fixed_day';
+  invoice_due_day: number;
+  invoice_due_plus_days: number;
 };
 
 const DEFAULT_RECURRENCE: RecurrenceForm = {
@@ -200,6 +215,12 @@ const DEFAULT_RECURRENCE: RecurrenceForm = {
   end_kind: 'occurrences',
   until_date: '',
   occurrences: 4,
+  billing_mode: 'per_occurrence',
+  invoice_issue_rule: 'first_business_day',
+  invoice_issue_day: 1,
+  invoice_due_rule: 'same_day',
+  invoice_due_day: 1,
+  invoice_due_plus_days: 0,
 };
 
 const DOW_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
@@ -310,6 +331,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [syncSameServicesForAll, setSyncSameServicesForAll] = useState(false);
   const [syncSameStaffForAll, setSyncSameStaffForAll] = useState(true);
   const [guardianPets, setGuardianPets] = useState<GuardianPetOption[]>([]);
+  const [guardianPetsLoading, setGuardianPetsLoading] = useState(false);
   const [guardianOptions, setGuardianOptions] = useState<HubComboboxOption[]>([]);
   const [guardiansLoading, setGuardiansLoading] = useState(false);
   const [quickRegisterOpen, setQuickRegisterOpen] = useState(false);
@@ -609,6 +631,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         setMainBlockNotesUserEdited(true);
       }
       if (initial.financial_notes) setFinancialNotes(initial.financial_notes);
+      if (!isWalkIn && initial.suggest_recurrence && initial.suggest_recurrence.occurrences >= 2) {
+        setWithRecurrence(true);
+        setRecurrence({
+          ...DEFAULT_RECURRENCE,
+          kind: initial.suggest_recurrence.kind ?? 'weekly',
+          interval_value: initial.suggest_recurrence.interval_value ?? 1,
+          end_kind: 'occurrences',
+          occurrences: Math.min(52, Math.max(2, Math.floor(initial.suggest_recurrence.occurrences))),
+        });
+      }
       if (initial.services?.length) {
         setServices(
           initial.services
@@ -789,36 +821,52 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   useEffect(() => {
     if (!guardianId || !clinicId) {
       setGuardianPets([]);
+      setGuardianPetsLoading(false);
       setPetId('');
       setPetName('');
       return;
     }
-    hubGuardiansApi.getById(guardianId, clinicId).then(({ pets }) => {
-      const mapped: GuardianPetOption[] = pets.map((p) => ({
-        id: p.id,
-        name: p.name,
-        size_tier: p.size_tier || 'medio',
-        coat_type: p.coat_type ?? null,
-        birth_date: p.birth_date,
-      }));
-      setGuardianPets(mapped);
-      const initialPetId = initialPetIdRef.current;
-      const initialPet = initialPetId ? mapped.find((p) => p.id === initialPetId) : null;
-      if (initialPet) {
-        setPetId(initialPet.id);
-        setPetName(initialPet.name);
-        setSelectedPetIds(multiPetEnabled ? [initialPet.id] : []);
-        initialPetIdRef.current = null;
-      } else if (mapped.length === 1) {
-        setPetId(mapped[0]!.id);
-        setPetName(mapped[0]!.name);
-        setSelectedPetIds(multiPetEnabled ? [mapped[0]!.id] : []);
-      } else {
-        setPetId('');
-        setPetName('');
-        setSelectedPetIds([]);
-      }
-    }).catch(() => setGuardianPets([]));
+    let cancelled = false;
+    setGuardianPets([]);
+    setGuardianPetsLoading(true);
+    hubGuardiansApi
+      .getById(guardianId, clinicId)
+      .then(({ pets }) => {
+        if (cancelled) return;
+        const mapped: GuardianPetOption[] = pets.map((p) => ({
+          id: p.id,
+          name: p.name,
+          size_tier: p.size_tier || 'medio',
+          coat_type: p.coat_type ?? null,
+          birth_date: p.birth_date,
+        }));
+        setGuardianPets(mapped);
+        const initialPetId = initialPetIdRef.current;
+        const initialPet = initialPetId ? mapped.find((p) => p.id === initialPetId) : null;
+        if (initialPet) {
+          setPetId(initialPet.id);
+          setPetName(initialPet.name);
+          setSelectedPetIds(multiPetEnabled ? [initialPet.id] : []);
+          initialPetIdRef.current = null;
+        } else if (mapped.length === 1) {
+          setPetId(mapped[0]!.id);
+          setPetName(mapped[0]!.name);
+          setSelectedPetIds(multiPetEnabled ? [mapped[0]!.id] : []);
+        } else {
+          setPetId('');
+          setPetName('');
+          setSelectedPetIds([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setGuardianPets([]);
+      })
+      .finally(() => {
+        if (!cancelled) setGuardianPetsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [guardianId, clinicId, multiPetEnabled]);
 
   useEffect(() => {
@@ -945,15 +993,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   useEffect(() => {
     if (selectedServiceTypes.length === 0) return;
+    // Em edição, nunca troca/zera o profissional automaticamente.
+    if (isEditMode) return;
     if (suggestedStaffIds.size === 1) {
       const only = [...suggestedStaffIds][0]!;
       setStaffId((prev) => (prev === only ? prev : only));
-      return;
     }
-    if (staffId && !suggestedStaffIds.has(staffId) && suggestedStaffIds.size > 0) {
-      setStaffId('');
-    }
-  }, [selectedServiceTypes, suggestedStaffIds, staffId]);
+  }, [selectedServiceTypes, suggestedStaffIds, isEditMode]);
+
+  const staffIncompatibleWithServices = useMemo(() => {
+    if (!staffId || selectedServiceTypes.length === 0 || suggestedStaffIds.size === 0) return false;
+    return !suggestedStaffIds.has(staffId);
+  }, [staffId, selectedServiceTypes.length, suggestedStaffIds]);
 
   const staffComboOptions = useMemo<HubComboboxOption[]>(() => {
     const eligible = staffOptions.filter((s) => s.active && s.accepts_appointments);
@@ -967,13 +1018,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     if (selectedServiceTypes.length > 0 && suggested.length > 0) {
       rows.push(...suggested.map((s) => mapRow(s, ' · sugerido')));
       if (others.length > 0) {
-        rows.push(...others.map((s) => mapRow(s, '')));
+        rows.push(...others.map((s) => mapRow(s, staffId === s.id ? ' · atual' : '')));
       }
     } else {
       rows.push(...eligible.map((s) => mapRow(s, '')));
     }
     return rows;
-  }, [staffOptions, suggestedStaffIds, selectedServiceTypes.length]);
+  }, [staffOptions, suggestedStaffIds, selectedServiceTypes.length, staffId]);
 
   const setClinicalRoutinePrimaryService = useCallback(
     (id: string) => {
@@ -1471,6 +1522,73 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const updateServicePricingVariant = (idx: number, variant: HubQuotePricingVariant | null) =>
     setServices((prev) => prev.map((s, i) => (i === idx ? { ...s, pricing_variant: variant } : s)));
 
+  const updateServiceSaleAmount = (idx: number, amount: number | null) =>
+    setServices((prev) =>
+      prev.map((s, i) => (i === idx ? { ...s, sale_amount_override: amount } : s)),
+    );
+
+  const updateServicePersistSpecial = (idx: number, persist: boolean, scope: 'pet' | 'guardian') =>
+    setServices((prev) =>
+      prev.map((s, i) =>
+        i === idx ? { ...s, persist_special_price: persist, persist_special_scope: scope } : s,
+      ),
+    );
+
+  /** Aplica preços especiais ativos do pet/tutor nos chips (default = especial). */
+  useEffect(() => {
+    if (!open || !clinicId || !petId || services.length === 0) return;
+    let cancelled = false;
+    const svcIds = services.map((s) => s.hub_service_type_id);
+    void (async () => {
+      try {
+        const results = await Promise.all(
+          svcIds.map(async (sid) => {
+            const res = await hubSpecialPricesApi.resolve({
+              clinic_id: clinicId,
+              hub_service_type_id: sid,
+              pet_id: petId,
+              guardian_id: guardianId || undefined,
+              on_date: dateYmd || undefined,
+            });
+            return { sid, res };
+          }),
+        );
+        if (cancelled) return;
+        setServices((prev) =>
+          prev.map((chip) => {
+            const hit = results.find((r) => r.sid === chip.hub_service_type_id);
+            const sp = hit?.res.special_price ?? null;
+            const catalog = hit?.res.catalog_sale ?? null;
+            if (!sp) {
+              return { ...chip, special_price_hint: null };
+            }
+            const alreadyManual =
+              chip.sale_amount_override != null &&
+              chip.persist_special_price !== true &&
+              Math.abs(Number(chip.sale_amount_override) - sp.sale_amount) > 0.009;
+            return {
+              ...chip,
+              sale_amount_override: alreadyManual ? chip.sale_amount_override : sp.sale_amount,
+              special_price_hint: {
+                catalog_sale: catalog ?? sp.catalog_sale ?? sp.sale_amount,
+                special_sale: sp.sale_amount,
+                scope: sp.scope,
+                family_total: sp.family_total,
+                family_pet_count: sp.family_pet_count,
+              },
+            };
+          }),
+        );
+      } catch {
+        /* silencioso — agenda continua com catálogo */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só reage a pet/serviços/data
+  }, [open, clinicId, petId, guardianId, dateYmd, services.map((s) => s.hub_service_type_id).join('|')]);
+
   useEffect(() => {
     if (!open || !clinicId || !allPetServiceIdsSignature) {
       setAddonsByParent(new Map());
@@ -1795,6 +1913,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           hub_service_type_id: s.hub_service_type_id,
           duration_minutes: s.duration_minutes,
           pricing_variant: s.pricing_variant ?? undefined,
+          sale_amount_override: s.sale_amount_override ?? undefined,
+          persist_special_price: s.persist_special_price === true ? true : undefined,
+          persist_special_scope: s.persist_special_price ? s.persist_special_scope ?? 'pet' : undefined,
         })),
       };
 
@@ -1890,7 +2011,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           interval_value: recurrence.interval_value,
           days_of_week: recurrence.kind === 'weekly' && recurrence.days_of_week.length > 0 ? recurrence.days_of_week : undefined,
           day_of_month: recurrence.kind === 'monthly' ? new Date(startsAt).getDate() : undefined,
+          billing_mode: recurrence.billing_mode,
         };
+        if (recurrence.billing_mode === 'periodic_invoice') {
+          rule.invoice_issue_rule = recurrence.invoice_issue_rule;
+          rule.invoice_issue_day =
+            recurrence.invoice_issue_rule === 'fixed_day' ? recurrence.invoice_issue_day : null;
+          rule.invoice_due_rule = recurrence.invoice_due_rule;
+          rule.invoice_due_day =
+            recurrence.invoice_due_rule === 'fixed_day' ? recurrence.invoice_due_day : null;
+          rule.invoice_due_plus_days =
+            recurrence.invoice_due_rule === 'plus_days' ? recurrence.invoice_due_plus_days : null;
+        }
         if (recurrence.end_kind === 'until' && recurrence.until_date) {
           rule.until_date = recurrence.until_date;
         } else {
@@ -1910,6 +2042,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               hub_service_type_id: s.hub_service_type_id,
               duration_minutes: s.duration_minutes,
               pricing_variant: s.pricing_variant ?? undefined,
+              sale_amount_override: s.sale_amount_override ?? undefined,
+              persist_special_price: s.persist_special_price === true ? true : undefined,
+              persist_special_scope: s.persist_special_price
+                ? s.persist_special_scope ?? 'pet'
+                : undefined,
             })),
             pricing_porte_tier: cfg.pricingApptPorteTier.trim() || null,
             pricing_coat_type: cfg.pricingApptCoatType.trim() || null,
@@ -2141,7 +2278,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   ? ` · Pelagem: ${COAT_TYPE_LABELS[pricingApptCoatType.trim() as CoatTypeValue] ?? pricingApptCoatType}`
                   : ''}
               </p>
-              {pricingPreview.lines.map((ln, i) => (
+              {pricingPreview.lines.map((ln, i) => {
+                const chip = services.find((s) => s.hub_service_type_id === ln.hub_service_type_id);
+                const sale =
+                  chip?.sale_amount_override != null && Number.isFinite(chip.sale_amount_override)
+                    ? Number(chip.sale_amount_override)
+                    : ln.sale;
+                const specialHint = chip?.special_price_hint;
+                return (
                 <div
                   key={`${ln.hub_service_type_id}-${ln.name}-${i}`}
                   className={ln.isAddon ? 'nam-aside__row nam-aside__row--addon' : 'nam-aside__row'}
@@ -2149,20 +2293,37 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   <span className="nam-aside__item">{ln.isAddon ? `Adicional: ${ln.name}` : ln.name}</span>
                   <span className="nam-aside__muted">
                     {ln.isAddon
-                      ? ln.sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                      ? sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                       : (
                           <>
-                            {ln.tierApplied ? PORTE_LABELS[ln.tierApplied as PorteValue] ?? ln.tierApplied : '—'}
-                            {ln.coatTypeApplied
-                              ? ` / ${COAT_TYPE_LABELS[ln.coatTypeApplied as CoatTypeValue] ?? ln.coatTypeApplied}`
-                              : ''}
-                            {ln.needsCoatType ? ' / selecione pelagem' : ''} ·{' '}
-                            {ln.sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            {specialHint ? (
+                              <>
+                                especial ·{' '}
+                                {sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                <span style={{ display: 'block', fontSize: 11 }}>
+                                  catálogo{' '}
+                                  {specialHint.catalog_sale.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                {ln.tierApplied ? PORTE_LABELS[ln.tierApplied as PorteValue] ?? ln.tierApplied : '—'}
+                                {ln.coatTypeApplied
+                                  ? ` / ${COAT_TYPE_LABELS[ln.coatTypeApplied as CoatTypeValue] ?? ln.coatTypeApplied}`
+                                  : ''}
+                                {ln.needsCoatType ? ' / selecione pelagem' : ''} ·{' '}
+                                {sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </>
+                            )}
                           </>
                         )}
                   </span>
                 </div>
-              ))}
+              );
+              })}
             </>
           ) : null}
           {pickupPricingPreview && pickupPricingPreview.source === 'attached' ? (
@@ -2321,40 +2482,43 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     </>
   );
 
-  const seriesScopeOverlay = seriesScopePickerOpen ? (
-    <div className="hub-agenda-series-scope" role="dialog" aria-modal="true" aria-label="Escopo da série">
-      <div className="hub-agenda-series-scope__card">
-        <h3 className="hub-agenda-series-scope__title">Aplicar alterações em</h3>
-        <p className="hub-agenda-series-scope__hint">Este agendamento faz parte de uma série recorrente.</p>
-        {extraBlocks.length > 0 ? (
-          <p className="hub-agenda-series-scope__hint">
-            Blocos adicionais só serão salvos se escolher «Só este agendamento».
-          </p>
-        ) : null}
-        <div className="hub-agenda-series-scope__actions">
-          <button type="button" className="hub-btn hub-btn--secondary" onClick={() => void submitPatch('this')} disabled={saving}>
-            Só este agendamento
-          </button>
-          <button type="button" className="hub-btn hub-btn--secondary" onClick={() => void submitPatch('future')} disabled={saving}>
-            Este e os futuros
-          </button>
-          <button type="button" className="hub-btn hub-btn--primary" onClick={() => void submitPatch('all')} disabled={saving}>
-            Toda a série
-          </button>
-        </div>
-        <button
-          type="button"
-          className="hub-agenda-series-scope__cancel"
-          onClick={() => {
-            setSeriesScopePickerOpen(false);
-            pendingPatchPayloadRef.current = null;
-          }}
-        >
-          Voltar
-        </button>
-      </div>
-    </div>
-  ) : null;
+  const seriesScopeOverlay = seriesScopePickerOpen
+    ? createPortal(
+        <div className="hub-agenda-series-scope" role="dialog" aria-modal="true" aria-label="Escopo da série">
+          <div className="hub-agenda-series-scope__card">
+            <h3 className="hub-agenda-series-scope__title">Aplicar alterações em</h3>
+            <p className="hub-agenda-series-scope__hint">Este agendamento faz parte de uma série recorrente.</p>
+            {extraBlocks.length > 0 ? (
+              <p className="hub-agenda-series-scope__hint">
+                Blocos adicionais só serão salvos se escolher «Só este agendamento».
+              </p>
+            ) : null}
+            <div className="hub-agenda-series-scope__actions">
+              <button type="button" className="hub-btn hub-btn--secondary" onClick={() => void submitPatch('this')} disabled={saving}>
+                Só este agendamento
+              </button>
+              <button type="button" className="hub-btn hub-btn--secondary" onClick={() => void submitPatch('future')} disabled={saving}>
+                Este e os futuros
+              </button>
+              <button type="button" className="hub-btn hub-btn--primary" onClick={() => void submitPatch('all')} disabled={saving}>
+                Toda a série
+              </button>
+            </div>
+            <button
+              type="button"
+              className="hub-agenda-series-scope__cancel"
+              onClick={() => {
+                setSeriesScopePickerOpen(false);
+                pendingPatchPayloadRef.current = null;
+              }}
+            >
+              Voltar
+            </button>
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
 
   if (isClinicalRoutine) {
     return (
@@ -2425,7 +2589,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     Pet
                   </label>
                   {guardianId ? (
-                    petComboOptions.length > 0 ? (
+                    guardianPetsLoading ? (
+                      <div className="nam-field-shell nam-field-shell--waiting" aria-busy="true">
+                        <span className="nam-field-shell__icon">
+                          <Loader2 size={18} strokeWidth={2} className="nam-field-shell__spin" aria-hidden />
+                        </span>
+                        <span className="nam-field-shell__text">Carregando pets…</span>
+                      </div>
+                    ) : petComboOptions.length > 0 ? (
                       <HubSearchableCombobox
                         id="nam-cr-pet"
                         options={petComboOptions}
@@ -2440,15 +2611,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                         ariaLabel="Selecionar pet"
                       />
                     ) : (
-                      <div className="nam-field-shell nam-field-shell--empty nam-field-shell--stacked" role="status">
+                      <div className="nam-field-shell nam-field-shell--blocked" role="status">
                         <span className="nam-field-shell__icon" aria-hidden>
                           <Dog size={18} strokeWidth={2} />
                         </span>
-                        <span className="nam-field-shell__text">Nenhum pet cadastrado</span>
-                        <button type="button" className="nam-quick-register-btn" onClick={openQuickRegisterPetsOnly}>
-                          <Plus size={16} strokeWidth={2} aria-hidden />
-                          Cadastrar pet
-                        </button>
+                        <span className="nam-field-shell__text">Nenhum pet neste tutor</span>
                       </div>
                     )
                   ) : (
@@ -2761,7 +2928,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   Pet
                 </label>
                 {guardianId ? (
-                  petComboOptions.length > 0 ? (
+                  guardianPetsLoading ? (
+                    <div className="nam-field-shell nam-field-shell--waiting" aria-busy="true">
+                      <span className="nam-field-shell__icon">
+                        <Loader2 size={18} strokeWidth={2} className="nam-field-shell__spin" aria-hidden />
+                      </span>
+                      <span className="nam-field-shell__text">Carregando pets…</span>
+                    </div>
+                  ) : petComboOptions.length > 0 ? (
                     multiPetEnabled ? (
                       <AppointmentPetSelector
                         id="nam-pet"
@@ -2785,15 +2959,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                       />
                     )
                   ) : (
-                    <div className="nam-field-shell nam-field-shell--empty nam-field-shell--stacked" role="status">
+                    <div className="nam-field-shell nam-field-shell--blocked" role="status">
                       <span className="nam-field-shell__icon" aria-hidden>
                         <Dog size={18} strokeWidth={2} />
                       </span>
-                      <span className="nam-field-shell__text">Nenhum pet cadastrado</span>
-                      <button type="button" className="nam-quick-register-btn" onClick={openQuickRegisterPetsOnly}>
-                        <Plus size={16} strokeWidth={2} aria-hidden />
-                        Cadastrar pet
-                      </button>
+                      <span className="nam-field-shell__text">Nenhum pet neste tutor</span>
                     </div>
                   )
                 ) : (
@@ -2837,6 +3007,57 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             ) : null}
           </div>
         </div>
+
+        {isEditMode ? (
+          <div className="nam-section nam-edit-staff-priority">
+            <h3 className="nam-section-title">Equipe</h3>
+            <div className="nam-quick-card">
+              <div className="nam-row nam-row--cols2">
+                <div className="nam-field">
+                  <label className="nam-label" htmlFor="nam-staff-edit-top">
+                    Profissional
+                  </label>
+                  <HubSearchableCombobox
+                    id="nam-staff-edit-top"
+                    options={staffComboOptions}
+                    value={staffId}
+                    onChange={setStaffId}
+                    placeholder="Não atribuído"
+                    clearable={false}
+                    triggerIcon={<Stethoscope size={18} strokeWidth={2} aria-hidden />}
+                    ariaLabel="Selecionar profissional"
+                  />
+                  {staffIncompatibleWithServices ? (
+                    <p className="nam-staff-compat-warn" role="status">
+                      <AlertCircle size={14} aria-hidden />
+                      Este profissional não está no mapeamento dos serviços atuais. Você pode manter ou
+                      trocar conscientemente.
+                    </p>
+                  ) : null}
+                  {seriesId ? (
+                    <p className="nam-muted" style={{ margin: '6px 0 0', fontSize: 12 }}>
+                      Série recorrente: ao salvar, escolha se a troca vale só neste, nos futuros ou em toda a
+                      série.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="nam-field">
+                  <label className="nam-label" htmlFor="nam-resource-edit-top">
+                    Recurso / Sala
+                  </label>
+                  <input
+                    id="nam-resource-edit-top"
+                    className="nam-input"
+                    type="text"
+                    placeholder="Ex.: Mesa 1, Van…"
+                    value={resourceLabel}
+                    onChange={(e) => setResourceLabel(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {isMultiPetSelection ? (
           <div className="nam-section nam-multi-pet-visits">
@@ -2976,6 +3197,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   variantMatrix={serviceNeedsVariantMatrix(chip, serviceTypes)}
                   onVariantChange={(v) => updateServicePricingVariant(idx, v)}
                   pricingLine={pricingLineByServiceId.get(chip.hub_service_type_id) ?? null}
+                  showSpecialPriceControls={Boolean(petId)}
+                  onSaleAmountChange={(amount) => updateServiceSaleAmount(idx, amount)}
+                  onPersistSpecialChange={(persist, scope) =>
+                    updateServicePersistSpecial(idx, persist, scope)
+                  }
                 />
               ))}
               <div className="nam-chips__duration-breakdown">
@@ -3070,7 +3296,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         </div>
         ) : null}
 
-        {/* ── 3 + 4. Profissional / Recurso ────────────────────────────── */}
+        {/* ── 3 + 4. Profissional / Recurso (criação; em edição fica no topo) ─ */}
+        {!isEditMode ? (
         <div className="nam-section">
           <div className="nam-row nam-row--cols2">
             {(!isMultiPetSelection || syncSameStaffForAll) ? (
@@ -3084,6 +3311,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 placeholder="Não atribuído"
                 clearable={false}
               />
+              {staffIncompatibleWithServices ? (
+                <p className="nam-staff-compat-warn" role="status">
+                  <AlertCircle size={14} aria-hidden />
+                  Este profissional não está no mapeamento dos serviços atuais. Você pode manter ou trocar
+                  conscientemente.
+                </p>
+              ) : null}
             </div>
             ) : (
             <div className="nam-field">
@@ -3105,6 +3339,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             </div>
           </div>
         </div>
+        ) : null}
             </div>
           )}
         </div>
@@ -3147,6 +3382,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           <>
         {/* ── 9. Repetição ─────────────────────────────────────────────── */}
         <div className="nam-section">
+          {initial?.package_balance_hint ? (
+            <p className="nam-aside__muted" style={{ marginBottom: 8 }}>
+              {initial.package_balance_hint}
+            </p>
+          ) : null}
           <HubCheckbox
             className="nam-checkbox-label"
             checked={withRecurrence}
@@ -3251,6 +3491,143 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   )}
                 </div>
               </div>
+
+              <div className="nam-field" style={{ marginTop: 12 }}>
+                <label className="nam-label">Como quer cobrar esta série?</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+                  <label className="nam-checkbox-label" style={{ alignItems: 'flex-start' }}>
+                    <input
+                      type="radio"
+                      name="nam-series-billing"
+                      checked={recurrence.billing_mode === 'per_occurrence'}
+                      onChange={() => setRecurrence((r) => ({ ...r, billing_mode: 'per_occurrence' }))}
+                    />
+                    <span>
+                      <strong>Separado</strong> — cada dia no caixa (como hoje)
+                    </span>
+                  </label>
+                  <label className="nam-checkbox-label" style={{ alignItems: 'flex-start' }}>
+                    <input
+                      type="radio"
+                      name="nam-series-billing"
+                      checked={recurrence.billing_mode === 'periodic_invoice'}
+                      onChange={() => setRecurrence((r) => ({ ...r, billing_mode: 'periodic_invoice' }))}
+                    />
+                    <span>
+                      <strong>Fatura em série</strong> — cobrança agrupada no mês
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {recurrence.billing_mode === 'periodic_invoice' ? (
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e5e7eb' }}>
+                  <p className="nam-aside__muted" style={{ marginBottom: 8 }}>
+                    A agenda mantém todas as datas; a cobrança sai numa única fatura por mês.
+                  </p>
+                  <div className="nam-row nam-row--cols2">
+                    <div className="nam-field">
+                      <label className="nam-label">Emitir em</label>
+                      <select
+                        className="nam-select"
+                        value={recurrence.invoice_issue_rule}
+                        onChange={(e) =>
+                          setRecurrence((r) => ({
+                            ...r,
+                            invoice_issue_rule: e.target.value as RecurrenceForm['invoice_issue_rule'],
+                          }))
+                        }
+                      >
+                        <option value="first_business_day">1º dia útil do mês</option>
+                        <option value="fixed_day">Dia fixo do mês</option>
+                      </select>
+                    </div>
+                    {recurrence.invoice_issue_rule === 'fixed_day' ? (
+                      <div className="nam-field">
+                        <label className="nam-label">Dia da emissão</label>
+                        <input
+                          className="nam-input"
+                          type="number"
+                          min={1}
+                          max={28}
+                          value={recurrence.invoice_issue_day}
+                          onChange={(e) =>
+                            setRecurrence((r) => ({ ...r, invoice_issue_day: Number(e.target.value) || 1 }))
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <div className="nam-field" />
+                    )}
+                  </div>
+                  <div className="nam-row nam-row--cols2">
+                    <div className="nam-field">
+                      <label className="nam-label">Vencimento</label>
+                      <select
+                        className="nam-select"
+                        value={recurrence.invoice_due_rule}
+                        onChange={(e) =>
+                          setRecurrence((r) => ({
+                            ...r,
+                            invoice_due_rule: e.target.value as RecurrenceForm['invoice_due_rule'],
+                          }))
+                        }
+                      >
+                        <option value="same_day">Mesmo dia da emissão</option>
+                        <option value="plus_days">Emissão + N dias</option>
+                        <option value="fixed_day">Dia fixo do mês</option>
+                      </select>
+                    </div>
+                    {recurrence.invoice_due_rule === 'plus_days' ? (
+                      <div className="nam-field">
+                        <label className="nam-label">Dias após emissão</label>
+                        <input
+                          className="nam-input"
+                          type="number"
+                          min={0}
+                          max={90}
+                          value={recurrence.invoice_due_plus_days}
+                          onChange={(e) =>
+                            setRecurrence((r) => ({
+                              ...r,
+                              invoice_due_plus_days: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </div>
+                    ) : recurrence.invoice_due_rule === 'fixed_day' ? (
+                      <div className="nam-field">
+                        <label className="nam-label">Dia do vencimento</label>
+                        <input
+                          className="nam-input"
+                          type="number"
+                          min={1}
+                          max={28}
+                          value={recurrence.invoice_due_day}
+                          onChange={(e) =>
+                            setRecurrence((r) => ({ ...r, invoice_due_day: Number(e.target.value) || 1 }))
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <div className="nam-field" />
+                    )}
+                  </div>
+                  <p className="nam-aside__muted" style={{ marginTop: 8 }}>
+                    Preview: fatura mensal · emite{' '}
+                    {recurrence.invoice_issue_rule === 'first_business_day'
+                      ? 'no 1º dia útil'
+                      : `no dia ${recurrence.invoice_issue_day}`}
+                    {' · vence '}
+                    {recurrence.invoice_due_rule === 'same_day'
+                      ? 'no mesmo dia'
+                      : recurrence.invoice_due_rule === 'plus_days'
+                        ? `${recurrence.invoice_due_plus_days} dia(s) depois`
+                        : `no dia ${recurrence.invoice_due_day}`}
+                    .
+                  </p>
+                </div>
+              ) : null}
             </div>
           )}
         </div>

@@ -311,6 +311,26 @@ export const PetForm: React.FC<PetFormProps> = ({
         />
       </div>
       <div className="hub-clientes__field">
+        <label className="hub-clientes__label" htmlFor="pet-form-neutered">
+          Castrado(a)
+        </label>
+        <HubSearchableCombobox
+          id="pet-form-neutered"
+          className="hub-combobox--clientes"
+          options={[
+            { value: '', label: '—' },
+            { value: 'Y', label: 'Sim' },
+            { value: 'N', label: 'Não' },
+          ]}
+          value={value.neutered}
+          onChange={(v) => patch({ neutered: v as PetFormValues['neutered'] })}
+          placeholder="—"
+          searchPlaceholder="Buscar…"
+          allowCreate={false}
+          ariaLabel="Castrado"
+        />
+      </div>
+      <div className="hub-clientes__field">
         <HubDateField
           id="pet-form-birth-date"
           label="Data de nascimento"

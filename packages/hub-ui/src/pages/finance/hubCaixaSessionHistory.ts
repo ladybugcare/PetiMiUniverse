@@ -103,6 +103,10 @@ export function sumDayBoardPendingAmount(items: HubFinanceDayBoardItem[]): numbe
   return round2(
     items.reduce((sum, item) => {
       if (item.billing.receivable_status === 'paid') return sum;
+      if (item.coverage_kind === 'series_invoice' || item.series_invoice_comanda_id) return sum;
+      if ((item.has_package_balance || item.coverage_kind === 'package') && Number(item.estimated_amount ?? 0) <= 0.009) {
+        return sum;
+      }
       return sum + Number(item.estimated_amount ?? 0);
     }, 0),
   );

@@ -14,6 +14,7 @@ import {
   Pencil,
   Receipt,
   Search,
+  ShoppingBag,
   User,
   X,
 } from 'lucide-react';
@@ -41,11 +42,16 @@ import {
 import { CaixaSessionHistoryTimeline } from './CaixaSessionHistoryTimeline';
 import { FinanceDayBoardTable } from './FinanceDayBoardTable';
 import { SellPackageDrawer } from './SellPackageDrawer';
+import { QuickSaleDrawer } from './QuickSaleDrawer';
 import { EncerrarTurnoDrawer } from './EncerrarTurnoDrawer';
 import type { PackageSaleScheduleContext } from './packageSaleScheduleUtils';
 import { HubDateField } from '../../components/HubDateField';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { filterEnabledPaymentMethods } from '../../utils/hubPaymentMethods';
+import {
+  formatComandaListTitle,
+  formatComandaOriginLabel,
+} from './comandaListPreview';
 import '../clientes/clientes.css';
 import '../pets/pets-page.css';
 import '../servicos/servicos-page.css';
@@ -116,6 +122,7 @@ const HubCaixaPage: React.FC = () => {
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
   const [checkoutScheduleContext, setCheckoutScheduleContext] = useState<PackageSaleScheduleContext | null>(null);
   const [showSellPackage, setShowSellPackage] = useState(false);
+  const [showQuickSale, setShowQuickSale] = useState(false);
   const [showEncerrarTurno, setShowEncerrarTurno] = useState(false);
   const [closedSessions, setClosedSessions] = useState<HubCashSession[]>([]);
   const [showSessionHistory, setShowSessionHistory] = useState(false);
@@ -317,6 +324,10 @@ const HubCaixaPage: React.FC = () => {
 
   const onOpenComanda = async (item: HubFinanceDayBoardItem) => {
     if (!canCreateReceivable) { showError('Sem permissão para abrir comanda.'); return; }
+    if (item.coverage_kind === 'series_invoice' && item.series_invoice_comanda_id) {
+      navigate(`/hub/caixa/comanda/${item.series_invoice_comanda_id}`);
+      return;
+    }
     setDayBoardBusy(true);
     try {
       const detail = await hubComandaApi.openComanda({
@@ -821,6 +832,15 @@ const HubCaixaPage: React.FC = () => {
             type="button"
             className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
             disabled={!canCreateReceivable}
+            onClick={() => setShowQuickSale(true)}
+          >
+            <ShoppingBag size={14} style={{ marginRight: 4 }} />
+            Venda rápida
+          </button>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+            disabled={!canCreateReceivable}
             onClick={() => setShowSellPackage(true)}
           >
             <Package size={14} style={{ marginRight: 4 }} />
@@ -884,10 +904,17 @@ const HubCaixaPage: React.FC = () => {
                           const guardian = c.guardian as { full_name?: string } | null;
                           const pet = c.pet as { name?: string } | null;
                           const tutorPet = [guardian?.full_name, pet?.name].filter(Boolean).join(' / ') || '—';
+                          const servicesTitle = formatComandaListTitle(c);
+                          const originLabel = formatComandaOriginLabel(c.origin_type);
                           return (
                             <tr key={String(c.id)}>
-                              <td>{tutorPet}</td>
-                              <td><span className="hub-clientes__muted">{String(c.origin_type ?? '—')}</span></td>
+                              <td>
+                                <div>{tutorPet}</div>
+                                <div className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                                  {servicesTitle}
+                                </div>
+                              </td>
+                              <td><span className="hub-clientes__muted">{originLabel}</span></td>
                               <td className="hub-finance-page__td-num">{formatBrl(Number(c.total_amount ?? 0))}</td>
                               <td>{c.opened_at ? new Date(String(c.opened_at)).toLocaleString('pt-BR') : '—'}</td>
                               <td>
@@ -1128,6 +1155,14 @@ const HubCaixaPage: React.FC = () => {
         onCheckout={(comandaId, intent, scheduleContext) => {
           setCheckoutComandaId(comandaId);
           setCheckoutScheduleContext(intent === 'checkout_and_schedule' ? scheduleContext : null);
+        }}
+      />
+      <QuickSaleDrawer
+        open={showQuickSale}
+        unitId={unitId}
+        onClose={() => setShowQuickSale(false)}
+        onOpened={(comandaId) => {
+          navigate(`/hub/caixa/comanda/${comandaId}`);
         }}
       />
       {showEncerrarTurno && cashOpen && (

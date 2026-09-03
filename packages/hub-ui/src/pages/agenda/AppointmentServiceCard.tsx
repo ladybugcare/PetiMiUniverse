@@ -46,6 +46,10 @@ export type AppointmentServiceCardProps = {
   onVariantChange: (variant: HubQuotePricingVariant | null) => void;
   /** Linha de estimativa de preço para este serviço. */
   pricingLine: AgendaPricingPreviewLine | null;
+  /** Valor cobrado neste agendamento (override / especial). */
+  onSaleAmountChange?: (amount: number | null) => void;
+  onPersistSpecialChange?: (persist: boolean, scope: 'pet' | 'guardian') => void;
+  showSpecialPriceControls?: boolean;
 };
 
 const EMPTY_ADDONS_HINT =
@@ -84,11 +88,31 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
   variantMatrix,
   onVariantChange,
   pricingLine,
+  onSaleAmountChange,
+  onPersistSpecialChange,
+  showSpecialPriceControls = false,
 }) => {
   const groupSlug = normalizeServiceGroupSlug(serviceType?.service_group);
   const groupLabel = serviceGroupLabel(groupSlug);
   const hasVariant = Boolean(variantMatrix);
   const hasAddons = parentAddons.length > 0;
+  const displaySale =
+    chip.sale_amount_override != null && Number.isFinite(chip.sale_amount_override)
+      ? Number(chip.sale_amount_override)
+      : pricingLine?.sale ?? null;
+  const hint = chip.special_price_hint;
+  const catalogSale = hint?.catalog_sale ?? pricingLine?.sale ?? null;
+  const hasExistingSpecial = Boolean(hint);
+  const [specialEditorOpen, setSpecialEditorOpen] = useState(
+    () => hasExistingSpecial || Boolean(chip.persist_special_price),
+  );
+
+  useEffect(() => {
+    // Só abre automaticamente quando chega um acordo já salvo para o pet.
+    if (hasExistingSpecial) setSpecialEditorOpen(true);
+  }, [hasExistingSpecial, chip.hub_service_type_id]);
+
+  const headerSale = specialEditorOpen ? displaySale : pricingLine?.sale ?? displaySale;
 
   return (
     <div className={`nam-service-card ${expanded ? 'nam-service-card--expanded' : 'nam-service-card--collapsed'}`}>
@@ -119,7 +143,12 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
           <span className="nam-service-card__dur-unit">min</span>
         </div>
         {pricingLine && !expanded ? (
-          <span className="nam-service-card__header-price">{formatPrice(pricingLine.sale)}</span>
+          <span className="nam-service-card__header-price">
+            {formatPrice(headerSale ?? pricingLine.sale)}
+            {specialEditorOpen && hint ? (
+              <span style={{ display: 'block', fontSize: 10, fontWeight: 500, opacity: 0.75 }}>especial</span>
+            ) : null}
+          </span>
         ) : null}
         <button
           type="button"
@@ -152,6 +181,100 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
             <div className="nam-service-card__section">
               <p className="nam-service-card__section-label">Preço estimado</p>
               <p className="nam-service-card__price-line">{pricingSummaryLabel(pricingLine)}</p>
+            </div>
+          ) : null}
+
+          {showSpecialPriceControls && onSaleAmountChange ? (
+            <div className="nam-service-card__section">
+              <HubCheckbox
+                checked={specialEditorOpen}
+                onChange={(checked) => {
+                  setSpecialEditorOpen(checked);
+                  if (!checked) {
+                    // Sem acordo salvo: volta ao catálogo automático.
+                    // Com acordo: força o valor de catálogo só nesta ocorrência.
+                    if (hint) {
+                      onSaleAmountChange(catalogSale ?? pricingLine?.sale ?? null);
+                    } else {
+                      onSaleAmountChange(null);
+                    }
+                    onPersistSpecialChange?.(false, chip.persist_special_scope ?? 'pet');
+                  } else if (hint) {
+                    onSaleAmountChange(hint.special_sale);
+                  } else if (pricingLine != null) {
+                    onSaleAmountChange(pricingLine.sale);
+                  }
+                }}
+              >
+                {hasExistingSpecial ? 'Usar valor especial neste serviço' : 'Adicionar valor especial'}
+              </HubCheckbox>
+
+              {specialEditorOpen ? (
+                <div style={{ marginTop: 10 }}>
+                  {hint ? (
+                    <p className="nam-aside__muted" style={{ fontSize: 12, margin: '0 0 8px' }}>
+                      Valor especial deste pet: {formatPrice(hint.special_sale)}
+                      {catalogSale != null ? ` (catálogo: ${formatPrice(catalogSale)})` : ''}
+                      {hint.scope === 'family_plan' && hint.family_total != null
+                        ? ` · plano família ${formatPrice(hint.family_total)} / ${hint.family_pet_count ?? '?'} pets`
+                        : hint.scope === 'guardian'
+                          ? ' · acordo do tutor'
+                          : ''}
+                      .
+                    </p>
+                  ) : (
+                    <p className="nam-aside__muted" style={{ fontSize: 12, margin: '0 0 8px' }}>
+                      Defina um valor diferente do catálogo só para este pet
+                      {catalogSale != null ? ` (hoje: ${formatPrice(catalogSale)})` : ''}.
+                    </p>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13 }}>R$</span>
+                    <input
+                      className="nam-service-card__dur-input"
+                      style={{ width: 100 }}
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={displaySale ?? ''}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (raw === '') {
+                          onSaleAmountChange(null);
+                          return;
+                        }
+                        const n = Number(raw);
+                        onSaleAmountChange(Number.isFinite(n) ? n : null);
+                      }}
+                      aria-label={`Valor especial de ${chip.name}`}
+                    />
+                  </div>
+                  {onPersistSpecialChange && !hasExistingSpecial ? (
+                    <div style={{ marginTop: 8 }}>
+                      <HubCheckbox
+                        checked={Boolean(chip.persist_special_price)}
+                        onChange={(checked) =>
+                          onPersistSpecialChange(checked, chip.persist_special_scope ?? 'pet')
+                        }
+                      >
+                        Salvar para os próximos agendamentos deste pet
+                      </HubCheckbox>
+                    </div>
+                  ) : null}
+                  {onPersistSpecialChange && hasExistingSpecial ? (
+                    <div style={{ marginTop: 8 }}>
+                      <HubCheckbox
+                        checked={Boolean(chip.persist_special_price)}
+                        onChange={(checked) =>
+                          onPersistSpecialChange(checked, chip.persist_special_scope ?? 'pet')
+                        }
+                      >
+                        Atualizar o preço especial salvo com este valor
+                      </HubCheckbox>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
 

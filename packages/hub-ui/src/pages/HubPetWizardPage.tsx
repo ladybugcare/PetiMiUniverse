@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
-import { hubGuardiansApi, type HubGuardian } from '../api/hubGuardiansApi';
+import { hubGuardiansApi, type HubGuardian, type HubGuardianPet } from '../api/hubGuardiansApi';
 import { hubPetsApi } from '../api/hubPetsApi';
+import { hubClinicalApi } from '../api/hubClinicalApi';
 import { hubQuotesApi } from '../api/hubQuotesApi';
 import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
 import type { CoatTypeValue } from '../utils/hubServiceTypesPricingMatrix';
+import { defaultClinicalFlagLabel } from './pets/petClinicalFlags';
 import { useAlert } from '../components/AlertProvider';
 import { HubCancelButton } from '../components/HubCancelButton';
 import { HubLoading } from '../components/HubLoading';
@@ -53,6 +55,8 @@ const HubPetWizardPage: React.FC = () => {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const photoBlobRef = useRef<string | null>(null);
   const [editLoading, setEditLoading] = useState(isEdit);
+  const [guardianPets, setGuardianPets] = useState<HubGuardianPet[]>([]);
+  const [guardianPetsLoading, setGuardianPetsLoading] = useState(false);
 
   const accessAllowed = hasPermission('hub.pets.write');
 
@@ -95,6 +99,30 @@ const HubPetWizardPage: React.FC = () => {
     })();
   }, [clinicId, accessAllowed]);
 
+  useEffect(() => {
+    const guardianId = state.primary_guardian_id;
+    if (!clinicId || !accessAllowed || !guardianId) {
+      setGuardianPets([]);
+      setGuardianPetsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setGuardianPetsLoading(true);
+    void (async () => {
+      try {
+        const { pets } = await hubGuardiansApi.getById(guardianId, clinicId);
+        if (!cancelled) setGuardianPets(pets);
+      } catch {
+        if (!cancelled) setGuardianPets([]);
+      } finally {
+        if (!cancelled) setGuardianPetsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, accessAllowed, state.primary_guardian_id]);
+
   const canWriteQuotes = hasPermission('hub.quotes.write');
 
   const fromQuote = isEdit ? '' : searchParams.get('fromQuote')?.trim() || '';
@@ -131,7 +159,15 @@ const HubPetWizardPage: React.FC = () => {
           navigate('/hub/pets', { replace: true });
           return;
         }
-        setState(petToWizardState(found));
+        let flags: Array<{ flag_key: string; label: string }> = [];
+        try {
+          const flagsRes = await hubClinicalApi.listPetFlags(clinicId, editPetId);
+          flags = flagsRes.flags ?? [];
+        } catch {
+          flags = [];
+        }
+        if (cancelled) return;
+        setState(petToWizardState(found, flags));
         setMaxReached(WIZARD_STEPS.length - 1);
       } catch (e: unknown) {
         if (!cancelled) {
@@ -199,22 +235,19 @@ const HubPetWizardPage: React.FC = () => {
     return g?.full_name ?? '';
   }, [guardians, state.primary_guardian_id]);
 
-  const secondaryName = useMemo(() => {
-    const g = guardians.find((x) => x.id === state.secondary_guardian_id);
-    return g?.full_name ?? '';
-  }, [guardians, state.secondary_guardian_id]);
-
   const validateStep = (step: number): string | null => {
     if (step === 0) {
       if (!state.name.trim()) return 'Indique o nome do pet.';
       if (!state.species.trim()) return 'Indique a espécie.';
       if (!state.isSRD && !state.breed.trim()) return 'Indique a raça ou active SRD.';
       if (!state.sex) return 'selecione o sexo.';
-      if (!isEdit && !state.neutered) return 'Indique se o pet é castrado.';
       if (!state.birth_date.trim()) return 'Indique a data de nascimento.';
     }
-    if (step === 2) {
+    if (step === 1) {
       if (!state.primary_guardian_id) return 'selecione o tutor principal.';
+    }
+    if (step === 2) {
+      if (!state.neutered) return 'Indique se o pet é castrado.';
     }
     return null;
   };
@@ -235,7 +268,7 @@ const HubPetWizardPage: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    const err = validateStep(0) || validateStep(2);
+    const err = validateStep(0) || validateStep(1) || validateStep(2);
     if (err) {
       showError(err);
       return;
@@ -257,6 +290,14 @@ const HubPetWizardPage: React.FC = () => {
       const notesVal = obsParts.length ? obsParts.join('\n\n') : null;
       const sizeTier = resolvePetBodyPorteForApi(state.size || '', state.species.trim(), state.isSRD ? '' : state.breed.trim());
 
+      const clinical_flags = state.clinicalFlagKeys.map((key) => {
+        const label =
+          key === 'allergy' && state.allergyDetail.trim()
+            ? state.allergyDetail.trim()
+            : defaultClinicalFlagLabel(key);
+        return { flag_key: key, label };
+      });
+
       const payload = {
         clinic_id: clinicId,
         name: state.name.trim(),
@@ -270,6 +311,11 @@ const HubPetWizardPage: React.FC = () => {
         primary_guardian_id: state.primary_guardian_id,
         secondary_guardian_id: sec,
         behavior_tags: state.behaviorTags.length ? state.behaviorTags : null,
+        behavior_tags_mode: 'replace' as const,
+        neutered: state.neutered === 'Y' ? true : state.neutered === 'N' ? false : null,
+        profile_source: 'wizard' as const,
+        clinical_flags,
+        clinical_flags_mode: 'replace' as const,
       };
 
       if (isEdit && editPetId) {
@@ -375,9 +421,9 @@ const HubPetWizardPage: React.FC = () => {
       case 0:
         return <PetWizardStepBasics state={state} update={update} photoPreview={photoPreview} onPhotoChange={onPhotoChange} isEdit={isEdit} />;
       case 1:
-        return <PetWizardStepHealth />;
-      case 2:
         return <PetWizardStepGuardians state={state} update={update} guardians={guardians} />;
+      case 2:
+        return <PetWizardStepHealth state={state} update={update} />;
       case 3:
         return <PetWizardStepDocs state={state} update={update} />;
       default:
@@ -413,8 +459,9 @@ const HubPetWizardPage: React.FC = () => {
             state={state}
             photoPreview={photoPreview}
             primaryName={primaryName}
-            secondaryName={secondaryName}
-            saveLaterDisabled
+            guardianPets={guardianPets}
+            guardianPetsLoading={guardianPetsLoading}
+            excludePetId={isEdit ? editPetId : null}
           />
         </div>
       </div>

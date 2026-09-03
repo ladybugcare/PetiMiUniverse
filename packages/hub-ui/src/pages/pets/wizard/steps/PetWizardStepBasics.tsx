@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Check, FileText, Heart, HelpCircle, X } from 'lucide-react';
+import { FileText, Heart, HelpCircle } from 'lucide-react';
 import { HubDateField } from '../../../../components/HubDateField';
 import { HubSearchableCombobox } from '../../../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../../../components/HubSearchableCombobox';
@@ -214,31 +214,6 @@ export const PetWizardStepBasics: React.FC<Props> = ({ state, update, photoPrevi
                   className={`pet-wizard__seg-btn ${state.sex === v ? 'pet-wizard__seg-btn--on' : ''}`}
                   onClick={() => update({ sex: v })}
                 >
-                  {lab}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="pet-wizard__field--full">
-            <label className="pet-wizard__label">
-              Castrado(a)? <span className="req">*</span>
-            </label>
-            <div className="pet-wizard__seg">
-              {(
-                [
-                  ['Y', 'Sim', Check],
-                  ['N', 'Não', X],
-                ] as const
-              ).map(([v, lab, Icon]) => (
-                <button
-                  key={v}
-                  type="button"
-                  className={`pet-wizard__seg-btn pet-wizard__seg-btn--neuter pet-wizard__seg-btn--neuter-${v.toLowerCase()} ${
-                    state.neutered === v ? 'pet-wizard__seg-btn--on' : ''
-                  }`}
-                  onClick={() => update({ neutered: v })}
-                >
-                  <Icon size={18} strokeWidth={2.25} aria-hidden />
                   {lab}
                 </button>
               ))}

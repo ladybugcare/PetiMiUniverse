@@ -28,6 +28,8 @@ import {
   validateLotStockForOut,
 } from './hubInventoryStockUtils.js';
 
+import { applyClinicalFlagUpsert, resolveProfileSource } from './hubPetHealthProfile';
+
 const uuidStr = z.string().uuid();
 
 // ── Pet clinical flags ───────────────────────────────────────────────────────
@@ -61,41 +63,27 @@ export const upsertHubPetClinicalFlag = async (req: Request, res: Response) => {
       label: z.string().trim().min(1).max(120),
       notes: z.string().trim().max(2000).optional().nullable(),
       active: z.boolean().optional(),
+      profile_source: z.enum(['wizard', 'clinic', 'grooming', 'boarding', 'pets_form']).optional(),
     })
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
-  const { data: existing } = await supabaseAdmin
-    .from('hub_pet_clinical_flags')
-    .select('id')
-    .eq('pet_id', b.pet_id)
-    .eq('flag_key', b.flag_key)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (existing) {
-    const { data, error } = await supabaseAdmin
-      .from('hub_pet_clinical_flags')
-      .update({ label: b.label, notes: b.notes ?? null, active: b.active ?? true })
-      .eq('id', existing.id)
-      .select('*')
-      .single();
-    if (error) return res.status(500).json({ error: error.message });
-    return res.json({ flag: data });
-  }
-  const { data, error } = await supabaseAdmin
-    .from('hub_pet_clinical_flags')
-    .insert({
-      clinic_id: b.clinic_id,
-      pet_id: b.pet_id,
-      flag_key: b.flag_key,
+  try {
+    const result = await applyClinicalFlagUpsert({
+      clinicId: b.clinic_id,
+      petId: b.pet_id,
+      flagKey: b.flag_key,
       label: b.label,
       notes: b.notes ?? null,
-      active: b.active ?? true,
-    })
-    .select('*')
-    .single();
-  if (error) return res.status(500).json({ error: error.message });
-  return res.status(201).json({ flag: data });
+      active: b.active,
+      source: resolveProfileSource(b.profile_source),
+      actorUserId: req.user?.id ?? null,
+    });
+    if (result.created) return res.status(201).json({ flag: result.flag, noop: false });
+    return res.json({ flag: result.flag, noop: result.noop });
+  } catch (e: unknown) {
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao salvar alerta clínico' });
+  }
 };
 
 // ── Encounter events (evolução) ─────────────────────────────────────────────
@@ -396,19 +384,26 @@ export const patchHubPrescription = async (req: Request, res: Response) => {
       clinic_id: uuidStr,
       notes: z.string().trim().max(4000).optional().nullable(),
       hub_staff_member_id: uuidStr.optional().nullable(),
+      /** Vínculo clínico posterior (permitido mesmo após emissão). */
+      hub_case_id: uuidStr.optional().nullable(),
+      hub_encounter_id: uuidStr.optional().nullable(),
       items: z.array(prescriptionItemInputSchema).min(1).optional(),
     })
     .safeParse(req.body);
   if (!id.success) return res.status(400).json({ error: id.error.flatten() });
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
-  if (b.notes === undefined && !b.items) {
-    return res.status(400).json({ error: 'Informe items e/ou notes para atualizar' });
+  const hasContentEdit = b.notes !== undefined || b.items !== undefined || b.hub_staff_member_id !== undefined;
+  const hasLinkEdit = b.hub_case_id !== undefined || b.hub_encounter_id !== undefined;
+  if (!hasContentEdit && !hasLinkEdit) {
+    return res.status(400).json({
+      error: 'Informe items, notes, hub_staff_member_id e/ou vínculo (hub_case_id / hub_encounter_id)',
+    });
   }
 
   const { data: rx, error: rxErr } = await supabaseAdmin
     .from('hub_prescriptions')
-    .select('id, status, clinic_id')
+    .select('id, status, clinic_id, pet_id')
     .eq('id', id.data)
     .eq('clinic_id', b.clinic_id)
     .is('deleted_at', null)
@@ -416,13 +411,55 @@ export const patchHubPrescription = async (req: Request, res: Response) => {
   if (rxErr) return res.status(500).json({ error: rxErr.message });
   if (!rx) return res.status(404).json({ error: 'Prescrição não encontrada' });
   if (rx.status === 'cancelled') return res.status(409).json({ error: 'Prescrição cancelada não pode ser editada' });
-  if (rx.status === 'issued') {
-    return res.status(409).json({ error: 'Prescrição já emitida; não é possível editar sem reemitir nova versão' });
+  if (rx.status === 'issued' && hasContentEdit) {
+    return res.status(409).json({
+      error: 'Prescrição já emitida; não é possível editar conteúdo sem reemitir nova versão (vínculo a caso/atendimento ainda é permitido)',
+    });
+  }
+
+  if (b.hub_case_id) {
+    const { data: caseRow } = await supabaseAdmin
+      .from('hub_clinical_cases')
+      .select('id, pet_id')
+      .eq('id', b.hub_case_id)
+      .eq('clinic_id', b.clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!caseRow) return res.status(400).json({ error: 'Caso clínico inválido' });
+    if (caseRow.pet_id !== rx.pet_id) {
+      return res.status(400).json({ error: 'Caso clínico não pertence a este pet' });
+    }
+  }
+
+  if (b.hub_encounter_id) {
+    const { data: encRow } = await supabaseAdmin
+      .from('hub_encounters')
+      .select('id, pet_id, hub_case_id')
+      .eq('id', b.hub_encounter_id)
+      .eq('clinic_id', b.clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!encRow) return res.status(400).json({ error: 'Atendimento inválido' });
+    if (encRow.pet_id !== rx.pet_id) {
+      return res.status(400).json({ error: 'Atendimento não pertence a este pet' });
+    }
   }
 
   const rowUpdates: Record<string, unknown> = {};
   if (b.notes !== undefined) rowUpdates.notes = b.notes;
   if (b.hub_staff_member_id !== undefined) rowUpdates.hub_staff_member_id = b.hub_staff_member_id;
+  if (b.hub_case_id !== undefined) rowUpdates.hub_case_id = b.hub_case_id;
+  if (b.hub_encounter_id !== undefined) {
+    rowUpdates.hub_encounter_id = b.hub_encounter_id;
+    if (b.hub_case_id === undefined && b.hub_encounter_id) {
+      const { data: encCase } = await supabaseAdmin
+        .from('hub_encounters')
+        .select('hub_case_id')
+        .eq('id', b.hub_encounter_id)
+        .maybeSingle();
+      if (encCase?.hub_case_id) rowUpdates.hub_case_id = encCase.hub_case_id;
+    }
+  }
 
   if (b.items) {
     const { error: delErr } = await supabaseAdmin.from('hub_prescription_items').delete().eq('prescription_id', id.data);

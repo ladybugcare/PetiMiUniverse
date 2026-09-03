@@ -249,7 +249,9 @@ export const HubMultiSelectCombobox: React.FC<HubMultiSelectComboboxProps> = ({
       <button
         type="button"
         id={id}
-        className="hub-combobox__trigger hub-combobox__trigger--multi"
+        className={`hub-combobox__trigger hub-combobox__trigger--multi${
+          value.length === 0 ? ' hub-combobox__trigger--multi-empty' : ''
+        }`}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}

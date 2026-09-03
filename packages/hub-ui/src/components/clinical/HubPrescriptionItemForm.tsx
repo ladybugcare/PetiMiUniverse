@@ -32,13 +32,22 @@ type Props = {
   onAdd: () => void;
   medicationItems: HubInventoryItem[];
   disabled?: boolean;
+  /** Layout mais denso (ex.: receita avulsa). */
+  compact?: boolean;
 };
 
-export function HubPrescriptionItemForm({ draft, onChange, onAdd, medicationItems, disabled }: Props) {
+export function HubPrescriptionItemForm({
+  draft,
+  onChange,
+  onAdd,
+  medicationItems,
+  disabled,
+  compact,
+}: Props) {
   const set = (patch: Partial<PrescriptionItemDraft>) => onChange({ ...draft, ...patch });
 
   return (
-    <div className="hub-cws-rx-form hub-rx-item-form">
+    <div className={`hub-cws-rx-form hub-rx-item-form${compact ? ' hub-rx-item-form--compact' : ''}`}>
       <input
         className="hub-clientes__input"
         placeholder="Medicamento *"
@@ -83,7 +92,7 @@ export function HubPrescriptionItemForm({ draft, onChange, onAdd, medicationItem
       />
       <textarea
         className="hub-clientes__input"
-        rows={2}
+        rows={compact ? 1 : 2}
         placeholder="Observações do item"
         value={draft.instructions}
         disabled={disabled}

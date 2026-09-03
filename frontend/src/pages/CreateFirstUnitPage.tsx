@@ -23,6 +23,7 @@ import AddressAutocomplete from '../components/AddressAutocomplete';
 import { getStoredClinicId } from '../utils/authHelpers';
 import { CLINIC_STORAGE_UPDATED_EVENT } from '../constants/appEvents';
 import { useAuth } from '../AuthContext';
+import { formatCNPJ } from '../utils/validators';
 
 type Step = 'welcome' | 'clinic' | 'unit';
 
@@ -190,7 +191,7 @@ const CreateFirstUnitPage: React.FC = () => {
           setHasClinic(true);
           setClinicData({
           name: clinic.name || '',
-          cnpj: clinic.cnpj || '',
+          cnpj: formatCNPJ(clinic.cnpj || ''),
           description: clinic.description || '',
           });
           
@@ -217,16 +218,18 @@ const CreateFirstUnitPage: React.FC = () => {
   }, [clinicId]);
 
   const handleClinicChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
     setClinicData({
       ...clinicData,
-      [e.target.name]: e.target.value,
+      [name]: name === 'cnpj' ? formatCNPJ(value) : value,
     });
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [name]: name === 'cnpj' ? formatCNPJ(value) : value,
     });
   };
 

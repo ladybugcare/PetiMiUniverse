@@ -502,6 +502,55 @@
   text-align: center;
 }
 
+.pet-wizard__summary-title--left {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.pet-wizard__summary-draft {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--pw-border);
+}
+
+.pet-wizard__summary-draft-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.pet-wizard__summary-draft-label {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pw-muted);
+}
+
+.pet-wizard__summary-draft-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.pet-wizard__summary-draft-meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--pw-muted);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
 .pet-wizard__summary-preview {
   width: 96px;
   height: 96px;
@@ -514,6 +563,13 @@
   align-items: center;
   justify-content: center;
   position: relative;
+  flex-shrink: 0;
+}
+
+.pet-wizard__summary-preview--sm {
+  width: 56px;
+  height: 56px;
+  margin: 0;
 }
 
 .pet-wizard__summary-preview-placeholder {
@@ -522,6 +578,9 @@
   color: var(--pw-muted);
   text-align: center;
   padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .pet-wizard__summary-preview img {
@@ -557,6 +616,98 @@
   font-weight: 600;
   text-align: right;
   word-break: break-word;
+}
+
+.pet-wizard__guardian-pets {
+  min-height: 80px;
+}
+
+.pet-wizard__guardian-pets-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(240, 100, 47, 0.12);
+  color: var(--pw-brand-soft);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.pet-wizard__guardian-pets-empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--pw-muted);
+}
+
+.pet-wizard__guardian-pets-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: min(420px, 48vh);
+  overflow-y: auto;
+}
+
+.pet-wizard__guardian-pets-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--pw-border);
+}
+
+.pet-wizard__guardian-pets-item:last-child {
+  border-bottom: none;
+}
+
+.pet-wizard__guardian-pets-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--pw-bg);
+  color: var(--pw-muted);
+  flex-shrink: 0;
+}
+
+.pet-wizard__guardian-pets-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.pet-wizard__guardian-pets-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pw-text);
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.pet-wizard__guardian-pets-name:hover {
+  color: var(--pw-brand-soft);
+  text-decoration: underline;
+}
+
+.pet-wizard__guardian-pets-meta {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--pw-muted);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.pet-wizard__guardian-pets-role {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pw-muted);
 }
 
 .pet-wizard__tip {
