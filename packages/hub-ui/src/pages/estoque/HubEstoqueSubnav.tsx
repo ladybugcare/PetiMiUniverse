@@ -12,10 +12,11 @@ const links = [
   { to: `${BASE}/validade`, label: 'Validade' },
   { to: `${BASE}/alertas`, label: 'Alertas' },
   { to: `${BASE}/inventario`, label: 'Inventário' },
+  { to: `${BASE}/fornecedores`, label: 'Fornecedores' },
 ];
 
 const HubEstoqueSubnav: React.FC = () => {
-  return <HubTabs ariaLabel="Secções de estoque" items={links} />;
+  return <HubTabs ariaLabel="Seções de estoque" items={links} />;
 };
 
 export default HubEstoqueSubnav;

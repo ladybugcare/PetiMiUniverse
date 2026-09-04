@@ -12,11 +12,7 @@ import {
   MoreHorizontal,
   FilePlus2,
   Coins,
-  Heart,
   Calendar,
-  Palette,
-  Ruler,
-  Tag,
   Stethoscope,
   FileText,
   ClipboardList,
@@ -28,6 +24,7 @@ import {
   CheckCircle2,
   HeartPulse,
   History,
+  Package,
 } from 'lucide-react';
 import { usePermissions } from '@petimi/web-core';
 import type { HubPet, HubPetProfileChange } from '../../api/hubPetsApi';
@@ -45,12 +42,12 @@ import {
   type HubVaccination,
 } from '../../api/hubClinicalApi';
 import { HubTabs } from '../../components/HubTabs';
-import { HubProfileInfoCell } from '../../components/HubProfileInfoCell';
-import { HubProfileAvatar, profileInitials } from '../../components/HubProfileAvatar';
+import { profileInitials } from '../../components/HubProfileAvatar';
 import { HubLoading } from '../../components/HubLoading';
 import { ProfileFinanceSummaryCard } from '../../components/ProfileFinanceSummaryCard';
 import { useAlert } from '../../components/AlertProvider';
 import { formatPrescriptionLine } from '../clinica/clinicalDisplay';
+import { clinicalCaseDisplayTitle, clinicalCaseTitleFallbacks } from '../clinica/clinicalCaseTitle';
 import { petAgeDetailedLabel } from './petAge';
 import {
   COAT_TYPE_LABELS,
@@ -88,6 +85,8 @@ import { buildProfileFinanceSummary } from '../finance/profileFinanceSummary';
 import { buildBatchChargeItems } from '../finance/batchChargeItems';
 import { BatchChargeDrawer } from '../finance/BatchChargeDrawer';
 import { ChargeBundleHistorySection } from '../finance/ChargeBundleHistorySection';
+import { SellPackageDrawer } from '../finance/SellPackageDrawer';
+import type { PackageSaleScheduleContext } from '../finance/packageSaleScheduleUtils';
 import { SpecialPricesSection } from '../../components/SpecialPricesSection';
 import { appointmentDrillHref } from '../finance/hubRelatoriosLinks';
 import '../../components/hub-profile.css';
@@ -277,6 +276,8 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   } | null>(null);
   const [openingComanda, setOpeningComanda] = useState(false);
   const [showBatchCharge, setShowBatchCharge] = useState(false);
+  const [showSellPackage, setShowSellPackage] = useState(false);
+  const [checkoutScheduleContext, setCheckoutScheduleContext] = useState<PackageSaleScheduleContext | null>(null);
   const [packageBalances, setPackageBalances] = useState<HubPackageBalance[]>([]);
   const [packagesLoading, setPackagesLoading] = useState(false);
   const [clinicalFlags, setClinicalFlags] = useState<HubPetClinicalFlag[]>([]);
@@ -579,9 +580,17 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
 
   const handleStartEncounter = async () => {
     if (!clinicId || !canClinicWrite) return;
+    if (!unitId) {
+      showError('Selecione uma unidade no cabeçalho para abrir o atendimento.');
+      return;
+    }
     setStartingEncounter(true);
     try {
-      const { encounter } = await hubEncountersApi.create({ clinic_id: clinicId, pet_id: pet.id });
+      const { encounter } = await hubEncountersApi.create({
+        clinic_id: clinicId,
+        pet_id: pet.id,
+        unit_id: unitId,
+      });
       navigate(`/hub/clinica/atendimentos/${encounter.id}`, { state: { from: 'pet' } });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao iniciar atendimento');
@@ -600,7 +609,10 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   }, [moreOpen]);
 
   const active = !pet.deleted_at;
-  const breedLine = [pet.breed || pet.species, sexLabel(pet.sex)].filter((x) => x && x !== '—').join(' • ');
+  const ageLabel = petAgeDetailedLabel(pet.birth_date);
+  const identityMeta = [pet.species, pet.breed?.trim() || null, sexLabel(pet.sex), ageLabel]
+    .filter((x) => x && x !== '—')
+    .join(' · ');
   const primaryTutor = pet.primary_guardian?.guardian_name;
   const primaryTutorId = pet.primary_guardian?.guardian_id;
   const since = pet.created_at
@@ -618,10 +630,33 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
     pet.coat_type && COAT_TYPE_LABELS[pet.coat_type as CoatTypeValue]
       ? COAT_TYPE_LABELS[pet.coat_type as CoatTypeValue]
       : '—';
+  const identityChips = [
+    porteLabel !== '—' ? { key: 'porte', label: `Porte ${porteLabel}` } : null,
+    pelagemLabel !== '—' ? { key: 'pelagem', label: pelagemLabel } : null,
+    pet.coat_color?.trim() ? { key: 'cor', label: pet.coat_color.trim() } : null,
+    pet.neutered === true
+      ? { key: 'neutered', label: 'Castrado' }
+      : pet.neutered === false
+        ? { key: 'neutered', label: 'Não castrado' }
+        : null,
+  ].filter((c): c is { key: string; label: string } => Boolean(c));
 
   const openFullPage = () => {
     if (onOpenInNewPage) onOpenInNewPage();
     else navigate(`/hub/pets/${pet.id}`);
+  };
+
+  const openSellPackage = () => {
+    if (!canCreateReceivable) return;
+    if (!unitId) {
+      alert('Selecione uma unidade para vender pacote.');
+      return;
+    }
+    if (!pet.primary_guardian?.guardian_id) {
+      alert('Este pet não tem tutor principal cadastrado.');
+      return;
+    }
+    setShowSellPackage(true);
   };
 
   const petScheduleState = {
@@ -645,7 +680,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   const petScheduleHref = `/hub/appointments?${petScheduleParams.toString()}`;
 
   const quickActions = (
-    <div className="hub-pets-detail__quick-actions">
+    <div className="hub-pets-detail__quick-actions" role="toolbar" aria-label="Ações rápidas">
       <Link
         to={petScheduleHref}
         state={petScheduleState}
@@ -666,14 +701,14 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
           <span className="hub-clientes__icon-btn" aria-hidden>
             <Pill size={18} strokeWidth={1.75} />
           </span>
-          <span className="hub-pets-detail__quick-label">Criar receita</span>
+          <span className="hub-pets-detail__quick-label">Receita</span>
         </Link>
       ) : (
         <button type="button" className="hub-pets-detail__quick-item" title="Sem permissão para criar receita" disabled>
           <span className="hub-clientes__icon-btn hub-pets-detail__quick-icon--disabled" aria-hidden>
             <Pill size={18} strokeWidth={1.75} />
           </span>
-          <span className="hub-pets-detail__quick-label">Criar receita</span>
+          <span className="hub-pets-detail__quick-label">Receita</span>
         </button>
       )}
       <Link
@@ -686,6 +721,29 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
         </span>
         <span className="hub-pets-detail__quick-label">Vacinas</span>
       </Link>
+      {canCreateReceivable ? (
+        <button
+          type="button"
+          className="hub-pets-detail__quick-item"
+          title={
+            !unitId
+              ? 'Selecione uma unidade para vender pacote'
+              : !pet.primary_guardian?.guardian_id
+                ? 'Cadastre um tutor principal para vender pacote'
+                : `Vender pacote para ${pet.name}`
+          }
+          disabled={!unitId || !pet.primary_guardian?.guardian_id}
+          onClick={openSellPackage}
+        >
+          <span
+            className={`hub-clientes__icon-btn${!unitId || !pet.primary_guardian?.guardian_id ? ' hub-pets-detail__quick-icon--disabled' : ''}`}
+            aria-hidden
+          >
+            <Package size={18} strokeWidth={1.75} />
+          </span>
+          <span className="hub-pets-detail__quick-label">Pacote</span>
+        </button>
+      ) : null}
       {canWrite ? (
         <button type="button" className="hub-pets-detail__quick-item" title="Editar ficha" onClick={onStartEdit}>
           <span className="hub-clientes__icon-btn" aria-hidden>
@@ -734,6 +792,55 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
         </div>
       ) : null}
     </div>
+  );
+
+  const panelIdentity = (
+    <section className="hub-pets-detail__identity" aria-label={`Identidade de ${pet.name}`}>
+      <div className="hub-pets-detail__identity-top">
+        <div className="hub-pets-detail__identity-avatar" aria-hidden>
+          {profileInitials(pet.name)}
+        </div>
+        <div className="hub-pets-detail__identity-body">
+          <div className="hub-pets-detail__identity-title-row">
+            <h2 className="hub-pets-detail__identity-name">{pet.name}</h2>
+            <span className={`hub-clientes__pill ${active ? 'hub-clientes__pill--active' : 'hub-clientes__pill--inactive'}`}>
+              {active ? 'Ativo' : 'Inativo'}
+            </span>
+          </div>
+          {identityMeta ? <p className="hub-pets-detail__identity-meta">{identityMeta}</p> : null}
+          {primaryTutor ? (
+            primaryTutorId ? (
+              <Link to={`/hub/clientes/${primaryTutorId}`} className="hub-pets-detail__identity-tutor">
+                <User size={14} strokeWidth={2} aria-hidden />
+                <span>{primaryTutor}</span>
+              </Link>
+            ) : (
+              <p className="hub-pets-detail__identity-tutor hub-pets-detail__identity-tutor--static">
+                <User size={14} strokeWidth={2} aria-hidden />
+                <span>{primaryTutor}</span>
+              </p>
+            )
+          ) : (
+            <p className="hub-pets-detail__identity-tutor hub-pets-detail__identity-tutor--muted">
+              <User size={14} strokeWidth={2} aria-hidden />
+              <span>Sem tutor principal</span>
+            </p>
+          )}
+        </div>
+      </div>
+
+      {identityChips.length > 0 ? (
+        <ul className="hub-pets-detail__identity-chips">
+          {identityChips.map((chip) => (
+            <li key={chip.key} className="hub-pets-detail__identity-chip">
+              {chip.label}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {quickActions}
+    </section>
   );
 
   const renderHealthProfile = (compact = false) => {
@@ -987,9 +1094,29 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
     );
   };
 
-  const renderResumoPage = () => (
-    <>
-      <section className="hub-meu-perfil__panel">
+  const renderResumoPage = () => {
+    const birthLabel = formatDateBR(pet.birth_date);
+    const birthWithAge =
+      birthLabel !== '—'
+        ? `${birthLabel} · ${ageLabel}`
+        : ageLabel !== '—'
+          ? ageLabel
+          : '—';
+
+    const generalFacts: Array<{ label: string; value: string }> = [
+      { label: 'Espécie', value: pet.species || '—' },
+      { label: 'Raça', value: pet.breed?.trim() || '—' },
+      { label: 'Sexo', value: sexLabel(pet.sex) },
+      { label: 'Nascimento', value: birthWithAge },
+      { label: 'Porte', value: porteLabel },
+      { label: 'Pelagem', value: pelagemLabel },
+      { label: 'Cor', value: pet.coat_color?.trim() || '—' },
+      { label: 'Castrado(a)', value: neuteredLabel(pet.neutered) },
+    ];
+
+    return (
+      <>
+      <section className="hub-meu-perfil__panel hub-pets-profile__general">
         <header className="hub-meu-perfil__panel-head">
           <div>
             <h2 className="hub-meu-perfil__panel-title">Informações gerais</h2>
@@ -1002,17 +1129,14 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
             </button>
           ) : null}
         </header>
-        <div className="hub-meu-perfil__grid">
-          <HubProfileInfoCell icon={Heart} label="Espécie" value={pet.species || '—'} />
-          <HubProfileInfoCell icon={Calendar} label="Data de nascimento" value={formatDateBR(pet.birth_date)} />
-          <HubProfileInfoCell icon={Tag} label="Raça" value={pet.breed || '—'} />
-          <HubProfileInfoCell icon={Palette} label="Cor" value={pet.coat_color || '—'} />
-          <HubProfileInfoCell icon={User} label="Sexo" value={sexLabel(pet.sex)} />
-          <HubProfileInfoCell icon={Heart} label="Castrado(a)" value={neuteredLabel(pet.neutered)} />
-          <HubProfileInfoCell icon={Palette} label="Pelagem" value={pelagemLabel} />
-          <HubProfileInfoCell icon={Ruler} label="Porte" value={porteLabel} />
-          <HubProfileInfoCell icon={User} label="Idade" value={petAgeDetailedLabel(pet.birth_date)} />
-        </div>
+        <dl className="hub-pets-profile__facts">
+          {generalFacts.map((fact) => (
+            <div key={fact.label} className="hub-pets-profile__fact">
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
       <section className="hub-meu-perfil__panel">
@@ -1088,7 +1212,8 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
         </section>
       ) : null}
     </>
-  );
+    );
+  };
 
   const renderResumoPanel = () => (
     <>
@@ -1218,7 +1343,8 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-            disabled={startingEncounter || !clinicId}
+            disabled={startingEncounter || !clinicId || !unitId}
+            title={!unitId ? 'Selecione uma unidade no cabeçalho para abrir o atendimento' : undefined}
             onClick={() => void handleStartEncounter()}
           >
             <Stethoscope size={14} aria-hidden />
@@ -1320,7 +1446,8 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-              disabled={startingEncounter || !clinicId}
+              disabled={startingEncounter || !clinicId || !unitId}
+              title={!unitId ? 'Selecione uma unidade no cabeçalho para abrir o atendimento' : undefined}
               onClick={() => void handleStartEncounter()}
             >
               <Stethoscope size={14} aria-hidden />
@@ -1340,7 +1467,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
                 <li key={c.id} className="hub-pets-detail__history-row">
                   <div className="hub-pets-detail__history-row-main">
                     <Link to={`/hub/clinica/casos/${c.id}`} className="hub-pets-detail__history-row-title">
-                      {c.title}
+                      {clinicalCaseDisplayTitle(c.title, clinicalCaseTitleFallbacks(encounters, c.id))}
                     </Link>
                     <span className={`hub-clinic-cases__badge hub-clinic-cases__badge--${c.status}`}>
                       {caseStatusLabel(c.status)}
@@ -1444,10 +1571,33 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   };
 
   const renderServicosTab = () => {
+    const sellPackageBtn =
+      canCreateReceivable ? (
+        <button
+          type="button"
+          className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"
+          disabled={!unitId || !pet.primary_guardian?.guardian_id}
+          onClick={openSellPackage}
+          title={
+            !unitId
+              ? 'Selecione uma unidade'
+              : !pet.primary_guardian?.guardian_id
+                ? 'Cadastre um tutor principal'
+                : 'Vender pacote'
+          }
+        >
+          <Package size={14} strokeWidth={2} aria-hidden />
+          Vender pacote
+        </button>
+      ) : null;
+
     const packagesBlock = packagesLoading ? (
       <HubLoading variant="inline" label="Carregando pacotes…" size="sm" />
     ) : packageBalances.length === 0 ? (
-      <div className="hub-clientes__empty-state">Nenhum pacote ativo para este pet.</div>
+      <div className="hub-clientes__empty-state">
+        <p style={{ margin: isPage || !sellPackageBtn ? 0 : '0 0 10px' }}>Nenhum pacote ativo para este pet.</p>
+        {!isPage ? sellPackageBtn : null}
+      </div>
     ) : (
       <ul className="hub-clientes__detail-list">
         {packageBalances.map((b) => {
@@ -1473,7 +1623,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
           <SpecialPricesSection
             clinicId={clinicId}
             petId={pet.id}
-            guardianId={pet.primary_guardian?.id}
+            guardianId={pet.primary_guardian?.guardian_id}
             canWrite={canWrite}
           />
         </div>
@@ -1481,7 +1631,16 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
 
     const inner = (
       <>
-        <h4 className="hub-clientes__label">Pacotes</h4>
+        {!isPage ? (
+          <div className="hub-pets-detail__history-section-head" style={{ marginBottom: 10 }}>
+            <h4 className="hub-clientes__label" style={{ margin: 0 }}>
+              Pacotes
+            </h4>
+            {packageBalances.length > 0 ? sellPackageBtn : null}
+          </div>
+        ) : (
+          <h4 className="hub-clientes__label">Pacotes</h4>
+        )}
         {packagesBlock}
         {specialBlock}
       </>
@@ -1495,6 +1654,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
               <h2 className="hub-meu-perfil__panel-title">Serviços</h2>
               <p className="hub-meu-perfil__panel-sub">Pacotes, preços especiais e acordos deste pet.</p>
             </div>
+            {sellPackageBtn}
           </header>
           {inner}
         </section>
@@ -1780,12 +1940,36 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
       <ComandaCheckoutDrawer
         key={checkoutComandaId}
         open={!!checkoutComandaId}
-        onClose={() => setCheckoutComandaId(null)}
+        onClose={() => {
+          setCheckoutComandaId(null);
+          setCheckoutScheduleContext(null);
+        }}
         clinicId={clinicId}
         unitId={unitId}
         comandaId={checkoutComandaId}
+        packageSaleSchedule={checkoutScheduleContext}
         onSuccess={() => {
           setCheckoutComandaId(null);
+          setCheckoutScheduleContext(null);
+          void loadFinanceiro();
+          void loadPackageBalances();
+        }}
+      />
+    ) : null;
+
+  const sellPackagePanel =
+    unitId && pet.primary_guardian?.guardian_id ? (
+      <SellPackageDrawer
+        open={showSellPackage}
+        unitId={unitId}
+        initialGuardianId={pet.primary_guardian.guardian_id}
+        initialPetId={pet.id}
+        lockGuardian
+        onClose={() => setShowSellPackage(false)}
+        onCheckout={(comandaId, intent, scheduleContext) => {
+          setCheckoutComandaId(comandaId);
+          setCheckoutScheduleContext(intent === 'checkout_and_schedule' ? scheduleContext : null);
+          void loadPackageBalances();
           void loadFinanceiro();
         }}
       />
@@ -1827,39 +2011,59 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   if (isPage) {
     return (
       <>
-        <div className="hub-meu-perfil">
+        <div className="hub-meu-perfil hub-meu-perfil--pet">
           <aside className="hub-meu-perfil__sidebar">
-            <div className="hub-meu-perfil__card hub-meu-perfil__summary">
-              <HubProfileAvatar name={pet.name} />
-              <h2 className="hub-meu-perfil__sidebar-name">{pet.name}</h2>
-              <span className={`hub-meu-perfil__badge ${active ? '' : 'hub-meu-perfil__badge--muted'}`}>
-                {active ? 'Ativo' : 'Inativo'}
-              </span>
-              {breedLine ? <p className="hub-meu-perfil__contact">{breedLine}</p> : null}
-              <p className="hub-meu-perfil__contact">{petAgeDetailedLabel(pet.birth_date)}</p>
-              {primaryTutor ? (
-                <p className="hub-meu-perfil__contact">
-                  Tutor:{' '}
-                  {primaryTutorId ? (
-                    <Link to={`/hub/clientes/${primaryTutorId}`} style={{ color: 'inherit', fontWeight: 600 }}>
-                      {primaryTutor}
-                    </Link>
+            <div className="hub-meu-perfil__card hub-pets-profile__summary">
+              <div className="hub-pets-profile__summary-top">
+                <div className="hub-pets-profile__avatar" aria-hidden>
+                  {profileInitials(pet.name)}
+                </div>
+                <div className="hub-pets-profile__summary-body">
+                  <div className="hub-pets-profile__title-row">
+                    <h2 className="hub-pets-profile__name">{pet.name}</h2>
+                    <span className={`hub-meu-perfil__badge ${active ? '' : 'hub-meu-perfil__badge--muted'}`}>
+                      {active ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </div>
+                  {identityMeta ? <p className="hub-pets-profile__meta">{identityMeta}</p> : null}
+                  {primaryTutor ? (
+                    primaryTutorId ? (
+                      <Link to={`/hub/clientes/${primaryTutorId}`} className="hub-pets-profile__tutor">
+                        <User size={14} strokeWidth={2} aria-hidden />
+                        <span>{primaryTutor}</span>
+                      </Link>
+                    ) : (
+                      <p className="hub-pets-profile__tutor hub-pets-profile__tutor--static">
+                        <User size={14} strokeWidth={2} aria-hidden />
+                        <span>{primaryTutor}</span>
+                      </p>
+                    )
                   ) : (
-                    primaryTutor
+                    <p className="hub-pets-profile__tutor hub-pets-profile__tutor--muted">
+                      <User size={14} strokeWidth={2} aria-hidden />
+                      <span>Sem tutor principal</span>
+                    </p>
                   )}
-                </p>
-              ) : null}
-              <div className="hub-meu-perfil__sidebar-actions">{quickActions}</div>
-            </div>
-
-            <div className="hub-meu-perfil__card hub-meu-perfil__aside-meta">
-              <div className="hub-meu-perfil__meta-row">
-                <span className="hub-meu-perfil__meta-label">Cadastrado em</span>
-                <span className="hub-meu-perfil__meta-value">{since}</span>
+                </div>
               </div>
-              <div className="hub-meu-perfil__meta-row">
-                <span className="hub-meu-perfil__meta-label">Espécie</span>
-                <span className="hub-meu-perfil__meta-value">{pet.species || '—'}</span>
+
+              {identityChips.length > 0 ? (
+                <ul className="hub-pets-profile__chips">
+                  {identityChips.map((chip) => (
+                    <li key={chip.key} className="hub-pets-profile__chip">
+                      {chip.label}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <div className="hub-pets-profile__actions">{quickActions}</div>
+
+              <div className="hub-pets-profile__foot">
+                <div className="hub-pets-profile__foot-row">
+                  <span className="hub-pets-profile__foot-label">Cadastrado em</span>
+                  <span className="hub-pets-profile__foot-value">{since}</span>
+                </div>
               </div>
             </div>
           </aside>
@@ -1872,6 +2076,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
         {financeDrawer}
         {receivablePanel}
         {batchChargePanel}
+        {sellPackagePanel}
       </>
     );
   }
@@ -1887,32 +2092,13 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
         </div>
       ) : null}
 
-      <div className="hub-pets-detail__hero">
-        <div className="hub-clientes__panel-avatar-lg hub-pets-detail__hero-avatar">{profileInitials(pet.name)}</div>
-        <div className="hub-pets-detail__hero-body">
-          <div className="hub-pets-detail__hero-title-row">
-            <h2 className="hub-clientes__panel-name hub-pets-detail__hero-name">{pet.name}</h2>
-            <span className={`hub-clientes__pill ${active ? 'hub-clientes__pill--active' : 'hub-clientes__pill--inactive'}`}>
-              {active ? 'Ativo' : 'Inativo'}
-            </span>
-          </div>
-          {breedLine ? <p className="hub-pets-detail__hero-muted">{breedLine}</p> : null}
-          <p className="hub-pets-detail__hero-muted">{petAgeDetailedLabel(pet.birth_date)}</p>
-          {primaryTutor ? (
-            <p className="hub-pets-detail__hero-muted hub-pets-detail__hero-tutor">
-              Tutor:{' '}
-              <span className="hub-pets-detail__hero-tutor-name">{primaryTutor}</span>
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      {quickActions}
+      {panelIdentity}
       {tabs}
       {tabContent}
       {financeDrawer}
       {receivablePanel}
       {batchChargePanel}
+      {sellPackagePanel}
 
       {canWrite && !hideFooter ? (
         <div className="hub-clientes__footer-btns">

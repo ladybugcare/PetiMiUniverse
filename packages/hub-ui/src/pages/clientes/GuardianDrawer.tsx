@@ -71,20 +71,15 @@ export const GuardianDrawer: React.FC<GuardianDrawerProps> = ({
   }, [mode, guardian, form.client_kind]);
 
   const title = useMemo(() => {
-    if (mode === 'detail' && guardian) return guardian.full_name;
+    if (mode === 'detail') return isCompany ? 'Perfil da empresa' : 'Perfil do tutor';
     if (mode === 'edit') return isCompany ? 'Editar empresa' : 'Editar tutor';
     if (mode === 'quote_review') return 'Rever contacto do orçamento';
     return isCompany ? 'Cadastrar nova empresa' : 'Cadastrar novo tutor';
-  }, [mode, guardian, isCompany]);
+  }, [mode, isCompany]);
 
+  /** Nome e “cliente desde” ficam no cartão de identidade — evita repetir no header. */
   const subtitle = useMemo(() => {
-    if (mode === 'detail' && guardian?.created_at) {
-      return `Cliente desde ${new Date(guardian.created_at).toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      })}`;
-    }
+    if (mode === 'edit') return guardian?.full_name || undefined;
     if (mode === 'create' && fromQuoteId && !linkGuardianId) {
       return `Conversão do orçamento #${quoteConvShort ?? ''}`;
     }
@@ -176,6 +171,11 @@ export const GuardianDrawer: React.FC<GuardianDrawerProps> = ({
         ) : undefined
       }
       subtitle={subtitle}
+      ariaLabel={
+        mode === 'detail' && guardian
+          ? `${isCompany ? 'Perfil da empresa' : 'Perfil do tutor'} ${guardian.full_name}`
+          : title
+      }
       footer={footer}
     >
       <div className="hub-clientes-drawer__content">

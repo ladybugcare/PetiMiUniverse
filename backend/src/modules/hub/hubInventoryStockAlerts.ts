@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../config/supabase.js';
-import { notifyHubStockAlert } from './hubNotifyEvents.js';
+import { notifyHubStockAlert, notifyHubStockExpiryAlert } from './hubNotifyEvents.js';
 
 /**
  * Avisa o estoque quando uma saída derruba o item abaixo do mínimo.
@@ -40,5 +40,49 @@ export async function notifyLowStockIfCrossed(opts: {
     });
   } catch (e) {
     console.error('notifyLowStockIfCrossed', opts.itemId, e);
+  }
+}
+
+function policyToDays(policy: string): number | null {
+  if (policy === 'd30') return 30;
+  if (policy === 'd60') return 60;
+  if (policy === 'd90') return 90;
+  return null;
+}
+
+/**
+ * Na entrada de lote, avisa se a validade está dentro da policy do item.
+ */
+export async function notifyExpiryAlertIfNeeded(opts: {
+  clinicId: string;
+  itemId: string;
+  itemName: string;
+  expiryAlertPolicy: string;
+  lotId: string;
+  lotCode?: string | null;
+  expiryDate?: string | null;
+}): Promise<void> {
+  try {
+    const days = policyToDays(opts.expiryAlertPolicy);
+    if (days == null || !opts.expiryDate) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const t0 = Date.parse(`${today}T12:00:00Z`);
+    const t1 = Date.parse(`${opts.expiryDate}T12:00:00Z`);
+    if (!Number.isFinite(t0) || !Number.isFinite(t1)) return;
+    const daysUntil = Math.round((t1 - t0) / 86400000);
+    if (daysUntil < 0 || daysUntil > days) return;
+
+    await notifyHubStockExpiryAlert({
+      clinicId: opts.clinicId,
+      itemId: opts.itemId,
+      itemName: opts.itemName,
+      lotId: opts.lotId,
+      lotCode: opts.lotCode ?? null,
+      expiryDate: opts.expiryDate,
+      daysUntil,
+    });
+  } catch (e) {
+    console.error('notifyExpiryAlertIfNeeded', opts.itemId, e);
   }
 }

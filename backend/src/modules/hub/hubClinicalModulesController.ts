@@ -9,7 +9,7 @@ import {
 } from '../../utils/supabaseSchemaErrors.js';
 import { streamPrescriptionPdf, streamValidatablePrescriptionPdf } from './hubPrescriptionPdf';
 import { recordTimelineEvent } from './hubClinicalTimelineController';
-import { ensureCaseAndAdmissionEncounter, CaseSelectionRequiredError } from './hubClinicalCasesController';
+import { ensureCaseAndAdmissionEncounter, CaseSelectionRequiredError, CaseReopenRequiredError } from './hubClinicalCasesController';
 import {
   computeDocumentStatus,
   maskPublicToken,
@@ -152,6 +152,7 @@ const prescriptionItemInputSchema = z.object({
   instructions: z.string().trim().max(2000).optional().nullable(),
   hub_inventory_item_id: uuidStr.optional().nullable(),
   administration: z.enum(['home_use', 'administered_in_clinic']).optional().default('home_use'),
+  use_route: z.string().trim().max(200).optional().nullable(),
 });
 
 function mapPrescriptionItemInsert(prescriptionId: string, it: z.infer<typeof prescriptionItemInputSchema>, orderIndex: number) {
@@ -168,6 +169,7 @@ function mapPrescriptionItemInsert(prescriptionId: string, it: z.infer<typeof pr
     instructions: it.instructions ?? null,
     hub_inventory_item_id: it.hub_inventory_item_id ?? null,
     administration: it.administration ?? 'home_use',
+    use_route: it.use_route ?? null,
     order_index: orderIndex,
   };
 }
@@ -270,6 +272,20 @@ export const createHubPrescription = async (req: Request, res: Response) => {
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
+
+  if (b.hub_case_id) {
+    const { data: caseRow } = await supabaseAdmin
+      .from('hub_clinical_cases')
+      .select('id, status')
+      .eq('id', b.hub_case_id)
+      .eq('clinic_id', b.clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!caseRow) return res.status(400).json({ error: 'Caso clínico inválido' });
+    if (caseRow.status === 'cancelled') {
+      return res.status(400).json({ error: 'Caso cancelado não pode receber receita. Abra um caso novo.' });
+    }
+  }
 
   /** Uma prescrição ativa/rascunho por atendimento: novos itens são anexados à existente. */
   if (b.hub_encounter_id) {
@@ -420,7 +436,7 @@ export const patchHubPrescription = async (req: Request, res: Response) => {
   if (b.hub_case_id) {
     const { data: caseRow } = await supabaseAdmin
       .from('hub_clinical_cases')
-      .select('id, pet_id')
+      .select('id, pet_id, status')
       .eq('id', b.hub_case_id)
       .eq('clinic_id', b.clinic_id)
       .is('deleted_at', null)
@@ -428,6 +444,9 @@ export const patchHubPrescription = async (req: Request, res: Response) => {
     if (!caseRow) return res.status(400).json({ error: 'Caso clínico inválido' });
     if (caseRow.pet_id !== rx.pet_id) {
       return res.status(400).json({ error: 'Caso clínico não pertence a este pet' });
+    }
+    if (caseRow.status === 'cancelled') {
+      return res.status(400).json({ error: 'Caso cancelado não pode receber receita. Abra um caso novo.' });
     }
   }
 
@@ -675,7 +694,9 @@ export const getHubPrescriptionPdf = async (req: Request, res: Response) => {
       actor_user_id: actorUserId,
     });
 
-    const pdfView = snapshotToPdfView(loaded.snapshot);
+    const pdfView = snapshotToPdfView(loaded.snapshot, {
+      expires_at: loaded.validation.expires_at,
+    });
     await streamValidatablePrescriptionPdf(res, pdfView, loaded.validation);
     return;
   }
@@ -685,8 +706,8 @@ export const getHubPrescriptionPdf = async (req: Request, res: Response) => {
     .select(
       `
       *,
-      clinic:clinics(name, phone, email),
-      pet:hub_pets(name, species, breed),
+      clinic:clinics(name, phone, email, address, city, state),
+      pet:hub_pets(name, species, breed, birth_date),
       staff:hub_staff_members(full_name, crmv, crmv_uf)
     `
     )
@@ -705,7 +726,9 @@ export const getHubPrescriptionPdf = async (req: Request, res: Response) => {
       .order('order_index'),
     supabaseAdmin
       .from('hub_pet_guardians')
-      .select('guardian:hub_guardians(full_name, phone)')
+      .select(
+        'guardian:hub_guardians(full_name, phone, tax_id, id_doc_number, street, street_number, district, city, state, postal_code)',
+      )
       .eq('pet_id', rx.pet_id)
       .order('role', { ascending: true })
       .limit(1),
@@ -1047,6 +1070,7 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
       hub_case_id: uuidStr.optional().nullable(),
       create_new_case: z.boolean().optional(),
       new_case_title: z.string().trim().max(500).optional().nullable(),
+      reopen_reason: z.string().trim().min(8).max(1000).optional().nullable(),
       hub_hospital_bed_id: uuidStr.optional().nullable(),
       hub_staff_member_id: uuidStr.optional().nullable(),
       admission_notes: z.string().trim().max(4000).optional().nullable(),
@@ -1069,11 +1093,13 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
       create_new_case: b.create_new_case,
       new_case_title: b.new_case_title,
       encounter_chief_complaint: b.reason ?? b.admission_notes ?? 'Admissão de internação',
+      reopen_reason: b.reopen_reason,
+      reopened_by: req.user?.id ?? null,
     });
     caseId = resolved.case_id;
     encounterId = resolved.encounter_id;
   } catch (e) {
-    if (e instanceof CaseSelectionRequiredError) {
+    if (e instanceof CaseSelectionRequiredError || e instanceof CaseReopenRequiredError) {
       return res.status(409).json({ error: e.message, code: e.code });
     }
     return res.status(400).json({ error: (e as Error)?.message });
@@ -1290,6 +1316,7 @@ export const createHubSurgery = async (req: Request, res: Response) => {
       hub_case_id: uuidStr.optional().nullable(),
       create_new_case: z.boolean().optional(),
       new_case_title: z.string().trim().max(500).optional().nullable(),
+      reopen_reason: z.string().trim().min(8).max(1000).optional().nullable(),
       hub_staff_member_id: uuidStr.optional().nullable(),
       title: z.string().trim().min(1).max(200),
       scheduled_at: z.string().datetime({ offset: true }).optional().nullable(),
@@ -1322,11 +1349,13 @@ export const createHubSurgery = async (req: Request, res: Response) => {
       create_new_case: b.create_new_case,
       new_case_title: b.new_case_title,
       encounter_chief_complaint: `Cirurgia: ${b.title}`,
+      reopen_reason: b.reopen_reason,
+      reopened_by: req.user?.id ?? null,
     });
     caseId = resolved.case_id;
     encounterId = resolved.encounter_id;
   } catch (e) {
-    if (e instanceof CaseSelectionRequiredError) {
+    if (e instanceof CaseSelectionRequiredError || e instanceof CaseReopenRequiredError) {
       return res.status(409).json({ error: e.message, code: e.code });
     }
     return res.status(400).json({ error: (e as Error)?.message });

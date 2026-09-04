@@ -49,6 +49,12 @@ type Props = {
   unitId: string | null;
   onClose: () => void;
   onCheckout: (comandaId: string, intent: 'checkout' | 'checkout_and_schedule', scheduleContext: PackageSaleScheduleContext) => void;
+  /** Pré-seleciona o tutor ao abrir (ex.: perfil do pet/tutor). */
+  initialGuardianId?: string | null;
+  /** Pré-seleciona o pet na primeira linha (requer `initialGuardianId`). */
+  initialPetId?: string | null;
+  /** Trava a troca de tutor quando aberto a partir de um perfil. */
+  lockGuardian?: boolean;
 };
 
 function formatBrl(n: number): string {
@@ -92,7 +98,15 @@ function expandSaleLines(
   return rows;
 }
 
-export const SellPackageDrawer: React.FC<Props> = ({ open, unitId, onClose, onCheckout }) => {
+export const SellPackageDrawer: React.FC<Props> = ({
+  open,
+  unitId,
+  onClose,
+  onCheckout,
+  initialGuardianId = null,
+  initialPetId = null,
+  lockGuardian = false,
+}) => {
   const clinicId = getStoredClinicId();
   const navigate = useNavigate();
   const { showError } = useAlert();
@@ -108,6 +122,7 @@ export const SellPackageDrawer: React.FC<Props> = ({ open, unitId, onClose, onCh
   const chargeSplitRef = useRef<HTMLDivElement>(null);
   const chargeMenuRef = useRef<HTMLDivElement>(null);
   const [chargeMenuStyle, setChargeMenuStyle] = useState<React.CSSProperties | null>(null);
+  const prefillPetAppliedRef = useRef(false);
 
   const updateChargeMenuPosition = useCallback(() => {
     const el = chargeSplitRef.current;
@@ -161,6 +176,7 @@ export const SellPackageDrawer: React.FC<Props> = ({ open, unitId, onClose, onCh
     setSaleLines([newSaleLine()]);
     setSuccessState(null);
     setChargeMenuOpen(false);
+    prefillPetAppliedRef.current = false;
   }, []);
 
   const load = useCallback(async () => {
@@ -185,8 +201,20 @@ export const SellPackageDrawer: React.FC<Props> = ({ open, unitId, onClose, onCh
   }, [load]);
 
   useEffect(() => {
-    if (!open) resetForm();
-  }, [open, resetForm]);
+    if (!open) {
+      resetForm();
+      return;
+    }
+    prefillPetAppliedRef.current = false;
+    if (initialGuardianId) {
+      setGuardianId(initialGuardianId);
+    } else {
+      setGuardianId('');
+      setSaleLines([newSaleLine()]);
+    }
+    setSuccessState(null);
+    setChargeMenuOpen(false);
+  }, [open, initialGuardianId, resetForm]);
 
   useLayoutEffect(() => {
     if (!chargeMenuOpen) {
@@ -232,24 +260,49 @@ export const SellPackageDrawer: React.FC<Props> = ({ open, unitId, onClose, onCh
   useEffect(() => {
     if (!clinicId || !guardianId) {
       setPets([]);
-      setSaleLines([newSaleLine()]);
+      if (!guardianId) setSaleLines([newSaleLine()]);
       return;
     }
+    let cancelled = false;
     void hubPetsApi
       .list(clinicId)
       .then((r) => {
+        if (cancelled) return;
         const all = r.pets ?? [];
-        setPets(
-          all.filter(
-            (p) =>
-              p.primary_guardian?.guardian_id === guardianId ||
-              p.secondary_guardian?.guardian_id === guardianId,
-          ),
+        const filtered = all.filter(
+          (p) =>
+            p.primary_guardian?.guardian_id === guardianId ||
+            p.secondary_guardian?.guardian_id === guardianId,
         );
+        setPets(filtered);
+
+        const applyInitialPet =
+          Boolean(open) &&
+          Boolean(initialPetId) &&
+          guardianId === (initialGuardianId || '') &&
+          filtered.some((p) => p.id === initialPetId) &&
+          !prefillPetAppliedRef.current;
+
+        if (applyInitialPet && initialPetId) {
+          prefillPetAppliedRef.current = true;
+          setSaleLines([{ id: crypto.randomUUID(), petIds: [initialPetId], packageId: '' }]);
+        } else if (
+          !prefillPetAppliedRef.current ||
+          guardianId !== (initialGuardianId || '')
+        ) {
+          setSaleLines([newSaleLine()]);
+        }
       })
-      .catch(() => setPets([]));
-    setSaleLines([newSaleLine()]);
-  }, [clinicId, guardianId]);
+      .catch(() => {
+        if (!cancelled) {
+          setPets([]);
+          setSaleLines([newSaleLine()]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, guardianId, initialPetId, initialGuardianId, open]);
 
   const guardianOptions = useMemo(
     () => [
@@ -523,8 +576,12 @@ export const SellPackageDrawer: React.FC<Props> = ({ open, unitId, onClose, onCh
               placeholder="Buscar tutor…"
               searchPlaceholder="Nome do tutor"
               ariaLabel="Tutor"
+              disabled={lockGuardian && Boolean(initialGuardianId)}
               triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
             />
+            {lockGuardian && initialGuardianId ? (
+              <p className="hub-clientes__muted hub-sell-package__hint">Tutor preenchido a partir do perfil.</p>
+            ) : null}
           </div>
 
           <div className="hub-clientes__field">

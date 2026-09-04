@@ -228,6 +228,10 @@ import {
   patchHubSurgery,
   getHubClinicalAlerts,
 } from '../hubClinicalModulesController';
+import {
+  listHubPrescriptionLookups,
+  createHubPrescriptionLookup,
+} from '../hubPrescriptionLookupsController';
 import { getHubVetCockpitPatientContext } from '../hubVetCockpitController.js';
 import {
   listHubQuotes,
@@ -1151,6 +1155,18 @@ router.get(
   authenticateUser,
   requirePermission('hub.clinic.read'),
   listHubPrescriptions
+);
+router.get(
+  '/clinical/prescription-lookups',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubPrescriptionLookups
+);
+router.post(
+  '/clinical/prescription-lookups',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubPrescriptionLookup
 );
 router.get(
   '/clinical/prescriptions/:id/pdf',

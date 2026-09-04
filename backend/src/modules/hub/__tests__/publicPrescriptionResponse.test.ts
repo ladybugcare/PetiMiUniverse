@@ -23,6 +23,7 @@ const snapshot: PrescriptionSnapshot = {
       duration: '5 dias',
       instructions: null,
       administration: 'home_use',
+      use_route: null,
     },
   ],
   notes: null,
@@ -59,7 +60,8 @@ describe('publicPrescriptionResponse', () => {
       status: 'valid',
       validation_code: 'RX-AB12-CD34',
       clinic: { name: 'Clínica Pet' },
-      guardian: { full_name: 'Ana Silva' },
+      guardian: { full_name: 'Ana Silva', tax_id_display: 'Não informado' },
+      pet: { age_label: 'Não informado' },
       medications: [{ medication_name: 'Dipirona' }],
     });
     expect(payload?.content_hash_short).toContain('…');

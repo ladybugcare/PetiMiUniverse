@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Coins, Link2, Pill } from 'lucide-react';
+import { ArrowLeft, Coins, Link2, Pill, Send } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
+import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
 import {
   HubPrescriptionItemForm,
   emptyPrescriptionItemDraft,
+  prescriptionItemToDraft,
   type PrescriptionItemDraft,
 } from '../../components/clinical/HubPrescriptionItemForm';
 import { HubPrescriptionIssuePanel } from '../../components/clinical/HubPrescriptionIssuePanel';
@@ -26,7 +28,6 @@ import {
 } from '../../api/hubClinicalApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
-import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryApi';
 import { hubPetsApi, type HubPet } from '../../api/hubPetsApi';
 import { useMyStaffMember } from '../../hooks/useMyStaffMember';
 import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
@@ -50,8 +51,9 @@ function draftToCreateItem(draft: PrescriptionItemDraft) {
     frequency: draft.posology.trim() || null,
     duration: draft.duration.trim() || null,
     instructions: draft.instructions.trim() || null,
-    hub_inventory_item_id: draft.hub_inventory_item_id || null,
+    hub_inventory_item_id: null,
     administration: draft.administration,
+    use_route: draft.use_route.trim() || null,
   };
 }
 
@@ -70,6 +72,7 @@ function prescriptionItemToPayload(it: HubPrescriptionItem) {
     instructions: it.instructions ?? null,
     hub_inventory_item_id: it.hub_inventory_item_id ?? null,
     administration,
+    use_route: it.use_route ?? null,
   };
 }
 
@@ -83,6 +86,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const petId = searchParams.get('petId')?.trim() || '';
+  const presetCaseId = searchParams.get('caseId')?.trim() || '';
   const { showError, showSuccess } = useAlert();
   const { hasPermission, loading: permLoading } = usePermissions();
   const canWrite = hasPermission('hub.clinic.write');
@@ -94,7 +98,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
   const [loadingPet, setLoadingPet] = useState(true);
   const [staffId, setStaffId] = useState('');
   const [draft, setDraft] = useState<PrescriptionItemDraft>(emptyPrescriptionItemDraft);
-  const [medicationItems, setMedicationItems] = useState<HubInventoryItem[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [prescription, setPrescription] = useState<HubPrescription | null>(null);
   const [saving, setSaving] = useState(false);
@@ -108,10 +112,12 @@ const HubStandalonePrescriptionPage: React.FC = () => {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const [postIssueStep, setPostIssueStep] = useState(false);
-  const [caseLink, setCaseLink] = useState<ClinicalCaseLinkValue>({});
+  const [caseLink, setCaseLink] = useState<ClinicalCaseLinkValue>(
+    presetCaseId ? { hub_case_id: presetCaseId } : {},
+  );
   const [hasActiveCases, setHasActiveCases] = useState(false);
   const [linkingCase, setLinkingCase] = useState(false);
-  const [caseLinkedId, setCaseLinkedId] = useState<string | null>(null);
+  const [caseLinkedId, setCaseLinkedId] = useState<string | null>(presetCaseId || null);
   const [openingComanda, setOpeningComanda] = useState(false);
   const [guardianPhone, setGuardianPhone] = useState<string | null>(null);
 
@@ -151,14 +157,6 @@ const HubStandalonePrescriptionPage: React.FC = () => {
     if (preferred) setStaffId(preferred);
   }, [myStaffMember, myStaffLoading, staffId]);
 
-  useEffect(() => {
-    if (!clinicId) return;
-    void hubInventoryApi.items
-      .list(clinicId, false, 'medication')
-      .then((r) => setMedicationItems(r.items ?? []))
-      .catch(() => setMedicationItems([]));
-  }, [clinicId]);
-
   const issued = prescription?.status === 'issued';
   const items = prescription?.items ?? [];
 
@@ -182,6 +180,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
       const res = await hubClinicalApi.createPrescription({
         clinic_id: clinicId,
         pet_id: petId,
+        hub_case_id: presetCaseId || null,
         hub_staff_member_id: staffId,
         notes: notes.trim() || null,
         items: [firstItem],
@@ -189,13 +188,43 @@ const HubStandalonePrescriptionPage: React.FC = () => {
       setPrescription(res.prescription);
       return res.prescription;
     },
-    [clinicId, petId, staffId, prescription, notes],
+    [clinicId, petId, staffId, prescription, notes, presetCaseId],
   );
+
+  const cancelEdit = () => {
+    setEditingIndex(null);
+    setDraft(emptyPrescriptionItemDraft());
+  };
+
+  const startEdit = (index: number) => {
+    if (!prescription || issued) return;
+    const it = (prescription.items ?? [])[index];
+    if (!it) return;
+    setEditingIndex(index);
+    setDraft(prescriptionItemToDraft(it));
+  };
 
   const addItem = async () => {
     if (!draft.medication_name.trim() || issued) return;
     setSaving(true);
     try {
+      if (editingIndex != null && prescription?.id && clinicId) {
+        const list = [...(prescription.items ?? [])];
+        if (editingIndex < 0 || editingIndex >= list.length) return;
+        list[editingIndex] = {
+          ...list[editingIndex],
+          ...draftToCreateItem(draft),
+        };
+        const res = await hubClinicalApi.patchPrescription(prescription.id, {
+          clinic_id: clinicId,
+          items: list.map(prescriptionItemToPayload),
+        });
+        setPrescription(res.prescription);
+        setEditingIndex(null);
+        setDraft(emptyPrescriptionItemDraft());
+        showSuccess('Medicamento atualizado');
+        return;
+      }
       await ensurePrescription(draftToCreateItem(draft));
       setDraft(emptyPrescriptionItemDraft());
       showSuccess('Medicamento incluído');
@@ -221,6 +250,11 @@ const HubStandalonePrescriptionPage: React.FC = () => {
         items: list.map(prescriptionItemToPayload),
       });
       setPrescription(res.prescription);
+      if (editingIndex === index) {
+        cancelEdit();
+      } else if (editingIndex != null && editingIndex > index) {
+        setEditingIndex(editingIndex - 1);
+      }
       showSuccess('Item removido');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao remover item');
@@ -389,29 +423,36 @@ const HubStandalonePrescriptionPage: React.FC = () => {
 
   const whatsAppReady = Boolean(normalizeBrPhone(guardianPhone));
 
-  const vetOptions = useMemo(() => {
+  const vetOptions = useMemo((): HubComboboxOption[] => {
     const withCrmvOrVet = staffList.filter(
       (s) => s.professional_kind === 'vet' || Boolean(s.crmv?.trim()),
     );
     const list = withCrmvOrVet.length ? withCrmvOrVet : staffList;
-    return [...list].sort((a, b) => a.full_name.localeCompare(b.full_name, 'pt-BR'));
+    return [...list]
+      .sort((a, b) => a.full_name.localeCompare(b.full_name, 'pt-BR'))
+      .map((s) => ({
+        value: s.id,
+        label: s.crmv
+          ? `${s.full_name} · CRMV ${s.crmv}${s.crmv_uf ? `/${s.crmv_uf}` : ''}`
+          : s.full_name,
+      }));
   }, [staffList]);
 
   if (permLoading || loadingPet) {
     return (
-      <div className="hub-clinic-page__pad">
+      <div className="hub-standalone-rx">
         <HubLoading label="Carregando…" />
       </div>
     );
   }
 
   if (!canRead) {
-    return <p className="hub-clientes__muted hub-clinic-page__pad">Sem permissão para receitas clínicas.</p>;
+    return <p className="hub-clientes__muted hub-standalone-rx">Sem permissão para receitas clínicas.</p>;
   }
 
   if (!petId || !pet) {
     return (
-      <div className="hub-clinic-page__pad">
+      <div className="hub-standalone-rx">
         <p className="hub-clientes__muted">Pet não encontrado. Abra a receita a partir da ficha do pet.</p>
         <Link to="/hub/pets" className="hub-clientes__link">
           Voltar aos pets
@@ -426,120 +467,193 @@ const HubStandalonePrescriptionPage: React.FC = () => {
 
   return (
     <div className="hub-standalone-rx">
-      <div className="hub-standalone-rx__top">
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-cws-back"
-          onClick={() => navigate(`/hub/pets/${pet.id}`)}
-        >
-          <ArrowLeft size={16} aria-hidden /> Voltar à ficha de {pet.name}
-        </button>
-
-        <header className="hub-standalone-rx__header">
-          <div>
-            <p className="hub-standalone-rx__kicker">Receita avulsa</p>
-            <h1 className="hub-standalone-rx__title">
-              <Pill size={20} aria-hidden /> Criar receita — {pet.name}
-            </h1>
-          </div>
-          <p className="hub-clientes__muted hub-standalone-rx__lead">
-            Pet + veterinário, sem atendimento completo. Depois vincule a um caso e cobre se quiser.
+      <header className="hub-standalone-rx__topbar">
+        <div>
+          <button
+            type="button"
+            className="hub-standalone-rx__back"
+            onClick={() =>
+              navigate(presetCaseId ? `/hub/clinica/casos/${presetCaseId}` : `/hub/pets/${pet.id}`)
+            }
+          >
+            <ArrowLeft size={16} aria-hidden />
+            {presetCaseId ? 'Voltar ao caso' : `Ficha de ${pet.name}`}
+          </button>
+          <h1 className="hub-standalone-rx__topbar-title">
+            <Pill size={20} aria-hidden /> Nova receita — {pet.name}
+          </h1>
+          <p className="hub-standalone-rx__topbar-subtitle">
+            {presetCaseId
+              ? 'Receita complementar neste caso, sem precisar abrir outro atendimento.'
+              : 'Receita avulsa sem atendimento completo. Depois da emissão, vincule a um caso e cobre se quiser.'}
           </p>
-        </header>
-      </div>
+        </div>
+        <div className="hub-standalone-rx__topbar-actions">
+          {!issued && canWrite ? (
+            <button
+              type="button"
+              className="hub-standalone-rx__btn hub-standalone-rx__btn--primary"
+              disabled={issuing || !staffId || items.length === 0}
+              onClick={() => void issueValidatable()}
+            >
+              <Send size={16} aria-hidden />
+              {issuing ? 'Emitindo…' : 'Emitir receita validável'}
+            </button>
+          ) : null}
+          {issued ? <span className="hub-rx-badge hub-rx-badge--issued">Emitida</span> : null}
+        </div>
+      </header>
 
       {!canWrite ? (
-        <p className="hub-clientes__muted hub-clinic-page__pad">Sem permissão para criar ou emitir receitas.</p>
+        <p className="hub-clientes__muted">Sem permissão para criar ou emitir receitas.</p>
       ) : (
-        <>
-          <div className="hub-standalone-rx__grid">
-            <section className="hub-standalone-rx__col">
-              <label className="hub-clientes__label" htmlFor="standalone-rx-vet">
-                Veterinária(o) responsável *
-              </label>
-              <select
-                id="standalone-rx-vet"
-                className="hub-clientes__input"
-                value={staffId}
-                disabled={issued}
-                onChange={(e) => setStaffId(e.target.value)}
-              >
-                <option value="">Selecionar…</option>
-                {vetOptions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name}
-                    {s.crmv ? ` · CRMV ${s.crmv}${s.crmv_uf ? `/${s.crmv_uf}` : ''}` : ''}
-                  </option>
-                ))}
-              </select>
+        <div className="hub-standalone-rx__grid">
+          <div className="hub-standalone-rx__main">
+            <section className="hub-standalone-rx__card">
+              <div className="hub-standalone-rx__card-header">
+                <div>
+                  <h2 className="hub-standalone-rx__card-title">1. Responsável</h2>
+                  <p className="hub-standalone-rx__card-subtitle">
+                    Veterinário(a) que assina a receita emitida.
+                  </p>
+                </div>
+              </div>
+              <div className="hub-standalone-rx__field">
+                <label className="hub-standalone-rx__label" htmlFor="standalone-rx-vet">
+                  Veterinária(o) *
+                </label>
+                <HubSearchableCombobox
+                  id="standalone-rx-vet"
+                  className="hub-standalone-rx__combobox"
+                  options={vetOptions}
+                  value={staffId}
+                  onChange={setStaffId}
+                  placeholder="Selecionar…"
+                  searchPlaceholder="Buscar profissional…"
+                  disabled={issued}
+                  allowCreate={false}
+                  clearable={false}
+                  ariaLabel="Veterinário responsável"
+                />
+              </div>
+            </section>
 
+            <section className="hub-standalone-rx__card">
+              <div className="hub-standalone-rx__card-header">
+                <div>
+                  <h2 className="hub-standalone-rx__card-title">
+                    {editingIndex != null ? '2. Editar medicamento' : '2. Incluir medicamento'}
+                  </h2>
+                  <p className="hub-standalone-rx__card-subtitle">
+                    Use o catálogo da clínica ou adicione uma opção nova na hora.
+                  </p>
+                </div>
+              </div>
               {!issued ? (
                 <HubPrescriptionItemForm
                   draft={draft}
                   onChange={setDraft}
                   onAdd={() => void addItem()}
-                  medicationItems={medicationItems}
+                  clinicId={clinicId}
+                  canCreateLookups={canWrite}
                   disabled={saving || !staffId}
-                  compact
+                  labeled
+                  editing={editingIndex != null}
+                  onCancelEdit={cancelEdit}
                 />
               ) : (
                 <p className="hub-rx-locked-note">Prescrição emitida — edição de itens bloqueada.</p>
               )}
+            </section>
 
-              {items.length > 0 ? (
-                <div className="hub-clinic-records__panel hub-rx-panel hub-standalone-rx__meds">
-                  <div className="hub-rx-panel__head">
-                    <strong>Medicamentos ({items.length})</strong>
-                    {issued ? <span className="hub-rx-badge hub-rx-badge--issued">Emitida</span> : null}
-                  </div>
-                  <ul className="hub-cws-rx-list">
-                    {items.map((it, idx) => (
-                      <li key={`${it.medication_name}-${idx}`} className="hub-cws-rx-item hub-cws-rx-item--compact">
+            <section className="hub-standalone-rx__card">
+              <div className="hub-standalone-rx__card-header">
+                <div>
+                  <h2 className="hub-standalone-rx__card-title">3. Medicamentos ({items.length})</h2>
+                  <p className="hub-standalone-rx__card-subtitle">
+                    Itens que entram no PDF e no link validável.
+                  </p>
+                </div>
+              </div>
+              {items.length === 0 ? (
+                <p className="hub-standalone-rx__empty">Nenhum medicamento ainda. Inclua pelo menos um acima.</p>
+              ) : (
+                <ul className="hub-standalone-rx__med-list">
+                  {items.map((it, idx) => (
+                    <li
+                      key={`${it.medication_name}-${idx}`}
+                      className={`hub-standalone-rx__med-row${editingIndex === idx ? ' hub-standalone-rx__med-row--editing' : ''}`}
+                    >
+                      <div className="hub-standalone-rx__med-main">
+                        <span className="hub-standalone-rx__med-index">{idx + 1}</span>
                         <div>
-                          <div className="hub-cws-rx-item__name">{it.medication_name}</div>
-                          <div className="hub-cws-rx-item__meta">{formatPrescriptionItemMeta(it)}</div>
+                          <div className="hub-standalone-rx__med-name">{it.medication_name}</div>
+                          <div className="hub-standalone-rx__med-meta">{formatPrescriptionItemMeta(it)}</div>
                         </div>
-                        {!issued ? (
+                      </div>
+                      {!issued ? (
+                        <div className="hub-standalone-rx__med-actions">
                           <button
                             type="button"
-                            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                            className="hub-standalone-rx__btn hub-standalone-rx__btn--outline hub-standalone-rx__btn--sm"
+                            onClick={() => startEdit(idx)}
+                            disabled={saving || editingIndex === idx}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className="hub-standalone-rx__btn hub-standalone-rx__btn--ghost hub-standalone-rx__btn--sm"
                             onClick={() => void removeItemAt(idx)}
                             disabled={saving}
                           >
                             Remover
                           </button>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-              <label className="hub-clientes__label" htmlFor="standalone-rx-notes">
-                Observações da receita
-              </label>
+            <section className="hub-standalone-rx__card">
+              <div className="hub-standalone-rx__card-header">
+                <div>
+                  <h2 className="hub-standalone-rx__card-title">4. Observações da receita</h2>
+                  <p className="hub-standalone-rx__card-subtitle">
+                    Orientações gerais salvas na emissão (opcional).
+                  </p>
+                </div>
+              </div>
               <textarea
                 id="standalone-rx-notes"
-                className="hub-clientes__input"
-                rows={2}
+                className="hub-standalone-rx__textarea"
+                rows={3}
                 value={notes}
                 disabled={issued}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Opcional — salvas na emissão"
+                placeholder="Ex.: retornar em 7 dias se não houver melhora…"
               />
             </section>
+          </div>
 
-            <aside className="hub-standalone-rx__aside" aria-labelledby="standalone-rx-after">
-              <h2 id="standalone-rx-after" className="hub-standalone-rx__after-title">
-                <Link2 size={16} aria-hidden /> Depois da emissão
-              </h2>
-              <p className="hub-clientes__muted hub-standalone-rx__aside-lead">
-                Vincule a um caso clínico para organizar o prontuário (opcional) e cobre só se fizer sentido.
-              </p>
+          <aside className="hub-standalone-rx__sidebar" aria-labelledby="standalone-rx-after">
+            <section className="hub-standalone-rx__card hub-standalone-rx__card--sidebar">
+              <div className="hub-standalone-rx__card-header">
+                <div>
+                  <h2 id="standalone-rx-after" className="hub-standalone-rx__card-title">
+                    <Link2 size={15} aria-hidden /> Depois da emissão
+                  </h2>
+                  <p className="hub-standalone-rx__card-subtitle">
+                    Vincular ao prontuário e cobrar só se fizer sentido.
+                  </p>
+                </div>
+              </div>
 
               {!(postIssueStep || issued) ? (
                 <p className="hub-standalone-rx__aside-empty">
-                  Emita a receita à esquerda. Este painel libera o vínculo ao caso, a cobrança e o acesso ao link.
+                  Emita a receita com o botão no topo. Aqui liberam o vínculo ao caso, a cobrança e o link.
                 </p>
               ) : (
                 <>
@@ -566,7 +680,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
                       <div className="hub-standalone-rx__after-actions">
                         <button
                           type="button"
-                          className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                          className="hub-standalone-rx__btn hub-standalone-rx__btn--primary hub-standalone-rx__btn--sm"
                           disabled={linkingCase}
                           onClick={() => void linkCase()}
                         >
@@ -574,7 +688,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                          className="hub-standalone-rx__btn hub-standalone-rx__btn--ghost hub-standalone-rx__btn--sm"
                           disabled={linkingCase}
                           onClick={skipCaseLink}
                         >
@@ -588,7 +702,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
                     {canCreateReceivable ? (
                       <button
                         type="button"
-                        className="hub-clientes__btn hub-clientes__btn--sm"
+                        className="hub-standalone-rx__btn hub-standalone-rx__btn--outline hub-standalone-rx__btn--sm"
                         disabled={openingComanda}
                         onClick={() => void openComanda()}
                       >
@@ -597,36 +711,50 @@ const HubStandalonePrescriptionPage: React.FC = () => {
                     ) : null}
                     <button
                       type="button"
-                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                      className="hub-standalone-rx__btn hub-standalone-rx__btn--ghost hub-standalone-rx__btn--sm"
                       onClick={() => setIssuePanelOpen(true)}
                     >
                       Ver link / código da receita
                     </button>
-                    <Link
-                      to={`/hub/pets/${pet.id}`}
-                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                    >
-                      Voltar ao pet
-                    </Link>
+                    {presetCaseId ? (
+                      <Link
+                        to={`/hub/clinica/casos/${presetCaseId}`}
+                        className="hub-standalone-rx__btn hub-standalone-rx__btn--ghost hub-standalone-rx__btn--sm"
+                      >
+                        Voltar ao caso
+                      </Link>
+                    ) : (
+                      <Link
+                        to={`/hub/pets/${pet.id}`}
+                        className="hub-standalone-rx__btn hub-standalone-rx__btn--ghost hub-standalone-rx__btn--sm"
+                      >
+                        Voltar ao pet
+                      </Link>
+                    )}
                   </div>
                 </>
               )}
-            </aside>
-          </div>
+            </section>
 
-          {!issued ? (
-            <footer className="hub-standalone-rx__footer">
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--primary"
-                disabled={issuing || !staffId || items.length === 0}
-                onClick={() => void issueValidatable()}
-              >
-                {issuing ? 'Emitindo…' : 'Emitir receita validável'}
-              </button>
-            </footer>
-          ) : null}
-        </>
+            <section className="hub-standalone-rx__card hub-standalone-rx__card--sidebar hub-standalone-rx__summary">
+              <p className="hub-standalone-rx__summary-label">Resumo</p>
+              <dl className="hub-standalone-rx__summary-dl">
+                <div>
+                  <dt>Pet</dt>
+                  <dd>{pet.name}</dd>
+                </div>
+                <div>
+                  <dt>Medicamentos</dt>
+                  <dd>{items.length}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{issued ? 'Emitida' : items.length ? 'Pronta para emitir' : 'Em montagem'}</dd>
+                </div>
+              </dl>
+            </section>
+          </aside>
+        </div>
       )}
 
       <HubPrescriptionIssuePanel

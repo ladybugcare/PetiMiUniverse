@@ -121,7 +121,9 @@ export const getPublicPrescriptionPdf = async (req: Request, res: Response) => {
     applyPublicPrescriptionHeaders(res);
     void recordPrescriptionPdfDownloaded(req, String(doc.clinic_id), String(doc.id));
 
-    const pdfView = snapshotToPdfView(doc.snapshot as PrescriptionSnapshot);
+    const pdfView = snapshotToPdfView(doc.snapshot as PrescriptionSnapshot, {
+      expires_at: payload.expires_at,
+    });
     await streamValidatablePrescriptionPdf(res, pdfView, {
       validation_code: payload.validation_code,
       public_url: publicUrl,

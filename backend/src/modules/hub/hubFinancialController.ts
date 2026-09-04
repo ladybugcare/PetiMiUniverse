@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { computeBalances } from './hubInventoryController';
+import { createSaleStockOut } from './hubInventoryStockUtils';
 import { streamPaymentReceiptPdf } from './hubPaymentReceiptPdf';
 import { fetchOpenComandaOriginKeysExported, tryAutoCloseComanda } from './hubComandasController';
 import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
@@ -1266,21 +1267,19 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
     const nextSort = Number(maxRows?.[0]?.sort_order ?? 0) + 1;
     await supabaseAdmin.from('hub_receivable_lines').update({ sort_order: nextSort }).eq('id', line.id);
 
-    const { error: movErr } = await supabaseAdmin.from('hub_stock_movements').insert({
-      clinic_id,
-      item_id,
-      lot_id,
-      movement_type: 'sale_out',
+    const stockResult = await createSaleStockOut({
+      clinicId: clinic_id,
+      itemId: item_id,
+      lotId: lot_id,
       qty: quantity,
-      unit_cost: null,
-      reference_type: 'hub_receivable',
-      reference_id: receivableId,
       notes: notes ?? `Venda vinculada ao recebível ${receivableId}`,
-      created_by: userId,
+      referenceType: 'hub_receivable_line',
+      referenceId: line.id as string,
+      createdBy: userId,
     });
-    if (movErr) {
+    if ('error' in stockResult) {
       await supabaseAdmin.from('hub_receivable_lines').delete().eq('id', line.id);
-      return res.status(500).json({ error: movErr.message });
+      return res.status(400).json({ error: stockResult.error });
     }
 
     const original = round2(Number(rec.original_amount ?? 0) + lineTotal);

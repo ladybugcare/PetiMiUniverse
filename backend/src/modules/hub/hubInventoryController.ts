@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
-import { notifyLowStockIfCrossed } from './hubInventoryStockAlerts';
+import { notifyLowStockIfCrossed, notifyExpiryAlertIfNeeded } from './hubInventoryStockAlerts';
 import { parseOptionalEan } from './inventoryEan';
 
 const uuidStr = z.string().uuid();
@@ -57,7 +57,7 @@ export async function computeBalances(clinicId: string) {
 async function assertClinicItem(clinicId: string, itemId: string) {
   const { data, error } = await supabaseAdmin
     .from('hub_inventory_items')
-    .select('id, clinic_id, deleted_at, name, min_stock_qty')
+    .select('id, clinic_id, deleted_at, name, min_stock_qty, expiry_alert_policy')
     .eq('id', itemId)
     .maybeSingle();
   if (error || !data || data.clinic_id !== clinicId || data.deleted_at) {
@@ -70,7 +70,7 @@ async function assertClinicItem(clinicId: string, itemId: string) {
 async function assertClinicLot(clinicId: string, lotId: string) {
   const { data, error } = await supabaseAdmin
     .from('hub_inventory_lots')
-    .select('id, clinic_id, item_id')
+    .select('id, clinic_id, item_id, lot_code, expiry_date')
     .eq('id', lotId)
     .maybeSingle();
   if (error || !data || data.clinic_id !== clinicId) return null;
@@ -575,7 +575,9 @@ export const listHubStockMovements = async (req: Request, res: Response) => {
 
     let q = supabaseAdmin
       .from('hub_stock_movements')
-      .select('id, clinic_id, item_id, lot_id, movement_type, qty, unit_cost, reference_type, reference_id, notes, created_by, created_at')
+      .select(
+        'id, clinic_id, item_id, lot_id, movement_type, qty, unit_cost, reference_type, reference_id, notes, created_by, created_at, lot:hub_inventory_lots(id, lot_code, expiry_date)'
+      )
       .eq('clinic_id', clinic_id)
       .order('created_at', { ascending: false })
       .limit(500);
@@ -738,7 +740,7 @@ export const createHubStockMovement = async (req: Request, res: Response) => {
       }
     }
 
-    if (sign > 0 && d.movement_type === 'purchase_in' && !lotId && d.new_lot) {
+    if (sign > 0 && !lotId && d.new_lot) {
       const { data: lot, error: lotErr } = await supabaseAdmin
         .from('hub_inventory_lots')
         .insert([
@@ -803,6 +805,19 @@ export const createHubStockMovement = async (req: Request, res: Response) => {
       });
     }
 
+    if (sign > 0 && lotId) {
+      const lot = await assertClinicLot(d.clinic_id, lotId);
+      void notifyExpiryAlertIfNeeded({
+        clinicId: d.clinic_id,
+        itemId: d.item_id,
+        itemName: String(item.name ?? 'Item'),
+        expiryAlertPolicy: String(item.expiry_alert_policy ?? 'none'),
+        lotId,
+        lotCode: lot?.lot_code ?? null,
+        expiryDate: lot?.expiry_date ?? (d.new_lot?.expiry_date ?? null),
+      });
+    }
+
     return res.status(201).json({ movement: mov });
   } catch (e) {
     console.error('[hub_inventory] create movement', e);
@@ -817,10 +832,14 @@ export const listHubExpiringLots = async (req: Request, res: Response) => {
     const parsed = uuidStr.safeParse(req.query.clinic_id);
     if (!parsed.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = parsed.data;
+    const byPolicy =
+      String(req.query.by_policy || '') === '1' ||
+      String(req.query.by_policy || '').toLowerCase() === 'true';
     const within = Math.min(365, Math.max(1, parseInt(String(req.query.within_days || '30'), 10) || 30));
     const today = new Date();
     const end = new Date(today);
-    end.setDate(end.getDate() + within);
+    // Para by_policy, busca até 90 dias (máximo das policies d30/d60/d90) e filtra por item.
+    end.setDate(end.getDate() + (byPolicy ? 90 : within));
     const isoToday = today.toISOString().slice(0, 10);
     const isoEnd = end.toISOString().slice(0, 10);
 
@@ -840,24 +859,57 @@ export const listHubExpiringLots = async (req: Request, res: Response) => {
 
     const { byLot } = await computeBalances(clinic_id);
     const itemIds = [...new Set((lots ?? []).map((l) => l.item_id as string))];
-    let itemMap = new Map<string, { name: string; item_kind: string }>();
+    let itemMap = new Map<string, { name: string; item_kind: string; expiry_alert_policy: string }>();
     if (itemIds.length) {
-      const { data: items } = await supabaseAdmin.from('hub_inventory_items').select('id, name, item_kind').in('id', itemIds);
+      const { data: items } = await supabaseAdmin
+        .from('hub_inventory_items')
+        .select('id, name, item_kind, expiry_alert_policy')
+        .in('id', itemIds);
       for (const it of items ?? []) {
-        itemMap.set(it.id as string, { name: it.name as string, item_kind: it.item_kind as string });
+        itemMap.set(it.id as string, {
+          name: it.name as string,
+          item_kind: it.item_kind as string,
+          expiry_alert_policy: String(it.expiry_alert_policy ?? 'none'),
+        });
       }
     }
+
+    const policyDays = (p: string): number | null => {
+      if (p === 'd30') return 30;
+      if (p === 'd60') return 60;
+      if (p === 'd90') return 90;
+      return null;
+    };
+
+    const daysUntil = (ymd: string): number => {
+      const t0 = Date.parse(`${isoToday}T12:00:00Z`);
+      const t1 = Date.parse(`${ymd}T12:00:00Z`);
+      return Math.round((t1 - t0) / 86400000);
+    };
 
     const enriched = (lots ?? [])
       .map((l) => {
         const qty = byLot.get(l.id as string) ?? 0;
+        const meta = itemMap.get(l.item_id as string) ?? {
+          name: '?',
+          item_kind: 'product',
+          expiry_alert_policy: 'none',
+        };
         return {
           ...l,
           qty_on_hand: qty,
-          item: itemMap.get(l.item_id as string) ?? { name: '?', item_kind: 'product' },
+          item: { name: meta.name, item_kind: meta.item_kind },
+          expiry_alert_policy: meta.expiry_alert_policy,
         };
       })
-      .filter((l) => l.qty_on_hand > 0);
+      .filter((l) => {
+        if (l.qty_on_hand <= 0) return false;
+        if (!byPolicy) return true;
+        const days = policyDays(l.expiry_alert_policy);
+        if (days == null) return false;
+        if (!l.expiry_date) return false;
+        return daysUntil(l.expiry_date as string) <= days;
+      });
 
     return res.json({ lots: enriched });
   } catch (e) {
@@ -879,7 +931,7 @@ export const listHubLowStock = async (req: Request, res: Response) => {
       .eq('active', true);
     if (error) {
       console.error('[hub_inventory] low stock', error);
-      return res.status(500).json({ error: 'Erro ao listar stock baixo' });
+      return res.status(500).json({ error: 'Erro ao listar estoque baixo' });
     }
     const { byItem } = await computeBalances(clinic_id);
     const low = (items ?? []).filter((it) => {

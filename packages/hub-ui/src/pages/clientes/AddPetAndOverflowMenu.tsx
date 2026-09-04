@@ -66,7 +66,7 @@ export const AddPetAndOverflowMenu: React.FC<Props> = ({ guardianId, onEdit, onA
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
 
-  const petsUrl = `/hub/pets/novo?guardianId=${encodeURIComponent(guardianId)}`;
+  const petsUrl = `/hub/pets/novo?guardianId=${encodeURIComponent(guardianId)}&returnTo=${encodeURIComponent(`/hub/clientes/${guardianId}?tab=pets`)}`;
 
   return (
     <div

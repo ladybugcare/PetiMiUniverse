@@ -1,0 +1,609 @@
+/* Prontuários — arquivo clínico (lista estreita + detalhe largo) */
+
+.hub-clinic-records.hub-clientes {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  width: 100%;
+  min-height: calc(100vh - 200px);
+}
+
+.hub-clinic-records__queue,
+.hub-clinic-records__detail {
+  background: var(--hc-card, #fff);
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 14px;
+  max-height: calc(100vh - 200px);
+  min-height: 520px;
+}
+
+.hub-clinic-records__queue {
+  padding: 14px;
+  overflow: auto;
+}
+
+.hub-clinic-records__queue-title {
+  margin: 0 0 12px;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__queue-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(74, 59, 58, 0.08);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clinic-records__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 10px;
+  background: var(--hc-bg-subtle, #faf7f5);
+}
+
+.hub-clinic-records__search svg {
+  flex-shrink: 0;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--hc-text, #4a3b3a);
+  outline: none;
+}
+
+.hub-clinic-records__queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hub-clinic-records__queue-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--hc-card, #fff);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.hub-clinic-records__queue-item:hover {
+  border-color: rgba(200, 106, 77, 0.4);
+  box-shadow: 0 2px 8px rgba(74, 59, 58, 0.06);
+}
+
+.hub-clinic-records__queue-item--selected {
+  border-color: var(--hc-brand, #c86a4d);
+  background: var(--hc-row-selected, #fdf6f2);
+  box-shadow: 0 0 0 2px rgba(200, 106, 77, 0.1);
+}
+
+.hub-clinic-records__queue-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hub-clinic-records__queue-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hub-clinic-records__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--hc-brand, #c86a4d);
+  background: rgba(200, 106, 77, 0.12);
+  border: 1px solid rgba(200, 106, 77, 0.18);
+  flex-shrink: 0;
+}
+
+.hub-clinic-records__avatar--lg {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  font-size: 15px;
+}
+
+.hub-clinic-records__queue-pet {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--hc-text, #4a3b3a);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.hub-clinic-records__queue-meta,
+.hub-clinic-records__queue-guardian {
+  font-size: 12px;
+  color: var(--hc-text-muted, #8e6e67);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.hub-clinic-records__detail {
+  padding: 20px;
+  overflow: auto;
+}
+
+.hub-clinic-records__detail--with-footer {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.hub-clinic-records__detail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 22px 16px;
+}
+
+.hub-clinic-records__detail--empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 40px 24px;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clinic-records__detail--empty > p {
+  margin: 0;
+  max-width: 28rem;
+  line-height: 1.45;
+}
+
+.hub-clinic-records__detail--empty svg {
+  color: var(--hc-text-muted, #8e6e67);
+  margin-bottom: 4px;
+}
+
+.hub-clinic-records__header {
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.hub-clinic-records__title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.hub-clinic-records__title-text {
+  min-width: 0;
+}
+
+.hub-clinic-records__kicker {
+  margin: 0 0 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__pet-name {
+  margin: 0 0 4px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clinic-records__pet-meta {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__alerts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.hub-clinic-alert-chip--behavior {
+  background: #f3eee8;
+  color: #6b5654;
+}
+
+.hub-clinic-records__facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--hc-bg-subtle, #faf7f5);
+  border: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.hub-clinic-records__facts strong {
+  display: block;
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.hub-clinic-records__fact-k {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--hc-text-muted, #8e6e67);
+  margin-bottom: 2px;
+}
+
+.hub-clinic-records__muted-value {
+  font-weight: 600;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.hub-clinic-records__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.hub-clinic-records__stat svg {
+  color: var(--hc-brand, #c86a4d);
+}
+
+.hub-clinic-records__stat-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--hc-text, #4a3b3a);
+  line-height: 1.2;
+}
+
+.hub-clinic-records__stat-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__tabs {
+  margin-bottom: 16px;
+}
+
+.hub-clinic-records__section {
+  min-height: 120px;
+}
+
+.hub-clinic-records__tab-empty {
+  margin: 12px 0 0;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__cases {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hub-clinic-records__case {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.hub-clinic-records__case--open {
+  border-color: rgba(200, 106, 77, 0.28);
+  background: var(--hc-row-selected, #fdf6f2);
+}
+
+.hub-clinic-records__case-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hub-clinic-records__case-action {
+  flex-shrink: 0;
+}
+
+.hub-clinic-records__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.hub-clinic-records__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.hub-clinic-records__card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.hub-clinic-records__card .hub-clientes__btn,
+.hub-clinic-records__case .hub-clientes__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hub-clinic-records__card-title {
+  font-size: 0.95rem;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clinic-records__card-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hc-text-secondary, #6b5a58);
+}
+
+.hub-clinic-records__card-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hub-clinic-records__timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 12px;
+  padding: 0 0 18px 4px;
+}
+
+.hub-clinic-records__timeline-item::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 10px;
+  bottom: 0;
+  width: 2px;
+  background: rgba(200, 106, 77, 0.22);
+}
+
+.hub-clinic-records__timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.hub-clinic-records__timeline-item:last-child::before {
+  display: none;
+}
+
+.hub-clinic-records__timeline-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: var(--hc-brand, #c86a4d);
+  box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.16);
+}
+
+.hub-clinic-records__status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hub-clinic-records__status--waiting {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.hub-clinic-records__status--in_progress {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.hub-clinic-records__status--completed {
+  background: rgba(74, 59, 58, 0.08);
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-clinic-records__status--cancelled {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.hub-clinic-records__status--external {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.hub-clinic-records__flags {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hub-clinic-records__block {
+  padding: 16px;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.hub-clinic-records__block h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-clinic-records__chip-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.hub-clinic-records__flag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-clinic-records__flag-list li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--hc-bg-subtle, #faf7f5);
+}
+
+.hub-clinic-records__flag-form {
+  margin-top: 14px;
+}
+
+.hub-clinic-records__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--hc-border, #e8ddd8);
+  background: #fff;
+}
+
+.hub-clinic-records__footer .hub-clientes__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+@media (max-width: 960px) {
+  .hub-clinic-records__case {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hub-clinic-records.hub-clientes {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-clinic-records__queue {
+    max-height: 42vh;
+    min-height: 0;
+  }
+
+  .hub-clinic-records__detail {
+    max-height: none;
+    min-height: 360px;
+  }
+
+  .hub-clinic-records__facts,
+  .hub-clinic-records__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .hub-clinic-records__facts,
+  .hub-clinic-records__stats {
+    grid-template-columns: 1fr;
+  }
+}

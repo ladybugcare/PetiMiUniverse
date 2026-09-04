@@ -6,6 +6,7 @@ import HubEstoqueMovementsPage from './HubEstoqueMovementsPage';
 import HubEstoqueValidadePage from './HubEstoqueValidadePage';
 import HubEstoqueAlertasPage from './HubEstoqueAlertasPage';
 import HubEstoqueInventarioPage from './HubEstoqueInventarioPage';
+import HubEstoqueFornecedoresPage from './HubEstoqueFornecedoresPage';
 
 /**
  * Rotas aninhadas sob `/hub/estoque/*` (parent define `path="estoque/*"`).
@@ -23,6 +24,7 @@ const HubEstoqueRoutes: React.FC = () => {
         <Route path="validade" element={<HubEstoqueValidadePage />} />
         <Route path="alertas" element={<HubEstoqueAlertasPage />} />
         <Route path="inventario" element={<HubEstoqueInventarioPage />} />
+        <Route path="fornecedores" element={<HubEstoqueFornecedoresPage />} />
         {/* URLs inválidas (ex.: /produtos/produtos por links relativos antigos) */}
         <Route path="*" element={<Navigate to="/hub/estoque/produtos" replace />} />
       </Route>

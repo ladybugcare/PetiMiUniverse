@@ -1,7 +1,12 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
-import { resolveOrCreateClinicalCase, CaseSelectionRequiredError } from './hubClinicalCasesController';
+import {
+  resolveOrCreateClinicalCase,
+  CaseSelectionRequiredError,
+  CaseReopenRequiredError,
+  maybePromoteGenericCaseTitle,
+} from './hubClinicalCasesController';
 import { recordTimelineEvent } from './hubClinicalTimelineController';
 import {
   syncOpenComandasAfterEncounterCompleted,
@@ -166,6 +171,8 @@ const createEncounterSchema = z
     // create_new_case=true para forçar caso novo, ou omitir para auto-caso.
     hub_case_id: uuidStr.optional().nullable(),
     create_new_case: z.boolean().optional(),
+    new_case_title: z.string().trim().max(500).optional().nullable(),
+    reopen_reason: z.string().trim().min(8).max(1000).optional().nullable(),
     encounter_type: encounterTypeSchema.optional().default('consultation'),
     ...careLocationBodyFields,
   })
@@ -961,9 +968,12 @@ export const createHubEncounter = async (req: Request, res: Response) => {
           started_at: now,
           hub_case_id: b.hub_case_id,
           create_new_case: b.create_new_case,
+          new_case_title: b.new_case_title,
+          reopen_reason: b.reopen_reason,
+          reopened_by: req.user?.id ?? null,
         });
       } catch (caseErr: unknown) {
-        if (caseErr instanceof CaseSelectionRequiredError) {
+        if (caseErr instanceof CaseSelectionRequiredError || caseErr instanceof CaseReopenRequiredError) {
           return res.status(409).json({ error: caseErr.message, code: caseErr.code });
         }
         return res.status(400).json({ error: (caseErr as Error)?.message || 'Erro ao resolver caso clínico' });
@@ -975,11 +985,23 @@ export const createHubEncounter = async (req: Request, res: Response) => {
 
     let effectiveApptId: string | null = b.hub_appointment_id ?? null;
     const careKind = b.care_location_kind ?? 'own_unit';
+    let resolvedUnitId = b.unit_id ?? null;
+    // Novo atendimento em caso existente: herda a unidade do caso quando o cliente não envia.
+    if (!resolvedUnitId && caseId) {
+      const { data: caseRow } = await supabaseAdmin
+        .from('hub_clinical_cases')
+        .select('unit_id')
+        .eq('id', caseId)
+        .eq('clinic_id', b.clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      resolvedUnitId = (caseRow?.unit_id as string | null | undefined) ?? null;
+    }
     const careResolved = await resolveCareLocation({
       clinicId: b.clinic_id,
       care_location_kind: careKind,
       hub_partner_clinic_id: b.hub_partner_clinic_id ?? null,
-      unit_id: b.unit_id ?? null,
+      unit_id: resolvedUnitId,
       allowNullUnit: careKind === 'partner_clinic' || isEmergency,
     });
     if (!careResolved.ok) {
@@ -1073,6 +1095,7 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
         hub_case_id: uuidStr.optional().nullable(),
         create_new_case: z.boolean().optional(),
         new_case_title: z.string().max(200).optional().nullable(),
+        reopen_reason: z.string().trim().min(8).max(1000).optional().nullable(),
       })
       .safeParse(req.body);
     if (!body.success) return res.status(400).json({ error: body.error.flatten() });
@@ -1095,7 +1118,7 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
     const { data: appt, error: apptErr } = await supabaseAdmin
       .from('hub_appointments')
       .select(
-        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, appointment_kind, intake_hub_case_id, intake_create_new_case, intake_new_case_title, care_location_kind, hub_partner_clinic_id',
+        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, title, appointment_kind, intake_hub_case_id, intake_create_new_case, intake_new_case_title, care_location_kind, hub_partner_clinic_id',
       )
       .eq('id', hub_appointment_id)
       .eq('clinic_id', clinic_id)
@@ -1158,9 +1181,12 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
           hub_case_id: intakeCaseId,
           create_new_case: intakeCreateNew,
           new_case_title: intakeNewTitle,
+          appointment_title: (apptRow.title as string | null | undefined) ?? null,
+          reopen_reason: body.data.reopen_reason,
+          reopened_by: req.user?.id ?? null,
         });
       } catch (caseErr: unknown) {
-        if (caseErr instanceof CaseSelectionRequiredError) {
+        if (caseErr instanceof CaseSelectionRequiredError || caseErr instanceof CaseReopenRequiredError) {
           return res.status(409).json({ error: caseErr.message, code: caseErr.code });
         }
         return res.status(400).json({ error: (caseErr as Error)?.message || 'Erro ao resolver caso clínico' });
@@ -1390,6 +1416,13 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
     if (patch.status === 'cancelled') {
       void maybeFlagComandaCancellationPending(b.clinic_id, 'encounter', id.data);
     }
+    if (b.chief_complaint !== undefined) {
+      void maybePromoteGenericCaseTitle({
+        case_id: (data as { hub_case_id?: string | null }).hub_case_id,
+        clinic_id: b.clinic_id,
+        candidate: b.chief_complaint,
+      });
+    }
     const encounter = await enrichEncounter(data as Record<string, unknown>);
     return res.json({ encounter });
   } catch (e: unknown) {
@@ -1493,6 +1526,12 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
         event_at: now,
       });
     }
+
+    void maybePromoteGenericCaseTitle({
+      case_id: (enc.hub_case_id as string | null) ?? bf.hub_case_id,
+      clinic_id: clinic_id.data,
+      candidate: bf.chief_complaint,
+    });
 
     void syncOpenComandasAfterEncounterCompleted(clinic_id.data, id.data);
 

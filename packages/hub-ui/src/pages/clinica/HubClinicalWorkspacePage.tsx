@@ -47,6 +47,7 @@ import {
   formatHubClinicalExamStatus,
   attachmentPublicUrl,
 } from './clinicalDisplay';
+import { clinicalCaseDisplayTitle } from './clinicalCaseTitle';
 import { petAgeDetailedLabel } from '../pets/petAge';
 import { useDebouncedSave } from '../../hooks/useDebouncedSave';
 import './clinica-page.css';
@@ -487,7 +488,10 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                 <p className="hub-cws-header__case-link">
                   Caso:{' '}
                   <Link to={`/hub/clinica/casos/${encounter.hub_case_id}`} className="hub-clientes__link">
-                    {encounter.case.title}
+                    {clinicalCaseDisplayTitle(encounter.case.title, [
+                      encounter.chief_complaint,
+                      encounter.summary_notes,
+                    ])}
                   </Link>
                 </p>
               ) : null}

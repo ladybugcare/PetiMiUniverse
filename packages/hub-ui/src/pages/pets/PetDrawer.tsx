@@ -1,15 +1,22 @@
 import React, { useMemo } from 'react';
-import { Dog } from 'lucide-react';
+import { Bird, Cat, Dog } from 'lucide-react';
 import type { HubGuardian } from '../../api/hubGuardiansApi';
 import type { HubPet } from '../../api/hubPetsApi';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { PetForm } from './PetForm';
 import { PetDetailPanel } from './PetDetailPanel';
 import type { PetFormValues } from './PetFormValues';
-import { petAgeDetailedLabel } from './petAge';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
 import './pets-page.css';
+
+function petSpeciesIcon(species: string | undefined) {
+  const s = (species || '').trim().toLowerCase();
+  const props = { size: 20, strokeWidth: 2, 'aria-hidden': true as const };
+  if (/gato|cat|felin/.test(s)) return <Cat {...props} />;
+  if (!s || /c[aã]o|dog|canin/.test(s)) return <Dog {...props} />;
+  return <Bird {...props} />;
+}
 
 export type PetDrawerMode = 'create' | 'edit' | 'detail';
 
@@ -57,19 +64,14 @@ export const PetDrawer: React.FC<PetDrawerProps> = ({
   canCreateReceivable,
 }) => {
   const title = useMemo(() => {
-    if (mode === 'detail' && pet) return pet.name;
+    if (mode === 'detail') return 'Perfil do pet';
     if (mode === 'edit') return 'Editar pet';
     return 'Cadastro rápido de pet';
-  }, [mode, pet]);
+  }, [mode]);
 
+  /** Nome e atributos ficam no cartão de identidade — header só contextualiza o painel. */
   const subtitle = useMemo(() => {
-    if (mode === 'detail' && pet) {
-      const breed = pet.breed?.trim();
-      const parts = [pet.species, breed || 'SRD'].filter(Boolean);
-      const line = parts.join(' · ');
-      const age = petAgeDetailedLabel(pet.birth_date);
-      return [line, age].filter((s) => s && s !== '—').join(' · ') || undefined;
-    }
+    if (mode === 'edit') return pet?.name || undefined;
     return undefined;
   }, [mode, pet]);
 
@@ -126,8 +128,9 @@ export const PetDrawer: React.FC<PetDrawerProps> = ({
       open={open}
       onClose={onClose}
       title={title}
-      titleIcon={<Dog size={20} strokeWidth={2} aria-hidden />}
+      titleIcon={mode === 'detail' && pet ? petSpeciesIcon(pet.species) : petSpeciesIcon(form.species)}
       subtitle={subtitle}
+      ariaLabel={mode === 'detail' && pet ? `Perfil do pet ${pet.name}` : title}
       footer={footer}
     >
       <div className="hub-clientes-drawer__content">

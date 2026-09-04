@@ -16,7 +16,7 @@ import { digitsOnlyBrPhone, formatBrPhoneDisplay } from '../../utils/formatBrPho
 import { renderTemplate } from '../../utils/hubMessageTemplates';
 import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
-import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryApi';
+import { hubInventoryApi, type HubInventoryItem, type HubInventoryLotRow } from '../../api/hubInventoryApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { useNavigate } from 'react-router-dom';
 import { shouldShowBoardingBillingButton } from './boardingBillingUi';
@@ -81,7 +81,9 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
   const navigate = useNavigate();
   const [billingBusy, setBillingBusy] = useState(false);
   const [stockItems, setStockItems] = useState<HubInventoryItem[]>([]);
+  const [stockLots, setStockLots] = useState<HubInventoryLotRow[]>([]);
   const [stockItemId, setStockItemId] = useState('');
+  const [stockLotId, setStockLotId] = useState('');
   const [stockQty, setStockQty] = useState('1');
   const [stockNotes, setStockNotes] = useState('');
   const [stockBusy, setStockBusy] = useState(false);
@@ -138,11 +140,21 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
 
   useEffect(() => {
     if (!open || !clinicId || !canWriteInventory) return;
-    void hubInventoryApi.items.list(clinicId).then((r) => setStockItems(r.items ?? [])).catch(() => {});
+    void Promise.all([
+      hubInventoryApi.items.list(clinicId),
+      hubInventoryApi.lots.list(clinicId),
+    ])
+      .then(([itemsRes, lotsRes]) => {
+        setStockItems(itemsRes.items ?? []);
+        setStockLots(lotsRes.lots ?? []);
+      })
+      .catch(() => {});
   }, [open, clinicId, canWriteInventory]);
 
+  const stockLotsForItem = stockLots.filter((l) => l.item_id === stockItemId && l.qty_on_hand > 0);
+
   const handleStockMovement = async () => {
-    if (!clinicId || !item?.reservation_id || !stockItemId) return;
+    if (!clinicId || !item?.reservation_id || !stockItemId || !stockLotId) return;
     const qty = parseFloat(stockQty);
     if (!qty || qty <= 0) return;
     setStockBusy(true);
@@ -150,6 +162,7 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
       await hubInventoryApi.movements.create({
         clinic_id: clinicId,
         item_id: stockItemId,
+        lot_id: stockLotId,
         movement_type: 'adjustment_out',
         qty,
         notes: stockNotes.trim() || null,
@@ -158,8 +171,11 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
       });
       showSuccess('Consumo registrado no estoque');
       setStockItemId('');
+      setStockLotId('');
       setStockQty('1');
       setStockNotes('');
+      const lotsRes = await hubInventoryApi.lots.list(clinicId);
+      setStockLots(lotsRes.lots ?? []);
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao registrar consumo');
     } finally {
@@ -513,11 +529,35 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
                 id="boarding-stock-item"
                 className="hub-clientes__select"
                 value={stockItemId}
-                onChange={(e) => setStockItemId(e.target.value)}
+                onChange={(e) => {
+                  setStockItemId(e.target.value);
+                  setStockLotId('');
+                }}
               >
                 <option value="">Selecione…</option>
                 {stockItems.map((si) => (
                   <option key={si.id} value={si.id}>{si.name}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ flex: '2 1 160px' }}>
+              <label className="hub-clientes__label" htmlFor="boarding-stock-lot">Lote</label>
+              <select
+                id="boarding-stock-lot"
+                className="hub-clientes__select"
+                value={stockLotId}
+                onChange={(e) => setStockLotId(e.target.value)}
+                disabled={!stockItemId}
+              >
+                <option value="">Selecione…</option>
+                {stockLotsForItem.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {(l.lot_code || 'Sem código') +
+                      (l.expiry_date
+                        ? ` · val. ${new Date(l.expiry_date + 'T12:00:00').toLocaleDateString('pt-BR')}`
+                        : '') +
+                      ` · ${l.qty_on_hand} un.`}
+                  </option>
                 ))}
               </select>
             </div>
@@ -547,7 +587,7 @@ const BoardingReservationDrawer: React.FC<BoardingReservationDrawerProps> = ({
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-              disabled={stockBusy || !stockItemId || !parseFloat(stockQty)}
+              disabled={stockBusy || !stockItemId || !stockLotId || !parseFloat(stockQty)}
               onClick={() => void handleStockMovement()}
             >
               {stockBusy ? '…' : 'Registrar'}

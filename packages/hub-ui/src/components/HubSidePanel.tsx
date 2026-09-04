@@ -10,6 +10,8 @@ export type HubSidePanelProps = {
   /** Ícone à esquerda do título (ex.: calendário no agendamento). */
   titleIcon?: React.ReactNode;
   subtitle?: string;
+  /** Sobrescreve o `aria-label` do diálogo (padrão: `title`). */
+  ariaLabel?: string;
   /** Ações à direita do título, antes do fechar (ex.: editar). */
   headerActions?: React.ReactNode;
   /** Conteúdo do rodapé (botões de ação). */
@@ -38,6 +40,7 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
   title,
   titleIcon,
   subtitle,
+  ariaLabel,
   headerActions,
   footer,
   aside,
@@ -84,7 +87,7 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
       onClick={handleOverlayClick}
       aria-modal="true"
       role="dialog"
-      aria-label={title}
+      aria-label={ariaLabel || title}
     >
       <div
         className={`hub-side-panel__sheet${size === 'wide' ? ' hub-side-panel__sheet--wide' : ''}`}

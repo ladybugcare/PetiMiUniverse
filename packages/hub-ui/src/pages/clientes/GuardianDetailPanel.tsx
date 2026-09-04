@@ -2,8 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { usePermissions } from '@petimi/web-core';
 import {
-  X,
-  ExternalLink,
+  User,
+  Bird,
+  Cat,
+  Dog,
+  ChevronRight,
+  FileText,
+  Stethoscope,
+  Package,
   Phone,
   Mail,
   MapPin,
@@ -11,14 +17,8 @@ import {
   Pencil,
   FilePlus2,
   Coins,
-  User,
-  Building2,
-  Bird,
-  Cat,
-  Dog,
-  ChevronRight,
-  FileText,
-  Stethoscope,
+  X,
+  ExternalLink,
 } from 'lucide-react';
 import type { HubGuardian, HubGuardianPet } from '../../api/hubGuardiansApi';
 import {
@@ -37,14 +37,15 @@ import { formatGuardianAddress } from './formatters';
 import { GuardianDetailQuickActions } from './GuardianDetailQuickActions';
 import { GuardianPetsTab } from './GuardianPetsTab';
 import { HubTabs } from '../../components/HubTabs';
-import { HubProfileInfoCell } from '../../components/HubProfileInfoCell';
-import { HubProfileAvatar, profileInitials } from '../../components/HubProfileAvatar';
+import { profileInitials } from '../../components/HubProfileAvatar';
 import { HubLoading } from '../../components/HubLoading';
 import { ProfileFinanceSummaryCard } from '../../components/ProfileFinanceSummaryCard';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { hubFinancialApi, type HubFinanceReceivable } from '../../api/hubFinancialApi';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 import { HubComandaReceivableDrawer } from '../finance/HubComandaReceivableDrawer';
+import { SellPackageDrawer } from '../finance/SellPackageDrawer';
+import type { PackageSaleScheduleContext } from '../finance/packageSaleScheduleUtils';
 import {
   formatComandaListOpenedAt,
   formatComandaListPets,
@@ -208,6 +209,8 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   /** Pet de contexto opcional — comanda manual não exige pet (itens podem ser só do tutor). */
   const [comandaPetId, setComandaPetId] = useState('');
   const [showBatchCharge, setShowBatchCharge] = useState(false);
+  const [showSellPackage, setShowSellPackage] = useState(false);
+  const [checkoutScheduleContext, setCheckoutScheduleContext] = useState<PackageSaleScheduleContext | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyEncounters, setHistoryEncounters] = useState<GuardianEncounter[]>([]);
   const [historyCases, setHistoryCases] = useState<GuardianClinicalCase[]>([]);
@@ -226,6 +229,35 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
   const hasSecondaryOnlyPet = pets.some((p) => p.role === 'secondary');
   const label = isCompany ? 'Cliente empresa' : 'Tutor principal';
   const taxLabel = isCompany ? 'CNPJ' : 'CPF';
+  const active = guardian.client_status !== 'inactive' && !guardian.deleted_at;
+  const taxDisplay = formatBrTaxIdDisplay(guardian.tax_id);
+  const phoneDisplay = formatBrPhoneDisplay(guardian.phone);
+  const identityMeta = [
+    isCompany && guardian.legal_name?.trim() && guardian.legal_name.trim() !== guardian.full_name.trim()
+      ? guardian.legal_name.trim()
+      : null,
+    taxDisplay && taxDisplay !== '—' ? `${taxLabel} ${taxDisplay}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const identityChips = [
+    { key: 'kind', label },
+    hasSecondaryOnlyPet && !isCompany ? { key: 'co', label: 'Co-tutor em alguns pets' } : null,
+    { key: 'pets', label: `${pets.length} pet${pets.length === 1 ? '' : 's'}` },
+    guardian.lead_source?.trim() ? { key: 'origem', label: guardian.lead_source.trim() } : null,
+  ].filter((c): c is { key: string; label: string } => Boolean(c));
+
+  const contactFacts: Array<{ label: string; value: string }> = [
+    { label: 'Telefone', value: phoneDisplay },
+    { label: 'E-mail', value: guardian.email?.trim() || '—' },
+    { label: 'Endereço', value: addr || '—' },
+    { label: taxLabel, value: taxDisplay },
+    { label: 'Origem', value: guardian.lead_source?.trim() || '—' },
+    { label: 'Cliente desde', value: since },
+    ...(isCompany && guardian.legal_name?.trim()
+      ? [{ label: 'Razão social', value: guardian.legal_name.trim() }]
+      : []),
+  ];
 
   const loadFinanceiro = useCallback(async () => {
     if (!clinicId) return;
@@ -448,6 +480,15 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
     }
   };
 
+  const openSellPackage = () => {
+    if (!canCreateReceivable) return;
+    if (!unitId) {
+      alert('Selecione uma unidade para vender pacote.');
+      return;
+    }
+    setShowSellPackage(true);
+  };
+
   const renderRecentEncounters = () => {
     if (historyLoading) {
       return <HubLoading variant="inline" label="Carregando atendimentos…" size="sm" />;
@@ -499,27 +540,27 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
 
   const renderResumoPage = () => (
     <>
-      <section className="hub-meu-perfil__panel">
+      <section className="hub-meu-perfil__panel hub-client-profile__general">
         <header className="hub-meu-perfil__panel-head">
           <div>
             <h2 className="hub-meu-perfil__panel-title">Informações de contato</h2>
-            <p className="hub-meu-perfil__panel-sub">Dados do tutor e localização.</p>
+            <p className="hub-meu-perfil__panel-sub">
+              {isCompany ? 'Dados da empresa e localização.' : 'Dados do tutor e localização.'}
+            </p>
           </div>
           <button type="button" className="hub-meu-perfil__btn-outline" onClick={onStartEdit}>
             <Pencil size={16} strokeWidth={2} aria-hidden />
             Editar informações
           </button>
         </header>
-        <div className="hub-meu-perfil__grid">
-          <HubProfileInfoCell icon={Phone} label="Telefone" value={formatBrPhoneDisplay(guardian.phone)} />
-          <HubProfileInfoCell icon={Mail} label="E-mail" value={guardian.email || '—'} />
-          <HubProfileInfoCell icon={MapPin} label="Endereço" value={addr} />
-          <HubProfileInfoCell icon={Info} label="Origem" value={guardian.lead_source || '—'} />
-          <HubProfileInfoCell icon={User} label={taxLabel} value={formatBrTaxIdDisplay(guardian.tax_id)} />
-          {isCompany && guardian.legal_name ? (
-            <HubProfileInfoCell icon={Building2} label="Razão social" value={guardian.legal_name} />
-          ) : null}
-        </div>
+        <dl className="hub-client-profile__facts">
+          {contactFacts.map((fact) => (
+            <div key={fact.label} className="hub-client-profile__fact">
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
       {renderFinanceSummaryBlock(true)}
@@ -849,8 +890,18 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
               </button>
             </div>
 
-            {batchChargeItems.length >= 2 ? (
-              <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"
+                disabled={!unitId}
+                onClick={openSellPackage}
+                title={!unitId ? 'Selecione uma unidade' : 'Vender pacote'}
+              >
+                <Package size={14} strokeWidth={2} aria-hidden />
+                Vender pacote
+              </button>
+              {batchChargeItems.length >= 2 ? (
                 <button
                   type="button"
                   className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
@@ -859,8 +910,8 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
                   <Coins size={14} strokeWidth={2} aria-hidden />
                   Cobrar em conjunto ({batchChargeItems.length})
                 </button>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
 
             {pets.length > 0 ? (
               <div
@@ -1134,12 +1185,17 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
       <ComandaCheckoutDrawer
         key={checkoutComandaId}
         open={!!checkoutComandaId}
-        onClose={() => setCheckoutComandaId(null)}
+        onClose={() => {
+          setCheckoutComandaId(null);
+          setCheckoutScheduleContext(null);
+        }}
         clinicId={clinicId}
         unitId={unitId}
         comandaId={checkoutComandaId}
+        packageSaleSchedule={checkoutScheduleContext}
         onSuccess={() => {
           setCheckoutComandaId(null);
+          setCheckoutScheduleContext(null);
           void loadFinanceiro();
         }}
       />
@@ -1178,43 +1234,102 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
     />
   );
 
+  const sellPackagePanel = unitId ? (
+    <SellPackageDrawer
+      open={showSellPackage}
+      unitId={unitId}
+      initialGuardianId={guardian.id}
+      initialPetId={singlePetId}
+      lockGuardian
+      onClose={() => setShowSellPackage(false)}
+      onCheckout={(comandaId, intent, scheduleContext) => {
+        setCheckoutComandaId(comandaId);
+        setCheckoutScheduleContext(intent === 'checkout_and_schedule' ? scheduleContext : null);
+        void loadFinanceiro();
+      }}
+    />
+  ) : null;
+
+  const quickActions = (
+    <GuardianDetailQuickActions
+      guardianId={guardian.id}
+      phone={guardian.phone}
+      email={guardian.email}
+      onArchive={onArchive}
+      canSellPackage={canCreateReceivable && Boolean(unitId)}
+      onSellPackage={openSellPackage}
+    />
+  );
+
+  const identityInner = (
+    <>
+      <div className="hub-client-profile__identity-top">
+        <div className="hub-client-profile__avatar" aria-hidden>
+          {profileInitials(guardian.full_name)}
+        </div>
+        <div className="hub-client-profile__identity-body">
+          <div className="hub-client-profile__title-row">
+            <h2 className="hub-client-profile__name">{guardian.full_name}</h2>
+            <span
+              className={`hub-clientes__pill ${
+                !active
+                  ? 'hub-clientes__pill--inactive'
+                  : isCompany
+                    ? 'hub-clientes__pill--company'
+                    : 'hub-clientes__pill--active'
+              }`}
+            >
+              {!active ? 'Inativo' : isCompany ? 'Empresa' : 'Ativo'}
+            </span>
+          </div>
+          {identityMeta ? <p className="hub-client-profile__meta">{identityMeta}</p> : null}
+          {guardian.phone ? (
+            <a className="hub-client-profile__contact-line" href={`tel:${guardian.phone}`}>
+              <Phone size={14} strokeWidth={2} aria-hidden />
+              <span>{phoneDisplay}</span>
+            </a>
+          ) : null}
+          {guardian.email ? (
+            <a className="hub-client-profile__contact-line" href={`mailto:${guardian.email}`}>
+              <Mail size={14} strokeWidth={2} aria-hidden />
+              <span>{guardian.email}</span>
+            </a>
+          ) : null}
+          {!guardian.phone && !guardian.email ? (
+            <p className="hub-client-profile__contact-line hub-client-profile__contact-line--muted">
+              Sem telefone ou e-mail cadastrado
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {identityChips.length > 0 ? (
+        <ul className="hub-client-profile__chips">
+          {identityChips.map((chip) => (
+            <li key={chip.key} className="hub-client-profile__chip">
+              {chip.label}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <div className="hub-client-profile__actions">{quickActions}</div>
+
+      <div className="hub-client-profile__foot">
+        <div className="hub-client-profile__foot-row">
+          <span className="hub-client-profile__foot-label">Cliente desde</span>
+          <span className="hub-client-profile__foot-value">{since}</span>
+        </div>
+      </div>
+    </>
+  );
+
   if (isPage) {
     return (
       <>
-        <div className="hub-meu-perfil">
+        <div className="hub-meu-perfil hub-meu-perfil--client">
           <aside className="hub-meu-perfil__sidebar">
-            <div className="hub-meu-perfil__card hub-meu-perfil__summary">
-              <HubProfileAvatar name={guardian.full_name} />
-              <h2 className="hub-meu-perfil__sidebar-name">{guardian.full_name}</h2>
-              <span className="hub-meu-perfil__badge">{label}</span>
-              {hasSecondaryOnlyPet && !isCompany ? (
-                <span className="hub-meu-perfil__badge hub-meu-perfil__badge--muted">Co-tutor em alguns pets</span>
-              ) : null}
-              <div className="hub-meu-perfil__contact">
-                {guardian.phone ? <span>{formatBrPhoneDisplay(guardian.phone)}</span> : null}
-                {guardian.email ? <span>{guardian.email}</span> : null}
-                {!guardian.phone && !guardian.email ? <span>—</span> : null}
-              </div>
-              <div className="hub-meu-perfil__sidebar-actions">
-                <GuardianDetailQuickActions
-                  guardianId={guardian.id}
-                  phone={guardian.phone}
-                  email={guardian.email}
-                  onArchive={onArchive}
-                />
-              </div>
-            </div>
-
-            <div className="hub-meu-perfil__card hub-meu-perfil__aside-meta">
-              <div className="hub-meu-perfil__meta-row">
-                <span className="hub-meu-perfil__meta-label">Cliente desde</span>
-                <span className="hub-meu-perfil__meta-value">{since}</span>
-              </div>
-              <div className="hub-meu-perfil__meta-row">
-                <span className="hub-meu-perfil__meta-label">Pets cadastrados</span>
-                <span className="hub-meu-perfil__meta-value">{pets.length}</span>
-              </div>
-            </div>
+            <div className="hub-meu-perfil__card hub-client-profile__summary">{identityInner}</div>
           </aside>
 
           <div className="hub-meu-perfil__main">
@@ -1225,12 +1340,13 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
         {financeDrawer}
         {receivablePanel}
         {batchChargePanel}
+        {sellPackagePanel}
       </>
     );
   }
 
   return (
-    <div>
+    <div className="hub-client-detail">
       {!hideHeader ? (
         <div className="hub-clientes__panel-header">
           <div style={{ flex: 1 }} />
@@ -1240,34 +1356,16 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
         </div>
       ) : null}
 
-      <div className="hub-clientes__panel-hero">
-        <div className="hub-clientes__panel-avatar-lg">{profileInitials(guardian.full_name)}</div>
-        <h2 className="hub-clientes__panel-name">{guardian.full_name}</h2>
-        <div style={{ marginTop: 6 }}>
-          <span className={`hub-clientes__tag ${isCompany ? 'hub-clientes__tag--company' : 'hub-clientes__tag--primary'}`}>
-            {label}
-          </span>
-          {hasSecondaryOnlyPet && !isCompany && (
-            <span className="hub-clientes__tag hub-clientes__tag--secondary">Co-tutor em alguns pets</span>
-          )}
-        </div>
-        <p className="hub-clientes__muted" style={{ margin: '8px 0 0', fontSize: 13 }}>
-          Cliente desde {since}
-        </p>
-      </div>
-
-      <GuardianDetailQuickActions
-        guardianId={guardian.id}
-        phone={guardian.phone}
-        email={guardian.email}
-        onArchive={onArchive}
-      />
+      <section className="hub-client-profile__identity" aria-label={`Identidade de ${guardian.full_name}`}>
+        {identityInner}
+      </section>
 
       {tabs}
       {tabContent}
       {financeDrawer}
       {receivablePanel}
       {batchChargePanel}
+      {sellPackagePanel}
 
       {!hideFooter ? (
         <div className="hub-clientes__footer-btns">

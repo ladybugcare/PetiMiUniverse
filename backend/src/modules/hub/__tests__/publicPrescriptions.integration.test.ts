@@ -30,6 +30,7 @@ const snapshot: PrescriptionSnapshot = {
       duration: '7 dias',
       instructions: null,
       administration: 'home_use',
+      use_route: 'Oral',
     },
   ],
   notes: null,

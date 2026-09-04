@@ -98,9 +98,12 @@ export async function loadPrescriptionIssueContext(
     .select(
       `
       *,
-      clinic:clinics(id, name),
-      pet:hub_pets(id, name, species, breed),
-      guardian:hub_guardians(id, full_name),
+      clinic:clinics(id, name, phone, email, address, city, state),
+      pet:hub_pets(id, name, species, breed, birth_date),
+      guardian:hub_guardians(
+        id, full_name, phone, tax_id, id_doc_number,
+        street, street_number, district, city, state, postal_code
+      ),
       staff:hub_staff_members(id, full_name, crmv, crmv_uf),
       encounter:hub_encounters(id, guardian_id, pet_id, hub_staff_member_id)
     `,
@@ -139,11 +142,14 @@ export async function loadPrescriptionIssueContext(
     | null;
   const enc = Array.isArray(encounter) ? encounter[0] : encounter;
 
+  const guardianSelect =
+    'id, full_name, phone, tax_id, id_doc_number, street, street_number, district, city, state, postal_code';
+
   let guardianEmbed = rxRow.guardian;
   if (!guardianEmbed && enc?.guardian_id) {
     const { data: gRow } = await supabaseAdmin
       .from('hub_guardians')
-      .select('id, full_name')
+      .select(guardianSelect)
       .eq('id', enc.guardian_id)
       .maybeSingle();
     guardianEmbed = gRow;
@@ -151,7 +157,7 @@ export async function loadPrescriptionIssueContext(
   if (!guardianEmbed && rxRow.pet_id) {
     const { data: pgRow } = await supabaseAdmin
       .from('hub_pet_guardians')
-      .select('guardian:hub_guardians(id, full_name)')
+      .select(`guardian:hub_guardians(${guardianSelect})`)
       .eq('pet_id', rxRow.pet_id)
       .order('role', { ascending: true })
       .limit(1)

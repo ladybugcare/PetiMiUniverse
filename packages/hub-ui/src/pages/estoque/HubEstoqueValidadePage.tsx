@@ -47,7 +47,7 @@ const HubEstoqueValidadePage: React.FC = () => {
   if (!permLoading && !clinicId) {
     return (
       <div className="hub-clientes hub-estoque-page" style={{ padding: 24 }}>
-        <p className="hub-clientes__muted">selecione uma clínica.</p>
+        <p className="hub-clientes__muted">Selecione uma clínica.</p>
       </div>
     );
   }
@@ -62,6 +62,10 @@ const HubEstoqueValidadePage: React.FC = () => {
   return (
     <div className="hub-clientes hub-servicos-page hub-estoque-page hub-pets-page hub-clientes-page--full-width">
       <div className="hub-clientes__main">
+        <p className="hub-clientes__muted" style={{ marginBottom: 16 }}>
+          Consulta de lotes a vencer no período escolhido. Os alertas operacionais (política por item) ficam na aba
+          Alertas.
+        </p>
         <div className="hub-servicos__toolbar-row" style={{ marginBottom: 16 }}>
           <div className="hub-servicos__filter-field">
             <span className="hub-clientes__label">Dias à frente</span>

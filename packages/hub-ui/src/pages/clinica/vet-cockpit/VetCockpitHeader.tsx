@@ -7,8 +7,8 @@ type Props = {
 };
 
 const VetCockpitHeader: React.FC<Props> = ({ summary, dateLabel }) => {
-  const currentName = summary.current?.pet?.name || '—';
-  const nextName = summary.next?.pet?.name || '—';
+  const currentName = summary.current?.pet?.name || null;
+  const nextName = summary.next?.pet?.name || null;
 
   return (
     <section className="vet-cockpit-summary" aria-label="Resumo do dia">
@@ -20,11 +20,23 @@ const VetCockpitHeader: React.FC<Props> = ({ summary, dateLabel }) => {
         </div>
         <div className="hub-clientes__metric-card">
           <div className="hub-clientes__metric-label">Atual</div>
-          <div className="hub-clientes__metric-value vet-cockpit-summary__metric-name">{currentName}</div>
+          <div
+            className={`hub-clientes__metric-value vet-cockpit-summary__metric-name${
+              currentName ? '' : ' vet-cockpit-summary__metric-name--empty'
+            }`}
+          >
+            {currentName || 'Nenhum'}
+          </div>
         </div>
         <div className="hub-clientes__metric-card">
           <div className="hub-clientes__metric-label">Próximo</div>
-          <div className="hub-clientes__metric-value vet-cockpit-summary__metric-name">{nextName}</div>
+          <div
+            className={`hub-clientes__metric-value vet-cockpit-summary__metric-name${
+              nextName ? '' : ' vet-cockpit-summary__metric-name--empty'
+            }`}
+          >
+            {nextName || 'Nenhum'}
+          </div>
         </div>
         {summary.late > 0 ? (
           <div className="hub-clientes__metric-card vet-cockpit-summary__metric-card--late">

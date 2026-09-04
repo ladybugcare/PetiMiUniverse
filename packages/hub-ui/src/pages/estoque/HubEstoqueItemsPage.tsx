@@ -15,6 +15,7 @@ import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import HubEstoqueItemDrawer, { type InventoryFormState } from './HubEstoqueItemDrawer';
+import HubEstoqueMovementDrawer from './HubEstoqueMovementDrawer';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
 import '../pets/pets-page.css';
@@ -132,6 +133,8 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<InventoryFormState>(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [movementDrawerOpen, setMovementDrawerOpen] = useState(false);
+  const [movementItemId, setMovementItemId] = useState<string | null>(null);
 
   const searchRef = useRef(search);
   searchRef.current = search;
@@ -466,7 +469,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
   if (!permLoading && !clinicId) {
     return (
       <div className="hub-clientes hub-estoque-page" style={{ padding: 24 }}>
-        <p className="hub-clientes__muted">selecione uma clínica.</p>
+        <p className="hub-clientes__muted">Selecione uma clínica.</p>
       </div>
     );
   }
@@ -725,7 +728,30 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
         onManufacturerChange={handleManufacturerComboboxChange}
         onSupplierChange={handleSupplierComboboxChange}
         onSubmit={handleSave}
+        onRegisterMovement={
+          editingId
+            ? () => {
+                setMovementItemId(editingId);
+                setMovementDrawerOpen(true);
+              }
+            : undefined
+        }
       />
+
+      {clinicId && (
+        <HubEstoqueMovementDrawer
+          open={movementDrawerOpen}
+          onClose={() => {
+            setMovementDrawerOpen(false);
+            setMovementItemId(null);
+          }}
+          clinicId={clinicId}
+          direction="in"
+          preselectedItemId={movementItemId}
+          canWrite={canWrite}
+          onSuccess={() => void loadItems()}
+        />
+      )}
     </>
   );
 };

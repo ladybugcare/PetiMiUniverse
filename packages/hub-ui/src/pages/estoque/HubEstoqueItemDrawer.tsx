@@ -61,6 +61,8 @@ export type HubEstoqueItemDrawerProps = {
   onManufacturerChange: (v: string) => void;
   onSupplierChange: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void;
+  /** Abre o drawer de entrada/ajuste para o item em edição. */
+  onRegisterMovement?: () => void;
 };
 
 export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
@@ -79,6 +81,7 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
   onManufacturerChange,
   onSupplierChange,
   onSubmit,
+  onRegisterMovement,
 }) => {
   const title = mode === 'create' ? `Novo ${kindLabel(itemKind).toLowerCase()}` : 'Editar item';
   const subtitle = mode === 'edit' && editingItem ? editingItem.name : undefined;
@@ -95,6 +98,16 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
       footer={
         <div className="hub-finance-page__drawer-footer">
           <HubCancelButton onClick={onClose} disabled={saving} />
+          {mode === 'edit' && canWrite && onRegisterMovement ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost"
+              disabled={saving}
+              onClick={onRegisterMovement}
+            >
+              Registrar entrada
+            </button>
+          ) : null}
           <button
             type="submit"
             form={INVENTORY_FORM_ID}

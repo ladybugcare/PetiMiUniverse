@@ -53,66 +53,64 @@ function queueItemTags(
 }
 
 const VetCockpitQueue: React.FC<Props> = ({ items, selectedKey, onSelect, loading, badgeHints }) => {
-  if (loading) {
-    return (
-      <div className="vet-cockpit-queue">
-        <p className="hub-clientes__muted">Carregando fila…</p>
-      </div>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="vet-cockpit-queue">
-        <p className="hub-clientes__muted">Nenhum atendimento na sua fila hoje.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="vet-cockpit-queue">
-      <h2 className="vet-cockpit-queue__title">Minha fila</h2>
-      <ul className="vet-cockpit-queue__list">
-        {items.map((item) => {
-          const key = itemKey(item);
-          const st = itemOperationalStatus(item);
-          const petName = item.pet?.name || 'Sem pet';
-          const svc = item.service_type?.name || item.title || 'Consulta';
-          const time = formatQueueTime(itemStartsAt(item));
-          const hints = badgeHints?.[item.pet_id || key];
-          const selected = selectedKey === key;
-          const late = isItemLate(item);
-          const tags = queueItemTags(item, hints);
+      <h2 className="vet-cockpit-queue__title">
+        Minha fila
+        {!loading && items.length > 0 ? (
+          <span className="vet-cockpit-queue__count">{items.length}</span>
+        ) : null}
+      </h2>
+      {loading ? (
+        <p className="hub-clientes__muted">Carregando fila…</p>
+      ) : items.length === 0 ? (
+        <p className="hub-clientes__muted">Nenhum atendimento na fila neste dia.</p>
+      ) : (
+        <ul className="vet-cockpit-queue__list">
+          {items.map((item) => {
+            const key = itemKey(item);
+            const st = itemOperationalStatus(item);
+            const petName = item.pet?.name || 'Sem pet';
+            const svc = item.service_type?.name || item.title || 'Consulta';
+            const time = formatQueueTime(itemStartsAt(item));
+            const hints = badgeHints?.[item.pet_id || key];
+            const selected = selectedKey === key;
+            const late = isItemLate(item);
+            const emergency = isItemEmergency(item);
+            const tags = queueItemTags(item, hints);
 
-          return (
-            <li key={key}>
-              <button
-                type="button"
-                className={[
-                  'vet-cockpit-queue__item',
-                  selected ? 'vet-cockpit-queue__item--selected' : '',
-                  late ? 'vet-cockpit-queue__item--late' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                onClick={() => onSelect(item)}
-                aria-current={selected ? 'true' : undefined}
-              >
-                <div className="vet-cockpit-queue__time-col">
-                  <Clock size={14} strokeWidth={2} aria-hidden className="vet-cockpit-queue__time-icon" />
-                  <span className="vet-cockpit-queue__time">{time}</span>
-                </div>
-                <div className="vet-cockpit-queue__avatar" aria-hidden>
-                  {petInitials(petName)}
-                </div>
-                <div className="vet-cockpit-queue__body">
-                  <div className="vet-cockpit-queue__row">
-                    <span className="vet-cockpit-queue__pet">{petName}</span>
-                    <span className={`vet-cockpit-queue__pill ${statusPillClass(st)}`}>
-                      {VET_QUEUE_STATUS_LABEL[st] || st}
+            return (
+              <li key={key}>
+                <button
+                  type="button"
+                  className={[
+                    'vet-cockpit-queue__item',
+                    selected ? 'vet-cockpit-queue__item--selected' : '',
+                    emergency ? 'vet-cockpit-queue__item--emergency' : late ? 'vet-cockpit-queue__item--late' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => onSelect(item)}
+                  aria-current={selected ? 'true' : undefined}
+                >
+                  <div className="vet-cockpit-queue__meta">
+                    <span className="vet-cockpit-queue__time">
+                      <Clock size={13} strokeWidth={2} aria-hidden className="vet-cockpit-queue__time-icon" />
+                      {time}
                     </span>
+                    <span className="vet-cockpit-queue__service">{svc}</span>
                   </div>
-                  <p className="vet-cockpit-queue__service">{svc}</p>
+                  <div className="vet-cockpit-queue__identity">
+                    <div className="vet-cockpit-queue__avatar" aria-hidden>
+                      {petInitials(petName)}
+                    </div>
+                    <div className="vet-cockpit-queue__identity-text">
+                      <span className="vet-cockpit-queue__pet">{petName}</span>
+                      <span className={`vet-cockpit-queue__pill ${statusPillClass(st)}`}>
+                        {VET_QUEUE_STATUS_LABEL[st] || st}
+                      </span>
+                    </div>
+                  </div>
                   {tags.length > 0 ? (
                     <div className="vet-cockpit-queue__tags" aria-label="Indicadores">
                       {tags.map((tag) => (
@@ -127,12 +125,12 @@ const VetCockpitQueue: React.FC<Props> = ({ items, selectedKey, onSelect, loadin
                       ))}
                     </div>
                   ) : null}
-                </div>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 };

@@ -70,6 +70,7 @@ export interface HubStockMovement {
   notes: string | null;
   created_by: string | null;
   created_at: string;
+  lot?: { id: string; lot_code: string | null; expiry_date: string | null } | null;
 }
 
 export interface HubInventoryLotRow {
@@ -295,10 +296,13 @@ export const hubInventoryApi = {
     list(clinicId: string) {
       return apiRequest(`${base}/lots?clinic_id=${encodeURIComponent(clinicId)}`) as Promise<{ lots: HubInventoryLotRow[] }>;
     },
-    expiring(clinicId: string, withinDays = 30) {
-      return apiRequest(
-        `${base}/lots/expiring?clinic_id=${encodeURIComponent(clinicId)}&within_days=${withinDays}`
-      ) as Promise<{ lots: HubInventoryLotRow[] }>;
+    expiring(clinicId: string, withinDays = 30, opts?: { byPolicy?: boolean }) {
+      const p = new URLSearchParams({
+        clinic_id: clinicId,
+        within_days: String(withinDays),
+      });
+      if (opts?.byPolicy) p.set('by_policy', '1');
+      return apiRequest(`${base}/lots/expiring?${p}`) as Promise<{ lots: HubInventoryLotRow[] }>;
     },
   },
   reports: {

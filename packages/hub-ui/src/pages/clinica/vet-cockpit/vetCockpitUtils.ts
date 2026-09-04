@@ -133,3 +133,28 @@ export function sexLabel(sex?: string | null): string {
   if (sex === 'F') return 'Fêmea';
   return '—';
 }
+
+export function formatCockpitDayLabel(cursor: Date, total: number, now = new Date()): string {
+  const sameDay =
+    cursor.getFullYear() === now.getFullYear() &&
+    cursor.getMonth() === now.getMonth() &&
+    cursor.getDate() === now.getDate();
+  const count = total === 1 ? '1 atendimento' : `${total} atendimentos`;
+  if (sameDay) return `Hoje · ${count}`;
+  const dateStr = cursor.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
+  return `${dateStr} · ${count}`;
+}
+
+export function formatCockpitShortDate(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+
+export function caseStatusLabel(status?: string | null): string {
+  if (status === 'monitoring') return 'Em acompanhamento';
+  if (status === 'resolved') return 'Resolvido';
+  if (status === 'cancelled') return 'Cancelado';
+  return 'Em investigação';
+}

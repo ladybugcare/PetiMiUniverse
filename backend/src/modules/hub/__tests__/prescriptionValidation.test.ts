@@ -49,6 +49,7 @@ describe('prescriptionValidation', () => {
     });
     expect(med.concentration).toBe('250mg');
     expect(med.posology).toBe('12/12h');
+    expect(med.use_route).toBeNull();
   });
 
   it('computeDocumentStatus considera revogação e expiração', () => {

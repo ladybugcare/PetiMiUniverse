@@ -299,6 +299,7 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
 
       {canWrite && embedded ? (
         <div className="hub-clientes__toolbar hub-clinic-hospital__embedded-beds">
+          {beds.length === 0 ? <p className="hub-clientes__muted">Nenhum leito configurado.</p> : null}
           <input
             className="hub-clientes__input hub-clinic-hospital__bed-input"
             placeholder="Código do leito"
@@ -311,19 +312,23 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
         </div>
       ) : null}
 
-      <h3 className="hub-clinic-section-title">Mapa de leitos</h3>
-      <div className="hub-clinic-beds-grid">
-        {beds.map((b) => {
-          const st = String(b.status || 'available');
-          return (
-            <div key={b.id} className={`hub-clinic-bed hub-clinic-bed--${st}`}>
-              {b.label || b.code}
-              <div className="hub-clinic-bed__status">{st}</div>
-            </div>
-          );
-        })}
-        {beds.length === 0 && <p className="hub-clientes__muted">Nenhum leito configurado.</p>}
-      </div>
+      {!embedded || beds.length > 0 ? (
+        <>
+          <h3 className="hub-clinic-section-title">Mapa de leitos</h3>
+          <div className="hub-clinic-beds-grid">
+            {beds.map((b) => {
+              const st = String(b.status || 'available');
+              return (
+                <div key={b.id} className={`hub-clinic-bed hub-clinic-bed--${st}`}>
+                  {b.label || b.code}
+                  <div className="hub-clinic-bed__status">{st}</div>
+                </div>
+              );
+            })}
+            {beds.length === 0 && <p className="hub-clientes__muted">Nenhum leito configurado.</p>}
+          </div>
+        </>
+      ) : null}
 
       {!embedded ? <h3 className="hub-clinic-section-title">Internações ativas</h3> : null}
       <div className="hub-clientes__table-wrap">

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { useAlert } from '../../../components/AlertProvider';
 import { HubLoading } from '../../../components/HubLoading';
@@ -24,11 +24,13 @@ import ClinicWalkInPanel from '../ClinicWalkInPanel';
 import HubClinicHospitalPage from '../HubClinicHospitalPage';
 import HubClinicSurgeriesPage from '../HubClinicSurgeriesPage';
 import VetCockpitHeader from './VetCockpitHeader';
+import VetCockpitOpsSection from './VetCockpitOpsSection';
 import VetCockpitQueue from './VetCockpitQueue';
 import VetCockpitPatientPanel, { type VetCockpitDrawerSection } from './VetCockpitPatientPanel';
 import {
   cockpitEncounterPath,
   computeTurnSummary,
+  formatCockpitDayLabel,
   itemKey,
   readStoredSelection,
   writeStoredSelection,
@@ -64,6 +66,7 @@ const HubVetCockpitPage: React.FC = () => {
   const [creatingWalkIn, setCreatingWalkIn] = useState(false);
   const [admitOpen, setAdmitOpen] = useState(false);
   const [surgeryCreateOpen, setSurgeryCreateOpen] = useState(false);
+  const [dayOpsOpen, setDayOpsOpen] = useState(true);
   const [hospSectionOpen, setHospSectionOpen] = useState(true);
   const [surgSectionOpen, setSurgSectionOpen] = useState(true);
   const [opsPresetPetId, setOpsPresetPetId] = useState<string | null>(null);
@@ -395,120 +398,114 @@ const HubVetCockpitPage: React.FC = () => {
             showTodayButton
           />
         </div>
-        {myStaffMember ? (
-          <span className="vet-cockpit-toolbar__vet">{myStaffMember.full_name}</span>
+        {canWrite ? (
+          <div className="vet-cockpit-toolbar__actions" role="group" aria-label="Operação do dia">
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              disabled={!linked}
+              title={!linked ? 'Vincule seu usuário a um profissional na Equipe' : undefined}
+              onClick={() => setWalkInOpen(true)}
+            >
+              Novo atendimento
+            </button>
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost"
+              onClick={() => {
+                setOpsPresetPetId(null);
+                setOpsPresetCaseId(null);
+                setAdmitOpen(true);
+                setHospSectionOpen(true);
+              }}
+            >
+              Internar
+            </button>
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost"
+              onClick={() => {
+                setOpsPresetPetId(null);
+                setOpsPresetCaseId(null);
+                setSurgeryCreateOpen(true);
+                setSurgSectionOpen(true);
+              }}
+            >
+              Nova cirurgia
+            </button>
+          </div>
         ) : null}
       </div>
 
-      {canWrite ? (
-        <div className="vet-cockpit-day-actions" role="group" aria-label="Operação do dia">
-          <span className="vet-cockpit-day-actions__label">Operação do dia</span>
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary"
-            disabled={!linked}
-            title={!linked ? 'Vincule seu usuário a um profissional na Equipe' : undefined}
-            onClick={() => setWalkInOpen(true)}
-          >
-            Novo atendimento
-          </button>
-          <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => {
-            setOpsPresetPetId(null);
-            setOpsPresetCaseId(null);
-            setAdmitOpen(true);
-            setHospSectionOpen(true);
-          }}>
-            Internar
-          </button>
-          <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => {
-            setOpsPresetPetId(null);
-            setOpsPresetCaseId(null);
-            setSurgeryCreateOpen(true);
-            setSurgSectionOpen(true);
-          }}>
-            Nova cirurgia
-          </button>
-        </div>
-      ) : null}
+      <div className="vet-cockpit-ops-sections">
+        <VetCockpitOpsSection
+          id="dia"
+          title="Operação do dia"
+          open={dayOpsOpen}
+          onToggle={() => setDayOpsOpen((v) => !v)}
+        >
+          <VetCockpitHeader summary={summary} dateLabel={formatCockpitDayLabel(cursor, summary.total)} />
+          <div className="vet-cockpit-layout">
+            <VetCockpitQueue
+              items={items}
+              selectedKey={selected ? itemKey(selected) : null}
+              onSelect={handleSelect}
+              loading={loading || staffLoading}
+              badgeHints={badgeHints}
+            />
+            <VetCockpitPatientPanel
+              item={selected}
+              context={patientContext}
+              loading={contextLoading}
+              canWrite={canWrite}
+              completing={completing}
+              phaseBusy={phaseBusy}
+              onStartConsultation={handleStartConsultation}
+              onOpenRecord={(section) => {
+                const encId = selected?.encounter_id ?? patientContext?.encounter?.id;
+                if (encId) openEncounter(encId, section);
+              }}
+              onAdmit={() => {
+                setOpsPresetPetId(selected?.pet_id ?? patientContext?.pet?.id ?? null);
+                setOpsPresetCaseId(patientContext?.encounter?.hub_case_id ?? null);
+                setAdmitOpen(true);
+                setHospSectionOpen(true);
+              }}
+              onComplete={() => void handleComplete()}
+              onSetOperationalPhase={(phase) => void handleSetOperationalPhase(phase)}
+            />
+          </div>
+        </VetCockpitOpsSection>
 
-      <VetCockpitHeader summary={summary} dateLabel={`Hoje: ${summary.total} atendimentos`} />
-      <div className="vet-cockpit-layout">
-        <VetCockpitQueue
-          items={items}
-          selectedKey={selected ? itemKey(selected) : null}
-          onSelect={handleSelect}
-          loading={loading || staffLoading}
-          badgeHints={badgeHints}
-        />
-        <VetCockpitPatientPanel
-          item={selected}
-          context={patientContext}
-          loading={contextLoading}
-          canWrite={canWrite}
-          completing={completing}
-          phaseBusy={phaseBusy}
-          onStartConsultation={handleStartConsultation}
-          onOpenRecord={(section) => {
-            const encId = selected?.encounter_id ?? patientContext?.encounter?.id;
-            if (encId) openEncounter(encId, section);
-          }}
-          onAdmit={() => {
-            setOpsPresetPetId(selected?.pet_id ?? patientContext?.pet?.id ?? null);
-            setOpsPresetCaseId(patientContext?.encounter?.hub_case_id ?? null);
-            setAdmitOpen(true);
-            setHospSectionOpen(true);
-          }}
-          onComplete={() => void handleComplete()}
-          onSetOperationalPhase={(phase) => void handleSetOperationalPhase(phase)}
-        />
-      </div>
+        <VetCockpitOpsSection
+          id="internacoes"
+          title="Internações ativas"
+          open={hospSectionOpen}
+          onToggle={() => setHospSectionOpen((v) => !v)}
+        >
+          <HubClinicHospitalPage
+            embedded
+            admitOpen={admitOpen}
+            onAdmitOpenChange={setAdmitOpen}
+            presetPetId={opsPresetPetId}
+            presetCaseId={opsPresetCaseId}
+          />
+        </VetCockpitOpsSection>
 
-      <div className="hub-clinic-sections vet-cockpit-ops-sections">
-        <section className="hub-clinic-section">
-          <button
-            type="button"
-            className="hub-clinic-section__header"
-            aria-expanded={hospSectionOpen}
-            onClick={() => setHospSectionOpen((v) => !v)}
-          >
-            <span className="hub-clinic-section__title">Internações ativas</span>
-            <ChevronDown size={18} style={{ transform: hospSectionOpen ? 'rotate(180deg)' : undefined }} aria-hidden />
-          </button>
-          {hospSectionOpen ? (
-            <div className="hub-clinic-section__body">
-              <HubClinicHospitalPage
-                embedded
-                admitOpen={admitOpen}
-                onAdmitOpenChange={setAdmitOpen}
-                presetPetId={opsPresetPetId}
-                presetCaseId={opsPresetCaseId}
-              />
-            </div>
-          ) : null}
-        </section>
-
-        <section className="hub-clinic-section">
-          <button
-            type="button"
-            className="hub-clinic-section__header"
-            aria-expanded={surgSectionOpen}
-            onClick={() => setSurgSectionOpen((v) => !v)}
-          >
-            <span className="hub-clinic-section__title">Cirurgias (agendadas / em andamento)</span>
-            <ChevronDown size={18} style={{ transform: surgSectionOpen ? 'rotate(180deg)' : undefined }} aria-hidden />
-          </button>
-          {surgSectionOpen ? (
-            <div className="hub-clinic-section__body">
-              <HubClinicSurgeriesPage
-                embedded
-                createOpen={surgeryCreateOpen}
-                onCreateOpenChange={setSurgeryCreateOpen}
-                presetPetId={opsPresetPetId}
-                presetCaseId={opsPresetCaseId}
-              />
-            </div>
-          ) : null}
-        </section>
+        <VetCockpitOpsSection
+          id="cirurgias"
+          title="Cirurgias (agendadas / em andamento)"
+          open={surgSectionOpen}
+          onToggle={() => setSurgSectionOpen((v) => !v)}
+        >
+          <HubClinicSurgeriesPage
+            embedded
+            createOpen={surgeryCreateOpen}
+            onCreateOpenChange={setSurgeryCreateOpen}
+            presetPetId={opsPresetPetId}
+            presetCaseId={opsPresetCaseId}
+          />
+        </VetCockpitOpsSection>
       </div>
 
       <StartEncounterModal

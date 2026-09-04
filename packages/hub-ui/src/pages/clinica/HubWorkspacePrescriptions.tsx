@@ -3,6 +3,7 @@ import { useAlert } from '../../components/AlertProvider';
 import {
   HubPrescriptionItemForm,
   emptyPrescriptionItemDraft,
+  prescriptionItemToDraft,
   type PrescriptionItemDraft,
 } from '../../components/clinical/HubPrescriptionItemForm';
 import { HubPrescriptionIssuePanel } from '../../components/clinical/HubPrescriptionIssuePanel';
@@ -17,7 +18,6 @@ import {
   type HubPrescriptionDocumentRow,
   type HubPrescriptionItem,
 } from '../../api/hubClinicalApi';
-import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryApi';
 import { formatPrescriptionItemMeta } from './clinicalDisplay';
 
 function prescriptionItemToPayload(it: HubPrescriptionItem) {
@@ -34,6 +34,7 @@ function prescriptionItemToPayload(it: HubPrescriptionItem) {
     instructions: it.instructions ?? null,
     hub_inventory_item_id: it.hub_inventory_item_id ?? null,
     administration,
+    use_route: it.use_route ?? null,
   };
 }
 
@@ -48,8 +49,9 @@ function draftToCreateItem(draft: PrescriptionItemDraft) {
     frequency: draft.posology.trim() || null,
     duration: draft.duration.trim() || null,
     instructions: draft.instructions.trim() || null,
-    hub_inventory_item_id: draft.hub_inventory_item_id || null,
+    hub_inventory_item_id: null,
     administration: draft.administration,
+    use_route: draft.use_route.trim() || null,
   };
 }
 
@@ -90,7 +92,7 @@ export function HubWorkspacePrescriptions({
   const [issuing, setIssuing] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [draft, setDraft] = useState<PrescriptionItemDraft>(emptyPrescriptionItemDraft);
-  const [medicationItems, setMedicationItems] = useState<HubInventoryItem[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [notesDraft, setNotesDraft] = useState('');
   const [issuePanelOpen, setIssuePanelOpen] = useState(false);
   const [issuePanelLoading, setIssuePanelLoading] = useState(false);
@@ -156,10 +158,6 @@ export function HubWorkspacePrescriptions({
 
   useEffect(() => {
     void reloadList();
-    void hubInventoryApi.items
-      .list(clinicId, false, 'medication')
-      .then((r) => setMedicationItems(r.items ?? []))
-      .catch(() => setMedicationItems([]));
   }, [clinicId, encounter.pet_id, reloadList]);
 
   useEffect(() => {
@@ -174,9 +172,40 @@ export function HubWorkspacePrescriptions({
     void reloadDocuments(canonicalRx.id).catch(() => setDocuments([]));
   }, [canonicalRx?.id, reloadDocuments]);
 
+  const cancelEdit = () => {
+    setEditingIndex(null);
+    setDraft(emptyPrescriptionItemDraft());
+  };
+
+  const startEdit = (index: number) => {
+    if (!canonicalRx || editLocked) return;
+    const it = (canonicalRx.items ?? [])[index];
+    if (!it) return;
+    setEditingIndex(index);
+    setDraft(prescriptionItemToDraft(it));
+  };
+
   const add = async () => {
     if (!draft.medication_name.trim() || editLocked) return;
     try {
+      if (editingIndex != null && canonicalRx) {
+        const list = [...(canonicalRx.items ?? [])];
+        if (editingIndex < 0 || editingIndex >= list.length) return;
+        list[editingIndex] = {
+          ...list[editingIndex],
+          ...draftToCreateItem(draft),
+        };
+        await hubClinicalApi.patchPrescription(canonicalRx.id, {
+          clinic_id: clinicId,
+          items: list.map(prescriptionItemToPayload),
+        });
+        setEditingIndex(null);
+        setDraft(emptyPrescriptionItemDraft());
+        await reloadList();
+        showSuccess('Medicamento atualizado');
+        onClinicalRefresh?.();
+        return;
+      }
       await hubClinicalApi.createPrescription({
         clinic_id: clinicId,
         hub_encounter_id: encounter.id,
@@ -222,6 +251,11 @@ export function HubWorkspacePrescriptions({
         clinic_id: clinicId,
         items: list.map(prescriptionItemToPayload),
       });
+      if (editingIndex === index) {
+        cancelEdit();
+      } else if (editingIndex != null && editingIndex > index) {
+        setEditingIndex(editingIndex - 1);
+      }
       await reloadList();
       showSuccess('Item removido');
       onClinicalRefresh?.();
@@ -329,7 +363,11 @@ export function HubWorkspacePrescriptions({
           draft={draft}
           onChange={setDraft}
           onAdd={() => void add()}
-          medicationItems={medicationItems}
+          clinicId={clinicId}
+          canCreateLookups={!readOnly}
+          disabled={editLocked}
+          editing={editingIndex != null}
+          onCancelEdit={cancelEdit}
         />
       ) : canonicalRx?.status === 'issued' ? (
         <p className="hub-rx-locked-note">Prescrição emitida — edição bloqueada. Reemita uma nova versão ou revogue no histórico.</p>
@@ -392,13 +430,32 @@ export function HubWorkspacePrescriptions({
 
           <ul className="hub-cws-rx-list">
             {(canonicalRx.items ?? []).map((it, idx) => (
-              <li key={it.id ?? `${canonicalRx.id}-${idx}`} className="hub-cws-rx-item">
-                <div className="hub-cws-rx-item__name">{it.medication_name}</div>
-                <div className="hub-cws-rx-item__meta">{formatPrescriptionItemMeta(it)}</div>
+              <li
+                key={it.id ?? `${canonicalRx.id}-${idx}`}
+                className={`hub-cws-rx-item${editingIndex === idx ? ' hub-cws-rx-item--editing' : ''}`}
+              >
+                <div>
+                  <div className="hub-cws-rx-item__name">{it.medication_name}</div>
+                  <div className="hub-cws-rx-item__meta">{formatPrescriptionItemMeta(it)}</div>
+                </div>
                 {!editLocked ? (
-                  <button type="button" className="hub-clientes__btn hub-clientes__btn--sm" onClick={() => void removeItemAt(idx)}>
-                    Remover
-                  </button>
+                  <div className="hub-cws-rx-item__actions">
+                    <button
+                      type="button"
+                      className="hub-clientes__btn hub-clientes__btn--sm"
+                      onClick={() => startEdit(idx)}
+                      disabled={editingIndex === idx}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                      onClick={() => void removeItemAt(idx)}
+                    >
+                      Remover
+                    </button>
+                  </div>
                 ) : null}
               </li>
             ))}

@@ -59,7 +59,7 @@ function petChips(p: HubGuardianPet): string[] {
 }
 
 function addPetHref(guardianId: string): string {
-  return `/hub/pets/novo?guardianId=${encodeURIComponent(guardianId)}`;
+  return `/hub/pets/novo?guardianId=${encodeURIComponent(guardianId)}&returnTo=${encodeURIComponent(`/hub/clientes/${guardianId}?tab=pets`)}`;
 }
 
 function editPetHref(petId: string, guardianId: string): string {

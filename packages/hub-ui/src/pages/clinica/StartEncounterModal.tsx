@@ -34,6 +34,7 @@ const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, o
   const [loadingCases, setLoadingCases] = useState(false);
   const [caseMode, setCaseMode] = useState<'auto' | 'existing' | 'new'>('auto');
   const [selectedCaseId, setSelectedCaseId] = useState('');
+  const [newCaseTitle, setNewCaseTitle] = useState('');
 
   const petId = item?.pet_id ?? null;
   const isEmergency =
@@ -45,12 +46,14 @@ const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, o
       setActiveCases([]);
       setCaseMode('auto');
       setSelectedCaseId('');
+      setNewCaseTitle('');
       return;
     }
     if (!petId || !clinicId) {
       setActiveCases([]);
       setCaseMode('auto');
       setSelectedCaseId('');
+      setNewCaseTitle(item.notes ?? item.chief_complaint ?? '');
       return;
     }
     setLoadingCases(true);
@@ -61,6 +64,7 @@ const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, o
         setActiveCases(rows);
         setCaseMode(rows.length > 0 ? 'existing' : 'auto');
         setSelectedCaseId(rows.length === 1 ? rows[0]!.id : '');
+        setNewCaseTitle(item.notes ?? item.chief_complaint ?? '');
       })
       .catch(() => setActiveCases([]))
       .finally(() => setLoadingCases(false));
@@ -75,6 +79,13 @@ const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, o
     !starting &&
     !(caseMode === 'existing' && !selectedCaseId && activeCases.length > 0);
 
+  const petName = item?.pet?.name ?? (isEmergency ? 'A identificar' : 'Sem pet');
+  const tutorName = item?.guardian?.full_name ?? (isEmergency ? 'A identificar' : '—');
+  const profName = item?.staff_member?.full_name ?? '(sem profissional)';
+  const svcName = item?.service_type?.name ?? item?.title ?? 'Consulta';
+  const time = formatTime(item?.starts_at ?? item?.started_at ?? undefined);
+  const complaint = item?.notes ?? item?.chief_complaint ?? null;
+
   const handleConfirm = () => {
     if (!item || !canStart) return;
     let opts: StartOpts = {};
@@ -82,18 +93,17 @@ const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, o
       if (caseMode === 'existing') {
         opts = { hub_case_id: selectedCaseId || null };
       } else if (caseMode === 'new') {
-        opts = { create_new_case: true };
+        opts = {
+          create_new_case: true,
+          new_case_title: newCaseTitle.trim() || complaint || null,
+        };
+      } else if (caseMode === 'auto') {
+        const autoTitle = newCaseTitle.trim() || complaint || null;
+        if (autoTitle) opts = { new_case_title: autoTitle };
       }
     }
     void onStart(item, opts).catch(() => {});
   };
-
-  const petName = item?.pet?.name ?? (isEmergency ? 'A identificar' : 'Sem pet');
-  const tutorName = item?.guardian?.full_name ?? (isEmergency ? 'A identificar' : '—');
-  const profName = item?.staff_member?.full_name ?? '(sem profissional)';
-  const svcName = item?.service_type?.name ?? item?.title ?? 'Consulta';
-  const time = formatTime(item?.starts_at ?? item?.started_at ?? undefined);
-  const complaint = item?.notes ?? item?.chief_complaint ?? null;
 
   const footer = (
     <>
@@ -232,14 +242,38 @@ const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, o
                       </div>
                     ) : null}
                     {caseMode === 'new' ? (
-                      <p className="nam-muted" style={{ marginTop: 12, marginBottom: 0 }}>
-                        Um novo caso será criado com a queixa principal como título.
-                      </p>
+                      <div className="nam-field" style={{ marginTop: 12 }}>
+                        <label className="nam-label" htmlFor="start-enc-new-case-title">
+                          Título do caso
+                        </label>
+                        <input
+                          id="start-enc-new-case-title"
+                          className="nam-input"
+                          value={newCaseTitle}
+                          onChange={(e) => setNewCaseTitle(e.target.value)}
+                          placeholder="Ex.: dermatite, pós-operatório, tosse…"
+                        />
+                        <p className="nam-muted" style={{ marginTop: 8, marginBottom: 0 }}>
+                          Esse nome aparece na lista de casos do pet. A queixa principal vira o título se você deixar em branco.
+                        </p>
+                      </div>
                     ) : null}
                     {caseMode === 'auto' ? (
-                      <p className="nam-muted" style={{ marginTop: 12, marginBottom: 0 }}>
-                        Caso criado ou reutilizado automaticamente conforme histórico do pet.
-                      </p>
+                      <div className="nam-field" style={{ marginTop: 12 }}>
+                        <label className="nam-label" htmlFor="start-enc-auto-case-title">
+                          Título do caso
+                        </label>
+                        <input
+                          id="start-enc-auto-case-title"
+                          className="nam-input"
+                          value={newCaseTitle}
+                          onChange={(e) => setNewCaseTitle(e.target.value)}
+                          placeholder="Ex.: dermatite, pós-operatório, tosse…"
+                        />
+                        <p className="nam-muted" style={{ marginTop: 8, marginBottom: 0 }}>
+                          Um novo caso será criado com este título. Sem nome, usamos a queixa ou a data da consulta.
+                        </p>
+                      </div>
                     ) : null}
                   </>
                 )}

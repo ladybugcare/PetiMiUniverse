@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { recordTimelineEvent } from './hubClinicalTimelineController';
 
 const uuidStr = z.string().uuid();
 
@@ -31,6 +32,8 @@ const patchCaseSchema = z
     tags: z.array(z.string().trim().max(100)).optional(),
     primary_veterinarian_id: uuidStr.optional().nullable(),
     metadata: z.record(z.string(), z.unknown()).optional(),
+    /** Obrigatório ao reabrir caso resolvido/cancelado (status → active/monitoring). */
+    reopen_reason: z.string().trim().min(8).max(1000).optional(),
   })
   .strict();
 
@@ -38,6 +41,63 @@ const CASE_SELECT = `
   id, clinic_id, unit_id, pet_id, guardian_id_snapshot, primary_veterinarian_id,
   title, summary, status, tags, metadata, opened_at, closed_at, created_at, updated_at
 `;
+
+const GENERIC_CASE_TITLE_RE =
+  /^(atendimento avulso|consulta|caso clínico|atendimento clínico)(\s*[—–-]\s*\d{2}\/\d{2}\/\d{4})?$/i;
+
+export function isGenericClinicalCaseTitle(title?: string | null): boolean {
+  const t = (title ?? '').trim();
+  return t.length === 0 || GENERIC_CASE_TITLE_RE.test(t);
+}
+
+function formatCaseTitleDate(iso?: string): string {
+  const d = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}/${d.getFullYear()}`;
+}
+
+/** Título do auto-caso: queixa/título explícito, senão consulta datada (nunca "Atendimento avulso"). */
+export function resolveAutoCaseTitle(opts: {
+  case_title?: string | null;
+  chief_complaint?: string | null;
+  appointment_title?: string | null;
+  started_at?: string;
+}): string {
+  for (const raw of [opts.case_title, opts.chief_complaint, opts.appointment_title]) {
+    const t = raw?.trim();
+    if (t && !isGenericClinicalCaseTitle(t)) return t.slice(0, 500);
+  }
+  const dateLabel = formatCaseTitleDate(opts.started_at);
+  return dateLabel ? `Consulta — ${dateLabel}` : 'Consulta';
+}
+
+/** Se o caso ainda tem título genérico e há uma queixa útil, promove o título. */
+export async function maybePromoteGenericCaseTitle(opts: {
+  case_id?: string | null;
+  clinic_id: string;
+  candidate?: string | null;
+}): Promise<void> {
+  const next = opts.candidate?.trim();
+  if (!opts.case_id || !next || isGenericClinicalCaseTitle(next)) return;
+
+  const { data } = await supabaseAdmin
+    .from('hub_clinical_cases')
+    .select('id, title')
+    .eq('id', opts.case_id)
+    .eq('clinic_id', opts.clinic_id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (!data || !isGenericClinicalCaseTitle(data.title as string | null)) return;
+
+  await supabaseAdmin
+    .from('hub_clinical_cases')
+    .update({ title: next.slice(0, 500) })
+    .eq('id', opts.case_id)
+    .eq('clinic_id', opts.clinic_id);
+}
 
 async function enrichCase(row: Record<string, unknown>) {
   const petId = row.pet_id as string;
@@ -187,16 +247,56 @@ export const patchHubClinicalCase = async (req: Request, res: Response) => {
     if (b.metadata !== undefined) patch.metadata = b.metadata;
 
     if (b.status !== undefined) {
-      patch.status = b.status;
-      if (b.status === 'resolved' || b.status === 'cancelled') {
-        patch.closed_at = new Date().toISOString();
+      const { data: current } = await supabaseAdmin
+        .from('hub_clinical_cases')
+        .select('status, closed_at')
+        .eq('id', id.data)
+        .eq('clinic_id', b.clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (!current) return res.status(404).json({ error: 'Caso clínico não encontrado' });
+
+      const opening = b.status === 'active' || b.status === 'monitoring';
+      const wasClosed = current.status === 'resolved' || current.status === 'cancelled';
+
+      if (wasClosed && opening) {
+        try {
+          await reopenClosedClinicalCase({
+            case_id: id.data,
+            clinic_id: b.clinic_id,
+            reason: assertReopenReason(b.reopen_reason),
+            reopened_by: req.user?.id ?? null,
+            allowCancelled: true,
+            nextStatus: b.status === 'monitoring' ? 'monitoring' : 'active',
+          });
+        } catch (reopenErr: unknown) {
+          return res.status(400).json({ error: (reopenErr as Error)?.message || 'Erro ao reabrir caso' });
+        }
       } else {
-        patch.closed_at = null;
+        patch.status = b.status;
+        if (b.status === 'resolved' || b.status === 'cancelled') {
+          patch.closed_at = new Date().toISOString();
+        } else {
+          patch.closed_at = null;
+        }
       }
     }
 
-    if (Object.keys(patch).length === 0) {
+    if (Object.keys(patch).length === 0 && b.status === undefined) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
+    }
+
+    if (Object.keys(patch).length === 0) {
+      const { data: afterReopen } = await supabaseAdmin
+        .from('hub_clinical_cases')
+        .select(CASE_SELECT)
+        .eq('id', id.data)
+        .eq('clinic_id', b.clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (!afterReopen) return res.status(404).json({ error: 'Caso clínico não encontrado' });
+      const enriched = await enrichCase(afterReopen as Record<string, unknown>);
+      return res.json({ case: enriched });
     }
 
     const { data, error } = await supabaseAdmin
@@ -267,6 +367,115 @@ export class CaseSelectionRequiredError extends Error {
   }
 }
 
+export class CaseReopenRequiredError extends Error {
+  readonly code = 'CASE_REOPEN_REQUIRED';
+  constructor() {
+    super('Este caso está resolvido. Informe o motivo para reabri-lo e continuar.');
+    this.name = 'CaseReopenRequiredError';
+  }
+}
+
+export const REOPEN_REASON_MIN = 8;
+
+export function assertReopenReason(reason?: string | null): string {
+  const t = reason?.trim() ?? '';
+  if (t.length < REOPEN_REASON_MIN) {
+    throw new Error(`Informe o motivo da reabertura do caso (mínimo ${REOPEN_REASON_MIN} caracteres).`);
+  }
+  return t;
+}
+
+type CaseReopenRecord = {
+  at: string;
+  previous_status: string;
+  previous_closed_at: string | null;
+  reason: string;
+  reopened_by: string | null;
+};
+
+/**
+ * Reabre caso resolvido (ou cancelado, se `allowCancelled`).
+ * Preserva o fechamento original em `metadata.first_closed_at` + `reopen_history`.
+ */
+export async function reopenClosedClinicalCase(opts: {
+  case_id: string;
+  clinic_id: string;
+  reason: string;
+  reopened_by?: string | null;
+  allowCancelled?: boolean;
+  nextStatus?: 'active' | 'monitoring';
+}): Promise<void> {
+  const reason = assertReopenReason(opts.reason);
+  const { data: row } = await supabaseAdmin
+    .from('hub_clinical_cases')
+    .select('id, pet_id, status, closed_at, metadata')
+    .eq('id', opts.case_id)
+    .eq('clinic_id', opts.clinic_id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (!row) throw new Error('Caso clínico não encontrado');
+
+  const status = row.status as string;
+  if (status === 'active' || status === 'monitoring') return;
+  if (status === 'cancelled' && !opts.allowCancelled) {
+    throw new Error('Caso cancelado não pode ser reaberto. Abra um caso novo.');
+  }
+  if (status !== 'resolved' && status !== 'cancelled') {
+    throw new Error('Este caso não pode ser reaberto.');
+  }
+
+  const now = new Date().toISOString();
+  const prevMeta = (row.metadata && typeof row.metadata === 'object' ? row.metadata : {}) as Record<string, unknown>;
+  const history = Array.isArray(prevMeta.reopen_history) ? [...prevMeta.reopen_history] : [];
+  const record: CaseReopenRecord = {
+    at: now,
+    previous_status: status,
+    previous_closed_at: (row.closed_at as string | null) ?? null,
+    reason,
+    reopened_by: opts.reopened_by ?? null,
+  };
+  history.push(record);
+
+  const metadata = {
+    ...prevMeta,
+    first_closed_at: prevMeta.first_closed_at ?? row.closed_at ?? null,
+    last_reopened_at: now,
+    last_reopen_reason: reason,
+    reopen_history: history,
+  };
+
+  const { error } = await supabaseAdmin
+    .from('hub_clinical_cases')
+    .update({
+      status: opts.nextStatus ?? 'active',
+      closed_at: null,
+      metadata,
+    })
+    .eq('id', opts.case_id)
+    .eq('clinic_id', opts.clinic_id);
+
+  if (error) throw new Error(`Erro ao reabrir caso: ${error.message}`);
+
+  const petId = row.pet_id as string | null;
+  if (petId) {
+    const closedLabel = record.previous_closed_at
+      ? new Date(record.previous_closed_at).toLocaleDateString('pt-BR')
+      : 'sem data';
+    void recordTimelineEvent({
+      clinic_id: opts.clinic_id,
+      pet_id: petId,
+      hub_case_id: opts.case_id,
+      event_type: 'note',
+      ref_type: 'case',
+      ref_id: opts.case_id,
+      title: 'Caso reaberto',
+      body: `Status anterior: ${status === 'resolved' ? 'resolvido' : 'cancelado'} (fechado em ${closedLabel}). Motivo: ${reason}`,
+      created_by: opts.reopened_by ?? null,
+    });
+  }
+}
+
 /**
  * Utilitário interno: retorna ou cria um caso clínico para o encounter.
  * Chamado por hubEncountersController e hubClinicalModulesController.
@@ -289,6 +498,11 @@ export async function resolveOrCreateClinicalCase(opts: {
   create_new_case?: boolean;
   /** Título do novo caso quando `create_new_case` (sobrepõe queixa como título). */
   new_case_title?: string | null;
+  /** Título do agendamento, usado só se não houver queixa/título explícito. */
+  appointment_title?: string | null;
+  /** Motivo obrigatório para reabrir caso resolvido e vincular o atendimento. */
+  reopen_reason?: string | null;
+  reopened_by?: string | null;
 }): Promise<string> {
   const {
     clinic_id,
@@ -301,6 +515,9 @@ export async function resolveOrCreateClinicalCase(opts: {
     hub_case_id,
     create_new_case,
     new_case_title,
+    appointment_title,
+    reopen_reason,
+    reopened_by,
   } = opts;
 
   // Caso fornecido explicitamente: validar
@@ -317,8 +534,19 @@ export async function resolveOrCreateClinicalCase(opts: {
     if (!existing) {
       throw new Error('Caso clínico não encontrado ou não pertence a este pet/clínica');
     }
-    if (existing.status === 'resolved' || existing.status === 'cancelled') {
-      throw new Error('Não é possível adicionar atendimento a um caso resolvido ou cancelado');
+    if (existing.status === 'cancelled') {
+      throw new Error('Caso cancelado não pode receber atendimento. Abra um caso novo.');
+    }
+    if (existing.status === 'resolved') {
+      if (!reopen_reason?.trim()) {
+        throw new CaseReopenRequiredError();
+      }
+      await reopenClosedClinicalCase({
+        case_id: existing.id as string,
+        clinic_id,
+        reason: reopen_reason,
+        reopened_by: reopened_by ?? null,
+      });
     }
     return existing.id as string;
   }
@@ -334,6 +562,7 @@ export async function resolveOrCreateClinicalCase(opts: {
       chief_complaint,
       started_at,
       case_title: new_case_title ?? null,
+      appointment_title,
     });
   }
 
@@ -353,7 +582,17 @@ export async function resolveOrCreateClinicalCase(opts: {
   }
 
   // Sem caso ativo → cria auto-caso
-  return createAutoCase({ clinic_id, unit_id, pet_id, guardian_id, primary_veterinarian_id, chief_complaint, started_at });
+  return createAutoCase({
+    clinic_id,
+    unit_id,
+    pet_id,
+    guardian_id,
+    primary_veterinarian_id,
+    chief_complaint,
+    started_at,
+    case_title: new_case_title ?? null,
+    appointment_title,
+  });
 }
 
 /**
@@ -371,6 +610,8 @@ export async function ensureCaseAndAdmissionEncounter(opts: {
   create_new_case?: boolean;
   new_case_title?: string | null;
   encounter_chief_complaint: string;
+  reopen_reason?: string | null;
+  reopened_by?: string | null;
 }): Promise<{ case_id: string; encounter_id: string }> {
   const {
     clinic_id,
@@ -382,6 +623,8 @@ export async function ensureCaseAndAdmissionEncounter(opts: {
     create_new_case,
     new_case_title,
     encounter_chief_complaint,
+    reopen_reason,
+    reopened_by,
   } = opts;
 
   // Encounter fornecido: validar e extrair case_id dele
@@ -401,6 +644,7 @@ export async function ensureCaseAndAdmissionEncounter(opts: {
     // Se o encounter já tem case, usar; se não, criar/resolver
     const finalCaseId = caseId ?? await resolveOrCreateClinicalCase({
       clinic_id, unit_id, pet_id, guardian_id, hub_case_id, create_new_case, new_case_title,
+      reopen_reason, reopened_by,
     });
 
     return { case_id: finalCaseId, encounter_id: hub_encounter_id };
@@ -416,6 +660,8 @@ export async function ensureCaseAndAdmissionEncounter(opts: {
     create_new_case,
     new_case_title,
     chief_complaint: encounter_chief_complaint,
+    reopen_reason,
+    reopened_by,
   });
 
   // Criar encounter de admissão
@@ -450,9 +696,14 @@ async function createAutoCase(opts: {
   started_at?: string;
   /** Se informado, usa como título do caso em vez da queixa principal. */
   case_title?: string | null;
+  appointment_title?: string | null;
 }): Promise<string> {
-  const title =
-    opts.case_title?.trim() || opts.chief_complaint?.trim() || 'Atendimento avulso';
+  const title = resolveAutoCaseTitle({
+    case_title: opts.case_title,
+    chief_complaint: opts.chief_complaint,
+    appointment_title: opts.appointment_title,
+    started_at: opts.started_at,
+  });
   const { data, error } = await supabaseAdmin
     .from('hub_clinical_cases')
     .insert({

@@ -129,10 +129,13 @@ const HubPetWizardPage: React.FC = () => {
   const petIndexRaw = searchParams.get('petIndex');
   const petIndex = Math.max(0, Number.parseInt(petIndexRaw || '0', 10) || 0);
   const guardianIdParam = searchParams.get('guardianId')?.trim() || '';
-  const returnTo = hubSafeReturnTo(
-    searchParams.get('returnTo'),
-    isEdit && editPetId ? `/hub/pets/${editPetId}` : '/hub/pets',
-  );
+  const defaultReturnTo =
+    isEdit && editPetId
+      ? `/hub/pets/${editPetId}`
+      : !fromQuote && guardianIdParam
+        ? `/hub/clientes/${guardianIdParam}?tab=pets`
+        : '/hub/pets';
+  const returnTo = hubSafeReturnTo(searchParams.get('returnTo'), defaultReturnTo);
   const preId = isEdit ? '' : guardianIdParam;
   const prefillApplied = useRef<string | null>(null);
   useEffect(() => {
@@ -377,7 +380,7 @@ const HubPetWizardPage: React.FC = () => {
       }
 
       showSuccess('Pet criado com sucesso');
-      navigate('/hub/pets', { replace: false });
+      navigate(returnTo, { replace: false });
     } catch (e: unknown) {
       showError((e as Error)?.message || (isEdit ? 'Erro ao atualizar pet' : 'Erro ao criar pet'));
     } finally {
@@ -467,7 +470,7 @@ const HubPetWizardPage: React.FC = () => {
       </div>
 
       <footer className="pet-wizard__footer">
-        <HubCancelButton onClick={() => navigate(isEdit ? returnTo : '/hub/pets')} />
+        <HubCancelButton onClick={() => navigate(returnTo)} />
         <div className="pet-wizard__footer-right">
           {activeStep > 0 && (
             <button type="button" className="pet-wizard__btn pet-wizard__btn--outline" onClick={goBack}>

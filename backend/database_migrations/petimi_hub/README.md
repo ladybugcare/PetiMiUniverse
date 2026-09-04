@@ -222,3 +222,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 101. **`101_alter_notifications_hub_ops_types.sql`** — Amplia `notifications_type_check` com os avisos operacionais internos do Hub (`hub_payment_due`, `hub_cancellation_pending`, `hub_stock_alert`, `hub_boarding_checkin`, `hub_boarding_checkout`), direcionados por área operacional via `hubNotifyStaff`. Executar depois do item 53.
 
 102. **`102_create_hub_charge_bundles.sql`** — Cobrança agrupada: `hub_charge_bundles` + `hub_charge_bundle_items` (lote persistente com link/PDF públicos e histórico para baixa). Executar depois de `hub_receivables` e `hub_guardians`.
+
+103. **`103_create_hub_prescription_lookups.sql`** — Catálogo de receita por clínica (`hub_prescription_lookups`: medication / presentation / use_route) + coluna `use_route` em `hub_prescription_items`. Independente do inventário. Executar depois de `025i` / `058`.

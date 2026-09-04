@@ -122,6 +122,14 @@ export type HubEncounterEvent = {
 
 export type HubPrescriptionAdministration = 'home_use' | 'administered_in_clinic';
 
+export type HubPrescriptionLookupKind = 'medication' | 'presentation' | 'use_route';
+
+export type HubPrescriptionLookupOption = {
+  id: string | null;
+  label: string;
+  from_catalog: boolean;
+};
+
 export type HubPrescriptionItem = {
   id?: string;
   medication_name: string;
@@ -135,6 +143,7 @@ export type HubPrescriptionItem = {
   instructions?: string | null;
   hub_inventory_item_id?: string | null;
   administration?: HubPrescriptionAdministration | string | null;
+  use_route?: string | null;
 };
 
 export type HubPrescriptionDocumentStatus = 'valid' | 'revoked' | 'expired';
@@ -549,6 +558,7 @@ export const hubClinicalApi = {
       instructions?: string | null;
       hub_inventory_item_id?: string | null;
       administration?: HubPrescriptionAdministration;
+      use_route?: string | null;
     }>;
   }) {
     return apiRequest(`${clinicalBase}/prescriptions`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<{
@@ -577,6 +587,7 @@ export const hubClinicalApi = {
         instructions?: string | null;
         hub_inventory_item_id?: string | null;
         administration?: HubPrescriptionAdministration;
+        use_route?: string | null;
       }>;
     },
   ) {
@@ -584,6 +595,26 @@ export const hubClinicalApi = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }) as Promise<{ prescription: HubPrescription }>;
+  },
+  listPrescriptionLookups(clinicId: string, kind: HubPrescriptionLookupKind) {
+    const q = new URLSearchParams({ clinic_id: clinicId, kind });
+    return apiRequest(`${clinicalBase}/prescription-lookups?${q}`) as Promise<{
+      kind: HubPrescriptionLookupKind;
+      lookups: HubPrescriptionLookupOption[];
+    }>;
+  },
+  createPrescriptionLookup(payload: {
+    clinic_id: string;
+    kind: HubPrescriptionLookupKind;
+    label: string;
+  }) {
+    return apiRequest(`${clinicalBase}/prescription-lookups`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{
+      lookup: { id: string; clinic_id: string; kind: HubPrescriptionLookupKind; label: string };
+      created: boolean;
+    }>;
   },
   listPrescriptionDocuments(prescriptionId: string, clinicId: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
@@ -1227,6 +1258,7 @@ export const hubClinicalCasesApi = {
       status?: HubClinicalCaseStatus;
       tags?: string[];
       primary_veterinarian_id?: string | null;
+      reopen_reason?: string;
     },
   ) {
     return apiRequest(`${clinicalBase}/cases/${id}`, {

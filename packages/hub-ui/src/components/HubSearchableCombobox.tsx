@@ -22,8 +22,10 @@ export type HubSearchableComboboxProps = {
   disabled?: boolean;
   /** Permite criar valor a partir do texto de pesquisa (ex.: espécie ou raça livre). */
   allowCreate?: boolean;
-  /** Substantivo para a linha «Adicionar … como nova …» (ex.: «espécie», «raça»). */
+  /** Substantivo para a linha «Adicionar … como novo/nova …» (ex.: «espécie», «medicamento»). */
   createEntityLabel?: string;
+  /** Concordância de gênero do adjetivo novo/nova. Default: feminino (legado). */
+  createEntityGender?: 'm' | 'f';
   emptyResultsLabel?: string;
   /** Ícone à esquerda no fechado quando não há valor (ex.: pata). */
   triggerIcon?: React.ReactNode;
@@ -50,6 +52,7 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
   disabled = false,
   allowCreate = false,
   createEntityLabel = 'opção',
+  createEntityGender = 'f',
   emptyResultsLabel = 'Nenhum resultado encontrado',
   triggerIcon,
   ariaLabel,
@@ -227,7 +230,7 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
       {showCreate ? (
         <div className="hub-combobox__create">
           <button type="button" className="hub-combobox__create-btn" onClick={onCreate}>
-            + Adicionar &apos;{qTrim}&apos; como nova {createEntityLabel}
+            + Adicionar &apos;{qTrim}&apos; como {createEntityGender === 'm' ? 'novo' : 'nova'} {createEntityLabel}
           </button>
         </div>
       ) : null}

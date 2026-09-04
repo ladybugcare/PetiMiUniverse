@@ -11,6 +11,7 @@ export type HubPublicPrescriptionMedication = {
   duration: string | null;
   instructions: string | null;
   administration: string | null;
+  use_route?: string | null;
 };
 
 export type HubPublicPrescriptionStatus = 'valid' | 'revoked' | 'expired';
@@ -23,9 +24,25 @@ export type HubPublicPrescriptionPayload = {
   revoked_at: string | null;
   content_hash_short: string;
   document_version: number;
-  clinic: { name: string };
-  pet: { name: string; species: string | null; breed: string | null };
-  guardian: { full_name: string };
+  clinic: {
+    name: string;
+    phone?: string | null;
+    email?: string | null;
+    address_line?: string | null;
+  };
+  pet: {
+    name: string;
+    species: string | null;
+    breed: string | null;
+    age_label?: string;
+  };
+  guardian: {
+    full_name: string;
+    phone?: string | null;
+    tax_id_display?: string;
+    id_doc_number?: string | null;
+    address_line?: string;
+  };
   veterinarian: {
     full_name: string;
     crmv: string | null;

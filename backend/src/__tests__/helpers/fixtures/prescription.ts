@@ -45,6 +45,7 @@ export function prescriptionItemRow(overrides: Record<string, unknown> = {}) {
     duration: '7 dias',
     instructions: null,
     administration: 'home_use',
+    use_route: 'Oral',
     order_index: 0,
     ...overrides,
   };
@@ -78,6 +79,7 @@ export function issuedDocumentRow(overrides: Record<string, unknown> = {}) {
           duration: '7 dias',
           instructions: null,
           administration: 'home_use',
+          use_route: 'Oral',
         },
       ],
       notes: 'Observação clínica',

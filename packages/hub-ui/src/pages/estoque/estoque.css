@@ -51,6 +51,26 @@
   border: 1px solid var(--hc-border);
 }
 
+.hub-estoque__lot-mode {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.hub-estoque__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.hub-estoque__count-input {
+  width: 96px;
+  max-width: 100%;
+}
+
 @media (max-width: 900px) {
   .hub-estoque-shell--tabs .hub-clientes__tabs {
     overflow-x: auto;

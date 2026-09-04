@@ -163,9 +163,32 @@ export async function notifyHubStockAlert(opts: {
     type: 'hub_stock_alert',
     title: 'Estoque abaixo do mínimo',
     message: `${opts.itemName}: ${opts.qtyOnHand} em estoque (mínimo ${opts.minQty}).`,
-    link: '/hub/estoque',
+    link: '/hub/estoque/alertas',
     entityType: 'inventory_item',
     entityId: opts.itemId,
+  });
+}
+
+/** Lote dentro da janela de alerta de validade do item. */
+export async function notifyHubStockExpiryAlert(opts: {
+  clinicId: string;
+  itemId: string;
+  itemName: string;
+  lotId: string;
+  lotCode?: string | null;
+  expiryDate: string;
+  daysUntil: number;
+}): Promise<void> {
+  const lotLabel = opts.lotCode?.trim() ? `lote ${opts.lotCode}` : 'lote sem código';
+  await hubNotifyStaff({
+    clinicId: opts.clinicId,
+    areas: ['estoque'],
+    type: 'hub_stock_alert',
+    title: 'Validade próxima',
+    message: `${opts.itemName} (${lotLabel}): vence em ${opts.daysUntil} dia(s) (${opts.expiryDate}).`,
+    link: '/hub/estoque/alertas',
+    entityType: 'inventory_lot',
+    entityId: opts.lotId,
   });
 }
 

@@ -122,7 +122,10 @@ const HubPetsPage: React.FC = () => {
   useEffect(() => {
     const g = searchParams.get('guardianId');
     if (!g || !accessAllowed) return;
-    navigate(`/hub/pets/novo?guardianId=${encodeURIComponent(g)}`, { replace: true });
+    navigate(
+      `/hub/pets/novo?guardianId=${encodeURIComponent(g)}&returnTo=${encodeURIComponent(`/hub/clientes/${g}?tab=pets`)}`,
+      { replace: true },
+    );
   }, [searchParams, accessAllowed, navigate]);
 
   const goToNewPetWizard = useCallback(() => {
