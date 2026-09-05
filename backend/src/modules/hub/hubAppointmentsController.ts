@@ -220,6 +220,122 @@ async function assertNoScheduleConflict(
   return { conflict: false, reason: '' };
 }
 
+type OccurrenceConflictWindow = {
+  staff: string | null;
+  resource: string | null;
+  starts: string;
+  ends: string;
+  label: string;
+};
+
+type OccurrenceConflictBody = {
+  starts_at: string;
+  ends_at: string;
+  hub_staff_member_id?: string | null;
+  resource_label?: string | null;
+  with_pickup_route_before?: {
+    starts_at: string;
+    ends_at: string;
+    hub_staff_member_id?: string | null;
+    resource_label?: string | null;
+  } | null;
+  with_pickup_route_after?: {
+    starts_at: string;
+    ends_at: string;
+    hub_staff_member_id?: string | null;
+    resource_label?: string | null;
+  } | null;
+  standalone_pickup_return?: {
+    starts_at: string;
+    ends_at: string;
+    hub_staff_member_id?: string | null;
+    resource_label?: string | null;
+  } | null;
+  extra_blocks?: Array<{
+    starts_at: string;
+    ends_at: string;
+    hub_staff_member_id?: string | null;
+    resource_label?: string | null;
+  }>;
+};
+
+function buildOccurrenceConflictWindows(
+  b: OccurrenceConflictBody,
+  occDate: string,
+  useShift: boolean,
+  standalonePickupMode: string | null,
+): OccurrenceConflictWindow[] {
+  const shift = (ts: string) => (useShift ? shiftTimestampToDate(ts, occDate) : ts);
+  const windows: OccurrenceConflictWindow[] = [];
+
+  if (b.with_pickup_route_before) {
+    const pb = b.with_pickup_route_before;
+    windows.push({
+      staff: pb.hub_staff_member_id ?? null,
+      resource: pb.resource_label ?? null,
+      starts: shift(pb.starts_at),
+      ends: shift(pb.ends_at),
+      label: 'Busca (Leva e Traz)',
+    });
+  }
+
+  windows.push({
+    staff: b.hub_staff_member_id ?? null,
+    resource: b.resource_label ?? null,
+    starts: shift(b.starts_at),
+    ends: shift(b.ends_at),
+    label: standalonePickupMode ? 'Leva e Traz (parada)' : 'Atendimento principal',
+  });
+
+  if (standalonePickupMode === 'round_trip' && b.standalone_pickup_return) {
+    const rb = b.standalone_pickup_return;
+    windows.push({
+      staff: rb.hub_staff_member_id ?? null,
+      resource: rb.resource_label ?? null,
+      starts: shift(rb.starts_at),
+      ends: shift(rb.ends_at),
+      label: 'Retorno (Leva e Traz)',
+    });
+  }
+
+  for (const block of b.extra_blocks ?? []) {
+    windows.push({
+      staff: block.hub_staff_member_id ?? null,
+      resource: block.resource_label ?? null,
+      starts: shift(block.starts_at),
+      ends: shift(block.ends_at),
+      label: 'Bloco extra',
+    });
+  }
+
+  if (b.with_pickup_route_after) {
+    const pa = b.with_pickup_route_after;
+    windows.push({
+      staff: pa.hub_staff_member_id ?? null,
+      resource: pa.resource_label ?? null,
+      starts: shift(pa.starts_at),
+      ends: shift(pa.ends_at),
+      label: 'Retorno (Leva e Traz)',
+    });
+  }
+
+  return windows;
+}
+
+function scheduleConflictJson(
+  error: string,
+  extra?: {
+    conflicts?: Array<{ date: string; reason: string; conflictingId?: string }>;
+    conflictingId?: string;
+  },
+) {
+  return {
+    error,
+    code: 'SCHEDULE_CONFLICT',
+    ...extra,
+  };
+}
+
 async function assertServiceTypeInClinic(clinicId: string, serviceTypeId: string): Promise<boolean> {
   const { data, error } = await supabaseAdmin
     .from('hub_service_types')
@@ -1046,7 +1162,7 @@ const createAppointmentSchema = z
     intake_hub_case_id: uuidStr.optional().nullable(),
     intake_create_new_case: z.boolean().optional(),
     intake_new_case_title: optionalTrim(500).optional().nullable(),
-    /** Permite sobrepor outro slot (somente kinds walk-in). */
+    /** Permite sobrepor outro slot após confirmação explícita do usuário. */
     allow_schedule_overlap: z.boolean().optional(),
     /** Agrupa vários agendamentos da mesma visita multi-pet. */
     visit_group_id: uuidStr.optional().nullable(),
@@ -1102,6 +1218,8 @@ const patchAppointmentSchema = z
     intake_create_new_case: z.boolean().optional(),
     intake_new_case_title: optionalTrim(200).optional().nullable(),
     extra_blocks: z.array(patchExtraBlockSchema).optional(),
+    /** Permite sobrepor outro slot após confirmação explícita do usuário. */
+    allow_schedule_overlap: z.boolean().optional(),
     ...careLocationBodyFields,
   })
   .strict();
@@ -1152,7 +1270,8 @@ async function syncExtraBlocksForParent(
   parentRow: Record<string, unknown>,
   blocks: PatchExtraBlock[],
   excludeConflictIds: string[],
-): Promise<{ error?: string; status?: number }> {
+  allowScheduleOverlap = false,
+): Promise<{ error?: string; status?: number; code?: string }> {
   const { data: existingChildren, error: childErr } = await supabaseAdmin
     .from('hub_appointments')
     .select('id')
@@ -1200,17 +1319,19 @@ async function syncExtraBlocksForParent(
     }
 
     const conflictExclude = [...excludeConflictIds, ...existingChildIds, ...[...keepIds]];
-    const chk = await assertNoScheduleConflict(
-      clinicId,
-      conflictExclude,
-      block.hub_staff_member_id ?? null,
-      block.resource_label ?? null,
-      unitId,
-      block.starts_at,
-      block.ends_at,
-    );
-    if (chk.conflict) {
-      return { error: `Bloco adicional: ${chk.reason}`, status: 409 };
+    if (!allowScheduleOverlap) {
+      const chk = await assertNoScheduleConflict(
+        clinicId,
+        conflictExclude,
+        block.hub_staff_member_id ?? null,
+        block.resource_label ?? null,
+        unitId,
+        block.starts_at,
+        block.ends_at,
+      );
+      if (chk.conflict) {
+        return { error: `Bloco adicional: ${chk.reason}`, status: 409, code: 'SCHEDULE_CONFLICT' };
+      }
     }
 
     const firstSvcType = block.services[0]!.hub_service_type_id;
@@ -1543,13 +1664,6 @@ export const createHubAppointment = async (req: Request, res: Response) => {
     }
     // Kind preliminar (walk-in etc.); pode virar pickup_route após carregar o serviço principal.
     let resolvedAppointmentKind: AppointmentKind = b.appointment_kind ?? 'standard';
-    if (
-      b.allow_schedule_overlap === true &&
-      !isWalkInAppointmentKind(resolvedAppointmentKind) &&
-      !b.visit_group_id
-    ) {
-      return res.status(400).json({ error: 'allow_schedule_overlap só é permitido para encaixes (walk-in) ou visitas multi-pet.' });
-    }
     const skipScheduleConflictCheck =
       isWalkInAppointmentKind(resolvedAppointmentKind) || b.allow_schedule_overlap === true;
 
@@ -1868,7 +1982,47 @@ export const createHubAppointment = async (req: Request, res: Response) => {
 
     // ── Create series if recurrence requested ─────────────────────────────
     let seriesId: string | null = null;
-    let occurrenceDates: string[] = [];
+    const occurrenceDates: string[] = b.recurrence
+      ? generateOccurrenceDates(b.starts_at.slice(0, 10), b.recurrence as RecurrenceRule)
+      : [b.starts_at.slice(0, 10)];
+
+    if (!skipScheduleConflictCheck) {
+      const preConflicts: Array<{ date: string; reason: string; conflictingId?: string }> = [];
+      const useShift = Boolean(b.recurrence);
+      for (const occDate of occurrenceDates) {
+        const windows = buildOccurrenceConflictWindows(b, occDate, useShift, standalonePickupMode);
+        for (const w of windows) {
+          const chk = await assertNoScheduleConflict(
+            b.clinic_id,
+            [],
+            w.staff,
+            w.resource,
+            resolvedUnitId,
+            w.starts,
+            w.ends,
+          );
+          if (chk.conflict) {
+            preConflicts.push({
+              date: occDate,
+              reason: `${w.label}: ${chk.reason}`,
+              conflictingId: chk.conflictingId,
+            });
+            break;
+          }
+        }
+      }
+      if (preConflicts.length > 0) {
+        const firstReason = preConflicts[0]?.reason.replace(/^[^:]+:\s*/, '') ?? preConflicts[0]?.reason;
+        return res.status(409).json(
+          scheduleConflictJson(
+            preConflicts.length === 1 && occurrenceDates.length === 1
+              ? firstReason || 'Horário em conflito com outro atendimento.'
+              : 'Alguns horários da série entram em conflito com outro atendimento.',
+            { conflicts: preConflicts },
+          ),
+        );
+      }
+    }
 
     if (b.recurrence) {
       const rule = b.recurrence;
@@ -1937,9 +2091,6 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       } else {
         seriesId = (seriesRow as { id: string }).id;
       }
-      occurrenceDates = generateOccurrenceDates(b.starts_at.slice(0, 10), rule as RecurrenceRule);
-    } else {
-      occurrenceDates = [b.starts_at.slice(0, 10)];
     }
 
     const conflicts: Array<{ date: string; reason: string; conflictingId?: string }> = [];
@@ -1949,72 +2100,12 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       const startsAt = seriesId ? shiftTimestampToDate(b.starts_at, occDate) : b.starts_at;
       const endsAt = seriesId ? shiftTimestampToDate(b.ends_at, occDate) : b.ends_at;
 
-      const conflictWindows: Array<{
-        staff: string | null;
-        resource: string | null;
-        starts: string;
-        ends: string;
-        label: string;
-      }> = [];
-
-      if (b.with_pickup_route_before) {
-        const pb = b.with_pickup_route_before;
-        const pStarts = seriesId ? shiftTimestampToDate(pb.starts_at, occDate) : pb.starts_at;
-        const pEnds = seriesId ? shiftTimestampToDate(pb.ends_at, occDate) : pb.ends_at;
-        conflictWindows.push({
-          staff: pb.hub_staff_member_id ?? null,
-          resource: pb.resource_label ?? null,
-          starts: pStarts,
-          ends: pEnds,
-          label: 'Busca (Leva e Traz)',
-        });
-      }
-
-      conflictWindows.push({
-        staff: b.hub_staff_member_id ?? null,
-        resource: b.resource_label ?? null,
-        starts: startsAt,
-        ends: endsAt,
-        label: standalonePickupMode ? 'Leva e Traz (parada)' : 'Atendimento principal',
-      });
-
-      if (standalonePickupMode === 'round_trip' && b.standalone_pickup_return) {
-        const rb = b.standalone_pickup_return;
-        const rStarts = seriesId ? shiftTimestampToDate(rb.starts_at, occDate) : rb.starts_at;
-        const rEnds = seriesId ? shiftTimestampToDate(rb.ends_at, occDate) : rb.ends_at;
-        conflictWindows.push({
-          staff: rb.hub_staff_member_id ?? null,
-          resource: rb.resource_label ?? null,
-          starts: rStarts,
-          ends: rEnds,
-          label: 'Retorno (Leva e Traz)',
-        });
-      }
-
-      for (const block of b.extra_blocks ?? []) {
-        const bStarts = seriesId ? shiftTimestampToDate(block.starts_at, occDate) : block.starts_at;
-        const bEnds = seriesId ? shiftTimestampToDate(block.ends_at, occDate) : block.ends_at;
-        conflictWindows.push({
-          staff: block.hub_staff_member_id ?? null,
-          resource: block.resource_label ?? null,
-          starts: bStarts,
-          ends: bEnds,
-          label: 'Bloco extra',
-        });
-      }
-
-      if (b.with_pickup_route_after) {
-        const pa = b.with_pickup_route_after;
-        const pStarts = seriesId ? shiftTimestampToDate(pa.starts_at, occDate) : pa.starts_at;
-        const pEnds = seriesId ? shiftTimestampToDate(pa.ends_at, occDate) : pa.ends_at;
-        conflictWindows.push({
-          staff: pa.hub_staff_member_id ?? null,
-          resource: pa.resource_label ?? null,
-          starts: pStarts,
-          ends: pEnds,
-          label: 'Retorno (Leva e Traz)',
-        });
-      }
+      const conflictWindows = buildOccurrenceConflictWindows(
+        b,
+        occDate,
+        Boolean(seriesId),
+        standalonePickupMode,
+      );
 
       let skipOcc = false;
       if (!skipScheduleConflictCheck) {
@@ -2369,15 +2460,16 @@ export const createHubAppointment = async (req: Request, res: Response) => {
     }
 
     if (conflicts.length > 0 && createdIds.length === 0) {
-      return res.status(409).json({
-        error: 'Todos os horários solicitados entram em conflito.',
-        conflicts,
-      });
+      return res.status(409).json(
+        scheduleConflictJson('Todos os horários solicitados entram em conflito.', { conflicts }),
+      );
     }
 
     // Fetch and return the main appointment (first created)
     if (createdIds.length === 0) {
-      return res.status(409).json({ error: 'Nenhum agendamento criado (conflitos em todas as datas).', conflicts });
+      return res.status(409).json(
+        scheduleConflictJson('Nenhum agendamento criado (conflitos em todas as datas).', { conflicts }),
+      );
     }
 
     const { data: mainAppt } = await supabaseAdmin
@@ -2521,17 +2613,19 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       return res.status(400).json({ error: careResolved.error });
     }
 
-    const check = await assertNoScheduleConflict(
-      b.clinic_id,
-      [id],
-      nextStaff,
-      nextResource,
-      careResolved.value.unit_id,
-      starts,
-      ends,
-    );
-    if (check.conflict) {
-      return res.status(409).json({ error: check.reason });
+    if (b.allow_schedule_overlap !== true) {
+      const check = await assertNoScheduleConflict(
+        b.clinic_id,
+        [id],
+        nextStaff,
+        nextResource,
+        careResolved.value.unit_id,
+        starts,
+        ends,
+      );
+      if (check.conflict) {
+        return res.status(409).json(scheduleConflictJson(check.reason, { conflictingId: check.conflictingId }));
+      }
     }
 
     const patch: Record<string, unknown> = {};
@@ -2774,9 +2868,13 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
         parentAfterPatch as Record<string, unknown>,
         b.extra_blocks,
         [id, ...targetIds],
+        b.allow_schedule_overlap === true,
       );
       if (syncResult.error) {
-        return res.status(syncResult.status ?? 500).json({ error: syncResult.error });
+        return res.status(syncResult.status ?? 500).json({
+          error: syncResult.error,
+          ...(syncResult.code ? { code: syncResult.code } : {}),
+        });
       }
     }
 

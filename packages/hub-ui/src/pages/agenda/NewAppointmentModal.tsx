@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { Plus, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, ChevronUp, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock, Zap } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
+import { useAlert } from '../../components/AlertProvider';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
@@ -97,9 +98,19 @@ import {
   resolvePickupLegAmounts,
 } from '../../utils/hubPickupPricing';
 import { isOperationalClinicalGroup, normalizeServiceGroupSlug, serviceGroupLabel } from '../../utils/serviceTypeSlug';
-import { STATUS_META, type AgendaStatus } from './agendaModel';
+import { STATUS_META, type AgendaAppointment, type AgendaStatus } from './agendaModel';
 import { ReceptionQuickRegisterPanel, type QuickRegisterSaveResult } from './ReceptionQuickRegisterPanel';
 import { resolveWalkInAppointmentKind } from './walkInUtils';
+import {
+  SCHEDULE_OVERLAP_CANCEL_TEXT,
+  SCHEDULE_OVERLAP_CONFIRM_TEXT,
+  SCHEDULE_OVERLAP_CONFIRM_TITLE,
+  agendaAppointmentToConflictSlot,
+  buildScheduleOverlapConfirmMessage,
+  findLocalScheduleConflict,
+  isScheduleConflictMessage,
+  type LocalScheduleWindow,
+} from './scheduleConflict';
 import './new-appointment-modal.css';
 
 export type CreateHubAppointmentResult = Awaited<ReturnType<typeof hubAgendaApi.create>>;
@@ -172,6 +183,8 @@ export type NewAppointmentModalProps = {
   appointmentId?: string | null;
   seriesId?: string | null;
   onUpdated?: (appointment: HubAppointment) => void;
+  /** Agendamentos já carregados na agenda — usados para avisar conflito antes de salvar. */
+  existingAppointments?: AgendaAppointment[];
 };
 
 type ServiceChip = {
@@ -270,6 +283,21 @@ function buildServiceDescriptionBullets(types: HubServiceType[], serviceIdsOrder
   return lines.join('\n');
 }
 
+function windowFromHm(
+  dateYmd: string,
+  startsHm: string,
+  endsHm: string,
+  staffId: string | null,
+  resourceLabel: string | null,
+): LocalScheduleWindow {
+  return {
+    staffId: staffId || null,
+    resourceLabel: resourceLabel || null,
+    startMs: new Date(toIsoTs(dateYmd, startsHm)).getTime(),
+    endMs: new Date(toEndIsoTs(dateYmd, startsHm, endsHm)).getTime(),
+  };
+}
+
 export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   open,
   onClose,
@@ -282,8 +310,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   appointmentId = null,
   seriesId = null,
   onUpdated,
+  existingAppointments = [],
 }) => {
   const clinicId = getStoredClinicId() ?? '';
+  const { showAlert } = useAlert();
   const isEditMode = mode === 'edit';
   const isClinicalRoutine = !isEditMode && layoutVariant === 'clinical_routine';
   const isWalkIn = !isEditMode && layoutVariant === 'walk_in';
@@ -484,6 +514,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [conflicts, setConflicts] = useState<Array<{ date: string; reason: string }>>([]);
   const [seriesScopePickerOpen, setSeriesScopePickerOpen] = useState(false);
   const pendingPatchPayloadRef = useRef<Parameters<typeof hubAgendaApi.patch>[1] | null>(null);
+  const confirmedOverlapRef = useRef(false);
+  const handleSaveRef = useRef<() => Promise<void>>(async () => undefined);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const servicesDurationMin = useMemo(
@@ -1683,6 +1715,26 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     });
   const removeExtraBlock = (key: string) => setExtraBlocks((prev) => prev.filter((b) => b.key !== key));
 
+  const askOverlapConfirm = (detail: string | undefined, reason: string | undefined, onConfirm: () => void) => {
+    setSaving(false);
+    showAlert({
+      type: 'warning',
+      title: SCHEDULE_OVERLAP_CONFIRM_TITLE,
+      message: buildScheduleOverlapConfirmMessage({
+        detail,
+        reason,
+        isSeries: Boolean(withRecurrence && !isEditMode) || Boolean(isEditMode && seriesId),
+      }),
+      showCancel: true,
+      confirmText: SCHEDULE_OVERLAP_CONFIRM_TEXT,
+      cancelText: SCHEDULE_OVERLAP_CANCEL_TEXT,
+      onConfirm: () => {
+        confirmedOverlapRef.current = true;
+        onConfirm();
+      },
+    });
+  };
+
   // ── Submit ────────────────────────────────────────────────────────────────
   const submitPatch = async (scope: 'this' | 'future' | 'all') => {
     if (!clinicId || !appointmentId) return;
@@ -1691,18 +1743,26 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setSaving(true);
     setSaveError(null);
     try {
-      const scopedPayload = { ...payload };
+      const scopedPayload = {
+        ...payload,
+        allow_schedule_overlap: confirmedOverlapRef.current ? true : payload.allow_schedule_overlap,
+      };
       if (scope !== 'this') {
         delete scopedPayload.extra_blocks;
       }
       const result = await hubAgendaApi.patch(appointmentId, scopedPayload, { scope });
       pendingPatchPayloadRef.current = null;
+      confirmedOverlapRef.current = false;
       setSeriesScopePickerOpen(false);
       resetForm();
       onClose();
       onUpdated?.(result.appointment);
     } catch (e: unknown) {
       const msg = (e as { message?: string })?.message ?? 'Erro ao salvar agendamento';
+      if (!confirmedOverlapRef.current && isScheduleConflictMessage(msg)) {
+        askOverlapConfirm(undefined, msg, () => void submitPatch(scope));
+        return;
+      }
       setSaveError(msg);
     } finally {
       setSaving(false);
@@ -1841,6 +1901,93 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
     }
 
+    if (!isWalkIn && !confirmedOverlapRef.current && existingAppointments.length > 0) {
+      const windows: LocalScheduleWindow[] = [];
+      if (isMultiPetSelection) {
+        for (const cfg of petVisitConfigs) {
+          const t = petVisitTimings.get(cfg.petId);
+          if (!t) continue;
+          const sid = syncSameStaffForAll ? staffId : cfg.hubStaffMemberId || staffId;
+          windows.push(windowFromHm(dateYmd, t.startsHm, t.endsHm, sid, resourceLabel));
+          for (const block of cfg.extraBlocks) {
+            windows.push(
+              windowFromHm(
+                dateYmd,
+                block.starts_hm,
+                block.ends_hm,
+                block.hub_staff_member_id || sid,
+                block.resource_label || resourceLabel,
+              ),
+            );
+          }
+        }
+      } else {
+        windows.push(windowFromHm(dateYmd, startsHm, endsHm, staffId, resourceLabel));
+        for (const block of extraBlocks) {
+          windows.push(
+            windowFromHm(
+              dateYmd,
+              block.starts_hm,
+              block.ends_hm,
+              block.hub_staff_member_id || staffId,
+              block.resource_label || resourceLabel,
+            ),
+          );
+        }
+        if (withPickup && !isPrimaryLevaTraz) {
+          if (pickupMode !== 'delivery_only') {
+            windows.push(
+              windowFromHm(
+                dateYmd,
+                pickupBefore.starts_hm,
+                pickupBefore.ends_hm,
+                pickupBefore.hub_staff_member_id,
+                pickupBefore.resource_label,
+              ),
+            );
+          }
+          if (pickupMode !== 'pickup_only') {
+            windows.push(
+              windowFromHm(
+                dateYmd,
+                pickupAfter.starts_hm,
+                pickupAfter.ends_hm,
+                pickupAfter.hub_staff_member_id,
+                pickupAfter.resource_label,
+              ),
+            );
+          }
+        } else if (isPrimaryLevaTraz && pickupMode === 'round_trip') {
+          windows.push(
+            windowFromHm(
+              dateYmd,
+              pickupAfter.starts_hm,
+              pickupAfter.ends_hm,
+              pickupAfter.hub_staff_member_id || staffId,
+              pickupAfter.resource_label,
+            ),
+          );
+        }
+      }
+      const exclude = new Set<string>();
+      if (appointmentId) exclude.add(appointmentId);
+      for (const a of existingAppointments) {
+        if (appointmentId && a.parent_appointment_id === appointmentId) exclude.add(a.id);
+      }
+      for (const block of extraBlocks) {
+        if (block.appointment_id) exclude.add(block.appointment_id);
+      }
+      const found = findLocalScheduleConflict(
+        windows,
+        existingAppointments.map(agendaAppointmentToConflictSlot),
+        exclude,
+      );
+      if (found) {
+        askOverlapConfirm(found.label, found.reason, () => void handleSaveRef.current());
+        return;
+      }
+    }
+
     setSaving(true);
     setSaveError(null);
     setConflicts([]);
@@ -1878,6 +2025,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             pricing_variant: s.pricing_variant ?? undefined,
           })),
           extra_blocks: extraBlocksPayload,
+          allow_schedule_overlap: confirmedOverlapRef.current || undefined,
         };
         pendingPatchPayloadRef.current = patchPayload;
         if (seriesId) {
@@ -1922,6 +2070,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           persist_special_price: s.persist_special_price === true ? true : undefined,
           persist_special_scope: s.persist_special_price ? s.persist_special_scope ?? 'pet' : undefined,
         })),
+        allow_schedule_overlap: confirmedOverlapRef.current || undefined,
       };
 
       if (isWalkIn) {
@@ -2069,6 +2218,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           shared: { ...payload, pet_id: petVisitConfigs[0]?.petId ?? null },
           pets,
         });
+        confirmedOverlapRef.current = false;
         resetForm();
         onClose();
         onCreated({
@@ -2085,18 +2235,25 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         setConflicts(result.conflicts);
       }
 
+      confirmedOverlapRef.current = false;
       resetForm();
       onClose();
       onCreated(result);
     } catch (e: unknown) {
       const msg = (e as { message?: string })?.message ?? 'Erro ao criar agendamento';
+      if (!confirmedOverlapRef.current && isScheduleConflictMessage(msg)) {
+        askOverlapConfirm(undefined, msg, () => void handleSaveRef.current());
+        return;
+      }
       setSaveError(msg);
     } finally {
       setSaving(false);
     }
   };
+  handleSaveRef.current = handleSave;
 
   const resetForm = () => {
+    confirmedOverlapRef.current = false;
     setServices([]);
     setGuardianId('');
     setPetId('');

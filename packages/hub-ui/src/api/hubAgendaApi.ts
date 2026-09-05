@@ -231,7 +231,7 @@ export type CreateHubAppointmentPayload = {
   intake_hub_case_id?: string | null;
   intake_create_new_case?: boolean;
   intake_new_case_title?: string | null;
-  /** Permite sobrepor outro slot (somente kinds walk-in). */
+  /** Permite sobrepor outro slot após confirmação explícita do usuário. */
   allow_schedule_overlap?: boolean;
   visit_group_id?: string | null;
   care_location_kind?: 'own_unit' | 'partner_clinic';
@@ -287,6 +287,8 @@ export type PatchHubAppointmentPayload = {
   intake_create_new_case?: boolean;
   intake_new_case_title?: string | null;
   extra_blocks?: CreateExtraBlock[];
+  /** Permite sobrepor outro slot após confirmação explícita do usuário. */
+  allow_schedule_overlap?: boolean;
 };
 
 function listAppointmentsUrl(p: ListHubAppointmentsParams): string {

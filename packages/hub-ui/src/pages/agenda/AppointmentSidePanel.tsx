@@ -16,6 +16,15 @@ import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
 import { useAlert } from '../../components/AlertProvider';
+import {
+  SCHEDULE_OVERLAP_CANCEL_TEXT,
+  SCHEDULE_OVERLAP_CONFIRM_TEXT,
+  SCHEDULE_OVERLAP_CONFIRM_TITLE,
+  agendaAppointmentToConflictSlot,
+  buildScheduleOverlapConfirmMessage,
+  findLocalScheduleConflict,
+  isScheduleConflictMessage,
+} from './scheduleConflict';
 import { hubAgendaApi, type HubAppointment, type HubSeriesEndingSoon } from '../../api/hubAgendaApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
@@ -72,6 +81,7 @@ export type AppointmentSidePanelProps = {
   serviceTypes: HubServiceType[];
   onUpdated: (appointment: HubAppointment) => void;
   extraBlockChildren?: AgendaAppointment[];
+  existingAppointments?: AgendaAppointment[];
   seriesEndingInfo?: HubSeriesEndingSoon | null;
   onRenewSeries?: () => void;
 };
@@ -97,10 +107,11 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
   serviceTypes,
   onUpdated,
   extraBlockChildren = [],
+  existingAppointments = [],
   seriesEndingInfo = null,
   onRenewSeries,
 }) => {
-  const { showError } = useAlert();
+  const { showError, showAlert } = useAlert();
   const clinicId = getStoredClinicId();
   const [staffSaving, setStaffSaving] = useState(false);
   const [notesSaving, setNotesSaving] = useState(false);
@@ -200,8 +211,34 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
     [appt.status, canWrite, handlers, operationalModule, canOpenComanda, existingComandaId, onViewComanda],
   );
 
-  const patchStaff = async (staffId: string, scope: 'this' | 'future' | 'all') => {
+  const patchStaff = async (staffId: string, scope: 'this' | 'future' | 'all', allowOverlap = false) => {
     if (!clinicId || !canWrite) return;
+    if (!allowOverlap && staffId) {
+      const found = findLocalScheduleConflict(
+        [
+          {
+            staffId,
+            resourceLabel: appt.resourceLabel,
+            startMs: appt.start.getTime(),
+            endMs: appt.end.getTime(),
+          },
+        ],
+        existingAppointments.map(agendaAppointmentToConflictSlot),
+        [appt.id],
+      );
+      if (found) {
+        showAlert({
+          type: 'warning',
+          title: SCHEDULE_OVERLAP_CONFIRM_TITLE,
+          message: buildScheduleOverlapConfirmMessage({ detail: found.label, reason: found.reason }),
+          showCancel: true,
+          confirmText: SCHEDULE_OVERLAP_CONFIRM_TEXT,
+          cancelText: SCHEDULE_OVERLAP_CANCEL_TEXT,
+          onConfirm: () => void patchStaff(staffId, scope, true),
+        });
+        return;
+      }
+    }
     setStaffSaving(true);
     try {
       const { appointment } = await hubAgendaApi.patch(
@@ -209,12 +246,26 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
         {
           clinic_id: clinicId,
           hub_staff_member_id: staffId || null,
+          allow_schedule_overlap: allowOverlap || undefined,
         },
         { scope },
       );
       onUpdated(appointment);
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao atualizar profissional');
+      const msg = (e as Error)?.message || 'Erro ao atualizar profissional';
+      if (!allowOverlap && isScheduleConflictMessage(msg)) {
+        showAlert({
+          type: 'warning',
+          title: SCHEDULE_OVERLAP_CONFIRM_TITLE,
+          message: buildScheduleOverlapConfirmMessage({ reason: msg }),
+          showCancel: true,
+          confirmText: SCHEDULE_OVERLAP_CONFIRM_TEXT,
+          cancelText: SCHEDULE_OVERLAP_CANCEL_TEXT,
+          onConfirm: () => void patchStaff(staffId, scope, true),
+        });
+        return;
+      }
+      showError(msg);
     } finally {
       setStaffSaving(false);
       setSeriesStaffPickerOpen(false);
@@ -266,6 +317,7 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
         onUpdated={onUpdated}
         staffOptions={staffOptions}
         serviceTypes={serviceTypes}
+        existingAppointments={existingAppointments}
       />
     );
   }
@@ -634,8 +686,8 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
             <div className="nam-section hub-agenda-appt-panel__alert">
               <h3 className="nam-section-title">Conflito de horário</h3>
               <p>
-                Este horário sobrepõe outro atendimento no mesmo profissional ou recurso. Ajuste horário ou
-                recurso antes de confirmar.
+      Este horário sobrepõe outro atendimento no mesmo profissional ou recurso. Ajuste o horário
+      ou confirme o conflito ao salvar.
               </p>
             </div>
           ) : null}

@@ -69,6 +69,15 @@ import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
 import { hubGroomingApi } from '../../api/hubGroomingApi';
 import { hubBoardingApi } from '../../api/hubBoardingApi';
 import { isWalkInAppointmentKind } from './walkInUtils';
+import {
+  SCHEDULE_OVERLAP_CANCEL_TEXT,
+  SCHEDULE_OVERLAP_CONFIRM_TEXT,
+  SCHEDULE_OVERLAP_CONFIRM_TITLE,
+  agendaAppointmentToConflictSlot,
+  buildScheduleOverlapConfirmMessage,
+  findLocalScheduleConflict,
+  isScheduleConflictMessage,
+} from './scheduleConflict';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 import { hubComandaApi as hubComandaApiAgenda } from '../../api/hubComandaApi';
 import StartEncounterModal from '../clinica/StartEncounterModal';
@@ -1345,6 +1354,60 @@ const HubAgendaPage: React.FC = () => {
     );
   }, [canWrite, showConfirm, selected, clinicId]);
 
+  const patchMoveWithOverlapConfirm = async (
+    id: string,
+    payload: Parameters<typeof hubAgendaApi.patch>[1],
+    allowOverlap = false,
+  ) => {
+    if (!allowOverlap) {
+      const ap = allAppointments.find((x) => x.id === id);
+      if (ap) {
+        const startMs = payload.starts_at ? new Date(payload.starts_at).getTime() : ap.start.getTime();
+        const endMs = payload.ends_at ? new Date(payload.ends_at).getTime() : ap.end.getTime();
+        const staffId =
+          payload.hub_staff_member_id !== undefined ? payload.hub_staff_member_id : ap.professionalId;
+        const resourceLabel =
+          payload.resource_label !== undefined ? payload.resource_label : ap.resourceLabel;
+        const found = findLocalScheduleConflict(
+          [{ staffId, resourceLabel, startMs, endMs }],
+          allAppointments.map(agendaAppointmentToConflictSlot),
+          [id],
+        );
+        if (found) {
+          showAlert({
+            type: 'warning',
+            title: SCHEDULE_OVERLAP_CONFIRM_TITLE,
+            message: buildScheduleOverlapConfirmMessage({ detail: found.label, reason: found.reason }),
+            showCancel: true,
+            confirmText: SCHEDULE_OVERLAP_CONFIRM_TEXT,
+            cancelText: SCHEDULE_OVERLAP_CANCEL_TEXT,
+            onConfirm: () => void patchMoveWithOverlapConfirm(id, payload, true),
+          });
+          return;
+        }
+      }
+    }
+    try {
+      await hubAgendaApi.patch(id, { ...payload, allow_schedule_overlap: allowOverlap || undefined });
+      bumpReload();
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message || 'Não foi possível mover';
+      if (!allowOverlap && isScheduleConflictMessage(msg)) {
+        showAlert({
+          type: 'warning',
+          title: SCHEDULE_OVERLAP_CONFIRM_TITLE,
+          message: buildScheduleOverlapConfirmMessage({ reason: msg }),
+          showCancel: true,
+          confirmText: SCHEDULE_OVERLAP_CONFIRM_TEXT,
+          cancelText: SCHEDULE_OVERLAP_CANCEL_TEXT,
+          onConfirm: () => void patchMoveWithOverlapConfirm(id, payload, true),
+        });
+        return;
+      }
+      showError(msg);
+    }
+  };
+
   const handleDropOnLane = async (e: React.DragEvent, colKey: string) => {
     e.preventDefault();
     if (!canWrite || !clinicId) return;
@@ -1360,46 +1423,22 @@ const HubAgendaPage: React.FC = () => {
     const newStart = new Date(dayStart.getTime() + snapped * 60_000);
     const durMs = ap.end.getTime() - ap.start.getTime();
     const newEnd = new Date(newStart.getTime() + durMs);
+    const base = {
+      clinic_id: clinicId,
+      starts_at: newStart.toISOString(),
+      ends_at: newEnd.toISOString(),
+    };
     if (groupMode === 'professional') {
       const staffId = colKey === '__na__' ? null : colKey;
-      try {
-        await hubAgendaApi.patch(id, {
-          clinic_id: clinicId,
-          starts_at: newStart.toISOString(),
-          ends_at: newEnd.toISOString(),
-          hub_staff_member_id: staffId,
-        });
-        bumpReload();
-      } catch (err: unknown) {
-        showError((err as Error)?.message || 'Não foi possível mover');
-      }
+      await patchMoveWithOverlapConfirm(id, { ...base, hub_staff_member_id: staffId });
       return;
     }
     if (groupMode === 'resource') {
       const label = colKey === '__none__' ? null : colKey;
-      try {
-        await hubAgendaApi.patch(id, {
-          clinic_id: clinicId,
-          starts_at: newStart.toISOString(),
-          ends_at: newEnd.toISOString(),
-          resource_label: label,
-        });
-        bumpReload();
-      } catch (err: unknown) {
-        showError((err as Error)?.message || 'Não foi possível mover');
-      }
+      await patchMoveWithOverlapConfirm(id, { ...base, resource_label: label });
       return;
     }
-    try {
-      await hubAgendaApi.patch(id, {
-        clinic_id: clinicId,
-        starts_at: newStart.toISOString(),
-        ends_at: newEnd.toISOString(),
-      });
-      bumpReload();
-    } catch (err: unknown) {
-      showError((err as Error)?.message || 'Não foi possível mover');
-    }
+    await patchMoveWithOverlapConfirm(id, base);
   };
 
   const navLabel = useMemo(() => {
@@ -2118,6 +2157,7 @@ const HubAgendaPage: React.FC = () => {
             serviceTypes={fullSvcTypes}
             onUpdated={handleAppointmentUpdated}
             extraBlockChildren={selectedExtraBlockChildren}
+            existingAppointments={allAppointments}
             seriesEndingInfo={
               selected.series_id ? seriesEndingMap.get(selected.series_id) ?? null : null
             }
@@ -2144,6 +2184,7 @@ const HubAgendaPage: React.FC = () => {
         layoutVariant={createModalLayout}
         staffOptions={fullStaff}
         serviceTypes={fullSvcTypes}
+        existingAppointments={allAppointments}
       />
 
       {clinicId && checkoutOpen && checkoutAppointmentId && checkoutUnitId ? (
