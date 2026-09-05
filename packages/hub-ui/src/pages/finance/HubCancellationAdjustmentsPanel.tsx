@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { ComandaCancellationResolveDrawer } from './ComandaCancellationResolveDrawer';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 
@@ -22,7 +23,9 @@ export const HubCancellationAdjustmentsPanel: React.FC<HubCancellationAdjustment
   const { hasPermission } = usePermissions();
   const { showError } = useAlert();
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
+    clinicId && unitId ? `${clinicId}:${unitId}` : null,
+  );
   const [queue, setQueue] = useState<Array<Record<string, unknown>>>([]);
   const [resolveComanda, setResolveComanda] = useState<Record<string, unknown> | null>(null);
 
@@ -35,10 +38,10 @@ export const HubCancellationAdjustmentsPanel: React.FC<HubCancellationAdjustment
     if (!clinicId || !unitId) {
       setQueue([]);
       onCountChangeRef.current?.(0);
-      setLoading(false);
+      finish();
       return;
     }
-    setLoading(true);
+    begin();
     try {
       const [countRes, queueRes] = await Promise.all([
         hubComandaApi.getCancellationPendingCount(clinicId, unitId).catch(() => ({ count: 0 })),
@@ -47,14 +50,15 @@ export const HubCancellationAdjustmentsPanel: React.FC<HubCancellationAdjustment
       const items = queueRes.comandas ?? [];
       setQueue(items);
       onCountChangeRef.current?.(countRes.count ?? items.length);
+      succeed();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao carregar cancelamentos pendentes');
       setQueue([]);
       onCountChangeRef.current?.(0);
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, unitId, showError]);
+  }, [clinicId, unitId, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -72,7 +76,8 @@ export const HubCancellationAdjustmentsPanel: React.FC<HubCancellationAdjustment
           Operação cancelada na agenda ou no atendimento, com pagamento já registrado na comanda. Resolva aqui
           (reembolso, crédito ou manter cobrança).
         </p>
-        {loading ? (
+        <HubRefreshingBanner show={refreshing} label="Atualizando ajustes…" />
+        {loading && queue.length === 0 ? (
           <HubLoading variant="block" label="Carregando ajustes…" />
         ) : queue.length === 0 ? (
           <p className="hub-clientes__muted">Nenhuma pendência de cancelamento nesta unidade.</p>

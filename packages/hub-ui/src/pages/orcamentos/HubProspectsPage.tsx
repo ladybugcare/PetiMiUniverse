@@ -8,7 +8,8 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { hubProspectsApi, type HubProspect } from '../../api/hubProspectsApi';
 import { maskTaxIdForList } from '../../utils/maskTaxId';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
@@ -35,7 +36,7 @@ const HubProspectsPage: React.FC = () => {
   const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.prospects.write');
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [rows, setRows] = useState<HubProspect[]>([]);
   const [q, setQ] = useState('');
   const debouncedQ = useDebounced(q, 350);
@@ -46,16 +47,17 @@ const HubProspectsPage: React.FC = () => {
 
   const load = useCallback(async () => {
     if (!clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const res = await hubProspectsApi.list(clinicId, debouncedQ || undefined);
       setRows(res.prospects || []);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, debouncedQ, showError]);
+  }, [clinicId, debouncedQ, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -249,7 +251,8 @@ const HubProspectsPage: React.FC = () => {
         </form>
       ) : null}
 
-      {loading ? (
+      <HubRefreshingBanner show={refreshing} label="Atualizando lista…" />
+      {loading && rows.length === 0 ? (
         <HubLoading variant="block" label="Carregando lista…" />
       ) : (
         <div className="hub-servicos__table-wrap">

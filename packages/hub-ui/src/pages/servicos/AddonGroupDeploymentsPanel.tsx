@@ -6,7 +6,8 @@ import {
   type AddonDeploymentItem,
 } from '../../api/hubServiceAddonsApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
 
@@ -47,13 +48,13 @@ function partialLabel(g: GroupDraft): string | null {
 
 const AddonGroupDeploymentsPanel: React.FC<Props> = ({ addonId, clinicId, canWrite }) => {
   const { showError, showSuccess } = useAlert();
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(addonId);
   const [saving, setSaving] = useState(false);
   const [groups, setGroups] = useState<GroupDraft[]>([]);
   const [baseline, setBaseline] = useState<Map<string, GroupBaseline>>(new Map());
 
   const load = useCallback(async () => {
-    setLoading(true);
+    begin();
     try {
       const res = await hubServiceAddonsApi.getAddonDeployments(addonId, clinicId);
       const rows = (res.groups ?? []).map((g) => ({
@@ -73,12 +74,13 @@ const AddonGroupDeploymentsPanel: React.FC<Props> = ({ addonId, clinicId, canWri
           ])
         )
       );
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar grupos');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [addonId, clinicId, showError]);
+  }, [addonId, clinicId, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -130,7 +132,7 @@ const AddonGroupDeploymentsPanel: React.FC<Props> = ({ addonId, clinicId, canWri
     }
   };
 
-  if (loading) {
+  if (loading && groups.length === 0) {
     return <HubLoading variant="block" label="Carregando grupos de serviço…" className="hub-servicos__margin-info" />;
   }
 
@@ -147,7 +149,8 @@ const AddonGroupDeploymentsPanel: React.FC<Props> = ({ addonId, clinicId, canWri
   }
 
   return (
-    <div className="pet-wizard__field--full hub-servicos-config__addons-block">
+    <div className="pet-wizard__field--full hub-servicos-config__addons-block hub-loading-host">
+      <HubRefreshingBanner show={refreshing} label="Atualizando grupos…" />
       <h3 className="hub-servicos__form-section-title">Adicionais por grupo</h3>
       <p className="hub-servicos__margin-info" style={{ marginBottom: 12 }}>
         Marcar um grupo ativa este adicional no grupo e em todos os serviços principais já criados desse grupo.

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Package } from 'lucide-react';
 import type { HubExpiryAlertPolicy, HubInventoryItem, HubItemKind } from '../../api/hubInventoryApi';
 import { HubSidePanel } from '../../components/HubSidePanel';
@@ -7,6 +7,8 @@ import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { HubDateField } from '../../components/HubDateField';
 import { HubCancelButton } from '../../components/HubCancelButton';
+import HubEstoqueFilterChips from './HubEstoqueFilterChips';
+import { kindLabel, kindNewLabel } from './estoqueShared';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
 import '../servicos/servicos-page.css';
@@ -15,6 +17,7 @@ import './estoque.css';
 export const INVENTORY_FORM_ID = 'hub-estoque-item-form';
 
 export type InventoryFormState = {
+  item_kind: HubItemKind;
   name: string;
   ean: string;
   unit_label: string;
@@ -39,10 +42,41 @@ export type InventoryFormState = {
   initial_lot_code: string;
 };
 
-function kindLabel(k: HubItemKind): string {
-  if (k === 'medication') return 'Medicamento';
-  if (k === 'vaccine') return 'Vacina';
-  return 'Produto';
+const KIND_OPTIONS: { id: HubItemKind; label: string }[] = [
+  { id: 'product', label: 'Produto' },
+  { id: 'medication', label: 'Medicamento' },
+  { id: 'vaccine', label: 'Vacina' },
+];
+
+const UNIT_BASE: HubComboboxOption[] = [
+  { value: 'Unidade', label: 'Unidade' },
+  { value: 'Caixa', label: 'Caixa' },
+  { value: 'Frasco', label: 'Frasco' },
+  { value: 'Ampola', label: 'Ampola' },
+  { value: 'Dose', label: 'Dose' },
+  { value: 'ml', label: 'ml' },
+  { value: 'Litro', label: 'Litro' },
+  { value: 'g', label: 'g' },
+  { value: 'kg', label: 'kg' },
+];
+
+const PURPOSE_BASE: HubComboboxOption[] = [
+  { value: 'SALE', label: 'Venda' },
+  { value: 'INTERNAL', label: 'Uso interno' },
+  { value: 'CLINICAL', label: 'Uso clínico' },
+];
+
+const ALERT_OPTIONS: HubComboboxOption[] = [
+  { value: 'none', label: 'Não avisar' },
+  { value: 'd30', label: '30 dias antes' },
+  { value: 'd60', label: '60 dias antes' },
+  { value: 'd90', label: '90 dias antes' },
+];
+
+function withCurrentOption(options: HubComboboxOption[], current: string): HubComboboxOption[] {
+  const value = current.trim();
+  if (!value || options.some((o) => o.value === value)) return options;
+  return [...options, { value, label: value }];
 }
 
 export type HubEstoqueItemDrawerProps = {
@@ -50,6 +84,7 @@ export type HubEstoqueItemDrawerProps = {
   onClose: () => void;
   mode: 'create' | 'edit';
   itemKind: HubItemKind;
+  allowKindChange?: boolean;
   form: InventoryFormState;
   setForm: React.Dispatch<React.SetStateAction<InventoryFormState>>;
   saving: boolean;
@@ -70,6 +105,7 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
   onClose,
   mode,
   itemKind,
+  allowKindChange = false,
   form,
   setForm,
   saving,
@@ -83,8 +119,15 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
   onSubmit,
   onRegisterMovement,
 }) => {
-  const title = mode === 'create' ? `Novo ${kindLabel(itemKind).toLowerCase()}` : 'Editar item';
+  const activeKind = form.item_kind || itemKind;
+  const title = mode === 'create' ? kindNewLabel(activeKind) : 'Editar item';
   const subtitle = mode === 'edit' && editingItem ? editingItem.name : undefined;
+
+  const unitOptions = useMemo(() => withCurrentOption(UNIT_BASE, form.unit_label), [form.unit_label]);
+  const purposeOptions = useMemo(
+    () => withCurrentOption(PURPOSE_BASE, form.sale_purpose),
+    [form.sale_purpose],
+  );
 
   return (
     <HubSidePanel
@@ -119,290 +162,376 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
         </div>
       }
     >
-      <div className="hub-clientes-drawer__content">
+      <div className="hub-clientes-drawer__content hub-estoque-drawer">
         <form id={INVENTORY_FORM_ID} onSubmit={onSubmit}>
-          <h3 className="hub-servicos__form-section-title">Informações gerais</h3>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-ean">
-              EAN / código de barras (opcional)
-            </label>
-            <input
-              id="inv-ean"
-              className="hub-clientes__input"
-              inputMode="numeric"
-              autoComplete="off"
-              value={form.ean}
-              onChange={(e) => setForm((f) => ({ ...f, ean: e.target.value }))}
-              placeholder="8 ou 13 dígitos"
-            />
-            <p className="hub-estoque__hint-ean">Leitor USB em modo teclado: coloque o foco aqui e escaneie.</p>
-          </div>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-name">
-              Nome do produto *
-            </label>
-            <input
-              id="inv-name"
-              className="hub-clientes__input"
-              required
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </div>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-unit">
-              Unidade de medida
-            </label>
-            <input
-              id="inv-unit"
-              className="hub-clientes__input"
-              value={form.unit_label}
-              onChange={(e) => setForm((f) => ({ ...f, unit_label: e.target.value }))}
-              placeholder="Ex.: Unidade, Caixa, Litro"
-            />
-          </div>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-manufacturer">
-              Fabricante
-            </label>
-            <HubSearchableCombobox
-              id="inv-manufacturer"
-              className="hub-combobox--clientes"
-              options={manufacturerOptions}
-              value={form.manufacturer_id}
-              onChange={(v) => void onManufacturerChange(v)}
-              placeholder="Selecionar ou buscar fabricante"
-              searchPlaceholder="Buscar fabricante…"
-              allowCreate={canWrite}
-              createEntityLabel="fabricante"
-              emptyResultsLabel="Nenhum fabricante encontrado"
-              ariaLabel="Fabricante"
-            />
-          </div>
-          <div className="hub-clientes__field">
-            <HubCheckbox
-              checked={form.allow_fractional}
-              onChange={(allow_fractional) => setForm((f) => ({ ...f, allow_fractional }))}
-            >
-              Permite quantidades fracionadas
-            </HubCheckbox>
-          </div>
-
-          <h3 className="hub-servicos__form-section-title">Identificação e categorização</h3>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-sku">
-              SKU da loja (opcional)
-            </label>
-            <input
-              id="inv-sku"
-              className="hub-clientes__input"
-              value={form.store_sku}
-              onChange={(e) => setForm((f) => ({ ...f, store_sku: e.target.value }))}
-              placeholder="Ex.: PROD-001"
-            />
-          </div>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-purpose">
-              Finalidade
-            </label>
-            <input
-              id="inv-purpose"
-              className="hub-clientes__input"
-              value={form.sale_purpose}
-              onChange={(e) => setForm((f) => ({ ...f, sale_purpose: e.target.value }))}
-            />
-          </div>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-group">
-              Grupo de produto
-            </label>
-            <HubSearchableCombobox
-              id="inv-group"
-              className="hub-combobox--clientes"
-              options={productGroupOptions}
-              value={form.product_group}
-              onChange={(v) => setForm((f) => ({ ...f, product_group: v }))}
-              placeholder="Selecionar ou criar grupo"
-              searchPlaceholder="Buscar ou escrever grupo…"
-              allowCreate={canWrite}
-              createEntityLabel="grupo de produto"
-              emptyResultsLabel="Nenhum grupo encontrado"
-              ariaLabel="Grupo de produto"
-            />
-          </div>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-supplier">
-              Fornecedor
-            </label>
-            <HubSearchableCombobox
-              id="inv-supplier"
-              className="hub-combobox--clientes"
-              options={supplierOptions}
-              value={form.default_supplier_id}
-              onChange={(v) => void onSupplierChange(v)}
-              placeholder="Selecionar ou buscar fornecedor"
-              searchPlaceholder="Buscar fornecedor…"
-              allowCreate={canWrite}
-              createEntityLabel="fornecedor"
-              emptyResultsLabel="Nenhum fornecedor encontrado"
-              ariaLabel="Fornecedor"
-            />
-          </div>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-desc">
-              Descrição
-            </label>
-            <textarea
-              id="inv-desc"
-              className="hub-clientes__textarea"
-              rows={3}
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-            />
-          </div>
-
-          <h3 className="hub-servicos__form-section-title">Preços (R$)</h3>
-          <div className="hub-servicos__price-grid">
-            <div>
-              <label className="hub-clientes__label">Valor de custo *</label>
-              <div className="hub-servicos__money-field">
-                <span className="hub-servicos__money-prefix">R$</span>
+          <section className="hub-estoque-drawer__section">
+            <h3 className="hub-estoque-drawer__section-title">Informações gerais</h3>
+            <div className="hub-clientes__field">
+              <span className="hub-clientes__label" id="inv-kind-label">
+                Tipo *
+              </span>
+              {allowKindChange ? (
+                <HubEstoqueFilterChips
+                  ariaLabel="Tipo do item"
+                  value={form.item_kind}
+                  options={KIND_OPTIONS}
+                  onChange={(id) => setForm((f) => ({ ...f, item_kind: id }))}
+                />
+              ) : (
+                <p className="hub-estoque__kind-readonly">
+                  <span className={`hub-estoque__kind hub-estoque__kind--${activeKind}`}>{kindLabel(activeKind)}</span>
+                </p>
+              )}
+            </div>
+            <div className="hub-clientes__field">
+              <label className="hub-clientes__label" htmlFor="inv-name">
+                Nome *
+              </label>
+              <input
+                id="inv-name"
+                className="hub-clientes__input"
+                required
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Ex.: Antipulgas, Ração premium…"
+              />
+            </div>
+            <div className="hub-estoque-drawer__row">
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-ean">
+                  EAN / código de barras
+                </label>
                 <input
+                  id="inv-ean"
                   className="hub-clientes__input"
-                  required
-                  value={form.cost_amount}
-                  onChange={(e) => setForm((f) => ({ ...f, cost_amount: e.target.value }))}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={form.ean}
+                  onChange={(e) => setForm((f) => ({ ...f, ean: e.target.value }))}
+                  placeholder="8 ou 13 dígitos"
+                />
+                <p className="hub-estoque__hint-ean">Leitor USB: foque aqui e escaneie.</p>
+              </div>
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-sku">
+                  SKU da loja
+                </label>
+                <input
+                  id="inv-sku"
+                  className="hub-clientes__input"
+                  value={form.store_sku}
+                  onChange={(e) => setForm((f) => ({ ...f, store_sku: e.target.value }))}
+                  placeholder="Ex.: PROD-001"
                 />
               </div>
             </div>
-            <div>
-              <label className="hub-clientes__label">Valor de venda *</label>
-              <div className="hub-servicos__money-field">
-                <span className="hub-servicos__money-prefix">R$</span>
-                <input
-                  className="hub-clientes__input"
-                  required
-                  value={form.sale_amount}
-                  onChange={(e) => setForm((f) => ({ ...f, sale_amount: e.target.value }))}
+            <div className="hub-estoque-drawer__row">
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-unit">
+                  Unidade de medida
+                </label>
+                <HubSearchableCombobox
+                  id="inv-unit"
+                  className="hub-combobox--clientes"
+                  options={unitOptions}
+                  value={form.unit_label}
+                  onChange={(v) => setForm((f) => ({ ...f, unit_label: v }))}
+                  placeholder="Selecionar unidade"
+                  searchPlaceholder="Buscar ou criar unidade…"
+                  allowCreate={canWrite}
+                  createEntityLabel="unidade"
+                  createEntityGender="f"
+                  emptyResultsLabel="Nenhuma unidade encontrada"
+                  ariaLabel="Unidade de medida"
+                />
+              </div>
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-purpose">
+                  Finalidade
+                </label>
+                <HubSearchableCombobox
+                  id="inv-purpose"
+                  className="hub-combobox--clientes"
+                  options={purposeOptions}
+                  value={form.sale_purpose}
+                  onChange={(v) => setForm((f) => ({ ...f, sale_purpose: v }))}
+                  placeholder="Selecionar finalidade"
+                  searchPlaceholder="Buscar ou criar finalidade…"
+                  allowCreate={canWrite}
+                  createEntityLabel="finalidade"
+                  createEntityGender="f"
+                  emptyResultsLabel="Nenhuma finalidade encontrada"
+                  ariaLabel="Finalidade"
                 />
               </div>
             </div>
-          </div>
-          <div className="hub-servicos__price-grid">
-            <div>
-              <label className="hub-clientes__label">Desconto fornecedor (%)</label>
-              <input
-                className="hub-clientes__input"
-                value={form.supplier_discount_pct}
-                onChange={(e) => setForm((f) => ({ ...f, supplier_discount_pct: e.target.value }))}
-              />
+            <div className="hub-clientes__field">
+              <HubCheckbox
+                checked={form.allow_fractional}
+                onChange={(allow_fractional) => setForm((f) => ({ ...f, allow_fractional }))}
+              >
+                Permite quantidades fracionadas
+              </HubCheckbox>
             </div>
-            <div>
-              <label className="hub-clientes__label">Desconto máximo venda (%)</label>
-              <input
-                className="hub-clientes__input"
-                value={form.max_sale_discount_pct}
-                onChange={(e) => setForm((f) => ({ ...f, max_sale_discount_pct: e.target.value }))}
-              />
-            </div>
-          </div>
-          <div className="hub-clientes__field">
-            <HubCheckbox
-              checked={form.allow_price_override_on_sale}
-              onChange={(allow_price_override_on_sale) =>
-                setForm((f) => ({ ...f, allow_price_override_on_sale }))
-              }
-            >
-              Permite alterar o preço durante a venda
-            </HubCheckbox>
-          </div>
-          <div className="hub-clientes__field">
-            <HubCheckbox
-              checked={form.generates_staff_commission}
-              onChange={(generates_staff_commission) =>
-                setForm((f) => ({ ...f, generates_staff_commission }))
-              }
-            >
-              Gera comissão para funcionários
-            </HubCheckbox>
-          </div>
+          </section>
 
-          <h3 className="hub-servicos__form-section-title">Estoque</h3>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-min">
-              Estoque mínimo
-            </label>
-            <input
-              id="inv-min"
-              className="hub-clientes__input"
-              value={form.min_stock_qty}
-              onChange={(e) => setForm((f) => ({ ...f, min_stock_qty: e.target.value }))}
-            />
-          </div>
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="inv-alert">
-              Alerta de vencimento
-            </label>
-            <select
-              id="inv-alert"
-              className="hub-clientes__select-input"
-              value={form.expiry_alert_policy}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, expiry_alert_policy: e.target.value as HubExpiryAlertPolicy }))
-              }
-            >
-              <option value="none">Não avisar</option>
-              <option value="d30">30 dias antes</option>
-              <option value="d60">60 dias antes</option>
-              <option value="d90">90 dias antes</option>
-            </select>
-          </div>
+          <section className="hub-estoque-drawer__section">
+            <h3 className="hub-estoque-drawer__section-title">Categorização</h3>
+            <div className="hub-clientes__field">
+              <label className="hub-clientes__label" htmlFor="inv-group">
+                Grupo de produto
+              </label>
+              <HubSearchableCombobox
+                id="inv-group"
+                className="hub-combobox--clientes"
+                options={productGroupOptions}
+                value={form.product_group}
+                onChange={(v) => setForm((f) => ({ ...f, product_group: v }))}
+                placeholder="Selecionar ou criar grupo"
+                searchPlaceholder="Buscar ou escrever grupo…"
+                allowCreate={canWrite}
+                createEntityLabel="grupo de produto"
+                createEntityGender="m"
+                emptyResultsLabel="Nenhum grupo encontrado"
+                ariaLabel="Grupo de produto"
+              />
+              <p className="hub-estoque__hint-ean">Sugestões comuns do tipo; você pode criar outro grupo.</p>
+            </div>
+            <div className="hub-estoque-drawer__row">
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-manufacturer">
+                  Fabricante
+                </label>
+                <HubSearchableCombobox
+                  id="inv-manufacturer"
+                  className="hub-combobox--clientes"
+                  options={manufacturerOptions}
+                  value={form.manufacturer_id}
+                  onChange={(v) => void onManufacturerChange(v)}
+                  placeholder="Selecionar ou buscar"
+                  searchPlaceholder="Buscar fabricante…"
+                  allowCreate={canWrite}
+                  createEntityLabel="fabricante"
+                  createEntityGender="m"
+                  emptyResultsLabel="Nenhum fabricante encontrado"
+                  ariaLabel="Fabricante"
+                />
+              </div>
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-supplier">
+                  Fornecedor
+                </label>
+                <HubSearchableCombobox
+                  id="inv-supplier"
+                  className="hub-combobox--clientes"
+                  options={supplierOptions}
+                  value={form.default_supplier_id}
+                  onChange={(v) => void onSupplierChange(v)}
+                  placeholder="Selecionar ou buscar"
+                  searchPlaceholder="Buscar fornecedor…"
+                  allowCreate={canWrite}
+                  createEntityLabel="fornecedor"
+                  createEntityGender="m"
+                  emptyResultsLabel="Nenhum fornecedor encontrado"
+                  ariaLabel="Fornecedor"
+                />
+              </div>
+            </div>
+            <div className="hub-clientes__field">
+              <label className="hub-clientes__label" htmlFor="inv-desc">
+                Descrição
+              </label>
+              <textarea
+                id="inv-desc"
+                className="hub-clientes__textarea"
+                rows={3}
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="Observações internas, apresentação, concentração…"
+              />
+            </div>
+          </section>
+
+          <section className="hub-estoque-drawer__section">
+            <h3 className="hub-estoque-drawer__section-title">Preços</h3>
+            <div className="hub-estoque-drawer__row">
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-cost">
+                  Valor de custo *
+                </label>
+                <div className="hub-estoque-drawer__affix">
+                  <span className="hub-estoque-drawer__affix-prefix">R$</span>
+                  <input
+                    id="inv-cost"
+                    className="hub-clientes__input"
+                    required
+                    value={form.cost_amount}
+                    onChange={(e) => setForm((f) => ({ ...f, cost_amount: e.target.value }))}
+                    placeholder="0,00"
+                  />
+                </div>
+              </div>
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-sale">
+                  Valor de venda *
+                </label>
+                <div className="hub-estoque-drawer__affix">
+                  <span className="hub-estoque-drawer__affix-prefix">R$</span>
+                  <input
+                    id="inv-sale"
+                    className="hub-clientes__input"
+                    required
+                    value={form.sale_amount}
+                    onChange={(e) => setForm((f) => ({ ...f, sale_amount: e.target.value }))}
+                    placeholder="0,00"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="hub-estoque-drawer__row">
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-sup-disc">
+                  Desconto fornecedor
+                </label>
+                <div className="hub-estoque-drawer__affix">
+                  <input
+                    id="inv-sup-disc"
+                    className="hub-clientes__input"
+                    value={form.supplier_discount_pct}
+                    onChange={(e) => setForm((f) => ({ ...f, supplier_discount_pct: e.target.value }))}
+                  />
+                  <span className="hub-estoque-drawer__affix-suffix">%</span>
+                </div>
+              </div>
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-max-disc">
+                  Desconto máximo na venda
+                </label>
+                <div className="hub-estoque-drawer__affix">
+                  <input
+                    id="inv-max-disc"
+                    className="hub-clientes__input"
+                    value={form.max_sale_discount_pct}
+                    onChange={(e) => setForm((f) => ({ ...f, max_sale_discount_pct: e.target.value }))}
+                  />
+                  <span className="hub-estoque-drawer__affix-suffix">%</span>
+                </div>
+              </div>
+            </div>
+            <div className="hub-estoque-drawer__checks">
+              <HubCheckbox
+                checked={form.allow_price_override_on_sale}
+                onChange={(allow_price_override_on_sale) =>
+                  setForm((f) => ({ ...f, allow_price_override_on_sale }))
+                }
+              >
+                Permite alterar o preço durante a venda
+              </HubCheckbox>
+              <HubCheckbox
+                checked={form.generates_staff_commission}
+                onChange={(generates_staff_commission) =>
+                  setForm((f) => ({ ...f, generates_staff_commission }))
+                }
+              >
+                Gera comissão para funcionários
+              </HubCheckbox>
+            </div>
+          </section>
+
+          <section className="hub-estoque-drawer__section">
+            <h3 className="hub-estoque-drawer__section-title">Estoque</h3>
+            <div className="hub-estoque-drawer__row">
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-min">
+                  Estoque mínimo
+                </label>
+                <input
+                  id="inv-min"
+                  className="hub-clientes__input"
+                  value={form.min_stock_qty}
+                  onChange={(e) => setForm((f) => ({ ...f, min_stock_qty: e.target.value }))}
+                />
+              </div>
+              <div className="hub-clientes__field">
+                <label className="hub-clientes__label" htmlFor="inv-alert">
+                  Alerta de vencimento
+                </label>
+                <HubSearchableCombobox
+                  id="inv-alert"
+                  className="hub-combobox--clientes"
+                  options={ALERT_OPTIONS}
+                  value={form.expiry_alert_policy}
+                  onChange={(v) =>
+                    setForm((f) => ({ ...f, expiry_alert_policy: (v || 'none') as HubExpiryAlertPolicy }))
+                  }
+                  placeholder="Selecionar alerta"
+                  searchPlaceholder="Buscar política…"
+                  clearable={false}
+                  ariaLabel="Alerta de vencimento"
+                />
+              </div>
+            </div>
+          </section>
 
           {mode === 'create' && (
-            <>
-              <h3 className="hub-servicos__form-section-title">Lote inicial (opcional)</h3>
-              <div className="hub-clientes__field">
-                <HubDateField
-                  id="inv-recv"
-                  label="Data de entrada *"
-                  valueIso={form.initial_received_at}
-                  onChangeIso={(iso) =>
-                    setForm((f) => ({ ...f, initial_received_at: iso || new Date().toISOString().slice(0, 10) }))
-                  }
-                  required
-                />
+            <section className="hub-estoque-drawer__section hub-estoque-drawer__section--lot">
+              <h3 className="hub-estoque-drawer__section-title">Lote inicial</h3>
+              <p className="hub-estoque-drawer__section-lead">
+                Opcional. Preencha a quantidade para já entrar com estoque.
+              </p>
+              <div className="hub-estoque-drawer__row">
+                <div className="hub-clientes__field">
+                  <label className="hub-clientes__label" htmlFor="inv-recv">
+                    Data de entrada
+                  </label>
+                  <HubDateField
+                    id="inv-recv"
+                    valueIso={form.initial_received_at}
+                    onChangeIso={(iso) =>
+                      setForm((f) => ({ ...f, initial_received_at: iso || new Date().toISOString().slice(0, 10) }))
+                    }
+                    showTodayButton={false}
+                  />
+                </div>
+                <div className="hub-clientes__field">
+                  <label className="hub-clientes__label" htmlFor="inv-exp">
+                    Data de validade
+                  </label>
+                  <HubDateField
+                    id="inv-exp"
+                    valueIso={form.initial_expiry_date}
+                    onChangeIso={(iso) => setForm((f) => ({ ...f, initial_expiry_date: iso }))}
+                    showTodayButton={false}
+                  />
+                </div>
               </div>
-              <div className="hub-clientes__field">
-                <HubDateField
-                  id="inv-exp"
-                  label="Data de validade"
-                  valueIso={form.initial_expiry_date}
-                  onChangeIso={(iso) => setForm((f) => ({ ...f, initial_expiry_date: iso }))}
-                />
+              <div className="hub-estoque-drawer__row">
+                <div className="hub-clientes__field">
+                  <label className="hub-clientes__label" htmlFor="inv-iqty">
+                    Quantidade
+                  </label>
+                  <input
+                    id="inv-iqty"
+                    className="hub-clientes__input"
+                    value={form.initial_qty}
+                    onChange={(e) => setForm((f) => ({ ...f, initial_qty: e.target.value }))}
+                    placeholder="Deixe vazio para cadastrar sem estoque"
+                  />
+                </div>
+                <div className="hub-clientes__field">
+                  <label className="hub-clientes__label" htmlFor="inv-lot">
+                    Número do lote
+                  </label>
+                  <input
+                    id="inv-lot"
+                    className="hub-clientes__input"
+                    value={form.initial_lot_code}
+                    onChange={(e) => setForm((f) => ({ ...f, initial_lot_code: e.target.value }))}
+                    placeholder="Opcional"
+                  />
+                </div>
               </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-iqty">
-                  Quantidade (se preenchida, &gt; 0)
-                </label>
-                <input
-                  id="inv-iqty"
-                  className="hub-clientes__input"
-                  value={form.initial_qty}
-                  onChange={(e) => setForm((f) => ({ ...f, initial_qty: e.target.value }))}
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-lot">
-                  Número do lote
-                </label>
-                <input
-                  id="inv-lot"
-                  className="hub-clientes__input"
-                  value={form.initial_lot_code}
-                  onChange={(e) => setForm((f) => ({ ...f, initial_lot_code: e.target.value }))}
-                />
-              </div>
-            </>
+            </section>
           )}
         </form>
       </div>

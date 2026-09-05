@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
+import { ClipboardList, Search } from 'lucide-react';
 import { getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { hubInventoryApi } from '../../api/hubInventoryApi';
 import type { HubInventoryLotRow } from '../../api/hubInventoryApi';
@@ -7,15 +8,18 @@ import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
+import HubEstoqueFilterChips from './HubEstoqueFilterChips';
+import { kindLabel, parseKindFilter, type EstoqueKindFilter } from './estoqueShared';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './estoque.css';
 
-function kindLabel(k: string | undefined): string {
-  if (k === 'medication') return 'Medicamento';
-  if (k === 'vaccine') return 'Vacina';
-  return 'Produto';
-}
+const KIND_FILTERS: { id: EstoqueKindFilter; label: string }[] = [
+  { id: 'all', label: 'Todos' },
+  { id: 'product', label: 'Produtos' },
+  { id: 'medication', label: 'Medicamentos' },
+  { id: 'vaccine', label: 'Vacinas' },
+];
 
 const HubEstoqueInventarioPage: React.FC = () => {
   const { showError, showSuccess, showConfirm } = useAlert();
@@ -28,6 +32,8 @@ const HubEstoqueInventarioPage: React.FC = () => {
   const [lots, setLots] = useState<HubInventoryLotRow[]>([]);
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [kindFilter, setKindFilter] = useState<EstoqueKindFilter>('all');
+  const [query, setQuery] = useState('');
 
   const load = useCallback(async () => {
     if (!clinicId) return;
@@ -58,6 +64,26 @@ const HubEstoqueInventarioPage: React.FC = () => {
     if (!clinicId || !accessAllowed) return;
     void load();
   }, [clinicId, accessAllowed, load]);
+
+  const displayedLots = useMemo(() => {
+    const parsed = parseKindFilter(kindFilter === 'all' ? null : kindFilter);
+    const q = query.trim().toLowerCase();
+    return lots.filter((l) => {
+      if (parsed !== 'all' && l.item?.item_kind !== parsed) return false;
+      if (!q) return true;
+      const name = (l.item?.name || '').toLowerCase();
+      const lot = (l.lot_code || '').toLowerCase();
+      return name.includes(q) || lot.includes(q);
+    });
+  }, [lots, kindFilter, query]);
+
+  const pendingAdjustments = useMemo(() => {
+    return displayedLots.filter((l) => {
+      const counted = Number(String(counts[l.id] ?? '').replace(',', '.'));
+      if (!Number.isFinite(counted)) return false;
+      return Math.round((counted - Number(l.qty_on_hand)) * 10000) / 10000 !== 0;
+    }).length;
+  }, [displayedLots, counts]);
 
   const applyCount = (lot: HubInventoryLotRow) => {
     if (!clinicId || !canWrite) return;
@@ -135,10 +161,73 @@ const HubEstoqueInventarioPage: React.FC = () => {
   return (
     <div className="hub-clientes hub-servicos-page hub-estoque-page hub-pets-page hub-clientes-page--full-width">
       <div className="hub-clientes__main">
-        <p className="hub-clientes__muted" style={{ marginBottom: 16 }}>
-          Conferência física: informe a quantidade contada por lote e confirme o ajuste. O sistema gera um movimento
-          de ajuste com referência de inventário.
-        </p>
+        <div className="hub-servicos-config__header">
+          <div>
+            <h1 className="hub-servicos-config__title">Inventário</h1>
+            <p className="hub-clientes__muted hub-servicos-config__lead">
+              Conferência física por lote. A diferença vira um ajuste com referência de inventário.
+            </p>
+          </div>
+        </div>
+
+        <div className="hub-servicos__metrics hub-estoque__metrics" aria-live="polite">
+          <div className="hub-servicos__metric-card">
+            <div className="hub-servicos__metric-card__text">
+              <div className="hub-servicos__metric-label">Lotes</div>
+              <div className="hub-servicos__metric-value">
+                {loading ? '—' : displayedLots.length.toLocaleString('pt-BR')}
+              </div>
+              <div className="hub-servicos__metric-sub">Com estoque no sistema</div>
+            </div>
+            <div className="hub-servicos__metric-icon" aria-hidden>
+              <ClipboardList size={22} strokeWidth={1.75} />
+            </div>
+          </div>
+          <div className="hub-servicos__metric-card">
+            <div className="hub-servicos__metric-card__text">
+              <div className="hub-servicos__metric-label">Diferenças</div>
+              <div className="hub-servicos__metric-value">
+                {loading ? '—' : pendingAdjustments.toLocaleString('pt-BR')}
+              </div>
+              <div className="hub-servicos__metric-sub">Contagens diferentes do sistema</div>
+            </div>
+            <div
+              className={`hub-servicos__metric-icon${pendingAdjustments > 0 ? '' : ' hub-servicos__metric-icon--muted'}`}
+              aria-hidden
+            >
+              <ClipboardList size={22} strokeWidth={1.75} />
+            </div>
+          </div>
+        </div>
+
+        <div className="hub-servicos__toolbar">
+          <div className="hub-servicos__toolbar-row hub-estoque__toolbar-filters">
+            <HubEstoqueFilterChips
+              ariaLabel="Tipo de item"
+              value={kindFilter}
+              options={KIND_FILTERS}
+              onChange={setKindFilter}
+            />
+          </div>
+          <div className="hub-servicos__toolbar-row">
+            <div className="hub-servicos__search-wrap">
+              <div className="hub-servicos__search-field">
+                <span className="hub-servicos__search-icon">
+                  <Search size={18} strokeWidth={2} aria-hidden />
+                </span>
+                <input
+                  type="search"
+                  className="hub-servicos__search-input"
+                  placeholder="Buscar por item ou lote…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  aria-label="Buscar lotes"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <HubRefreshingBanner show={refreshing} label="Atualizando inventário…" />
         {loading && lots.length === 0 ? (
           <HubLoading variant="block" label="Carregando inventário…" />
@@ -158,7 +247,7 @@ const HubEstoqueInventarioPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {lots.length === 0 ? (
+                {displayedLots.length === 0 ? (
                   <tr>
                     <td
                       colSpan={canWrite ? 8 : 6}
@@ -169,7 +258,7 @@ const HubEstoqueInventarioPage: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  lots.map((l) => {
+                  displayedLots.map((l) => {
                     const counted = Number(String(counts[l.id] ?? '').replace(',', '.'));
                     const delta =
                       Number.isFinite(counted) ? Math.round((counted - Number(l.qty_on_hand)) * 10000) / 10000 : 0;
@@ -178,7 +267,11 @@ const HubEstoqueInventarioPage: React.FC = () => {
                         <td>
                           <strong>{l.item?.name}</strong>
                         </td>
-                        <td>{kindLabel(l.item?.item_kind)}</td>
+                        <td>
+                          <span className={`hub-estoque__kind hub-estoque__kind--${l.item?.item_kind || 'product'}`}>
+                            {kindLabel(l.item?.item_kind)}
+                          </span>
+                        </td>
                         <td>{l.lot_code || '—'}</td>
                         <td>
                           {l.received_at
@@ -202,7 +295,7 @@ const HubEstoqueInventarioPage: React.FC = () => {
                               aria-label={`Contagem de ${l.item?.name || 'lote'}`}
                             />
                             {delta !== 0 && Number.isFinite(counted) ? (
-                              <span className="hub-clientes__muted" style={{ marginLeft: 8, fontSize: 12 }}>
+                              <span className={`hub-estoque__qty hub-estoque__qty--${delta > 0 ? 'in' : 'out'}`}>
                                 {delta > 0 ? `+${delta}` : String(delta)}
                               </span>
                             ) : null}

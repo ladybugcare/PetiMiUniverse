@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Mail, Play, Trash2 } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import {
   hubReportSchedulesApi,
   type HubReportEmailSchedule,
@@ -26,7 +27,7 @@ type Props = {
 
 export const HubRelatoriosEmailSchedules: React.FC<Props> = ({ clinicId, unitId }) => {
   const { showError, showSuccess } = useAlert();
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [schedules, setSchedules] = useState<HubReportEmailSchedule[]>([]);
   const [reportId, setReportId] = useState('cash-flow');
   const [email, setEmail] = useState('');
@@ -36,16 +37,17 @@ export const HubRelatoriosEmailSchedules: React.FC<Props> = ({ clinicId, unitId 
   const options = HUB_REPORTS.filter((r) => SCHEDULABLE.has(r.id));
 
   const load = useCallback(async () => {
-    setLoading(true);
+    begin();
     try {
       const res = await hubReportSchedulesApi.list(clinicId);
       setSchedules(res.schedules ?? []);
+      succeed();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao carregar agendamentos');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, showError]);
+  }, [clinicId, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -159,7 +161,8 @@ export const HubRelatoriosEmailSchedules: React.FC<Props> = ({ clinicId, unitId 
         </button>
       </div>
 
-      {loading ? (
+      <HubRefreshingBanner show={refreshing} label="Atualizando agendamentos…" />
+      {loading && schedules.length === 0 ? (
         <HubLoading variant="block" label="Carregando agendamentos…" />
       ) : schedules.length === 0 ? (
         <p className="hub-clientes__muted">Nenhum agendamento ainda.</p>

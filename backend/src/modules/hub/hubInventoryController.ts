@@ -86,7 +86,7 @@ export const listHubSuppliers = async (req: Request, res: Response) => {
     const clinic_id = parsed.data;
     const { data, error } = await supabaseAdmin
       .from('hub_suppliers')
-      .select('id, clinic_id, name, tax_id, phone, email, notes, active, created_at, updated_at, deleted_at')
+      .select('id, clinic_id, name, party_name, tax_id, phone, email, notes, active, created_at, updated_at, deleted_at')
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
       .order('name', { ascending: true });
@@ -105,6 +105,7 @@ const createSupplierSchema = z
   .object({
     clinic_id: uuidStr,
     name: z.string().trim().min(1).max(300),
+    party_name: z.string().max(300).optional().nullable(),
     tax_id: z.string().max(64).optional().nullable(),
     phone: z.string().max(64).optional().nullable(),
     email: z.string().email().max(200).optional().nullable().or(z.literal('')),
@@ -118,6 +119,7 @@ export const createHubSupplier = async (req: Request, res: Response) => {
     if (!body.success) return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
     const row = {
       ...body.data,
+      party_name: body.data.party_name?.trim() || null,
       email: body.data.email === '' ? null : body.data.email,
       active: true,
       deleted_at: null,
@@ -138,6 +140,7 @@ const patchSupplierSchema = z
   .object({
     clinic_id: uuidStr,
     name: z.string().trim().min(1).max(300).optional(),
+    party_name: z.string().max(300).optional().nullable(),
     tax_id: z.string().max(64).optional().nullable(),
     phone: z.string().max(64).optional().nullable(),
     email: z.string().email().max(200).optional().nullable().or(z.literal('')),
@@ -156,6 +159,7 @@ export const patchHubSupplier = async (req: Request, res: Response) => {
     const { clinic_id, archived, ...rest } = body.data;
     const patch: Record<string, unknown> = {};
     if (rest.name !== undefined) patch.name = rest.name;
+    if (rest.party_name !== undefined) patch.party_name = rest.party_name?.trim() || null;
     if (rest.tax_id !== undefined) patch.tax_id = rest.tax_id;
     if (rest.phone !== undefined) patch.phone = rest.phone;
     if (rest.email !== undefined) patch.email = rest.email === '' ? null : rest.email;
@@ -188,7 +192,7 @@ export const listHubManufacturers = async (req: Request, res: Response) => {
     const clinic_id = parsed.data;
     const { data, error } = await supabaseAdmin
       .from('hub_manufacturers')
-      .select('id, clinic_id, name, created_at, updated_at, deleted_at')
+      .select('id, clinic_id, name, party_name, tax_id, phone, email, notes, created_at, updated_at, deleted_at')
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
       .order('name', { ascending: true });
@@ -203,13 +207,32 @@ export const listHubManufacturers = async (req: Request, res: Response) => {
   }
 };
 
-const createManufacturerSchema = z.object({ clinic_id: uuidStr, name: z.string().trim().min(1).max(300) }).strict();
+const manufacturerContactSchema = {
+  party_name: z.string().max(300).optional().nullable(),
+  tax_id: z.string().max(64).optional().nullable(),
+  phone: z.string().max(64).optional().nullable(),
+  email: z.string().email().max(200).optional().nullable().or(z.literal('')),
+  notes: z.string().max(4000).optional().nullable(),
+};
+
+const createManufacturerSchema = z
+  .object({
+    clinic_id: uuidStr,
+    name: z.string().trim().min(1).max(300),
+    ...manufacturerContactSchema,
+  })
+  .strict();
 
 export const createHubManufacturer = async (req: Request, res: Response) => {
   try {
     const body = createManufacturerSchema.safeParse(req.body);
     if (!body.success) return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
-    const row = { ...body.data, deleted_at: null };
+    const row = {
+      ...body.data,
+      party_name: body.data.party_name?.trim() || null,
+      email: body.data.email === '' ? null : body.data.email,
+      deleted_at: null,
+    };
     const { data, error } = await supabaseAdmin.from('hub_manufacturers').insert([row]).select('*').single();
     if (error) {
       console.error('[hub_inventory] create manufacturer', error);
@@ -223,7 +246,12 @@ export const createHubManufacturer = async (req: Request, res: Response) => {
 };
 
 const patchManufacturerSchema = z
-  .object({ clinic_id: uuidStr, name: z.string().trim().min(1).max(300).optional(), archived: z.boolean().optional() })
+  .object({
+    clinic_id: uuidStr,
+    name: z.string().trim().min(1).max(300).optional(),
+    archived: z.boolean().optional(),
+    ...manufacturerContactSchema,
+  })
   .strict();
 
 export const patchHubManufacturer = async (req: Request, res: Response) => {
@@ -232,9 +260,14 @@ export const patchHubManufacturer = async (req: Request, res: Response) => {
     if (!idParsed.success) return res.status(400).json({ error: 'id inválido' });
     const body = patchManufacturerSchema.safeParse(req.body);
     if (!body.success) return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
-    const { clinic_id, name, archived } = body.data;
+    const { clinic_id, name, archived, party_name, tax_id, phone, email, notes } = body.data;
     const patch: Record<string, unknown> = {};
     if (name !== undefined) patch.name = name;
+    if (party_name !== undefined) patch.party_name = party_name?.trim() || null;
+    if (tax_id !== undefined) patch.tax_id = tax_id;
+    if (phone !== undefined) patch.phone = phone;
+    if (email !== undefined) patch.email = email === '' ? null : email;
+    if (notes !== undefined) patch.notes = notes;
     if (archived === true) patch.deleted_at = new Date().toISOString();
     if (archived === false) patch.deleted_at = null;
     if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'Nada para atualizar' });

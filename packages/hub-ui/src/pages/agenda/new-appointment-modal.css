@@ -1243,6 +1243,12 @@
   line-height: 1.4;
 }
 
+.nam-aside__special-note {
+  display: block;
+  font-size: 11px;
+  color: #c86a4d;
+}
+
 .nam-aside__total {
   display: flex;
   justify-content: space-between;

@@ -19,14 +19,13 @@ export function boardingDrillHref(): string {
 }
 
 export function stockItemDrillHref(itemKind: string | null | undefined, name?: string | null): string {
-  const path =
-    itemKind === 'medication'
-      ? '/hub/estoque/medicamentos'
-      : itemKind === 'vaccine'
-        ? '/hub/estoque/vacinas'
-        : '/hub/estoque/produtos';
-  if (name?.trim()) return `${path}?q=${encodeURIComponent(name.trim())}`;
-  return path;
+  const params = new URLSearchParams();
+  if (itemKind === 'medication' || itemKind === 'vaccine' || itemKind === 'product') {
+    params.set('kind', itemKind);
+  }
+  if (name?.trim()) params.set('q', name.trim());
+  const qs = params.toString();
+  return `/hub/estoque/itens${qs ? `?${qs}` : ''}`;
 }
 
 export function petDrillHref(petId: string): string {

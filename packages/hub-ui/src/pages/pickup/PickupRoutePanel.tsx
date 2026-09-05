@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom';
 import { getStoredClinicId } from '@petimi/web-core';
 import { hubPickupApi, type PickupRoute, type PickupRouteStatus } from '../../api/hubPickupApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 
 const STATUS_LABELS: Record<PickupRouteStatus, string> = {
   planned: 'Planejada',
@@ -45,21 +46,22 @@ const PickupRoutePanel: React.FC<Props> = ({
   const clinicId = getStoredClinicId();
   const { showError, showSuccess } = useAlert();
   const [routes, setRoutes] = useState<PickupRoute[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId, false);
   const [reorderingId, setReorderingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const res = await hubPickupApi.listRoutes(clinicId, { date: dateYmd, unitId });
       setRoutes(res.routes ?? []);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar rotas');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, dateYmd, unitId, showError]);
+  }, [clinicId, dateYmd, unitId, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -107,7 +109,8 @@ const PickupRoutePanel: React.FC<Props> = ({
         ) : null}
       </div>
 
-      {loading ? (
+      <HubRefreshingBanner show={refreshing} label="Atualizando rotas…" />
+      {loading && routes.length === 0 ? (
         <HubLoading variant="inline" size="sm" label="Carregando rotas…" />
       ) : routes.length === 0 ? (
         <p className="hub-clientes__muted hub-pickup-route-panel__empty">

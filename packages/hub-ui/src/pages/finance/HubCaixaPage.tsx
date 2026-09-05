@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Coins,
   Lock,
+  Unlock,
   Package,
   Pencil,
   Receipt,
@@ -19,7 +20,8 @@ import {
   X,
 } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import {
   hubFinancialApi,
   type HubFinanceDayBoardItem,
@@ -32,7 +34,6 @@ import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
 import { CaixaMetricsRow } from './CaixaMetricsRow';
 import { CaixaSessionMovementsCard } from './CaixaSessionMovementsCard';
 import { canCaixaEditOpenComanda } from './hubComandaEditUtils';
-import { enviarComandasAbertasAoFinanceiro } from './caixaHandoffUtils';
 import {
   buildCaixaSessionHistoryItems,
   sumDayBoardPendingAmount,
@@ -44,6 +45,7 @@ import { FinanceDayBoardTable } from './FinanceDayBoardTable';
 import { SellPackageDrawer } from './SellPackageDrawer';
 import { QuickSaleDrawer } from './QuickSaleDrawer';
 import { EncerrarTurnoDrawer } from './EncerrarTurnoDrawer';
+import { IniciarTurnoDrawer } from './IniciarTurnoDrawer';
 import type { PackageSaleScheduleContext } from './packageSaleScheduleUtils';
 import { HubDateField } from '../../components/HubDateField';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
@@ -87,16 +89,16 @@ const HubCaixaPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { hasPermission, loading: permLoading } = usePermissions();
-  const { showError, showSuccess, showConfirm } = useAlert();
+  const { showError, showSuccess } = useAlert();
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
 
   const [pending, setPending] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
+    clinicId && unitId ? `${clinicId}:${unitId}` : null,
+  );
   const [cashOpen, setCashOpen] = useState<HubCashSession | null>(null);
   const [cashSummary, setCashSummary] = useState<HubCashSessionSummary | null>(null);
-  const [openBal, setOpenBal] = useState('0');
-  const [closeBal, setCloseBal] = useState('');
   const [movType, setMovType] = useState<'withdrawal' | 'deposit'>('withdrawal');
   const [movAmount, setMovAmount] = useState('');
   const [movNotes, setMovNotes] = useState('');
@@ -124,6 +126,7 @@ const HubCaixaPage: React.FC = () => {
   const [showSellPackage, setShowSellPackage] = useState(false);
   const [showQuickSale, setShowQuickSale] = useState(false);
   const [showEncerrarTurno, setShowEncerrarTurno] = useState(false);
+  const [showIniciarTurno, setShowIniciarTurno] = useState(false);
   const [closedSessions, setClosedSessions] = useState<HubCashSession[]>([]);
   const [showSessionHistory, setShowSessionHistory] = useState(false);
 
@@ -154,10 +157,10 @@ const HubCaixaPage: React.FC = () => {
 
   const load = useCallback(async () => {
     if (!clinicId || !unitId) {
-      setLoading(false);
+      finish();
       return;
     }
-    setLoading(true);
+    begin();
     try {
       const [c, cash, comandasRes, dayBoard, closedRes] = await Promise.all([
         hubFinancialApi.getPendingBillingCount(clinicId, unitId),
@@ -177,12 +180,13 @@ const HubCaixaPage: React.FC = () => {
       } else {
         setCashSummary(null);
       }
+      succeed();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao carregar caixa');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, unitId, dayBoardDate, showError]);
+  }, [clinicId, unitId, dayBoardDate, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (!permLoading && hasPermission('hub.financial.read')) void load();
@@ -261,15 +265,7 @@ const HubCaixaPage: React.FC = () => {
   }, [dayBoardItems, dayBoardSearch, atendimentosStatusFilter]);
 
   const expectedBalance = cashSummary?.summary.expected_balance ?? Number(cashOpen?.opening_balance ?? 0);
-  const closeInformedNum = useMemo(() => {
-    const t = String(closeBal).trim();
-    if (!t) return null;
-    const v = Number(t.replace(',', '.'));
-    return Number.isNaN(v) ? null : v;
-  }, [closeBal]);
-  const closeDiffPreview = closeInformedNum != null && cashOpen
-    ? Math.round((closeInformedNum - expectedBalance + Number.EPSILON) * 100) / 100
-    : null;
+  const lastClosingBalance = closedSessions[0]?.closing_balance ?? null;
 
   const methodsEntries = useMemo(() => {
     const totals = cashSummary?.summary.totals_by_method ?? {};
@@ -300,8 +296,6 @@ const HubCaixaPage: React.FC = () => {
     () => buildCaixaSessionHistoryItems(cashSummary, dayBoardItems, openComandas),
     [cashSummary, dayBoardItems, openComandas],
   );
-
-  const diffDisplay = closeDiffPreview;
 
   if (!permLoading && !hasPermission('hub.financial.read')) {
     return <Navigate to="/hub/clientes" replace />;
@@ -430,59 +424,6 @@ const HubCaixaPage: React.FC = () => {
     }
   };
 
-  const onOpenCash = async () => {
-    if (!hasPermission('hub.cash.session')) { showError('Sem permissão para abrir caixa.'); return; }
-    const v = Number(String(openBal).replace(',', '.'));
-    if (Number.isNaN(v) || v < 0) { showError('Saldo inicial inválido.'); return; }
-    try {
-      await hubFinancialApi.openCashSession({ clinic_id: clinicId, unit_id: unitId, opening_balance: v });
-      showSuccess('Caixa aberto.');
-      await load();
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao abrir caixa');
-    }
-  };
-
-  const executarFechamentoCaixa = async (sessionId: string, v: number) => {
-    try {
-      await hubFinancialApi.closeCashSession(sessionId, { clinic_id: clinicId, closing_balance: v });
-      showSuccess('Caixa fechado.');
-      setCloseBal('');
-      await load();
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao fechar caixa');
-    }
-  };
-
-  const enviarComandasAbertas = async (): Promise<boolean> => {
-    const result = await enviarComandasAbertasAoFinanceiro(openComandas, clinicId);
-    if (!result.success) {
-      showError(`Falha ao enviar ${result.errors.length} comanda(s) ao financeiro:\n${result.errors.join('\n')}`);
-      return false;
-    }
-    return true;
-  };
-
-  const onCloseCash = () => {
-    if (!cashOpen?.id) return;
-    const sessionId = cashOpen.id;
-    const v = Number(String(closeBal).replace(',', '.'));
-    if (Number.isNaN(v) || v < 0) { showError('Saldo de fechamento inválido.'); return; }
-    const abertas = openComandas.filter((c) => c.status === 'aberta' && canCaixaEditOpenComanda(c));
-    if (abertas.length > 0) {
-      showConfirm(
-        `Há ${abertas.length} comanda(s) em aberto. Ao fechar o caixa, esses itens serão enviados ao financeiro (cobrança pendente). Deseja continuar?`,
-        async () => {
-          const ok = await enviarComandasAbertas();
-          if (ok) void executarFechamentoCaixa(sessionId, v);
-        },
-        'Fechar caixa e enviar ao financeiro',
-      );
-      return;
-    }
-    void executarFechamentoCaixa(sessionId, v);
-  };
-
   const onCashMovement = async () => {
     if (!cashOpen?.id) return;
     if (!hasPermission('hub.cash.session')) { showError('Sem permissão para movimentar caixa.'); return; }
@@ -504,7 +445,7 @@ const HubCaixaPage: React.FC = () => {
       {isPreviousDaySession && (
         <div className="hub-finance-page__context-warning" role="alert">
           <AlertCircle size={16} strokeWidth={2} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-          Há uma sessão de caixa aberta de um dia anterior. Feche-a e abra uma nova sessão para o dia de hoje.
+          Há um turno aberto de um dia anterior. Encerre o turno e inicie um novo para o dia de hoje.
         </div>
       )}
       {cashOpen?.opened_by_staff && !isPreviousDaySession && (
@@ -528,17 +469,27 @@ const HubCaixaPage: React.FC = () => {
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        {cashOpen && hasPermission('hub.cash.session') && (
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary"
-            onClick={() => setShowEncerrarTurno(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <Lock size={15} strokeWidth={2} />
-            Encerrar turno
-          </button>
+      <div className="hub-caixa-page__turno-bar">
+        {hasPermission('hub.cash.session') && (
+          cashOpen ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              onClick={() => setShowEncerrarTurno(true)}
+            >
+              <Lock size={15} strokeWidth={2} />
+              Encerrar turno
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              onClick={() => setShowIniciarTurno(true)}
+            >
+              <Unlock size={15} strokeWidth={2} />
+              Iniciar turno
+            </button>
+          )
         )}
       </div>
 
@@ -553,33 +504,10 @@ const HubCaixaPage: React.FC = () => {
         dayBoardCount={dayBoardItems.length}
       />
 
-      {/* ── Três colunas: O caixa | Recebimentos | Histórico ── */}
-      <div className="hub-caixa-page__ops-row">
-        {/* Coluna 1 — O caixa */}
+      {/* ── Colunas: Sangria (turno aberto) | Movimentações | Histórico ── */}
+      <div className={`hub-caixa-page__ops-row${cashOpen ? '' : ' hub-caixa-page__ops-row--closed'}`}>
+        {cashOpen ? (
         <div className="hub-caixa-page__col">
-          {!cashOpen ? (
-            <div className="hub-caixa-page__card hub-caixa-page__open-card">
-              <h3 className="hub-caixa-page__card-title">O caixa</h3>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="caixa-open-bal">Saldo inicial (abertura)</label>
-                <div className="hub-caixa-page__money-field">
-                  <span className="hub-caixa-page__money-prefix">R$</span>
-                  <input
-                    id="caixa-open-bal"
-                    className="hub-clientes__input"
-                    value={openBal}
-                    onChange={(e) => setOpenBal(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="0,00"
-                  />
-                </div>
-              </div>
-              <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={() => void onOpenCash()}>
-                Abrir caixa
-              </button>
-            </div>
-          ) : (
-            <>
               <div className="hub-caixa-page__card">
                 <button
                   type="button"
@@ -658,54 +586,8 @@ const HubCaixaPage: React.FC = () => {
                   </>
                 )}
               </div>
-
-              <div className="hub-caixa-page__card">
-                <h3 className="hub-caixa-page__card-title">Fechamento do caixa</h3>
-                <div className="hub-caixa-page__kv-row">
-                  <span>Saldo esperado</span>
-                  <strong>{formatBrl(expectedBalance)}</strong>
-                </div>
-                <div className="hub-caixa-page__kv-row">
-                  <span>Saldo informado</span>
-                  <div className="hub-caixa-page__money-field" style={{ maxWidth: 140 }}>
-                    <span className="hub-caixa-page__money-prefix">R$</span>
-                    <input
-                      id="caixa-close-bal"
-                      className="hub-clientes__input"
-                      value={closeBal}
-                      onChange={(e) => setCloseBal(e.target.value)}
-                      placeholder="0,00"
-                      inputMode="decimal"
-                      aria-label="Saldo informado no fechamento"
-                    />
-                  </div>
-                </div>
-                <div className="hub-caixa-page__kv-row hub-caixa-page__kv-row--divider">
-                  <span>Diferença</span>
-                  <strong
-                    className={
-                      diffDisplay == null
-                        ? undefined
-                        : diffDisplay >= -0.009
-                          ? 'hub-caixa-page__kv-diff--pos'
-                          : 'hub-caixa-page__kv-diff--neg'
-                    }
-                  >
-                    {diffDisplay != null ? formatBrl(diffDisplay) : '—'}
-                  </strong>
-                </div>
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--primary hub-caixa-page__btn-close"
-                  onClick={onCloseCash}
-                >
-                  <Lock size={16} strokeWidth={2} />
-                  Fechar caixa
-                </button>
-              </div>
-            </>
-          )}
         </div>
+        ) : null}
 
         {/* Coluna 2 — Movimentações da sessão */}
         <div className="hub-caixa-page__col">
@@ -730,7 +612,7 @@ const HubCaixaPage: React.FC = () => {
               Histórico da sessão
             </h3>
             {!cashOpen ? (
-              <p className="hub-caixa-page__empty">Abra o caixa para ver o histórico de movimentos.</p>
+              <p className="hub-caixa-page__empty">Inicie o turno para ver o histórico de movimentos.</p>
             ) : sessionHistoryItems.length === 0 ? (
               <p className="hub-caixa-page__empty">Nenhuma movimentação ou cobrança no painel do dia.</p>
             ) : (
@@ -856,7 +738,8 @@ const HubCaixaPage: React.FC = () => {
           </button>
         </div>
 
-        {loading || dayBoardBusy ? (
+        <HubRefreshingBanner show={refreshing || dayBoardBusy} label="Atualizando caixa…" />
+        {loading && dayBoardItems.length === 0 && openComandas.length === 0 ? (
           <HubLoading variant="block" label="Carregando ações pendentes…" />
         ) : dayBoardFiltered.length === 0 && openComandas.length === 0 ? (
           <div className="hub-dayboard__empty">
@@ -1165,6 +1048,18 @@ const HubCaixaPage: React.FC = () => {
           navigate(`/hub/caixa/comanda/${comandaId}`);
         }}
       />
+      <IniciarTurnoDrawer
+        open={showIniciarTurno}
+        onClose={() => setShowIniciarTurno(false)}
+        clinicId={clinicId}
+        unitId={unitId}
+        lastClosingBalance={lastClosingBalance}
+        onOpened={async () => {
+          setShowIniciarTurno(false);
+          showSuccess('Turno iniciado.');
+          await load();
+        }}
+      />
       {showEncerrarTurno && cashOpen && (
         <EncerrarTurnoDrawer
           open={showEncerrarTurno}
@@ -1179,7 +1074,6 @@ const HubCaixaPage: React.FC = () => {
           onClosed={async () => {
             setShowEncerrarTurno(false);
             showSuccess('Caixa fechado com sucesso.');
-            setCloseBal('');
             await load();
           }}
         />

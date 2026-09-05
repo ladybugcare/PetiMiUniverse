@@ -288,7 +288,11 @@ export type AgendaPricingPreviewLine = {
   name: string;
   tierApplied: string | null;
   coatTypeApplied: string | null;
+  /** Valor de catálogo (porte / variante). */
   sale: number;
+  /** Valor cobrado neste agendamento (override especial, se houver). */
+  effectiveSale: number;
+  hasSpecialOverride: boolean;
   cost: number;
   needsCoatType: boolean;
   isAddon?: boolean;
@@ -299,7 +303,24 @@ export type AgendaPricingPreviewRow = {
   name: string;
   pricing_variant?: HubQuotePricingVariant | null;
   isAddon?: boolean;
+  sale_amount_override?: number | null;
 };
+
+/** Aplica valor especial no preview sem perder o preço de catálogo. */
+export function resolveEffectiveSale(
+  catalogSale: number,
+  override?: number | null,
+): { effectiveSale: number; hasSpecialOverride: boolean } {
+  const catalog = round2(catalogSale);
+  if (override != null && Number.isFinite(Number(override))) {
+    const effectiveSale = round2(Number(override));
+    return {
+      effectiveSale,
+      hasSpecialOverride: Math.abs(effectiveSale - catalog) > 0.009,
+    };
+  }
+  return { effectiveSale: catalog, hasSpecialOverride: false };
+}
 
 export function buildAgendaPricingPreview(input: {
   mainServices: AgendaPricingPreviewRow[];
@@ -326,17 +347,20 @@ export function buildAgendaPricingPreview(input: {
     const matrix = parsePricingMatrix(st);
     if (isAddon) {
       const p = resolveVariantLinePreview(st, row.pricing_variant);
+      const applied = resolveEffectiveSale(p.sale, row.sale_amount_override);
       lines.push({
         hub_service_type_id: row.hub_service_type_id,
         name: row.name,
         tierApplied: null,
         coatTypeApplied: null,
         sale: p.sale,
+        effectiveSale: applied.effectiveSale,
+        hasSpecialOverride: applied.hasSpecialOverride,
         cost: p.cost,
         needsCoatType: false,
         isAddon: true,
       });
-      totalSale += p.sale;
+      totalSale += applied.effectiveSale;
       totalCost += p.cost;
       continue;
     }
@@ -367,17 +391,20 @@ export function buildAgendaPricingPreview(input: {
           petCoatType,
           appointmentOverrideCoatType,
         });
+    const applied = resolveEffectiveSale(r.sale, row.sale_amount_override);
     lines.push({
       hub_service_type_id: row.hub_service_type_id,
       name: row.name,
       tierApplied: r.tierApplied,
       coatTypeApplied: r.coatTypeApplied,
       sale: r.sale,
+      effectiveSale: applied.effectiveSale,
+      hasSpecialOverride: applied.hasSpecialOverride,
       cost: r.cost,
       needsCoatType: r.needsCoatType,
       isAddon: false,
     });
-    totalSale += r.sale;
+    totalSale += applied.effectiveSale;
     totalCost += r.cost;
   }
   return { lines, totalSale: round2(totalSale), totalCost: round2(totalCost) };

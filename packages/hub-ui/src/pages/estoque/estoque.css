@@ -12,12 +12,22 @@
   padding-right: 0;
 }
 
-.hub-estoque-page .hub-servicos__metrics {
+.hub-estoque-page .hub-servicos__metrics,
+.hub-estoque-page .hub-estoque__metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.hub-estoque-page .hub-estoque__metrics:has(> :nth-child(2):last-child) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.hub-estoque-page .hub-estoque__metrics:has(> :only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 @media (max-width: 900px) {
-  .hub-estoque-page .hub-servicos__metrics {
+  .hub-estoque-page .hub-servicos__metrics,
+  .hub-estoque-page .hub-estoque__metrics {
     grid-template-columns: 1fr;
   }
 }
@@ -30,15 +40,163 @@
   min-height: calc(100vh - 120px);
 }
 
-/* Abas: tokens de .hub-clientes */
 .hub-estoque-shell--tabs .hub-clientes__tabs {
   flex-wrap: wrap;
 }
 
-.hub-estoque-page .hub-estoque__hint-ean {
+.hub-estoque-page .hub-estoque__hint-ean,
+.hub-estoque-drawer .hub-estoque__hint-ean {
   font-size: 12px;
   color: var(--hc-text-muted);
   margin-top: 4px;
+}
+
+.hub-estoque-drawer {
+  --hc-brand: #c86a4d;
+  --hc-brand-hover: #a85a40;
+}
+
+.hub-estoque-drawer__section {
+  margin: 0 0 22px;
+  padding: 16px;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.hub-estoque-drawer__section:last-child {
+  margin-bottom: 0;
+}
+
+.hub-estoque-drawer__section--lot {
+  background: #fdfaf8;
+}
+
+.hub-estoque-drawer__section-title {
+  margin: 0 0 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-estoque-drawer__section-lead {
+  margin: -6px 0 14px;
+  font-size: 13px;
+  color: var(--hc-text-muted, #8e6e67);
+  line-height: 1.4;
+}
+
+.hub-estoque-drawer__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.hub-estoque-drawer__row > .hub-clientes__field {
+  margin-bottom: 12px;
+}
+
+.hub-estoque-drawer .hub-clientes__input,
+.hub-estoque-drawer .hub-clientes__textarea {
+  min-height: 40px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border-color: #e8e4e0;
+  background: #fff;
+}
+
+.hub-estoque-drawer .hub-clientes__input:focus,
+.hub-estoque-drawer .hub-clientes__textarea:focus {
+  outline: none;
+  border-color: var(--hc-brand, #c86a4d);
+  box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.14);
+}
+
+.hub-estoque-drawer .hub-combobox--clientes .hub-combobox__trigger {
+  min-height: 40px;
+  border-radius: 10px;
+}
+
+.hub-estoque-drawer .hub-combobox--clientes .hub-combobox__trigger:focus-visible,
+.hub-estoque-drawer .hub-combobox--clientes .hub-combobox__trigger[aria-expanded='true'] {
+  border-color: var(--hc-brand, #c86a4d);
+  box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.14);
+}
+
+.hub-estoque-drawer__affix {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #e8e4e0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.hub-estoque-drawer__affix:focus-within {
+  border-color: var(--hc-brand, #c86a4d);
+  box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.14);
+}
+
+.hub-estoque-drawer__affix .hub-clientes__input {
+  border: none;
+  border-radius: 0;
+  min-height: 40px;
+  box-shadow: none;
+}
+
+.hub-estoque-drawer__affix .hub-clientes__input:focus {
+  box-shadow: none;
+}
+
+.hub-estoque-drawer__affix-prefix,
+.hub-estoque-drawer__affix-suffix {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-text-muted, #8e6e67);
+  background: #faf8f7;
+}
+
+.hub-estoque-drawer__affix-prefix {
+  border-right: 1px solid #e8e4e0;
+}
+
+.hub-estoque-drawer__affix-suffix {
+  border-left: 1px solid #e8e4e0;
+}
+
+.hub-estoque-drawer__checks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #faf8f7;
+  border: 1px solid #efe8e3;
+}
+
+.hub-estoque-drawer .hub-estoque__filters {
+  width: 100%;
+}
+
+.hub-estoque-drawer .hub-estoque__filter-chip {
+  flex: 1;
+  justify-content: center;
+  text-align: center;
+}
+
+.hub-estoque-drawer .hub-date-field__label {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .hub-estoque-drawer__row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .hub-estoque-page .hub-estoque__encounter-note {
@@ -69,6 +227,189 @@
 .hub-estoque__count-input {
   width: 96px;
   max-width: 100%;
+}
+
+.hub-estoque__filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: #fdfaf8;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.hub-estoque__filter-chip {
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--hc-text-muted, #8e6e67);
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.hub-estoque__filter-chip:hover:not(.hub-estoque__filter-chip--active) {
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-estoque__filter-chip--active {
+  background: #fff;
+  color: var(--hc-brand, #f0642f);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(58, 42, 32, 0.08);
+}
+
+.hub-estoque__toolbar-filters {
+  align-items: flex-end;
+}
+
+.hub-estoque__toolbar-actions {
+  margin-left: auto;
+}
+
+.hub-estoque__metric-btn {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+
+.hub-estoque__metric-btn--active {
+  border-color: color-mix(in srgb, var(--hc-brand) 45%, var(--hc-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hc-brand) 14%, transparent);
+}
+
+.hub-estoque__metric-icon--in {
+  background: color-mix(in srgb, #6fa677 16%, white);
+  color: #4d8a56;
+}
+
+.hub-estoque__metric-icon--out {
+  background: color-mix(in srgb, #ef4444 12%, white);
+  color: #c53030;
+}
+
+.hub-estoque__kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  background: #f3eee9;
+  color: #6b5348;
+}
+
+.hub-estoque__kind--product {
+  background: #f8ece4;
+  color: #b4532a;
+}
+
+.hub-estoque__kind--medication {
+  background: #e6f4ef;
+  color: #2f7a64;
+}
+
+.hub-estoque__kind--vaccine {
+  background: #eee6f4;
+  color: #6d4d86;
+}
+
+.hub-estoque__kind-readonly {
+  margin: 0;
+}
+
+.hub-estoque__dir {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hub-estoque__dir--in {
+  background: #e8f5ea;
+  color: #3d7a46;
+}
+
+.hub-estoque__dir--out {
+  background: #fde8e8;
+  color: #b42318;
+}
+
+.hub-estoque__dir--unknown {
+  background: #f3eee9;
+  color: #6b5348;
+}
+
+.hub-estoque__qty {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.hub-estoque__qty--in {
+  color: #3d7a46;
+}
+
+.hub-estoque__qty--out {
+  color: #b42318;
+}
+
+.hub-estoque__qty--unknown {
+  color: inherit;
+}
+
+.hub-estoque__alert-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.hub-estoque__alert-panel {
+  background: #fff;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.hub-estoque__alert-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-estoque__link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--hc-brand);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+
+.hub-estoque__link:hover {
+  text-decoration: underline;
+}
+
+.hub-estoque__mobile-static {
+  cursor: default;
 }
 
 @media (max-width: 900px) {
@@ -107,5 +448,18 @@
   .hub-estoque-page .hub-clientes__row2,
   .hub-estoque-page .hub-servicos__form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hub-estoque__alert-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-estoque__toolbar-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .hub-estoque__filters {
+    width: 100%;
   }
 }

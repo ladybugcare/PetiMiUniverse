@@ -106,7 +106,7 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
     <div className="hub-caixa-page__card hub-caixa-page__card--ops">
       <h3 className="hub-caixa-page__card-title">Movimentações da sessão</h3>
       {!cashOpen ? (
-        <p className="hub-caixa-page__empty">Abra o caixa para ver as movimentações da sessão.</p>
+        <p className="hub-caixa-page__empty">Inicie o turno para ver as movimentações da sessão.</p>
       ) : loadingMethods ? (
         <HubLoading variant="block" label="Carregando formas de pagamento…" />
       ) : (

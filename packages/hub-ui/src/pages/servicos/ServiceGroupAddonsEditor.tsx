@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { hubServiceAddonsApi } from '../../api/hubServiceAddonsApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { HubCheckbox } from '../../components/HubCheckbox';
 
 type Props = {
@@ -15,11 +16,11 @@ const ServiceGroupAddonsEditor: React.FC<Props> = ({ groupId, clinicId, canWrite
   const { showError, showSuccess } = useAlert();
   const [catalog, setCatalog] = useState<HubServiceType[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(groupId);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    begin();
     try {
       const [addonsRes, groupRes] = await Promise.all([
         hubServiceTypesApi.list(clinicId, true, false, true),
@@ -27,12 +28,13 @@ const ServiceGroupAddonsEditor: React.FC<Props> = ({ groupId, clinicId, canWrite
       ]);
       setCatalog(addonsRes.service_types ?? []);
       setSelected(new Set(groupRes.addon_service_type_ids ?? []));
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar adicionais do grupo');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, groupId, showError]);
+  }, [clinicId, groupId, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -65,12 +67,13 @@ const ServiceGroupAddonsEditor: React.FC<Props> = ({ groupId, clinicId, canWrite
     }
   };
 
-  if (loading) {
+  if (loading && catalog.length === 0) {
     return <HubLoading variant="block" label="Carregando catálogo de adicionais…" className="hub-servicos__margin-info" />;
   }
 
   return (
-    <div className="hub-servicos-config__addons-block">
+    <div className="hub-servicos-config__addons-block hub-loading-host">
+      <HubRefreshingBanner show={refreshing} label="Atualizando adicionais…" />
       <h3 className="hub-servicos__form-section-title">Adicionais deste grupo</h3>
       <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>
         Ao marcar um adicional, ele passa a estar disponível em todos os serviços principais já criados deste grupo.

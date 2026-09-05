@@ -1274,12 +1274,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             hub_service_type_id: s.hub_service_type_id,
             name: s.name,
             pricing_variant: s.pricing_variant,
+            sale_amount_override: s.sale_amount_override,
             isAddon: false as const,
           })),
           ...cfg.selectedAddons.map((s) => ({
             hub_service_type_id: s.hub_service_type_id,
             name: s.name,
             pricing_variant: s.pricing_variant,
+            sale_amount_override: s.sale_amount_override,
             isAddon: true as const,
           })),
         ],
@@ -1318,12 +1320,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             hub_service_type_id: s.hub_service_type_id,
             name: s.name,
             pricing_variant: s.pricing_variant,
+            sale_amount_override: s.sale_amount_override,
             isAddon: false as const,
           })),
           ...selectedAddons.map((s) => ({
             hub_service_type_id: s.hub_service_type_id,
             name: s.name,
             pricing_variant: s.pricing_variant,
+            sale_amount_override: s.sale_amount_override,
             isAddon: true as const,
           })),
         ],
@@ -1332,6 +1336,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             hub_service_type_id: s.hub_service_type_id,
             name: s.name,
             pricing_variant: s.pricing_variant,
+            sale_amount_override: s.sale_amount_override,
           })),
         ),
         serviceTypes: serviceTypesForPricing,
@@ -2280,11 +2285,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               </p>
               {pricingPreview.lines.map((ln, i) => {
                 const chip = services.find((s) => s.hub_service_type_id === ln.hub_service_type_id);
-                const sale =
-                  chip?.sale_amount_override != null && Number.isFinite(chip.sale_amount_override)
-                    ? Number(chip.sale_amount_override)
-                    : ln.sale;
+                const sale = ln.effectiveSale;
                 const specialHint = chip?.special_price_hint;
+                const showSpecial = ln.hasSpecialOverride || Boolean(specialHint);
+                const catalogSale = specialHint?.catalog_sale ?? ln.sale;
                 return (
                 <div
                   key={`${ln.hub_service_type_id}-${ln.name}-${i}`}
@@ -2296,28 +2300,23 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                       ? sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                       : (
                           <>
-                            {specialHint ? (
-                              <>
-                                especial ·{' '}
-                                {sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                <span style={{ display: 'block', fontSize: 11 }}>
-                                  catálogo{' '}
-                                  {specialHint.catalog_sale.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL',
-                                  })}
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                {ln.tierApplied ? PORTE_LABELS[ln.tierApplied as PorteValue] ?? ln.tierApplied : '—'}
-                                {ln.coatTypeApplied
-                                  ? ` / ${COAT_TYPE_LABELS[ln.coatTypeApplied as CoatTypeValue] ?? ln.coatTypeApplied}`
+                            {ln.tierApplied ? PORTE_LABELS[ln.tierApplied as PorteValue] ?? ln.tierApplied : '—'}
+                            {ln.coatTypeApplied
+                              ? ` / ${COAT_TYPE_LABELS[ln.coatTypeApplied as CoatTypeValue] ?? ln.coatTypeApplied}`
+                              : ''}
+                            {ln.needsCoatType ? ' / selecione pelagem' : ''} ·{' '}
+                            {sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            {showSpecial ? (
+                              <span className="nam-aside__special-note">
+                                especial
+                                {Math.abs(catalogSale - sale) > 0.009
+                                  ? ` · catálogo ${catalogSale.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}`
                                   : ''}
-                                {ln.needsCoatType ? ' / selecione pelagem' : ''} ·{' '}
-                                {sale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                              </>
-                            )}
+                              </span>
+                            ) : null}
                           </>
                         )}
                   </span>

@@ -6,16 +6,31 @@ import {
   hubInventoryApi,
   type HubExpiryAlertPolicy,
   type HubInventoryItem,
-  type HubItemKind,
   type HubManufacturer,
   type HubSupplier,
 } from '../../api/hubInventoryApi';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import HubEstoqueItemDrawer, { type InventoryFormState } from './HubEstoqueItemDrawer';
 import HubEstoqueMovementDrawer from './HubEstoqueMovementDrawer';
+import HubEstoqueFilterChips from './HubEstoqueFilterChips';
+import {
+  isLowStock,
+  kindFirstCreateLabel,
+  kindLabel,
+  kindLabelPlural,
+  kindNewLabel,
+  kindNoneCadastradoLabel,
+  partnerDisplayLabel,
+  suggestedProductGroups,
+  parseKindFilter,
+  parseStockFilter,
+  type EstoqueKindFilter,
+  type EstoqueStockFilter,
+} from './estoqueShared';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
 import '../pets/pets-page.css';
@@ -48,12 +63,6 @@ function parseMoneyInput(raw: string): number | null {
   return Math.round(n * 100) / 100;
 }
 
-function kindLabel(k: HubItemKind): string {
-  if (k === 'medication') return 'Medicamento';
-  if (k === 'vaccine') return 'Vacina';
-  return 'Produto';
-}
-
 /** Distingue ID existente de texto livre ao usar allowCreate no combobox (valor = id ou nome novo). */
 function isLikelyUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.trim());
@@ -61,7 +70,8 @@ function isLikelyUuid(s: string): boolean {
 
 type PanelMode = 'none' | 'create' | 'edit';
 
-const emptyForm = (): InventoryFormState => ({
+const emptyForm = (itemKind: InventoryFormState['item_kind'] = 'product'): InventoryFormState => ({
+  item_kind: itemKind,
   name: '',
   ean: '',
   unit_label: '',
@@ -87,6 +97,7 @@ const emptyForm = (): InventoryFormState => ({
 });
 
 const fromRow = (t: HubInventoryItem): InventoryFormState => ({
+  item_kind: t.item_kind,
   name: t.name,
   ean: t.ean ?? '',
   unit_label: t.unit_label ?? '',
@@ -111,23 +122,38 @@ const fromRow = (t: HubInventoryItem): InventoryFormState => ({
   initial_lot_code: '',
 });
 
-export interface HubEstoqueItemsPageProps {
-  itemKind: HubItemKind;
-}
+const KIND_FILTERS: { id: EstoqueKindFilter; label: string }[] = [
+  { id: 'all', label: 'Todos' },
+  { id: 'product', label: 'Produtos' },
+  { id: 'medication', label: 'Medicamentos' },
+  { id: 'vaccine', label: 'Vacinas' },
+];
 
-const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) => {
+const STOCK_FILTERS: { id: EstoqueStockFilter; label: string }[] = [
+  { id: 'all', label: 'Qualquer estoque' },
+  { id: 'low', label: 'Abaixo do mínimo' },
+  { id: 'zero', label: 'Zerados' },
+  { id: 'ok', label: 'Em dia' },
+];
+
+const HubEstoqueItemsPage: React.FC = () => {
   const { showError, showSuccess, showConfirm } = useAlert();
   const { user, role: authRole } = useAuth();
   const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.inventory.write');
   const accessAllowed = hasPermission('hub.inventory.read');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const kindFilter = parseKindFilter(searchParams.get('kind'));
+  const stockFilter = parseStockFilter(searchParams.get('stock'));
+  const itemKind = kindFilter === 'all' ? undefined : kindFilter;
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
+    clinicId ? `${clinicId}:${kindFilter}` : null,
+  );
   const [items, setItems] = useState<HubInventoryItem[]>([]);
   const [suppliers, setSuppliers] = useState<HubSupplier[]>([]);
   const [manufacturers, setManufacturers] = useState<HubManufacturer[]>([]);
-  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
   const [panelMode, setPanelMode] = useState<PanelMode>('none');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -141,17 +167,18 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
 
   const loadItems = useCallback(async () => {
     if (!clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const s = searchRef.current.trim();
       const res = await hubInventoryApi.items.list(clinicId, true, itemKind, s || undefined);
       setItems(res.items || []);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar itens');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, itemKind, showError]);
+  }, [clinicId, itemKind, showError, begin, succeed, finish]);
 
   const onSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -195,56 +222,92 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
     void loadRefs();
   }, [clinicId, accessAllowed, loadRefs]);
 
-  // Deep link /hub/estoque?q=… (ex.: relatórios) e reload ao mudar o parâmetro.
+  // Deep link /hub/estoque/itens?q=… (ex.: relatórios) e reload ao mudar busca ou tipo.
+  const qParam = searchParams.get('q') ?? '';
   useEffect(() => {
     if (!clinicId || !accessAllowed) return;
-    const q = searchParams.get('q') ?? '';
-    setSearch(q);
-    searchRef.current = q;
+    setSearch(qParam);
+    searchRef.current = qParam;
     void loadItems();
-  }, [clinicId, accessAllowed, loadItems, searchParams]);
+  }, [clinicId, accessAllowed, loadItems, qParam]);
+
+  const patchFilters = useCallback(
+    (patch: { kind?: EstoqueKindFilter; stock?: EstoqueStockFilter }) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (patch.kind !== undefined) {
+            if (patch.kind === 'all') next.delete('kind');
+            else next.set('kind', patch.kind);
+          }
+          if (patch.stock !== undefined) {
+            if (patch.stock === 'all') next.delete('stock');
+            else next.set('stock', patch.stock);
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   const metrics = useMemo(() => {
     const total = items.length;
-    const low = items.filter((i) => (i.qty_on_hand ?? 0) < Number(i.min_stock_qty || 0) && Number(i.min_stock_qty || 0) > 0).length;
-    return { total, low };
+    const low = items.filter((i) => isLowStock(i.qty_on_hand, i.min_stock_qty)).length;
+    const zero = items.filter((i) => (i.qty_on_hand ?? 0) === 0).length;
+    return { total, low, zero };
   }, [items]);
+
+  const displayedItems = useMemo(() => {
+    return items.filter((i) => {
+      if (stockFilter === 'low') return isLowStock(i.qty_on_hand, i.min_stock_qty);
+      if (stockFilter === 'zero') return (i.qty_on_hand ?? 0) === 0;
+      if (stockFilter === 'ok') return !isLowStock(i.qty_on_hand, i.min_stock_qty) && (i.qty_on_hand ?? 0) > 0;
+      return true;
+    });
+  }, [items, stockFilter]);
 
   const manufacturerOptions = useMemo((): HubComboboxOption[] => {
     const sorted = [...manufacturers].sort((a, b) => a.name.localeCompare(b.name, 'pt'));
-    const rows: HubComboboxOption[] = sorted.map((m) => ({ value: m.id, label: m.name }));
+    const rows: HubComboboxOption[] = sorted.map((m) => ({
+      value: m.id,
+      label: partnerDisplayLabel(m.name, m.party_name),
+    }));
     const id = form.manufacturer_id.trim();
     if (id && !rows.some((o) => o.value === id)) {
       rows.push({ value: id, label: `${manufacturers.find((m) => m.id === id)?.name ?? 'Fabricante'} (referência)` });
     }
-    return [{ value: '', label: '—' }, ...rows];
+    return rows;
   }, [manufacturers, form.manufacturer_id]);
 
   const supplierOptions = useMemo((): HubComboboxOption[] => {
     const sorted = [...suppliers].sort((a, b) => a.name.localeCompare(b.name, 'pt'));
-    const rows: HubComboboxOption[] = sorted.map((s) => ({ value: s.id, label: s.name }));
+    const rows: HubComboboxOption[] = sorted.map((s) => ({
+      value: s.id,
+      label: partnerDisplayLabel(s.name, s.party_name),
+    }));
     const id = form.default_supplier_id.trim();
     if (id && !rows.some((o) => o.value === id)) {
       rows.push({ value: id, label: `${suppliers.find((s) => s.id === id)?.name ?? 'Fornecedor'} (referência)` });
     }
-    return [{ value: '', label: '—' }, ...rows];
+    return rows;
   }, [suppliers, form.default_supplier_id]);
 
-  /** Grupos já usados nos itens desta vista + valor atual; novos via allowCreate (texto livre, sem tabela). */
+  /** Sugestões por tipo + grupos já usados nos itens; novos via allowCreate (texto livre). */
   const productGroupOptions = useMemo((): HubComboboxOption[] => {
     const seen = new Set<string>();
+    for (const g of suggestedProductGroups(form.item_kind)) {
+      if (g) seen.add(g);
+    }
     for (const it of items) {
       const g = (it.product_group ?? '').trim();
       if (g) seen.add(g);
     }
-    const sorted = [...seen].sort((a, b) => a.localeCompare(b, 'pt'));
-    const rows: HubComboboxOption[] = sorted.map((g) => ({ value: g, label: g }));
     const current = form.product_group.trim();
-    if (current && !rows.some((o) => o.value === current)) {
-      rows.push({ value: form.product_group, label: `${current} (valor atual)` });
-    }
-    return [{ value: '', label: '—' }, ...rows];
-  }, [items, form.product_group]);
+    if (current) seen.add(current);
+    return [...seen].sort((a, b) => a.localeCompare(b, 'pt')).map((g) => ({ value: g, label: g }));
+  }, [items, form.product_group, form.item_kind]);
 
   const handleManufacturerComboboxChange = useCallback(
     async (v: string) => {
@@ -317,7 +380,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
   const openCreate = () => {
     setPanelMode('create');
     setEditingId(null);
-    setForm(emptyForm());
+    setForm(emptyForm(itemKind ?? 'product'));
   };
 
   const openEdit = (t: HubInventoryItem) => {
@@ -395,7 +458,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
       if (panelMode === 'create') {
         await hubInventoryApi.items.create({
           clinic_id: clinicId,
-          item_kind: itemKind,
+          item_kind: form.item_kind,
           ean: form.ean.trim() || null,
           name,
           unit_label: form.unit_label.trim() || null,
@@ -490,33 +553,41 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
         <div className="hub-clientes__main">
           <div className="hub-servicos-config__header">
             <div>
-              <h1 className="hub-servicos-config__title">{kindLabel(itemKind)}</h1>
+              <h1 className="hub-servicos-config__title">Itens de estoque</h1>
               <p className="hub-clientes__muted hub-servicos-config__lead">
-                Cadastro e gestão de {kindLabel(itemKind).toLowerCase()}s no inventário da clínica.
+                Catálogo de produtos, medicamentos e vacinas — quantidade, preços e alertas em um só lugar.
               </p>
             </div>
           </div>
 
-          <div className="hub-servicos__metrics" aria-live="polite">
-            <div className="hub-servicos__metric-card">
+          <div className="hub-servicos__metrics hub-estoque__metrics" aria-live="polite">
+            <button
+              type="button"
+              className={`hub-servicos__metric-card hub-estoque__metric-btn${stockFilter === 'all' ? ' hub-estoque__metric-btn--active' : ''}`}
+              onClick={() => patchFilters({ stock: 'all' })}
+            >
               <div className="hub-servicos__metric-card__text">
-                <div className="hub-servicos__metric-label">Total de itens</div>
+                <div className="hub-servicos__metric-label">Cadastrados</div>
                 <div className="hub-servicos__metric-value">
                   {loading ? '—' : metrics.total.toLocaleString('pt-BR')}
                 </div>
-                <div className="hub-servicos__metric-sub">{kindLabel(itemKind)}s cadastrados</div>
+                <div className="hub-servicos__metric-sub">{kindLabelPlural(kindFilter).toLowerCase()} na vista</div>
               </div>
               <div className="hub-servicos__metric-icon" aria-hidden>
                 <Package size={22} strokeWidth={1.75} />
               </div>
-            </div>
-            <div className="hub-servicos__metric-card">
+            </button>
+            <button
+              type="button"
+              className={`hub-servicos__metric-card hub-estoque__metric-btn${stockFilter === 'low' ? ' hub-estoque__metric-btn--active' : ''}`}
+              onClick={() => patchFilters({ stock: stockFilter === 'low' ? 'all' : 'low' })}
+            >
               <div className="hub-servicos__metric-card__text">
                 <div className="hub-servicos__metric-label">Abaixo do mínimo</div>
                 <div className="hub-servicos__metric-value">
                   {loading ? '—' : metrics.low.toLocaleString('pt-BR')}
                 </div>
-                <div className="hub-servicos__metric-sub">Itens com estoque crítico</div>
+                <div className="hub-servicos__metric-sub">Estoque crítico</div>
               </div>
               <div
                 className={`hub-servicos__metric-icon${metrics.low > 0 ? '' : ' hub-servicos__metric-icon--muted'}`}
@@ -524,10 +595,43 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
               >
                 <AlertTriangle size={22} strokeWidth={1.75} />
               </div>
-            </div>
+            </button>
+            <button
+              type="button"
+              className={`hub-servicos__metric-card hub-estoque__metric-btn${stockFilter === 'zero' ? ' hub-estoque__metric-btn--active' : ''}`}
+              onClick={() => patchFilters({ stock: stockFilter === 'zero' ? 'all' : 'zero' })}
+            >
+              <div className="hub-servicos__metric-card__text">
+                <div className="hub-servicos__metric-label">Zerados</div>
+                <div className="hub-servicos__metric-value">
+                  {loading ? '—' : metrics.zero.toLocaleString('pt-BR')}
+                </div>
+                <div className="hub-servicos__metric-sub">Sem quantidade em mãos</div>
+              </div>
+              <div
+                className={`hub-servicos__metric-icon${metrics.zero > 0 ? '' : ' hub-servicos__metric-icon--muted'}`}
+                aria-hidden
+              >
+                <Package size={22} strokeWidth={1.75} />
+              </div>
+            </button>
           </div>
 
           <div className="hub-servicos__toolbar">
+            <div className="hub-servicos__toolbar-row hub-estoque__toolbar-filters">
+              <HubEstoqueFilterChips
+                ariaLabel="Tipo de item"
+                value={kindFilter}
+                options={KIND_FILTERS}
+                onChange={(id) => patchFilters({ kind: id })}
+              />
+              <HubEstoqueFilterChips
+                ariaLabel="Situação do estoque"
+                value={stockFilter}
+                options={STOCK_FILTERS}
+                onChange={(id) => patchFilters({ stock: id })}
+              />
+            </div>
             <div className="hub-servicos__toolbar-row">
               <div className="hub-servicos__search-wrap">
                 <div className="hub-servicos__search-field">
@@ -550,29 +654,44 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
               {canWrite && (
                 <button type="button" className="hub-servicos__btn-primary-icon" onClick={openCreate}>
                   <Plus size={18} strokeWidth={2.25} aria-hidden />
-                  Novo {kindLabel(itemKind).toLowerCase()}
+                  {kindNewLabel(kindFilter)}
                 </button>
               )}
             </div>
           </div>
 
-          {loading ? (
+          <HubRefreshingBanner show={refreshing} label="Atualizando itens…" />
+          {loading && items.length === 0 ? (
             <HubLoading variant="block" label="Carregando itens…" />
           ) : items.length === 0 ? (
             <div className="hub-packages__empty">
               <div className="hub-packages__empty-icon" aria-hidden>
                 <Package size={36} strokeWidth={1.5} />
               </div>
-              <h2 className="hub-packages__empty-title">Nenhum {kindLabel(itemKind).toLowerCase()} cadastrado</h2>
+              <h2 className="hub-packages__empty-title">{kindNoneCadastradoLabel(kindFilter)}</h2>
               <p className="hub-packages__empty-text">
-                Cadastre {kindLabel(itemKind).toLowerCase()}s para controlar quantidade, preços e alertas de estoque.
+                Cadastre {kindLabelPlural(kindFilter).toLowerCase()} para controlar quantidade, preços e alertas.
               </p>
               {canWrite && (
                 <button type="button" className="hub-servicos__btn-primary-icon" onClick={openCreate}>
                   <Plus size={18} strokeWidth={2.25} aria-hidden />
-                  Criar primeiro {kindLabel(itemKind).toLowerCase()}
+                  {kindFirstCreateLabel(kindFilter)}
                 </button>
               )}
+            </div>
+          ) : displayedItems.length === 0 ? (
+            <div className="hub-packages__empty">
+              <div className="hub-packages__empty-icon" aria-hidden>
+                <Package size={36} strokeWidth={1.5} />
+              </div>
+              <h2 className="hub-packages__empty-title">Nenhum item neste filtro</h2>
+              <p className="hub-packages__empty-text">
+                Há {metrics.total.toLocaleString('pt-BR')} {kindLabelPlural(kindFilter).toLowerCase()} cadastrados, mas
+                nenhum combina com a situação de estoque selecionada.
+              </p>
+              <button type="button" className="hub-servicos__btn-ghost-sm" onClick={() => patchFilters({ stock: 'all' })}>
+                Limpar filtro de estoque
+              </button>
             </div>
           ) : (
             <>
@@ -581,6 +700,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                   <thead>
                     <tr>
                       <th>Item</th>
+                      {kindFilter === 'all' ? <th>Tipo</th> : null}
                       <th>EAN</th>
                       <th>SKU</th>
                       <th>Qtd</th>
@@ -591,9 +711,9 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((t) => {
-                      const isLow =
-                        Number(t.min_stock_qty || 0) > 0 && (t.qty_on_hand ?? 0) < Number(t.min_stock_qty || 0);
+                    {displayedItems.map((t) => {
+                      const isLow = isLowStock(t.qty_on_hand, t.min_stock_qty);
+                      const isZero = (t.qty_on_hand ?? 0) === 0;
                       return (
                         <tr
                           key={t.id}
@@ -616,6 +736,13 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                               </div>
                             </div>
                           </td>
+                          {kindFilter === 'all' ? (
+                            <td>
+                              <span className={`hub-estoque__kind hub-estoque__kind--${t.item_kind}`}>
+                                {kindLabel(t.item_kind)}
+                              </span>
+                            </td>
+                          ) : null}
                           <td className="hub-clientes__muted" style={{ fontFamily: 'monospace', fontSize: 12 }}>
                             {t.ean || '—'}
                           </td>
@@ -625,7 +752,7 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                           <td>
                             <span
                               className={`hub-clientes__pill ${
-                                isLow ? 'hub-clientes__pill--inactive' : 'hub-clientes__pill--active'
+                                isLow || isZero ? 'hub-clientes__pill--inactive' : 'hub-clientes__pill--active'
                               }`}
                             >
                               {t.qty_on_hand ?? 0}
@@ -666,9 +793,9 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
               </div>
 
               <div className="hub-clientes__mobile-list" aria-label="Lista de itens">
-                {items.map((t) => {
-                  const isLow =
-                    Number(t.min_stock_qty || 0) > 0 && (t.qty_on_hand ?? 0) < Number(t.min_stock_qty || 0);
+                {displayedItems.map((t) => {
+                  const isLow = isLowStock(t.qty_on_hand, t.min_stock_qty);
+                  const isZero = (t.qty_on_hand ?? 0) === 0;
                   return (
                     <button
                       key={t.id}
@@ -683,13 +810,16 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
                         <div className="hub-clientes__mobile-card-main">
                           <span className="hub-clientes__mobile-card-name">{t.name}</span>
                           <span className="hub-clientes__muted hub-clientes__mobile-card-contact">
-                            {t.ean ? `EAN ${t.ean}` : 'Sem EAN'}
+                            <span className={`hub-estoque__kind hub-estoque__kind--${t.item_kind}`}>
+                              {kindLabel(t.item_kind)}
+                            </span>
+                            {t.ean ? ` · EAN ${t.ean}` : ''}
                             {t.store_sku ? ` · SKU ${t.store_sku}` : ''}
                           </span>
                         </div>
                         <span
                           className={`hub-clientes__pill ${
-                            isLow ? 'hub-clientes__pill--inactive' : 'hub-clientes__pill--active'
+                            isLow || isZero ? 'hub-clientes__pill--inactive' : 'hub-clientes__pill--active'
                           }`}
                         >
                           {t.qty_on_hand ?? 0} un.
@@ -716,7 +846,8 @@ const HubEstoqueItemsPage: React.FC<HubEstoqueItemsPageProps> = ({ itemKind }) =
         open={drawerOpen}
         onClose={closePanel}
         mode={panelMode === 'edit' ? 'edit' : 'create'}
-        itemKind={itemKind}
+        itemKind={form.item_kind}
+        allowKindChange={panelMode === 'create'}
         form={form}
         setForm={setForm}
         saving={saving}

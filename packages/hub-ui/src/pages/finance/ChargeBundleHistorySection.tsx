@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Coins, ExternalLink, Send } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { hubFinancialApi, type HubChargeBundle, type HubChargeBundleStatus } from '../../api/hubFinancialApi';
 import { batchChargeItemsFromBundleItems } from './batchChargeItems';
 import { BatchChargeDrawer } from './BatchChargeDrawer';
@@ -44,26 +45,29 @@ export const ChargeBundleHistorySection: React.FC<ChargeBundleHistorySectionProp
 }) => {
   const clinicId = getStoredClinicId();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
+    clinicId ? `${clinicId}:${guardianId}` : null,
+  );
   const [bundles, setBundles] = useState<HubChargeBundle[]>([]);
   const [settleBundle, setSettleBundle] = useState<HubChargeBundle | null>(null);
   const [showSettleDrawer, setShowSettleDrawer] = useState(false);
 
   const load = useCallback(async () => {
     if (!clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const { bundles: rows } = await hubFinancialApi.listChargeBundles(clinicId, {
         guardian_id: guardianId,
         limit: 30,
       });
       setBundles(rows);
+      succeed();
     } catch {
       setBundles([]);
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, guardianId]);
+  }, [clinicId, guardianId, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -96,10 +100,13 @@ export const ChargeBundleHistorySection: React.FC<ChargeBundleHistorySectionProp
       <section className="hub-clientes__fin-section">
         <h4 className="hub-clientes__fin-section-title">
           Cobranças enviadas
-          {!loading ? <span className="hub-clientes__fin-section-count">{visibleBundles.length}</span> : null}
+          {bundles.length > 0 || !loading ? (
+            <span className="hub-clientes__fin-section-count">{visibleBundles.length}</span>
+          ) : null}
         </h4>
 
-        {loading ? (
+        <HubRefreshingBanner show={refreshing} label="Atualizando cobranças…" />
+        {loading && bundles.length === 0 ? (
           <HubLoading variant="inline" label="Carregando lotes…" size="sm" />
         ) : visibleBundles.length === 0 ? (
           <p className="hub-clientes__muted">Nenhuma cobrança agrupada enviada ainda.</p>

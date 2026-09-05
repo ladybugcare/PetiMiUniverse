@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import { hubFinancialApi, type HubCashSessionSummary } from '../../api/hubFinancialApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 
 function formatBrl(n: number): string {
@@ -17,7 +18,9 @@ export const HubPaymentReversalPanel: React.FC = () => {
   const { showError, showSuccess } = useAlert();
 
   const [cashSummary, setCashSummary] = useState<HubCashSessionSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
+    clinicId && unitId ? `${clinicId}:${unitId}` : null,
+  );
   const [reversePaymentId, setReversePaymentId] = useState('');
   const [reverseTargetId, setReverseTargetId] = useState<string | null>(null);
   const [reverseReason, setReverseReason] = useState('');
@@ -25,10 +28,10 @@ export const HubPaymentReversalPanel: React.FC = () => {
   const load = useCallback(async () => {
     if (!clinicId || !unitId) {
       setCashSummary(null);
-      setLoading(false);
+      finish();
       return;
     }
-    setLoading(true);
+    begin();
     try {
       const { cash_session } = await hubFinancialApi.getCashSessionOpen(clinicId, unitId);
       if (cash_session?.id) {
@@ -36,12 +39,13 @@ export const HubPaymentReversalPanel: React.FC = () => {
       } else {
         setCashSummary(null);
       }
+      succeed();
     } catch {
       setCashSummary(null);
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, unitId]);
+  }, [clinicId, unitId, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -88,7 +92,8 @@ export const HubPaymentReversalPanel: React.FC = () => {
         . Use esta seção para estornos avulsos por UUID do pagamento.
       </p>
 
-      {loading ? (
+      <HubRefreshingBanner show={refreshing} label="Atualizando pagamentos…" />
+      {loading && !cashSummary ? (
         <HubLoading variant="block" label="Carregando pagamentos…" />
       ) : cashSummary?.payments?.length ? (
         <div className="hub-finance-page__panel-section" style={{ marginBottom: 20 }}>

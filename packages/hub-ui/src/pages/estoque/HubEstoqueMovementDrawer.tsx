@@ -12,6 +12,7 @@ import { HubCheckbox } from '../../components/HubCheckbox';
 import { HubDateField } from '../../components/HubDateField';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import { useAlert } from '../../components/AlertProvider';
+import HubEstoqueFilterChips from './HubEstoqueFilterChips';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
 import '../servicos/servicos-page.css';
@@ -23,7 +24,7 @@ export type HubEstoqueMovementDrawerProps = {
   open: boolean;
   onClose: () => void;
   clinicId: string;
-  /** Direção padrão da tela (entradas → in; saídas → out). */
+  /** Direção do movimento (entrada ou ajuste de saída). */
   direction: 'in' | 'out';
   /** Item pré-selecionado (ficha do produto / alerta). */
   preselectedItemId?: string | null;
@@ -247,7 +248,7 @@ const HubEstoqueMovementDrawer: React.FC<HubEstoqueMovementDrawerProps> = ({
         </div>
       }
     >
-      <div className="hub-clientes-drawer__content">
+      <div className="hub-clientes-drawer__content hub-estoque-drawer">
         <form id={FORM_ID} onSubmit={(e) => void handleSubmit(e)}>
           <div className="hub-clientes__field">
             <label className="hub-clientes__label" htmlFor="mov-item">
@@ -274,51 +275,42 @@ const HubEstoqueMovementDrawer: React.FC<HubEstoqueMovementDrawerProps> = ({
             <label className="hub-clientes__label" htmlFor="mov-type">
               Tipo *
             </label>
-            <select
+            <HubSearchableCombobox
               id="mov-type"
-              className="hub-clientes__select-input"
+              className="hub-combobox--clientes"
+              options={
+                direction === 'in'
+                  ? [
+                      { value: 'purchase_in', label: 'Compra' },
+                      { value: 'adjustment_in', label: 'Ajuste (+)' },
+                    ]
+                  : [{ value: 'adjustment_out', label: 'Ajuste (−)' }]
+              }
               value={movementType}
-              onChange={(e) => {
-                const t = e.target.value as typeof movementType;
+              onChange={(v) => {
+                const t = v as typeof movementType;
                 setMovementType(t);
                 if (t === 'adjustment_out') setLotMode('existing');
                 if (t === 'purchase_in') setLotMode('new');
               }}
-            >
-              {direction === 'in' ? (
-                <>
-                  <option value="purchase_in">Compra</option>
-                  <option value="adjustment_in">Ajuste (+)</option>
-                </>
-              ) : (
-                <option value="adjustment_out">Ajuste (−)</option>
-              )}
-            </select>
+              placeholder="Selecionar tipo"
+              clearable={false}
+              ariaLabel="Tipo de movimento"
+            />
           </div>
 
           {isIn && (
             <div className="hub-clientes__field">
-              <label className="hub-clientes__label">Lote</label>
-              <div className="hub-estoque__lot-mode">
-                <label className="hub-estoque__radio">
-                  <input
-                    type="radio"
-                    name="lot-mode"
-                    checked={lotMode === 'new'}
-                    onChange={() => setLotMode('new')}
-                  />
-                  Novo lote
-                </label>
-                <label className="hub-estoque__radio">
-                  <input
-                    type="radio"
-                    name="lot-mode"
-                    checked={lotMode === 'existing'}
-                    onChange={() => setLotMode('existing')}
-                  />
-                  Lote existente
-                </label>
-              </div>
+              <span className="hub-clientes__label">Lote</span>
+              <HubEstoqueFilterChips
+                ariaLabel="Modo do lote"
+                value={lotMode}
+                options={[
+                  { id: 'new', label: 'Novo lote' },
+                  { id: 'existing', label: 'Lote existente' },
+                ]}
+                onChange={setLotMode}
+              />
             </div>
           )}
 
@@ -327,24 +319,25 @@ const HubEstoqueMovementDrawer: React.FC<HubEstoqueMovementDrawerProps> = ({
               <label className="hub-clientes__label" htmlFor="mov-lot">
                 Lote *
               </label>
-              <select
+              <HubSearchableCombobox
                 id="mov-lot"
-                className="hub-clientes__select-input"
+                className="hub-combobox--clientes"
+                options={lotsForItem.map((l) => ({
+                  value: l.id,
+                  label:
+                    (l.lot_code || 'Sem código') +
+                    (l.expiry_date
+                      ? ` · val. ${new Date(`${l.expiry_date}T12:00:00`).toLocaleDateString('pt-BR')}`
+                      : '') +
+                    ` · ${l.qty_on_hand} un.`,
+                }))}
                 value={lotId}
-                onChange={(e) => setLotId(e.target.value)}
-                required
-              >
-                <option value="">Selecione…</option>
-                {lotsForItem.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {(l.lot_code || 'Sem código') +
-                      (l.expiry_date
-                        ? ` · val. ${new Date(l.expiry_date + 'T12:00:00').toLocaleDateString('pt-BR')}`
-                        : '') +
-                      ` · ${l.qty_on_hand} un.`}
-                  </option>
-                ))}
-              </select>
+                onChange={setLotId}
+                placeholder="Selecionar lote"
+                searchPlaceholder="Buscar lote…"
+                emptyResultsLabel="Nenhum lote encontrado"
+                ariaLabel="Lote"
+              />
               {itemId && lotsForItem.length === 0 ? (
                 <p className="hub-estoque__hint-ean">Nenhum lote com saldo para este item.</p>
               ) : null}

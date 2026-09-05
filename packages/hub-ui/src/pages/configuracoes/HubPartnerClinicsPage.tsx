@@ -7,6 +7,8 @@ import {
   type HubPartnerClinic,
 } from '../../api/hubPartnerClinicsApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
 import { formatBrPhoneFromApi } from '../../utils/formatBrPhone';
@@ -68,7 +70,7 @@ const HubPartnerClinicsPage: React.FC = () => {
   const canRead = hasPermission('hub.clinic.read');
   const canWrite = hasPermission('hub.clinic.write');
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [rows, setRows] = useState<HubPartnerClinic[]>([]);
   const [includeInactive, setIncludeInactive] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -79,19 +81,20 @@ const HubPartnerClinicsPage: React.FC = () => {
   const load = useCallback(
     async (signal?: { cancelled: boolean }) => {
       if (!clinicId || !canRead) return;
-      setLoading(true);
+      begin();
       try {
         const res = await hubPartnerClinicsApi.list(clinicId, { includeInactive });
         if (signal?.cancelled) return;
         setRows(res.partner_clinics ?? []);
+        succeed();
       } catch (e: unknown) {
         if (signal?.cancelled) return;
         showError((e as Error)?.message || 'Erro ao carregar clínicas parceiras');
       } finally {
-        if (!signal?.cancelled) setLoading(false);
+        if (!signal?.cancelled) finish();
       }
     },
-    [clinicId, canRead, includeInactive, showError],
+    [clinicId, canRead, includeInactive, showError, begin, succeed, finish],
   );
 
   useEffect(() => {
@@ -229,7 +232,8 @@ const HubPartnerClinicsPage: React.FC = () => {
         ) : null}
       </div>
 
-      {loading ? (
+      <HubRefreshingBanner show={refreshing} label="Atualizando clínicas…" />
+      {loading && rows.length === 0 ? (
         <p className="hub-clientes__muted">Carregando…</p>
       ) : rows.length === 0 ? (
         <div className="hub-pc__empty">

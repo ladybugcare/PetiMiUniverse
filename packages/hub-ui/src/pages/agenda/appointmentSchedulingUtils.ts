@@ -6,6 +6,7 @@ export type SchedulingServiceChip = {
   name: string;
   duration_minutes: number;
   pricing_variant?: HubQuotePricingVariant | null;
+  sale_amount_override?: number | null;
 };
 
 export type ExtraBlock = {

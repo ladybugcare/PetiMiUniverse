@@ -9,6 +9,7 @@ export interface HubSupplier {
   id: string;
   clinic_id: string;
   name: string;
+  party_name: string | null;
   tax_id: string | null;
   phone: string | null;
   email: string | null;
@@ -23,6 +24,11 @@ export interface HubManufacturer {
   id: string;
   clinic_id: string;
   name: string;
+  party_name: string | null;
+  tax_id: string | null;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -161,6 +167,7 @@ export const hubInventoryApi = {
     create(payload: {
       clinic_id: string;
       name: string;
+      party_name?: string | null;
       tax_id?: string | null;
       phone?: string | null;
       email?: string | null;
@@ -173,6 +180,7 @@ export const hubInventoryApi = {
       payload: {
         clinic_id: string;
         name?: string;
+        party_name?: string | null;
         tax_id?: string | null;
         phone?: string | null;
         email?: string | null;
@@ -188,10 +196,30 @@ export const hubInventoryApi = {
     list(clinicId: string) {
       return apiRequest(`${base}/manufacturers?clinic_id=${encodeURIComponent(clinicId)}`) as Promise<{ manufacturers: HubManufacturer[] }>;
     },
-    create(payload: { clinic_id: string; name: string }) {
+    create(payload: {
+      clinic_id: string;
+      name: string;
+      party_name?: string | null;
+      tax_id?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      notes?: string | null;
+    }) {
       return apiRequest(`${base}/manufacturers`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<{ manufacturer: HubManufacturer }>;
     },
-    patch(id: string, payload: { clinic_id: string; name?: string; archived?: boolean }) {
+    patch(
+      id: string,
+      payload: {
+        clinic_id: string;
+        name?: string;
+        party_name?: string | null;
+        tax_id?: string | null;
+        phone?: string | null;
+        email?: string | null;
+        notes?: string | null;
+        archived?: boolean;
+      },
+    ) {
       return apiRequest(`${base}/manufacturers/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }) as Promise<{ manufacturer: HubManufacturer }>;
     },
   },

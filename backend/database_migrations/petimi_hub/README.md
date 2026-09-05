@@ -224,3 +224,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 102. **`102_create_hub_charge_bundles.sql`** — Cobrança agrupada: `hub_charge_bundles` + `hub_charge_bundle_items` (lote persistente com link/PDF públicos e histórico para baixa). Executar depois de `hub_receivables` e `hub_guardians`.
 
 103. **`103_create_hub_prescription_lookups.sql`** — Catálogo de receita por clínica (`hub_prescription_lookups`: medication / presentation / use_route) + coluna `use_route` em `hub_prescription_items`. Independente do inventário. Executar depois de `025i` / `058`.
+
+104. **`104_alter_hub_suppliers_manufacturers_party.sql`** — `hub_suppliers.party_name` (empresa ou pessoa que fornece) e ficha completa em `hub_manufacturers` (`party_name`, `tax_id`, `phone`, `email`, `notes`). Executar depois de `008_create_hub_inventory.sql`.
