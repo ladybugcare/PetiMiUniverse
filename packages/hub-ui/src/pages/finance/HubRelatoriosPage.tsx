@@ -23,6 +23,7 @@ import { HubRelatoriosNoShows } from './HubRelatoriosNoShows';
 import { HubRelatoriosBoardingOccupancy } from './HubRelatoriosBoardingOccupancy';
 import { HubRelatoriosGroomingProductivity } from './HubRelatoriosGroomingProductivity';
 import { HubRelatoriosVaccinesDue } from './HubRelatoriosVaccinesDue';
+import { HubRelatoriosExams } from './HubRelatoriosExams';
 import { HubRelatoriosPeriodToolbar } from './HubRelatoriosPeriodToolbar';
 import {
   HUB_REPORTS,
@@ -273,6 +274,10 @@ const HubRelatoriosPage: React.FC = () => {
 
             {!periodInvalid && activeReport.id === 'vaccines-due' && period.mode === 'preset' ? (
               <HubRelatoriosVaccinesDue clinicId={clinicId} days={period.days} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'exams-requested' ? (
+              <HubRelatoriosExams clinicId={clinicId} period={period} />
             ) : null}
           </>
         )}

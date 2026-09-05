@@ -4,6 +4,10 @@ import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 export type BlockCardHeaderProps = {
   blockNumber: number;
   title: string;
+  /** Linha secundária: horário · duração · serviços. */
+  subtitle?: string;
+  /** Variante visual do badge (blocos adicionais usam outline). */
+  badgeVariant?: 'primary' | 'secondary';
   expanded: boolean;
   onToggle: () => void;
   onRemove?: () => void;
@@ -12,6 +16,8 @@ export type BlockCardHeaderProps = {
 export const BlockCardHeader: React.FC<BlockCardHeaderProps> = ({
   blockNumber,
   title,
+  subtitle,
+  badgeVariant = 'primary',
   expanded,
   onToggle,
   onRemove,
@@ -19,10 +25,16 @@ export const BlockCardHeader: React.FC<BlockCardHeaderProps> = ({
   <div className={`nam-block-card__header-row${expanded ? '' : ' nam-block-card__header-row--collapsed'}`}>
     <button type="button" className="nam-block-card__header" onClick={onToggle}>
       <span className="nam-block-card__header-left">
-        <span className="nam-block-card__badge" aria-hidden>
+        <span
+          className={`nam-block-card__badge${badgeVariant === 'secondary' ? ' nam-block-card__badge--secondary' : ''}`}
+          aria-hidden
+        >
           {blockNumber}
         </span>
-        <span className="nam-block-card__title">{title}</span>
+        <span className="nam-block-card__title-stack">
+          <span className="nam-block-card__title">{title}</span>
+          {subtitle ? <span className="nam-block-card__subtitle">{subtitle}</span> : null}
+        </span>
       </span>
       <span className="nam-block-card__toggle">
         {expanded ? 'Recolher' : 'Expandir'}

@@ -64,9 +64,15 @@ export const ComandaItemsSection: React.FC<Props> = ({
   const serviceComboOptions = useMemo((): HubComboboxOption[] => {
     const active = serviceTypes.filter((s) => !s.deleted_at && s.active !== false && !s.is_addon);
     const filtered = q ? active.filter((s) => s.name.toLowerCase().includes(q)) : active;
+    const apps = filtered.filter((s) => Boolean(s.is_encounter_application));
+    const others = filtered.filter((s) => !s.is_encounter_application);
+    const sorted = [...apps, ...others];
     return [
       { value: '', label: '— Selecionar serviço —' },
-      ...filtered.map((s) => ({ value: s.id, label: s.name })),
+      ...sorted.map((s) => ({
+        value: s.id,
+        label: s.is_encounter_application ? `${s.name} · aplicação` : s.name,
+      })),
     ];
   }, [serviceTypes, q]);
 

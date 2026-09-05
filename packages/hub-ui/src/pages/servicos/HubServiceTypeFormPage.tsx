@@ -303,9 +303,10 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
         form.service_group === 'leva_traz' ? form.pickup_price_scope : 'round_trip',
       default_duration_minutes: dur,
       description: form.description.trim() || null,
-      allow_scheduling: isAddon ? false : form.allow_scheduling,
+      allow_scheduling: isAddon ? false : form.is_encounter_application ? false : form.allow_scheduling,
       internal_notes: form.internal_notes.trim() || null,
       is_addon: isAddon,
+      is_encounter_application: isAddon || form.service_group !== 'clinica' ? false : form.is_encounter_application,
     };
   };
 
@@ -487,6 +488,26 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
                       Adicionais não são agendáveis sozinhos; entram na marcação como opções do serviço principal.
                     </p>
                   )}
+                  {!isAddon && form.service_group === 'clinica' ? (
+                    <div className="pet-wizard__field--full">
+                      <HubCheckbox
+                        className="hub-servicos__check-row"
+                        checked={form.is_encounter_application}
+                        onChange={(is_encounter_application) =>
+                          setForm((f) => ({
+                            ...f,
+                            is_encounter_application,
+                            allow_scheduling: is_encounter_application ? false : f.allow_scheduling,
+                          }))
+                        }
+                      >
+                        Aplicação na consulta
+                      </HubCheckbox>
+                      <p className="hub-servicos__margin-info" style={{ marginTop: 6 }}>
+                        Marque para IM, IV, SC etc. Aparece só no dropdown da Medicação e entra na comanda como taxa de aplicação.
+                      </p>
+                    </div>
+                  ) : null}
                   <div className="pet-wizard__field--full">
                     <label className="pet-wizard__label">Descrição</label>
                     <textarea
@@ -630,6 +651,12 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
                           <div>
                             <dt>Agendamento</dt>
                             <dd>{form.allow_scheduling ? 'Permite' : 'Não permite'}</dd>
+                          </div>
+                        ) : null}
+                        {!isAddon && form.service_group === 'clinica' ? (
+                          <div>
+                            <dt>Aplicação na consulta</dt>
+                            <dd>{form.is_encounter_application ? 'Sim' : 'Não'}</dd>
                           </div>
                         ) : null}
                         {form.description.trim() ? (

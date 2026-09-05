@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
@@ -15,12 +16,20 @@ import {
   useServiceCardExpansion,
 } from './AppointmentServiceCard';
 import { BlockCardHeader } from './BlockCardHeader';
-import type { ExtraBlock } from './appointmentSchedulingUtils';
+import {
+  addMinutes,
+  applyExtraBlockAutoFields,
+  buildBlockHeaderSubtitle,
+  buildBlockTitleFromServices,
+  buildServiceDescriptionBullets,
+  type ExtraBlock,
+} from './appointmentSchedulingUtils';
 
 export type ExtraBlockCardProps = {
   block: ExtraBlock;
   index: number;
   blockNumber?: number;
+  petName?: string | null;
   groups: HubComboboxOption[];
   staffComboOptions: HubComboboxOption[];
   serviceTypes: HubServiceType[];
@@ -33,6 +42,7 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
   block,
   index,
   blockNumber,
+  petName,
   groups,
   staffComboOptions,
   serviceTypes,
@@ -41,7 +51,52 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
   onToggleExpand,
 }) => {
   const [svcSearchId, setSvcSearchId] = useState('');
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const displayBlockNumber = blockNumber ?? index + 2;
+  const autoSyncedKeyRef = useRef<string | null>(null);
+
+  const autoTitle = useMemo(
+    () => buildBlockTitleFromServices(block.services.map((s) => s.name), petName),
+    [block.services, petName],
+  );
+
+  // Garante título/descrição na abertura (edição ou bloco com serviços sem campos preenchidos).
+  useEffect(() => {
+    const svcSig = block.services.map((s) => s.hub_service_type_id).join('|');
+    const sig = `${block.key}:${svcSig}:${petName ?? ''}`;
+    if (autoSyncedKeyRef.current === sig) return;
+    autoSyncedKeyRef.current = sig;
+    if (block.services.length === 0) return;
+    if (block.block_title_user_edited && block.block_description_user_edited) return;
+    const next = applyExtraBlockAutoFields(block, serviceTypes, petName, { recalcEnds: false });
+    if (
+      next.block_title !== block.block_title ||
+      next.block_description !== block.block_description
+    ) {
+      onChange(next);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sincroniza só quando serviços/pet mudam
+  }, [
+    block.key,
+    block.services,
+    block.block_title,
+    block.block_description,
+    block.block_title_user_edited,
+    block.block_description_user_edited,
+    petName,
+    serviceTypes,
+  ]);
+
+  const headerSubtitle = useMemo(
+    () =>
+      buildBlockHeaderSubtitle({
+        startsHm: block.starts_hm,
+        endsHm: block.ends_hm,
+        durationMin: block.services.reduce((sum, s) => sum + s.duration_minutes, 0),
+        serviceNames: block.services.map((s) => s.name),
+      }),
+    [block.starts_hm, block.ends_hm, block.services],
+  );
 
   const blockServiceComboOptions = useMemo<HubComboboxOption[]>(() => {
     const filtered = serviceTypes.filter(
@@ -55,6 +110,17 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
     }));
   }, [serviceTypes, block.group_filter]);
 
+  const commitServices = (services: ExtraBlock['services']) => {
+    onChange(
+      applyExtraBlockAutoFields(
+        { ...block, services },
+        serviceTypes,
+        petName,
+        { recalcEnds: true },
+      ),
+    );
+  };
+
   const addSvc = (id: string) => {
     if (!id) return;
     if (block.services.some((s) => s.hub_service_type_id === id)) {
@@ -66,29 +132,30 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
     const matrix = coercePricingMatrixFromApi(st.pricing_matrix);
     const pricing_variant =
       matrix && matrixNeedsVariantChoice(matrix) ? defaultPricingVariantForMatrix(matrix) : null;
-    onChange({
-      ...block,
-      services: [
-        ...block.services,
-        {
-          hub_service_type_id: id,
-          name: st.name,
-          duration_minutes: st.default_duration_minutes ?? 60,
-          pricing_variant,
-        },
-      ],
-    });
+    commitServices([
+      ...block.services,
+      {
+        hub_service_type_id: id,
+        name: st.name,
+        duration_minutes: st.default_duration_minutes ?? 60,
+        pricing_variant,
+      },
+    ]);
     setSvcSearchId('');
   };
 
   const removeSvc = (svcId: string) =>
-    onChange({ ...block, services: block.services.filter((s) => s.hub_service_type_id !== svcId) });
+    commitServices(block.services.filter((s) => s.hub_service_type_id !== svcId));
 
-  const updateSvcDuration = (idx: number, dur: number) =>
+  const updateSvcDuration = (idx: number, dur: number) => {
+    const services = block.services.map((s, i) => (i === idx ? { ...s, duration_minutes: dur } : s));
+    const durationMin = services.reduce((sum, s) => sum + s.duration_minutes, 0);
     onChange({
       ...block,
-      services: block.services.map((s, i) => (i === idx ? { ...s, duration_minutes: dur } : s)),
+      services,
+      ends_hm: durationMin > 0 ? addMinutes(block.starts_hm, durationMin) : block.ends_hm,
     });
+  };
 
   const blockDurationMin = useMemo(
     () => block.services.reduce((sum, s) => sum + s.duration_minutes, 0),
@@ -103,11 +170,22 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
       services: block.services.map((s, i) => (i === idx ? { ...s, pricing_variant: variant } : s)),
     });
 
+  const onStartsChange = (starts_hm: string) => {
+    const durationMin = block.services.reduce((sum, s) => sum + s.duration_minutes, 0);
+    onChange({
+      ...block,
+      starts_hm,
+      ends_hm: durationMin > 0 ? addMinutes(starts_hm, durationMin) : block.ends_hm,
+    });
+  };
+
   return (
     <div className="nam-section nam-block-card nam-extra-block">
       <BlockCardHeader
         blockNumber={displayBlockNumber}
-        title={block.block_title.trim() || `Bloco ${displayBlockNumber}`}
+        title={block.block_title.trim() || autoTitle || `Bloco ${displayBlockNumber}`}
+        subtitle={headerSubtitle || undefined}
+        badgeVariant="secondary"
         expanded={block.expanded}
         onToggle={onToggleExpand}
         onRemove={onRemove}
@@ -172,35 +250,6 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
           </div>
 
           <div className="nam-section">
-            <label className="nam-label">Título do bloco</label>
-            <div className="nam-title-row">
-              <input
-                className="nam-input"
-                type="text"
-                maxLength={200}
-                placeholder={`Bloco ${displayBlockNumber}`}
-                value={block.block_title}
-                onChange={(e) => onChange({ ...block, block_title: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div className="nam-section">
-            <label className="nam-label">Descrição do bloco</label>
-            <textarea
-              className="nam-textarea"
-              rows={3}
-              maxLength={8000}
-              placeholder="Preenchida automaticamente com as descrições dos serviços deste bloco; pode editar."
-              value={block.block_description}
-              onChange={(e) =>
-                onChange({ ...block, block_description: e.target.value, block_description_user_edited: true })
-              }
-            />
-            <p className="nam-char-count">{block.block_description.length}/8000</p>
-          </div>
-
-          <div className="nam-section">
             <div className="nam-row nam-row--cols2">
               <div className="nam-field">
                 <label className="nam-label">Início</label>
@@ -208,7 +257,7 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
                   className="nam-input"
                   type="time"
                   value={block.starts_hm}
-                  onChange={(e) => onChange({ ...block, starts_hm: e.target.value })}
+                  onChange={(e) => onStartsChange(e.target.value)}
                 />
               </div>
               <div className="nam-field">
@@ -247,6 +296,97 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
                 />
               </div>
             </div>
+          </div>
+
+          <div className="nam-section nam-block-details">
+            <button
+              type="button"
+              className="nam-block-details__toggle"
+              onClick={() => setDetailsOpen((o) => !o)}
+              aria-expanded={detailsOpen}
+            >
+              <span>Detalhes do bloco</span>
+              {detailsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {detailsOpen ? (
+              <div className="nam-block-details__body">
+                <div className="nam-section" style={{ borderBottom: 'none', paddingTop: 10 }}>
+                  <label className="nam-label">Título do bloco</label>
+                  <div className="nam-title-row">
+                    <input
+                      className="nam-input"
+                      type="text"
+                      maxLength={200}
+                      placeholder={autoTitle || `Bloco ${displayBlockNumber}`}
+                      value={block.block_title}
+                      onChange={(e) =>
+                        onChange({
+                          ...block,
+                          block_title: e.target.value,
+                          block_title_user_edited: true,
+                        })
+                      }
+                    />
+                    {block.block_title_user_edited ? (
+                      <button
+                        className="nam-btn-icon"
+                        type="button"
+                        title="Restaurar sugestão automática"
+                        onClick={() =>
+                          onChange({
+                            ...block,
+                            block_title: autoTitle,
+                            block_title_user_edited: false,
+                          })
+                        }
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="nam-section" style={{ borderBottom: 'none', paddingTop: 0 }}>
+                  <label className="nam-label">Descrição do bloco</label>
+                  <div className="nam-title-row" style={{ alignItems: 'flex-start' }}>
+                    <textarea
+                      className="nam-textarea"
+                      rows={3}
+                      maxLength={8000}
+                      placeholder="Preenchida automaticamente com as descrições dos serviços deste bloco; pode editar."
+                      value={block.block_description}
+                      onChange={(e) =>
+                        onChange({
+                          ...block,
+                          block_description: e.target.value,
+                          block_description_user_edited: true,
+                        })
+                      }
+                      style={{ flex: 1 }}
+                    />
+                    {block.block_description_user_edited ? (
+                      <button
+                        className="nam-btn-icon"
+                        type="button"
+                        title="Restaurar descrição automática"
+                        onClick={() =>
+                          onChange({
+                            ...block,
+                            block_description: buildServiceDescriptionBullets(
+                              serviceTypes,
+                              block.services.map((s) => s.hub_service_type_id),
+                            ),
+                            block_description_user_edited: false,
+                          })
+                        }
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="nam-char-count">{block.block_description.length}/8000</p>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       )}

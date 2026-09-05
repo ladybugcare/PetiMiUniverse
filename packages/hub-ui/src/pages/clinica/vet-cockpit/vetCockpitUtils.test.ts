@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCockpitDayLabel, formatCockpitShortDate } from './vetCockpitUtils';
+import { formatCockpitDayLabel, formatCockpitShortDate, isFinalOperationalStatus } from './vetCockpitUtils';
 
 describe('formatCockpitDayLabel', () => {
   const now = new Date(2026, 8, 3);
@@ -16,6 +16,20 @@ describe('formatCockpitDayLabel', () => {
     const label = formatCockpitDayLabel(new Date(2026, 8, 2), 2, now);
     expect(label).toMatch(/2 atendimentos$/);
     expect(label).not.toMatch(/^Hoje/);
+  });
+});
+
+describe('isFinalOperationalStatus', () => {
+  it('marca finalizado, concluído e cancelado como encerrados', () => {
+    expect(isFinalOperationalStatus('completed')).toBe(true);
+    expect(isFinalOperationalStatus('done')).toBe(true);
+    expect(isFinalOperationalStatus('cancelled')).toBe(true);
+  });
+
+  it('mantém status em andamento abertos', () => {
+    expect(isFinalOperationalStatus('in_progress')).toBe(false);
+    expect(isFinalOperationalStatus('awaiting_exams')).toBe(false);
+    expect(isFinalOperationalStatus('waiting')).toBe(false);
   });
 });
 

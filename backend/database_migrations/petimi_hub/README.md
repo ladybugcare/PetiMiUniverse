@@ -226,3 +226,7 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 103. **`103_create_hub_prescription_lookups.sql`** — Catálogo de receita por clínica (`hub_prescription_lookups`: medication / presentation / use_route) + coluna `use_route` em `hub_prescription_items`. Independente do inventário. Executar depois de `025i` / `058`.
 
 104. **`104_alter_hub_suppliers_manufacturers_party.sql`** — `hub_suppliers.party_name` (empresa ou pessoa que fornece) e ficha completa em `hub_manufacturers` (`party_name`, `tax_id`, `phone`, `email`, `notes`). Executar depois de `008_create_hub_inventory.sql`.
+
+105. **`105_create_hub_encounter_medication_administrations.sql`** — Medicação aplicada na consulta: serviço cobrável + estoque/lote opcional, com snapshot de preço para a comanda. Executar depois de `025b`, `003`, `008` e `025i`.
+
+106. **`106_alter_hub_service_types_encounter_application.sql`** — Coluna `is_encounter_application` em `hub_service_types` (serviços de aplicação na consulta no grupo Clínica). Executar depois de `003` / `004`.

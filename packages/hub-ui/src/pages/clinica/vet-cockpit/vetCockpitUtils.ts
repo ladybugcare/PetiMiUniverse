@@ -3,6 +3,10 @@ import type { HubEncounterOperationalPhase } from '../../../api/hubClinicalApi';
 
 const FINAL_STATUSES = new Set(['completed', 'done', 'cancelled']);
 
+export function isFinalOperationalStatus(status: string): boolean {
+  return FINAL_STATUSES.has(status);
+}
+
 export function itemOperationalStatus(item: DayBoardItem): string {
   const base = (item.status as string) || item.appointment_status || 'waiting';
   const phase = (item as { operational_phase?: HubEncounterOperationalPhase | null }).operational_phase;

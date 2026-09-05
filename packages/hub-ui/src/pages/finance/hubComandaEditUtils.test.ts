@@ -3,6 +3,8 @@ import type { HubComandaDetailResponse } from '../../api/hubComandaApi';
 import type { HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
 import {
   canSendToFinanceiroHandoff,
+  isCaixaCarryoverPendingComanda,
+  isCaixaOwnedDayBoardItem,
   resolveComandaCheckoutCTA,
   resolveDayBoardCheckoutLabel,
   resolveSendToFinanceiroConfirmMessage,
@@ -153,6 +155,66 @@ describe('canSendToFinanceiroHandoff', () => {
         balance_due: 100,
         finance_handoff_at: '2026-07-06T12:00:00.000Z',
       }),
+    ).toBe(false);
+  });
+});
+
+describe('isCaixaOwnedDayBoardItem', () => {
+  it('exclui item já enviado ao financeiro', () => {
+    expect(
+      isCaixaOwnedDayBoardItem(
+        dayBoardItem({ finance_handoff_at: '2026-09-04T12:00:00.000Z', receivable_status: 'pending' }),
+      ),
+    ).toBe(false);
+  });
+
+  it('mantém item ainda no caixa', () => {
+    expect(isCaixaOwnedDayBoardItem(dayBoardItem({ finance_handoff_at: null }))).toBe(true);
+  });
+});
+
+describe('isCaixaCarryoverPendingComanda', () => {
+  it('mantém comanda aberta de dia anterior sem handoff', () => {
+    expect(
+      isCaixaCarryoverPendingComanda(
+        {
+          status: 'aberta',
+          opened_at: '2026-09-04T10:00:00.000Z',
+          finance_handoff_at: null,
+          total_amount: 80,
+          paid_total: 0,
+        },
+        '2026-09-05',
+      ),
+    ).toBe(true);
+  });
+
+  it('exclui comanda já enviada ao financeiro', () => {
+    expect(
+      isCaixaCarryoverPendingComanda(
+        {
+          status: 'aberta',
+          opened_at: '2026-09-04T10:00:00.000Z',
+          finance_handoff_at: '2026-09-04T20:00:00.000Z',
+          edit_scopes: { caixa: false, financeiro: true, locked_reason: 'finance_handoff' },
+        },
+        '2026-09-05',
+      ),
+    ).toBe(false);
+  });
+
+  it('exclui comanda aberta no mesmo dia', () => {
+    expect(
+      isCaixaCarryoverPendingComanda(
+        {
+          status: 'aberta',
+          opened_at: '2026-09-05T09:00:00.000Z',
+          finance_handoff_at: null,
+          total_amount: 80,
+          paid_total: 0,
+        },
+        '2026-09-05',
+      ),
     ).toBe(false);
   });
 });

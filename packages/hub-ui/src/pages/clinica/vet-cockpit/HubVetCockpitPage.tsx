@@ -14,6 +14,14 @@ import {
   type HubEncounterOperationalPhase,
   type VetCockpitPatientContext,
 } from '../../../api/hubClinicalApi';
+import CompleteEncounterCasePrompt from '../CompleteEncounterCasePrompt.tsx';
+import {
+  applyCaseAfterCompleteChoice,
+  buildCaseAfterCompletePrompt,
+  caseAfterCompleteSuccessMessage,
+  type CaseAfterCompleteChoice,
+  type CaseAfterCompletePrompt,
+} from '../caseAfterCompletePrompt';
 import { useMyStaffMember } from '../../../hooks/useMyStaffMember';
 import { redirectAwayFromHub } from '../../../utils/redirectAwayFromHub';
 import { getSelectedUnitId } from '../../../utils/useSelectedUnitId';
@@ -61,6 +69,8 @@ const HubVetCockpitPage: React.FC = () => {
   const [startModalItem, setStartModalItem] = useState<DayBoardItem | null>(null);
   const [startingEncounter, setStartingEncounter] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [casePrompt, setCasePrompt] = useState<CaseAfterCompletePrompt | null>(null);
+  const [casePromptSaving, setCasePromptSaving] = useState(false);
   const [phaseBusy, setPhaseBusy] = useState(false);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [creatingWalkIn, setCreatingWalkIn] = useState(false);
@@ -261,14 +271,55 @@ const HubVetCockpitPage: React.FC = () => {
     if (!clinicId || !encId || !canWrite) return;
     setCompleting(true);
     try {
-      await hubEncountersApi.complete(encId, clinicId);
+      const { encounter: enc } = await hubEncountersApi.complete(encId, clinicId);
       showSuccess('Atendimento finalizado');
       await loadQueue();
+
+      const caseId = enc.case?.id ?? enc.hub_case_id ?? patientContext?.encounter?.hub_case_id;
+      const hosp = patientContext?.active_hospitalization;
+      const hasOpenHospitalization = Boolean(hosp && (!hosp.hub_case_id || hosp.hub_case_id === caseId));
+      const pendingExamsCount = patientContext?.exams_grouped.awaiting.length ?? 0;
+      const linkedCase =
+        (patientContext?.active_case && patientContext.active_case.id === caseId
+          ? patientContext.active_case
+          : patientContext?.cases.find((c) => c.id === caseId)) ?? null;
+
+      const prompt = buildCaseAfterCompletePrompt({
+        caseId,
+        status: enc.case?.status ?? linkedCase?.status,
+        title: enc.case?.title ?? linkedCase?.title,
+        chiefComplaint: enc.chief_complaint ?? patientContext?.chief_complaint,
+        hasOpenHospitalization,
+        pendingExamsCount,
+      });
       setPatientContext(null);
+      if (prompt) setCasePrompt(prompt);
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao finalizar atendimento');
     } finally {
       setCompleting(false);
+    }
+  };
+
+  const handleCaseAfterComplete = async (choice: CaseAfterCompleteChoice) => {
+    if (!clinicId || !casePrompt) {
+      setCasePrompt(null);
+      return;
+    }
+    if (choice === 'keep_open') {
+      setCasePrompt(null);
+      return;
+    }
+    setCasePromptSaving(true);
+    try {
+      const result = await applyCaseAfterCompleteChoice(clinicId, casePrompt.caseId, choice);
+      const msg = caseAfterCompleteSuccessMessage(result);
+      if (msg) showSuccess(msg);
+      setCasePrompt(null);
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao atualizar o caso');
+    } finally {
+      setCasePromptSaving(false);
     }
   };
 
@@ -519,6 +570,13 @@ const HubVetCockpitPage: React.FC = () => {
           />
         </VetCockpitOpsSection>
       </div>
+
+      <CompleteEncounterCasePrompt
+        open={Boolean(casePrompt)}
+        prompt={casePrompt}
+        saving={casePromptSaving}
+        onChoose={(choice) => void handleCaseAfterComplete(choice)}
+      />
 
       <StartEncounterModal
         open={Boolean(startModalItem)}

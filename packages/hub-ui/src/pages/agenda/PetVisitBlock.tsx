@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { AlertCircle, ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
@@ -198,7 +198,6 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
   }, [pricingPreview.lines]);
 
   const needsManualCoatType = pricingPreview.lines.some((ln) => ln.needsCoatType);
-  const showPricingOverrides = unionPricingTiers.length > 0 || unionPricingCoatTypes.length > 0;
 
   const servicesDurationMin = config.services.reduce((s, c) => s + c.duration_minutes, 0);
   const addonsDurationMin = config.selectedAddons.reduce((s, c) => s + c.duration_minutes, 0);
@@ -277,14 +276,29 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
     });
 
   const pricingTierComboOptions = useMemo<HubComboboxOption[]>(() => {
-    const auto: HubComboboxOption = { value: '', label: 'Automático (idade + porte do pet)' };
+    const auto: HubComboboxOption = { value: '', label: 'Automático' };
     return [auto, ...unionPricingTiers.map((t) => ({ value: t, label: PORTE_LABELS[t] }))];
   }, [unionPricingTiers]);
 
   const pricingCoatComboOptions = useMemo<HubComboboxOption[]>(() => {
-    const auto: HubComboboxOption = { value: '', label: 'Automático (pelagem do pet)' };
+    const auto: HubComboboxOption = { value: '', label: 'Automático' };
     return [auto, ...unionPricingCoatTypes.map((t) => ({ value: t, label: COAT_TYPE_LABELS[t] }))];
   }, [unionPricingCoatTypes]);
+
+  const serviceTableOverride =
+    unionPricingTiers.length > 0 || unionPricingCoatTypes.length > 0
+      ? {
+          porteOptions: unionPricingTiers.length > 0 ? pricingTierComboOptions : undefined,
+          porteValue: config.pricingApptPorteTier,
+          onPorteChange: (v: string) => patch({ pricingApptPorteTier: v }),
+          coatOptions: unionPricingCoatTypes.length > 0 ? pricingCoatComboOptions : undefined,
+          coatValue: config.pricingApptCoatType,
+          onCoatChange: (v: string) => patch({ pricingApptCoatType: v }),
+          puppyMaxMonths,
+          coatRequired: needsManualCoatType,
+          coatRequiredHint: `Selecione a pelagem para precificar os serviços de ${petName}.`,
+        }
+      : undefined;
 
   const addExtraBlock = () => {
     const collapsed = config.extraBlocks.map((b) => ({ ...b, expanded: false }));
@@ -393,6 +407,7 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
                     variantMatrix={serviceNeedsVariantMatrix(chip, serviceTypes)}
                     onVariantChange={(v) => updateServiceVariant(idx, v)}
                     pricingLine={pricingLineByServiceId.get(chip.hub_service_type_id) ?? null}
+                    tableOverride={serviceTableOverride}
                   />
                 ))}
                 <div className="nam-chips__duration-breakdown">
@@ -447,44 +462,6 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
             </div>
           ) : null}
 
-          {showPricingOverrides ? (
-            <div className="nam-section nam-section--pricing-overrides">
-              <div className="nam-row nam-row--cols2">
-                {unionPricingTiers.length > 0 ? (
-                  <div className="nam-field">
-                    <label className="nam-label">Preço por porte</label>
-                    <HubSearchableCombobox
-                      id={`nam-pet-porte-${config.petId}`}
-                      options={pricingTierComboOptions}
-                      value={config.pricingApptPorteTier}
-                      onChange={(v) => patch({ pricingApptPorteTier: v })}
-                      placeholder="Automático"
-                      clearable={false}
-                    />
-                  </div>
-                ) : null}
-                {unionPricingCoatTypes.length > 0 ? (
-                  <div className="nam-field">
-                    <label className="nam-label">Preço por pelagem</label>
-                    <HubSearchableCombobox
-                      id={`nam-pet-coat-${config.petId}`}
-                      options={pricingCoatComboOptions}
-                      value={config.pricingApptCoatType}
-                      onChange={(v) => patch({ pricingApptCoatType: v })}
-                      placeholder="Automático"
-                      clearable={false}
-                    />
-                    {needsManualCoatType ? (
-                      <p className="nam-footer-error" style={{ marginTop: 6 }}>
-                        <AlertCircle size={14} /> Pelagem obrigatória para {petName}.
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-
           {config.extraBlocks.length > 0 ? (
             <div className="nam-section nam-pet-extra-blocks">
               {config.extraBlocks.map((block, ebIdx) => (
@@ -493,6 +470,7 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
                   block={block}
                   index={ebIdx}
                   blockNumber={ebIdx + 2}
+                  petName={petName}
                   groups={groups}
                   staffComboOptions={staffComboOptions}
                   serviceTypes={serviceTypes}

@@ -756,6 +756,7 @@ const HubEstoqueItemsPage: React.FC = () => {
                               }`}
                             >
                               {t.qty_on_hand ?? 0}
+                              {t.unit_label?.trim() ? ` ${t.unit_label.trim()}` : ''}
                             </span>
                           </td>
                           <td>{t.min_stock_qty}</td>
@@ -822,7 +823,7 @@ const HubEstoqueItemsPage: React.FC = () => {
                             isLow || isZero ? 'hub-clientes__pill--inactive' : 'hub-clientes__pill--active'
                           }`}
                         >
-                          {t.qty_on_hand ?? 0} un.
+                          {t.qty_on_hand ?? 0} {t.unit_label?.trim() || 'un.'}
                         </span>
                       </div>
                       <div className="hub-clientes__mobile-card-foot">

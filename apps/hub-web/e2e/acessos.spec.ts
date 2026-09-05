@@ -101,7 +101,7 @@ test.describe('acessos Hub', () => {
 
     await expectNav(page, {
       visiveis: ['Clínica', 'Agenda', 'Clientes'],
-      ocultos: ['Banho & Tosa', 'Leva e Traz', 'Financeiro'],
+      ocultos: ['Banho & Tosa', 'Leva e Traz', 'Financeiro', /^Caixa/],
     });
   });
 

@@ -2535,6 +2535,24 @@ async function fetchBillingStatusBatch(
     });
   }
 
+  const appointmentIdsWithoutComanda = originKeys
+    .filter((k) => k.origin_type === 'appointment' && !comandaByKey.has(`appointment:${k.origin_id}`))
+    .map((k) => k.origin_id);
+  if (appointmentIdsWithoutComanda.length > 0) {
+    const { data: encs } = await supabaseAdmin
+      .from('hub_encounters')
+      .select('id, hub_appointment_id')
+      .eq('clinic_id', clinicId)
+      .in('hub_appointment_id', appointmentIdsWithoutComanda)
+      .is('deleted_at', null);
+    for (const enc of encs ?? []) {
+      const apptId = enc.hub_appointment_id as string | null;
+      if (!apptId) continue;
+      const encComanda = comandaByKey.get(`encounter:${enc.id as string}`);
+      if (encComanda) comandaByKey.set(`appointment:${apptId}`, encComanda);
+    }
+  }
+
   // Carrega recebíveis ativos por source_key e comanda_id
   const { data: receivables } = await supabaseAdmin
     .from('hub_receivables')

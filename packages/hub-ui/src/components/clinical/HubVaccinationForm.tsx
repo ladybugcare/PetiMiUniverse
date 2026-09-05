@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { hubInventoryApi, type HubInventoryItem, type HubInventoryLotRow } from '../../api/hubInventoryApi';
-import type { HubVaccinationSource } from '../../api/hubClinicalApi';
+import { HubSearchableCombobox } from '../HubSearchableCombobox';
 
 export type VaccinationFormDraft = {
-  source: HubVaccinationSource;
   hub_inventory_item_id: string;
   hub_inventory_lot_id: string;
   vaccine_name: string;
@@ -13,7 +12,6 @@ export type VaccinationFormDraft = {
 };
 
 export const emptyVaccinationFormDraft = (): VaccinationFormDraft => ({
-  source: 'in_clinic',
   hub_inventory_item_id: '',
   hub_inventory_lot_id: '',
   vaccine_name: '',
@@ -57,17 +55,13 @@ export function HubVaccinationForm({
   }, [clinicId]);
 
   useEffect(() => {
-    if (draft.source !== 'in_clinic') {
-      setLots([]);
-      return;
-    }
     setLoadingLots(true);
     void hubInventoryApi.lots
       .list(clinicId)
       .then((r) => setLots(r.lots ?? []))
       .catch(() => setLots([]))
       .finally(() => setLoadingLots(false));
-  }, [clinicId, draft.source]);
+  }, [clinicId]);
 
   const lotsForItem = useMemo(
     () =>
@@ -79,14 +73,33 @@ export function HubVaccinationForm({
 
   const selectedItem = vaccineItems.find((v) => v.id === draft.hub_inventory_item_id) ?? null;
   const selectedLot = lotsForItem.find((l) => l.id === draft.hub_inventory_lot_id) ?? null;
-  const inClinic = draft.source === 'in_clinic';
+
+  const vaccineOptions = useMemo(
+    () =>
+      vaccineItems.map((it) => ({
+        value: it.id,
+        label: `${it.name} — ${formatMoneyBrl(it.sale_amount)}`,
+      })),
+    [vaccineItems],
+  );
+
+  const lotOptions = useMemo(
+    () =>
+      lotsForItem.map((lot) => ({
+        value: lot.id,
+        label: [
+          lot.lot_code || 'Sem código',
+          `saldo ${lot.qty_on_hand}`,
+          lot.expiry_date ? `val. ${lot.expiry_date.slice(0, 10)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' — '),
+      })),
+    [lotsForItem],
+  );
 
   const canSubmit =
-    !disabled &&
-    !submitting &&
-    (inClinic
-      ? Boolean(draft.hub_inventory_item_id && draft.hub_inventory_lot_id && draft.vaccine_name.trim())
-      : Boolean(draft.vaccine_name.trim()));
+    !disabled && !submitting && Boolean(draft.hub_inventory_item_id && draft.vaccine_name.trim());
 
   const onSelectVaccine = (itemId: string) => {
     const item = vaccineItems.find((v) => v.id === itemId);
@@ -107,157 +120,82 @@ export function HubVaccinationForm({
   };
 
   return (
-    <div className="hub-cws-rx-form hub-vaccination-form">
-      <div className="hub-clientes__field" style={{ minWidth: 200 }}>
-        <label className="hub-clientes__label" htmlFor="vac-source">
-          Origem
-        </label>
-        <select
-          id="vac-source"
-          className="hub-clientes__input"
-          value={draft.source}
-          disabled={disabled}
-          onChange={(e) => {
-            const source = e.target.value as HubVaccinationSource;
-            if (source === 'external') {
-              onChange({
-                ...draft,
-                source,
-                hub_inventory_item_id: '',
-                hub_inventory_lot_id: '',
-              });
-            } else {
-              set({ source });
-            }
-          }}
-        >
-          <option value="in_clinic">Aplicada na clínica (estoque)</option>
-          <option value="external">Vacina externa / histórico</option>
-        </select>
+    <div className="hub-cws-exam-form">
+      <div className="hub-clinic-field hub-cws-field-tight">
+        <label htmlFor="vac-item">Vacina</label>
+        <HubSearchableCombobox
+          id="vac-item"
+          options={vaccineOptions}
+          value={draft.hub_inventory_item_id}
+          onChange={onSelectVaccine}
+          placeholder="Buscar no estoque…"
+          searchPlaceholder="Raiva, V10, tríplice…"
+          disabled={disabled || vaccineItems.length === 0}
+          ariaLabel="Vacina"
+        />
+        {vaccineItems.length === 0 ? (
+          <p className="hub-cws-exam-form__hint">
+            Nenhuma vacina no estoque. Cadastre em Estoque → Vacinas e registre uma entrada com lote.
+          </p>
+        ) : null}
       </div>
 
-      {inClinic ? (
-        <>
-          <div className="hub-clientes__field" style={{ minWidth: 220, flex: 1 }}>
-            <label className="hub-clientes__label" htmlFor="vac-item">
-              Vacina (estoque)
-            </label>
-            <select
-              id="vac-item"
-              className="hub-clientes__input"
-              value={draft.hub_inventory_item_id}
-              disabled={disabled || vaccineItems.length === 0}
-              onChange={(e) => onSelectVaccine(e.target.value)}
-            >
-              <option value="">Selecione a vacina</option>
-              {vaccineItems.map((it) => (
-                <option key={it.id} value={it.id}>
-                  {it.name} — {formatMoneyBrl(it.sale_amount)}
-                </option>
-              ))}
-            </select>
-            {vaccineItems.length === 0 ? (
-              <p className="hub-clientes__muted" style={{ margin: '6px 0 0', fontSize: 13 }}>
-                Nenhuma vacina no estoque. Cadastre em Estoque → Vacinas e registre uma entrada com lote.
-              </p>
-            ) : null}
-          </div>
-
-          <div className="hub-clientes__field" style={{ minWidth: 200 }}>
-            <label className="hub-clientes__label" htmlFor="vac-lot">
-              Lote
-            </label>
-            <select
-              id="vac-lot"
-              className="hub-clientes__input"
-              value={draft.hub_inventory_lot_id}
-              disabled={disabled || !draft.hub_inventory_item_id || loadingLots}
-              onChange={(e) => onSelectLot(e.target.value)}
-            >
-              <option value="">Selecione o lote</option>
-              {lotsForItem.map((lot) => (
-                <option key={lot.id} value={lot.id}>
-                  {lot.lot_code || 'Sem código'} — saldo {lot.qty_on_hand}
-                  {lot.expiry_date ? ` — val. ${lot.expiry_date.slice(0, 10)}` : ''}
-                </option>
-              ))}
-            </select>
-            {draft.hub_inventory_item_id && !loadingLots && lotsForItem.length === 0 ? (
-              <p className="hub-clientes__muted" style={{ margin: '6px 0 0', fontSize: 13 }}>
-                Sem lotes com saldo para esta vacina. Registre entrada de estoque antes de aplicar.
-              </p>
-            ) : null}
-          </div>
-
-          {selectedItem ? (
-            <p className="hub-clientes__muted" style={{ width: '100%', margin: 0, fontSize: 13 }}>
-              Cobrança na comanda: {formatMoneyBrl(selectedItem.sale_amount)} (produto) + consulta agendada, se houver.
+      <div className="hub-cws-field-grid hub-cws-field-grid--2">
+        <div className="hub-clinic-field hub-cws-field-tight">
+          <label htmlFor="vac-lot">Lote</label>
+          <HubSearchableCombobox
+            id="vac-lot"
+            options={lotOptions}
+            value={draft.hub_inventory_lot_id}
+            onChange={onSelectLot}
+            placeholder={
+              !draft.hub_inventory_item_id
+                ? 'Selecione a vacina primeiro'
+                : loadingLots
+                  ? 'Carregando lotes…'
+                  : 'Opcional'
+            }
+            searchPlaceholder="Código do lote…"
+            disabled={disabled || !draft.hub_inventory_item_id || loadingLots}
+            ariaLabel="Lote"
+            clearable
+          />
+          {draft.hub_inventory_item_id && !loadingLots && lotsForItem.length === 0 ? (
+            <p className="hub-cws-exam-form__hint">
+              Nenhum lote com saldo. Pode registrar sem baixa — o item entra na comanda do mesmo jeito.
             </p>
           ) : null}
-        </>
-      ) : (
-        <>
-          <div className="hub-clientes__field" style={{ minWidth: 200, flex: 1 }}>
-            <label className="hub-clientes__label" htmlFor="vac-name-ext">
-              Nome da vacina
-            </label>
-            <input
-              id="vac-name-ext"
-              className="hub-clientes__input"
-              placeholder="Ex.: Vacina Raiva"
-              value={draft.vaccine_name}
-              disabled={disabled}
-              onChange={(e) => set({ vaccine_name: e.target.value })}
-            />
-          </div>
-          <div className="hub-clientes__field" style={{ minWidth: 140 }}>
-            <label className="hub-clientes__label" htmlFor="vac-batch-ext">
-              Lote / ref.
-            </label>
-            <input
-              id="vac-batch-ext"
-              className="hub-clientes__input"
-              placeholder="Opcional"
-              value={draft.batch_number}
-              disabled={disabled}
-              onChange={(e) => set({ batch_number: e.target.value })}
-            />
-          </div>
-        </>
-      )}
-
-      <div className="hub-clientes__field" style={{ minWidth: 150 }}>
-        <label className="hub-clientes__label" htmlFor="vac-next">
-          Próxima dose
-        </label>
-        <input
-          id="vac-next"
-          type="date"
-          className="hub-clientes__input"
-          value={draft.next_dose_at}
-          disabled={disabled}
-          onChange={(e) => set({ next_dose_at: e.target.value })}
-        />
+        </div>
+        <div className="hub-clinic-field hub-cws-field-tight">
+          <label htmlFor="vac-next">Próxima dose</label>
+          <input
+            id="vac-next"
+            type="date"
+            value={draft.next_dose_at}
+            disabled={disabled}
+            onChange={(e) => set({ next_dose_at: e.target.value })}
+          />
+        </div>
       </div>
 
-      <div className="hub-clientes__field" style={{ minWidth: 200, flex: 1 }}>
-        <label className="hub-clientes__label" htmlFor="vac-notes">
-          Observações
-        </label>
+      <div className="hub-clinic-field hub-cws-field-tight">
+        <label htmlFor="vac-notes">Observações</label>
         <input
           id="vac-notes"
-          className="hub-clientes__input"
-          placeholder="Opcional"
           value={draft.notes}
           disabled={disabled}
           onChange={(e) => set({ notes: e.target.value })}
+          placeholder="Opcional — protocolo, reação, o que a equipe precisa saber"
         />
       </div>
 
-      {selectedLot?.expiry_date ? (
-        <p className="hub-clientes__muted" style={{ width: '100%', margin: 0, fontSize: 13 }}>
-          Validade do lote selecionado: {selectedLot.expiry_date.slice(0, 10)}
+      {selectedItem ? (
+        <p className="hub-cws-exam-form__hint">
+          Cobrança na comanda: {formatMoneyBrl(selectedItem.sale_amount)} (produto) + consulta agendada, se houver.
         </p>
+      ) : null}
+      {selectedLot?.expiry_date ? (
+        <p className="hub-cws-exam-form__hint">Validade do lote selecionado: {selectedLot.expiry_date.slice(0, 10)}</p>
       ) : null}
 
       <button

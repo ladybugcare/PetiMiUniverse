@@ -8,6 +8,7 @@ import {
   loadPartnerClinicMap,
   resolveCareLocation,
 } from './hubCareLocation';
+import { syncOpenComandasAfterEncounterChargeableChange } from './hubComandasController';
 
 const uuidStr = z.string().uuid();
 
@@ -156,6 +157,12 @@ export const listHubClinicalExams = async (req: Request, res: Response) => {
     if (req.query.hub_partner_clinic_id) {
       const v = uuidStr.safeParse(req.query.hub_partner_clinic_id);
       if (v.success) q = q.eq('hub_partner_clinic_id', v.data);
+    }
+    if (typeof req.query.from === 'string' && req.query.from) {
+      q = q.gte('requested_at', req.query.from);
+    }
+    if (typeof req.query.to === 'string' && req.query.to) {
+      q = q.lte('requested_at', req.query.to);
     }
 
     const { data, error } = await q;
@@ -375,6 +382,10 @@ export const createHubClinicalExam = async (req: Request, res: Response) => {
       body: b.lab_kind === 'external' ? `Laboratório: ${b.external_lab_name ?? b.lab_name ?? '—'}` : null,
       created_by: b.requested_by ?? null,
     });
+
+    if (b.hub_encounter_id) {
+      void syncOpenComandasAfterEncounterChargeableChange(b.clinic_id, b.hub_encounter_id);
+    }
 
     const enriched = await enrichExam(exam);
     return res.status(201).json({ exam: enriched });

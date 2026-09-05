@@ -272,6 +272,12 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
               >
                 Permite quantidades fracionadas
               </HubCheckbox>
+              {activeKind === 'medication' ? (
+                <p className="hub-estoque__hint-ean" style={{ marginTop: 8 }}>
+                  Na consulta, a Qtd. baixada usa a mesma unidade deste cadastro (ex.: frasco ou ml). A cobrança do
+                  tutor é o serviço de aplicação, não o preço de venda deste item.
+                </p>
+              ) : null}
             </div>
           </section>
 

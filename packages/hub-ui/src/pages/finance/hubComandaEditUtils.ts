@@ -145,6 +145,21 @@ export function canCaixaEditOpenComanda(comanda: Record<string, unknown>): boole
   return true;
 }
 
+/** Item do day board que ainda é ação do caixa — após handoff vai para o Financeiro. */
+export function isCaixaOwnedDayBoardItem(item: HubFinanceDayBoardItem): boolean {
+  return !item.billing.finance_handoff_at;
+}
+
+/** Comanda de dia anterior que ainda é pendência do caixa (não enviada ao financeiro). */
+export function isCaixaCarryoverPendingComanda(
+  comanda: Record<string, unknown>,
+  todayYmd: string,
+): boolean {
+  if (!canCaixaEditOpenComanda(comanda)) return false;
+  const openedAt = comanda.opened_at ? String(comanda.opened_at).slice(0, 10) : null;
+  return Boolean(openedAt && openedAt < todayYmd);
+}
+
 export function isDayBoardViewOnly(item: HubFinanceDayBoardItem): boolean {
   return isDayBoardPaidAndComplete(item);
 }

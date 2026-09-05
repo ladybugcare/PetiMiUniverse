@@ -22,7 +22,6 @@ import {
   openBlankPdfPreviewTab,
   openHubPrescriptionPdf,
   type HubPrescription,
-  type HubPrescriptionAdministration,
   type HubPrescriptionDocumentRow,
   type HubPrescriptionItem,
 } from '../../api/hubClinicalApi';
@@ -52,14 +51,12 @@ function draftToCreateItem(draft: PrescriptionItemDraft) {
     duration: draft.duration.trim() || null,
     instructions: draft.instructions.trim() || null,
     hub_inventory_item_id: null,
-    administration: draft.administration,
+    administration: 'home_use' as const,
     use_route: draft.use_route.trim() || null,
   };
 }
 
 function prescriptionItemToPayload(it: HubPrescriptionItem) {
-  const administration: HubPrescriptionAdministration =
-    it.administration === 'administered_in_clinic' ? 'administered_in_clinic' : 'home_use';
   return {
     medication_name: it.medication_name,
     presentation: it.presentation ?? null,
@@ -71,7 +68,7 @@ function prescriptionItemToPayload(it: HubPrescriptionItem) {
     duration: it.duration ?? null,
     instructions: it.instructions ?? null,
     hub_inventory_item_id: it.hub_inventory_item_id ?? null,
-    administration,
+    administration: 'home_use' as const,
     use_route: it.use_route ?? null,
   };
 }

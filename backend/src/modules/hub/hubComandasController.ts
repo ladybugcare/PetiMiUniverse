@@ -23,6 +23,8 @@ import {
 } from './comandaEvents';
 import { canHandoffExistingReceivables } from './comandaFinanceHandoff';
 import { notifyHubCancellationPending } from './hubNotifyEvents';
+import { isMissingPostgrestRelation } from '../../utils/supabaseSchemaErrors.js';
+import { comandaProductOriginAlreadyStockedOut } from './comandaStockOut';
 import {
   buildComandaItemsFromPackagePurchase,
   fulfillPackagePurchasesOnComandaCheckout,
@@ -167,6 +169,25 @@ async function findOpenComandaIdByOrigin(
   return (data?.id as string) ?? null;
 }
 
+async function findOpenEncounterComandaIdForAppointment(
+  clinicId: string,
+  appointmentId: string
+): Promise<string | null> {
+  const { data: encs } = await supabaseAdmin
+    .from('hub_encounters')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('hub_appointment_id', appointmentId)
+    .is('deleted_at', null)
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false });
+  for (const enc of encs ?? []) {
+    const byEnc = await findOpenComandaIdByOrigin(clinicId, 'encounter', enc.id as string);
+    if (byEnc) return byEnc;
+  }
+  return null;
+}
+
 /** Reutiliza comanda aberta do agendamento ao abrir checkout pela sessão B&T ou pelo encounter. */
 async function resolveExistingOpenComandaIdForOpen(
   clinicId: string,
@@ -202,6 +223,11 @@ async function resolveExistingOpenComandaIdForOpen(
     }
     const byEnc = await findOpenComandaIdByOrigin(clinicId, 'encounter', originId);
     if (byEnc) return byEnc;
+  }
+  if (originType === 'appointment') {
+    const byAppt = await findOpenComandaIdByOrigin(clinicId, 'appointment', originId);
+    if (byAppt) return byAppt;
+    return findOpenEncounterComandaIdForAppointment(clinicId, originId);
   }
   return findOpenComandaIdByOrigin(clinicId, originType, originId);
 }
@@ -990,93 +1016,8 @@ async function buildComandaItemsFromEncounter(
   if (enc.billing_waived_at) throw new Error('WAIVED');
 
   const encStatus = String(enc.status ?? '');
-  const apptIdEarly = enc.hub_appointment_id as string | null;
-
-  if (opts?.allowIncomplete && encStatus !== 'completed') {
-    let guardianId = enc.guardian_id as string | null;
-    let petId = (enc.pet_id as string | null) ?? null;
-    // Resolver identidade via caso clínico quando encounter não tem tutor/pet
-    if (!guardianId || !petId) {
-      const caseId = enc.hub_case_id as string | null;
-      if (caseId) {
-        const { data: caseRow } = await supabaseAdmin
-          .from('hub_clinical_cases')
-          .select('pet_id, guardian_id_snapshot')
-          .eq('id', caseId)
-          .eq('clinic_id', clinicId)
-          .is('deleted_at', null)
-          .maybeSingle();
-        if (caseRow) {
-          const cr = caseRow as { pet_id: string | null; guardian_id_snapshot: string | null };
-          if (!petId && cr.pet_id) petId = cr.pet_id;
-          if (!guardianId && cr.guardian_id_snapshot) guardianId = cr.guardian_id_snapshot;
-          if (!guardianId && petId) guardianId = await fetchPrimaryGuardianForPet(petId);
-        }
-      }
-    }
-    if (!guardianId) throw new Error('NO_GUARDIAN');
-
-    if (apptIdEarly) {
-      // Encounter com agendamento — usar itens do agendamento como rascunho
-      if (!petId) throw new Error('NO_PET');
-      const ap = await sumAppointmentServicesSaleForComanda(apptIdEarly, petId);
-      const allItems = [...ap.items];
-      let subtotal = ap.subtotal;
-      if (allItems.length === 0) {
-        allItems.push({
-          pet_id: petId,
-          item_kind: 'fee',
-          hub_service_type_id: null,
-          hub_inventory_item_id: null,
-          hub_inventory_lot_id: null,
-          description: 'Consulta / atendimento clínico (parcial)',
-          quantity: 1,
-          unit_amount: 0,
-          discount_amount: 0,
-          line_total: 0,
-          service_date: null,
-          origin_type: null,
-          origin_id: null,
-          sort_order: 0,
-        });
-      }
-      return {
-        items: allItems,
-        subtotal: round2(subtotal),
-        unit_id: (enc.unit_id as string) ?? null,
-        guardian_id: guardianId,
-        pet_id: petId,
-      };
-    } else {
-      // Walk-in clínico antecipado — sem agendamento, item de placeholder com tutor/pet do encounter
-      return {
-        items: [
-          {
-            pet_id: petId,
-            item_kind: 'fee' as const,
-            hub_service_type_id: null,
-            hub_inventory_item_id: null,
-            hub_inventory_lot_id: null,
-            description: 'Consulta / atendimento clínico (parcial)',
-            quantity: 1,
-            unit_amount: 0,
-            discount_amount: 0,
-            line_total: 0,
-            service_date: null,
-            origin_type: null,
-            origin_id: null,
-            sort_order: 0,
-          },
-        ],
-        subtotal: 0,
-        unit_id: (enc.unit_id as string) ?? null,
-        guardian_id: guardianId,
-        pet_id: petId,
-      };
-    }
-  }
-
-  if (enc.status !== 'completed') throw new Error('NOT_READY');
+  const isCompleted = encStatus === 'completed';
+  if (!isCompleted && !opts?.allowIncomplete) throw new Error('NOT_READY');
 
   let guardianId = enc.guardian_id as string | null;
   let petId = (enc.pet_id as string | null) ?? null;
@@ -1102,14 +1043,14 @@ async function buildComandaItemsFromEncounter(
   }
 
   if (!guardianId) throw new Error('NO_GUARDIAN');
-  if (!petId) throw new Error('NO_PET');
+  if (!petId && isCompleted) throw new Error('NO_PET');
   const apptId = enc.hub_appointment_id as string | null;
 
   const allItems: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[] = [];
   let subtotal = 0;
 
   // 1. Appointment service items (existing behaviour)
-  if (apptId) {
+  if (apptId && petId) {
     const ap = await sumAppointmentServicesSaleForComanda(apptId, petId);
     allItems.push(...ap.items);
     subtotal += ap.subtotal;
@@ -1202,6 +1143,37 @@ async function buildComandaItemsFromEncounter(
     }
   }
 
+  // 3b. Medicação aplicada na consulta — só o serviço cobrável (estoque é custo da clínica)
+  const { data: medAdminRows, error: medAdminErr } = await supabaseAdmin
+    .from('hub_encounter_medication_administrations')
+    .select(
+      'id, service_name, service_price, hub_service_type_id',
+    )
+    .eq('hub_encounter_id', encounterId)
+    .is('deleted_at', null);
+  const medAdminList = medAdminErr && isMissingPostgrestRelation(medAdminErr) ? [] : medAdminRows ?? [];
+  for (const raw of medAdminList) {
+    const row = raw as Record<string, unknown>;
+    const serviceAmount = Number(row.service_price ?? 0);
+    allItems.push({
+      pet_id: petId,
+      item_kind: 'service',
+      hub_service_type_id: (row.hub_service_type_id as string | null) ?? null,
+      hub_inventory_item_id: null,
+      hub_inventory_lot_id: null,
+      description: `Aplicação: ${String(row.service_name || 'Medicação na consulta')}`,
+      quantity: 1,
+      unit_amount: serviceAmount,
+      discount_amount: 0,
+      line_total: serviceAmount,
+      service_date: null,
+      origin_type: 'medication_service',
+      origin_id: row.id as string,
+      sort_order: allItems.length,
+    });
+    subtotal += serviceAmount;
+  }
+
   // 4. Clinical exams requested in this encounter
   const { data: examRows } = await supabaseAdmin
     .from('hub_clinical_exams')
@@ -1247,7 +1219,9 @@ async function buildComandaItemsFromEncounter(
       hub_service_type_id: null,
       hub_inventory_item_id: null,
       hub_inventory_lot_id: null,
-      description: 'Consulta / atendimento clínico',
+      description: isCompleted
+        ? 'Consulta / atendimento clínico'
+        : 'Consulta / atendimento clínico (parcial)',
       quantity: 1,
       unit_amount: 0,
       discount_amount: 0,
@@ -1666,8 +1640,11 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
     const discount = 0;
     const total = round2(Math.max(0, built.subtotal - discount));
 
-    const resolvedEncounterId =
+    let resolvedEncounterId =
       hub_encounter_id ?? (origin_type === 'encounter' ? effectiveOriginId : null);
+    if (!resolvedEncounterId && origin_type === 'appointment') {
+      resolvedEncounterId = await findLatestCompletedEncounterIdForAppointment(clinic_id, effectiveOriginId);
+    }
     let resolvedCaseId = hub_case_id ?? null;
     if (!resolvedCaseId && resolvedEncounterId) {
       const { data: encCase } = await supabaseAdmin
@@ -2585,6 +2562,8 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
 
     for (const it of items) {
       if (String(it.item_kind ?? '') !== 'product') continue;
+      // Já baixados no atendimento (encounter_out) — não repetir sale_out no checkout
+      if (comandaProductOriginAlreadyStockedOut((it.origin_type as string | null) ?? null)) continue;
       const invItemId = (it.hub_inventory_item_id as string | null) ?? null;
       const invLotId = (it.hub_inventory_lot_id as string | null) ?? null;
       if (!invItemId || !invLotId) continue;
@@ -3044,24 +3023,128 @@ export async function syncOpenComandasAfterGroomingClosed(clinicId: string, sess
   }
 }
 
-export async function syncOpenComandasAfterEncounterCompleted(clinicId: string, encounterId: string): Promise<void> {
+async function listOpenComandaIdsForEncounter(
+  clinicId: string,
+  encounterId: string,
+): Promise<{ ids: string[]; appointmentId: string | null; caseId: string | null }> {
   const { data: enc } = await supabaseAdmin
     .from('hub_encounters')
-    .select('hub_appointment_id')
+    .select('hub_appointment_id, hub_case_id')
     .eq('id', encounterId)
     .eq('clinic_id', clinicId)
     .maybeSingle();
-  const apptId = (enc?.hub_appointment_id as string | null) ?? null;
+  const appointmentId = (enc?.hub_appointment_id as string | null) ?? null;
+  const caseId = (enc?.hub_case_id as string | null) ?? null;
   const ids = new Set<string>();
   const idE = await findOpenComandaIdByOrigin(clinicId, 'encounter', encounterId);
   if (idE) ids.add(idE);
-  if (apptId) {
-    const idA = await findOpenComandaIdByOrigin(clinicId, 'appointment', apptId);
+  if (appointmentId) {
+    const idA = await findOpenComandaIdByOrigin(clinicId, 'appointment', appointmentId);
     if (idA) ids.add(idA);
   }
-  for (const id of ids) {
-    await syncAndTryAutoCloseComanda(clinicId, id);
+  return { ids: [...ids], appointmentId, caseId };
+}
+
+/** Sincroniza comanda já aberta quando o vet registra item cobrável (medicação, vacina, exame). */
+export async function syncOpenComandasAfterEncounterChargeableChange(
+  clinicId: string,
+  encounterId: string,
+): Promise<void> {
+  try {
+    const { ids } = await listOpenComandaIdsForEncounter(clinicId, encounterId);
+    for (const id of ids) {
+      await syncAndTryAutoCloseComanda(clinicId, id);
+    }
+  } catch (e) {
+    console.error('syncOpenComandasAfterEncounterChargeableChange', e);
   }
+}
+
+async function ensureOpenComandaForCompletedEncounter(
+  clinicId: string,
+  encounterId: string,
+  appointmentId: string | null,
+  caseId: string | null,
+): Promise<void> {
+  try {
+    const keys = await fetchActiveReceivableKeys(clinicId);
+    if (keys.has(`encounter:${encounterId}`)) return;
+    if (appointmentId && keys.has(`appointment:${appointmentId}`)) return;
+
+    const built = await buildComandaItemsFromEncounter(clinicId, encounterId);
+    const discount = 0;
+    const total = round2(Math.max(0, built.subtotal - discount));
+    const resolvedPetId =
+      built.pet_id ??
+      (built.items.map((it) => it.pet_id).find((pid): pid is string => Boolean(pid)) ?? null);
+
+    const { data: comanda, error: cErr } = await supabaseAdmin
+      .from('hub_comandas')
+      .insert({
+        clinic_id: clinicId,
+        unit_id: built.unit_id,
+        guardian_id: built.guardian_id,
+        pet_id: resolvedPetId,
+        origin_type: 'encounter',
+        origin_id: encounterId,
+        hub_case_id: caseId,
+        hub_encounter_id: encounterId,
+        status: 'aberta',
+        financial_status: 'open',
+        subtotal_amount: built.subtotal,
+        discount_amount: discount,
+        total_amount: total,
+        notes: null,
+      })
+      .select('id')
+      .single();
+    if (cErr || !comanda) {
+      console.error('ensureOpenComandaForCompletedEncounter', cErr);
+      return;
+    }
+    const comandaId = comanda.id as string;
+    const rows = built.items.map((it) => comandaItemInsertRow(clinicId, comandaId, it));
+    if (rows.length > 0) {
+      const { error: iErr } = await supabaseAdmin.from('hub_comanda_items').insert(rows);
+      if (iErr) {
+        await supabaseAdmin.from('hub_comandas').delete().eq('id', comandaId);
+        console.error('ensureOpenComandaForCompletedEncounter items', iErr);
+        return;
+      }
+    }
+    for (const row of rows) {
+      void recordComandaItemAddedEvent({
+        clinic_id: clinicId,
+        comanda_id: comandaId,
+        item: {
+          description: String(row.description),
+          item_kind: String(row.item_kind),
+          quantity: Number(row.quantity),
+          unit_amount: Number(row.unit_amount),
+          line_total: Number(row.line_total),
+        },
+        actor_user_id: null,
+        source: 'origin_open',
+      });
+    }
+  } catch (e: unknown) {
+    const msg = (e as Error)?.message;
+    if (msg === 'WAIVED' || msg === 'NO_GUARDIAN' || msg === 'NO_PET' || msg === 'NOT_FOUND' || msg === 'NOT_READY') {
+      return;
+    }
+    console.error('ensureOpenComandaForCompletedEncounter', e);
+  }
+}
+
+export async function syncOpenComandasAfterEncounterCompleted(clinicId: string, encounterId: string): Promise<void> {
+  const { ids, appointmentId, caseId } = await listOpenComandaIdsForEncounter(clinicId, encounterId);
+  if (ids.length > 0) {
+    for (const id of ids) {
+      await syncAndTryAutoCloseComanda(clinicId, id);
+    }
+    return;
+  }
+  await ensureOpenComandaForCompletedEncounter(clinicId, encounterId, appointmentId, caseId);
 }
 
 export async function syncOpenComandasAfterBoardingCheckedOut(
@@ -3603,6 +3686,10 @@ export const getHubComandaByOrigin = async (req: Request, res: Response) => {
           .maybeSingle();
         rowId = (rowAppt?.id as string) ?? null;
       }
+    }
+
+    if (!rowId && origin_type === 'appointment') {
+      rowId = await findOpenEncounterComandaIdForAppointment(clinic_id, origin_id);
     }
 
     if (!rowId) return res.status(404).json({ error: 'Comanda aberta não encontrada' });

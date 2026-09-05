@@ -54,7 +54,7 @@ export function prescriptionItemToDraft(it: {
     posology: it.posology ?? it.frequency ?? '',
     duration: it.duration ?? '',
     instructions: it.instructions ?? '',
-    administration: it.administration === 'administered_in_clinic' ? 'administered_in_clinic' : 'home_use',
+    administration: 'home_use',
     use_route: it.use_route ?? '',
   };
 }
@@ -236,7 +236,7 @@ export function HubPrescriptionItemForm({
             options={medicationOptions}
             value={draft.medication_name}
             onChange={(v) => void handleLookupChange('medication', 'medication_name', v)}
-            placeholder={labeled ? 'Selecionar ou adicionar…' : 'Medicamento *'}
+            placeholder={labeled ? 'Buscar no catálogo, ou criar outro…' : 'Medicamento *'}
             searchPlaceholder="Buscar medicamento…"
             disabled={disabled}
             allowCreate={canCreateLookups && !disabled}
@@ -246,6 +246,7 @@ export function HubPrescriptionItemForm({
             clearable
           />
         </div>,
+        labeled,
       )}
       {field(
         'Apresentação',
@@ -347,22 +348,6 @@ export function HubPrescriptionItemForm({
         />,
         true,
       )}
-      {field(
-        'Local de administração',
-        'hub-rx-administration',
-        <select
-          id="hub-rx-administration"
-          className="hub-clientes__input"
-          value={draft.administration}
-          disabled={disabled}
-          onChange={(e) => set({ administration: e.target.value as HubPrescriptionAdministration })}
-          aria-label="Local de administração"
-        >
-          <option value="home_use">Uso em casa (retirada / posologia domiciliar)</option>
-          <option value="administered_in_clinic">Administrado na clínica</option>
-        </select>,
-        true,
-      )}
       <div className="hub-rx-item-form__actions">
         {editing && onCancelEdit ? (
           <button
@@ -380,7 +365,7 @@ export function HubPrescriptionItemForm({
           disabled={disabled || !draft.medication_name.trim()}
           onClick={onAdd}
         >
-          {editing ? 'Salvar alterações' : 'Adicionar à prescrição'}
+          {editing ? 'Salvar alterações' : 'Adicionar à receita'}
         </button>
       </div>
     </div>

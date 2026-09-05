@@ -140,6 +140,7 @@ type FormState = {
   default_duration_minutes: string;
   description: string;
   allow_scheduling: boolean;
+  is_encounter_application: boolean;
   internal_notes: string;
   code_locked: boolean;
 };
@@ -154,6 +155,7 @@ const emptyForm = (): FormState => ({
   default_duration_minutes: '',
   description: '',
   allow_scheduling: true,
+  is_encounter_application: false,
   internal_notes: '',
   code_locked: false,
 });
@@ -177,6 +179,7 @@ const fromRow = (t: HubServiceType): FormState => {
     default_duration_minutes: t.default_duration_minutes != null ? String(t.default_duration_minutes) : '',
     description: t.description ?? '',
     allow_scheduling: t.allow_scheduling !== false,
+    is_encounter_application: Boolean(t.is_encounter_application),
     internal_notes: t.internal_notes ?? '',
     code_locked: Boolean(t.code_locked),
   };
@@ -237,6 +240,7 @@ function applySvcGroupChange(prev: FormState, newGroup: string): FormState {
       pricing_matrix,
       cost_amount: formatMoneyNumberBrl(ref.cost),
       sale_amount: formatMoneyNumberBrl(ref.sale),
+      is_encounter_application: newGroup === 'clinica' ? prev.is_encounter_application : false,
     };
   }
 
@@ -245,6 +249,7 @@ function applySvcGroupChange(prev: FormState, newGroup: string): FormState {
     service_group: newGroup,
     pricing_mode,
     pricing_matrix,
+    is_encounter_application: newGroup === 'clinica' ? prev.is_encounter_application : false,
   };
 }
 
@@ -530,7 +535,9 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
           pricing_matrix: pricingMatrixPayload,
           default_duration_minutes: dur,
           description: form.description.trim() || null,
-          allow_scheduling: form.allow_scheduling,
+          allow_scheduling: form.is_encounter_application ? false : form.allow_scheduling,
+          is_encounter_application:
+            form.service_group === 'clinica' ? form.is_encounter_application : false,
           internal_notes: form.internal_notes.trim() || null,
         });
         showSuccess('Serviço criado');
@@ -542,9 +549,11 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
           cost_amount: costVal,
           sale_amount: saleVal,
           pricing_matrix: pricingMatrixPayload,
-        default_duration_minutes: dur,
+          default_duration_minutes: dur,
           description: form.description.trim() || null,
-          allow_scheduling: form.allow_scheduling,
+          allow_scheduling: form.is_encounter_application ? false : form.allow_scheduling,
+          is_encounter_application:
+            form.service_group === 'clinica' ? form.is_encounter_application : false,
           internal_notes: form.internal_notes.trim() || null,
           code_locked: form.code_locked,
       });
@@ -811,7 +820,14 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
                               <ServiceGroupIcon group={t.service_group || 'outros'} color={accent} size={22} />
                             </div>
                             <div className="hub-servicos__metric-card__text">
-                              <div className="hub-servicos__svc-title">{t.name}</div>
+                              <div className="hub-servicos__svc-title">
+                                {t.name}
+                                {t.is_encounter_application ? (
+                                  <span className="hub-clientes__pill hub-clientes__pill--active" style={{ marginLeft: 8, fontSize: 11 }}>
+                                    Aplicação
+                                  </span>
+                                ) : null}
+                              </div>
                               {desc ? <div className="hub-servicos__svc-desc">{truncateDesc(desc, 120)}</div> : null}
                             </div>
                           </div>
@@ -1040,6 +1056,26 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
                   </button>
                   </div>
                 </div>
+
+                {form.service_group === 'clinica' ? (
+                  <div className="hub-clientes__field">
+                    <HubCheckbox
+                      checked={form.is_encounter_application}
+                      onChange={(is_encounter_application) =>
+                        setForm((f) => ({
+                          ...f,
+                          is_encounter_application,
+                          allow_scheduling: is_encounter_application ? false : f.allow_scheduling,
+                        }))
+                      }
+                    >
+                      Aplicação na consulta
+                    </HubCheckbox>
+                    <p className="hub-clientes__muted" style={{ margin: '6px 0 0', fontSize: 13 }}>
+                      Marque para IM, IV, SC etc. Aparece no dropdown da Medicação.
+                    </p>
+                  </div>
+                ) : null}
 
                 <div className="hub-clientes__field">
                   <label className="hub-clientes__label" htmlFor="svc-desc">

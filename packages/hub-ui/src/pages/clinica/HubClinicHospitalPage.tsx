@@ -1,41 +1,26 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowRightLeft, BedDouble, FileText, Link2, LogOut } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
-import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
-import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
-import {
-  hubClinicalApi,
-  type HubHospitalBed,
-  type HubHospitalization,
-  type HubHospitalizationEvent,
-  type HubHospitalizationEventKind,
-} from '../../api/hubClinicalApi';
-import { hubPetsApi, type HubPet } from '../../api/hubPetsApi';
+import { hubClinicalApi, type HubHospitalBed, type HubHospitalization } from '../../api/hubClinicalApi';
+import { getSelectedUnitId, useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import ClinicalCaseLinkFields, {
   type ClinicalCaseLinkValue,
   isCaseLinkResolved,
 } from '../../components/clinical/ClinicalCaseLinkFields';
-
-const STATUS_LABEL: Record<string, string> = {
-  active: 'Internado',
-  discharged: 'Alta',
-  death: 'Óbito',
-  transferred: 'Transferido',
-  cancelled: 'Cancelado',
-};
-
-const EVENT_KIND_LABEL: Record<HubHospitalizationEventKind, string> = {
-  vital: 'Sinais vitais',
-  medication: 'Medicação',
-  feeding: 'Alimentação',
-  fluid: 'Fluidoterapia',
-  nursing: 'Enfermagem',
-  note: 'Nota',
-};
+import { useMyStaffMember } from '../../hooks/useMyStaffMember';
+import {
+  BED_STATUS_LABEL,
+  buildHospAdmitReason,
+  formatHospDate,
+  HOSP_STATUS_LABEL,
+  petInitials,
+} from './hospital/hospDisplay';
+import HospBedAssignPanel from './hospital/HospBedAssignPanel';
+import HospAdmitForm, { type HospAdmitDraft } from './hospital/HospAdmitForm';
 
 export type HubClinicHospitalPageProps = {
   /** Lista embutida no Consultório (sem toolbar primária de admissão). */
@@ -56,8 +41,11 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
   presetCaseId,
 }) => {
   const clinicId = getStoredClinicId();
+  const unitId = useSelectedUnitId();
+  const navigate = useNavigate();
   const { showError, showSuccess } = useAlert();
   const { hasPermission } = usePermissions();
+  const { myStaffMember, staffList } = useMyStaffMember();
   const [searchParams] = useSearchParams();
   const canRead = hasPermission('hub.clinic.read');
   const canWrite = hasPermission('hub.clinic.write');
@@ -65,6 +53,7 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
   const [beds, setBeds] = useState<HubHospitalBed[]>([]);
   const [hosp, setHosp] = useState<HubHospitalization[]>([]);
   const [bedCode, setBedCode] = useState('');
+  const [bedSubmitting, setBedSubmitting] = useState(false);
   const [admitOpenInternal, setAdmitOpenInternal] = useState(false);
   const admitControlled = admitOpenProp !== undefined;
   const admitOpen = admitControlled ? Boolean(admitOpenProp) : admitOpenInternal;
@@ -72,30 +61,26 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
     onAdmitOpenChange?.(open);
     if (!admitControlled) setAdmitOpenInternal(open);
   };
-  const [pets, setPets] = useState<HubPet[]>([]);
-  const [petId, setPetId] = useState('');
-  const [bedId, setBedId] = useState('');
-  const [notes, setNotes] = useState('');
-  const [caseLink, setCaseLink] = useState<ClinicalCaseLinkValue>({});
+  const emptyAdmitDraft = (): HospAdmitDraft => ({
+    guardianId: '',
+    petId: '',
+    bedId: '',
+    reasonKey: '',
+    reasonDetail: '',
+    notes: '',
+    staffId: myStaffMember?.id ?? '',
+    caseLink: {},
+  });
+  const [admitDraft, setAdmitDraft] = useState<HospAdmitDraft>(emptyAdmitDraft);
   const [hasActiveCases, setHasActiveCases] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Events panel
-  const [eventsHospId, setEventsHospId] = useState<string | null>(null);
-  const [events, setEvents] = useState<HubHospitalizationEvent[]>([]);
-  const [eventsLoading, setEventsLoading] = useState(false);
-  const [eventKind, setEventKind] = useState<HubHospitalizationEventKind>('vital');
-  const [eventPayloadRaw, setEventPayloadRaw] = useState('');
-  const [eventNote, setEventNote] = useState('');
-  const [eventSubmitting, setEventSubmitting] = useState(false);
-
-  // Discharge panel
   const [dischargeHosp, setDischargeHosp] = useState<HubHospitalization | null>(null);
   const [dischargeStatus, setDischargeStatus] = useState<'discharged' | 'death' | 'transferred'>('discharged');
   const [dischargeNotes, setDischargeNotes] = useState('');
   const [dischargeSubmitting, setDischargeSubmitting] = useState(false);
 
-  // Link-case for orphan hospitalizations
+  const [assignBedHosp, setAssignBedHosp] = useState<HubHospitalization | null>(null);
   const [linkCaseHosp, setLinkCaseHosp] = useState<HubHospitalization | null>(null);
   const [linkCaseValue, setLinkCaseValue] = useState<ClinicalCaseLinkValue>({});
   const [linkCaseHasActive, setLinkCaseHasActive] = useState(false);
@@ -114,18 +99,17 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
   useEffect(() => {
     if (!canRead) return;
     void reload().catch(() => {});
-  }, [clinicId, canRead]);
+  }, [clinicId, unitId, canRead]);
 
   useEffect(() => {
-    if (!clinicId || !admitOpen) return;
-    void hubPetsApi.list(clinicId).then((r) => setPets(r.pets ?? [])).catch(() => setPets([]));
-  }, [clinicId, admitOpen]);
-
-  // Prefill: props do Consultório ou query em rota legada standalone.
-  useEffect(() => {
-    if (presetPetId) setPetId(presetPetId);
-    if (presetCaseId) setCaseLink({ hub_case_id: presetCaseId });
-  }, [presetPetId, presetCaseId, admitOpen]);
+    if (!admitOpen) return;
+    setAdmitDraft((prev) => ({
+      ...prev,
+      petId: presetPetId || prev.petId,
+      caseLink: presetCaseId ? { hub_case_id: presetCaseId } : prev.caseLink,
+      staffId: prev.staffId || myStaffMember?.id || '',
+    }));
+  }, [presetPetId, presetCaseId, admitOpen, myStaffMember?.id]);
 
   useEffect(() => {
     if (embedded) return;
@@ -133,61 +117,71 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
     const qCase = searchParams.get('hub_case_id');
     if (!qPet && !qCase) return;
     setAdmitOpen(true);
-    if (qPet) setPetId(qPet);
-    if (qCase) setCaseLink({ hub_case_id: qCase });
+    setAdmitDraft((prev) => ({
+      ...prev,
+      petId: qPet || prev.petId,
+      caseLink: qCase ? { hub_case_id: qCase } : prev.caseLink,
+    }));
   }, []);
 
-  const openEvents = async (hospId: string) => {
-    setEventsHospId(hospId);
-    setEventsLoading(true);
-    try {
-      const r = await hubClinicalApi.listHospEvents(hospId);
-      setEvents(r.events ?? []);
-    } catch {
-      setEvents([]);
-    } finally {
-      setEventsLoading(false);
-    }
-  };
-
-  const petOptions: HubComboboxOption[] = pets.map((p) => ({ value: p.id, label: p.name }));
-  const bedOptions: HubComboboxOption[] = beds
-    .filter((b) => b.status === 'available' || !b.status)
-    .map((b) => ({ value: b.id, label: b.label || b.code }));
-
   const addBed = async () => {
-    if (!clinicId || !bedCode.trim()) return;
+    const code = bedCode.trim();
+    if (!clinicId) {
+      showError('Selecione uma clínica antes de cadastrar o leito.');
+      return;
+    }
+    if (!code) {
+      showError('Informe o código do leito.');
+      return;
+    }
+    setBedSubmitting(true);
     try {
-      await hubClinicalApi.createBed({ clinic_id: clinicId, code: bedCode.trim(), label: bedCode.trim() });
+      await hubClinicalApi.createBed({
+        clinic_id: clinicId,
+        code,
+        label: code,
+        unit_id: getSelectedUnitId(),
+      });
       setBedCode('');
       await reload();
       showSuccess('Leito criado');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao criar leito');
+    } finally {
+      setBedSubmitting(false);
     }
   };
 
   const resetAdmitForm = () => {
-    setPetId('');
-    setBedId('');
-    setNotes('');
-    setCaseLink({});
+    setAdmitDraft(emptyAdmitDraft());
     setHasActiveCases(false);
   };
 
+  const admitReason = buildHospAdmitReason(admitDraft.reasonKey, admitDraft.reasonDetail);
+
   const admit = async () => {
-    if (!clinicId || !petId) return;
-    if (!isCaseLinkResolved(caseLink, hasActiveCases)) {
+    if (!clinicId || !admitDraft.guardianId || !admitDraft.petId || !admitReason) return;
+    if (!isCaseLinkResolved(admitDraft.caseLink, hasActiveCases)) {
       showError('Selecione um caso clínico ou escolha criar um novo antes de continuar.');
       return;
     }
+    const caseLink = admitDraft.caseLink.create_new_case
+      ? {
+          ...admitDraft.caseLink,
+          new_case_title: admitDraft.caseLink.new_case_title?.trim() || admitReason,
+        }
+      : admitDraft.caseLink;
     setSubmitting(true);
     try {
       await hubClinicalApi.createHospitalization({
         clinic_id: clinicId,
-        pet_id: petId,
-        hub_hospital_bed_id: bedId || null,
-        admission_notes: notes.trim() || null,
+        pet_id: admitDraft.petId,
+        hub_hospital_bed_id: admitDraft.bedId || null,
+        reason: admitReason,
+        admission_notes: admitDraft.notes.trim() || null,
+        hub_staff_member_id: admitDraft.staffId || null,
+        guardian_id: admitDraft.guardianId || null,
+        unit_id: getSelectedUnitId(),
         ...caseLink,
       });
       setAdmitOpen(false);
@@ -245,167 +239,227 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
     }
   };
 
-  const addEvent = async () => {
-    if (!eventsHospId) return;
-    setEventSubmitting(true);
-    let payload: Record<string, unknown> = {};
-    if (eventPayloadRaw.trim()) {
-      try {
-        payload = JSON.parse(eventPayloadRaw) as Record<string, unknown>;
-      } catch {
-        payload = { raw: eventPayloadRaw };
-      }
-    }
-    if (eventNote.trim()) payload.note = eventNote.trim();
-    try {
-      await hubClinicalApi.createHospEvent(eventsHospId, { kind: eventKind, payload });
-      setEventPayloadRaw('');
-      setEventNote('');
-      const r = await hubClinicalApi.listHospEvents(eventsHospId);
-      setEvents(r.events ?? []);
-      showSuccess('Evento registrado');
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao registrar evento');
-    } finally {
-      setEventSubmitting(false);
-    }
+  const openHospitalization = (id: string) => {
+    navigate(`/hub/clinica/internacoes/${id}`);
   };
 
-  const selectedHosp = hosp.find((h) => h.id === eventsHospId);
-  const canSubmitAdmit = !!petId && !submitting && isCaseLinkResolved(caseLink, hasActiveCases);
+  const canSubmitAdmit =
+    !!admitDraft.guardianId &&
+    !!admitDraft.petId &&
+    !!admitReason &&
+    !submitting &&
+    isCaseLinkResolved(admitDraft.caseLink, hasActiveCases);
 
   if (!canRead) {
     return <p className="hub-clientes__muted hub-clinic-page__pad">Sem permissão.</p>;
   }
 
+  const bedComposer = canWrite ? (
+    <div className={`hub-hosp-beds-toolbar${embedded ? ' hub-clinic-hospital__embedded-beds' : ''}`}>
+      <input
+        className="hub-clientes__input hub-clinic-hospital__bed-input"
+        placeholder="Código do leito (ex.: L01)"
+        value={bedCode}
+        onChange={(e) => setBedCode(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            void addBed();
+          }
+        }}
+        aria-label="Código do leito"
+      />
+      <button
+        type="button"
+        className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+        disabled={bedSubmitting || !bedCode.trim()}
+        onClick={() => void addBed()}
+      >
+        {bedSubmitting ? 'Salvando…' : 'Adicionar leito'}
+      </button>
+      {!embedded ? (
+        <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={() => setAdmitOpen(true)}>
+          Internar pet
+        </button>
+      ) : null}
+    </div>
+  ) : null;
+
   return (
     <div className={`hub-clinic-hospital${embedded ? ' hub-clinic-hospital--embedded' : ''}`}>
-      {canWrite && !embedded && (
-        <div className="hub-clientes__toolbar">
-          <input
-            className="hub-clientes__input hub-clinic-hospital__bed-input"
-            placeholder="Código do leito"
-            value={bedCode}
-            onChange={(e) => setBedCode(e.target.value)}
-          />
-          <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => void addBed()}>
-            Adicionar leito
-          </button>
-          <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={() => setAdmitOpen(true)}>
-            Internar pet
-          </button>
+      {bedComposer}
+
+      <h3 className="hub-clinic-section-title">Mapa de leitos</h3>
+      <div className="hub-clinic-beds-grid">
+        {beds.map((b) => {
+          const st = String(b.status || 'available');
+          return (
+            <div key={b.id} className={`hub-clinic-bed hub-clinic-bed--${st}`}>
+              <span className="hub-clinic-bed__dot" aria-hidden />
+              <span className="hub-clinic-bed__code">{b.label || b.code}</span>
+              <span className="hub-clinic-bed__status">{BED_STATUS_LABEL[st] ?? st}</span>
+            </div>
+          );
+        })}
+        {beds.length === 0 ? (
+          <p className="hub-clientes__muted hub-hosp-beds-empty">
+            Nenhum leito configurado. Cadastre o código acima para montar o mapa.
+          </p>
+        ) : null}
+      </div>
+
+      {!embedded ? <h3 className="hub-clinic-section-title">Internações ativas</h3> : null}
+      {hosp.length === 0 ? (
+        <div className="hub-dayboard__empty">Nenhuma internação ativa.</div>
+      ) : (
+        <div className="hub-clientes__table-wrap">
+          <table className="hub-clientes__table hub-dayboard__table">
+            <thead>
+              <tr>
+                <th>Pet</th>
+                <th>Leito</th>
+                <th>Tutor</th>
+                <th>Entrada</th>
+                <th>Status</th>
+                <th>Caso</th>
+                <th className="hub-clientes__th-actions">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hosp.map((h) => {
+                const petName = h.hub_pets?.name || 'Pet';
+                const bed = h.hub_hospital_beds?.label || h.hub_hospital_beds?.code;
+                const tutor = h.hub_guardians?.full_name;
+                return (
+                  <tr
+                    key={h.id}
+                    className="hub-dayboard__row-click"
+                    onClick={() => openHospitalization(h.id)}
+                  >
+                    <td>
+                      <div className="hub-clientes__tutor-cell">
+                        <span className="hub-clientes__avatar">{petInitials(petName)}</span>
+                        <span>
+                          <span className="hub-clientes__tutor-name hub-dayboard__pet-name">{petName}</span>
+                          {h.reason ? <small className="hub-hosp-admit__row-reason">{h.reason}</small> : null}
+                        </span>
+                      </div>
+                    </td>
+                    <td>{bed || <span className="hub-clientes__muted">Sem leito</span>}</td>
+                    <td>{tutor || <span className="hub-clientes__muted">—</span>}</td>
+                    <td className="hub-dayboard__time-cell">{formatHospDate(h.admitted_at)}</td>
+                    <td>
+                      <span className={`hub-dayboard__op-badge hub-dayboard__op-badge--${h.status === 'active' ? 'in_progress' : h.status}`}>
+                        {HOSP_STATUS_LABEL[h.status] || h.status}
+                      </span>
+                    </td>
+                    <td>
+                      {h.hub_case_id ? (
+                        <span className="hub-clientes__pill hub-dayboard__pill--open">Vinculado</span>
+                      ) : (
+                        <span className="hub-clientes__pill hub-dayboard__pill--none">Sem caso</span>
+                      )}
+                    </td>
+                    <td className="hub-clientes__td-actions" onClick={(e) => e.stopPropagation()}>
+                      <div className="hub-clientes__td-actions-inner hub-dayboard__actions">
+                        <button
+                          type="button"
+                          className="hub-dayboard__action-btn"
+                          title="Abrir internação"
+                          aria-label="Abrir internação"
+                          onClick={() => openHospitalization(h.id)}
+                        >
+                          <BedDouble size={15} strokeWidth={2} />
+                        </button>
+                        {h.hub_case_id ? (
+                          <button
+                            type="button"
+                            className="hub-dayboard__action-btn"
+                            title="Ver caso"
+                            aria-label="Ver caso"
+                            onClick={() => navigate(`/hub/clinica/casos/${h.hub_case_id}`)}
+                          >
+                            <FileText size={15} strokeWidth={2} />
+                          </button>
+                        ) : canWrite ? (
+                          <button
+                            type="button"
+                            className="hub-dayboard__action-btn"
+                            title="Vincular caso"
+                            aria-label="Vincular caso"
+                            onClick={() => {
+                              setLinkCaseHosp(h);
+                              setLinkCaseValue({});
+                              setLinkCaseHasActive(false);
+                            }}
+                          >
+                            <Link2 size={15} strokeWidth={2} />
+                          </button>
+                        ) : null}
+                        {canWrite ? (
+                          <button
+                            type="button"
+                            className="hub-dayboard__action-btn"
+                            title={h.hub_hospital_bed_id ? 'Trocar leito' : 'Atribuir leito'}
+                            aria-label={h.hub_hospital_bed_id ? 'Trocar leito' : 'Atribuir leito'}
+                            onClick={() => setAssignBedHosp(h)}
+                          >
+                            <ArrowRightLeft size={15} strokeWidth={2} />
+                          </button>
+                        ) : null}
+                        {canWrite ? (
+                          <button
+                            type="button"
+                            className="hub-dayboard__action-btn"
+                            title="Alta / encerrar"
+                            aria-label="Alta / encerrar"
+                            onClick={() => {
+                              setDischargeHosp(h);
+                              setDischargeStatus('discharged');
+                              setDischargeNotes('');
+                            }}
+                          >
+                            <LogOut size={15} strokeWidth={2} />
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {canWrite && embedded ? (
-        <div className="hub-clientes__toolbar hub-clinic-hospital__embedded-beds">
-          {beds.length === 0 ? <p className="hub-clientes__muted">Nenhum leito configurado.</p> : null}
-          <input
-            className="hub-clientes__input hub-clinic-hospital__bed-input"
-            placeholder="Código do leito"
-            value={bedCode}
-            onChange={(e) => setBedCode(e.target.value)}
-          />
-          <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm" onClick={() => void addBed()}>
-            Adicionar leito
-          </button>
-        </div>
+      {clinicId ? (
+        <HospBedAssignPanel
+          open={!!assignBedHosp}
+          clinicId={clinicId}
+          hospitalization={assignBedHosp}
+          beds={beds}
+          onClose={() => setAssignBedHosp(null)}
+          onAssigned={() => reload()}
+        />
       ) : null}
 
-      {!embedded || beds.length > 0 ? (
-        <>
-          <h3 className="hub-clinic-section-title">Mapa de leitos</h3>
-          <div className="hub-clinic-beds-grid">
-            {beds.map((b) => {
-              const st = String(b.status || 'available');
-              return (
-                <div key={b.id} className={`hub-clinic-bed hub-clinic-bed--${st}`}>
-                  {b.label || b.code}
-                  <div className="hub-clinic-bed__status">{st}</div>
-                </div>
-              );
-            })}
-            {beds.length === 0 && <p className="hub-clientes__muted">Nenhum leito configurado.</p>}
-          </div>
-        </>
-      ) : null}
-
-      {!embedded ? <h3 className="hub-clinic-section-title">Internações ativas</h3> : null}
-      <div className="hub-clientes__table-wrap">
-        <table className="hub-clientes__table">
-          <thead>
-            <tr>
-              <th>Pet</th>
-              <th>Leito</th>
-              <th>Entrada</th>
-              <th>Status</th>
-              <th>Caso</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {hosp.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="hub-clientes__muted" style={{ textAlign: 'center', padding: 24 }}>
-                  Nenhuma internação ativa.
-                </td>
-              </tr>
-            ) : (
-              hosp.map((h) => (
-                <tr key={h.id}>
-                  <td>{h.hub_pets?.name || h.pet_id}</td>
-                  <td>{h.hub_hospital_beds?.label || h.hub_hospital_beds?.code || '—'}</td>
-                  <td>{String(h.admitted_at || '').slice(0, 10)}</td>
-                  <td>{STATUS_LABEL[h.status] || h.status}</td>
-                  <td>
-                    {h.hub_case_id ? (
-                      <span style={{ color: 'var(--color-success, green)', fontSize: 12 }}>Vinculado</span>
-                    ) : (
-                      <span style={{ color: 'var(--color-warning, #b45309)', fontSize: 12 }}>Sem caso</span>
-                    )}
-                  </td>
-                  <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                      onClick={() => void openEvents(h.id)}
-                    >
-                      Eventos
-                    </button>
-                    {canWrite && !h.hub_case_id && (
-                      <button
-                        type="button"
-                        className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                        onClick={() => { setLinkCaseHosp(h); setLinkCaseValue({}); setLinkCaseHasActive(false); }}
-                      >
-                        Vincular caso
-                      </button>
-                    )}
-                    {canWrite && (
-                      <button
-                        type="button"
-                        className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                        onClick={() => { setDischargeHosp(h); setDischargeStatus('discharged'); setDischargeNotes(''); }}
-                      >
-                        Alta / encerrar
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Painel de admissão */}
       <HubSidePanel
         open={admitOpen}
-        onClose={() => { setAdmitOpen(false); resetAdmitForm(); }}
+        onClose={() => {
+          setAdmitOpen(false);
+          resetAdmitForm();
+        }}
         title="Internar pet"
+        titleIcon={<BedDouble size={22} strokeWidth={2} aria-hidden />}
+        size="wide"
         footer={
           <div className="hub-clientes__panel-footer">
-            <HubCancelButton onClick={() => { setAdmitOpen(false); resetAdmitForm(); }} />
+            <HubCancelButton
+              onClick={() => {
+                setAdmitOpen(false);
+                resetAdmitForm();
+              }}
+            />
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--primary"
@@ -417,48 +471,37 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
           </div>
         }
       >
-        <div className="hub-clientes__form-stack">
-          <span className="hub-clientes__label">Pet</span>
-          <HubSearchableCombobox
-            id="clinic-admit-pet"
-            className="hub-combobox--clientes"
-            options={petOptions}
-            value={petId}
-            onChange={(v) => { setPetId(v); setCaseLink({}); setHasActiveCases(false); }}
-            placeholder="Buscar pet…"
+        {clinicId ? (
+          <HospAdmitForm
+            clinicId={clinicId}
+            open={admitOpen}
+            beds={beds}
+            staff={staffList}
+            draft={admitDraft}
+            onChange={setAdmitDraft}
+            onHasActiveCases={setHasActiveCases}
+            submitting={submitting}
           />
-          {clinicId && petId && (
-            <ClinicalCaseLinkFields
-              clinicId={clinicId}
-              petId={petId}
-              value={caseLink}
-              onChange={(v) => setCaseLink(v)}
-              onHasActiveCases={setHasActiveCases}
-              disabled={submitting}
-            />
-          )}
-          <span className="hub-clientes__label">Leito (opcional)</span>
-          <HubSearchableCombobox
-            id="clinic-admit-bed"
-            className="hub-combobox--clientes"
-            options={bedOptions}
-            value={bedId}
-            onChange={setBedId}
-            placeholder="Selecionar leito…"
-          />
-          <span className="hub-clientes__label">Observações de admissão</span>
-          <textarea className="hub-clientes__textarea" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </div>
+        ) : (
+          <p className="hub-clientes__muted">Selecione uma clínica para internar.</p>
+        )}
       </HubSidePanel>
 
-      {/* Painel de vincular caso (órfão) */}
       <HubSidePanel
         open={!!linkCaseHosp}
-        onClose={() => { setLinkCaseHosp(null); setLinkCaseValue({}); }}
+        onClose={() => {
+          setLinkCaseHosp(null);
+          setLinkCaseValue({});
+        }}
         title={`Vincular caso — ${linkCaseHosp?.hub_pets?.name || 'Internação'}`}
         footer={
           <div className="hub-clientes__panel-footer">
-            <HubCancelButton onClick={() => { setLinkCaseHosp(null); setLinkCaseValue({}); }} />
+            <HubCancelButton
+              onClick={() => {
+                setLinkCaseHosp(null);
+                setLinkCaseValue({});
+              }}
+            />
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--primary"
@@ -471,7 +514,7 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
         }
       >
         <div className="hub-clientes__form-stack">
-          {clinicId && linkCaseHosp && (
+          {clinicId && linkCaseHosp ? (
             <ClinicalCaseLinkFields
               clinicId={clinicId}
               petId={linkCaseHosp.pet_id}
@@ -482,92 +525,10 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
               }}
               disabled={linkCaseSubmitting}
             />
-          )}
-        </div>
-      </HubSidePanel>
-
-      {/* Painel de eventos de internação */}
-      <HubSidePanel
-        open={!!eventsHospId}
-        onClose={() => setEventsHospId(null)}
-        title={`Eventos — ${selectedHosp?.hub_pets?.name || 'Internação'}`}
-        footer={null}
-      >
-        <div className="hub-clientes__form-stack">
-          {canWrite && (
-            <>
-              <span className="hub-clientes__label">Tipo de evento</span>
-              <select
-                className="hub-clientes__input"
-                value={eventKind}
-                onChange={(e) => setEventKind(e.target.value as HubHospitalizationEventKind)}
-              >
-                {(Object.keys(EVENT_KIND_LABEL) as HubHospitalizationEventKind[]).map((k) => (
-                  <option key={k} value={k}>{EVENT_KIND_LABEL[k]}</option>
-                ))}
-              </select>
-              <span className="hub-clientes__label">Nota / observação</span>
-              <textarea
-                className="hub-clientes__textarea"
-                rows={2}
-                placeholder="Ex.: FC 90 bpm, temperatura 38°C, administrado 5 mg/kg…"
-                value={eventNote}
-                onChange={(e) => setEventNote(e.target.value)}
-              />
-              <span className="hub-clientes__label" style={{ color: 'var(--color-muted, #888)', fontSize: 12 }}>
-                Payload JSON adicional (opcional)
-              </span>
-              <textarea
-                className="hub-clientes__textarea"
-                rows={2}
-                placeholder='{"fc": 90, "temperatura": 38}'
-                value={eventPayloadRaw}
-                onChange={(e) => setEventPayloadRaw(e.target.value)}
-              />
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--primary"
-                disabled={eventSubmitting || (!eventNote.trim() && !eventPayloadRaw.trim())}
-                onClick={() => void addEvent()}
-              >
-                {eventSubmitting ? 'Registrando…' : 'Registrar evento'}
-              </button>
-            </>
-          )}
-
-          <h4 style={{ margin: '16px 0 8px' }}>Histórico</h4>
-          {eventsLoading ? (
-            <HubLoading variant="inline" size="sm" label="Carregando histórico…" />
           ) : null}
-          {!eventsLoading && events.length === 0 && (
-            <p className="hub-clientes__muted">Nenhum evento registrado.</p>
-          )}
-          {events.map((ev) => (
-            <div key={ev.id} className="hub-clinic-hosp-event">
-              <div className="hub-clinic-hosp-event__header">
-                <span className="hub-clinic-hosp-event__kind">{EVENT_KIND_LABEL[ev.kind] || ev.kind}</span>
-                <span className="hub-clinic-hosp-event__time">
-                  {new Date(ev.recorded_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
-                </span>
-              </div>
-              {ev.payload?.note != null && (
-                <p className="hub-clinic-hosp-event__note">{String(ev.payload.note)}</p>
-              )}
-              {Object.keys(ev.payload).filter((k) => k !== 'note').length > 0 && (
-                <pre className="hub-clinic-hosp-event__payload">
-                  {JSON.stringify(
-                    Object.fromEntries(Object.entries(ev.payload).filter(([k]) => k !== 'note')),
-                    null,
-                    2,
-                  )}
-                </pre>
-              )}
-            </div>
-          ))}
         </div>
       </HubSidePanel>
 
-      {/* Painel de alta / encerramento */}
       <HubSidePanel
         open={!!dischargeHosp}
         onClose={() => setDischargeHosp(null)}

@@ -22,6 +22,8 @@ type Props = {
   downloading?: boolean;
   onCopySuccess?: (message: string) => void;
   onCopyError?: (message: string) => void;
+  /** Conteúdo no painel atual, sem modal (ex.: após solicitar exame na cirurgia). */
+  embedded?: boolean;
 };
 
 async function copyText(
@@ -54,6 +56,7 @@ export function HubClinicalDocumentIssuePanel({
   downloading,
   onCopySuccess,
   onCopyError,
+  embedded = false,
 }: Props) {
   const link = useMemo(() => {
     if (publicUrl) return publicUrl;
@@ -62,34 +65,23 @@ export function HubClinicalDocumentIssuePanel({
 
   if (!open) return null;
 
+  const title = loading ? titleLoading : titleReady;
   const subtitle =
     loading || !document
       ? subtitleLoading
       : `Versão ${document.version_no}${document.validation_code ? ` · ${document.validation_code}` : ''}`;
 
-  return (
-    <HubModal
-      open={open}
-      onClose={onClose}
-      title={loading ? titleLoading : titleReady}
-      subtitle={subtitle}
-      size="xl"
-      footer={
-        <button type="button" className="hub-clientes__btn hub-clientes__btn--sm" onClick={onClose}>
-          Fechar
-        </button>
-      }
-    >
-      {loading ? (
-        <HubLoading variant="block" label="Emitindo documento e preparando link público…" />
-      ) : error ? (
-        <div className="hub-public-quote__banner hub-public-quote__banner--warn" role="alert">
-          <p className="hub-public-quote__banner-text">{error}</p>
-        </div>
-      ) : !document ? (
-        <p className="hub-clientes__muted">Não foi possível carregar os dados da emissão.</p>
-      ) : (
-        <div className="hub-rx-issue">
+  const body =
+    loading ? (
+      <HubLoading variant="block" label="Emitindo documento e preparando link público…" />
+    ) : error ? (
+      <div className="hub-public-quote__banner hub-public-quote__banner--warn" role="alert">
+        <p className="hub-public-quote__banner-text">{error}</p>
+      </div>
+    ) : !document ? (
+      <p className="hub-clientes__muted">Não foi possível carregar os dados da emissão.</p>
+    ) : (
+      <div className="hub-rx-issue">
           <div className="hub-rx-issue__head">
             <HubPrescriptionDocumentBadge status={document.document_status ?? 'valid'} />
             {contentHashShort || document.content_hash_short ? (
@@ -164,7 +156,32 @@ export function HubClinicalDocumentIssuePanel({
             </ul>
           </div>
         </div>
-      )}
+    );
+
+  if (embedded) {
+    return (
+      <div className="hub-rx-issue-embed">
+        <h3 className="nam-label">{title}</h3>
+        <p className="nam-muted">{subtitle}</p>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <HubModal
+      open={open}
+      onClose={onClose}
+      title={title}
+      subtitle={subtitle}
+      size="xl"
+      footer={
+        <button type="button" className="hub-clientes__btn hub-clientes__btn--sm" onClick={onClose}>
+          Fechar
+        </button>
+      }
+    >
+      {body}
     </HubModal>
   );
 }

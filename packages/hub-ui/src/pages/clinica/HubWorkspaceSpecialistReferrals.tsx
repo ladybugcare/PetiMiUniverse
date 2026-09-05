@@ -18,6 +18,10 @@ import {
   buildSpecialistReferralWhatsAppMessage,
   openSpecialistReferralWhatsApp,
 } from './hubSpecialistReferralShareUtils';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
+import { HubCwsChoiceChips } from './HubCwsChoiceChips';
+import { HubCwsStatusPills } from './HubCwsStatusPills';
+import { REFERRAL_PRIORITY_OPTIONS, REFERRAL_SPECIALTY_OPTIONS } from './referralSpecialtyOptions';
 
 const SPECIALIST_REFERRAL_DISCLAIMERS = [
   'Documento gerado pelo PetMi Hub para validação de autenticidade. Não substitui documentos regulatórios específicos.',
@@ -72,12 +76,14 @@ export function HubWorkspaceSpecialistReferrals({
   readOnly,
   onClinicalRefresh,
   messageTemplateOverrides,
+  hideEmptyState = false,
 }: {
   encounter: HubEncounter;
   clinicId: string;
   readOnly: boolean;
   onClinicalRefresh?: () => void;
   messageTemplateOverrides?: Record<string, string>;
+  hideEmptyState?: boolean;
 }) {
   const { showError, showSuccess } = useAlert();
   const [referrals, setReferrals] = useState<HubSpecialistReferral[]>([]);
@@ -95,6 +101,7 @@ export function HubWorkspaceSpecialistReferrals({
   const [revokeDoc, setRevokeDoc] = useState<ClinicalDocRow | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [guardianPhone, setGuardianPhone] = useState<string | null>(null);
+  const [requesting, setRequesting] = useState(false);
 
   const reloadReferrals = useCallback(async () => {
     const r = await hubSpecialistReferralsApi.list(clinicId, { encounterId: encounter.id });
@@ -123,6 +130,26 @@ export function HubWorkspaceSpecialistReferrals({
   }, [encounter.guardian_id, clinicId]);
 
   const issueBlockReason = useMemo(() => resolveIssueBlockReason(encounter, referrals), [encounter, referrals]);
+
+  const referralStats = useMemo(() => {
+    let pendentes = 0;
+    let emitidos = 0;
+    for (const ref of referrals) {
+      if (ref.status === 'cancelled') continue;
+      if (ref.status === 'issued') emitidos += 1;
+      else pendentes += 1;
+    }
+    return { total: referrals.length, pendentes, emitidos };
+  }, [referrals]);
+
+  const specialtyOptions = useMemo(() => {
+    const opts = REFERRAL_SPECIALTY_OPTIONS.map((o) => ({ value: o.key, label: o.label }));
+    const cur = draft.specialty.trim();
+    if (cur && !opts.some((o) => o.value.toLowerCase() === cur.toLowerCase())) {
+      opts.push({ value: draft.specialty, label: draft.specialty });
+    }
+    return opts;
+  }, [draft.specialty]);
 
   const openIssuePanel = (doc: ClinicalDocRow, publicUrl?: string | null) => {
     setIssuePanelError(null);
@@ -267,7 +294,8 @@ export function HubWorkspaceSpecialistReferrals({
   };
 
   const createReferral = async () => {
-    if (!draft.specialty.trim() || !draft.referral_reason.trim() || readOnly) return;
+    if (!draft.specialty.trim() || !draft.referral_reason.trim() || readOnly || requesting) return;
+    setRequesting(true);
     try {
       await hubSpecialistReferralsApi.create({
         clinic_id: clinicId,
@@ -289,6 +317,8 @@ export function HubWorkspaceSpecialistReferrals({
       onClinicalRefresh?.();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao registrar encaminhamento');
+    } finally {
+      setRequesting(false);
     }
   };
 
@@ -328,59 +358,96 @@ export function HubWorkspaceSpecialistReferrals({
 
   return (
     <>
-      <p className="hub-clientes__muted" style={{ marginTop: 0, marginBottom: 12 }}>
-        Registre encaminhamentos a especialistas e emita PDF com link validável. Após emitir, o item fica bloqueado para edição.
+      <HubCwsStatusPills
+        items={[
+          { label: 'Total', value: referralStats.total },
+          { label: 'Pendentes', value: referralStats.pendentes, tone: 'amber' },
+          { label: 'Emitidos', value: referralStats.emitidos, tone: 'green' },
+        ]}
+      />
+
+      <p className="hub-cws-an-block__hint">
+        Encaminhe ao especialista e emita o PDF com link validável. Depois de emitir, o item trava — gere outra versão
+        se precisar mudar.
       </p>
 
       {!readOnly ? (
-        <div className="hub-clientes__form-stack" style={{ marginBottom: 16, maxWidth: 560 }}>
-          <input
-            className="hub-clientes__input"
-            placeholder="Especialidade (ex.: cardiologia, dermatologia)"
-            value={draft.specialty}
-            onChange={(e) => setDraft((d) => ({ ...d, specialty: e.target.value }))}
-          />
-          <input
-            className="hub-clientes__input"
-            placeholder="Nome do especialista (opcional)"
-            value={draft.specialist_name}
-            onChange={(e) => setDraft((d) => ({ ...d, specialist_name: e.target.value }))}
-          />
-          <input
-            className="hub-clientes__input"
-            placeholder="Contato do especialista (opcional)"
-            value={draft.specialist_contact}
-            onChange={(e) => setDraft((d) => ({ ...d, specialist_contact: e.target.value }))}
-          />
-          <textarea
-            className="hub-clientes__input"
-            rows={2}
-            placeholder="Motivo do encaminhamento"
-            value={draft.referral_reason}
-            onChange={(e) => setDraft((d) => ({ ...d, referral_reason: e.target.value }))}
-          />
-          <textarea
-            className="hub-clientes__input"
-            rows={2}
-            placeholder="Resumo clínico"
-            value={draft.clinical_summary}
-            onChange={(e) => setDraft((d) => ({ ...d, clinical_summary: e.target.value }))}
-          />
-          <select
-            className="hub-clientes__input"
-            value={draft.priority}
-            onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value as 'routine' | 'urgent' }))}
-          >
-            <option value="routine">Prioridade: rotina</option>
-            <option value="urgent">Prioridade: urgente</option>
-          </select>
+        <div className="hub-cws-exam-form">
+          <div className="hub-clinic-field hub-cws-field-tight">
+            <label htmlFor="referral_specialty">Especialidade</label>
+            <HubSearchableCombobox
+              id="referral_specialty"
+              options={specialtyOptions}
+              value={draft.specialty}
+              onChange={(next) => setDraft((d) => ({ ...d, specialty: next }))}
+              placeholder="Buscar no catálogo, ou criar outra…"
+              searchPlaceholder="Cardiologia, dermatologia…"
+              allowCreate
+              createEntityLabel="especialidade"
+              ariaLabel="Especialidade"
+            />
+          </div>
+
+          <div className="hub-cws-exam-form__meta">
+            <HubCwsChoiceChips
+              options={REFERRAL_PRIORITY_OPTIONS}
+              value={draft.priority}
+              ariaLabel="Prioridade"
+              onChange={(next) => {
+                if (next !== 'routine' && next !== 'urgent') return;
+                setDraft((d) => ({ ...d, priority: next }));
+              }}
+            />
+          </div>
+
+          <div className="hub-cws-field-grid hub-cws-field-grid--2">
+            <div className="hub-clinic-field hub-cws-field-tight">
+              <label htmlFor="referral_specialist">Especialista</label>
+              <input
+                id="referral_specialist"
+                value={draft.specialist_name}
+                onChange={(e) => setDraft((d) => ({ ...d, specialist_name: e.target.value }))}
+                placeholder="Opcional"
+              />
+            </div>
+            <div className="hub-clinic-field hub-cws-field-tight">
+              <label htmlFor="referral_contact">Contato</label>
+              <input
+                id="referral_contact"
+                value={draft.specialist_contact}
+                onChange={(e) => setDraft((d) => ({ ...d, specialist_contact: e.target.value }))}
+                placeholder="Telefone, e-mail ou clínica"
+              />
+            </div>
+          </div>
+
+          <div className="hub-clinic-field hub-cws-field-tight">
+            <label htmlFor="referral_reason">Motivo do encaminhamento</label>
+            <input
+              id="referral_reason"
+              value={draft.referral_reason}
+              onChange={(e) => setDraft((d) => ({ ...d, referral_reason: e.target.value }))}
+              placeholder="Por que este encaminhamento agora"
+            />
+          </div>
+
+          <div className="hub-clinic-field hub-cws-field-tight">
+            <label htmlFor="referral_summary">Resumo clínico</label>
+            <input
+              id="referral_summary"
+              value={draft.clinical_summary}
+              onChange={(e) => setDraft((d) => ({ ...d, clinical_summary: e.target.value }))}
+              placeholder="Opcional — o que o especialista precisa saber"
+            />
+          </div>
+
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-            disabled={!draft.specialty.trim() || !draft.referral_reason.trim()}
+            disabled={!draft.specialty.trim() || !draft.referral_reason.trim() || requesting}
             onClick={() => void createReferral()}
           >
-            Registrar encaminhamento
+            {requesting ? 'Registrando…' : 'Registrar encaminhamento'}
           </button>
         </div>
       ) : null}
@@ -412,60 +479,75 @@ export function HubWorkspaceSpecialistReferrals({
             </div>
           </div>
 
-          <ul className="hub-cws-rx-list">
-            {referrals.map((ref) => {
-              const locked = isReferralEditLocked(readOnly, ref);
-              return (
-                <li key={ref.id} className="hub-cws-rx-item">
-                  <div className="hub-cws-rx-item__name">
-                    {ref.specialty}
-                    {ref.status === 'issued' ? (
-                      <span className="hub-rx-badge hub-rx-badge--issued" style={{ marginLeft: 8 }}>
-                        Emitido
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="hub-cws-rx-item__meta">
-                    {ref.specialist_name ? `Especialista: ${ref.specialist_name}` : 'Especialista não informado'}
-                    {ref.specialist_contact ? ` · ${ref.specialist_contact}` : ''}
-                    {` · ${PRIORITY_LABELS[ref.priority]}`}
-                  </div>
-                  <div className="hub-cws-rx-item__meta">{ref.referral_reason}</div>
-                  {ref.clinical_summary ? (
-                    <div className="hub-clientes__muted" style={{ fontSize: 12 }}>
-                      {ref.clinical_summary}
-                    </div>
-                  ) : null}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                    {ref.status !== 'issued' ? (
-                      <button
-                        type="button"
-                        className="hub-clientes__btn hub-clientes__btn--sm"
-                        disabled={issuing || Boolean(issueBlockReason)}
-                        onClick={() => void issueSingle(ref)}
-                      >
-                        {issuingReferralId === ref.id ? 'Emitindo…' : 'Emitir só este item'}
-                      </button>
-                    ) : null}
-                    {!locked ? (
-                      <button
-                        type="button"
-                        className="hub-clientes__btn hub-clientes__btn--sm hub-clientes__btn--danger-outline"
-                        onClick={() => void removeReferral(ref)}
-                      >
-                        Remover
-                      </button>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="hub-cws-exam-table-wrap">
+            <table className="hub-cws-exam-table">
+              <thead>
+                <tr>
+                  <th>Especialidade</th>
+                  <th>Especialista</th>
+                  <th>Motivo</th>
+                  <th>Prioridade</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {referrals.map((ref) => {
+                  const locked = isReferralEditLocked(readOnly, ref);
+                  return (
+                    <tr key={ref.id}>
+                      <td>
+                        <strong>{ref.specialty}</strong>
+                        {ref.status === 'issued' ? (
+                          <span className="hub-rx-badge hub-rx-badge--issued" style={{ marginTop: 4, display: 'inline-block' }}>
+                            Emitido
+                          </span>
+                        ) : null}
+                        {ref.clinical_summary ? (
+                          <div className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                            {ref.clinical_summary}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="hub-clientes__muted">
+                        {ref.specialist_name || 'Não informado'}
+                        {ref.specialist_contact ? (
+                          <div style={{ fontSize: 12 }}>{ref.specialist_contact}</div>
+                        ) : null}
+                      </td>
+                      <td className="hub-clientes__muted">{ref.referral_reason}</td>
+                      <td>{PRIORITY_LABELS[ref.priority]}</td>
+                      <td>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+                          {ref.status !== 'issued' ? (
+                            <button
+                              type="button"
+                              className="hub-clientes__btn hub-clientes__btn--sm"
+                              disabled={issuing || Boolean(issueBlockReason)}
+                              onClick={() => void issueSingle(ref)}
+                            >
+                              {issuingReferralId === ref.id ? 'Emitindo…' : 'Emitir só este item'}
+                            </button>
+                          ) : null}
+                          {!locked ? (
+                            <button
+                              type="button"
+                              className="hub-clientes__btn hub-clientes__btn--sm hub-clientes__btn--danger-outline"
+                              onClick={() => void removeReferral(ref)}
+                            >
+                              Remover
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      ) : (
-        <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>
-          Nenhum encaminhamento neste atendimento.
-        </p>
+      ) : hideEmptyState ? null : (
+        <p className="hub-cws-exam-empty">Nenhum encaminhamento neste atendimento ainda.</p>
       )}
 
       {documents.length > 0 ? (

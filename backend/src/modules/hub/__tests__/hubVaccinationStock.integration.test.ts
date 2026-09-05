@@ -84,7 +84,7 @@ describe('API clínica — vacinação com estoque', () => {
     expect(movements.some((m) => m.movement_type === 'encounter_out')).toBe(true);
   });
 
-  it('POST /clinical/vaccinations exige lote para vacina na clínica', async () => {
+  it('POST /clinical/vaccinations permite vacina na clínica sem lote', async () => {
     vaccinationFixture(3);
     const res = await request(app)
       .post('/api/hub/clinical/vaccinations')
@@ -98,8 +98,11 @@ describe('API clínica — vacinação com estoque', () => {
         hub_inventory_item_id: ITEM_ID,
       });
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/lote/i);
+    expect(res.status).toBe(201);
+    expect(res.body.vaccination.hub_inventory_item_id).toBe(ITEM_ID);
+    expect(res.body.vaccination.hub_inventory_lot_id).toBeNull();
+    expect(res.body.vaccination.stock_movement_id).toBeNull();
+    expect(res.body.vaccination.price).toBe(120);
   });
 
   it('POST /clinical/vaccinations retorna 400 sem saldo e não mantém registro', async () => {

@@ -61,8 +61,12 @@ const anamnesisSchema = z
     chief_complaint_detail: z.string().optional(),
     history: z.string().optional(),
     diet: z.string().optional(),
+    diet_types: z.array(z.string()).optional(),
     behavior: z.string().optional(),
+    behavior_today: z.array(z.string()).optional(),
     medications: z.string().optional(),
+    pain: z.string().optional(),
+    pain_notes: z.string().optional(),
   })
   .passthrough()
   .optional();
@@ -73,8 +77,12 @@ const physicalExamSchema = z
     temperature_c: z.union([z.number(), z.string()]).optional().nullable(),
     heart_rate: z.union([z.number(), z.string()]).optional().nullable(),
     respiratory_rate: z.union([z.number(), z.string()]).optional().nullable(),
+    crt: z.string().optional().nullable(),
     hydration: z.string().optional().nullable(),
     mucosa: z.string().optional().nullable(),
+    pain: z.string().optional().nullable(),
+    lymph_nodes: z.string().optional().nullable(),
+    general_state: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
   })
   .passthrough()
@@ -393,7 +401,7 @@ async function enrichEncounter(row: Record<string, unknown>) {
     petId
       ? supabaseAdmin
           .from('hub_pets')
-          .select('id, name, species, breed, size_tier, birth_date, coat_type')
+          .select('id, name, species, breed, size_tier, birth_date, coat_type, behavior_tags, neutered')
           .eq('id', petId)
           .maybeSingle()
       : Promise.resolve({ data: null }),

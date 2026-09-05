@@ -19,6 +19,14 @@ import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 import { formatHubClinicalExamStatus } from './clinicalDisplay';
 import { buildExamOrderWhatsAppMessage, openExamOrderWhatsApp } from './hubExamOrderShareUtils';
 import { CareLocationBadge } from '../../components/CareLocationFields';
+import { HubMultiSelectCombobox } from '../../components/HubMultiSelectCombobox';
+import { HubCwsChoiceChips } from './HubCwsChoiceChips';
+import {
+  EXAM_LAB_OPTIONS,
+  EXAM_TYPE_OPTIONS,
+  examTypeLabel,
+  uniqueExamTypes,
+} from './examOrderOptions';
 
 const EXAM_ORDER_DISCLAIMERS = [
   'Documento gerado pelo PetMi Hub para validação de autenticidade. Não substitui guias oficiais de convênios ou laboratórios.',
@@ -47,7 +55,7 @@ function resolveIssueBlockReason(encounter: HubEncounter, exams: HubClinicalExam
 }
 
 const emptyDraft = () => ({
-  exam_type: '',
+  exam_types: [] as string[],
   lab_kind: 'internal' as HubClinicalExamLabKind,
   lab_name: '',
   clinical_indication: '',
@@ -61,12 +69,14 @@ export function HubWorkspaceExamOrders({
   readOnly,
   onClinicalRefresh,
   messageTemplateOverrides,
+  hideEmptyState = false,
 }: {
   encounter: HubEncounter;
   clinicId: string;
   readOnly: boolean;
   onClinicalRefresh?: () => void;
   messageTemplateOverrides?: Record<string, string>;
+  hideEmptyState?: boolean;
 }) {
   const { showError, showSuccess } = useAlert();
   const [exams, setExams] = useState<HubClinicalExam[]>([]);
@@ -85,6 +95,7 @@ export function HubWorkspaceExamOrders({
   const [revokeDoc, setRevokeDoc] = useState<ClinicalDocRow | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [guardianPhone, setGuardianPhone] = useState<string | null>(null);
+  const [requesting, setRequesting] = useState(false);
 
   const reloadExams = useCallback(async () => {
     const r = await hubClinicalExamsApi.list(clinicId, { encounterId: encounter.id });
@@ -113,6 +124,16 @@ export function HubWorkspaceExamOrders({
   }, [encounter.guardian_id, clinicId]);
 
   const issueBlockReason = useMemo(() => resolveIssueBlockReason(encounter, exams), [encounter, exams]);
+
+  const examTypeOptions = useMemo(() => {
+    const opts = EXAM_TYPE_OPTIONS.map((o) => ({ value: o.key, label: o.key }));
+    for (const cur of draft.exam_types) {
+      if (cur && !opts.some((o) => o.value === cur)) {
+        opts.push({ value: cur, label: cur });
+      }
+    }
+    return opts;
+  }, [draft.exam_types]);
 
   const openIssuePanel = (doc: ClinicalDocRow, publicUrl?: string | null, hashShort?: string | null) => {
     setIssuePanelError(null);
@@ -217,15 +238,16 @@ export function HubWorkspaceExamOrders({
   };
 
   const requestExam = async () => {
-    if (!draft.exam_type.trim() || readOnly) return;
+    const types = uniqueExamTypes(draft.exam_types);
+    if (!types.length || readOnly || requesting) return;
+    setRequesting(true);
     try {
-      await hubClinicalExamsApi.create({
+      const shared = {
         clinic_id: clinicId,
         pet_id: encounter.pet_id ?? '',
         hub_encounter_id: encounter.id,
         hub_case_id: encounter.hub_case_id ?? null,
         guardian_id: encounter.guardian_id ?? null,
-        exam_type: draft.exam_type.trim(),
         lab_kind: draft.lab_kind,
         lab_name: draft.lab_kind === 'internal' ? draft.lab_name.trim() || null : null,
         external_lab_name: draft.lab_kind === 'external' ? draft.lab_name.trim() || null : null,
@@ -233,13 +255,19 @@ export function HubWorkspaceExamOrders({
         fasting_required: draft.fasting_required,
         collection_instructions: draft.collection_instructions.trim() || null,
         requested_by: encounter.hub_staff_member_id ?? null,
-      });
+      };
+      for (const exam_type of types) {
+        await hubClinicalExamsApi.create({ ...shared, exam_type });
+      }
       setDraft(emptyDraft());
       await reloadExams();
-      showSuccess('Exame solicitado');
+      showSuccess(types.length === 1 ? 'Exame solicitado' : `${types.length} exames solicitados`);
       onClinicalRefresh?.();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao solicitar exame');
+      await reloadExams().catch(() => undefined);
+    } finally {
+      setRequesting(false);
     }
   };
 
@@ -323,87 +351,105 @@ export function HubWorkspaceExamOrders({
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 12 }}>
-        <p className="hub-clientes__muted" style={{ margin: 0 }}>
-          Solicite exames e emita PDF com link validável. Após emitir, o item fica bloqueado para edição — reemita uma nova versão se necessário.
-          {encounter.care_location_kind === 'partner_clinic' ? (
-            <>
-              {' '}
-              <CareLocationBadge
-                care_location_kind={encounter.care_location_kind}
-                partner_clinic={encounter.partner_clinic}
-              />
-            </>
-          ) : null}
-        </p>
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-          onClick={() => {
-            void hubClinicalExamsApi
-              .downloadExportCsv(clinicId, {
-                careLocationKind: encounter.care_location_kind === 'partner_clinic' ? 'partner_clinic' : undefined,
-                partnerClinicId: encounter.hub_partner_clinic_id ?? undefined,
-              })
-              .then(() => showSuccess('CSV de exames baixado'))
-              .catch((e: unknown) => showError((e as Error)?.message || 'Erro ao exportar'));
-          }}
-        >
-          Exportar CSV
-        </button>
-      </div>
+      <p className="hub-cws-an-block__hint">
+        Solicite o exame e emita o PDF com link validável. Depois de emitir, o item trava — gere outra versão se
+        precisar mudar.
+        {encounter.care_location_kind === 'partner_clinic' ? (
+          <>
+            {' '}
+            <CareLocationBadge
+              care_location_kind={encounter.care_location_kind}
+              partner_clinic={encounter.partner_clinic}
+            />
+          </>
+        ) : null}
+      </p>
 
       {!readOnly ? (
-        <div className="hub-clientes__form-stack" style={{ marginBottom: 16, maxWidth: 560 }}>
-          <input
-            className="hub-clientes__input"
-            placeholder="Tipo de exame (ex.: hemograma, bioquímica)"
-            value={draft.exam_type}
-            onChange={(e) => setDraft((d) => ({ ...d, exam_type: e.target.value }))}
-          />
-          <select
-            className="hub-clientes__input"
-            value={draft.lab_kind}
-            onChange={(e) => setDraft((d) => ({ ...d, lab_kind: e.target.value as HubClinicalExamLabKind }))}
-          >
-            <option value="internal">Laboratório interno</option>
-            <option value="external">Laboratório externo</option>
-          </select>
-          <input
-            className="hub-clientes__input"
-            placeholder={draft.lab_kind === 'internal' ? 'Nome do lab interno (opcional)' : 'Nome do laboratório externo'}
-            value={draft.lab_name}
-            onChange={(e) => setDraft((d) => ({ ...d, lab_name: e.target.value }))}
-          />
-          <textarea
-            className="hub-clientes__input"
-            rows={2}
-            placeholder="Indicação clínica"
-            value={draft.clinical_indication}
-            onChange={(e) => setDraft((d) => ({ ...d, clinical_indication: e.target.value }))}
-          />
-          <label className="hub-clientes__muted" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={draft.fasting_required}
-              onChange={(e) => setDraft((d) => ({ ...d, fasting_required: e.target.checked }))}
+        <div className="hub-cws-exam-form">
+          <div className="hub-clinic-field hub-cws-field-tight">
+            <label htmlFor="exam_types">Exames</label>
+            <HubMultiSelectCombobox
+              id="exam_types"
+              options={examTypeOptions}
+              value={draft.exam_types}
+              onChange={(next) => setDraft((d) => ({ ...d, exam_types: uniqueExamTypes(next) }))}
+              placeholder="Buscar e marcar vários, ou criar outro…"
+              searchPlaceholder="Hemograma, T4, ultrassom…"
+              allowCreate
+              createEntityLabel="opção de exame"
+              resolveLabel={examTypeLabel}
+              ariaLabel="Exames"
             />
-            Jejum necessário
-          </label>
-          <textarea
-            className="hub-clientes__input"
-            rows={2}
-            placeholder="Instruções de coleta"
-            value={draft.collection_instructions}
-            onChange={(e) => setDraft((d) => ({ ...d, collection_instructions: e.target.value }))}
-          />
+          </div>
+
+          <div className="hub-cws-exam-form__meta">
+            <HubCwsChoiceChips
+              options={EXAM_LAB_OPTIONS}
+              value={draft.lab_kind}
+              ariaLabel="Laboratório"
+              onChange={(next) => {
+                if (!next) return;
+                setDraft((d) => ({
+                  ...d,
+                  lab_kind: next === 'external' ? 'external' : 'internal',
+                }));
+              }}
+            />
+            <button
+              type="button"
+              className={`hub-cws-chip${draft.fasting_required ? ' hub-cws-chip--on hub-cws-chip--warning' : ''}`}
+              aria-pressed={draft.fasting_required}
+              onClick={() => setDraft((d) => ({ ...d, fasting_required: !d.fasting_required }))}
+            >
+              Jejum necessário
+            </button>
+          </div>
+
+          <div className="hub-cws-field-grid hub-cws-field-grid--2">
+            <div className="hub-clinic-field hub-cws-field-tight">
+              <label htmlFor="exam_lab_name">
+                {draft.lab_kind === 'external' ? 'Laboratório externo' : 'Lab interno'}
+              </label>
+              <input
+                id="exam_lab_name"
+                value={draft.lab_name}
+                onChange={(e) => setDraft((d) => ({ ...d, lab_name: e.target.value }))}
+                placeholder={draft.lab_kind === 'external' ? 'Nome do laboratório' : 'Opcional'}
+              />
+            </div>
+            <div className="hub-clinic-field hub-cws-field-tight">
+              <label htmlFor="exam_indication">Indicação clínica</label>
+              <input
+                id="exam_indication"
+                value={draft.clinical_indication}
+                onChange={(e) => setDraft((d) => ({ ...d, clinical_indication: e.target.value }))}
+                placeholder="Por que estes exames agora"
+              />
+            </div>
+          </div>
+
+          <div className="hub-clinic-field hub-cws-field-tight">
+            <label htmlFor="exam_collection">Instruções de coleta</label>
+            <input
+              id="exam_collection"
+              value={draft.collection_instructions}
+              onChange={(e) => setDraft((d) => ({ ...d, collection_instructions: e.target.value }))}
+              placeholder="Opcional — horário, recipiente, o que o tutor precisa saber"
+            />
+          </div>
+
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-            disabled={!draft.exam_type.trim()}
+            disabled={!draft.exam_types.length || requesting}
             onClick={() => void requestExam()}
           >
-            Solicitar exame
+            {requesting
+              ? 'Solicitando…'
+              : draft.exam_types.length > 1
+                ? `Solicitar ${draft.exam_types.length} exames`
+                : 'Solicitar exame'}
           </button>
         </div>
       ) : null}
@@ -529,10 +575,8 @@ export function HubWorkspaceExamOrders({
             </table>
           </div>
         </div>
-      ) : (
-        <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>
-          Nenhum exame estruturado neste atendimento.
-        </p>
+      ) : hideEmptyState ? null : (
+        <p className="hub-cws-exam-empty">Nenhum exame neste atendimento ainda.</p>
       )}
 
       {documents.length > 0 ? (

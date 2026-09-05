@@ -64,6 +64,7 @@ const ROUTES_BY_SPECIFICITY = [...ROUTES].sort((a, b) => b.path.length - a.path.
 export function hubPageTitleFromPath(pathname: string): string {
   if (/^\/hub\/pets\/[^/]+\/editar$/.test(pathname)) return 'Editar pet';
   if (/^\/hub\/clinica\/atendimentos\/[^/]+$/.test(pathname)) return 'Clínica — Atendimento';
+  if (/^\/hub\/clinica\/internacoes\/[^/]+$/.test(pathname)) return 'Clínica — Internação';
   if (/^\/hub\/clientes\/[^/]+$/.test(pathname)) return 'Cliente';
   if (/^\/hub\/orcamentos\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Orçamento — Pronto para envio';
   if (/^\/hub\/financeiro\/cobranca-lote\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Cobrança — Pronto para envio';

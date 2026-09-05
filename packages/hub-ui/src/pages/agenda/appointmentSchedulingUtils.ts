@@ -15,6 +15,8 @@ export type ExtraBlock = {
   appointment_id?: string;
   expanded: boolean;
   block_title: string;
+  /** true quando o usuário editou o título manualmente. */
+  block_title_user_edited: boolean;
   block_description: string;
   block_description_user_edited: boolean;
   /** Filtro de grupo de serviço só para este bloco (`all` ou slug). */
@@ -25,6 +27,84 @@ export type ExtraBlock = {
   hub_staff_member_id: string;
   resource_label: string;
 };
+
+/** Título automático: "Serviço A + Serviço B — Pet" (paridade com o bloco principal). */
+export function buildBlockTitleFromServices(serviceNames: string[], petName?: string | null): string {
+  const svcPart = serviceNames.filter(Boolean).join(' + ');
+  const petPart = (petName ?? '').trim();
+  if (!svcPart && !petPart) return '';
+  if (!petPart) return svcPart;
+  if (!svcPart) return petPart;
+  return `${svcPart} — ${petPart}`;
+}
+
+/** Texto com bullets a partir das descrições dos tipos de serviço (cadastro). */
+export function buildServiceDescriptionBullets(
+  types: Array<{ id: string; description?: string | null }>,
+  serviceIdsOrdered: string[],
+): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const id of serviceIdsOrdered) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const st = types.find((t) => t.id === id);
+    const d = (st?.description ?? '').trim();
+    if (d) lines.push(`- ${d}`);
+  }
+  return lines.join('\n');
+}
+
+/** Aplica título/descrição automáticos e recalcula fim quando o usuário não editou. */
+export function applyExtraBlockAutoFields(
+  block: ExtraBlock,
+  serviceTypes: Array<{ id: string; description?: string | null }>,
+  petName?: string | null,
+  opts?: { recalcEnds?: boolean },
+): ExtraBlock {
+  const next: ExtraBlock = { ...block, services: block.services.map((s) => ({ ...s })) };
+  const names = next.services.map((s) => s.name);
+  const ids = next.services.map((s) => s.hub_service_type_id);
+
+  if (!next.block_title_user_edited) {
+    next.block_title = buildBlockTitleFromServices(names, petName);
+  }
+  if (!next.block_description_user_edited) {
+    next.block_description = buildServiceDescriptionBullets(serviceTypes, ids);
+  }
+
+  if (opts?.recalcEnds !== false) {
+    const dur = next.services.reduce((sum, s) => sum + s.duration_minutes, 0);
+    if (dur > 0) {
+      next.ends_hm = addMinutes(next.starts_hm, dur);
+    }
+  }
+  return next;
+}
+
+/** Subtítulo compacto do cabeçalho: "10:00–11:30 · 90 min · Banho + Tosa". */
+export function buildBlockHeaderSubtitle(opts: {
+  startsHm: string;
+  endsHm: string;
+  durationMin: number;
+  serviceNames: string[];
+  maxServiceNames?: number;
+}): string {
+  const max = opts.maxServiceNames ?? 2;
+  const names = opts.serviceNames.filter(Boolean);
+  const svcPart =
+    names.length === 0
+      ? ''
+      : names.length <= max
+        ? names.join(' + ')
+        : `${names.slice(0, max).join(' + ')} +${names.length - max}`;
+  const parts: string[] = [];
+  if (opts.startsHm && opts.endsHm) parts.push(`${opts.startsHm}–${opts.endsHm}`);
+  else if (opts.startsHm) parts.push(opts.startsHm);
+  if (opts.durationMin > 0) parts.push(`${opts.durationMin} min`);
+  if (svcPart) parts.push(svcPart);
+  return parts.join(' · ');
+}
 
 export type PetVisitTiming = {
   startsHm: string;
@@ -259,6 +339,7 @@ export function createEmptyExtraBlock(opts: {
     key: String(Date.now()),
     expanded: true,
     block_title: '',
+    block_title_user_edited: false,
     block_description: '',
     block_description_user_edited: false,
     group_filter: opts.groupFilter,

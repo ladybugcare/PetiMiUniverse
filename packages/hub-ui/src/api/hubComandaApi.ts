@@ -128,9 +128,38 @@ export type HubComandaOpenBody = {
   hub_encounter_id?: string | null;
 };
 
+export function isTransientComandaOpenError(error: unknown): boolean {
+  const msg = String((error as Error)?.message ?? '');
+  return (
+    /Não foi possível conectar ao servidor/i.test(msg) ||
+    /demorou muito para responder/i.test(msg) ||
+    /Failed to fetch/i.test(msg) ||
+    /NetworkError/i.test(msg)
+  );
+}
+
+async function postOpenComanda(body: HubComandaOpenBody): Promise<HubComandaDetailResponse> {
+  return apiRequest(`${base}/open`, { method: 'POST', body: JSON.stringify(body) }) as Promise<HubComandaDetailResponse>;
+}
+
 export const hubComandaApi = {
   async openComanda(body: HubComandaOpenBody): Promise<HubComandaDetailResponse> {
-    return apiRequest(`${base}/open`, { method: 'POST', body: JSON.stringify(body) }) as Promise<HubComandaDetailResponse>;
+    try {
+      return await postOpenComanda(body);
+    } catch (error) {
+      if (!isTransientComandaOpenError(error) || !body.origin_id) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      try {
+        return await postOpenComanda(body);
+      } catch (retryError) {
+        if (!isTransientComandaOpenError(retryError)) throw retryError;
+        return hubComandaApi.getComandaByOrigin({
+          clinic_id: body.clinic_id,
+          origin_type: body.origin_type,
+          origin_id: body.origin_id,
+        });
+      }
+    }
   },
 
   async getComandaByOrigin(params: {

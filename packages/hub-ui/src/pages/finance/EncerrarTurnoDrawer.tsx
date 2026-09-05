@@ -56,7 +56,9 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
       sumOpenComandasPendingAmount(openComandas, dayBoardComandaIds),
   );
   const openComandasCount = contarComandasAbertasEditaveis(openComandas);
-  const pendingBillingCount = openComandasCount + dayBoardItems.filter((i) => i.billing.receivable_status !== 'paid').length;
+  const pendingBillingCount =
+    openComandasCount +
+    dayBoardItems.filter((i) => !i.billing.finance_handoff_at && i.billing.receivable_status !== 'paid').length;
 
   const closeInformedNum = (() => {
     const t = String(closeBal).trim();

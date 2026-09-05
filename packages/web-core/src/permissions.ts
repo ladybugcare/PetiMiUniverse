@@ -146,7 +146,6 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.appointments.read',
     'hub.clinic.read',
     'hub.clinic.write',
-    'hub.financial.read',
     'hub.reports.read',
   ],
   CGROOMER: [

@@ -60,6 +60,8 @@ const createServiceTypeBodySchema = z
     /** Matriz opcional (porte, período, consulta, km); alinhada a `service_group`. */
     pricing_matrix: z.unknown().optional().nullable(),
     is_addon: z.boolean().optional(),
+    /** Aplicação na consulta (grupo clínica); aparece no dropdown da Medicação. */
+    is_encounter_application: z.boolean().optional(),
     /** Leva e Traz: valor cadastrado é ida+volta ou por perna. */
     pickup_price_scope: z.enum(['round_trip', 'per_leg']).optional(),
     /** Legado / migração: se enviado, deve coincidir com o slug gerado ou ser único. Preferir omitir. */
@@ -86,6 +88,7 @@ const updateServiceTypeBodySchema = z
     internal_notes: z.string().max(4000).optional().nullable(),
     pricing_matrix: z.unknown().optional().nullable(),
     is_addon: z.boolean().optional(),
+    is_encounter_application: z.boolean().optional(),
     pickup_price_scope: z.enum(['round_trip', 'per_leg']).optional(),
     code_locked: z.boolean().optional(),
     active: z.boolean().optional(),
@@ -94,15 +97,37 @@ const updateServiceTypeBodySchema = z
   .strict();
 
 const SELECT_FIELDS =
-  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, default_duration_minutes, active, allow_scheduling, is_addon, is_encounter_application, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
 
 /** Sem `pickup_price_scope` — fallback se a migração 087 ainda não foi aplicada. */
 const SELECT_FIELDS_LEGACY =
   'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
 
+/** Sem `is_encounter_application` — fallback se a migração 106 ainda não foi aplicada. */
+const SELECT_FIELDS_NO_APPLICATION =
+  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+
 function isMissingPickupPriceScopeColumn(error: { message?: string; code?: string } | null | undefined): boolean {
   const msg = String(error?.message ?? '');
   return msg.includes('pickup_price_scope') && (msg.includes('does not exist') || error?.code === '42703');
+}
+
+function isMissingEncounterApplicationColumn(error: { message?: string; code?: string } | null | undefined): boolean {
+  const msg = String(error?.message ?? '');
+  return msg.includes('is_encounter_application') && (msg.includes('does not exist') || error?.code === '42703');
+}
+
+type ServiceTypeRow = Record<string, unknown> & {
+  service_group?: string | null;
+  pickup_price_scope?: string | null;
+  is_encounter_application?: boolean | null;
+};
+
+function withDefaultEncounterApplication<T extends ServiceTypeRow>(rows: T[]): Array<T & { is_encounter_application: boolean }> {
+  return rows.map((r) => ({
+    ...r,
+    is_encounter_application: Boolean(r.is_encounter_application),
+  }));
 }
 
 function withDefaultPickupPriceScope<T extends ServiceTypeRow>(rows: T[]): Array<T & { pickup_price_scope: string }> {
@@ -114,11 +139,6 @@ function withDefaultPickupPriceScope<T extends ServiceTypeRow>(rows: T[]): Array
         : 'round_trip',
   }));
 }
-
-type ServiceTypeRow = Record<string, unknown> & {
-  service_group?: string | null;
-  pickup_price_scope?: string | null;
-};
 
 
 async function fetchGroupColorMap(clinicId: string): Promise<Map<string, string>> {
@@ -249,6 +269,24 @@ export const listHubServiceTypes = async (req: Request, res: Response) => {
       error = legacy.error;
     }
 
+    if (error && isMissingEncounterApplicationColumn(error)) {
+      console.warn(
+        '[hub_service_types] list: coluna is_encounter_application ausente — aplique a migração 106. Usando SELECT sem o campo.',
+      );
+      let qNoApp = supabaseAdmin
+        .from('hub_service_types')
+        .select(SELECT_FIELDS_NO_APPLICATION)
+        .eq('clinic_id', clinic_id)
+        .eq('is_addon', addonsOnly)
+        .order('name', { ascending: true });
+      if (!includeArchived) {
+        qNoApp = qNoApp.is('deleted_at', null);
+      }
+      const noApp = await qNoApp;
+      data = (noApp.data as unknown[] | null) ?? null;
+      error = noApp.error;
+    }
+
     if (error) {
       console.error('[hub_service_types] list', error);
       return res.status(500).json({ error: 'Erro ao listar tipos de serviço' });
@@ -256,7 +294,7 @@ export const listHubServiceTypes = async (req: Request, res: Response) => {
 
     const colorMap = await fetchGroupColorMap(clinic_id);
     const service_types = enrichRowsWithGroupColor(
-      withDefaultPickupPriceScope((data ?? []) as ServiceTypeRow[]),
+      withDefaultEncounterApplication(withDefaultPickupPriceScope((data ?? []) as ServiceTypeRow[])),
       colorMap,
     );
 
@@ -286,16 +324,25 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       code: codeOverride,
       pricing_matrix: pricing_matrix_raw,
       is_addon: is_addon_raw,
+      is_encounter_application: is_encounter_application_raw,
       pickup_price_scope: pickup_price_scope_raw,
     } = body.data;
 
     const is_addon = is_addon_raw === true;
     const group = service_group;
+    const is_encounter_application =
+      !is_addon && group === 'clinica' && is_encounter_application_raw === true;
     const pickup_price_scope =
       group === 'leva_traz' && pickup_price_scope_raw === 'per_leg' ? 'per_leg' : 'round_trip';
 
     if (is_addon && (default_duration_minutes == null || default_duration_minutes < 1)) {
       return res.status(400).json({ error: 'Adicionais exigem duração padrão em minutos (≥ 1)' });
+    }
+
+    if (is_encounter_application_raw === true && (is_addon || group !== 'clinica')) {
+      return res.status(400).json({
+        error: 'Aplicação na consulta só pode ser marcada em serviços do grupo Clínica (não em adicionais).',
+      });
     }
 
     const archivedGroupErr = await assertHubServiceGroupNotArchived(clinic_id, group);
@@ -359,8 +406,9 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       pricing_matrix,
       pickup_price_scope,
       description: description ?? null,
-      allow_scheduling: is_addon ? false : (allow_scheduling ?? true),
+      allow_scheduling: is_addon ? false : is_encounter_application ? false : (allow_scheduling ?? true),
       is_addon,
+      is_encounter_application,
       agenda_color: null,
       internal_notes: internal_notes ?? null,
       code_locked: false,
@@ -381,11 +429,25 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       error = first.error;
     }
 
+    if (error && isMissingEncounterApplicationColumn(error)) {
+      console.warn(
+        '[hub_service_types] create: coluna is_encounter_application ausente — aplique a migração 106. Inserindo sem o campo.',
+      );
+      const { is_encounter_application: _omitApp, ...rowNoApp } = row;
+      const noApp = await supabaseAdmin
+        .from('hub_service_types')
+        .insert([rowNoApp])
+        .select(SELECT_FIELDS_NO_APPLICATION)
+        .single();
+      data = (noApp.data as Record<string, unknown> | null) ?? null;
+      error = noApp.error;
+    }
+
     if (error && isMissingPickupPriceScopeColumn(error)) {
       console.warn(
         '[hub_service_types] create: coluna pickup_price_scope ausente — aplique a migração 087. Inserindo sem o campo.',
       );
-      const { pickup_price_scope: _omit, ...rowLegacy } = row;
+      const { pickup_price_scope: _omit, is_encounter_application: _omitApp2, ...rowLegacy } = row;
       const legacy = await supabaseAdmin
         .from('hub_service_types')
         .insert([rowLegacy])
@@ -405,7 +467,7 @@ export const createHubServiceType = async (req: Request, res: Response) => {
 
     const colorMap = await fetchGroupColorMap(clinic_id);
     const service_type = enrichRowsWithGroupColor(
-      withDefaultPickupPriceScope([data as ServiceTypeRow]),
+      withDefaultEncounterApplication(withDefaultPickupPriceScope([data as ServiceTypeRow])),
       colorMap,
     )[0];
 
@@ -447,6 +509,7 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       archived,
       pricing_matrix: pricing_matrix_raw,
       is_addon: is_addon_patch,
+      is_encounter_application: is_encounter_application_patch,
       pickup_price_scope: pickup_price_scope_raw,
     } = body.data;
 
@@ -464,6 +527,7 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       archived === undefined &&
       pricing_matrix_raw === undefined &&
       is_addon_patch === undefined &&
+      is_encounter_application_patch === undefined &&
       pickup_price_scope_raw === undefined
     ) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
@@ -471,7 +535,7 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
 
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from('hub_service_types')
-      .select('id, clinic_id, code, name, code_locked, deleted_at, service_group, is_addon, sale_amount')
+      .select('id, clinic_id, code, name, code_locked, deleted_at, service_group, is_addon, is_encounter_application, sale_amount')
       .eq('id', id)
       .maybeSingle();
 
@@ -501,16 +565,34 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
     const existingIsAddon = Boolean(existing.is_addon);
     if (is_addon_patch !== undefined) patch.is_addon = is_addon_patch;
     const nextIsAddon = is_addon_patch !== undefined ? is_addon_patch : existingIsAddon;
+    const nextGroup = (service_group !== undefined ? service_group : existing.service_group) as string;
+    const existingIsApp = Boolean(
+      (existing as { is_encounter_application?: boolean }).is_encounter_application,
+    );
+    let nextIsApp =
+      is_encounter_application_patch !== undefined ? is_encounter_application_patch : existingIsApp;
+    if (nextIsAddon || nextGroup !== 'clinica') {
+      nextIsApp = false;
+    }
+    if (
+      is_encounter_application_patch === true &&
+      (nextIsAddon || nextGroup !== 'clinica')
+    ) {
+      return res.status(400).json({
+        error: 'Aplicação na consulta só pode ser marcada em serviços do grupo Clínica (não em adicionais).',
+      });
+    }
+    if (is_encounter_application_patch !== undefined || nextIsApp !== existingIsApp) {
+      patch.is_encounter_application = nextIsApp;
+    }
     if (allow_scheduling !== undefined) {
-      patch.allow_scheduling = nextIsAddon ? false : allow_scheduling;
-    } else if (nextIsAddon) {
+      patch.allow_scheduling = nextIsAddon || nextIsApp ? false : allow_scheduling;
+    } else if (nextIsAddon || (nextIsApp && is_encounter_application_patch === true)) {
       patch.allow_scheduling = false;
     }
     if (internal_notes !== undefined) patch.internal_notes = internal_notes;
     if (code_locked !== undefined) patch.code_locked = code_locked;
     if (active !== undefined) patch.active = active;
-
-    const nextGroup = service_group !== undefined ? service_group : existing.service_group;
 
     if (pricing_matrix_raw !== undefined) {
       if (pricing_matrix_raw === null) {
@@ -595,6 +677,7 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       );
       const patchLegacy = { ...patch };
       delete patchLegacy.pickup_price_scope;
+      delete patchLegacy.is_encounter_application;
       const legacy = await supabaseAdmin
         .from('hub_service_types')
         .update(patchLegacy)
@@ -604,6 +687,23 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
         .single();
       data = (legacy.data as Record<string, unknown> | null) ?? null;
       error = legacy.error;
+    }
+
+    if (error && isMissingEncounterApplicationColumn(error)) {
+      console.warn(
+        '[hub_service_types] update: coluna is_encounter_application ausente — aplique a migração 106. Atualizando sem o campo.',
+      );
+      const patchNoApp = { ...patch };
+      delete patchNoApp.is_encounter_application;
+      const noApp = await supabaseAdmin
+        .from('hub_service_types')
+        .update(patchNoApp)
+        .eq('id', id)
+        .eq('clinic_id', clinic_id)
+        .select(SELECT_FIELDS_NO_APPLICATION)
+        .single();
+      data = (noApp.data as Record<string, unknown> | null) ?? null;
+      error = noApp.error;
     }
 
     if (error) {
@@ -638,7 +738,7 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
 
     const colorMap = await fetchGroupColorMap(clinic_id);
     const service_type = enrichRowsWithGroupColor(
-      withDefaultPickupPriceScope([data as ServiceTypeRow]),
+      withDefaultEncounterApplication(withDefaultPickupPriceScope([data as ServiceTypeRow])),
       colorMap,
     )[0];
 
@@ -727,6 +827,19 @@ export const bootstrapHubServiceTypes = async (req: Request, res: Response) => {
       all = (legacy.data as unknown[] | null) ?? null;
       finalErr = legacy.error;
     }
+    if (finalErr && isMissingEncounterApplicationColumn(finalErr)) {
+      let qNoApp = supabaseAdmin
+        .from('hub_service_types')
+        .select(SELECT_FIELDS_NO_APPLICATION)
+        .eq('clinic_id', clinic_id)
+        .order('name', { ascending: true });
+      if (!includeArchived) {
+        qNoApp = qNoApp.is('deleted_at', null);
+      }
+      const noApp = await qNoApp;
+      all = (noApp.data as unknown[] | null) ?? null;
+      finalErr = noApp.error;
+    }
 
     if (finalErr) {
       return res.status(500).json({ error: 'Erro ao listar tipos após bootstrap' });
@@ -734,7 +847,7 @@ export const bootstrapHubServiceTypes = async (req: Request, res: Response) => {
 
     const colorMap = await fetchGroupColorMap(clinic_id);
     const service_types = enrichRowsWithGroupColor(
-      withDefaultPickupPriceScope((all ?? []) as ServiceTypeRow[]),
+      withDefaultEncounterApplication(withDefaultPickupPriceScope((all ?? []) as ServiceTypeRow[])),
       colorMap,
     );
 

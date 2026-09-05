@@ -11,6 +11,7 @@ import {
   Send,
   Share2,
   Stethoscope,
+  Syringe,
   Undo2,
 } from 'lucide-react';
 import type { DayBoardItem } from '../../../api/hubClinicalApi';
@@ -22,6 +23,7 @@ import { petAgeDetailedLabel } from '../../pets/petAge';
 import {
   caseStatusLabel,
   formatCockpitShortDate,
+  isFinalOperationalStatus,
   isItemEmergency,
   itemOperationalStatus,
   sexLabel,
@@ -30,6 +32,10 @@ import {
 
 export type VetCockpitDrawerSection =
   | 'sec-resumo'
+  | 'sec-aplicado'
+  | 'sec-medicacao'
+  | 'sec-vacinas'
+  | 'sec-carteirinha'
   | 'sec-exames'
   | 'sec-prescricoes'
   | 'sec-encaminhamentos';
@@ -121,6 +127,8 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
   const st = itemOperationalStatus(item);
   const encounterId = item.encounter_id ?? context.encounter?.id;
   const inProgress = st === 'in_progress' || st === 'awaiting_exams' || st === 'exams_returned';
+  const writeActionsLocked = isFinalOperationalStatus(st);
+  const writeActionsTitle = writeActionsLocked ? 'Disponível apenas durante o atendimento' : undefined;
   const opPhase = context.encounter?.operational_phase ?? null;
   const hasWeight = context.weight_kg != null && context.weight_kg !== '';
   const weight = hasWeight ? `${context.weight_kg} kg` : 'Não informado';
@@ -207,6 +215,10 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
             <h3>Internado</h3>
             <p className="hub-clientes__muted">
               Desde {formatCockpitShortDate(context.active_hospitalization.admitted_at)}
+              {' · '}
+              <Link to={`/hub/clinica/internacoes/${context.active_hospitalization.id}`} className="hub-clientes__link">
+                Abrir internação
+              </Link>
             </p>
           </section>
         ) : null}
@@ -349,24 +361,64 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
 
       {encounterId && canWrite ? (
         <div className="vet-cockpit-actions">
-          <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-exames')}>
+          <button
+            type="button"
+            className="vet-cockpit-action-btn"
+            disabled={writeActionsLocked}
+            title={writeActionsTitle}
+            onClick={() => onOpenRecord('sec-exames')}
+          >
             <FlaskConical size={16} aria-hidden />
             Solicitar exame
           </button>
-          <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-prescricoes')}>
+          <button
+            type="button"
+            className="vet-cockpit-action-btn"
+            disabled={writeActionsLocked}
+            title={writeActionsTitle}
+            onClick={() => onOpenRecord('sec-medicacao')}
+          >
+            <Syringe size={16} aria-hidden />
+            Aplicar medicação
+          </button>
+          <button
+            type="button"
+            className="vet-cockpit-action-btn"
+            disabled={writeActionsLocked}
+            title={writeActionsTitle}
+            onClick={() => onOpenRecord('sec-prescricoes')}
+          >
             <Pill size={16} aria-hidden />
             Prescrever
           </button>
-          <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-encaminhamentos')}>
+          <button
+            type="button"
+            className="vet-cockpit-action-btn"
+            disabled={writeActionsLocked}
+            title={writeActionsTitle}
+            onClick={() => onOpenRecord('sec-encaminhamentos')}
+          >
             <Share2 size={16} aria-hidden />
             Encaminhar
           </button>
-          <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-prescricoes')}>
+          <button
+            type="button"
+            className="vet-cockpit-action-btn"
+            disabled={writeActionsLocked}
+            title={writeActionsTitle}
+            onClick={() => onOpenRecord('sec-prescricoes')}
+          >
             <FileText size={16} aria-hidden />
             Gerar documento
           </button>
           {onAdmit ? (
-            <button type="button" className="vet-cockpit-action-btn" onClick={onAdmit}>
+            <button
+              type="button"
+              className="vet-cockpit-action-btn"
+              disabled={writeActionsLocked}
+              title={writeActionsTitle}
+              onClick={onAdmit}
+            >
               <BedDouble size={16} aria-hidden />
               Internar
             </button>

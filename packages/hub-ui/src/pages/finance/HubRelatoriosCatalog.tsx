@@ -17,6 +17,7 @@ import {
   Repeat,
   Scissors,
   Syringe,
+  FlaskConical,
   Trophy,
   UserX,
   UserMinus,
@@ -51,6 +52,7 @@ const REPORT_ICONS: Record<HubReportId, React.ElementType> = {
   'boarding-occupancy': Building2,
   'grooming-productivity': Scissors,
   'vaccines-due': Syringe,
+  'exams-requested': FlaskConical,
 };
 
 type HubRelatoriosCatalogProps = {

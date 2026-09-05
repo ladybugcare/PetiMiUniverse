@@ -1,18 +1,26 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Wallet } from 'lucide-react';
+import { usePermissions } from '@petimi/web-core';
 import { useHubCashSession } from '../contexts/HubCashSessionContext';
 
 /**
  * Banner persistente que aparece em qualquer tela (exceto /hub/caixa*)
  * quando o caixa está aberto de um dia anterior OU há itens sem cobrança.
+ * Só para quem opera caixa — veterinário não vê atalho financeiro.
  */
 const HubCashOpenBanner: React.FC = () => {
   const { isOpen, isPreviousDay, pendingBillingCount, openedAt } = useHubCashSession();
   const { pathname } = useLocation();
+  const { hasPermission } = usePermissions();
+  const canOperateCaixa =
+    hasPermission('hub.cash.session') || hasPermission('hub.receivables.create');
 
   const showBanner =
-    isOpen && (isPreviousDay || pendingBillingCount > 0) && !pathname.startsWith('/hub/caixa');
+    canOperateCaixa &&
+    isOpen &&
+    (isPreviousDay || pendingBillingCount > 0) &&
+    !pathname.startsWith('/hub/caixa');
 
   if (!showBanner) return null;
 

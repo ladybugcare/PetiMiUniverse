@@ -55,6 +55,8 @@ export type FormState = {
   duration_input_unit: DurationInputUnit;
   description: string;
   allow_scheduling: boolean;
+  /** Só grupo Clínica: aparece no dropdown da Medicação. */
+  is_encounter_application: boolean;
   internal_notes: string;
   code_locked: boolean;
 };
@@ -64,7 +66,8 @@ export const SERVICE_GROUP_HINTS: Record<string, string> = {
     'Pode usar uma única linha de serviço com preços diferentes por porte, por pelagem ou pela combinação porte + pelagem.',
   hotel: 'Mesmo modelo por porte: um serviço «hotel» com tabela por tamanho do animal.',
   creche: 'Defina valores para dia completo e meio dia no mesmo serviço, quando activar a tabela de preços.',
-  clinica: 'Consulta padrão e retorno no mesmo registo; retorno pode ter venda 0 (gratuita).',
+  clinica:
+    'Consulta padrão e retorno no mesmo registro; ou marque «Aplicação na consulta» para IM/IV/SC (aparece só na Medicação).',
   cirurgia: 'Precificação única (custo e venda) por serviço, salvo extensões futuras.',
   leva_traz:
     'Adicione faixas de quilometragem com nome e valores; indique se o valor é ida e volta ou por perna (busca/retorno).',
@@ -174,6 +177,7 @@ export function emptyForm(): FormState {
     duration_input_unit: 'min',
     description: '',
     allow_scheduling: true,
+    is_encounter_application: false,
     internal_notes: '',
     code_locked: false,
   };
@@ -213,6 +217,7 @@ export function fromRow(t: HubServiceType): FormState {
     duration_input_unit: durationUnit,
     description: t.description ?? '',
     allow_scheduling: t.allow_scheduling !== false,
+    is_encounter_application: Boolean(t.is_encounter_application),
     internal_notes: t.internal_notes ?? '',
     code_locked: Boolean(t.code_locked),
   };
@@ -256,6 +261,7 @@ export function applySvcGroupChange(prev: FormState, newGroup: string): FormStat
       cost_amount: formatMoneyNumberBrl(ref.cost),
       sale_amount: formatMoneyNumberBrl(ref.sale),
       pickup_price_scope: newGroup === 'leva_traz' ? prev.pickup_price_scope : 'round_trip',
+      is_encounter_application: newGroup === 'clinica' ? prev.is_encounter_application : false,
     };
   }
 
@@ -265,6 +271,7 @@ export function applySvcGroupChange(prev: FormState, newGroup: string): FormStat
     pricing_mode,
     pricing_matrix,
     pickup_price_scope: newGroup === 'leva_traz' ? prev.pickup_price_scope : 'round_trip',
+    is_encounter_application: newGroup === 'clinica' ? prev.is_encounter_application : false,
   };
 }
 

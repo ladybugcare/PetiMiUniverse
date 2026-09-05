@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Loader2, Trash2 } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronUp, Loader2, Trash2 } from 'lucide-react';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
-import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
+import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import {
   comboValueToVariant,
@@ -50,6 +50,20 @@ export type AppointmentServiceCardProps = {
   onSaleAmountChange?: (amount: number | null) => void;
   onPersistSpecialChange?: (persist: boolean, scope: 'pet' | 'guardian') => void;
   showSpecialPriceControls?: boolean;
+  /** Override de porte/pelagem deste agendamento — só em serviços com tabela por porte/pelagem. */
+  tableOverride?: ServiceTableOverride;
+};
+
+export type ServiceTableOverride = {
+  porteOptions?: HubComboboxOption[];
+  porteValue?: string;
+  onPorteChange?: (value: string) => void;
+  coatOptions?: HubComboboxOption[];
+  coatValue?: string;
+  onCoatChange?: (value: string) => void;
+  puppyMaxMonths?: number;
+  coatRequired?: boolean;
+  coatRequiredHint?: string;
 };
 
 const EMPTY_ADDONS_HINT =
@@ -59,16 +73,77 @@ function formatPrice(n: number): string {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function pricingSummaryLabel(line: AgendaPricingPreviewLine): string {
-  if (line.isAddon) return formatPrice(line.sale);
-  const parts: string[] = [];
-  if (line.tierApplied) parts.push(PORTE_LABELS[line.tierApplied as PorteValue] ?? line.tierApplied);
+function splitVariantLabel(label: string): { name: string; price: string } {
+  const idx = label.lastIndexOf(' — ');
+  if (idx === -1) return { name: label, price: '' };
+  return { name: label.slice(0, idx).trim(), price: label.slice(idx + 3).trim() };
+}
+
+function NamVariantChips({
+  options,
+  value,
+  onChange,
+  labelledBy,
+}: {
+  options: HubComboboxOption[];
+  value: string;
+  onChange: (value: string) => void;
+  labelledBy?: string;
+}) {
+  return (
+    <div className="nam-variant-chips" role="radiogroup" aria-labelledby={labelledBy}>
+      {options.map((opt) => {
+        const active = opt.value === value;
+        const { name, price } = splitVariantLabel(opt.label);
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            className={`nam-variant-chip${active ? ' nam-variant-chip--active' : ''}`}
+            onClick={() => onChange(opt.value)}
+          >
+            <span className="nam-variant-chip__name">{name}</span>
+            {price ? <span className="nam-variant-chip__price">{price}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function pricingAttrTags(line: AgendaPricingPreviewLine): string[] {
+  if (line.isAddon) return [];
+  const tags: string[] = [];
+  if (line.tierApplied) tags.push(PORTE_LABELS[line.tierApplied as PorteValue] ?? line.tierApplied);
   if (line.coatTypeApplied) {
-    parts.push(COAT_TYPE_LABELS[line.coatTypeApplied as CoatTypeValue] ?? line.coatTypeApplied);
+    tags.push(COAT_TYPE_LABELS[line.coatTypeApplied as CoatTypeValue] ?? line.coatTypeApplied);
   }
-  if (line.needsCoatType) parts.push('selecione pelagem');
-  const meta = parts.length > 0 ? `${parts.join(' · ')} · ` : '';
-  return `${meta}${formatPrice(line.sale)}`;
+  if (line.needsCoatType) tags.push('Selecione a pelagem');
+  return tags;
+}
+
+export function serviceUsesPorteCoatMatrix(st: HubServiceType | undefined): {
+  porte: boolean;
+  coat: boolean;
+} {
+  const m = st ? coercePricingMatrixFromApi(st.pricing_matrix) : null;
+  if (!m) return { porte: false, coat: false };
+  return {
+    porte: m.kind === 'porte' || m.kind === 'porte_pelagem',
+    coat: m.kind === 'pelagem' || m.kind === 'porte_pelagem',
+  };
+}
+
+function specialScopeHint(
+  hint: NonNullable<AppointmentServiceChip['special_price_hint']>,
+): string {
+  if (hint.scope === 'family_plan' && hint.family_total != null) {
+    return `Plano família · ${formatPrice(hint.family_total)} / ${hint.family_pet_count ?? '?'} pets`;
+  }
+  if (hint.scope === 'guardian') return 'Acordo do tutor';
+  return 'Acordo deste pet';
 }
 
 export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
@@ -91,6 +166,7 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
   onSaleAmountChange,
   onPersistSpecialChange,
   showSpecialPriceControls = false,
+  tableOverride,
 }) => {
   const groupSlug = normalizeServiceGroupSlug(serviceType?.service_group);
   const groupLabel = serviceGroupLabel(groupSlug);
@@ -113,6 +189,11 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
   }, [hasExistingSpecial, chip.hub_service_type_id]);
 
   const headerSale = specialEditorOpen ? displaySale : pricingLine?.sale ?? displaySale;
+  const usesTable = serviceUsesPorteCoatMatrix(serviceType);
+  const showPorteField = Boolean(usesTable.porte && tableOverride?.onPorteChange && tableOverride.porteOptions);
+  const showCoatField = Boolean(usesTable.coat && tableOverride?.onCoatChange && tableOverride.coatOptions);
+  const showTable = showPorteField || showCoatField;
+  const appliedTags = pricingLine && !hasVariant && !showTable ? pricingAttrTags(pricingLine) : [];
 
   return (
     <div className={`nam-service-card ${expanded ? 'nam-service-card--expanded' : 'nam-service-card--collapsed'}`}>
@@ -164,113 +245,194 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
         <div className="nam-service-card__body">
           {hasVariant && variantMatrix ? (
             <div className="nam-service-card__section">
-              <p className="nam-service-card__section-label">Tabela de preço</p>
-              <HubSearchableCombobox
-                id={`${idPrefix}-variant-${serviceIndex}`}
+              <p className="nam-service-card__section-label" id={`${idPrefix}-variant-label-${serviceIndex}`}>
+                Tabela de preço
+              </p>
+              <NamVariantChips
+                labelledBy={`${idPrefix}-variant-label-${serviceIndex}`}
                 options={variantComboboxOptionsForMatrix(variantMatrix)}
                 value={variantToComboValue(variantMatrix, chip.pricing_variant ?? null)}
                 onChange={(raw) => {
                   const v = comboValueToVariant(variantMatrix, raw);
                   onVariantChange(v);
                 }}
-                clearable={false}
-                placeholder="Selecione a opção"
               />
-            </div>
-          ) : pricingLine ? (
-            <div className="nam-service-card__section">
-              <p className="nam-service-card__section-label">Preço estimado</p>
-              <p className="nam-service-card__price-line">{pricingSummaryLabel(pricingLine)}</p>
             </div>
           ) : null}
 
-          {showSpecialPriceControls && onSaleAmountChange ? (
-            <div className="nam-service-card__section">
-              <HubCheckbox
-                checked={specialEditorOpen}
-                onChange={(checked) => {
-                  setSpecialEditorOpen(checked);
-                  if (!checked) {
-                    // Sem acordo salvo: volta ao catálogo automático.
-                    // Com acordo: força o valor de catálogo só nesta ocorrência.
-                    if (hint) {
-                      onSaleAmountChange(catalogSale ?? pricingLine?.sale ?? null);
-                    } else {
-                      onSaleAmountChange(null);
-                    }
-                    onPersistSpecialChange?.(false, chip.persist_special_scope ?? 'pet');
-                  } else if (hint) {
-                    onSaleAmountChange(hint.special_sale);
-                  } else if (pricingLine != null) {
-                    onSaleAmountChange(pricingLine.sale);
-                  }
-                }}
-              >
-                {hasExistingSpecial ? 'Usar valor especial neste serviço' : 'Adicionar valor especial'}
-              </HubCheckbox>
+          {pricingLine || (showSpecialPriceControls && onSaleAmountChange) || showTable ? (
+            <div className="nam-service-card__section nam-price-block">
+              <p className="nam-service-card__section-label">Preço estimado</p>
+              {appliedTags.length > 0 ? (
+                <div className="nam-price-block__tags">
+                  {appliedTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className={`nam-price-tag${tag === 'Selecione a pelagem' ? ' nam-price-tag--warn' : ''}`}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
 
-              {specialEditorOpen ? (
-                <div style={{ marginTop: 10 }}>
-                  {hint ? (
-                    <p className="nam-aside__muted" style={{ fontSize: 12, margin: '0 0 8px' }}>
-                      Valor especial deste pet: {formatPrice(hint.special_sale)}
-                      {catalogSale != null ? ` (catálogo: ${formatPrice(catalogSale)})` : ''}
-                      {hint.scope === 'family_plan' && hint.family_total != null
-                        ? ` · plano família ${formatPrice(hint.family_total)} / ${hint.family_pet_count ?? '?'} pets`
-                        : hint.scope === 'guardian'
-                          ? ' · acordo do tutor'
-                          : ''}
-                      .
-                    </p>
-                  ) : (
-                    <p className="nam-aside__muted" style={{ fontSize: 12, margin: '0 0 8px' }}>
-                      Defina um valor diferente do catálogo só para este pet
-                      {catalogSale != null ? ` (hoje: ${formatPrice(catalogSale)})` : ''}.
-                    </p>
-                  )}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 13 }}>R$</span>
-                    <input
-                      className="nam-service-card__dur-input"
-                      style={{ width: 100 }}
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={displaySale ?? ''}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        if (raw === '') {
-                          onSaleAmountChange(null);
-                          return;
-                        }
-                        const n = Number(raw);
-                        onSaleAmountChange(Number.isFinite(n) ? n : null);
-                      }}
-                      aria-label={`Valor especial de ${chip.name}`}
-                    />
+              <div className="nam-price-block__amount">
+                {specialEditorOpen && catalogSale != null && catalogSale !== (headerSale ?? catalogSale) ? (
+                  <span className="nam-price-block__catalog">{formatPrice(catalogSale)}</span>
+                ) : null}
+                <strong className="nam-price-block__sale">
+                  {formatPrice(headerSale ?? pricingLine?.sale ?? displaySale ?? 0)}
+                </strong>
+                {specialEditorOpen ? <span className="nam-price-block__badge">Especial</span> : null}
+              </div>
+
+              {showTable && tableOverride ? (
+                <div className="nam-price-table">
+                  <p className="nam-price-table__title">Como calcular {groupLabel}</p>
+                  <div
+                    className={`nam-price-table__fields${
+                      showPorteField && showCoatField ? '' : ' nam-price-table__fields--single'
+                    }`}
+                  >
+                    {showPorteField ? (
+                      <label className="nam-price-table__field" htmlFor={`${idPrefix}-pricing-porte-${serviceIndex}`}>
+                        <span>Porte</span>
+                        <select
+                          id={`${idPrefix}-pricing-porte-${serviceIndex}`}
+                          className="nam-price-table__select"
+                          value={tableOverride.porteValue ?? ''}
+                          onChange={(e) => tableOverride.onPorteChange?.(e.target.value)}
+                        >
+                          {(tableOverride.porteOptions ?? []).map((opt) => (
+                            <option key={opt.value || 'auto'} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                    {showCoatField ? (
+                      <label className="nam-price-table__field" htmlFor={`${idPrefix}-pricing-coat-${serviceIndex}`}>
+                        <span>Pelagem</span>
+                        <select
+                          id={`${idPrefix}-pricing-coat-${serviceIndex}`}
+                          className="nam-price-table__select"
+                          value={tableOverride.coatValue ?? ''}
+                          onChange={(e) => tableOverride.onCoatChange?.(e.target.value)}
+                        >
+                          {(tableOverride.coatOptions ?? []).map((opt) => (
+                            <option key={opt.value || 'auto'} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
                   </div>
-                  {onPersistSpecialChange && !hasExistingSpecial ? (
-                    <div style={{ marginTop: 8 }}>
-                      <HubCheckbox
-                        checked={Boolean(chip.persist_special_price)}
-                        onChange={(checked) =>
-                          onPersistSpecialChange(checked, chip.persist_special_scope ?? 'pet')
-                        }
-                      >
-                        Salvar para os próximos agendamentos deste pet
-                      </HubCheckbox>
-                    </div>
+                  {pricingLine && (pricingLine.tierApplied || pricingLine.coatTypeApplied) ? (
+                    <p className="nam-price-table__applied">
+                      Neste agendamento:{' '}
+                      {[
+                        pricingLine.tierApplied
+                          ? (PORTE_LABELS[pricingLine.tierApplied as PorteValue] ?? pricingLine.tierApplied)
+                          : null,
+                        pricingLine.coatTypeApplied
+                          ? (COAT_TYPE_LABELS[pricingLine.coatTypeApplied as CoatTypeValue] ??
+                            pricingLine.coatTypeApplied)
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
                   ) : null}
-                  {onPersistSpecialChange && hasExistingSpecial ? (
-                    <div style={{ marginTop: 8 }}>
-                      <HubCheckbox
-                        checked={Boolean(chip.persist_special_price)}
-                        onChange={(checked) =>
-                          onPersistSpecialChange(checked, chip.persist_special_scope ?? 'pet')
+                  {showPorteField && tableOverride.puppyMaxMonths != null ? (
+                    <p className="nam-price-table__hint">
+                      Filhote nesta clínica: até {tableOverride.puppyMaxMonths} meses na data do agendamento.
+                    </p>
+                  ) : null}
+                  {showCoatField && tableOverride.coatRequired ? (
+                    <p className="nam-footer-error nam-price-table__error">
+                      <AlertCircle size={14} />{' '}
+                      {tableOverride.coatRequiredHint ?? 'Selecione a pelagem para precificar este serviço.'}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {showSpecialPriceControls && onSaleAmountChange ? (
+                <div className="nam-price-block__special">
+                  <HubCheckbox
+                    checked={specialEditorOpen}
+                    onChange={(checked) => {
+                      setSpecialEditorOpen(checked);
+                      if (!checked) {
+                        if (hint) {
+                          onSaleAmountChange(catalogSale ?? pricingLine?.sale ?? null);
+                        } else {
+                          onSaleAmountChange(null);
                         }
-                      >
-                        Atualizar o preço especial salvo com este valor
-                      </HubCheckbox>
+                        onPersistSpecialChange?.(false, chip.persist_special_scope ?? 'pet');
+                      } else if (hint) {
+                        onSaleAmountChange(hint.special_sale);
+                      } else if (pricingLine != null) {
+                        onSaleAmountChange(pricingLine.sale);
+                      }
+                    }}
+                  >
+                    {hasExistingSpecial ? 'Usar valor especial neste serviço' : 'Adicionar valor especial'}
+                  </HubCheckbox>
+
+                  {specialEditorOpen ? (
+                    <div className="nam-price-block__special-body">
+                      {hint ? (
+                        <p className="nam-price-block__hint">
+                          {specialScopeHint(hint)} · salvo {formatPrice(hint.special_sale)}
+                        </p>
+                      ) : (
+                        <p className="nam-price-block__hint">
+                          Vale só neste agendamento
+                          {catalogSale != null ? ` · catálogo ${formatPrice(catalogSale)}` : ''}.
+                        </p>
+                      )}
+                      <label className="nam-price-input">
+                        <span className="nam-price-input__prefix">R$</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={displaySale ?? ''}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw === '') {
+                              onSaleAmountChange(null);
+                              return;
+                            }
+                            const n = Number(raw);
+                            onSaleAmountChange(Number.isFinite(n) ? n : null);
+                          }}
+                          aria-label={`Valor especial de ${chip.name}`}
+                        />
+                      </label>
+                      {onPersistSpecialChange && !hasExistingSpecial ? (
+                        <HubCheckbox
+                          checked={Boolean(chip.persist_special_price)}
+                          onChange={(checked) =>
+                            onPersistSpecialChange(checked, chip.persist_special_scope ?? 'pet')
+                          }
+                        >
+                          Salvar para os próximos agendamentos deste pet
+                        </HubCheckbox>
+                      ) : null}
+                      {onPersistSpecialChange && hasExistingSpecial ? (
+                        <HubCheckbox
+                          checked={Boolean(chip.persist_special_price)}
+                          onChange={(checked) =>
+                            onPersistSpecialChange(checked, chip.persist_special_scope ?? 'pet')
+                          }
+                        >
+                          Atualizar o preço especial salvo com este valor
+                        </HubCheckbox>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -287,7 +449,23 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
                     const addonChip = selectedAddons.find((s) => s.hub_service_type_id === addon.id);
                     const checked = Boolean(addonChip);
                     const variantRow = checked ? addonNeedsVariantOnRow(addon, addonChip) : null;
-                    const meta = addonMetaLabel(addon);
+                    const variantOptions = variantRow
+                      ? variantComboboxOptionsForMatrix(variantRow.matrix)
+                      : [];
+                    const selectedVariantValue = variantRow
+                      ? variantToComboValue(variantRow.matrix, addonChip?.pricing_variant ?? null)
+                      : '';
+                    const selectedVariant = variantOptions.find((o) => o.value === selectedVariantValue);
+                    const selectedPrice = selectedVariant
+                      ? splitVariantLabel(selectedVariant.label).price
+                      : '';
+                    const baseMeta = addonMetaLabel(addon);
+                    const meta =
+                      checked && selectedPrice
+                        ? [addon.default_duration_minutes != null ? `${addon.default_duration_minutes} min` : '', selectedPrice]
+                            .filter(Boolean)
+                            .join(' · ')
+                        : baseMeta;
                     return (
                       <li key={addon.id} className="nam-addon-row">
                         <HubCheckbox
@@ -299,19 +477,14 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
                           {meta ? <span className="nam-addon-row__meta">{meta}</span> : null}
                         </HubCheckbox>
                         {variantRow ? (
-                          <div className="nam-addon-row__variant">
-                            <HubSearchableCombobox
-                              id={`${idPrefix}-addon-variant-${addon.id}`}
-                              options={variantComboboxOptionsForMatrix(variantRow.matrix)}
-                              value={variantToComboValue(variantRow.matrix, addonChip?.pricing_variant ?? null)}
-                              onChange={(raw) => {
-                                const v = comboValueToVariant(variantRow.matrix, raw);
-                                onAddonVariantChange(addon.id, v);
-                              }}
-                              clearable={false}
-                              placeholder="Selecione a opção"
-                            />
-                          </div>
+                          <NamVariantChips
+                            options={variantOptions}
+                            value={selectedVariantValue}
+                            onChange={(raw) => {
+                              const v = comboValueToVariant(variantRow.matrix, raw);
+                              onAddonVariantChange(addon.id, v);
+                            }}
+                          />
                         ) : null}
                       </li>
                     );

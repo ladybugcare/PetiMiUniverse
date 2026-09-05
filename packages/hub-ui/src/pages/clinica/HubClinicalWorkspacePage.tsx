@@ -2,15 +2,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
+  BookOpen,
   Check,
   ClipboardList,
-  FlaskConical,
+  FileText,
   LayoutList,
   MessageSquare,
   Microscope,
   Paperclip,
   Phone,
-  Pill,
   Plus,
   Save,
   Stethoscope,
@@ -33,11 +33,29 @@ import {
   type HubClinicalExam,
   type HubVaccination,
 } from '../../api/hubClinicalApi';
+import CompleteEncounterCasePrompt from './CompleteEncounterCasePrompt.tsx';
+import {
+  applyCaseAfterCompleteChoice,
+  buildCaseAfterCompletePrompt,
+  caseAfterCompleteSuccessMessage,
+  type CaseAfterCompleteChoice,
+  type CaseAfterCompletePrompt,
+} from './caseAfterCompletePrompt';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { HubWorkspacePrescriptions } from './HubWorkspacePrescriptions';
 import { HubWorkspaceExamOrders } from './HubWorkspaceExamOrders';
 import { HubWorkspaceSpecialistReferrals } from './HubWorkspaceSpecialistReferrals';
+import { HubCwsStatusPills } from './HubCwsStatusPills';
 import { HubWorkspaceVaccinations } from '../../components/clinical/HubWorkspaceVaccinations';
+import { HubWorkspaceVaccineCard } from './HubWorkspaceVaccineCard';
+import { HubWorkspaceInClinicMedications } from '../../components/clinical/HubWorkspaceInClinicMedications';
+import { HubCwsTabbedCard, HubCwsTabPanel } from './HubCwsTabbedCard';
+import { HubCwsCollapsibleCard } from './HubCwsCollapsibleCard';
+import { HubWorkspaceAplicadoRegistry } from './HubWorkspaceAplicadoRegistry';
+import { HubWorkspaceSolicitacoesRegistry } from './HubWorkspaceSolicitacoesRegistry';
+import { HubWorkspaceAnamnesis } from './HubWorkspaceAnamnesis';
+import { HubWorkspacePhysicalExam } from './HubWorkspacePhysicalExam';
+import { asStringList } from './anamnesisOptions';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import {
@@ -67,6 +85,17 @@ function canonicalEncounterPrescription(enc: HubEncounter, prescriptions: HubPre
     return tb - ta;
   });
   return sameEncounter[0] ?? null;
+}
+
+const APLICADO_TAB_IDS = ['sec-medicacao', 'sec-vacinas'] as const;
+const SOLICITACOES_TAB_IDS = ['sec-prescricoes', 'sec-exames', 'sec-encaminhamentos'] as const;
+
+function navIdForSection(id: string): string {
+  if (id === 'sec-aplicado' || (APLICADO_TAB_IDS as readonly string[]).includes(id)) return 'sec-aplicado';
+  if (id === 'sec-solicitacoes' || (SOLICITACOES_TAB_IDS as readonly string[]).includes(id)) {
+    return 'sec-solicitacoes';
+  }
+  return id;
 }
 
 const HUB_CWS_STATUS_ENCOUNTER: Record<string, { label: string; className: string }> = {
@@ -112,20 +141,40 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [casePrompt, setCasePrompt] = useState<CaseAfterCompletePrompt | null>(null);
+  const [casePromptSaving, setCasePromptSaving] = useState(false);
   const loadedEncounterIdRef = useRef<string | null>(null);
   const [encounterExams, setEncounterExams] = useState<HubClinicalExam[]>([]);
   const [encounterVaccinations, setEncounterVaccinations] = useState<HubVaccination[]>([]);
   const [rxItemsCount, setRxItemsCount] = useState(0);
   const [evolutionDrawerOpen, setEvolutionDrawerOpen] = useState(false);
-  const [activeNav, setActiveNav] = useState(initialSection || 'sec-resumo');
+  const [activeNav, setActiveNav] = useState(() => navIdForSection(initialSection || 'sec-resumo'));
+  const [aplicadoTab, setAplicadoTab] = useState(() =>
+    APLICADO_TAB_IDS.includes(initialSection as (typeof APLICADO_TAB_IDS)[number])
+      ? (initialSection as string)
+      : 'sec-medicacao',
+  );
+  const [solicitacoesTab, setSolicitacoesTab] = useState(() =>
+    SOLICITACOES_TAB_IDS.includes(initialSection as (typeof SOLICITACOES_TAB_IDS)[number])
+      ? (initialSection as string)
+      : 'sec-prescricoes',
+  );
+  const [aplicadoRegistryKey, setAplicadoRegistryKey] = useState(0);
+  const [solicitacoesRegistryKey, setSolicitacoesRegistryKey] = useState(0);
 
   const backTo = '/hub/clinica';
   const backLabel = 'Voltar ao consultório';
 
   useEffect(() => {
     if (initialSection) {
-      setActiveNav(initialSection);
-      const el = document.getElementById(initialSection);
+      if ((APLICADO_TAB_IDS as readonly string[]).includes(initialSection)) {
+        setAplicadoTab(initialSection);
+      }
+      if ((SOLICITACOES_TAB_IDS as readonly string[]).includes(initialSection)) {
+        setSolicitacoesTab(initialSection);
+      }
+      setActiveNav(navIdForSection(initialSection));
+      const el = document.getElementById(navIdForSection(initialSection));
       el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [initialSection, encounterId]);
@@ -222,6 +271,15 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
     });
   };
 
+  const patchAnamnesis = (fields: Record<string, unknown>) => {
+    setEncounter((prev) => {
+      if (!prev) return prev;
+      const block = { ...(prev.anamnesis as Record<string, unknown>), ...fields };
+      queue({ anamnesis: block });
+      return { ...prev, anamnesis: block };
+    });
+  };
+
   const hasBillingIdentity =
     !!(encounter?.guardian_id && encounter?.pet_id) || !!encounter?.hub_case_id;
 
@@ -238,12 +296,70 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
       const { encounter: enc } = await hubEncountersApi.complete(encounterId, clinicId);
       setEncounter(enc);
       showSuccess('Atendimento finalizado');
+
+      const caseId = enc.case?.id ?? enc.hub_case_id;
+      let hasOpenHospitalization = false;
+      if (caseId) {
+        try {
+          const { hospitalizations } = await hubClinicalApi.listHospitalizations(clinicId, 'active', caseId);
+          hasOpenHospitalization = (hospitalizations ?? []).some((h) => h.status === 'active' || !h.discharged_at);
+        } catch {
+          hasOpenHospitalization = false;
+        }
+      }
+
+      const pendingExamsCount = encounterExams.filter(
+        (ex) => ex.status !== 'completed' && ex.status !== 'result_received' && ex.status !== 'cancelled',
+      ).length;
+
+      const prompt = buildCaseAfterCompletePrompt({
+        caseId,
+        status: enc.case?.status,
+        title: enc.case?.title,
+        chiefComplaint: enc.chief_complaint ?? encounter.chief_complaint,
+        hasOpenHospitalization,
+        pendingExamsCount,
+      });
+      if (prompt) {
+        setCasePrompt(prompt);
+        return;
+      }
+
       if (mode === 'drawer') onCompleted?.();
       else navigate(backTo);
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao finalizar');
     } finally {
       setCompleting(false);
+    }
+  };
+
+  const leaveAfterComplete = useCallback(() => {
+    if (mode === 'drawer') onCompleted?.();
+    else navigate(backTo);
+  }, [mode, onCompleted, navigate, backTo]);
+
+  const handleCaseAfterComplete = async (choice: CaseAfterCompleteChoice) => {
+    if (!clinicId || !casePrompt) {
+      leaveAfterComplete();
+      return;
+    }
+    if (choice === 'keep_open') {
+      setCasePrompt(null);
+      leaveAfterComplete();
+      return;
+    }
+    setCasePromptSaving(true);
+    try {
+      const result = await applyCaseAfterCompleteChoice(clinicId, casePrompt.caseId, choice);
+      const msg = caseAfterCompleteSuccessMessage(result);
+      if (msg) showSuccess(msg);
+      setCasePrompt(null);
+      leaveAfterComplete();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao atualizar o caso');
+    } finally {
+      setCasePromptSaving(false);
     }
   };
 
@@ -368,10 +484,17 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   }, [encounterExams]);
 
   const scrollToSection = useCallback((id: string) => {
-    const el = document.getElementById(id);
+    if ((APLICADO_TAB_IDS as readonly string[]).includes(id)) {
+      setAplicadoTab(id);
+    }
+    if ((SOLICITACOES_TAB_IDS as readonly string[]).includes(id)) {
+      setSolicitacoesTab(id);
+    }
+    const navId = navIdForSection(id);
+    const el = document.getElementById(navId);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setActiveNav(id);
+      setActiveNav(navId);
     }
   }, []);
 
@@ -395,6 +518,7 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   const pe = (encounter.physical_exam || {}) as Record<string, unknown>;
   const an = (encounter.anamnesis || {}) as Record<string, unknown>;
   const dx = (encounter.diagnosis || {}) as Record<string, unknown>;
+  const suspicionsText = String(dx.suspicions ?? '').trim();
   const weight = pe.weight_kg != null && pe.weight_kg !== '' ? `${pe.weight_kg} kg` : '—';
   const readOnly = !canWrite || encounter.status === 'completed';
   const needsIdentificationForCheckout = !hasBillingIdentity && encounter.status !== 'completed';
@@ -403,9 +527,9 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
     { id: 'sec-resumo', label: 'Consulta' },
     { id: 'sec-exame', label: 'Exame' },
     { id: 'sec-diagnostico', label: 'Diagnóstico' },
-    { id: 'sec-prescricoes', label: 'Prescrição' },
+    { id: 'sec-prescricoes', label: 'Receita' },
     { id: 'sec-exames', label: 'Exames' },
-    { id: 'sec-footer-actions', label: 'Cobrar' },
+    { id: 'sec-footer-actions', label: 'Finalizar' },
   ] as const;
 
   const NAV_ITEMS = [
@@ -414,10 +538,9 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
     { id: 'sec-exame', label: 'Exame físico', Icon: Stethoscope },
     { id: 'sec-diagnostico', label: 'Diagnóstico', Icon: Microscope },
     { id: 'sec-evolucao', label: 'Evolução clínica', Icon: MessageSquare },
-    { id: 'sec-prescricoes', label: 'Prescrições', Icon: Pill },
-    { id: 'sec-vacinas', label: 'Vacinas', Icon: Syringe },
-    { id: 'sec-exames', label: 'Exames solicitados', Icon: FlaskConical },
-    { id: 'sec-encaminhamentos', label: 'Encaminhamentos', Icon: Stethoscope },
+    { id: 'sec-aplicado', label: 'Aplicado agora', Icon: Syringe },
+    { id: 'sec-carteirinha', label: 'Carteirinha', Icon: BookOpen },
+    { id: 'sec-solicitacoes', label: 'Solicitações', Icon: FileText },
     { id: 'sec-anexos', label: 'Anexos', Icon: Paperclip },
   ] as const;
 
@@ -458,7 +581,7 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                   />
                   <span className={`hub-cws-status ${statusUi.className}`}>{statusUi.label}</span>
                 </div>
-                {!hideFinancial ? (
+                {!hideFinancial && canViewFinancial ? (
                   <FinancialAdjustmentPendingBadge
                     pending={Boolean(encounter.financial_adjustment_pending)}
                     showCaixaLink={canViewFinancial}
@@ -577,8 +700,14 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
         {needsIdentificationForCheckout ? (
           <div className="hub-clinic-banner hub-cws-banner">
             <p style={{ margin: 0 }}>
-              <strong>Identificação pendente.</strong> Para <strong>finalizar</strong> ou <strong>abrir comanda/checkout</strong>,
-              é necessário{' '}
+              <strong>Identificação pendente.</strong> Para <strong>finalizar</strong>
+              {canCreateReceivable ? (
+                <>
+                  {' '}
+                  ou <strong>abrir comanda/checkout</strong>
+                </>
+              ) : null}
+              , é necessário{' '}
               {encounter.hub_case_id
                 ? 'um tutor e pet vinculados (direto no atendimento ou via caso clínico com pet cadastrado)'
                 : 'associar tutor e pet a este atendimento ou vincular um caso clínico com pet/tutor cadastrado'}
@@ -609,28 +738,13 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
           </nav>
 
           <div className="hub-cws-main-col">
-            <section id="sec-resumo" className="hub-cws-section hub-cws-card">
-              <h2 className="hub-cws-card__title">Resumo do caso</h2>
-              <div className="hub-cws-resumo-grid">
-                <div>
-                  <span className="hub-cws-k">Queixa principal</span>
-                  <p className="hub-cws-v hub-cws-v--accent">{encounter.chief_complaint?.trim() || '—'}</p>
-                </div>
-                <div>
-                  <span className="hub-cws-k">Histórico resumido</span>
-                  <p className="hub-cws-v">{String(an.history ?? '').trim() || encounter.summary_notes?.trim() || '—'}</p>
-                </div>
-                <div>
-                  <span className="hub-cws-k">Hipóteses</span>
-                  <p className="hub-cws-v">{String(dx.suspicions ?? '').trim() || '—'}</p>
-                </div>
-                <div>
-                  <span className="hub-cws-k">Status clínico</span>
-                  <span className={`hub-cws-pill hub-cws-pill--${caseProgressUi.tone}`}>{caseProgressUi.label}</span>
-                </div>
-              </div>
-              <div className="hub-cws-field-grid hub-cws-field-grid--2">
-                <div className="hub-clinic-field hub-cws-field-tight">
+            <HubCwsCollapsibleCard
+              id="sec-resumo"
+              title="Resumo do caso"
+              extra={<span className={`hub-cws-pill hub-cws-pill--${caseProgressUi.tone}`}>{caseProgressUi.label}</span>}
+            >
+              <div className="hub-cws-resumo-fields">
+                <div className="hub-clinic-field hub-cws-field-tight hub-cws-resumo-lead">
                   <label htmlFor="chief_complaint">Queixa principal</label>
                   <textarea
                     id="chief_complaint"
@@ -639,9 +753,10 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                     disabled={readOnly}
                     onChange={(e) => patchField('chief_complaint', e.target.value || null)}
                     rows={2}
+                    placeholder="Motivo da consulta, em uma frase"
                   />
                 </div>
-                <div className="hub-clinic-field hub-cws-field-tight">
+                <div className="hub-clinic-field hub-cws-field-tight hub-cws-resumo-notes">
                   <label htmlFor="summary_notes">Resumo / notas do caso</label>
                   <textarea
                     id="summary_notes"
@@ -649,103 +764,51 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                     value={encounter.summary_notes || ''}
                     disabled={readOnly}
                     onChange={(e) => patchField('summary_notes', e.target.value || null)}
-                    rows={2}
+                    rows={3}
+                    placeholder="Contexto breve para o time acompanhar o caso"
                   />
                 </div>
               </div>
-            </section>
+              <div className="hub-cws-resumo-meta">
+                <div className="hub-cws-resumo-meta__body">
+                  <span className="hub-cws-k">Hipóteses</span>
+                  <p className={`hub-cws-v${suspicionsText ? '' : ' hub-cws-v--empty'}`}>
+                    {suspicionsText || 'Nenhuma hipótese registrada ainda.'}
+                  </p>
+                </div>
+                {!readOnly || suspicionsText ? (
+                  <button
+                    type="button"
+                    className="hub-cws-resumo-meta__link"
+                    onClick={() => scrollToSection('sec-diagnostico')}
+                  >
+                    {suspicionsText ? 'Ver diagnóstico' : 'Registrar hipóteses'}
+                  </button>
+                ) : null}
+              </div>
+            </HubCwsCollapsibleCard>
 
-            <section id="sec-anamnese" className="hub-cws-section hub-cws-card">
-              <h2 className="hub-cws-card__title">Anamnese</h2>
-              <div className="hub-cws-field-grid hub-cws-field-grid--2">
-                {(
-                  [
-                    ['history', 'Histórico'],
-                    ['diet', 'Alimentação'],
-                    ['behavior', 'Comportamento'],
-                    ['medications', 'Medicamentos em uso'],
-                    ['environment', 'Ambiente'],
-                    ['chief_complaint_detail', 'Detalhamento da queixa'],
-                  ] as const
-                ).map(([field, lbl]) => (
-                  <div key={field} className="hub-clinic-field hub-cws-field-tight">
-                    <label htmlFor={`an_${field}`}>{lbl}</label>
-                    <textarea
-                      id={`an_${field}`}
-                      className="hub-cws-textarea"
-                      value={String(an[field] ?? '')}
-                      disabled={readOnly}
-                      onChange={(e) => patchNested('anamnesis', field, e.target.value)}
-                      rows={3}
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
+            <HubWorkspaceAnamnesis
+              anamnesis={an}
+              examPain={String(pe.pain ?? '')}
+              flags={flags}
+              behaviorTags={asStringList(pet?.behavior_tags)}
+              petId={encounter.pet_id}
+              species={pet?.species}
+              readOnly={readOnly}
+              onPatch={patchAnamnesis}
+            />
 
-            <section id="sec-exame" className="hub-cws-section hub-cws-card">
-              <h2 className="hub-cws-card__title">Exame físico</h2>
-              <div className="hub-cws-subtitle">Sinais vitais</div>
-              <div className="hub-cws-vitals">
-                {(
-                  [
-                    ['temperature_c', 'Temperatura (°C)'],
-                    ['heart_rate', 'FC (bpm)'],
-                    ['respiratory_rate', 'FR (rpm)'],
-                    ['crt', 'TPC'],
-                    ['weight_kg', 'Peso (kg)'],
-                  ] as const
-                ).map(([field, label]) => (
-                  <div key={field} className="hub-cws-vital-cell">
-                    <label htmlFor={`pe_${field}`}>{label}</label>
-                    <input
-                      id={`pe_${field}`}
-                      type="text"
-                      value={String(pe[field] ?? '')}
-                      disabled={readOnly}
-                      onChange={(e) => patchNested('physical_exam', field, e.target.value)}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="hub-cws-subtitle">Avaliação</div>
-              <div className="hub-cws-vitals">
-                {(
-                  [
-                    ['hydration', 'Hidratação'],
-                    ['mucosa', 'Mucosas'],
-                    ['pain', 'Dor'],
-                    ['lymph_nodes', 'Linfonodos'],
-                    ['general_state', 'Estado geral'],
-                  ] as const
-                ).map(([field, label]) => (
-                  <div key={field} className="hub-cws-vital-cell">
-                    <label htmlFor={`pe_${field}`}>{label}</label>
-                    <input
-                      id={`pe_${field}`}
-                      type="text"
-                      value={String(pe[field] ?? '')}
-                      disabled={readOnly}
-                      onChange={(e) => patchNested('physical_exam', field, e.target.value)}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="hub-clinic-field hub-cws-field-tight">
-                <label htmlFor="pe_notes">Observações do exame</label>
-                <textarea
-                  id="pe_notes"
-                  className="hub-cws-textarea"
-                  value={String(pe.notes ?? '')}
-                  disabled={readOnly}
-                  onChange={(e) => patchNested('physical_exam', 'notes', e.target.value)}
-                  rows={2}
-                />
-              </div>
-            </section>
+            <HubWorkspacePhysicalExam
+              exam={pe}
+              anamnesis={an}
+              behaviorTags={asStringList(pet?.behavior_tags)}
+              species={pet?.species}
+              readOnly={readOnly}
+              onPatch={(field, value) => patchNested('physical_exam', field, value)}
+            />
 
-            <section id="sec-diagnostico" className="hub-cws-section hub-cws-card">
-              <h2 className="hub-cws-card__title">Diagnóstico</h2>
+            <HubCwsCollapsibleCard id="sec-diagnostico" title="Diagnóstico">
               <div className="hub-clinic-field hub-cws-field-tight">
                 <label htmlFor="dx_suspicions">Hipóteses</label>
                 <textarea
@@ -774,10 +837,9 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                   Campo reservado para classificação futura.
                 </p>
               </div>
-            </section>
+            </HubCwsCollapsibleCard>
 
-            <section id="sec-evolucao" className="hub-cws-section hub-cws-card hub-cws-card--muted">
-              <h2 className="hub-cws-card__title">Evolução clínica</h2>
+            <HubCwsCollapsibleCard id="sec-evolucao" title="Evolução clínica" className="hub-cws-card--muted">
               <p className="hub-clientes__muted" style={{ marginTop: 0 }}>
                 A linha do tempo deste caso fica no painel à direita. Use <strong>+ Registrar evolução</strong> para
                 abrir o formulário.
@@ -785,70 +847,149 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
               <button type="button" className="hub-cws-btn-primary-outline" onClick={() => setEvolutionDrawerOpen(true)}>
                 <Plus size={16} /> Registrar evolução
               </button>
-            </section>
+            </HubCwsCollapsibleCard>
 
-            <section id="sec-prescricoes" className="hub-cws-section hub-cws-card">
-              <h2 className="hub-cws-card__title">Prescrições</h2>
-              <HubWorkspacePrescriptions
+            <HubCwsTabbedCard
+              id="sec-aplicado"
+              title="Aplicado agora"
+              description="O que foi aplicado nesta consulta. Vacina da carteirinha fica na seção Carteirinha."
+              tabs={[
+                { id: 'sec-medicacao', label: 'Medicação' },
+                { id: 'sec-vacinas', label: 'Vacina' },
+              ]}
+              activeTab={aplicadoTab}
+              onTabChange={(id) => {
+                setAplicadoTab(id);
+                setActiveNav('sec-aplicado');
+              }}
+              footer={
+                <HubWorkspaceAplicadoRegistry
+                  encounter={encounter}
+                  clinicId={clinicId!}
+                  refreshKey={aplicadoRegistryKey}
+                />
+              }
+            >
+              <HubCwsTabPanel id="sec-medicacao" active={aplicadoTab === 'sec-medicacao'} labelledBy="tab-sec-medicacao">
+                <HubWorkspaceInClinicMedications
+                  encounter={encounter}
+                  clinicId={clinicId!}
+                  readOnly={readOnly}
+                  formOnly
+                  onClinicalRefresh={() => {
+                    setAplicadoRegistryKey((k) => k + 1);
+                    void load();
+                  }}
+                />
+              </HubCwsTabPanel>
+              <HubCwsTabPanel id="sec-vacinas" active={aplicadoTab === 'sec-vacinas'} labelledBy="tab-sec-vacinas">
+                <HubWorkspaceVaccinations
+                  encounter={encounter}
+                  clinicId={clinicId!}
+                  readOnly={readOnly}
+                  formOnly
+                  onClinicalRefresh={() => {
+                    setAplicadoRegistryKey((k) => k + 1);
+                    void load();
+                  }}
+                />
+              </HubCwsTabPanel>
+            </HubCwsTabbedCard>
+
+            <HubCwsCollapsibleCard
+              id="sec-carteirinha"
+              title="Carteirinha"
+              description="Histórico vacinal do pet: transcreva o que já está na carteirinha e veja o que foi aplicado na clínica."
+            >
+              <HubWorkspaceVaccineCard
                 encounter={encounter}
                 clinicId={clinicId!}
                 readOnly={readOnly}
-                onClinicalRefresh={() => void load()}
+                onClinicalRefresh={() => {
+                  setAplicadoRegistryKey((k) => k + 1);
+                  void load();
+                }}
               />
-            </section>
+            </HubCwsCollapsibleCard>
 
-            <section id="sec-vacinas" className="hub-cws-section hub-cws-card">
-              <h2 className="hub-cws-card__title">Vacinas</h2>
-              <HubWorkspaceVaccinations
-                encounter={encounter}
-                clinicId={clinicId!}
-                readOnly={readOnly}
-                onClinicalRefresh={() => void load()}
-              />
-            </section>
+            <HubCwsTabbedCard
+              id="sec-solicitacoes"
+              title="Solicitações"
+              description="O que o tutor leva ou faz depois da consulta: receita, exames e encaminhamentos."
+              tabs={[
+                { id: 'sec-prescricoes', label: 'Receita' },
+                { id: 'sec-exames', label: 'Exames' },
+                { id: 'sec-encaminhamentos', label: 'Encaminhamentos' },
+              ]}
+              activeTab={solicitacoesTab}
+              onTabChange={(id) => {
+                setSolicitacoesTab(id);
+                setActiveNav('sec-solicitacoes');
+              }}
+              footer={
+                <HubWorkspaceSolicitacoesRegistry
+                  encounter={encounter}
+                  clinicId={clinicId!}
+                  refreshKey={solicitacoesRegistryKey}
+                />
+              }
+            >
+              <HubCwsTabPanel
+                id="sec-prescricoes"
+                active={solicitacoesTab === 'sec-prescricoes'}
+                labelledBy="tab-sec-prescricoes"
+              >
+                <HubWorkspacePrescriptions
+                  encounter={encounter}
+                  clinicId={clinicId!}
+                  readOnly={readOnly}
+                  onClinicalRefresh={() => {
+                    setSolicitacoesRegistryKey((k) => k + 1);
+                    void load();
+                  }}
+                />
+              </HubCwsTabPanel>
+              <HubCwsTabPanel id="sec-exames" active={solicitacoesTab === 'sec-exames'} labelledBy="tab-sec-exames">
+                <HubCwsStatusPills
+                  items={[
+                    { label: 'Total', value: examStats.total },
+                    { label: 'Pendentes', value: examStats.pendentes, tone: 'amber' },
+                    { label: 'Concluídos', value: examStats.concluidos, tone: 'green' },
+                  ]}
+                />
+                <HubWorkspaceExamOrders
+                  encounter={encounter}
+                  clinicId={clinicId!}
+                  readOnly={readOnly}
+                  onClinicalRefresh={() => {
+                    setSolicitacoesRegistryKey((k) => k + 1);
+                    void load();
+                  }}
+                />
+              </HubCwsTabPanel>
+              <HubCwsTabPanel
+                id="sec-encaminhamentos"
+                active={solicitacoesTab === 'sec-encaminhamentos'}
+                labelledBy="tab-sec-encaminhamentos"
+              >
+                <HubWorkspaceSpecialistReferrals
+                  encounter={encounter}
+                  clinicId={clinicId!}
+                  readOnly={readOnly}
+                  onClinicalRefresh={() => {
+                    setSolicitacoesRegistryKey((k) => k + 1);
+                    void load();
+                  }}
+                />
+              </HubCwsTabPanel>
+            </HubCwsTabbedCard>
 
-            <section id="sec-exames" className="hub-cws-section hub-cws-card">
-              <h2 className="hub-cws-card__title">Exames solicitados</h2>
-              <div className="hub-cws-exam-summary">
-                <div className="hub-cws-exam-pill">
-                  <span>Total</span>
-                  <strong>{examStats.total}</strong>
-                </div>
-                <div className="hub-cws-exam-pill hub-cws-exam-pill--amber">
-                  <span>Pendentes</span>
-                  <strong>{examStats.pendentes}</strong>
-                </div>
-                <div className="hub-cws-exam-pill hub-cws-exam-pill--green">
-                  <span>Concluídos</span>
-                  <strong>{examStats.concluidos}</strong>
-                </div>
-              </div>
-              <HubWorkspaceExamOrders
-                encounter={encounter}
-                clinicId={clinicId!}
-                readOnly={readOnly}
-                onClinicalRefresh={() => void load()}
-              />
-            </section>
-
-            <section id="sec-encaminhamentos" className="hub-cws-section hub-cws-card">
-              <h2 className="hub-cws-card__title">Encaminhamentos a especialista</h2>
-              <HubWorkspaceSpecialistReferrals
-                encounter={encounter}
-                clinicId={clinicId!}
-                readOnly={readOnly}
-                onClinicalRefresh={() => void load()}
-              />
-            </section>
-
-            <section id="sec-anexos" className="hub-cws-section hub-cws-card">
-              <h2 className="hub-cws-card__title">Anexos</h2>
+            <HubCwsCollapsibleCard id="sec-anexos" title="Anexos">
               <HubWorkspaceAttachments encounter={encounter} clinicId={clinicId!} readOnly={readOnly} />
-            </section>
+            </HubCwsCollapsibleCard>
 
             {versions.length > 0 ? (
-              <section className="hub-cws-section hub-cws-card">
-                <h2 className="hub-cws-card__title">Histórico de alterações ({versions.length})</h2>
+              <HubCwsCollapsibleCard id="sec-historico" title={`Histórico de alterações (${versions.length})`}>
                 <ul className="hub-clinic-records__list">
                   {versions.map((v) => (
                     <li key={v.id}>
@@ -862,7 +1003,7 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                     </li>
                   ))}
                 </ul>
-              </section>
+              </HubCwsCollapsibleCard>
             ) : null}
 
             <div id="sec-footer-actions" className="hub-cws-footer-anchor" aria-hidden />
@@ -942,7 +1083,14 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                 <Save size={16} /> Salvar rascunho
               </button>
             ) : null}
-            {/* Checkout de fim de atendimento removido — use o Caixa (Atendimentos do dia). */}
+            {canCreateReceivable && encounter.status !== 'completed' ? (
+              <Link
+                to="/hub/caixa"
+                className="hub-clientes__btn hub-clientes__btn--ghost hub-cws-footer__btn"
+              >
+                Abrir Caixa
+              </Link>
+            ) : null}
             {canWrite && encounter.status !== 'completed' ? (
               <button
                 type="button"
@@ -1027,6 +1175,13 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
           </div>
         ) : null}
       </div>
+
+      <CompleteEncounterCasePrompt
+        open={Boolean(casePrompt)}
+        prompt={casePrompt}
+        saving={casePromptSaving}
+        onChoose={(choice) => void handleCaseAfterComplete(choice)}
+      />
 
       {/* Modal de emenda (edição pós-finalização) */}
       {amendOpen && (

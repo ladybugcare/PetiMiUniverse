@@ -18,10 +18,9 @@ import {
   type HubPrescriptionDocumentRow,
   type HubPrescriptionItem,
 } from '../../api/hubClinicalApi';
-import { formatPrescriptionItemMeta } from './clinicalDisplay';
+import { HubCwsStatusPills } from './HubCwsStatusPills';
 
 function prescriptionItemToPayload(it: HubPrescriptionItem) {
-  const administration = it.administration === 'administered_in_clinic' ? 'administered_in_clinic' : 'home_use';
   return {
     medication_name: it.medication_name,
     presentation: it.presentation ?? null,
@@ -33,7 +32,7 @@ function prescriptionItemToPayload(it: HubPrescriptionItem) {
     duration: it.duration ?? null,
     instructions: it.instructions ?? null,
     hub_inventory_item_id: it.hub_inventory_item_id ?? null,
-    administration,
+    administration: 'home_use' as const,
     use_route: it.use_route ?? null,
   };
 }
@@ -50,7 +49,7 @@ function draftToCreateItem(draft: PrescriptionItemDraft) {
     duration: draft.duration.trim() || null,
     instructions: draft.instructions.trim() || null,
     hub_inventory_item_id: null,
-    administration: draft.administration,
+    administration: 'home_use' as const,
     use_route: draft.use_route.trim() || null,
   };
 }
@@ -80,11 +79,14 @@ export function HubWorkspacePrescriptions({
   clinicId,
   readOnly,
   onClinicalRefresh,
+  hideEmptyState = false,
 }: {
   encounter: HubEncounter;
   clinicId: string;
   readOnly: boolean;
   onClinicalRefresh?: () => void;
+  /** Esconde o aviso de “nenhuma receita” quando a listagem unificada fica fora da aba. */
+  hideEmptyState?: boolean;
 }) {
   const { showError, showSuccess } = useAlert();
   const [items, setItems] = useState<HubPrescription[]>([]);
@@ -102,6 +104,7 @@ export function HubWorkspacePrescriptions({
   const [issuedHashShort, setIssuedHashShort] = useState<string | null>(null);
   const [revokeDoc, setRevokeDoc] = useState<HubPrescriptionDocumentRow | null>(null);
   const [revoking, setRevoking] = useState(false);
+  const [savingItem, setSavingItem] = useState(false);
 
   const reloadList = useCallback(async () => {
     const r = await hubClinicalApi.listPrescriptions(clinicId, encounter.pet_id ?? undefined);
@@ -186,7 +189,8 @@ export function HubWorkspacePrescriptions({
   };
 
   const add = async () => {
-    if (!draft.medication_name.trim() || editLocked) return;
+    if (!draft.medication_name.trim() || editLocked || savingItem) return;
+    setSavingItem(true);
     try {
       if (editingIndex != null && canonicalRx) {
         const list = [...(canonicalRx.items ?? [])];
@@ -216,10 +220,12 @@ export function HubWorkspacePrescriptions({
       });
       setDraft(emptyPrescriptionItemDraft());
       await reloadList();
-      showSuccess('Medicamento incluído na prescrição do atendimento');
+      showSuccess('Medicamento incluído na receita do atendimento');
       onClinicalRefresh?.();
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao atualizar prescrição');
+      showError((e as Error)?.message || 'Erro ao atualizar receita');
+    } finally {
+      setSavingItem(false);
     }
   };
 
@@ -231,7 +237,7 @@ export function HubWorkspacePrescriptions({
         notes: notesDraft.trim() ? notesDraft.trim() : null,
       });
       await reloadList();
-      showSuccess('Observações da prescrição salvas');
+      showSuccess('Observações da receita salvas');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao salvar observações');
     }
@@ -242,7 +248,7 @@ export function HubWorkspacePrescriptions({
     const list = [...(canonicalRx.items ?? [])];
     if (index < 0 || index >= list.length) return;
     if (list.length <= 1) {
-      showError('A prescrição precisa ter pelo menos um medicamento. Remova itens só quando houver mais de um.');
+      showError('A receita precisa ter pelo menos um medicamento. Remova itens só quando houver mais de um.');
       return;
     }
     list.splice(index, 1);
@@ -331,6 +337,13 @@ export function HubWorkspacePrescriptions({
 
   const hasPrescriptionItems = Boolean(canonicalRx?.items?.length);
   const latestDocumentId = documents[0]?.id;
+  const rxItems = canonicalRx?.items ?? [];
+  const rxIssued = canonicalRx?.status === 'issued';
+  const rxStats = {
+    total: rxItems.length,
+    pendentes: rxIssued ? 0 : rxItems.length,
+    emitidos: rxIssued ? rxItems.length : 0,
+  };
 
   const confirmRevoke = async (reason: string) => {
     if (!canonicalRx || !revokeDoc) return;
@@ -354,26 +367,40 @@ export function HubWorkspacePrescriptions({
 
   return (
     <>
-      <p className="hub-clientes__muted" style={{ marginTop: 0, marginBottom: 12 }}>
-        Uma prescrição por atendimento. Após emitir a receita validável, o conteúdo fica bloqueado para edição.
+      <HubCwsStatusPills
+        items={[
+          { label: 'Total', value: rxStats.total },
+          { label: 'Pendentes', value: rxStats.pendentes, tone: 'amber' },
+          { label: 'Emitidos', value: rxStats.emitidos, tone: 'green' },
+        ]}
+      />
+
+      <p className="hub-cws-an-block__hint">
+        Inclua os medicamentos de uso em casa e emita o PDF com link validável. Depois de emitir, o item trava — gere
+        outra versão se precisar mudar.
       </p>
 
       {!editLocked ? (
-        <HubPrescriptionItemForm
-          draft={draft}
-          onChange={setDraft}
-          onAdd={() => void add()}
-          clinicId={clinicId}
-          canCreateLookups={!readOnly}
-          disabled={editLocked}
-          editing={editingIndex != null}
-          onCancelEdit={cancelEdit}
-        />
+        <div className="hub-cws-exam-form">
+          <HubPrescriptionItemForm
+            draft={draft}
+            onChange={setDraft}
+            onAdd={() => void add()}
+            clinicId={clinicId}
+            canCreateLookups={!readOnly}
+            disabled={editLocked || savingItem}
+            labeled
+            editing={editingIndex != null}
+            onCancelEdit={cancelEdit}
+          />
+        </div>
       ) : canonicalRx?.status === 'issued' ? (
-        <p className="hub-rx-locked-note">Prescrição emitida — edição bloqueada. Reemita uma nova versão ou revogue no histórico.</p>
+        <p className="hub-rx-locked-note">
+          Receita emitida — edição bloqueada. Reemita uma nova versão ou revogue no histórico.
+        </p>
       ) : null}
 
-      {issueBlockReason && !readOnly && canonicalRx ? (
+      {issueBlockReason ? (
         <p className="hub-rx-warnings hub-rx-warnings--inline" role="status">
           {issueBlockReason}
         </p>
@@ -388,9 +415,9 @@ export function HubWorkspacePrescriptions({
       ) : null}
 
       {canonicalRx ? (
-        <div className="hub-clinic-records__panel hub-rx-panel">
+        <div className="hub-clinic-records__panel hub-rx-panel" style={{ marginBottom: 16 }}>
           <div className="hub-rx-panel__head">
-            <strong>Prescrição deste atendimento</strong>
+            <strong>Receita deste atendimento</strong>
             {canonicalRx.status === 'issued' ? (
               <span className="hub-rx-badge hub-rx-badge--issued">Emitida</span>
             ) : null}
@@ -419,7 +446,7 @@ export function HubWorkspacePrescriptions({
                     ? 'Adicione medicamentos para gerar PDF'
                     : latestDocumentId
                       ? 'Abrir PDF da última emissão validável'
-                      : 'Abrir PDF simples da prescrição'
+                      : 'Abrir PDF simples da receita'
                 }
                 onClick={() => void downloadPdf(latestDocumentId)}
               >
@@ -428,51 +455,86 @@ export function HubWorkspacePrescriptions({
             </div>
           </div>
 
-          <ul className="hub-cws-rx-list">
-            {(canonicalRx.items ?? []).map((it, idx) => (
-              <li
-                key={it.id ?? `${canonicalRx.id}-${idx}`}
-                className={`hub-cws-rx-item${editingIndex === idx ? ' hub-cws-rx-item--editing' : ''}`}
-              >
-                <div>
-                  <div className="hub-cws-rx-item__name">{it.medication_name}</div>
-                  <div className="hub-cws-rx-item__meta">{formatPrescriptionItemMeta(it)}</div>
-                </div>
-                {!editLocked ? (
-                  <div className="hub-cws-rx-item__actions">
-                    <button
-                      type="button"
-                      className="hub-clientes__btn hub-clientes__btn--sm"
-                      onClick={() => startEdit(idx)}
-                      disabled={editingIndex === idx}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                      onClick={() => void removeItemAt(idx)}
-                    >
-                      Remover
-                    </button>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <div className="hub-cws-exam-table-wrap">
+            <table className="hub-cws-exam-table">
+              <thead>
+                <tr>
+                  <th>Medicamento</th>
+                  <th>Posologia</th>
+                  <th>Duração</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {rxItems.map((it, idx) => (
+                  <tr
+                    key={it.id ?? `${canonicalRx.id}-${idx}`}
+                    className={editingIndex === idx ? 'hub-cws-rx-item--editing' : undefined}
+                  >
+                    <td>
+                      <strong>{it.medication_name}</strong>
+                      {it.use_route ? (
+                        <div className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                          {it.use_route}
+                          {it.presentation ? ` · ${it.presentation}` : ''}
+                          {it.concentration || it.dosage ? ` · ${it.concentration || it.dosage}` : ''}
+                        </div>
+                      ) : it.presentation || it.concentration || it.dosage ? (
+                        <div className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                          {[it.presentation, it.concentration || it.dosage].filter(Boolean).join(' · ')}
+                        </div>
+                      ) : null}
+                      {it.instructions ? (
+                        <div className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                          {it.instructions}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="hub-clientes__muted">
+                      {it.posology || it.frequency || '—'}
+                      {it.quantity ? (
+                        <div style={{ fontSize: 12 }}>{it.quantity}</div>
+                      ) : null}
+                    </td>
+                    <td className="hub-clientes__muted">{it.duration?.trim() || '—'}</td>
+                    <td>
+                      {!editLocked ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            className="hub-clientes__btn hub-clientes__btn--sm"
+                            onClick={() => startEdit(idx)}
+                            disabled={editingIndex === idx}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className="hub-clientes__btn hub-clientes__btn--sm hub-clientes__btn--danger-outline"
+                            onClick={() => void removeItemAt(idx)}
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           {!editLocked ? (
-            <div className="hub-clientes__form-stack" style={{ marginBottom: 0 }}>
-              <label className="hub-clientes__muted" style={{ fontSize: 12 }}>
-                Observações da prescrição
-                <textarea
-                  className="hub-clientes__input"
-                  rows={2}
+            <div className="hub-cws-field-grid" style={{ marginTop: 12 }}>
+              <div className="hub-clinic-field hub-cws-field-tight">
+                <label htmlFor="rx_notes">Observações da receita</label>
+                <input
+                  id="rx_notes"
                   value={notesDraft}
                   onChange={(e) => setNotesDraft(e.target.value)}
                   placeholder="Orientações gerais, alertas de administração…"
                 />
-              </label>
+              </div>
               <button type="button" className="hub-clientes__btn hub-clientes__btn--sm" onClick={() => void saveNotes()}>
                 Salvar observações
               </button>
@@ -540,21 +602,19 @@ export function HubWorkspacePrescriptions({
             </div>
           ) : null}
         </div>
-      ) : (
-        <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>
-          Nenhuma prescrição neste atendimento ainda. Use o formulário acima para adicionar o primeiro medicamento.
-        </p>
+      ) : hideEmptyState ? null : (
+        <p className="hub-cws-exam-empty">Nenhum medicamento neste atendimento ainda.</p>
       )}
 
       {caseLinkedOthers.length > 0 ? (
         <div style={{ marginTop: 8 }}>
           <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
-            Outras prescrições do mesmo caso (outros atendimentos)
+            Outras receitas do mesmo caso (outros atendimentos)
           </span>
           <ul className="hub-clinic-records__list">
             {caseLinkedOthers.map((p) => (
               <li key={p.id}>
-                {(p.items ?? []).map((it) => it.medication_name).join(', ') || 'Prescrição'}
+                {(p.items ?? []).map((it) => it.medication_name).join(', ') || 'Receita'}
                 <button
                   type="button"
                   className="hub-clientes__btn hub-clientes__btn--sm"

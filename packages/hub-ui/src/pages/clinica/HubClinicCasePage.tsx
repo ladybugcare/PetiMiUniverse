@@ -742,7 +742,7 @@ const HubClinicCasePage: React.FC = () => {
 
       <div className="hub-clinic-case-page__body">
         <nav className="hub-cws-rail" aria-label="Seções do caso">
-          {CASE_NAV.map(({ id, label, Icon, countKey }) => {
+          {CASE_NAV.filter((item) => item.id !== 'financeiro' || canFinancial).map(({ id, label, Icon, countKey }) => {
             const count = countKey ? counts[countKey] : null;
             return (
               <button
@@ -966,14 +966,18 @@ const HubClinicCasePage: React.FC = () => {
           ) : (
             <div className="hub-clinic-records__cards">
               {hospitalizations.map((h) => (
-                <article key={h.id} className="hub-clinic-records__card">
+                <Link
+                  key={h.id}
+                  to={`/hub/clinica/internacoes/${h.id}`}
+                  className="hub-clinic-records__card hub-clinic-records__card--link"
+                >
                   <strong className="hub-clinic-records__card-title">{HOSP_STATUS_LABELS[h.status] ?? h.status}</strong>
                   <p className="hub-clinic-records__card-meta">
                     {h.hub_hospital_beds ? `Leito ${h.hub_hospital_beds.code}` : 'Sem leito'}
                     {h.admitted_at ? ` · Entrada ${String(h.admitted_at).slice(0, 10)}` : ''}
                     {h.discharged_at ? ` · Alta ${String(h.discharged_at).slice(0, 10)}` : ''}
                   </p>
-                </article>
+                </Link>
               ))}
             </div>
           )}

@@ -13,7 +13,6 @@ import {
   Unlock,
   Package,
   Pencil,
-  Receipt,
   Search,
   ShoppingBag,
   User,
@@ -33,7 +32,7 @@ import { hubComandaApi } from '../../api/hubComandaApi';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
 import { CaixaMetricsRow } from './CaixaMetricsRow';
 import { CaixaSessionMovementsCard } from './CaixaSessionMovementsCard';
-import { canCaixaEditOpenComanda } from './hubComandaEditUtils';
+import { isCaixaCarryoverPendingComanda, isCaixaOwnedDayBoardItem } from './hubComandaEditUtils';
 import {
   buildCaixaSessionHistoryItems,
   sumDayBoardPendingAmount,
@@ -237,15 +236,16 @@ const HubCaixaPage: React.FC = () => {
 
   const dayBoardFiltered = useMemo(() => {
     const searchTerm = normalizeText(dayBoardSearch.trim());
-    let result = searchTerm
-      ? dayBoardItems.filter((item) => {
-          const guardian = normalizeText(item.guardian?.full_name ?? '');
-          const pet = normalizeText(item.pet?.name ?? '');
-          const svcNames = normalizeText((item.services ?? []).map((s) => s.name).join(' '));
-          const label = normalizeText(item.origin_label ?? '');
-          return guardian.includes(searchTerm) || pet.includes(searchTerm) || svcNames.includes(searchTerm) || label.includes(searchTerm);
-        })
-      : dayBoardItems;
+    let result = dayBoardItems.filter(isCaixaOwnedDayBoardItem);
+    if (searchTerm) {
+      result = result.filter((item) => {
+        const guardian = normalizeText(item.guardian?.full_name ?? '');
+        const pet = normalizeText(item.pet?.name ?? '');
+        const svcNames = normalizeText((item.services ?? []).map((s) => s.name).join(' '));
+        const label = normalizeText(item.origin_label ?? '');
+        return guardian.includes(searchTerm) || pet.includes(searchTerm) || svcNames.includes(searchTerm) || label.includes(searchTerm);
+      });
+    }
 
     if (atendimentosStatusFilter !== 'all') {
       result = result.filter((it) => {
@@ -263,6 +263,12 @@ const HubCaixaPage: React.FC = () => {
 
     return result;
   }, [dayBoardItems, dayBoardSearch, atendimentosStatusFilter]);
+
+  const extraComandas = useMemo(() => {
+    if (atendimentosStatusFilter !== 'all' && atendimentosStatusFilter !== 'comanda_aberta') return [];
+    const today = ymdToday();
+    return openComandas.filter((c) => isCaixaCarryoverPendingComanda(c, today));
+  }, [openComandas, atendimentosStatusFilter]);
 
   const expectedBalance = cashSummary?.summary.expected_balance ?? Number(cashOpen?.opening_balance ?? 0);
   const lastClosingBalance = closedSessions[0]?.closing_balance ?? null;
@@ -416,7 +422,7 @@ const HubCaixaPage: React.FC = () => {
         due_date: dueDate,
       });
       showSuccess('Enviado ao financeiro como pendente.');
-      await loadDayBoard();
+      await load();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao enviar ao financeiro');
     } finally {
@@ -741,7 +747,7 @@ const HubCaixaPage: React.FC = () => {
         <HubRefreshingBanner show={refreshing || dayBoardBusy} label="Atualizando caixa…" />
         {loading && dayBoardItems.length === 0 && openComandas.length === 0 ? (
           <HubLoading variant="block" label="Carregando ações pendentes…" />
-        ) : dayBoardFiltered.length === 0 && openComandas.length === 0 ? (
+        ) : dayBoardFiltered.length === 0 && extraComandas.length === 0 ? (
           <div className="hub-dayboard__empty">
             Nenhuma ação pendente encontrada para esta data nesta unidade.
           </div>
@@ -765,14 +771,7 @@ const HubCaixaPage: React.FC = () => {
               />
             )}
 
-            {(atendimentosStatusFilter === 'all' || atendimentosStatusFilter === 'comanda_aberta') && openComandas.length > 0 && (() => {
-              const today = ymdToday();
-              const extraComandas = openComandas.filter((c) => {
-                const openedAt = c.opened_at ? String(c.opened_at).slice(0, 10) : null;
-                return openedAt && openedAt < today;
-              });
-              if (extraComandas.length === 0) return null;
-              return (
+            {extraComandas.length > 0 && (
                 <div className="hub-dayboard__group" style={{ marginTop: 16 }}>
                   <div className="hub-dayboard__group-header">
                     <span className="hub-dayboard__group-name">Pendentes de dias anteriores</span>
@@ -802,24 +801,18 @@ const HubCaixaPage: React.FC = () => {
                               <td>{c.opened_at ? new Date(String(c.opened_at)).toLocaleString('pt-BR') : '—'}</td>
                               <td>
                                 <div className="hub-dayboard__item-actions">
-                                  {canCreateReceivable && canCaixaEditOpenComanda(c) && (
+                                  {canCreateReceivable && (
                                     <button
                                       type="button"
                                       className="hub-dayboard__action-btn"
                                       title="Editar comanda"
                                       aria-label="Editar comanda"
-                                      onClick={() => {
-                                        if (c.finance_handoff_at) {
-                                          navigate(`/hub/financeiro/comanda/${String(c.id)}`);
-                                        } else {
-                                          navigate(`/hub/caixa/comanda/${String(c.id)}`);
-                                        }
-                                      }}
+                                      onClick={() => navigate(`/hub/caixa/comanda/${String(c.id)}`)}
                                     >
                                       <Pencil size={15} strokeWidth={2} />
                                     </button>
                                   )}
-                                  {canCreateReceivable && canCaixaEditOpenComanda(c) && (
+                                  {canCreateReceivable && (
                                     <button
                                       type="button"
                                       className="hub-dayboard__action-btn hub-dayboard__action-btn--primary"
@@ -828,17 +821,6 @@ const HubCaixaPage: React.FC = () => {
                                       onClick={() => setCheckoutComandaId(String(c.id))}
                                     >
                                       <Coins size={15} strokeWidth={2} />
-                                    </button>
-                                  )}
-                                  {canCreateReceivable && !canCaixaEditOpenComanda(c) && (
-                                    <button
-                                      type="button"
-                                      className="hub-dayboard__action-btn"
-                                      title="Ver comanda"
-                                      aria-label="Ver comanda"
-                                      onClick={() => navigate(`/hub/caixa/comanda/${String(c.id)}`)}
-                                    >
-                                      <Receipt size={15} strokeWidth={2} />
                                     </button>
                                   )}
                                 </div>
@@ -850,8 +832,7 @@ const HubCaixaPage: React.FC = () => {
                     </table>
                   </div>
                 </div>
-              );
-            })()}
+            )}
           </>
         )}
       </section>

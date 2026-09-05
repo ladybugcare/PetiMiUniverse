@@ -212,12 +212,15 @@ import {
   getHubPrescriptionPdf,
   listHubVaccinations,
   createHubVaccination,
+  listHubMedicationAdministrations,
+  createHubMedicationAdministration,
   listHubClinicalAttachments,
   createHubClinicalAttachment,
   uploadHubClinicalAttachment,
   listHubHospitalBeds,
   createHubHospitalBed,
   listHubHospitalizations,
+  getHubHospitalization,
   createHubHospitalization,
   patchHubHospitalization,
   addHubHospitalizationDailyNote,
@@ -1217,6 +1220,18 @@ router.post(
   createHubVaccination
 );
 router.get(
+  '/clinical/medication-administrations',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubMedicationAdministrations
+);
+router.post(
+  '/clinical/medication-administrations',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubMedicationAdministration
+);
+router.get(
   '/clinical/attachments',
   authenticateUser,
   requirePermission('hub.clinic.read'),
@@ -1258,6 +1273,12 @@ router.post(
   authenticateUser,
   requirePermission('hub.clinic.write'),
   createHubHospitalization
+);
+router.get(
+  '/clinical/hospitalizations/:id',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  getHubHospitalization
 );
 router.patch(
   '/clinical/hospitalizations/:id',

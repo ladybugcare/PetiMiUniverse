@@ -8,6 +8,7 @@ import React, {
   type ReactNode,
 } from 'react';
 import { hubFinancialApi, type HubCashSession } from '@petimi/hub-ui';
+import { usePermissions } from '@petimi/web-core';
 import { useHubUnit } from './HubUnitContext';
 
 type HubCashSessionContextValue = {
@@ -32,6 +33,12 @@ function ymdToday(): string {
 export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { clinicId, selectedUnit } = useHubUnit();
   const unitId = selectedUnit?.id ?? null;
+  const { hasPermission, loading: permLoading } = usePermissions();
+  const canReadCash =
+    !permLoading &&
+    (hasPermission('hub.financial.read') ||
+      hasPermission('hub.cash.session') ||
+      hasPermission('hub.receivables.create'));
 
   const [cashSession, setCashSession] = useState<HubCashSession | null>(null);
   const [pendingBillingCount, setPendingBillingCount] = useState(0);
@@ -39,7 +46,7 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!clinicId || !unitId) {
+    if (!clinicId || !unitId || !canReadCash) {
       setCashSession(null);
       setPendingBillingCount(0);
       return;
@@ -54,7 +61,7 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
     } finally {
       setLoading(false);
     }
-  }, [clinicId, unitId]);
+  }, [clinicId, unitId, canReadCash]);
 
   useEffect(() => {
     void refresh();

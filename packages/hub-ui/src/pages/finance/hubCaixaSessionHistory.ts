@@ -102,6 +102,7 @@ function paymentSubtitle(
 export function sumDayBoardPendingAmount(items: HubFinanceDayBoardItem[]): number {
   return round2(
     items.reduce((sum, item) => {
+      if (item.billing.finance_handoff_at) return sum;
       if (item.billing.receivable_status === 'paid') return sum;
       if (item.coverage_kind === 'series_invoice' || item.series_invoice_comanda_id) return sum;
       if ((item.has_package_balance || item.coverage_kind === 'package') && Number(item.estimated_amount ?? 0) <= 0.009) {
@@ -121,6 +122,7 @@ export function sumOpenComandasPendingAmount(
       const id = String(comanda.id ?? '');
       if (!id || excludeComandaIds.has(id)) return sum;
       if (String(comanda.status ?? '') !== 'aberta') return sum;
+      if (comanda.finance_handoff_at) return sum;
       return sum + Number(comanda.total_amount ?? 0);
     }, 0),
   );
@@ -185,7 +187,7 @@ export function buildCaixaSessionHistoryItems(
   );
 
   const billingRows: CaixaSessionHistoryItem[] = dayBoardItems
-    .filter((item) => item.billing.receivable_status !== 'paid')
+    .filter((item) => item.billing.receivable_status !== 'paid' && !item.billing.finance_handoff_at)
     .map((item) => {
       const meta = dayBoardBillingMeta(item);
       return {
@@ -205,7 +207,9 @@ export function buildCaixaSessionHistoryItems(
   const openComandaRows: CaixaSessionHistoryItem[] = openComandas
     .filter((comanda) => {
       const id = String(comanda.id ?? '');
-      return id && !dayBoardComandaIds.has(id) && !paymentComandaIds.has(id);
+      if (!id || dayBoardComandaIds.has(id) || paymentComandaIds.has(id)) return false;
+      if (comanda.finance_handoff_at) return false;
+      return true;
     })
     .map((comanda) => {
       const guardian = comanda.guardian as { full_name?: string } | null;

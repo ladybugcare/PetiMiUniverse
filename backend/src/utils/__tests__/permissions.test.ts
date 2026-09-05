@@ -21,6 +21,13 @@ describe('permissions', () => {
       expect(hasPermission('CFINANCE', 'hub.cash.receive')).toBe(true);
     });
 
+    it('CVET_INTERNAL não vê caixa nem financeiro', () => {
+      expect(hasPermission('CVET_INTERNAL', 'hub.clinic.write')).toBe(true);
+      expect(hasPermission('CVET_INTERNAL', 'hub.financial.read')).toBe(false);
+      expect(hasPermission('CVET_INTERNAL', 'hub.receivables.create')).toBe(false);
+      expect(hasPermission('CVET_INTERNAL', 'hub.cash.session')).toBe(false);
+    });
+
     it('CGROOMER não tem hub.financial.write', () => {
       expect(hasPermission('CGROOMER', 'hub.financial.write')).toBe(false);
     });

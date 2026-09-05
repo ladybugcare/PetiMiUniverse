@@ -289,16 +289,17 @@ export function snapshotToPdfView(
   notes: string | null;
   items: Array<{
     medication_name: string;
-    dosage?: string | null;
-    frequency?: string | null;
-    duration?: string | null;
-    instructions?: string | null;
-    presentation?: string | null;
-    concentration?: string | null;
-    quantity?: string | null;
-    posology?: string | null;
-    use_route?: string | null;
-    order_index?: number;
+    dosage: string | null;
+    frequency: string | null;
+    duration: string | null;
+    instructions: string | null;
+    presentation: string | null;
+    concentration: string | null;
+    quantity: string | null;
+    posology: string | null;
+    administration: string | null;
+    use_route: string | null;
+    order_index: number;
   }>;
   clinic: PrescriptionSnapshotClinic;
   pet: PrescriptionSnapshotPet;
@@ -321,6 +322,7 @@ export function snapshotToPdfView(
       frequency: med.posology,
       duration: med.duration,
       instructions: med.instructions,
+      administration: med.administration,
       use_route: med.use_route,
       order_index: idx,
     })),

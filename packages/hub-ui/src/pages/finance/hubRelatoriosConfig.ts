@@ -17,7 +17,8 @@ export type HubReportId =
   | 'no-shows'
   | 'boarding-occupancy'
   | 'grooming-productivity'
-  | 'vaccines-due';
+  | 'vaccines-due'
+  | 'exams-requested';
 
 export type HubReportCategoryId = 'financeiro' | 'estoque' | 'clientes' | 'operacional';
 
@@ -205,6 +206,14 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     description: 'Próximas doses vencidas ou a vencer por pet.',
     permission: 'hub.clinic.read',
     periodFilter: 'lookahead',
+  },
+  {
+    id: 'exams-requested',
+    category: 'operacional',
+    title: 'Exames solicitados',
+    description: 'Pedidos de exame da clínica no período, para acompanhar e exportar.',
+    permission: 'hub.clinic.read',
+    periodFilter: 'standard',
   },
 ];
 
