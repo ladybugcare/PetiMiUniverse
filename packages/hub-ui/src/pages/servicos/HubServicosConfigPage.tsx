@@ -4,7 +4,8 @@ import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petim
 import { hubServiceGroupsApi, type HubServiceGroupRow } from '../../api/hubServiceGroupsApi';
 import { hubClinicSettingsApi } from '../../api/hubClinicSettingsApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { Check, CheckCircle, Layers, LayoutGrid, Pencil, Plus, Search, Trash2, Archive, ArchiveRestore } from 'lucide-react';
@@ -39,7 +40,7 @@ const HubServicosConfigPage: React.FC = () => {
   const canAgendaPrefsRead = hasPermission('hub.appointments.read');
   const canAgendaPrefsWrite = hasPermission('hub.appointments.write');
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [groups, setGroups] = useState<HubServiceGroupRow[]>([]);
   const [puppyMaxMonths, setPuppyMaxMonths] = useState(8);
   const [puppyLoading, setPuppyLoading] = useState(false);
@@ -55,16 +56,17 @@ const HubServicosConfigPage: React.FC = () => {
 
   const load = useCallback(async () => {
     if (!clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const res = await hubServiceGroupsApi.list(clinicId, true);
       setGroups(res.service_groups || []);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar grupos');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, showError]);
+  }, [clinicId, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -505,7 +507,8 @@ const HubServicosConfigPage: React.FC = () => {
           </form>
         ) : null}
 
-        {loading ? (
+        <HubRefreshingBanner show={refreshing} label="Atualizando grupos…" />
+        {loading && groups.length === 0 ? (
           <HubLoading variant="block" label="Carregando grupos…" />
         ) : (
           <div className="hub-servicos__table-wrap">

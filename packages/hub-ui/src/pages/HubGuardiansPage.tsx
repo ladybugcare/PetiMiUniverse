@@ -9,7 +9,8 @@ import {
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import { useAlert } from '../components/AlertProvider';
 import { HubTabs } from '../components/HubTabs';
-import { HubLoading } from '../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../components/HubLoading';
+import { useKeepContentLoad } from '../hooks/useKeepContentLoad';
 import { getSelectedUnitId } from '../utils/useSelectedUnitId';
 import { hubGuardiansApi, type HubGuardian, type HubGuardianStats } from '../api/hubGuardiansApi';
 import './clientes/clientes.css';
@@ -56,7 +57,7 @@ const HubGuardiansPage: React.FC = () => {
   const canWritePets = hasPermission('hub.pets.write');
   const canCreateReceivable = hasPermission('hub.receivables.create');
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [stats, setStats] = useState<HubGuardianStats | null>(null);
   const [guardiansRaw, setGuardiansRaw] = useState<HubGuardian[]>([]);
   const [mainTab, setMainTab] = useState<MainTab>('tutores');
@@ -100,7 +101,7 @@ const HubGuardiansPage: React.FC = () => {
 
   const loadList = useCallback(async () => {
     if (!clinicId || !accessAllowed) return;
-    setLoading(true);
+    begin();
     try {
       const { guardians } = await hubGuardiansApi.list(clinicId, true, {
         kind: kindParam,
@@ -109,12 +110,13 @@ const HubGuardiansPage: React.FC = () => {
         careLocationKind: careLocationFilter === 'all' ? undefined : careLocationFilter,
       });
       setGuardiansRaw(guardians);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar clientes');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, accessAllowed, kindParam, statusFilter, careLocationFilter, debouncedQ, showError]);
+  }, [clinicId, accessAllowed, kindParam, statusFilter, careLocationFilter, debouncedQ, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -402,7 +404,8 @@ const HubGuardiansPage: React.FC = () => {
           onNewClient={openCreate}
         />
 
-        {loading ? (
+        <HubRefreshingBanner show={refreshing} label="Atualizando lista…" />
+        {loading && guardiansRaw.length === 0 ? (
           <HubLoading variant="block" label="Carregando lista…" />
         ) : (
           <>

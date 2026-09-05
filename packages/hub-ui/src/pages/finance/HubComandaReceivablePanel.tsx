@@ -10,7 +10,8 @@ import {
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import {
   defaultPaymentMethod,
@@ -109,7 +110,6 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const { showError, showSuccess, showConfirm } = useAlert();
 
   const [detail, setDetail] = useState<HubFinanceReceivableDetail | null>(null);
-  const [loading, setLoading] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<HubPaymentMethod>('pix');
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<HubPaymentMethod[]>([]);
@@ -126,6 +126,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const paymentSectionRef = useRef<HTMLDivElement | null>(null);
 
   const activeReceivableId = selectedReceivableId || receivableIds[0] || '';
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(activeReceivableId || null, false);
   const drawerLayout = hideHeader;
 
   const loadDetail = useCallback(async () => {
@@ -133,17 +134,18 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       setDetail(null);
       return;
     }
-    setLoading(true);
+    begin();
     try {
       const d = await hubFinancialApi.getReceivableDetail(activeReceivableId, clinicId);
       setDetail(d);
+      succeed();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao carregar recebível');
       setDetail(null);
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [activeReceivableId, clinicId, showError]);
+  }, [activeReceivableId, clinicId, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void loadDetail();
@@ -811,7 +813,8 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
 
       {receivableSelector}
 
-      {loading ? <HubLoading variant="block" label="Carregando recebível…" /> : detailBody}
+      <HubRefreshingBanner show={refreshing} label="Atualizando cobrança…" />
+      {loading && !detail ? <HubLoading variant="block" label="Carregando recebível…" /> : detailBody}
     </div>
   );
 };

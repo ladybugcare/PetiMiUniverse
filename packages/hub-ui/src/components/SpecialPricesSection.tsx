@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dog, Pencil } from 'lucide-react';
 import { usePermissions } from '@petimi/web-core';
-import { HubLoading } from './HubLoading';
+import { HubLoading, HubRefreshingBanner } from './HubLoading';
+import { useKeepContentLoad } from '../hooks/useKeepContentLoad';
 import { HubCheckbox } from './HubCheckbox';
 import { HubSearchableCombobox, type HubComboboxOption } from './HubSearchableCombobox';
 import { HubMultiSelectCombobox } from './HubMultiSelectCombobox';
@@ -53,7 +54,9 @@ export const SpecialPricesSection: React.FC<Props> = ({
   const canApprove = hasPermission('hub.financial.write');
   const alert = useAlert();
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
+    `${clinicId}:${petId || guardianId || ''}`,
+  );
   const [rows, setRows] = useState<HubSpecialPrice[]>([]);
   const [services, setServices] = useState<HubServiceType[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -122,7 +125,7 @@ export const SpecialPricesSection: React.FC<Props> = ({
   }, [guardianPets]);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    begin();
     try {
       const [listRes, svcRes] = await Promise.all([
         hubSpecialPricesApi.list({
@@ -135,12 +138,13 @@ export const SpecialPricesSection: React.FC<Props> = ({
       ]);
       setRows(listRes.special_prices);
       setServices((svcRes.service_types ?? []).filter((s) => s.active !== false && !s.deleted_at));
+      succeed();
     } catch (e) {
       alert.showError((e as Error)?.message || 'Erro ao carregar preços especiais');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [alert, clinicId, guardianId, petId]);
+  }, [alert, clinicId, guardianId, petId, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -310,7 +314,7 @@ export const SpecialPricesSection: React.FC<Props> = ({
     }
   };
 
-  if (loading) {
+  if (loading && rows.length === 0) {
     return <HubLoading variant="inline" label="Carregando preços especiais…" size="sm" />;
   }
 
@@ -327,7 +331,8 @@ export const SpecialPricesSection: React.FC<Props> = ({
       : null;
 
   return (
-    <div className="hub-special-prices">
+    <div className="hub-special-prices hub-loading-host">
+      <HubRefreshingBanner show={refreshing} label="Atualizando preços…" />
       <div className="hub-pets-detail__history-section-head" style={{ marginBottom: 10 }}>
         <h4 className="hub-clientes__label" style={{ margin: 0 }}>
           Preços especiais

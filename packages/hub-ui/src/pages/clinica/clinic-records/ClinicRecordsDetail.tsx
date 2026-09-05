@@ -56,6 +56,7 @@ import './clinic-records.css';
 type Props = {
   pet?: HubPet;
   loading: boolean;
+  refreshing?: boolean;
   tab: ClinicRecordsTabId;
   onTabChange: (tab: ClinicRecordsTabId) => void;
   canWrite: boolean;
@@ -142,6 +143,7 @@ function RecordGroup({
 const ClinicRecordsDetail: React.FC<Props> = ({
   pet,
   loading,
+  refreshing = false,
   tab,
   onTabChange,
   canWrite,
@@ -184,7 +186,7 @@ const ClinicRecordsDetail: React.FC<Props> = ({
     );
   }
 
-  if (loading) {
+  if (loading && !refreshing) {
     return (
       <div className="hub-clinic-records__detail">
         <HubLoading variant="block" label="Carregando prontuário…" />
@@ -204,7 +206,8 @@ const ClinicRecordsDetail: React.FC<Props> = ({
   ];
 
   return (
-    <div className="hub-clinic-records__detail hub-clinic-records__detail--with-footer">
+    <div className="hub-clinic-records__detail hub-clinic-records__detail--with-footer hub-loading-host">
+      {refreshing ? <HubLoading variant="banner" label="Atualizando prontuário…" /> : null}
       <div className="hub-clinic-records__detail-scroll">
         <header className="hub-clinic-records__header">
           <div className="hub-clinic-records__title-row">

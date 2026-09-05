@@ -9,7 +9,8 @@ import {
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import { useAlert } from '../components/AlertProvider';
 import { HubCancelButton } from '../components/HubCancelButton';
-import { HubLoading } from '../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../components/HubLoading';
+import { useKeepContentLoad } from '../hooks/useKeepContentLoad';
 import { getSelectedUnitId } from '../utils/useSelectedUnitId';
 import { hubGuardiansApi, type HubGuardian, type HubGuardianPet } from '../api/hubGuardiansApi';
 import './clientes/clientes.css';
@@ -34,7 +35,7 @@ const HubGuardianDetailPage: React.FC = () => {
   const unitId = getSelectedUnitId();
   const canWrite = hasPermission('hub.guardians.write');
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(guardianId);
   const [guardian, setGuardian] = useState<HubGuardian | null>(null);
   const [pets, setPets] = useState<HubGuardianPet[]>([]);
   const [editing, setEditing] = useState(false);
@@ -45,19 +46,20 @@ const HubGuardianDetailPage: React.FC = () => {
 
   const load = useCallback(async () => {
     if (!clinicId || !guardianId || !accessAllowed) return;
-    setLoading(true);
+    begin();
     try {
       const res = await hubGuardiansApi.getById(guardianId, clinicId);
       setGuardian(res.guardian);
       setPets(res.pets);
       setForm(guardianToFormValues(res.guardian));
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar cliente');
       setGuardian(null);
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, guardianId, accessAllowed, showError]);
+  }, [clinicId, guardianId, accessAllowed, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -113,7 +115,7 @@ const HubGuardianDetailPage: React.FC = () => {
     );
   }
 
-  if (permLoading || !accessAllowed || loading) {
+  if (permLoading || !accessAllowed || (loading && !guardian)) {
     return (
       <div style={{ padding: 24 }}>
         <HubLoading label="Carregando cliente…" />
@@ -133,7 +135,8 @@ const HubGuardianDetailPage: React.FC = () => {
   }
 
   return (
-    <div className="hub-clientes__detail-page">
+    <div className="hub-clientes__detail-page hub-loading-host">
+      <HubRefreshingBanner show={refreshing} label="Atualizando cliente…" />
       <div className="hub-clientes__detail-page-back">
         <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => navigate('/hub/clientes')}>
           ← Voltar aos clientes

@@ -9,7 +9,8 @@ import {
 } from '../../utils/hubServiceTypesPricingMatrix';
 import { formatMoneyCurrencyBrl } from './serviceTypeFormUtils';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { HubCheckbox } from '../../components/HubCheckbox';
 
 export type AddonAvailabilitySnapshot = {
@@ -81,7 +82,11 @@ const ServiceAddonAvailabilityPanel: React.FC<Props> = ({
   const isWizard = variant === 'wizard';
   const isDraftMode = !serviceTypeId;
   const { showError, showSuccess } = useAlert();
-  const [loading, setLoading] = useState(Boolean(serviceTypeId || serviceGroupId));
+  const addonResourceKey = serviceTypeId || serviceGroupId || null;
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
+    addonResourceKey,
+    Boolean(addonResourceKey),
+  );
   const [saving, setSaving] = useState(false);
   const [addons, setAddons] = useState<HubServiceType[]>([]);
   const [items, setItems] = useState<AddonAvailabilityItem[]>([]);
@@ -105,28 +110,30 @@ const ServiceAddonAvailabilityPanel: React.FC<Props> = ({
 
   const load = useCallback(async () => {
     if (serviceTypeId) {
-      setLoading(true);
+      begin();
       try {
         const res = await hubServiceAddonsApi.getAddonAvailability(serviceTypeId, clinicId);
         const list = res.addons ?? [];
         const availability = res.items ?? [];
         applyAvailability(list, availability);
+        succeed();
       } catch (e: unknown) {
         showError((e as Error)?.message || 'Erro ao carregar adicionais');
         onSnapshotChange?.(null);
       } finally {
-        setLoading(false);
+        finish();
       }
       return;
     }
 
     if (serviceGroupId && serviceGroup.trim()) {
-      setLoading(true);
+      begin();
       try {
         const res = await hubServiceAddonsApi.listGroupAddons(serviceGroupId, clinicId);
         const list = res.addons ?? [];
         const availability = defaultItemsForAddons(list);
         applyAvailability(list, availability);
+        succeed();
       } catch (e: unknown) {
         showError((e as Error)?.message || 'Erro ao carregar adicionais do grupo');
         setAddons([]);
@@ -134,14 +141,14 @@ const ServiceAddonAvailabilityPanel: React.FC<Props> = ({
         onSnapshotChange?.(null);
         onDraftItemsChange?.([]);
       } finally {
-        setLoading(false);
+        finish();
       }
       return;
     }
 
     setAddons([]);
     setItems([]);
-    setLoading(false);
+    finish();
     onSnapshotChange?.(null);
     onDraftItemsChange?.([]);
   }, [
@@ -151,6 +158,9 @@ const ServiceAddonAvailabilityPanel: React.FC<Props> = ({
     serviceGroup,
     showError,
     onSnapshotChange,
+    begin,
+    succeed,
+    finish,
     onDraftItemsChange,
     applyAvailability,
   ]);
@@ -220,7 +230,7 @@ const ServiceAddonAvailabilityPanel: React.FC<Props> = ({
     );
   }
 
-  if (loading) {
+  if (loading && addons.length === 0) {
     return (
       <HubLoading
         variant="block"
@@ -247,7 +257,8 @@ const ServiceAddonAvailabilityPanel: React.FC<Props> = ({
   }
 
   return (
-    <div className={isWizard ? 'hub-service-addons-step' : 'pet-wizard__field--full'}>
+    <div className={isWizard ? 'hub-service-addons-step hub-loading-host' : 'pet-wizard__field--full hub-loading-host'}>
+      <HubRefreshingBanner show={refreshing} label="Atualizando adicionais…" />
       {!isWizard ? <h3 className="hub-servicos__form-section-title">Adicionais neste serviço</h3> : null}
 
       <div className="hub-service-addons-step__toolbar">

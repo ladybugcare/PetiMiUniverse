@@ -2,7 +2,7 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import './HubLoading.css';
 
-export type HubLoadingVariant = 'inline' | 'block' | 'overlay';
+export type HubLoadingVariant = 'inline' | 'block' | 'overlay' | 'banner';
 
 export type HubLoadingSize = 'sm' | 'md' | 'lg';
 
@@ -17,7 +17,7 @@ export type HubLoadingProps = {
   label?: string;
   /** Exibe só o spinner (mantém texto para leitor de tela). */
   hideLabel?: boolean;
-  /** inline — linha compacta; block — centralizado na área; overlay — cobre o container pai (position: relative). */
+  /** inline — linha compacta; block — substitui a área vazia; overlay — cobre o pai; banner — chip sobre o conteúdo. */
   variant?: HubLoadingVariant;
   size?: HubLoadingSize;
   className?: string;
@@ -25,7 +25,7 @@ export type HubLoadingProps = {
 
 /**
  * Indicador de carregamento padronizado do Hub.
- * Use `variant="block"` em listas e seções; `inline` em toolbars; `overlay` sobre conteúdo existente.
+ * Use `block` só na primeira carga; `banner` ou `overlay` quando o conteúdo já está na tela.
  */
 export const HubLoading: React.FC<HubLoadingProps> = ({
   label = 'Carregando…',
@@ -47,5 +47,16 @@ export const HubLoading: React.FC<HubLoadingProps> = ({
     </div>
   );
 };
+
+export function HubRefreshingBanner({
+  show,
+  label = 'Atualizando…',
+}: {
+  show: boolean;
+  label?: string;
+}) {
+  if (!show) return null;
+  return <HubLoading variant="banner" label={label} />;
+}
 
 export default HubLoading;

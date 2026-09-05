@@ -110,7 +110,9 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   const [evBody, setEvBody] = useState('');
   const [saveHint, setSaveHint] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const loadedEncounterIdRef = useRef<string | null>(null);
   const [encounterExams, setEncounterExams] = useState<HubClinicalExam[]>([]);
   const [encounterVaccinations, setEncounterVaccinations] = useState<HubVaccination[]>([]);
   const [rxItemsCount, setRxItemsCount] = useState(0);
@@ -149,7 +151,9 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
 
   const load = useCallback(async () => {
     if (!clinicId || !encounterId) return;
-    setLoading(true);
+    const keepContent = loadedEncounterIdRef.current === encounterId;
+    if (keepContent) setRefreshing(true);
+    else setLoading(true);
     try {
       const { encounter: enc } = await hubEncountersApi.get(encounterId, clinicId);
       setEncounter(enc);
@@ -191,10 +195,12 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
       } else {
         setVersions([]);
       }
+      loadedEncounterIdRef.current = encounterId;
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar atendimento');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [clinicId, encounterId, showError]);
 
@@ -374,15 +380,14 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
     return HUB_CWS_STATUS_ENCOUNTER[encounter.status] ?? HUB_CWS_STATUS_ENCOUNTER.waiting;
   }, [encounter]);
 
-  if (loading) {
-    return (
-      <div style={{ padding: 24 }}>
-        <HubLoading variant="block" label="Carregando atendimento…" />
-      </div>
-    );
-  }
-
-  if (!encounter) {
+  if (!encounter || encounter.id !== encounterId) {
+    if (loading) {
+      return (
+        <div style={{ padding: 24 }}>
+          <HubLoading variant="block" label="Carregando atendimento…" />
+        </div>
+      );
+    }
     return <p style={{ padding: 24 }}>Atendimento não encontrado.</p>;
   }
 
@@ -907,7 +912,13 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
 
         <footer className="hub-cws-footer">
           <div className="hub-cws-footer__left">
-            <span className="hub-cws-footer__hint">{saveHint}</span>
+            <div className="hub-cws-footer__hint">
+              {refreshing ? (
+                <HubLoading variant="inline" size="sm" label="Atualizando…" />
+              ) : (
+                saveHint
+              )}
+            </div>
             <span className="hub-clientes__muted hub-cws-footer__started">
               {encounter.started_at
                 ? `Atendimento iniciado em ${new Date(encounter.started_at).toLocaleString('pt-BR', {

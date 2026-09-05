@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
@@ -72,6 +72,8 @@ const HubClinicRecordsPage: React.FC = () => {
   const [exams, setExams] = useState<HubClinicalExam[]>([]);
   const [referrals, setReferrals] = useState<HubSpecialistReferral[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadedPetIdRef = useRef<string | null>(null);
   const [newFlagKey, setNewFlagKey] = useState('allergy');
   const [newFlagLabel, setNewFlagLabel] = useState('');
   const [startingEncounter, setStartingEncounter] = useState(false);
@@ -117,7 +119,9 @@ const HubClinicRecordsPage: React.FC = () => {
 
   const loadPetClinical = useCallback(async () => {
     if (!clinicId || !selectedId) return;
-    setLoading(true);
+    const keepContent = loadedPetIdRef.current === selectedId;
+    if (keepContent) setRefreshing(true);
+    else setLoading(true);
     const results = await Promise.allSettled([
       hubEncountersApi.listByPet(clinicId, selectedId),
       hubClinicalCasesApi.list(clinicId, { petId: selectedId }),
@@ -152,8 +156,11 @@ const HubClinicRecordsPage: React.FC = () => {
     if (criticalFailed) {
       const first = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
       showError((first?.reason as Error)?.message || 'Erro ao carregar prontuário');
+    } else {
+      loadedPetIdRef.current = selectedId;
     }
     setLoading(false);
+    setRefreshing(false);
   }, [clinicId, selectedId, showError]);
 
   useEffect(() => {
@@ -277,6 +284,7 @@ const HubClinicRecordsPage: React.FC = () => {
       <ClinicRecordsDetail
         pet={selectedPet}
         loading={Boolean(selectedId) && (loading || (petsLoading && !selectedPet))}
+        refreshing={refreshing}
         tab={tab}
         onTabChange={handleTabChange}
         canWrite={canWrite}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertCircle, BedDouble, Clock, FlaskConical, Pill } from 'lucide-react';
+import { HubRefreshingBanner } from '../../../components/HubLoading';
 import type { DayBoardItem } from '../../../api/hubClinicalApi';
 import {
   formatQueueTime,
@@ -17,6 +18,7 @@ type Props = {
   selectedKey: string | null;
   onSelect: (item: DayBoardItem) => void;
   loading?: boolean;
+  refreshing?: boolean;
   badgeHints?: Record<string, { examsAvailable?: boolean; rxDraft?: boolean; hospitalized?: boolean }>;
 };
 
@@ -52,16 +54,17 @@ function queueItemTags(
   return tags;
 }
 
-const VetCockpitQueue: React.FC<Props> = ({ items, selectedKey, onSelect, loading, badgeHints }) => {
+const VetCockpitQueue: React.FC<Props> = ({ items, selectedKey, onSelect, loading, refreshing, badgeHints }) => {
   return (
-    <div className="vet-cockpit-queue">
+    <div className="vet-cockpit-queue hub-loading-host">
       <h2 className="vet-cockpit-queue__title">
         Minha fila
-        {!loading && items.length > 0 ? (
+        {items.length > 0 ? (
           <span className="vet-cockpit-queue__count">{items.length}</span>
         ) : null}
       </h2>
-      {loading ? (
+      <HubRefreshingBanner show={Boolean(refreshing)} label="Atualizando fila…" />
+      {loading && items.length === 0 ? (
         <p className="hub-clientes__muted">Carregando fila…</p>
       ) : items.length === 0 ? (
         <p className="hub-clientes__muted">Nenhum atendimento na fila neste dia.</p>

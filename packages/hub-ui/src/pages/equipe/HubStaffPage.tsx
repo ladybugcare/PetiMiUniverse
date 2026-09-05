@@ -8,7 +8,8 @@ import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTyp
 import { type GroupJobMappings } from '../../utils/staffServiceCompatibility';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import HubStaffDrawer from './HubStaffDrawer';
 import '../clientes/clientes.css';
@@ -27,7 +28,7 @@ const HubStaffPage: React.FC = () => {
   const canInvite = hasPermission('hub.staff.invite') && hasPermission('user.invite');
   const accessAllowed = hasPermission('hub.staff.read');
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [staff, setStaff] = useState<HubStaffMember[]>([]);
   const [search, setSearch] = useState('');
   const [activeOnly, setActiveOnly] = useState(false);
@@ -40,19 +41,20 @@ const HubStaffPage: React.FC = () => {
 
   const loadStaff = useCallback(async () => {
     if (!clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const res = await hubStaffApi.list(clinicId, {
         search: search.trim() || undefined,
         active_only: activeOnly,
       });
       setStaff(res.staff || []);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar equipe');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, search, activeOnly, showError]);
+  }, [clinicId, search, activeOnly, showError, begin, succeed, finish]);
 
   const loadRefs = useCallback(async () => {
     if (!clinicId) return;
@@ -200,7 +202,8 @@ const HubStaffPage: React.FC = () => {
           </div>
         </div>
 
-        {loading ? (
+        <HubRefreshingBanner show={refreshing} label="Atualizando equipe…" />
+        {loading && staff.length === 0 ? (
           <HubLoading variant="block" label="Carregando equipe…" />
         ) : (
           <>

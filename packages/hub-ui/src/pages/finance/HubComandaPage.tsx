@@ -14,7 +14,8 @@ import {
 import { hubInventoryApi, type HubInventoryItem, type HubInventoryLotRow } from '../../api/hubInventoryApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import {
   resolveDiscountAmount,
   inferDiscountKindAndValue,
@@ -82,7 +83,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
 
   const canWrite = hasPermission('hub.receivables.create');
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(comandaId);
   const [saving, setSaving] = useState(false);
   const [payload, setPayload] = useState<HubComandaDetailResponse | null>(null);
   const [serviceTypes, setServiceTypes] = useState<HubServiceType[]>([]);
@@ -125,7 +126,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
 
   const load = useCallback(async () => {
     if (!comandaId || !clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const [detail, stRes, invRes, lotsRes] = await Promise.all([
         hubComandaApi.getComandaDetail(comandaId, clinicId),
@@ -153,12 +154,13 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
       const { kind, valueStr } = inferDiscountKindAndValue(discAmt, subtotalEst);
       setDiscountKind(kind);
       setDiscountValueStr(valueStr);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar comanda');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [comandaId, clinicId, showError]);
+  }, [comandaId, clinicId, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -552,15 +554,14 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
     );
   }
 
-  if (loading) {
-    return (
-      <div className="hub-quote-detail" style={{ padding: 24 }}>
-        <HubLoading variant="block" label="Carregando comanda…" />
-      </div>
-    );
-  }
-
   if (!payload || !comandaRow || !comandaId) {
+    if (loading) {
+      return (
+        <div className="hub-quote-detail" style={{ padding: 24 }}>
+          <HubLoading variant="block" label="Carregando comanda…" />
+        </div>
+      );
+    }
     return (
       <div className="hub-quote-detail" style={{ padding: 24 }}>
         <p className="hub-clientes__muted">Comanda não encontrada.</p>
@@ -681,6 +682,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
 
   return (
     <>
+      <HubRefreshingBanner show={refreshing} label="Atualizando comanda…" />
       <HubComandaDetailLayout
         comandaId={comandaId}
         status={status}

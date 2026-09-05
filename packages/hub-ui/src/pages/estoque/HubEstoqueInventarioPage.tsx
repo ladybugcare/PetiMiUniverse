@@ -4,7 +4,8 @@ import { getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petim
 import { hubInventoryApi } from '../../api/hubInventoryApi';
 import type { HubInventoryLotRow } from '../../api/hubInventoryApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
@@ -23,14 +24,14 @@ const HubEstoqueInventarioPage: React.FC = () => {
   const clinicId = getStoredClinicId();
   const accessAllowed = hasPermission('hub.inventory.read');
   const canWrite = hasPermission('hub.inventory.write');
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [lots, setLots] = useState<HubInventoryLotRow[]>([]);
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const res = await hubInventoryApi.lots.list(clinicId);
       const rows = res.lots || [];
@@ -40,12 +41,13 @@ const HubEstoqueInventarioPage: React.FC = () => {
         next[l.id] = String(l.qty_on_hand);
       }
       setCounts(next);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar inventário');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, showError]);
+  }, [clinicId, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -137,7 +139,8 @@ const HubEstoqueInventarioPage: React.FC = () => {
           Conferência física: informe a quantidade contada por lote e confirme o ajuste. O sistema gera um movimento
           de ajuste com referência de inventário.
         </p>
-        {loading ? (
+        <HubRefreshingBanner show={refreshing} label="Atualizando inventário…" />
+        {loading && lots.length === 0 ? (
           <HubLoading variant="block" label="Carregando inventário…" />
         ) : (
           <div className="hub-servicos__table-wrap">

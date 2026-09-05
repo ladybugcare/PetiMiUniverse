@@ -72,14 +72,19 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
   const handleHandoff = async () => {
     setBusy(true);
     setErrorMsg(null);
-    const result = await enviarComandasAbertasAoFinanceiro(openComandas, clinicId);
-    setBusy(false);
-    if (!result.success) {
-      setErrorMsg(`Falha em ${result.errors.length} comanda(s):\n${result.errors.join('\n')}`);
-      return;
+    try {
+      const result = await enviarComandasAbertasAoFinanceiro(openComandas, clinicId);
+      if (!result.success) {
+        setErrorMsg(`Falha em ${result.errors.length} item(ns):\n${result.errors.join('\n')}`);
+        return;
+      }
+      setHandoffDone(true);
+      setStep('gaveta');
+    } catch (e) {
+      setErrorMsg((e as Error)?.message || 'Erro ao enviar pendentes.');
+    } finally {
+      setBusy(false);
     }
-    setHandoffDone(true);
-    setStep('gaveta');
   };
 
   const handleClose = async () => {

@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { useAlert } from '../../../components/AlertProvider';
 import { HubLoading } from '../../../components/HubLoading';
+import { useKeepContentLoad } from '../../../hooks/useKeepContentLoad';
 import { HubDateField } from '../../../components/HubDateField';
 import { formatYmd, parseIsoYmd } from '../../../utils/hubCalendar';
 import {
@@ -54,7 +55,6 @@ const HubVetCockpitPage: React.FC = () => {
 
   const [cursor, setCursor] = useState(() => new Date());
   const [items, setItems] = useState<DayBoardItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<DayBoardItem | null>(null);
   const [patientContext, setPatientContext] = useState<VetCockpitPatientContext | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
@@ -77,24 +77,29 @@ const HubVetCockpitPage: React.FC = () => {
 
   const dayRange = useMemo(() => dayRangeIsoLocal(cursor), [cursor]);
   const staffId = myStaffMember?.id;
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
+    clinicId && staffId ? `${clinicId}:${staffId}` : null,
+  );
+  const contextPetIdRef = useRef<string | null>(null);
 
   const loadQueue = useCallback(async () => {
     if (!clinicId || !staffId) {
       setItems([]);
-      setLoading(false);
+      finish();
       return;
     }
-    setLoading(true);
+    begin();
     try {
       const res = await hubEncountersApi.dayBoard(clinicId, dayRange, { staffId });
       setItems(res.items ?? []);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar fila');
       setItems([]);
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, staffId, dayRange, showError]);
+  }, [clinicId, staffId, dayRange, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -163,9 +168,14 @@ const HubVetCockpitPage: React.FC = () => {
     async (item: DayBoardItem) => {
       if (!clinicId || !item.pet_id) {
         setPatientContext(null);
+        contextPetIdRef.current = null;
         return;
       }
-      setContextLoading(true);
+      const keepContext = contextPetIdRef.current === item.pet_id;
+      if (!keepContext) {
+        setPatientContext(null);
+        setContextLoading(true);
+      }
       try {
         const ctx = await hubVetCockpitApi.patientContext(clinicId, {
           petId: item.pet_id,
@@ -173,6 +183,7 @@ const HubVetCockpitPage: React.FC = () => {
           appointmentId: item.appointment_id,
         });
         setPatientContext(ctx);
+        contextPetIdRef.current = item.pet_id;
         if (item.pet_id) {
           setBadgeHints((prev) => ({
             ...prev,
@@ -451,6 +462,7 @@ const HubVetCockpitPage: React.FC = () => {
               selectedKey={selected ? itemKey(selected) : null}
               onSelect={handleSelect}
               loading={loading || staffLoading}
+              refreshing={refreshing}
               badgeHints={badgeHints}
             />
             <VetCockpitPatientPanel

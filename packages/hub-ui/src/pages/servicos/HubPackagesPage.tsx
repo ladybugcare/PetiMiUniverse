@@ -5,7 +5,8 @@ import { getStoredClinicId } from '@petimi/web-core';
 import { hubPackagesApi, type HubPackage, type HubPackageItem } from '../../api/hubPackagesApi';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import '../clientes/clientes.css';
 import './servicos-page.css';
 
@@ -29,23 +30,24 @@ const HubPackagesPage: React.FC = () => {
   const clinicId = getStoredClinicId();
   const navigate = useNavigate();
   const { showError, showSuccess, showConfirm } = useAlert();
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [packages, setPackages] = useState<HubPackage[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const load = useCallback(async () => {
     if (!clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const res = await hubPackagesApi.list(clinicId, showInactive);
       setPackages(res.packages ?? []);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar pacotes');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, showInactive, showError]);
+  }, [clinicId, showInactive, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -187,7 +189,8 @@ const HubPackagesPage: React.FC = () => {
           </div>
         </div>
 
-        {loading ? (
+        <HubRefreshingBanner show={refreshing} label="Atualizando pacotes…" />
+        {loading && packages.length === 0 ? (
           <HubLoading variant="block" label="Carregando pacotes…" />
         ) : packages.length === 0 ? (
           <div className="hub-packages__empty">

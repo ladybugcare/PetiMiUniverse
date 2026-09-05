@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { useAlert } from '../AlertProvider';
@@ -42,6 +42,8 @@ export function HubEncounterClinicalDocumentsList({
   const { showError, showSuccess } = useAlert();
   const [docsByEncounter, setDocsByEncounter] = useState<Record<string, HubClinicalDocumentRow[]>>({});
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const hasDocsRef = useRef(false);
   const [issuePanelOpen, setIssuePanelOpen] = useState(false);
   const [issuedDoc, setIssuedDoc] = useState<HubClinicalDocumentRow | null>(null);
   const [issuedPublicUrl, setIssuedPublicUrl] = useState<string | null>(null);
@@ -54,7 +56,8 @@ export function HubEncounterClinicalDocumentsList({
       setDocsByEncounter({});
       return;
     }
-    setLoading(true);
+    if (hasDocsRef.current) setRefreshing(true);
+    else setLoading(true);
     try {
       const entries = await Promise.all(
         encounters.map(async (enc) => {
@@ -66,11 +69,13 @@ export function HubEncounterClinicalDocumentsList({
         }),
       );
       setDocsByEncounter(Object.fromEntries(entries));
+      hasDocsRef.current = true;
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar documentos');
       setDocsByEncounter({});
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [clinicId, encounters, kind, showError]);
 
@@ -130,7 +135,7 @@ export function HubEncounterClinicalDocumentsList({
     (docsByEncounter[enc.id] ?? []).map((doc) => ({ enc, doc })),
   );
 
-  if (loading) return <p className="hub-clientes__muted">Carregando documentos…</p>;
+  if (loading && !allDocs.length) return <p className="hub-clientes__muted">Carregando documentos…</p>;
   if (!allDocs.length) {
     return (
       <p className="hub-clientes__muted">
@@ -143,6 +148,7 @@ export function HubEncounterClinicalDocumentsList({
 
   return (
     <>
+      {refreshing ? <p className="hub-clientes__muted">Atualizando documentos…</p> : null}
       <h3 className="hub-cws-card__title" style={{ fontSize: '1rem', marginTop: 16 }}>
         {title}
       </h3>

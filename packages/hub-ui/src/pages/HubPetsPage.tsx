@@ -4,7 +4,8 @@ import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petim
 import { hubGuardiansApi, type HubGuardian } from '../api/hubGuardiansApi';
 import { hubPetsApi, type HubPet } from '../api/hubPetsApi';
 import { useAlert } from '../components/AlertProvider';
-import { HubLoading } from '../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../components/HubLoading';
+import { useKeepContentLoad } from '../hooks/useKeepContentLoad';
 import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import './clientes/clientes.css';
 import './clientes/clientes-drawer.css';
@@ -62,7 +63,7 @@ const HubPetsPage: React.FC = () => {
   const unitId = getSelectedUnitId();
   const canWrite = hasPermission('hub.pets.write');
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [guardians, setGuardians] = useState<HubGuardian[]>([]);
   const [pets, setPets] = useState<HubPet[]>([]);
   const [searchQ, setSearchQ] = useState('');
@@ -90,16 +91,17 @@ const HubPetsPage: React.FC = () => {
 
   const loadPets = useCallback(async () => {
     if (!clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const res = await hubPetsApi.list(clinicId, true);
       setPets(res.pets || []);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar pets');
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, showError]);
+  }, [clinicId, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -385,7 +387,8 @@ const HubPetsPage: React.FC = () => {
           onQuickCreate={openCreate}
         />
 
-        {loading ? (
+        <HubRefreshingBanner show={refreshing} label="Atualizando lista…" />
+        {loading && pets.length === 0 ? (
           <HubLoading variant="block" label="Carregando lista…" />
         ) : (
           <>

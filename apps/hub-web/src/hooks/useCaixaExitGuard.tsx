@@ -1,46 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
-import { hubComandaApi } from '@petimi/hub-ui';
+import { enviarPendentesAoFinanceiro } from '@petimi/hub-ui';
 import { useHubCashSession } from '../contexts/HubCashSessionContext';
 import { useHubUnit } from '../contexts/HubUnitContext';
-
-function ymdToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-async function handoffOpenComandas(clinicId: string, unitId: string): Promise<{ count: number; errors: string[] }> {
-  const res = await hubComandaApi.listComandas({
-    clinic_id: clinicId,
-    unit_id: unitId,
-    status: 'aberta',
-    enrich: true,
-  });
-  const abertas = (res.comandas ?? []).filter(
-    (c) => !c.finance_handoff_at && c.status === 'aberta',
-  );
-
-  const today = ymdToday();
-  const errors: string[] = [];
-  let count = 0;
-
-  for (const c of abertas) {
-    try {
-      await hubComandaApi.checkout(String(c.id), {
-        clinic_id: clinicId,
-        grouping: 'all',
-        action: 'leave_pending',
-        due_date: today,
-        payment_timing: 'on_checkout',
-      });
-      count++;
-    } catch (e: unknown) {
-      errors.push(`#${String(c.id).slice(0, 8)}: ${(e as Error)?.message ?? 'Erro'}`);
-    }
-  }
-
-  return { count, errors };
-}
 
 /**
  * Intercepta navegação para fora de /hub/caixa* quando o caixa está aberto
@@ -86,9 +48,9 @@ export function useCaixaExitGuard() {
     setHandoffBusy(true);
     setHandoffError(null);
     try {
-      const { errors } = await handoffOpenComandas(clinicId, unitId);
+      const { errors } = await enviarPendentesAoFinanceiro(clinicId, unitId);
       if (errors.length > 0) {
-        setHandoffError(`Falha em ${errors.length} comanda(s):\n${errors.join('\n')}`);
+        setHandoffError(`Falha em ${errors.length} item(ns):\n${errors.join('\n')}`);
         setHandoffBusy(false);
         return;
       }
@@ -146,7 +108,16 @@ export function useCaixaExitGuard() {
             O que deseja fazer antes de sair?
           </p>
           {handoffError && (
-            <p style={{ margin: '-8px 0 16px', fontSize: 13, color: '#dc2626' }}>{handoffError}</p>
+            <p
+              style={{
+                margin: '-8px 0 16px',
+                fontSize: 13,
+                color: '#dc2626',
+                whiteSpace: 'pre-line',
+              }}
+            >
+              {handoffError}
+            </p>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <button

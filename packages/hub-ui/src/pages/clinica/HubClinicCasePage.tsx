@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -176,6 +176,8 @@ const HubClinicCasePage: React.FC = () => {
   const [attachments, setAttachments] = useState<HubClinicalAttachment[]>([]);
   const [comandas, setComandas] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadedCaseIdRef = useRef<string | null>(null);
   const [editingStatus, setEditingStatus] = useState(false);
   const [newStatus, setNewStatus] = useState<HubClinicalCaseStatus>('active');
   const [savingStatus, setSavingStatus] = useState(false);
@@ -191,7 +193,9 @@ const HubClinicCasePage: React.FC = () => {
 
   const load = useCallback(async () => {
     if (!clinicId || !caseId) return;
-    setLoading(true);
+    const keepContent = loadedCaseIdRef.current === caseId;
+    if (keepContent) setRefreshing(true);
+    else setLoading(true);
     try {
       const [caseRes, tlRes] = await Promise.allSettled([
         hubClinicalCasesApi.get(caseId, clinicId),
@@ -257,10 +261,12 @@ const HubClinicCasePage: React.FC = () => {
 
         setComandas(comFull.status === 'fulfilled' ? comFull.value.comandas ?? [] : []);
       }
+      loadedCaseIdRef.current = caseId;
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar caso clínico');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [clinicId, caseId, showError, canFinancial]);
 
@@ -453,15 +459,14 @@ const HubClinicCasePage: React.FC = () => {
     return <p className="hub-clientes__muted hub-clinic-page__pad">Sem permissão para casos clínicos.</p>;
   }
 
-  if (loading) {
-    return (
-      <div className="hub-clinic-page__pad">
-        <HubLoading variant="block" label="Carregando caso clínico…" />
-      </div>
-    );
-  }
-
-  if (!clinicalCase || !caseId || !clinicId) {
+  if (!clinicalCase || !caseId || !clinicId || clinicalCase.id !== caseId) {
+    if (loading) {
+      return (
+        <div className="hub-clinic-page__pad">
+          <HubLoading variant="block" label="Carregando caso clínico…" />
+        </div>
+      );
+    }
     return (
       <div className="hub-clinic-page__pad">
         <p className="hub-clientes__muted">Caso clínico não encontrado.</p>
@@ -523,7 +528,8 @@ const HubClinicCasePage: React.FC = () => {
   const activeNav = CASE_NAV.find((item) => item.id === tab) ?? CASE_NAV[0];
 
   return (
-    <div className="hub-clinic-case-page">
+    <div className="hub-clinic-case-page hub-loading-host">
+      {refreshing ? <HubLoading variant="banner" label="Atualizando caso…" /> : null}
       <button
         type="button"
         className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-clinic-case-page__back"

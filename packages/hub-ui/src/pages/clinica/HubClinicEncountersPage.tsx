@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
@@ -37,7 +38,7 @@ const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = 
 
   const [cursor, setCursor] = useState(() => new Date());
   const [items, setItems] = useState<DayBoardItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [creatingWalkIn, setCreatingWalkIn] = useState(false);
   const [staff, setStaff] = useState<HubStaffMember[]>([]);
@@ -60,7 +61,7 @@ const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = 
 
   const load = useCallback(async () => {
     if (!clinicId) return;
-    setLoading(true);
+    begin();
     try {
       const res = await hubEncountersApi.dayBoard(clinicId, dayRange, {
         staffId: staffFilter || undefined,
@@ -68,14 +69,15 @@ const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = 
       });
       setItems(res.items ?? []);
       setClinicalTypesConfigured(res.clinical_types_configured !== false);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar atendimentos');
       setItems([]);
       setClinicalTypesConfigured(true);
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, dayRange, staffFilter, unitIdParam, showError]);
+  }, [clinicId, dayRange, staffFilter, unitIdParam, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -320,9 +322,10 @@ const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = 
         ) : null}
       </div>
 
-      {!loading ? <ClinicDayMetrics items={items} /> : null}
+      {items.length > 0 || !loading ? <ClinicDayMetrics items={items} /> : null}
+      <HubRefreshingBanner show={refreshing} label="Atualizando fila…" />
 
-      {loading ? (
+      {loading && items.length === 0 ? (
         <HubLoading variant="block" label="Carregando fila clínica…" className="hub-clinic-page__pad" />
       ) : items.length === 0 ? (
         <p className="hub-clientes__muted hub-clinic-page__pad">Nenhum atendimento clínico neste dia.</p>

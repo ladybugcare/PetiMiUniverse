@@ -8,8 +8,9 @@ export { HubToastRegion, HubToast } from './components/HubToast';
 export type { HubToastItemData, HubToastRegionProps } from './components/HubToast';
 export { HubCancelButton } from './components/HubCancelButton';
 export type { HubCancelButtonProps } from './components/HubCancelButton';
-export { HubLoading } from './components/HubLoading';
+export { HubLoading, HubRefreshingBanner } from './components/HubLoading';
 export type { HubLoadingProps, HubLoadingVariant, HubLoadingSize } from './components/HubLoading';
+export { useKeepContentLoad } from './hooks/useKeepContentLoad';
 export { HubCheckbox } from './components/HubCheckbox';
 export type { HubCheckboxProps } from './components/HubCheckbox';
 export { HubTabs } from './components/HubTabs';
@@ -200,6 +201,12 @@ export type {
   HubChargeBundleStatus,
   HubPublicChargeBundleResponse,
 } from './api/hubFinancialApi';
+export {
+  enviarPendentesAoFinanceiro,
+  enviarComandasAbertasAoFinanceiro,
+  isSkippableFinanceHandoffError,
+} from './pages/finance/caixaHandoffUtils';
+export type { HandoffResult } from './pages/finance/caixaHandoffUtils';
 export { default as HubCaixaPage } from './pages/finance/HubCaixaPage';
 export { default as HubComandaPage } from './pages/finance/HubComandaPage';
 export { default as HubComandaFinancePage } from './pages/finance/HubComandaFinancePage';

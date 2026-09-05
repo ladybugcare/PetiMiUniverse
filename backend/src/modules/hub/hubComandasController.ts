@@ -2337,10 +2337,15 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       payment_timing,
     } = parsed.data;
 
-    const detail = await getHubComandaDetailPayload(comandaId, clinic_id);
-    const comanda = detail.comanda as Record<string, unknown>;
+    let detail = await getHubComandaDetailPayload(comandaId, clinic_id);
+    let comanda = detail.comanda as Record<string, unknown>;
     if (String(comanda.status) !== 'aberta') {
       return res.status(409).json({ error: 'Comanda não está aberta' });
+    }
+
+    if (action === 'leave_pending') {
+      detail = await maybeSyncEmptyComandaForHandoff(comandaId, clinic_id, detail, req.user?.id ?? null);
+      comanda = detail.comanda as Record<string, unknown>;
     }
 
     const items = (detail.items as Record<string, unknown>[]).filter((it) =>
@@ -2819,6 +2824,27 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };
+
+/** Sincroniza a origem quando o handoff não encontra itens em aberto (comanda aberta cedo). */
+async function maybeSyncEmptyComandaForHandoff(
+  comandaId: string,
+  clinicId: string,
+  detail: Awaited<ReturnType<typeof getHubComandaDetailPayload>>,
+  actorUserId: string | null,
+): Promise<Awaited<ReturnType<typeof getHubComandaDetailPayload>>> {
+  const originType = String((detail.comanda as Record<string, unknown>).origin_type ?? '');
+  if (!originType || originType === 'manual') return detail;
+  if ((detail.open_item_ids as string[]).length > 0) return detail;
+  if (canHandoffExistingReceivables(detail)) return detail;
+  try {
+    return await applySyncComandaFromOrigin(clinicId, comandaId, {
+      actor_user_id: actorUserId,
+      edit_context: 'caixa',
+    });
+  } catch {
+    return detail;
+  }
+}
 
 async function applySyncComandaFromOrigin(
   clinicId: string,
@@ -4258,7 +4284,10 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
         // Chamada interna ao core do checkout (reutiliza a lógica existente via supabase direto)
         // Para simplificar, usa o endpoint internamente construindo um fake request/response
         // Na prática: chamamos a lógica diretamente replicando o essencial do postHubComandaCheckout
-        const detail = await getHubComandaDetailPayload(comandaId, clinic_id);
+        let detail = await getHubComandaDetailPayload(comandaId, clinic_id);
+        if (action === 'leave_pending') {
+          detail = await maybeSyncEmptyComandaForHandoff(comandaId, clinic_id, detail, userId);
+        }
         const items = (detail.items as Record<string, unknown>[]).filter(
           (it) => (detail.open_item_ids as string[]).includes(it.id as string)
         );

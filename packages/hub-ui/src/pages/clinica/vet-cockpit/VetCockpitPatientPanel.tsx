@@ -107,10 +107,12 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
     );
   }
 
-  if (loading || !context) {
+  if (!context) {
     return (
       <div className="vet-cockpit-panel">
-        <HubLoading variant="block" label="Carregando paciente…" />
+        {loading ? <HubLoading variant="block" label="Carregando paciente…" /> : (
+          <p className="hub-clientes__muted">Sem contexto clínico para este paciente.</p>
+        )}
       </div>
     );
   }

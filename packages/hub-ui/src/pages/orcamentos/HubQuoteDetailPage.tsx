@@ -8,7 +8,8 @@ import {
 } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { hubQuotesApi, openHubQuotePdf, type HubQuote } from '../../api/hubQuotesApi';
@@ -48,7 +49,7 @@ const HubQuoteDetailPage: React.FC = () => {
   const canWrite = hasPermission('hub.quotes.write');
   const canCreateReceivable = hasPermission('hub.receivables.create');
 
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(id);
   const [quote, setQuote] = useState<HubQuote | null>(null);
   const [saving, setSaving] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -58,17 +59,18 @@ const HubQuoteDetailPage: React.FC = () => {
 
   const load = useCallback(async () => {
     if (!clinicId || !id) return;
-    setLoading(true);
+    begin();
     try {
       const { quote: q } = await hubQuotesApi.get(id, clinicId);
       setQuote(q);
+      succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar');
       setQuote(null);
     } finally {
-      setLoading(false);
+      finish();
     }
-  }, [clinicId, id, showError]);
+  }, [clinicId, id, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -232,7 +234,14 @@ const HubQuoteDetailPage: React.FC = () => {
   }
   if (!id) return <Navigate to="/hub/orcamentos" replace />;
 
-  if (!loading && !quote) {
+  if (!quote) {
+    if (loading) {
+      return (
+        <div style={{ padding: 24 }}>
+          <HubLoading variant="block" label="Carregando orçamento…" />
+        </div>
+      );
+    }
     return (
       <div style={{ padding: 24 }}>
         <p>Orçamento não encontrado.</p>
@@ -241,16 +250,9 @@ const HubQuoteDetailPage: React.FC = () => {
     );
   }
 
-  if (loading || !quote) {
-    return (
-      <div style={{ padding: 24 }}>
-        <HubLoading variant="block" label="Carregando orçamento…" />
-      </div>
-    );
-  }
-
   return (
     <>
+    <HubRefreshingBanner show={refreshing} label="Atualizando orçamento…" />
     <HubQuoteDetailLayout
       quote={quote}
       quoteId={id}
