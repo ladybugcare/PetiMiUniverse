@@ -60,6 +60,7 @@ import {
   createHubStockMovement,
   listHubExpiringLots,
   listHubLowStock,
+  listHubNearlyEmptyLots,
   listHubInventoryLots,
   getHubInventoryMovementsReport,
   getHubInventoryAbcReport,
@@ -227,10 +228,23 @@ import {
   listHubHospitalizationEvents,
   createHubHospitalizationEvent,
   listHubSurgeries,
+  getHubSurgery,
   createHubSurgery,
   patchHubSurgery,
   getHubClinicalAlerts,
 } from '../hubClinicalModulesController';
+import {
+  listHubSurgeryServices,
+  createHubSurgeryService,
+  patchHubSurgeryService,
+  deleteHubSurgeryService,
+  approveHubSurgeryServicePrice,
+  listHubHospitalizationCharges,
+  createHubHospitalizationCharge,
+  patchHubHospitalizationCharge,
+  deleteHubHospitalizationCharge,
+  approveHubHospitalizationChargePrice,
+} from '../hubClinicalBillableServicesController';
 import {
   listHubPrescriptionLookups,
   createHubPrescriptionLookup,
@@ -672,6 +686,12 @@ router.post('/inventory/movements', authenticateUser, requirePermission('hub.inv
 router.get('/inventory/lots', authenticateUser, requirePermission('hub.inventory.read'), listHubInventoryLots);
 router.get('/inventory/lots/expiring', authenticateUser, requirePermission('hub.inventory.read'), listHubExpiringLots);
 router.get('/inventory/reports/low-stock', authenticateUser, requirePermission('hub.inventory.read'), listHubLowStock);
+router.get(
+  '/inventory/reports/nearly-empty-lots',
+  authenticateUser,
+  requirePermission('hub.inventory.read'),
+  listHubNearlyEmptyLots,
+);
 router.get(
   '/inventory/reports/movements',
   authenticateUser,
@@ -1304,10 +1324,71 @@ router.post(
   requirePermission('hub.clinic.write'),
   createHubHospitalizationEvent
 );
+router.get(
+  '/clinical/hospitalizations/:id/charges',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubHospitalizationCharges
+);
+router.post(
+  '/clinical/hospitalizations/:id/charges',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubHospitalizationCharge
+);
+router.patch(
+  '/clinical/hospitalizations/:id/charges/:chargeId',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  patchHubHospitalizationCharge
+);
+router.delete(
+  '/clinical/hospitalizations/:id/charges/:chargeId',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  deleteHubHospitalizationCharge
+);
+router.post(
+  '/clinical/hospitalizations/:id/charges/:chargeId/approve-price',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  approveHubHospitalizationChargePrice
+);
 
 router.get('/clinical/surgeries', authenticateUser, requirePermission('hub.clinic.read'), listHubSurgeries);
 router.post('/clinical/surgeries', authenticateUser, requirePermission('hub.clinic.write'), createHubSurgery);
+router.get('/clinical/surgeries/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubSurgery);
 router.patch('/clinical/surgeries/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubSurgery);
+router.get(
+  '/clinical/surgeries/:id/services',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  listHubSurgeryServices
+);
+router.post(
+  '/clinical/surgeries/:id/services',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  createHubSurgeryService
+);
+router.patch(
+  '/clinical/surgeries/:id/services/:serviceId',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  patchHubSurgeryService
+);
+router.delete(
+  '/clinical/surgeries/:id/services/:serviceId',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  deleteHubSurgeryService
+);
+router.post(
+  '/clinical/surgeries/:id/services/:serviceId/approve-price',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  approveHubSurgeryServicePrice
+);
 
 /** Comandas / checkout operacional */
 router.get(

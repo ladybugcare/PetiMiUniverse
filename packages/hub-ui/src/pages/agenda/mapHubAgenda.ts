@@ -164,6 +164,7 @@ export function nextSeriesOccurrenceStart(
   const n = Math.max(1, Math.floor(intervalValue) || 1);
   if (kind === 'daily') next.setDate(next.getDate() + n);
   else if (kind === 'monthly') next.setMonth(next.getMonth() + n);
+  else if (kind === 'biweekly') next.setDate(next.getDate() + 14);
   else next.setDate(next.getDate() + n * 7);
   return next;
 }
@@ -180,7 +181,10 @@ export function buildSeriesRenewalInitial(
   const nextStart = nextSeriesOccurrenceStart(last, series.kind, series.interval_value);
   const nextEnd = new Date(nextStart.getTime() + durationMs);
   const kind =
-    series.kind === 'daily' || series.kind === 'monthly' || series.kind === 'weekly'
+    series.kind === 'daily' ||
+    series.kind === 'monthly' ||
+    series.kind === 'weekly' ||
+    series.kind === 'biweekly'
       ? series.kind
       : 'weekly';
   const occurrences =

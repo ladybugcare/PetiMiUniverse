@@ -23,6 +23,12 @@ describe('nextSeriesOccurrenceStart', () => {
     const last = new Date('2026-09-10T13:00:00.000Z');
     expect(nextSeriesOccurrenceStart(last, 'weekly', 1).toISOString()).toBe('2026-09-17T13:00:00.000Z');
   });
+
+  it('avança duas semanas na série quinzenal', () => {
+    const last = new Date('2026-09-10T13:00:00.000Z');
+    expect(nextSeriesOccurrenceStart(last, 'weekly', 2).toISOString()).toBe('2026-09-24T13:00:00.000Z');
+    expect(nextSeriesOccurrenceStart(last, 'biweekly', 1).toISOString()).toBe('2026-09-24T13:00:00.000Z');
+  });
 });
 
 describe('buildSeriesRenewalInitial', () => {

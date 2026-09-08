@@ -263,6 +263,15 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
       }
       if (parseMoneyInput(form.cost_amount) == null) return 'Indique o valor de custo.';
       if (parseMoneyInput(form.sale_amount) == null) return 'Indique o valor de venda.';
+      if (form.price_mode === 'variable') {
+        const min = form.price_min.trim() ? parseMoneyInput(form.price_min) : null;
+        const max = form.price_max.trim() ? parseMoneyInput(form.price_max) : null;
+        if (form.price_min.trim() && min == null) return 'Faixa mínima inválida.';
+        if (form.price_max.trim() && max == null) return 'Faixa máxima inválida.';
+        if (min != null && max != null && min > max) {
+          return 'A faixa mínima não pode ser maior que a máxima.';
+        }
+      }
     }
     return null;
   };
@@ -307,6 +316,11 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
       internal_notes: form.internal_notes.trim() || null,
       is_addon: isAddon,
       is_encounter_application: isAddon || form.service_group !== 'clinica' ? false : form.is_encounter_application,
+      price_mode: form.price_mode,
+      price_min:
+        form.price_mode === 'variable' ? parseMoneyInput(form.price_min) : null,
+      price_max:
+        form.price_mode === 'variable' ? parseMoneyInput(form.price_max) : null,
     };
   };
 
@@ -566,6 +580,53 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
                       </div>
                     </>
                   )}
+                  <div className="pet-wizard__field--full">
+                    <span className="pet-wizard__label">Permite alterar o preço durante a venda?</span>
+                    <div className="hub-servicos__seg" role="group" aria-label="Modo de preço">
+                      <button
+                        type="button"
+                        className={form.price_mode === 'fixed' ? 'hub-servicos__seg--active' : ''}
+                        onClick={() =>
+                          setForm((f) => ({ ...f, price_mode: 'fixed', price_min: '', price_max: '' }))
+                        }
+                      >
+                        Não — valor fixo
+                      </button>
+                      <button
+                        type="button"
+                        className={form.price_mode === 'variable' ? 'hub-servicos__seg--active' : ''}
+                        onClick={() => setForm((f) => ({ ...f, price_mode: 'variable' }))}
+                      >
+                        Sim — variável na hora
+                      </button>
+                    </div>
+                    <p className="hub-servicos__margin-info" style={{ marginTop: 8 }}>
+                      Útil em cirurgias e procedimentos cujo valor muda com complexidade, peso ou materiais.
+                      Valores fora da faixa exigem aprovação do financeiro.
+                    </p>
+                  </div>
+                  {form.price_mode === 'variable' ? (
+                    <>
+                      <div>
+                        <label className="pet-wizard__label">Faixa mínima (R$)</label>
+                        <input
+                          className="pet-wizard__input"
+                          value={form.price_min}
+                          onChange={(e) => setForm((f) => ({ ...f, price_min: e.target.value }))}
+                          placeholder="Opcional"
+                        />
+                      </div>
+                      <div>
+                        <label className="pet-wizard__label">Faixa máxima (R$)</label>
+                        <input
+                          className="pet-wizard__input"
+                          value={form.price_max}
+                          onChange={(e) => setForm((f) => ({ ...f, price_max: e.target.value }))}
+                          placeholder="Opcional"
+                        />
+                      </div>
+                    </>
+                  ) : null}
                   {form.service_group === 'leva_traz' ? (
                     <div className="pet-wizard__field--full">
                       <span className="pet-wizard__label">O valor cadastrado representa</span>

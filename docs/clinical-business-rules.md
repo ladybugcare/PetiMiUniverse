@@ -193,10 +193,12 @@ Suportar internação com rastreio clínico, **sempre** contextualizada no epis�
 2. Toda internação nasce **obrigatoriamente** de um **atendimento**; se não existir atendimento de admissão, o sistema **cria automaticamente** um atendimento de admissão (tipo adequado, ex.: emergência ou internação conforme enum alinhado).
 3. **Alta**, **óbito** e **transferência** encerram a **internação** (status operacionais da internação).
 4. Encerrar a internação **não** encerra automaticamente o **caso** clínico (o episódio pode continuar com retornos, receitas, etc.).
+5. **Espelho na agenda:** ao admitir pelo Consultório, o sistema cria um slot de **marco de admissão** no dia (`appointment_kind: clinical_walk_in`, `status: in_progress`), vinculado via `hub_appointment_id`. O slot **não** modela a estadia multi-dia (censo/hotel); internações ativas continuam listadas no Consultório. Alta/óbito/transferência marcam o slot como `done`; cancelar a internação cancela o slot. Cancelar o slot na agenda **não** encerra a internação (só desvincula).
+6. A agenda **não** cria ficha de internação: internar continua sendo admissão no Consultório, não “agendar diária”.
 
 ### 4.4 Fluxos
 
-Admissão (atendimento) → internação ativa → eventos/evoluções → saída (alta/óbito/transferência) → caso pode permanecer `active`/`monitoring` até decisão clínica de `resolved`.
+Admissão (atendimento) → espelho do slot na agenda do dia → internação ativa → eventos/evoluções → saída (alta/óbito/transferência; slot → `done`) → caso pode permanecer `active`/`monitoring` até decisão clínica de `resolved`.
 
 ### 4.5 Exceções
 
@@ -210,11 +212,15 @@ Admissão (atendimento) → internação ativa → eventos/evoluções → saíd
 
 ### 4.7 Impactos financeiros
 
-- Comanda de internação (quando existir) segue regras globais de comanda; internação não força fechamento de caso.
+- A cobrança da internação entra na **comanda do atendimento** (`origin_type: encounter`), não em uma comanda separada.
+- Na admissão o veterinário escolhe o **serviço de diária** (grupo `internacao`); a comanda gera um item `hospitalization_daily` com `quantity` = número de diárias entre admissão e alta (ou até hoje, se ativa).
+- Lançamentos extras (`hub_hospitalization_charges`) usam `billing_mode`: `charge` (entra na comanda) ou `included` (só histórico clínico / estoque, sem valor).
+- Preço variável fora da faixa (ou sem faixa) fica `pending_approval` até alguém com `hub.financial.write` aprovar — ver [HUB_CLINICAL_BILLABLE_SERVICES.md](architecture/HUB_CLINICAL_BILLABLE_SERVICES.md).
 
 ### 4.8 Impactos em estoque
 
 - Materiais e medicamentos da internação: **podem** baixar estoque conforme matriz.
+- Item `included` na diária **não** gera linha de comanda, mas **pode** baixar estoque se houver lote vinculado.
 
 ### 4.9 Impactos em timeline
 
@@ -239,26 +245,34 @@ Registrar procedimentos cirúrgicos com rastreio pré-operatório, anestésico, 
 
 ### 5.3 Regras aprovadas
 
-1. Toda cirurgia pertence a um **caso clínico** (`hub_case_id` obrigatório na criação).
-2. Toda cirurgia nasce de um **atendimento**; se não existir atendimento de referência, o sistema **cria automaticamente** um atendimento de admissão cirúrgica (tipo `procedure`, título "Cirurgia: {título}").
-3. **Status:** `scheduled` → `in_progress` → `completed` | `cancelled`.
+1. Toda cirurgia pertence a um **caso clínico** (`hub_case_id` obrigatório na criação **pelo vet**). **Exceção:** cirurgia agendada pela recepção nasce sem caso (ver regra 7).
+2. Toda cirurgia nasce de um **atendimento**; se não existir atendimento de referência, o sistema **cria automaticamente** um atendimento de admissão cirúrgica (tipo `procedure`, título "Cirurgia: {título}"). **Exceção:** cirurgia agendada pela recepção só ganha atendimento na chegada do pet (ver regra 7).
+3. **Status:** `scheduled` → `in_progress` → `completed` | `cancelled`. Iniciar uma cirurgia marcada para **outro dia** exige confirmação: o slot da agenda é antecipado para agora (mantém a duração), o status do agendamento passa a `in_progress` e o pet entra na **fila do consultório** daquele profissional. Cirurgias do dia e as já `in_progress` aparecem na fila com o selo "Cirurgia", não só como consulta.
 4. Concluir a cirurgia (`completed`) **não** encerra automaticamente o **caso** clínico (o pet pode necessitar de internação pós-op, retornos, etc.).
 5. **Pós-operatório internado:** o sistema oferece CTA "Internar pós-operatório" na cirurgia em andamento ou concluída; o mesmo `hub_case_id` da cirurgia é pré-preenchido na admissão — **sem** coluna FK direta entre cirurgia e internação.
 6. Risco anestésico (ASA I–VI + E) é informado no pré-op; recomendado antes de confirmar o procedimento.
+7. **Agendada pela recepção:** um agendamento com serviço do grupo `cirurgia` **gera automaticamente** a ficha cirúrgica em `scheduled`, com `hub_appointment_id` e `scheduled_at` espelhando o slot. Ela nasce **sem** atendimento e **sem** caso (herda apenas `intake_hub_case_id`, quando a agenda já perguntou), aparece no Consultório com o selo "Sem caso", e ganha atendimento e caso quando o pet chega e o atendimento é aberto pelo slot. Enquanto ninguém iniciou a cirurgia, o slot manda: mudar horário **reagenda** a ficha, cancelar ou excluir o agendamento **cancela** a ficha, remover o serviço de cirurgia do slot **cancela** a ficha. A partir de `in_progress` (ou com atendimento) a ficha é do vet e a agenda não a altera mais.
+8. **Agendada pelo Consultório:** ao criar a cirurgia com `scheduled_at`, o sistema **espelha** um slot na agenda (`confirmed`, grupo `cirurgia`) e grava `hub_appointment_id` na ficha — **sem** passar pelo sync Agenda→ficha (evita duplicata). Mudar `scheduled_at` enquanto `scheduled` reagenda o slot; concluir marca o slot `done`; cancelar a ficha cancela o slot. Se a recepção cancelar/apagar o slot de uma cirurgia **com atendimento**, a ficha **não** é cancelada (só desvincula).
 
 ### 5.4 Fluxos
 
-**Fluxo A — Agendamento direto:**  
-Selecionar pet → escolher/criar caso clínico → preencher dados da cirurgia → status `scheduled`.
+**Fluxo A — Agendamento direto (Consultório):**  
+Selecionar pet → escolher/criar caso clínico → preencher dados da cirurgia → status `scheduled` → **slot criado na agenda** no mesmo horário.
 
 **Fluxo B — A partir do caso:**  
-Página do caso → aba "Cirurgias" → "Agendar cirurgia neste caso" → `hub_case_id` pré-preenchido.
+Página do caso → aba "Cirurgias" → "Agendar cirurgia neste caso" → `hub_case_id` pré-preenchido → mesmo espelho de slot do Fluxo A.
 
 **Fluxo C — Pós-operatório internado:**  
 Cirurgia `in_progress` ou `completed` → "Internar pós-operatório" → rota de admissão com mesmo `pet_id` e `hub_case_id`.
 
 **Fluxo D — Conclusão:**  
-Cirurgia `in_progress` → "Concluir" → status `completed` → timeline recebe evento `surgery_performed` — **apenas** na conclusão, não no agendamento.
+Cirurgia `in_progress` → "Concluir" → status `completed` → ficha fica **somente leitura** → se ainda não houver caso, o sistema cria um com o título do procedimento e amarra atendimento → o slot da agenda vai para `done` → timeline recebe `surgery_performed` → o registro aparece nas abas **Cirurgias** do caso e do prontuário do pet.
+
+**Fluxo E — Agendamento pela recepção (agenda):**  
+Agenda → novo agendamento com serviço do grupo `cirurgia` → ficha cirúrgica criada em `scheduled` e vinculada ao slot → aparece no Consultório em "Cirurgias (agendadas / em andamento)" → na chegada, abrir o atendimento pelo slot vincula atendimento e caso à ficha.
+
+**Fluxo F — Início antecipado:**  
+Ficha de cirurgia futura → "Iniciar antes do dia" → aviso de que não é hoje → confirmar → agenda e `scheduled_at` passam para agora → o item entra na "Minha fila" do dia com o selo Cirurgia.
 
 ### 5.5 Permissões
 
@@ -268,8 +282,9 @@ Cirurgia `in_progress` → "Concluir" → status `completed` → timeline recebe
 
 ### 5.6 Impactos financeiros
 
-- Indiretos: caso agrupa episódio; itens de materiais e equipe podem ser lançados em comanda vinculada ao atendimento/caso.
-- Comanda com `hub_surgery_id` como origem: follow-up pós v1 (documentado em "Fora").
+- Serviços do grupo `cirurgia` vinculam-se em `hub_surgery_services` e entram na **comanda do atendimento** (`origin_type: surgery_service`).
+- Se a cirurgia tem `hub_appointment_id` e o slot já cobrou o mesmo serviço em `hub_appointment_services`, a linha da cirurgia **adota** aquela linha (dedupe) em vez de duplicar o valor.
+- Preço variável: o vet propõe o valor; dentro da faixa confirma; fora/sem faixa exige `hub.financial.write`. Detalhes em [HUB_CLINICAL_BILLABLE_SERVICES.md](architecture/HUB_CLINICAL_BILLABLE_SERVICES.md).
 
 ### 5.7 Impactos em estoque
 
@@ -285,13 +300,13 @@ Cirurgia `in_progress` → "Concluir" → status `completed` → timeline recebe
 | # | Inconsistência | Resolução |
 |---|----------------|-----------|
 | 1 | `encounter_type` sem `cirurgia` como valor dedicado | Usar `procedure` + `chief_complaint` até expansão do enum em plano separado. |
-| 2 | Comanda sem `hub_surgery_id` como origem | Follow-up; cobrar via atendimento ou caso. |
+| 2 | ~~Comanda sem `hub_surgery_id` como origem~~ | **Resolvido:** cobrar via comanda do atendimento (`surgery_service` / `hospitalization_*`). Sem `origin_type` novo em `hub_comandas`. |
 | 3 | FK direta cirurgia ↔ internação ausente | Usar mesmo `hub_case_id`; FK direta avaliada após go-live. |
 
 ### 5.10 Perguntas futuras
 
 - Enum de `encounter_type` dedicado para cirurgia e internação.
-- Comanda com origem `hub_surgery_id`.
+- Promover `hub_surgeries.materials` de JSONB para vínculo real com estoque.
 
 ---
 
@@ -340,6 +355,8 @@ Quando um agendamento ou atendimento é **cancelado na operação** e já existi
 ### 5.7 Impactos financeiros
 
 - Central para receita; congelamento de itens após fechamento evita litígio.
+- Comanda de atendimento agrega também `surgery_service`, `hospitalization_daily` e `hospitalization_charge` (ver [HUB_CLINICAL_BILLABLE_SERVICES.md](architecture/HUB_CLINICAL_BILLABLE_SERVICES.md)).
+- Serviços com `price_mode = fixed` não permitem editar `unit_amount` livremente na UI; alterações auditáveis vão para `hub_comanda_events` (`item_updated`).
 
 ### 5.8 Impactos em estoque
 
@@ -351,7 +368,7 @@ Quando um agendamento ou atendimento é **cancelado na operação** e já existi
 
 ### 5.10 Perguntas futuras
 
-- Comanda **por caso** vs **por atendimento** vs **por internação**: hierarquia de visualização na UX.
+- Hierarquia de visualização na UX por caso vs atendimento (a cobrança operacional de cirurgia/internação já usa a comanda do **atendimento**).
 
 ---
 
@@ -372,7 +389,7 @@ Manter inventário confiável sem **dupla baixa** nem furos entre clínica e cai
 |--------|------------------|
 | Vacina aplicada **na clínica** (com vínculo a item/lote interno) | **Sim** |
 | Vacina **externa** | **Não** |
-| Medicamento **administrado na clínica** | **Pode** (config + vínculo a item/lote quando baixar) |
+| Medicamento **administrado na clínica** | **Sim, após confirmação explícita** (com vínculo a item/lote; quantidade na unidade de consumo, convertida para a unidade de estoque quando houver conteúdo por embalagem) |
 | Medicamento **apenas prescrito** para casa | **Não** |
 | Materiais **cirúrgicos** consumidos | **Podem** |
 | Materiais de **internação** | **Podem** |
@@ -380,27 +397,35 @@ Manter inventário confiável sem **dupla baixa** nem furos entre clínica e cai
 
 ### 6.4 Fluxos
 
-Administração clínica com item de estoque → baixa no ato **ou** na dispensação vinculada à comanda — **uma** fonte de verdade por política de clínica (deve ser documentada na implementação).
+1. **Medicação na consulta:** a equipe informa a quantidade usada (ex.: ml, se o item tem conteúdo por frasco/ampola). Com item + lote, o sistema **não** baixa automaticamente: exige confirmação (`confirm_stock_out`). Só então cria `encounter_out` na quantidade convertida (ex.: 2 ml ÷ 10 ml/frasco = 0,2 frasco). Sem item/lote, grava só o registro clínico + serviço de aplicação na comanda.
+2. **Embalagem quase vazia:** após uso fracionado, se o saldo do lote ficar **maior que 0 e menor que 20% de 1 unidade** de estoque, notifica a área **estoque** (e gestores). Em Estoque → Alertas, quem tem `hub.inventory.write` pode **Baixar resto** (`adjustment_out`).
+3. Administração clínica e venda na comanda: **uma** fonte de verdade por consumo (medicação clínica já baixa no atendimento; checkout não duplica).
 
 ### 6.5 Exceções
 
 - Ajuste manual de inventário: sempre com permissão e motivo.
+- Itens antigos sem `content_qty`: a quantidade informada na consulta já está na unidade de estoque (sem conversão).
 
 ### 6.6 Permissões
 
 - Estoque geralmente **recepção**/**admin**; veterinário **não** obrigatório para ajuste global.
+- Confirmação de baixa clínica: quem registra a medicação com `hub.clinic.write` (diálogo no momento do registro).
+- Baixa do resto de embalagem: `hub.inventory.write`.
 
 ### 6.7 Impactos financeiros
 
 - Item faturado sem baixa (ou o inverso) gera divergência: a regra de **evento único** na venda mitiga.
+- Medicação na consulta cobra só o **serviço de aplicação**; o produto é custo da clínica.
 
 ### 6.8 Impactos em timeline
 
 - Opcional: marco “dispensação” — normalmente **não** na timeline clínica canônica; manter em log de estoque.
+- Medicação registrada gera evento na timeline clínica; a baixa fica em `hub_stock_movements`.
 
 ### 6.9 Perguntas futuras
 
 - Reagente de exame in house (baixa opcional por config).
+- Limiar configurável por item para “quase vazio” (hoje fixo em 20%).
 
 ---
 

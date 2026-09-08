@@ -5,7 +5,11 @@ import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubCancelButton } from '../../components/HubCancelButton';
+import { HubDateField } from '../../components/HubDateField';
+import { HubTimeField } from '../../components/HubTimeField';
 import { hubPetsApi, type HubPet } from '../../api/hubPetsApi';
+import { todayYmd } from '../../utils/hubCalendar';
+import { nowHm } from '../../utils/hubTime';
 import type { BoardingMode } from './boardingStages';
 
 type Props = {
@@ -24,18 +28,34 @@ type Props = {
   submitting: boolean;
 };
 
+function combineDateTime(dateIso: string, timeHm: string): string | undefined {
+  if (!dateIso.trim()) return undefined;
+  const hm = timeHm.trim() || '00:00';
+  return `${dateIso}T${hm}`;
+}
+
 const BoardingWalkInPanel: React.FC<Props> = ({ open, clinicId, unitId: _unitId, onClose, onSubmit, submitting }) => {
   const [pets, setPets] = useState<HubPet[]>([]);
   const [petId, setPetId] = useState('');
   const [mode, setMode] = useState<BoardingMode>('hotel');
-  const [checkIn, setCheckIn] = useState('');
-  const [checkOut, setCheckOut] = useState('');
+  const [checkInDate, setCheckInDate] = useState('');
+  const [checkInTime, setCheckInTime] = useState('');
+  const [checkOutDate, setCheckOutDate] = useState('');
+  const [checkOutTime, setCheckOutTime] = useState('');
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
     if (!open || !clinicId) return;
     void hubPetsApi.list(clinicId).then((p) => setPets(p.pets ?? []));
   }, [open, clinicId]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!checkInDate) {
+      setCheckInDate(todayYmd());
+      setCheckInTime(nowHm());
+    }
+  }, [open, checkInDate]);
 
   const petOptions: HubComboboxOption[] = useMemo(
     () => pets.map((p) => ({ value: p.id, label: p.name })),
@@ -53,14 +73,16 @@ const BoardingWalkInPanel: React.FC<Props> = ({ open, clinicId, unitId: _unitId,
       petId,
       guardianId,
       mode,
-      expectedCheckIn: checkIn || undefined,
-      expectedCheckOut: checkOut || undefined,
+      expectedCheckIn: combineDateTime(checkInDate, checkInTime),
+      expectedCheckOut: combineDateTime(checkOutDate, checkOutTime),
       notes: notes.trim() || undefined,
     }).then(() => {
       setPetId('');
       setMode('hotel');
-      setCheckIn('');
-      setCheckOut('');
+      setCheckInDate('');
+      setCheckInTime('');
+      setCheckOutDate('');
+      setCheckOutTime('');
       setNotes('');
     });
   };
@@ -120,29 +142,41 @@ const BoardingWalkInPanel: React.FC<Props> = ({ open, clinicId, unitId: _unitId,
         </div>
 
         <div className="hub-servicos__filter-field">
-          <label className="hub-clientes__label" htmlFor="boarding-walkin-checkin">
-            Check-in previsto
-          </label>
-          <input
-            id="boarding-walkin-checkin"
-            type="datetime-local"
-            className="hub-clientes__input"
-            value={checkIn}
-            onChange={(e) => setCheckIn(e.target.value)}
-          />
+          <span className="hub-clientes__label">Check-in previsto</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <HubDateField
+              id="boarding-walkin-checkin-date"
+              label="Data"
+              valueIso={checkInDate}
+              onChangeIso={setCheckInDate}
+              showTodayButton={false}
+            />
+            <HubTimeField
+              id="boarding-walkin-checkin-time"
+              label="Horário"
+              valueHm={checkInTime}
+              onChangeHm={setCheckInTime}
+            />
+          </div>
         </div>
 
         <div className="hub-servicos__filter-field">
-          <label className="hub-clientes__label" htmlFor="boarding-walkin-checkout">
-            Check-out previsto
-          </label>
-          <input
-            id="boarding-walkin-checkout"
-            type="datetime-local"
-            className="hub-clientes__input"
-            value={checkOut}
-            onChange={(e) => setCheckOut(e.target.value)}
-          />
+          <span className="hub-clientes__label">Check-out previsto</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <HubDateField
+              id="boarding-walkin-checkout-date"
+              label="Data"
+              valueIso={checkOutDate}
+              onChangeIso={setCheckOutDate}
+              showTodayButton={false}
+            />
+            <HubTimeField
+              id="boarding-walkin-checkout-time"
+              label="Horário"
+              valueHm={checkOutTime}
+              onChangeHm={setCheckOutTime}
+            />
+          </div>
         </div>
 
         <div className="hub-servicos__filter-field">

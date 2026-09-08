@@ -6,6 +6,7 @@ import { useAlert } from '../../../components/AlertProvider';
 import { HubLoading } from '../../../components/HubLoading';
 import { useKeepContentLoad } from '../../../hooks/useKeepContentLoad';
 import { HubDateField } from '../../../components/HubDateField';
+import { HubTabs } from '../../../components/HubTabs';
 import { formatYmd, parseIsoYmd } from '../../../utils/hubCalendar';
 import {
   hubEncountersApi,
@@ -34,6 +35,7 @@ import HubClinicHospitalPage from '../HubClinicHospitalPage';
 import HubClinicSurgeriesPage from '../HubClinicSurgeriesPage';
 import VetCockpitHeader from './VetCockpitHeader';
 import VetCockpitOpsSection from './VetCockpitOpsSection';
+import VetCockpitHistory from './VetCockpitHistory';
 import VetCockpitQueue from './VetCockpitQueue';
 import VetCockpitPatientPanel, { type VetCockpitDrawerSection } from './VetCockpitPatientPanel';
 import {
@@ -50,6 +52,14 @@ import '../../../components/HubViewDateToolbar.css';
 import './vet-cockpit.css';
 
 const POLL_MS = 30_000;
+
+type CockpitTab = 'hoje' | 'andamento' | 'historico';
+
+const COCKPIT_TABS: Array<{ id: CockpitTab; label: string }> = [
+  { id: 'hoje', label: 'Operação do dia' },
+  { id: 'andamento', label: 'Cirurgias e internações' },
+  { id: 'historico', label: 'Histórico' },
+];
 
 const HubVetCockpitPage: React.FC = () => {
   const navigate = useNavigate();
@@ -76,6 +86,7 @@ const HubVetCockpitPage: React.FC = () => {
   const [creatingWalkIn, setCreatingWalkIn] = useState(false);
   const [admitOpen, setAdmitOpen] = useState(false);
   const [surgeryCreateOpen, setSurgeryCreateOpen] = useState(false);
+  const [cockpitTab, setCockpitTab] = useState<CockpitTab>('hoje');
   const [dayOpsOpen, setDayOpsOpen] = useState(true);
   const [hospSectionOpen, setHospSectionOpen] = useState(true);
   const [surgSectionOpen, setSurgSectionOpen] = useState(true);
@@ -128,10 +139,12 @@ const HubVetCockpitPage: React.FC = () => {
     if (wantAdmit) {
       setAdmitOpen(true);
       setHospSectionOpen(true);
+      setCockpitTab('andamento');
     }
     if (wantSurgery) {
       setSurgeryCreateOpen(true);
       setSurgSectionOpen(true);
+      setCockpitTab('andamento');
     }
     const next = new URLSearchParams(searchParams);
     next.delete('admit');
@@ -234,8 +247,12 @@ const HubVetCockpitPage: React.FC = () => {
       openEncounter(selected.encounter_id);
       return;
     }
-    if (selected.kind === 'appointment_slot') {
+    if (selected.appointment_id) {
       setStartModalItem(selected);
+      return;
+    }
+    if (selected.surgery_id) {
+      navigate(`/hub/clinica/cirurgias/${selected.surgery_id}`);
     }
   };
 
@@ -431,35 +448,43 @@ const HubVetCockpitPage: React.FC = () => {
       ) : null}
 
       <div className="hub-view-date-toolbar vet-cockpit-toolbar">
-        <div className="hub-view-date-toolbar__nav-cluster">
-          <button
-            type="button"
-            className="hub-view-date-toolbar__icon-btn"
-            onClick={() => shiftCursor(-1)}
-            aria-label="Dia anterior"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <button
-            type="button"
-            className="hub-view-date-toolbar__icon-btn"
-            onClick={() => shiftCursor(1)}
-            aria-label="Próximo dia"
-          >
-            <ChevronRight size={18} />
-          </button>
-          <HubDateField
-            id="vet-cockpit-date"
-            className="hub-view-date-toolbar__date-field"
-            valueIso={cursorIso}
-            onChangeIso={(iso) => {
-              if (!iso) return;
-              const parsed = parseIsoYmd(iso);
-              if (parsed) setCursor(parsed);
-            }}
-            showTodayButton
-          />
-        </div>
+        {cockpitTab === 'hoje' ? (
+          <div className="hub-view-date-toolbar__nav-cluster">
+            <button
+              type="button"
+              className="hub-view-date-toolbar__icon-btn"
+              onClick={() => shiftCursor(-1)}
+              aria-label="Dia anterior"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              type="button"
+              className="hub-view-date-toolbar__icon-btn"
+              onClick={() => shiftCursor(1)}
+              aria-label="Próximo dia"
+            >
+              <ChevronRight size={18} />
+            </button>
+            <HubDateField
+              id="vet-cockpit-date"
+              className="hub-view-date-toolbar__date-field"
+              valueIso={cursorIso}
+              onChangeIso={(iso) => {
+                if (!iso) return;
+                const parsed = parseIsoYmd(iso);
+                if (parsed) setCursor(parsed);
+              }}
+              showTodayButton
+            />
+          </div>
+        ) : (
+          <p className="hub-clientes__muted" style={{ margin: 0 }}>
+            {cockpitTab === 'historico'
+              ? 'Atendimentos, cirurgias e internações já encerrados.'
+              : 'O que ainda está aberto na clínica.'}
+          </p>
+        )}
         {canWrite ? (
           <div className="vet-cockpit-toolbar__actions" role="group" aria-label="Operação do dia">
             <button
@@ -467,7 +492,10 @@ const HubVetCockpitPage: React.FC = () => {
               className="hub-clientes__btn hub-clientes__btn--primary"
               disabled={!linked}
               title={!linked ? 'Vincule seu usuário a um profissional na Equipe' : undefined}
-              onClick={() => setWalkInOpen(true)}
+              onClick={() => {
+                setCockpitTab('hoje');
+                setWalkInOpen(true);
+              }}
             >
               Novo atendimento
             </button>
@@ -479,6 +507,7 @@ const HubVetCockpitPage: React.FC = () => {
                 setOpsPresetCaseId(null);
                 setAdmitOpen(true);
                 setHospSectionOpen(true);
+                setCockpitTab('andamento');
               }}
             >
               Internar
@@ -491,6 +520,7 @@ const HubVetCockpitPage: React.FC = () => {
                 setOpsPresetCaseId(null);
                 setSurgeryCreateOpen(true);
                 setSurgSectionOpen(true);
+                setCockpitTab('andamento');
               }}
             >
               Nova cirurgia
@@ -499,7 +529,17 @@ const HubVetCockpitPage: React.FC = () => {
         ) : null}
       </div>
 
+      <HubTabs
+        className="vet-cockpit-tabs"
+        ariaLabel="Áreas do consultório"
+        variant="page"
+        activeId={cockpitTab}
+        onTabChange={(id) => setCockpitTab(id as CockpitTab)}
+        items={COCKPIT_TABS}
+      />
+
       <div className="vet-cockpit-ops-sections">
+        {cockpitTab === 'hoje' ? (
         <VetCockpitOpsSection
           id="dia"
           title="Operação do dia"
@@ -524,6 +564,11 @@ const HubVetCockpitPage: React.FC = () => {
               completing={completing}
               phaseBusy={phaseBusy}
               onStartConsultation={handleStartConsultation}
+              onOpenSurgery={
+                selected?.surgery_id
+                  ? () => navigate(`/hub/clinica/cirurgias/${selected.surgery_id}`)
+                  : undefined
+              }
               onOpenRecord={(section) => {
                 const encId = selected?.encounter_id ?? patientContext?.encounter?.id;
                 if (encId) openEncounter(encId, section);
@@ -533,13 +578,17 @@ const HubVetCockpitPage: React.FC = () => {
                 setOpsPresetCaseId(patientContext?.encounter?.hub_case_id ?? null);
                 setAdmitOpen(true);
                 setHospSectionOpen(true);
+                setCockpitTab('andamento');
               }}
               onComplete={() => void handleComplete()}
               onSetOperationalPhase={(phase) => void handleSetOperationalPhase(phase)}
             />
           </div>
         </VetCockpitOpsSection>
+        ) : null}
 
+        {cockpitTab === 'andamento' ? (
+          <>
         <VetCockpitOpsSection
           id="internacoes"
           title="Internações ativas"
@@ -569,6 +618,16 @@ const HubVetCockpitPage: React.FC = () => {
             presetCaseId={opsPresetCaseId}
           />
         </VetCockpitOpsSection>
+          </>
+        ) : null}
+
+        {cockpitTab === 'historico' ? (
+          <section className="vet-cockpit-ops" aria-label="Histórico clínico">
+            <div className="vet-cockpit-ops__body">
+              <VetCockpitHistory clinicId={clinicId} staffId={staffId} />
+            </div>
+          </section>
+        ) : null}
       </div>
 
       <CompleteEncounterCasePrompt

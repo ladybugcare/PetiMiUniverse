@@ -768,6 +768,7 @@ a.hub-clientes__btn:focus-visible {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .hub-clientes__btn--outline {
@@ -1283,7 +1284,8 @@ a.hub-clientes__btn:focus-visible {
     flex-direction: column;
   }
 
-  .hub-clientes__btn-row .hub-clientes__btn {
+  .hub-clientes__btn-row .hub-clientes__btn,
+  .hub-clientes__btn-row .hub-cancel-btn {
     width: 100%;
     justify-content: center;
     min-height: 44px;

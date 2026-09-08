@@ -56,6 +56,8 @@ export interface HubInventoryItem {
   generates_staff_commission: boolean;
   min_stock_qty: number;
   expiry_alert_policy: HubExpiryAlertPolicy;
+  content_qty?: number | null;
+  content_unit?: string | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -86,7 +88,14 @@ export interface HubInventoryLotRow {
   expiry_date: string | null;
   received_at: string;
   qty_on_hand: number;
-  item: { name: string; item_kind: HubItemKind } | null;
+  remaining_content?: number;
+  item: {
+    name: string;
+    item_kind: HubItemKind;
+    unit_label?: string | null;
+    content_qty?: number | null;
+    content_unit?: string | null;
+  } | null;
 }
 
 export type HubInventoryMovementsReport = {
@@ -252,6 +261,8 @@ export const hubInventoryApi = {
       generates_staff_commission?: boolean;
       min_stock_qty?: number;
       expiry_alert_policy?: HubExpiryAlertPolicy;
+      content_qty?: number | null;
+      content_unit?: string | null;
       initial_lot?: {
         received_at: string;
         expiry_date?: string | null;
@@ -284,6 +295,8 @@ export const hubInventoryApi = {
         generates_staff_commission?: boolean;
         min_stock_qty?: number;
         expiry_alert_policy?: HubExpiryAlertPolicy;
+        content_qty?: number | null;
+        content_unit?: string | null;
         active?: boolean;
         archived?: boolean;
       }
@@ -336,6 +349,11 @@ export const hubInventoryApi = {
   reports: {
     lowStock(clinicId: string) {
       return apiRequest(`${base}/reports/low-stock?clinic_id=${encodeURIComponent(clinicId)}`) as Promise<{ items: HubInventoryItem[] }>;
+    },
+    nearlyEmptyLots(clinicId: string) {
+      return apiRequest(
+        `${base}/reports/nearly-empty-lots?clinic_id=${encodeURIComponent(clinicId)}`,
+      ) as Promise<{ lots: HubInventoryLotRow[] }>;
     },
     movements(clinicId: string, opts?: { days?: number; from?: string; to?: string; direction?: 'all' | 'in' | 'out' }) {
       const p = new URLSearchParams({ clinic_id: clinicId });

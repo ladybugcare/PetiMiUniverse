@@ -3,6 +3,7 @@ import { Search, Trash2 } from 'lucide-react';
 import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
 import type { HubInventoryItem, HubInventoryLotRow } from '../../api/hubInventoryApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
+import type { HubComandaPendingPriceApproval } from '../../api/hubComandaApi';
 import type { ComandaItemDraft } from './comandaItemDraft';
 
 function fmtBrl(n: number): string {
@@ -30,6 +31,10 @@ type Props = {
   onApplyProduct: (idx: number, inventoryItemId: string) => void;
   packageBalancesByItemId?: Record<string, Array<{ id: string; sessions_remaining: number; hub_packages?: { name?: string } | { name?: string }[] | null }>>;
   onTogglePackage?: (itemId: string, balanceId: string | null) => void;
+  pendingPriceApprovals?: HubComandaPendingPriceApproval[];
+  canApprovePrices?: boolean;
+  approvingPriceId?: string | null;
+  onApprovePrice?: (item: HubComandaPendingPriceApproval) => void;
 };
 
 export const ComandaItemsSection: React.FC<Props> = ({
@@ -49,6 +54,10 @@ export const ComandaItemsSection: React.FC<Props> = ({
   onApplyProduct,
   packageBalancesByItemId = {},
   onTogglePackage,
+  pendingPriceApprovals = [],
+  canApprovePrices = false,
+  approvingPriceId = null,
+  onApprovePrice,
 }) => {
   const serviceRows = useMemo(
     () => items.map((it, idx) => ({ it, idx })).filter(({ it }) => !isProductItem(it)),
@@ -182,12 +191,29 @@ export const ComandaItemsSection: React.FC<Props> = ({
         </td>
         <td className="right" style={{ minWidth: 96 }}>
           {editable ? (
-            <input
-              className="hub-orcamento-novo__input"
-              style={{ textAlign: 'right', maxWidth: 96 }}
-              value={it.unit_amount}
-              onChange={(e) => onUpdateItem(idx, { unit_amount: e.target.value })}
-            />
+            (() => {
+              const svc = it.hub_service_type_id
+                ? serviceTypes.find((s) => s.id === it.hub_service_type_id)
+                : null;
+              const locked = svc?.price_mode === 'fixed' && Boolean(it.hub_service_type_id);
+              return (
+                <input
+                  className="hub-orcamento-novo__input"
+                  style={{ textAlign: 'right', maxWidth: 96 }}
+                  value={it.unit_amount}
+                  readOnly={locked}
+                  title={
+                    locked
+                      ? 'Este serviço tem preço fixo no catálogo. Só o financeiro pode ajustar via desconto.'
+                      : undefined
+                  }
+                  onChange={(e) => {
+                    if (locked) return;
+                    onUpdateItem(idx, { unit_amount: e.target.value });
+                  }}
+                />
+              );
+            })()
           ) : (
             fmtBrl(Number(it.unit_amount))
           )}
@@ -348,6 +374,44 @@ export const ComandaItemsSection: React.FC<Props> = ({
             />
           </div>
         </div>
+      ) : null}
+
+      {pendingPriceApprovals.length > 0 ? (
+        <section
+          className="hub-comanda-items__subsection"
+          aria-labelledby="comanda-pending-prices"
+          style={{ marginBottom: 16 }}
+        >
+          <h3 id="comanda-pending-prices" className="hub-comanda-items__subsection-title">
+            Pendentes de aprovação financeira
+          </h3>
+          <p className="hub-clientes__muted" style={{ marginTop: 0, fontSize: 13 }}>
+            Valores de cirurgia/internação fora da faixa (ou sem faixa) ainda não entram no total da
+            comanda.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {pendingPriceApprovals.map((p) => (
+              <li key={`${p.kind}-${p.id}`} style={{ marginBottom: 8 }}>
+                {p.service_name} — {fmtBrl(Number(p.unit_amount))} × {p.quantity}
+                {canApprovePrices && onApprovePrice ? (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className="hub-quote-detail__text-btn"
+                      disabled={approvingPriceId === p.id}
+                      onClick={() => onApprovePrice(p)}
+                    >
+                      {approvingPriceId === p.id ? 'Aprovando…' : 'Aprovar preço'}
+                    </button>
+                  </>
+                ) : (
+                  <span className="hub-clientes__muted"> · aguardando financeiro</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       <section className="hub-comanda-items__subsection" aria-labelledby="comanda-items-services">

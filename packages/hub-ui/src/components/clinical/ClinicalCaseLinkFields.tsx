@@ -44,7 +44,9 @@ export function isCaseLinkResolved(
 ): boolean {
   if (value.hub_case_id) return true;
   if (value.create_new_case) return true;
-  return !hasActiveCases;
+  // Sem casos ativos ainda dá para criar — mas só se o formulário já marcou criação
+  // (evita submit “vazio” que gerava caso genérico sem o título digitado).
+  return !hasActiveCases && Boolean(value.create_new_case);
 }
 
 /**
@@ -86,10 +88,13 @@ const ClinicalCaseLinkFields: React.FC<Props> = ({
         onHasActiveCases?.(active.length > 0);
         if (value.hub_case_id || value.create_new_case) return;
         if (active.length === 0) {
-          onChange({ create_new_case: true, new_case_title: value.new_case_title ?? null });
-        } else if (active.length === 1) {
-          onChange({ hub_case_id: active[0]!.id });
+          // Sem caso ativo: já prepara criação com o título sugerido (procedimento / queixa).
+          onChange({
+            create_new_case: true,
+            new_case_title: value.new_case_title ?? suggestedTitle ?? null,
+          });
         }
+        // Com casos ativos: não pré-seleciona — o usuário escolhe existente ou novo.
       })
       .catch(() => {
         if (cancelled) return;
@@ -103,7 +108,7 @@ const ClinicalCaseLinkFields: React.FC<Props> = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clinicId, petId]);
+  }, [clinicId, petId, suggestedTitle]);
 
   const caseOptions: HubComboboxOption[] = useMemo(() => {
     const opts = activeCases.map((c) => ({ value: c.id, label: c.title }));
@@ -144,7 +149,7 @@ const ClinicalCaseLinkFields: React.FC<Props> = ({
       return;
     }
     onChange({
-      hub_case_id: activeCases.length === 1 ? activeCases[0]!.id : value.hub_case_id ?? null,
+      hub_case_id: value.hub_case_id ?? (activeCases.length === 1 ? activeCases[0]!.id : null),
     });
   };
 

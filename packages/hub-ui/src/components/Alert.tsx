@@ -120,13 +120,17 @@ const Alert: React.FC<AlertProps> = ({
               }}
               style={{
                 width: '100%',
-                padding: '12px 24px',
+                padding: '10px 16px',
                 borderRadius: 8,
                 border: `1px solid ${color}`,
                 background: '#fff',
                 color,
                 cursor: 'pointer',
-                fontWeight: 500,
+                fontWeight: 600,
+                fontSize: 14,
+                fontFamily: 'inherit',
+                lineHeight: 1.2,
+                boxSizing: 'border-box',
               }}
             >
               {secondaryText}
@@ -137,13 +141,17 @@ const Alert: React.FC<AlertProps> = ({
             onClick={handleConfirm}
             style={{
               width: '100%',
-              padding: '12px 24px',
+              padding: '10px 16px',
               borderRadius: 8,
               border: 'none',
               background: color,
               color: '#fff',
               cursor: 'pointer',
-              fontWeight: 500,
+              fontWeight: 600,
+              fontSize: 14,
+              fontFamily: 'inherit',
+              lineHeight: 1.2,
+              boxSizing: 'border-box',
             }}
           >
             {confirmText}

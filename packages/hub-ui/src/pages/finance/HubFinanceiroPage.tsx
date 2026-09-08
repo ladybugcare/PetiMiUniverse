@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import { AlertCircle, LayoutDashboard, Receipt, TrendingDown, TrendingUp } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
+import { HubDateField } from '../../components/HubDateField';
 import { HubLoading } from '../../components/HubLoading';
 import { HubTabs } from '../../components/HubTabs';
 import {
@@ -567,15 +568,12 @@ const HubFinanceiroPage: React.FC = () => {
                 />
               </div>
               <div className="hub-clientes__field hub-finance-page__field-compact">
-                <label className="hub-clientes__label" htmlFor="fin-exp-date">
-                  Data
-                </label>
-                <input
+                <HubDateField
                   id="fin-exp-date"
-                  className="hub-clientes__input"
-                  type="date"
-                  value={expDate}
-                  onChange={(e) => setExpDate(e.target.value)}
+                  label="Data"
+                  valueIso={expDate}
+                  onChangeIso={setExpDate}
+                  showTodayButton={false}
                 />
               </div>
               <button
@@ -591,27 +589,21 @@ const HubFinanceiroPage: React.FC = () => {
           )}
           <div className="hub-clientes__toolbar" style={{ marginTop: 16, marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
             <div className="hub-clientes__field hub-finance-page__field-compact">
-              <label className="hub-clientes__label" htmlFor="fin-exp-list-from">
-                Listar de
-              </label>
-              <input
+              <HubDateField
                 id="fin-exp-list-from"
-                className="hub-clientes__input"
-                type="date"
-                value={expListFrom}
-                onChange={(e) => setExpListFrom(e.target.value)}
+                label="Listar de"
+                valueIso={expListFrom}
+                onChangeIso={setExpListFrom}
+                showTodayButton={false}
               />
             </div>
             <div className="hub-clientes__field hub-finance-page__field-compact">
-              <label className="hub-clientes__label" htmlFor="fin-exp-list-to">
-                até
-              </label>
-              <input
+              <HubDateField
                 id="fin-exp-list-to"
-                className="hub-clientes__input"
-                type="date"
-                value={expListTo}
-                onChange={(e) => setExpListTo(e.target.value)}
+                label="até"
+                valueIso={expListTo}
+                onChangeIso={setExpListTo}
+                showTodayButton={false}
               />
             </div>
             <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => void loadExpenses()}>

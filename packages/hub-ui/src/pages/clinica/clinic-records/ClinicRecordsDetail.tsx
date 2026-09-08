@@ -23,9 +23,11 @@ import type {
   HubClinicalExam,
   HubClinicalTimelineEvent,
   HubEncounter,
+  HubHospitalization,
   HubPetClinicalFlag,
   HubPrescription,
   HubSpecialistReferral,
+  HubSurgery,
   HubVaccination,
 } from '../../../api/hubClinicalApi';
 import type { HubPet, HubPetProfileChange } from '../../../api/hubPetsApi';
@@ -38,6 +40,8 @@ import { PetProfileHistoryList } from '../../pets/PetProfileHistoryList';
 import { PET_CLINICAL_FLAG_OPTIONS, defaultClinicalFlagLabel, neuteredLabel } from '../../pets/petClinicalFlags';
 import { behaviorTagLabel } from '../../pets/petBehaviorTags';
 import { petInitials, sexLabel } from '../vet-cockpit/vetCockpitUtils';
+import { HOSP_STATUS_LABEL } from '../hospital/hospDisplay';
+import { SURGERY_STATUS_LABEL } from '../surgery/surgDisplay';
 import {
   CLINIC_RECORDS_TABS,
   encounterStatusLabel,
@@ -71,6 +75,8 @@ type Props = {
   attachments: HubClinicalAttachment[];
   exams: HubClinicalExam[];
   referrals: HubSpecialistReferral[];
+  surgeries: HubSurgery[];
+  hospitalizations: HubHospitalization[];
   profileChanges: HubPetProfileChange[];
   newFlagKey: string;
   newFlagLabel: string;
@@ -158,6 +164,8 @@ const ClinicRecordsDetail: React.FC<Props> = ({
   attachments,
   exams,
   referrals,
+  surgeries,
+  hospitalizations,
   profileChanges,
   newFlagKey,
   newFlagLabel,
@@ -272,6 +280,24 @@ const ClinicRecordsDetail: React.FC<Props> = ({
               <span className="hub-clinic-records__stat-value">{vaccinations.length}</span>
               <span className="hub-clinic-records__stat-label">Vacinas</span>
             </div>
+            <button
+              type="button"
+              className="hub-clinic-records__stat hub-clinic-case-page__stat-btn"
+              onClick={() => onTabChange('cirurgias')}
+            >
+              <Scissors size={16} aria-hidden />
+              <span className="hub-clinic-records__stat-value">{surgeries.length}</span>
+              <span className="hub-clinic-records__stat-label">Cirurgias</span>
+            </button>
+            <button
+              type="button"
+              className="hub-clinic-records__stat hub-clinic-case-page__stat-btn"
+              onClick={() => onTabChange('internacoes')}
+            >
+              <BedDouble size={16} aria-hidden />
+              <span className="hub-clinic-records__stat-value">{hospitalizations.length}</span>
+              <span className="hub-clinic-records__stat-label">Internações</span>
+            </button>
           </div>
         </header>
 
@@ -453,6 +479,107 @@ const ClinicRecordsDetail: React.FC<Props> = ({
                     </RecordGroup>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {tab === 'cirurgias' ? (
+          <div className="hub-clinic-records__section">
+            {surgeries.length === 0 ? (
+              <p className="hub-clinic-records__tab-empty">Nenhuma cirurgia registrada neste prontuário.</p>
+            ) : (
+              <div className="hub-clinic-records__cards">
+                {[...surgeries]
+                  .sort(
+                    (a, b) =>
+                      new Date(b.completed_at || b.started_at || b.scheduled_at || 0).getTime() -
+                      new Date(a.completed_at || a.started_at || a.scheduled_at || 0).getTime(),
+                  )
+                  .map((s) => (
+                    <article key={s.id} className="hub-clinic-records__card">
+                      <div className="hub-clinic-records__card-head">
+                        <strong className="hub-clinic-records__card-title">{s.title}</strong>
+                        <span className={`hub-dayboard__op-badge hub-dayboard__op-badge--${s.status}`}>
+                          {SURGERY_STATUS_LABEL[s.status] || s.status}
+                        </span>
+                      </div>
+                      <p className="hub-clinic-records__card-meta">
+                        {s.completed_at
+                          ? `Concluída em ${formatRecordDateTime(s.completed_at)}`
+                          : s.scheduled_at
+                            ? `Agendada para ${formatRecordDateTime(s.scheduled_at)}`
+                            : 'Sem data'}
+                        {s.anesthetic_risk ? ` · ASA ${s.anesthetic_risk}` : ''}
+                      </p>
+                      <div className="hub-clinic-records__chip-row">
+                        <Link
+                          to={`/hub/clinica/cirurgias/${s.id}`}
+                          className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"
+                        >
+                          Abrir ficha
+                          <ChevronRight size={14} aria-hidden />
+                        </Link>
+                        {s.hub_case_id ? (
+                          <Link
+                            to={`/hub/clinica/casos/${s.hub_case_id}`}
+                            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                          >
+                            Ver caso
+                            <ChevronRight size={14} aria-hidden />
+                          </Link>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {tab === 'internacoes' ? (
+          <div className="hub-clinic-records__section">
+            {hospitalizations.length === 0 ? (
+              <p className="hub-clinic-records__tab-empty">Nenhuma internação registrada neste prontuário.</p>
+            ) : (
+              <div className="hub-clinic-records__cards">
+                {hospitalizations.map((h) => (
+                  <article key={h.id} className="hub-clinic-records__card">
+                    <div className="hub-clinic-records__card-head">
+                      <strong className="hub-clinic-records__card-title">
+                        {h.reason?.trim() || h.hub_hospital_beds?.code
+                          ? `Internação${h.hub_hospital_beds?.code ? ` · leito ${h.hub_hospital_beds.code}` : ''}`
+                          : 'Internação'}
+                      </strong>
+                      <span className={`hub-dayboard__op-badge hub-dayboard__op-badge--${h.status === 'active' ? 'in_progress' : h.status}`}>
+                        {HOSP_STATUS_LABEL[h.status] || h.status}
+                      </span>
+                    </div>
+                    <p className="hub-clinic-records__card-meta">
+                      Entrada {formatRecordDateTime(h.admitted_at)}
+                      {h.discharged_at ? ` · Alta ${formatRecordDateTime(h.discharged_at)}` : ''}
+                    </p>
+                    {h.reason ? <p className="hub-clinic-records__card-body">{h.reason}</p> : null}
+                    <div className="hub-clinic-records__chip-row">
+                      <Link
+                        to={`/hub/clinica/internacoes/${h.id}`}
+                        className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"
+                      >
+                        Abrir ficha
+                        <ChevronRight size={14} aria-hidden />
+                      </Link>
+                      {h.hub_case_id ? (
+                        <Link
+                          to={`/hub/clinica/casos/${h.hub_case_id}`}
+                          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                        >
+                          Ver caso
+                          <ChevronRight size={14} aria-hidden />
+                        </Link>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
               </div>
             )}
           </div>

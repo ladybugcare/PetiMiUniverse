@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
+import { HubTimeField } from '../../components/HubTimeField';
 import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import {
@@ -441,21 +442,19 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
             <div className="nam-section">
               <div className="nam-row nam-row--cols2">
                 <div className="nam-field">
-                  <label className="nam-label">Início</label>
-                  <input
-                    className="nam-input"
-                    type="time"
-                    value={config.startsHmOverride ?? computedStartHm}
-                    onChange={(e) => patch({ startsHmOverride: e.target.value })}
+                  <HubTimeField
+                    id={`nam-pet-starts-${config.petId}`}
+                    label="Início"
+                    valueHm={config.startsHmOverride ?? computedStartHm}
+                    onChangeHm={(startsHmOverride) => patch({ startsHmOverride })}
                   />
                 </div>
                 <div className="nam-field">
-                  <label className="nam-label">Fim previsto</label>
-                  <input
-                    className="nam-input"
-                    type="time"
-                    value={config.endsHmOverride ?? computedEndHm}
-                    onChange={(e) => patch({ endsHmOverride: e.target.value })}
+                  <HubTimeField
+                    id={`nam-pet-ends-${config.petId}`}
+                    label="Fim previsto"
+                    valueHm={config.endsHmOverride ?? computedEndHm}
+                    onChangeHm={(endsHmOverride) => patch({ endsHmOverride })}
                   />
                 </div>
               </div>

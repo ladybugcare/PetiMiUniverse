@@ -169,6 +169,36 @@ export async function notifyHubStockAlert(opts: {
   });
 }
 
+/** Embalagem quase vazia após uso fracionado — quem pode zerar o resto. */
+export async function notifyHubNearlyEmptyLot(opts: {
+  clinicId: string;
+  itemId: string;
+  lotId: string;
+  itemName: string;
+  lotCode?: string | null;
+  remainingStock: number;
+  unitLabel: string;
+  remainingContent?: number | null;
+  contentUnit?: string | null;
+}): Promise<void> {
+  const lotLabel = opts.lotCode?.trim() ? `lote ${opts.lotCode}` : 'lote sem código';
+  const stockPart = `${opts.remainingStock} ${opts.unitLabel}`;
+  const contentPart =
+    opts.remainingContent != null && opts.contentUnit
+      ? ` (${opts.remainingContent} ${opts.contentUnit})`
+      : '';
+  await hubNotifyStaff({
+    clinicId: opts.clinicId,
+    areas: ['estoque'],
+    type: 'hub_stock_alert',
+    title: 'Embalagem quase vazia',
+    message: `${opts.itemName} (${lotLabel}): restam ${stockPart}${contentPart}. Quem tem estoque pode dar a baixa completa do resto.`,
+    link: '/hub/estoque/alertas',
+    entityType: 'inventory_lot',
+    entityId: opts.lotId,
+  });
+}
+
 /** Lote dentro da janela de alerta de validade do item. */
 export async function notifyHubStockExpiryAlert(opts: {
   clinicId: string;

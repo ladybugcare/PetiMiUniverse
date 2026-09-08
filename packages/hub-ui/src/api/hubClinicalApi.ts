@@ -95,11 +95,14 @@ export type DayBoardItem = {
   pet?: HubEncounterPet | null;
   guardian?: { id: string; full_name: string } | null;
   staff_member?: { id: string; full_name: string } | null;
-  service_type?: { id: string; name: string } | null;
+  service_type?: { id: string; name: string; service_group?: string } | null;
   pet_id?: string | null;
   guardian_id?: string | null;
   hub_staff_member_id?: string | null;
   operational_phase?: HubEncounterOperationalPhase | null;
+  surgery_id?: string | null;
+  surgery_title?: string | null;
+  surgery_status?: string | null;
 } & Partial<HubEncounter>;
 
 export type HubPetClinicalFlag = {
@@ -205,6 +208,8 @@ export type HubMedicationAdministration = {
   dose?: string | null;
   use_route?: string | null;
   quantity?: number | null;
+  quantity_unit?: string | null;
+  stock_qty?: number | null;
   product_price?: number | null;
   notes?: string | null;
   administered_at?: string | null;
@@ -266,6 +271,9 @@ export type HubHospitalization = {
   hub_hospital_bed_id?: string | null;
   hub_case_id?: string | null;
   hub_encounter_id?: string | null;
+  daily_hub_service_type_id?: string | null;
+  daily_unit_amount?: number | null;
+  daily_includes_medication?: boolean;
   hub_pets?: { name: string; species?: string | null } | null;
   hub_hospital_beds?: { code: string; label?: string | null } | null;
   hub_guardians?: { full_name: string } | null;
@@ -273,6 +281,44 @@ export type HubHospitalization = {
 
 export type HubSurgeryStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
 export type HubAnestheticRisk = 'I' | 'II' | 'III' | 'IV' | 'V' | 'VI' | 'E';
+
+export type HubClinicalPriceStatus = 'confirmed' | 'pending_approval';
+export type HubClinicalBillingMode = 'charge' | 'included';
+
+export type HubSurgeryService = {
+  id: string;
+  clinic_id: string;
+  surgery_id: string;
+  hub_service_type_id: string;
+  hub_appointment_service_id?: string | null;
+  service_name: string;
+  quantity: number;
+  unit_amount: number;
+  pricing_source?: string;
+  price_status: HubClinicalPriceStatus;
+  billing_mode: HubClinicalBillingMode;
+  notes?: string | null;
+  sort_order?: number;
+};
+
+export type HubHospitalizationCharge = {
+  id: string;
+  clinic_id: string;
+  hospitalization_id: string;
+  charge_kind: 'daily' | 'medication' | 'procedure' | 'material' | 'other';
+  hub_service_type_id?: string | null;
+  hub_inventory_item_id?: string | null;
+  hub_inventory_lot_id?: string | null;
+  service_name: string;
+  quantity: number;
+  unit_amount: number;
+  pricing_source?: string;
+  price_status: HubClinicalPriceStatus;
+  billing_mode: HubClinicalBillingMode;
+  service_date?: string | null;
+  notes?: string | null;
+  sort_order?: number;
+};
 
 export type HubSurgery = {
   id: string;
@@ -287,6 +333,7 @@ export type HubSurgery = {
   guardian_id?: string | null;
   hub_encounter_id?: string | null;
   hub_case_id?: string | null;
+  hub_appointment_id?: string | null;
   hub_staff_member_id?: string | null;
   anesthetic_risk?: HubAnestheticRisk | null;
   pre_op?: Record<string, unknown>;
@@ -299,8 +346,9 @@ export type HubSurgery = {
   team_notes?: string | null;
   materials_notes?: string | null;
   post_op_notes?: string | null;
-  hub_pets?: { name: string } | null;
+  hub_pets?: { name: string; species?: string | null } | null;
   hub_guardians?: { full_name: string } | null;
+  hub_clinical_cases?: { id: string; title: string; status?: string | null } | null;
 };
 
 export type HubHospitalizationEventKind = 'vital' | 'medication' | 'feeding' | 'fluid' | 'nursing' | 'note';
@@ -454,6 +502,16 @@ export const hubEncountersApi = {
     return apiRequest(
       `${encBase}?clinic_id=${encodeURIComponent(clinicId)}&pet_id=${encodeURIComponent(petId)}`,
     ) as Promise<{ encounters: HubEncounter[] }>;
+  },
+  list(
+    clinicId: string,
+    opts?: { status?: HubEncounterStatus; staffId?: string; petId?: string },
+  ) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.status) q.set('status', opts.status);
+    if (opts?.staffId) q.set('hub_staff_member_id', opts.staffId);
+    if (opts?.petId) q.set('pet_id', opts.petId);
+    return apiRequest(`${encBase}?${q}`) as Promise<{ encounters: HubEncounter[] }>;
   },
 };
 
@@ -704,6 +762,7 @@ export const hubClinicalApi = {
     use_route?: string | null;
     quantity?: number;
     notes?: string | null;
+    confirm_stock_out?: boolean;
   }) {
     return apiRequest(`${clinicalBase}/medication-administrations`, {
       method: 'POST',
@@ -787,10 +846,11 @@ export const hubClinicalApi = {
       body: JSON.stringify({ ...payload, unit_id: unitId }),
     });
   },
-  listHospitalizations(clinicId: string, status?: string, hubCaseId?: string) {
+  listHospitalizations(clinicId: string, status?: string, hubCaseId?: string, petId?: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (status) q.set('status', status);
     if (hubCaseId) q.set('hub_case_id', hubCaseId);
+    if (petId) q.set('pet_id', petId);
     return apiRequest(`${clinicalBase}/hospitalizations?${q}`) as Promise<{
       hospitalizations: HubHospitalization[];
     }>;
@@ -814,6 +874,9 @@ export const hubClinicalApi = {
     hub_staff_member_id?: string | null;
     guardian_id?: string | null;
     unit_id?: string | null;
+    daily_hub_service_type_id?: string | null;
+    daily_unit_amount?: number | null;
+    daily_includes_medication?: boolean;
   }) {
     const unitId = payload.unit_id ?? getSelectedUnitId() ?? null;
     return apiRequest(`${clinicalBase}/hospitalizations`, {
@@ -829,11 +892,64 @@ export const hubClinicalApi = {
     create_new_case?: boolean;
     new_case_title?: string | null;
     hub_hospital_bed_id?: string | null;
+    daily_hub_service_type_id?: string | null;
+    daily_unit_amount?: number | null;
+    daily_includes_medication?: boolean;
   }) {
     return apiRequest(`${clinicalBase}/hospitalizations/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }) as Promise<{ hospitalization: HubHospitalization }>;
+  },
+  listHospitalizationCharges(hospitalizationId: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${clinicalBase}/hospitalizations/${hospitalizationId}/charges?${q}`) as Promise<{
+      charges: HubHospitalizationCharge[];
+    }>;
+  },
+  createHospitalizationCharge(
+    hospitalizationId: string,
+    payload: {
+      clinic_id: string;
+      charge_kind?: HubHospitalizationCharge['charge_kind'];
+      hub_service_type_id?: string | null;
+      hub_inventory_item_id?: string | null;
+      hub_inventory_lot_id?: string | null;
+      service_name?: string;
+      unit_amount?: number | null;
+      quantity?: number;
+      billing_mode?: HubClinicalBillingMode;
+      service_date?: string | null;
+      notes?: string | null;
+    },
+  ) {
+    return apiRequest(`${clinicalBase}/hospitalizations/${hospitalizationId}/charges`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ charge: HubHospitalizationCharge }>;
+  },
+  patchHospitalizationCharge(
+    hospitalizationId: string,
+    chargeId: string,
+    payload: {
+      clinic_id: string;
+      unit_amount?: number;
+      quantity?: number;
+      billing_mode?: HubClinicalBillingMode;
+      notes?: string | null;
+      service_date?: string | null;
+    },
+  ) {
+    return apiRequest(`${clinicalBase}/hospitalizations/${hospitalizationId}/charges/${chargeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ charge: HubHospitalizationCharge }>;
+  },
+  deleteHospitalizationCharge(hospitalizationId: string, chargeId: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${clinicalBase}/hospitalizations/${hospitalizationId}/charges/${chargeId}?${q}`, {
+      method: 'DELETE',
+    });
   },
   addDailyNote(hospitalizationId: string, payload: Record<string, unknown>) {
     return apiRequest(`${clinicalBase}/hospitalizations/${hospitalizationId}/daily-notes`, {
@@ -857,11 +973,16 @@ export const hubClinicalApi = {
       body: JSON.stringify({ ...payload, clinic_id }),
     }) as Promise<{ event: HubHospitalizationEvent }>;
   },
-  listSurgeries(clinicId: string, status?: string, hubCaseId?: string) {
+  listSurgeries(clinicId: string, status?: string, hubCaseId?: string, petId?: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (status) q.set('status', status);
     if (hubCaseId) q.set('hub_case_id', hubCaseId);
+    if (petId) q.set('pet_id', petId);
     return apiRequest(`${clinicalBase}/surgeries?${q}`) as Promise<{ surgeries: HubSurgery[] }>;
+  },
+  getSurgery(id: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${clinicalBase}/surgeries/${id}?${q}`) as Promise<{ surgery: HubSurgery }>;
   },
   createSurgery(payload: {
     clinic_id: string;
@@ -872,16 +993,86 @@ export const hubClinicalApi = {
     pre_op?: Record<string, unknown>;
     hub_case_id?: string | null;
     hub_encounter_id?: string | null;
+    hub_appointment_id?: string | null;
     create_new_case?: boolean;
     new_case_title?: string | null;
     hub_staff_member_id?: string | null;
     guardian_id?: string | null;
     unit_id?: string | null;
+    services?: Array<{
+      hub_service_type_id: string;
+      unit_amount?: number | null;
+      quantity?: number;
+      billing_mode?: HubClinicalBillingMode;
+      notes?: string | null;
+    }>;
   }) {
-    return apiRequest(`${clinicalBase}/surgeries`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<{ surgery: HubSurgery }>;
+    return apiRequest(`${clinicalBase}/surgeries`, { method: 'POST', body: JSON.stringify(payload) }) as Promise<{
+      surgery: HubSurgery;
+      services?: HubSurgeryService[];
+    }>;
   },
   patchSurgery(id: string, payload: Record<string, unknown>) {
     return apiRequest(`${clinicalBase}/surgeries/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+  listSurgeryServices(surgeryId: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${clinicalBase}/surgeries/${surgeryId}/services?${q}`) as Promise<{
+      services: HubSurgeryService[];
+    }>;
+  },
+  createSurgeryService(
+    surgeryId: string,
+    payload: {
+      clinic_id: string;
+      hub_service_type_id: string;
+      unit_amount?: number | null;
+      quantity?: number;
+      billing_mode?: HubClinicalBillingMode;
+      notes?: string | null;
+    },
+  ) {
+    return apiRequest(`${clinicalBase}/surgeries/${surgeryId}/services`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ service: HubSurgeryService }>;
+  },
+  patchSurgeryService(
+    surgeryId: string,
+    serviceId: string,
+    payload: {
+      clinic_id: string;
+      unit_amount?: number;
+      quantity?: number;
+      billing_mode?: HubClinicalBillingMode;
+      notes?: string | null;
+    },
+  ) {
+    return apiRequest(`${clinicalBase}/surgeries/${surgeryId}/services/${serviceId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ service: HubSurgeryService }>;
+  },
+  deleteSurgeryService(surgeryId: string, serviceId: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${clinicalBase}/surgeries/${surgeryId}/services/${serviceId}?${q}`, {
+      method: 'DELETE',
+    });
+  },
+  approveSurgeryServicePrice(surgeryId: string, serviceId: string, clinicId: string) {
+    return apiRequest(`${clinicalBase}/surgeries/${surgeryId}/services/${serviceId}/approve-price`, {
+      method: 'POST',
+      body: JSON.stringify({ clinic_id: clinicId }),
+    }) as Promise<{ service: HubSurgeryService }>;
+  },
+  approveHospitalizationChargePrice(hospitalizationId: string, chargeId: string, clinicId: string) {
+    return apiRequest(
+      `${clinicalBase}/hospitalizations/${hospitalizationId}/charges/${chargeId}/approve-price`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ clinic_id: clinicId }),
+      },
+    ) as Promise<{ charge: HubHospitalizationCharge }>;
   },
 };
 

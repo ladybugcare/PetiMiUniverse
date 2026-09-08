@@ -43,7 +43,7 @@ const CASE_SELECT = `
 `;
 
 const GENERIC_CASE_TITLE_RE =
-  /^(atendimento avulso|consulta|caso clínico|atendimento clínico)(\s*[—–-]\s*\d{2}\/\d{2}\/\d{4})?$/i;
+  /^(atendimento avulso|caso avulso|consulta|caso clínico|atendimento clínico)(\s*[—–-]\s*\d{2}\/\d{2}\/\d{4})?$/i;
 
 export function isGenericClinicalCaseTitle(title?: string | null): boolean {
   const t = (title ?? '').trim();
@@ -612,6 +612,8 @@ export async function ensureCaseAndAdmissionEncounter(opts: {
   encounter_chief_complaint: string;
   reopen_reason?: string | null;
   reopened_by?: string | null;
+  hub_staff_member_id?: string | null;
+  hub_service_type_id?: string | null;
 }): Promise<{ case_id: string; encounter_id: string }> {
   const {
     clinic_id,
@@ -625,13 +627,15 @@ export async function ensureCaseAndAdmissionEncounter(opts: {
     encounter_chief_complaint,
     reopen_reason,
     reopened_by,
+    hub_staff_member_id,
+    hub_service_type_id,
   } = opts;
 
   // Encounter fornecido: validar e extrair case_id dele
   if (hub_encounter_id) {
     const { data: enc } = await supabaseAdmin
       .from('hub_encounters')
-      .select('id, hub_case_id')
+      .select('id, hub_case_id, hub_staff_member_id, hub_service_type_id')
       .eq('id', hub_encounter_id)
       .eq('clinic_id', clinic_id)
       .eq('pet_id', pet_id)
@@ -639,11 +643,26 @@ export async function ensureCaseAndAdmissionEncounter(opts: {
       .maybeSingle();
 
     if (!enc) throw new Error('Atendimento não encontrado ou não pertence a este pet/clínica');
+    const encPatch: Record<string, unknown> = {};
+    if (hub_staff_member_id && !(enc as { hub_staff_member_id?: string | null }).hub_staff_member_id) {
+      encPatch.hub_staff_member_id = hub_staff_member_id;
+    }
+    if (hub_service_type_id && !(enc as { hub_service_type_id?: string | null }).hub_service_type_id) {
+      encPatch.hub_service_type_id = hub_service_type_id;
+    }
+    if (Object.keys(encPatch).length > 0) {
+      await supabaseAdmin
+        .from('hub_encounters')
+        .update(encPatch)
+        .eq('id', hub_encounter_id)
+        .eq('clinic_id', clinic_id);
+    }
     const caseId = (enc.hub_case_id as string | null) ?? null;
 
     // Se o encounter já tem case, usar; se não, criar/resolver
     const finalCaseId = caseId ?? await resolveOrCreateClinicalCase({
       clinic_id, unit_id, pet_id, guardian_id, hub_case_id, create_new_case, new_case_title,
+      chief_complaint: encounter_chief_complaint,
       reopen_reason, reopened_by,
     });
 
@@ -677,6 +696,8 @@ export async function ensureCaseAndAdmissionEncounter(opts: {
       status: 'in_progress',
       chief_complaint: encounter_chief_complaint,
       started_at: new Date().toISOString(),
+      hub_staff_member_id: hub_staff_member_id ?? null,
+      hub_service_type_id: hub_service_type_id ?? null,
     })
     .select('id')
     .single();

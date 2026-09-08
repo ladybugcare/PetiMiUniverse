@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Clock, Plus } from 'lucide-react';
+import { AlertTriangle, Clock, Droplets, Plus } from 'lucide-react';
 import { getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { hubInventoryApi } from '../../api/hubInventoryApi';
 import type { HubInventoryItem, HubInventoryLotRow } from '../../api/hubInventoryApi';
@@ -16,6 +16,7 @@ import {
   stockItemCatalogHref,
   type EstoqueAlertasView,
 } from './estoqueShared';
+import { formatStockQty } from './inventoryContentUtils';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './estoque.css';
@@ -30,7 +31,7 @@ function formatExpiry(date: string | null | undefined): string {
 }
 
 const HubEstoqueAlertasPage: React.FC = () => {
-  const { showError } = useAlert();
+  const { showError, showSuccess, showConfirm } = useAlert();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const view = parseAlertasView(searchParams.get('view'));
@@ -43,11 +44,13 @@ const HubEstoqueAlertasPage: React.FC = () => {
     clinicId ? `${clinicId}:${view}` : null,
   );
   const [low, setLow] = useState<HubInventoryItem[]>([]);
+  const [nearlyEmpty, setNearlyEmpty] = useState<HubInventoryLotRow[]>([]);
   const [expiringPolicy, setExpiringPolicy] = useState<HubInventoryLotRow[]>([]);
   const [expiringPeriod, setExpiringPeriod] = useState<HubInventoryLotRow[]>([]);
   const [within, setWithin] = useState(60);
   const [movementOpen, setMovementOpen] = useState(false);
   const [movementItemId, setMovementItemId] = useState<string | null>(null);
+  const [writingRemainder, setWritingRemainder] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!clinicId) return;
@@ -57,12 +60,14 @@ const HubEstoqueAlertasPage: React.FC = () => {
         const res = await hubInventoryApi.lots.expiring(clinicId, within);
         setExpiringPeriod(res.lots || []);
       } else {
-        const [a, b] = await Promise.all([
+        const [a, b, c] = await Promise.all([
           hubInventoryApi.reports.lowStock(clinicId),
           hubInventoryApi.lots.expiring(clinicId, 90, { byPolicy: true }),
+          hubInventoryApi.reports.nearlyEmptyLots(clinicId),
         ]);
         setLow(a.items || []);
         setExpiringPolicy(b.lots || []);
+        setNearlyEmpty(c.lots || []);
       }
       succeed();
     } catch (e: unknown) {
@@ -103,6 +108,39 @@ const HubEstoqueAlertasPage: React.FC = () => {
     navigate(stockItemCatalogHref(item.item_kind, item.name));
   };
 
+  const writeOffRemainder = (lot: HubInventoryLotRow) => {
+    if (!clinicId || !canWrite || writingRemainder) return;
+    const unit = lot.item?.unit_label?.trim() || 'un.';
+    const contentUnit = lot.item?.content_unit?.trim();
+    const contentPart =
+      lot.remaining_content != null && contentUnit
+        ? ` (${formatStockQty(lot.remaining_content)} ${contentUnit})`
+        : '';
+    showConfirm(
+      `Baixar o resto de ${lot.item?.name || 'item'} — lote ${lot.lot_code || 'sem código'}: ${formatStockQty(lot.qty_on_hand)} ${unit}${contentPart}?`,
+      async () => {
+        setWritingRemainder(lot.id);
+        try {
+          await hubInventoryApi.movements.create({
+            clinic_id: clinicId,
+            item_id: lot.item_id,
+            lot_id: lot.id,
+            movement_type: 'adjustment_out',
+            qty: lot.qty_on_hand,
+            notes: 'Resto de embalagem após uso clínico',
+          });
+          showSuccess('Resto baixado do estoque.');
+          await load();
+        } catch (e: unknown) {
+          showError((e as Error)?.message || 'Erro ao baixar resto');
+        } finally {
+          setWritingRemainder(null);
+        }
+      },
+      'Baixar resto',
+    );
+  };
+
   if (!user) return <Navigate to="/login" replace />;
   if (!permLoading && !clinicId) {
     return (
@@ -119,7 +157,7 @@ const HubEstoqueAlertasPage: React.FC = () => {
     );
   }
 
-  const operacionalEmpty = low.length === 0 && expiringPolicy.length === 0;
+  const operacionalEmpty = low.length === 0 && expiringPolicy.length === 0 && nearlyEmpty.length === 0;
   const validadeEmpty = expiringPeriod.length === 0;
 
   return (
@@ -132,7 +170,7 @@ const HubEstoqueAlertasPage: React.FC = () => {
               <p className="hub-clientes__muted hub-servicos-config__lead">
                 {view === 'validade'
                   ? 'Consulta livre de lotes a vencer no período escolhido, independente da política do item.'
-                  : 'Estoque abaixo do mínimo e lotes dentro da política de validade de cada item.'}
+                  : 'Estoque abaixo do mínimo, embalagens quase vazias e lotes dentro da política de validade de cada item.'}
               </p>
             </div>
           </div>
@@ -168,6 +206,21 @@ const HubEstoqueAlertasPage: React.FC = () => {
                 </div>
                 <div className={`hub-servicos__metric-icon${low.length > 0 ? '' : ' hub-servicos__metric-icon--muted'}`} aria-hidden>
                   <AlertTriangle size={22} strokeWidth={1.75} />
+                </div>
+              </div>
+              <div className="hub-servicos__metric-card">
+                <div className="hub-servicos__metric-card__text">
+                  <div className="hub-servicos__metric-label">Quase vazias</div>
+                  <div className="hub-servicos__metric-value">
+                    {loading ? '—' : nearlyEmpty.length.toLocaleString('pt-BR')}
+                  </div>
+                  <div className="hub-servicos__metric-sub">Resto &lt; 20% da embalagem</div>
+                </div>
+                <div
+                  className={`hub-servicos__metric-icon${nearlyEmpty.length > 0 ? '' : ' hub-servicos__metric-icon--muted'}`}
+                  aria-hidden
+                >
+                  <Droplets size={22} strokeWidth={1.75} />
                 </div>
               </div>
               <div className="hub-servicos__metric-card">
@@ -368,6 +421,119 @@ const HubEstoqueAlertasPage: React.FC = () => {
                         ) : null}
                       </div>
                     ))
+                  )}
+                </div>
+              </section>
+
+              <section className="hub-estoque__alert-panel">
+                <h2 className="hub-estoque__alert-title">Embalagens quase vazias</h2>
+                <p className="hub-clientes__muted" style={{ marginTop: 0, marginBottom: 12 }}>
+                  Lotes com menos de 20% de 1 unidade após uso fracionado. Quem tem permissão de estoque pode zerar o
+                  resto.
+                </p>
+                <div className="hub-servicos__table-wrap hub-clientes__table-wrap--desktop">
+                  <table className="hub-clientes__table">
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th>Lote</th>
+                        <th>Saldo</th>
+                        <th>Resto</th>
+                        {canWrite ? <th>Ação</th> : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {nearlyEmpty.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={canWrite ? 5 : 4}
+                            className="hub-clientes__muted"
+                            style={{ textAlign: 'center', padding: 16 }}
+                          >
+                            Nenhuma embalagem quase vazia.
+                          </td>
+                        </tr>
+                      ) : (
+                        nearlyEmpty.map((l) => {
+                          const unit = l.item?.unit_label?.trim() || 'un.';
+                          const contentUnit = l.item?.content_unit?.trim() || '';
+                          return (
+                            <tr key={l.id}>
+                              <td>
+                                <strong>{l.item?.name}</strong>
+                                <div>
+                                  <span
+                                    className={`hub-estoque__kind hub-estoque__kind--${l.item?.item_kind || 'product'}`}
+                                  >
+                                    {kindLabel(l.item?.item_kind)}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="hub-clientes__muted">{l.lot_code || '—'}</td>
+                              <td>
+                                {formatStockQty(l.qty_on_hand)} {unit}
+                              </td>
+                              <td>
+                                {l.remaining_content != null && contentUnit
+                                  ? `${formatStockQty(l.remaining_content)} ${contentUnit}`
+                                  : '—'}
+                              </td>
+                              {canWrite ? (
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                                    disabled={writingRemainder === l.id}
+                                    onClick={() => writeOffRemainder(l)}
+                                  >
+                                    {writingRemainder === l.id ? 'Baixando…' : 'Baixar resto'}
+                                  </button>
+                                </td>
+                              ) : null}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="hub-clientes__mobile-list" aria-label="Embalagens quase vazias">
+                  {nearlyEmpty.length === 0 ? (
+                    <p className="hub-clientes__muted" style={{ textAlign: 'center', padding: 12 }}>
+                      Nenhuma embalagem quase vazia.
+                    </p>
+                  ) : (
+                    nearlyEmpty.map((l) => {
+                      const unit = l.item?.unit_label?.trim() || 'un.';
+                      const contentUnit = l.item?.content_unit?.trim() || '';
+                      return (
+                        <div key={l.id} className="hub-clientes__mobile-card hub-estoque__mobile-static">
+                          <div className="hub-clientes__mobile-card-top">
+                            <div className="hub-clientes__mobile-card-main">
+                              <span className="hub-clientes__mobile-card-name">{l.item?.name}</span>
+                              <span className="hub-clientes__muted hub-clientes__mobile-card-contact">
+                                Lote {l.lot_code || 'sem código'} · {formatStockQty(l.qty_on_hand)} {unit}
+                                {l.remaining_content != null && contentUnit
+                                  ? ` · ${formatStockQty(l.remaining_content)} ${contentUnit}`
+                                  : ''}
+                              </span>
+                            </div>
+                          </div>
+                          {canWrite ? (
+                            <div className="hub-clientes__mobile-card-foot">
+                              <button
+                                type="button"
+                                className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                                disabled={writingRemainder === l.id}
+                                onClick={() => writeOffRemainder(l)}
+                              >
+                                {writingRemainder === l.id ? 'Baixando…' : 'Baixar resto'}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </section>

@@ -26,7 +26,8 @@ Este diretório documenta a estratégia oficial para evoluir o monorepo **PetiMi
 | [HUB_PICKUP_DELIVERY_OPERATIONAL_PLAN.md](./HUB_PICKUP_DELIVERY_OPERATIONAL_PLAN.md) | **MVP:** plano em fases da tela operacional Leva e Traz |
 | [HUB_COMMUNICATION_WHATSAPP_PLAN.md](./HUB_COMMUNICATION_WHATSAPP_PLAN.md) | **MVP:** comunicação com o tutor via WhatsApp click-to-chat (`wa.me`, sem custo) + in-app |
 | [HUB_MVP_MANUAL_QA.md](./HUB_MVP_MANUAL_QA.md) | Cenários de QA manual passo a passo do MVP (multi-tenant, permissões, fluxos core, financeiro) |
-| [HUB_AUTOMATED_TESTING_PLAN.md](./HUB_AUTOMATED_TESTING_PLAN.md) | Plano de testes automatizados (financeiro e atendimento) |
+| [HUB_SPECIAL_PRICES.md](./HUB_SPECIAL_PRICES.md) | Preços especiais (pet/tutor/plano) e aprovação financeira |
+| [HUB_CLINICAL_BILLABLE_SERVICES.md](./HUB_CLINICAL_BILLABLE_SERVICES.md) | Serviços cobráveis em cirurgia/internação + preço variável na comanda do atendimento |
 
 ## Princípios
 

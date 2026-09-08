@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { hubInventoryApi, type HubInventoryItem, type HubInventoryLotRow } from '../../api/hubInventoryApi';
+import { HubDateField } from '../HubDateField';
 import { HubSearchableCombobox } from '../HubSearchableCombobox';
 
 export type VaccinationFormDraft = {
@@ -167,13 +168,13 @@ export function HubVaccinationForm({
           ) : null}
         </div>
         <div className="hub-clinic-field hub-cws-field-tight">
-          <label htmlFor="vac-next">Próxima dose</label>
-          <input
+          <HubDateField
             id="vac-next"
-            type="date"
-            value={draft.next_dose_at}
+            label="Próxima dose"
+            valueIso={draft.next_dose_at}
+            onChangeIso={(next_dose_at) => set({ next_dose_at })}
             disabled={disabled}
-            onChange={(e) => set({ next_dose_at: e.target.value })}
+            showTodayButton={false}
           />
         </div>
       </div>

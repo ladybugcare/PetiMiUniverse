@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { formatCockpitDayLabel, formatCockpitShortDate, isFinalOperationalStatus } from './vetCockpitUtils';
+import {
+  formatCockpitDayLabel,
+  formatCockpitShortDate,
+  isDayBoardSurgery,
+  isFinalOperationalStatus,
+} from './vetCockpitUtils';
 
 describe('formatCockpitDayLabel', () => {
   const now = new Date(2026, 8, 3);
@@ -30,6 +35,30 @@ describe('isFinalOperationalStatus', () => {
     expect(isFinalOperationalStatus('in_progress')).toBe(false);
     expect(isFinalOperationalStatus('awaiting_exams')).toBe(false);
     expect(isFinalOperationalStatus('waiting')).toBe(false);
+  });
+});
+
+describe('isDayBoardSurgery', () => {
+  it('reconhece item com ficha cirúrgica', () => {
+    expect(isDayBoardSurgery({ kind: 'appointment_slot', surgery_id: 's1' })).toBe(true);
+  });
+
+  it('reconhece slot do grupo cirurgia', () => {
+    expect(
+      isDayBoardSurgery({
+        kind: 'appointment_slot',
+        service_type: { id: 't1', name: 'Castração', service_group: 'cirurgia' },
+      }),
+    ).toBe(true);
+  });
+
+  it('não marca consulta comum', () => {
+    expect(
+      isDayBoardSurgery({
+        kind: 'encounter',
+        service_type: { id: 't2', name: 'Consulta', service_group: 'clinica' },
+      }),
+    ).toBe(false);
   });
 });
 

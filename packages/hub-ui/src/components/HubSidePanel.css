@@ -104,10 +104,17 @@
   }
 
   .hub-side-panel__footer .hub-btn,
-  .hub-side-panel__footer .hub-clientes__btn {
+  .hub-side-panel__footer .hub-clientes__btn,
+  .hub-side-panel__footer .hub-cancel-btn {
     width: 100%;
     justify-content: center;
     min-height: 44px;
+    height: 44px;
+  }
+
+  .hub-side-panel__footer .hub-clientes__panel-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
   }
 
   .hub-side-panel__footer .hub-agenda-appt-panel__footer-actions {
@@ -257,6 +264,29 @@
   background: #faf8f6;
 }
 
-.hub-side-panel__footer .hub-btn {
+/* Mesma altura/padding/raio para cancelar, hub-btn e hub-clientes__btn no rodapé */
+.hub-side-panel__footer .hub-btn,
+.hub-side-panel__footer .hub-clientes__btn,
+.hub-side-panel__footer .hub-cancel-btn {
+  height: 40px;
   min-height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.hub-side-panel__footer .hub-clientes__panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
 }

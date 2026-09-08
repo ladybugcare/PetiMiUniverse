@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { notifyLowStockIfCrossed, notifyExpiryAlertIfNeeded } from './hubInventoryStockAlerts';
 import { parseOptionalEan } from './inventoryEan';
+import {
+  isNearlyEmptyLotBalance,
+  roundStockQty,
+  stockUnitIsConsumption,
+  stockUnitRequiresContent,
+} from './hubInventoryContentUtils';
 
 const uuidStr = z.string().uuid();
 
@@ -57,7 +63,9 @@ export async function computeBalances(clinicId: string) {
 async function assertClinicItem(clinicId: string, itemId: string) {
   const { data, error } = await supabaseAdmin
     .from('hub_inventory_items')
-    .select('id, clinic_id, deleted_at, name, min_stock_qty, expiry_alert_policy')
+    .select(
+      'id, clinic_id, deleted_at, name, min_stock_qty, expiry_alert_policy, unit_label, content_qty, content_unit',
+    )
     .eq('id', itemId)
     .maybeSingle();
   if (error || !data || data.clinic_id !== clinicId || data.deleted_at) {
@@ -289,7 +297,39 @@ export const patchHubManufacturer = async (req: Request, res: Response) => {
 // --- Items ---
 
 const ITEM_SELECT =
-  'id, clinic_id, item_kind, ean, name, unit_label, manufacturer_id, allow_fractional, store_sku, sale_purpose, product_group, default_supplier_id, description, cost_amount, sale_amount, supplier_discount_pct, max_sale_discount_pct, allow_price_override_on_sale, generates_staff_commission, min_stock_qty, expiry_alert_policy, active, created_at, updated_at, deleted_at';
+  'id, clinic_id, item_kind, ean, name, unit_label, manufacturer_id, allow_fractional, store_sku, sale_purpose, product_group, default_supplier_id, description, cost_amount, sale_amount, supplier_discount_pct, max_sale_discount_pct, allow_price_override_on_sale, generates_staff_commission, min_stock_qty, expiry_alert_policy, content_qty, content_unit, active, created_at, updated_at, deleted_at';
+
+function normalizeContentFields(opts: {
+  unit_label: string | null | undefined;
+  content_qty: number | null | undefined;
+  content_unit: string | null | undefined;
+}): { content_qty: number | null; content_unit: string | null; error?: string } {
+  if (stockUnitIsConsumption(opts.unit_label)) {
+    return { content_qty: null, content_unit: null };
+  }
+  const qtyRaw = opts.content_qty;
+  const unitRaw = opts.content_unit?.trim() || null;
+  const hasQty = qtyRaw != null && Number.isFinite(Number(qtyRaw)) && Number(qtyRaw) > 0;
+  const hasUnit = Boolean(unitRaw);
+  if (stockUnitRequiresContent(opts.unit_label)) {
+    if (!hasQty || !hasUnit) {
+      return {
+        content_qty: null,
+        content_unit: null,
+        error: 'Informe o conteúdo por frasco/ampola (quantidade e unidade, ex.: 10 ml).',
+      };
+    }
+  }
+  if (hasQty !== hasUnit) {
+    return {
+      content_qty: null,
+      content_unit: null,
+      error: 'Preencha quantidade e unidade de conteúdo juntos, ou deixe ambos vazios.',
+    };
+  }
+  if (!hasQty) return { content_qty: null, content_unit: null };
+  return { content_qty: Number(qtyRaw), content_unit: unitRaw };
+}
 
 const initialLotSchema = z
   .object({
@@ -322,6 +362,11 @@ const createItemSchema = z
     generates_staff_commission: z.boolean().optional(),
     min_stock_qty: z.coerce.number().finite().min(0).optional(),
     expiry_alert_policy: expiryPolicySchema.optional(),
+    content_qty: z.preprocess(
+      (v) => (v === '' || v === undefined ? undefined : v === null ? null : v),
+      z.union([z.coerce.number().finite().positive(), z.null()]).optional(),
+    ),
+    content_unit: z.string().trim().max(64).optional().nullable(),
     initial_lot: initialLotSchema.optional().nullable(),
   })
   .strict();
@@ -384,6 +429,13 @@ export const createHubInventoryItem = async (req: Request, res: Response) => {
       return res.status(400).json({ error: (err as Error).message });
     }
 
+    const content = normalizeContentFields({
+      unit_label: d.unit_label ?? null,
+      content_qty: d.content_qty,
+      content_unit: d.content_unit,
+    });
+    if (content.error) return res.status(400).json({ error: content.error });
+
     const row = {
       clinic_id: d.clinic_id,
       item_kind: d.item_kind,
@@ -391,7 +443,7 @@ export const createHubInventoryItem = async (req: Request, res: Response) => {
       name: d.name,
       unit_label: d.unit_label ?? null,
       manufacturer_id: d.manufacturer_id ?? null,
-      allow_fractional: d.allow_fractional ?? false,
+      allow_fractional: content.content_qty != null ? true : (d.allow_fractional ?? false),
       store_sku: d.store_sku?.trim() || null,
       sale_purpose: d.sale_purpose ?? null,
       product_group: d.product_group ?? null,
@@ -405,6 +457,8 @@ export const createHubInventoryItem = async (req: Request, res: Response) => {
       generates_staff_commission: d.generates_staff_commission ?? false,
       min_stock_qty: d.min_stock_qty ?? 0,
       expiry_alert_policy: d.expiry_alert_policy ?? 'none',
+      content_qty: content.content_qty,
+      content_unit: content.content_unit,
       active: true,
       deleted_at: null,
     };
@@ -489,6 +543,11 @@ const patchItemSchema = z
     generates_staff_commission: z.boolean().optional(),
     min_stock_qty: z.coerce.number().finite().min(0).optional(),
     expiry_alert_policy: expiryPolicySchema.optional(),
+    content_qty: z.preprocess(
+      (v) => (v === '' || v === undefined ? undefined : v === null ? null : v),
+      z.union([z.coerce.number().finite().positive(), z.null()]).optional(),
+    ),
+    content_unit: z.string().trim().max(64).optional().nullable(),
     active: z.boolean().optional(),
     archived: z.boolean().optional(),
   })
@@ -533,6 +592,28 @@ export const patchHubInventoryItem = async (req: Request, res: Response) => {
     if (d.active !== undefined) patch.active = d.active;
     if (d.archived === true) patch.deleted_at = new Date().toISOString();
     if (d.archived === false) patch.deleted_at = null;
+
+    if (d.content_qty !== undefined || d.content_unit !== undefined || d.unit_label !== undefined) {
+      const nextUnit =
+        d.unit_label !== undefined ? d.unit_label : ((existing.unit_label as string | null) ?? null);
+      const nextContentQty =
+        d.content_qty !== undefined
+          ? d.content_qty
+          : ((existing.content_qty as number | null | undefined) ?? null);
+      const nextContentUnit =
+        d.content_unit !== undefined
+          ? d.content_unit
+          : ((existing.content_unit as string | null | undefined) ?? null);
+      const content = normalizeContentFields({
+        unit_label: nextUnit,
+        content_qty: nextContentQty,
+        content_unit: nextContentUnit,
+      });
+      if (content.error) return res.status(400).json({ error: content.error });
+      patch.content_qty = content.content_qty;
+      patch.content_unit = content.content_unit;
+      if (content.content_qty != null) patch.allow_fractional = true;
+    }
 
     if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'Nada para atualizar' });
 
@@ -978,6 +1059,90 @@ export const listHubLowStock = async (req: Request, res: Response) => {
     return res.json({ items: low });
   } catch (e) {
     console.error('[hub_inventory] low stock', e);
+    return res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+/** Lotes com resto abaixo de 20% de 1 unidade (embalagem quase vazia). */
+export const listHubNearlyEmptyLots = async (req: Request, res: Response) => {
+  try {
+    const parsed = uuidStr.safeParse(req.query.clinic_id);
+    if (!parsed.success) return res.status(400).json({ error: 'clinic_id inválido' });
+    const clinic_id = parsed.data;
+
+    const { data: items, error: itemsErr } = await supabaseAdmin
+      .from('hub_inventory_items')
+      .select('id, name, item_kind, unit_label, content_qty, content_unit')
+      .eq('clinic_id', clinic_id)
+      .is('deleted_at', null)
+      .eq('active', true)
+      .not('content_qty', 'is', null);
+    if (itemsErr) {
+      if (String(itemsErr.message || '').includes('content_qty')) {
+        return res.json({ lots: [] });
+      }
+      console.error('[hub_inventory] nearly empty items', itemsErr);
+      return res.status(500).json({ error: 'Erro ao listar embalagens quase vazias' });
+    }
+
+    const withContent = (items ?? []).filter((it) => Number(it.content_qty) > 0);
+    if (withContent.length === 0) return res.json({ lots: [] });
+
+    const itemIds = withContent.map((it) => it.id as string);
+    const itemMap = new Map(
+      withContent.map((it) => [
+        it.id as string,
+        {
+          name: it.name as string,
+          item_kind: it.item_kind as string,
+          unit_label: (it.unit_label as string | null) ?? null,
+          content_qty: Number(it.content_qty),
+          content_unit: (it.content_unit as string | null) ?? null,
+        },
+      ]),
+    );
+
+    const { data: lots, error: lotsErr } = await supabaseAdmin
+      .from('hub_inventory_lots')
+      .select('id, item_id, lot_code, expiry_date, received_at')
+      .eq('clinic_id', clinic_id)
+      .in('item_id', itemIds);
+    if (lotsErr) {
+      console.error('[hub_inventory] nearly empty lots', lotsErr);
+      return res.status(500).json({ error: 'Erro ao listar lotes' });
+    }
+
+    const { byLot } = await computeBalances(clinic_id);
+
+    const enriched = (lots ?? [])
+      .map((l) => {
+        const qty = byLot.get(l.id as string) ?? 0;
+        const meta = itemMap.get(l.item_id as string);
+        if (!meta) return null;
+        if (!isNearlyEmptyLotBalance(qty, true)) return null;
+        const remainingContent = roundStockQty(qty * meta.content_qty);
+        return {
+          id: l.id,
+          item_id: l.item_id,
+          lot_code: l.lot_code,
+          expiry_date: l.expiry_date,
+          received_at: l.received_at,
+          qty_on_hand: roundStockQty(qty),
+          remaining_content: remainingContent,
+          item: {
+            name: meta.name,
+            item_kind: meta.item_kind,
+            unit_label: meta.unit_label,
+            content_qty: meta.content_qty,
+            content_unit: meta.content_unit,
+          },
+        };
+      })
+      .filter(Boolean);
+
+    return res.json({ lots: enriched });
+  } catch (e) {
+    console.error('[hub_inventory] nearly empty lots', e);
     return res.status(500).json({ error: 'Erro interno' });
   }
 };

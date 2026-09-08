@@ -57,6 +57,10 @@ export type FormState = {
   allow_scheduling: boolean;
   /** Só grupo Clínica: aparece no dropdown da Medicação. */
   is_encounter_application: boolean;
+  /** fixed = valor travado; variable = permite alterar na cobrança. */
+  price_mode: 'fixed' | 'variable';
+  price_min: string;
+  price_max: string;
   internal_notes: string;
   code_locked: boolean;
 };
@@ -178,6 +182,9 @@ export function emptyForm(): FormState {
     description: '',
     allow_scheduling: true,
     is_encounter_application: false,
+    price_mode: 'fixed',
+    price_min: '',
+    price_max: '',
     internal_notes: '',
     code_locked: false,
   };
@@ -218,6 +225,15 @@ export function fromRow(t: HubServiceType): FormState {
     description: t.description ?? '',
     allow_scheduling: t.allow_scheduling !== false,
     is_encounter_application: Boolean(t.is_encounter_application),
+    price_mode: t.price_mode === 'variable' ? 'variable' : 'fixed',
+    price_min:
+      t.price_min != null && Number.isFinite(Number(t.price_min))
+        ? formatMoneyNumberBrl(Number(t.price_min))
+        : '',
+    price_max:
+      t.price_max != null && Number.isFinite(Number(t.price_max))
+        ? formatMoneyNumberBrl(Number(t.price_max))
+        : '',
     internal_notes: t.internal_notes ?? '',
     code_locked: Boolean(t.code_locked),
   };

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { hubClinicalApi, type HubEncounter, type HubVaccination } from '../../api/hubClinicalApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubDateField } from '../../components/HubDateField';
 import { HubMultiSelectCombobox } from '../../components/HubMultiSelectCombobox';
 import { todayYmd } from './clinicalDisplay';
 import { HubCwsStatusPills } from './HubCwsStatusPills';
@@ -142,12 +143,12 @@ export function HubWorkspaceVaccineCard({
 
           <div className="hub-cws-field-grid hub-cws-field-grid--2">
             <div className="hub-clinic-field hub-cws-field-tight">
-              <label htmlFor="card-vac-date">Data da aplicação</label>
-              <input
+              <HubDateField
                 id="card-vac-date"
-                type="date"
-                value={draft.administered_at}
-                onChange={(e) => setDraft((d) => ({ ...d, administered_at: e.target.value }))}
+                label="Data da aplicação"
+                valueIso={draft.administered_at}
+                onChangeIso={(administered_at) => setDraft((d) => ({ ...d, administered_at }))}
+                showTodayButton={false}
               />
             </div>
             <div className="hub-clinic-field hub-cws-field-tight">
@@ -165,12 +166,12 @@ export function HubWorkspaceVaccineCard({
 
           <div className="hub-cws-field-grid hub-cws-field-grid--2">
             <div className="hub-clinic-field hub-cws-field-tight">
-              <label htmlFor="card-vac-next">Próxima dose</label>
-              <input
+              <HubDateField
                 id="card-vac-next"
-                type="date"
-                value={draft.next_dose_at}
-                onChange={(e) => setDraft((d) => ({ ...d, next_dose_at: e.target.value }))}
+                label="Próxima dose"
+                valueIso={draft.next_dose_at}
+                onChangeIso={(next_dose_at) => setDraft((d) => ({ ...d, next_dose_at }))}
+                showTodayButton={false}
               />
             </div>
             <div className="hub-clinic-field hub-cws-field-tight">

@@ -1026,6 +1026,7 @@
   gap: 8px;
   justify-content: flex-end;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 /* —— Vender pacote (drawer do Caixa) —— */

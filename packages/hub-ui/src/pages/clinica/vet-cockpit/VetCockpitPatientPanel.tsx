@@ -8,6 +8,7 @@ import {
   Pill,
   Play,
   RotateCcw,
+  Scissors,
   Send,
   Share2,
   Stethoscope,
@@ -23,6 +24,7 @@ import { petAgeDetailedLabel } from '../../pets/petAge';
 import {
   caseStatusLabel,
   formatCockpitShortDate,
+  isDayBoardSurgery,
   isFinalOperationalStatus,
   isItemEmergency,
   itemOperationalStatus,
@@ -48,6 +50,7 @@ type Props = {
   completing: boolean;
   phaseBusy: boolean;
   onStartConsultation: () => void;
+  onOpenSurgery?: () => void;
   onOpenRecord: (section?: VetCockpitDrawerSection) => void;
   onAdmit?: () => void;
   onComplete: () => void;
@@ -98,6 +101,7 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
   completing,
   phaseBusy,
   onStartConsultation,
+  onOpenSurgery,
   onOpenRecord,
   onAdmit,
   onComplete,
@@ -113,11 +117,23 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
     );
   }
 
+  const isSurgery = item ? isDayBoardSurgery(item) : false;
+
   if (!context) {
     return (
       <div className="vet-cockpit-panel">
         {loading ? <HubLoading variant="block" label="Carregando paciente…" /> : (
-          <p className="hub-clientes__muted">Sem contexto clínico para este paciente.</p>
+          <>
+            <p className="hub-clientes__muted">Sem contexto clínico para este paciente.</p>
+            {isSurgery && item?.surgery_id && onOpenSurgery ? (
+              <div className="vet-cockpit-panel__footer">
+                <button type="button" className="vet-cockpit-action-btn vet-cockpit-action-btn--primary" onClick={onOpenSurgery}>
+                  <Scissors size={18} aria-hidden />
+                  Abrir ficha da cirurgia
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     );
@@ -144,7 +160,7 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
           <div className="vet-cockpit-panel__title-row">
             <h1 className="vet-cockpit-panel__pet-name">{pet.name}</h1>
             <span className={`vet-cockpit-queue__pill ${statusPillClass(st)}`}>
-              {VET_QUEUE_STATUS_LABEL[st] || st}
+              {isSurgery && st === 'in_progress' ? 'Em cirurgia' : VET_QUEUE_STATUS_LABEL[st] || st}
             </span>
           </div>
           <div className="vet-cockpit-panel__subtitle-row">
@@ -163,8 +179,9 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
             ) : null}
           </div>
 
-          {emergency || context.flags.length > 0 ? (
+            {emergency || isSurgery || context.flags.length > 0 ? (
             <div className="vet-cockpit-panel__alerts">
+              {isSurgery ? <span className="vet-cockpit-alert-chip">Cirurgia</span> : null}
               {emergency ? <span className="vet-cockpit-alert-chip">Emergência</span> : null}
               {context.flags.map((f) => (
                 <span key={f.flag_key} className="vet-cockpit-alert-chip">
@@ -188,6 +205,12 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
               <span className="vet-cockpit-panel__k">Peso</span>
               <strong className={hasWeight ? undefined : 'vet-cockpit-panel__muted-value'}>{weight}</strong>
             </div>
+            {isSurgery ? (
+              <div>
+                <span className="vet-cockpit-panel__k">Cirurgia</span>
+                <strong>{item.surgery_title || item.title || item.service_type?.name || 'Procedimento'}</strong>
+              </div>
+            ) : null}
             {context.chief_complaint ? (
               <div>
                 <span className="vet-cockpit-panel__k">Motivo</span>
@@ -464,6 +487,16 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
       ) : null}
 
       <div className="vet-cockpit-panel__footer">
+        {isSurgery && item.surgery_id && onOpenSurgery ? (
+          <button
+            type="button"
+            className="vet-cockpit-action-btn"
+            onClick={onOpenSurgery}
+          >
+            <Scissors size={18} aria-hidden />
+            Abrir ficha da cirurgia
+          </button>
+        ) : null}
         {!encounterId && canWrite ? (
           <button
             type="button"
@@ -471,7 +504,7 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
             onClick={onStartConsultation}
           >
             <Play size={18} aria-hidden />
-            Iniciar consulta
+            {isSurgery ? 'Abrir atendimento da cirurgia' : 'Iniciar consulta'}
           </button>
         ) : null}
         {encounterId ? (

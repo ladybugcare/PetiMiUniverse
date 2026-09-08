@@ -8,6 +8,8 @@ export type HubComboboxOption = {
   value: string;
   label: string;
   icon?: React.ReactNode;
+  /** Texto extra para filtro (ex.: CPF, telefone) — não aparece no label. */
+  searchText?: string;
 };
 
 export type HubSearchableComboboxProps = {
@@ -41,6 +43,23 @@ function norm(s: string): string {
   return s.trim().toLowerCase();
 }
 
+function digitsOnly(s: string): string {
+  return s.replace(/\D/g, '');
+}
+
+function optionMatchesQuery(o: HubComboboxOption, query: string): boolean {
+  const q = norm(query);
+  if (!q) return true;
+  if (norm(o.label).includes(q) || norm(o.value).includes(q)) return true;
+  if (o.searchText && norm(o.searchText).includes(q)) return true;
+  const qDigits = digitsOnly(query);
+  if (qDigits.length >= 3) {
+    const hayDigits = digitsOnly(`${o.label} ${o.searchText ?? ''} ${o.value}`);
+    if (hayDigits.includes(qDigits)) return true;
+  }
+  return false;
+}
+
 export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
   id,
   className = '',
@@ -72,9 +91,9 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
   const markedSet = useMemo(() => new Set(markedValues ?? []), [markedValues]);
 
   const filtered = useMemo(() => {
-    const q = norm(query);
+    const q = query.trim();
     if (!q) return options;
-    return options.filter((o) => norm(o.label).includes(q) || norm(o.value).includes(q));
+    return options.filter((o) => optionMatchesQuery(o, q));
   }, [options, query]);
 
   const qTrim = query.trim();

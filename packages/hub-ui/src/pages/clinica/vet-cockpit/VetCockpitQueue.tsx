@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, BedDouble, Clock, FlaskConical, Pill } from 'lucide-react';
+import { AlertCircle, BedDouble, Clock, FlaskConical, Pill, Scissors } from 'lucide-react';
 import { HubRefreshingBanner } from '../../../components/HubLoading';
 import type { DayBoardItem } from '../../../api/hubClinicalApi';
 import {
@@ -7,6 +7,7 @@ import {
   isItemEmergency,
   isItemLate,
   itemKey,
+  isDayBoardSurgery,
   itemOperationalStatus,
   itemStartsAt,
   petInitials,
@@ -36,6 +37,9 @@ function queueItemTags(
   hints?: { examsAvailable?: boolean; rxDraft?: boolean; hospitalized?: boolean },
 ): Array<{ key: string; label: string; className: string }> {
   const tags: Array<{ key: string; label: string; className: string }> = [];
+  if (isDayBoardSurgery(item)) {
+    tags.push({ key: 'surgery', label: 'Cirurgia', className: 'vet-cockpit-queue__tag--surgery' });
+  }
   if (isItemEmergency(item)) {
     tags.push({ key: 'emergency', label: 'Emergência', className: 'vet-cockpit-queue__tag--emergency' });
   }
@@ -74,7 +78,13 @@ const VetCockpitQueue: React.FC<Props> = ({ items, selectedKey, onSelect, loadin
             const key = itemKey(item);
             const st = itemOperationalStatus(item);
             const petName = item.pet?.name || 'Sem pet';
-            const svc = item.service_type?.name || item.title || 'Consulta';
+            const svc = isDayBoardSurgery(item)
+              ? item.surgery_title || item.title || item.service_type?.name || 'Cirurgia'
+              : item.service_type?.name || item.title || 'Consulta';
+            const statusLabel =
+              isDayBoardSurgery(item) && st === 'in_progress'
+                ? 'Em cirurgia'
+                : VET_QUEUE_STATUS_LABEL[st] || st;
             const time = formatQueueTime(itemStartsAt(item));
             const hints = badgeHints?.[item.pet_id || key];
             const selected = selectedKey === key;
@@ -110,7 +120,7 @@ const VetCockpitQueue: React.FC<Props> = ({ items, selectedKey, onSelect, loadin
                     <div className="vet-cockpit-queue__identity-text">
                       <span className="vet-cockpit-queue__pet">{petName}</span>
                       <span className={`vet-cockpit-queue__pill ${statusPillClass(st)}`}>
-                        {VET_QUEUE_STATUS_LABEL[st] || st}
+                        {statusLabel}
                       </span>
                     </div>
                   </div>
@@ -122,6 +132,7 @@ const VetCockpitQueue: React.FC<Props> = ({ items, selectedKey, onSelect, loadin
                           {tag.key === 'late' ? <Clock size={12} aria-hidden /> : null}
                           {tag.key === 'exams' ? <FlaskConical size={12} aria-hidden /> : null}
                           {tag.key === 'rx' ? <Pill size={12} aria-hidden /> : null}
+                          {tag.key === 'surgery' ? <Scissors size={12} aria-hidden /> : null}
                           {tag.key === 'hospital' ? <BedDouble size={12} aria-hidden /> : null}
                           {tag.label}
                         </span>

@@ -20,6 +20,8 @@ export type { HubComboboxOption } from './components/HubSearchableCombobox';
 export { HubMultiSelectCombobox } from './components/HubMultiSelectCombobox';
 export { HubDateField } from './components/HubDateField';
 export type { HubDateFieldProps } from './components/HubDateField';
+export { HubTimeField } from './components/HubTimeField';
+export type { HubTimeFieldProps } from './components/HubTimeField';
 export { HubBrDateInput } from './components/HubBrDateInput';
 export type { HubBrDateInputProps } from './components/HubBrDateInput';
 export { HubBrPhoneInput } from './components/HubBrPhoneInput';

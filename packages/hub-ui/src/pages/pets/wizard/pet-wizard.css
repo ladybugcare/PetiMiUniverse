@@ -828,6 +828,18 @@
   cursor: not-allowed;
 }
 
+/* Cancelar no rodapé — mesmo tamanho/borda dos .pet-wizard__btn (outline/primary) */
+.pet-wizard__footer .hub-cancel-btn {
+  height: auto;
+  padding: 12px 22px;
+  border-width: 2px;
+  line-height: 1.2;
+}
+
+.pet-wizard__footer .hub-cancel-btn span {
+  line-height: 1.2;
+}
+
 .pet-wizard__empty {
   padding: 40px 20px;
   text-align: center;

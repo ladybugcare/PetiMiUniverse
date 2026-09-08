@@ -10,6 +10,14 @@ import { HubMultiSelectCombobox } from '../../../components/HubMultiSelectCombob
 import ClinicalCaseLinkFields, {
   type ClinicalCaseLinkValue,
 } from '../../../components/clinical/ClinicalCaseLinkFields';
+import {
+  HubClinicalServicePicker,
+  type ClinicalServicePick,
+} from '../../../components/clinical/HubClinicalServicePicker';
+import { HubDateField } from '../../../components/HubDateField';
+import { HubTimeField } from '../../../components/HubTimeField';
+import { todayYmd } from '../../../utils/hubCalendar';
+import { nowHm } from '../../../utils/hubTime';
 import { isCatSpecies, isDogSpecies } from '../anamnesisOptions';
 import {
   EXAM_TYPE_OPTIONS,
@@ -50,7 +58,10 @@ export type SurgCreateDraft = {
   guardianId: string;
   petId: string;
   title: string;
-  scheduledAt: string;
+  /** YYYY-MM-DD */
+  scheduledDate: string;
+  /** HH:mm */
+  scheduledTime: string;
   asaRisk: HubAnestheticRisk | '';
   staffId: string;
   notes: string;
@@ -60,6 +71,7 @@ export type SurgCreateDraft = {
   labName: string;
   fastingRequired: boolean;
   examIndication: string;
+  servicePick: ClinicalServicePick;
 };
 
 export function emptySurgCreateDraft(staffId = ''): SurgCreateDraft {
@@ -67,7 +79,8 @@ export function emptySurgCreateDraft(staffId = ''): SurgCreateDraft {
     guardianId: '',
     petId: '',
     title: '',
-    scheduledAt: '',
+    scheduledDate: todayYmd(),
+    scheduledTime: nowHm(),
     asaRisk: '',
     staffId,
     notes: '',
@@ -77,6 +90,7 @@ export function emptySurgCreateDraft(staffId = ''): SurgCreateDraft {
     labName: '',
     fastingRequired: false,
     examIndication: '',
+    servicePick: { hub_service_type_id: '', unit_amount: '' },
   };
 }
 
@@ -326,36 +340,58 @@ const SurgCreateForm: React.FC<Props> = ({
           />
         </div>
 
+        <div className="nam-field">
+          <HubClinicalServicePicker
+            clinicId={clinicId}
+            group="cirurgia"
+            value={draft.servicePick}
+            onChange={(servicePick) => set({ servicePick })}
+            label="Serviço cobrável"
+            placeholder="Buscar serviço do catálogo…"
+            disabled={submitting}
+            allowPriceOverride
+            id="clinic-surg-service"
+          />
+        </div>
+
         <div className="nam-row nam-row--cols2">
           <div className="nam-field">
-            <label className="nam-label" htmlFor="clinic-surg-when">
-              Data e hora *
-            </label>
-            <input
-              id="clinic-surg-when"
-              type="datetime-local"
-              className="nam-input"
-              value={draft.scheduledAt}
+            <HubDateField
+              id="clinic-surg-date"
+              label="Data *"
+              valueIso={draft.scheduledDate}
+              onChangeIso={(scheduledDate) => set({ scheduledDate })}
               disabled={submitting}
-              onChange={(e) => set({ scheduledAt: e.target.value })}
+              required
             />
           </div>
           <div className="nam-field">
-            <label className="nam-label" htmlFor="clinic-surg-asa">
-              Risco anestésico
-            </label>
-            <HubSearchableCombobox
-              id="clinic-surg-asa"
-              options={asaOptions}
-              value={draft.asaRisk}
-              onChange={(v) => set({ asaRisk: (v as HubAnestheticRisk) || '' })}
-              placeholder="Não classificado"
-              searchPlaceholder="ASA…"
-              ariaLabel="Risco anestésico"
+            <HubTimeField
+              id="clinic-surg-time"
+              label="Horário *"
+              valueHm={draft.scheduledTime}
+              onChangeHm={(scheduledTime) => set({ scheduledTime })}
               disabled={submitting}
-              clearable
+              required
             />
           </div>
+        </div>
+
+        <div className="nam-field">
+          <label className="nam-label" htmlFor="clinic-surg-asa">
+            Risco anestésico
+          </label>
+          <HubSearchableCombobox
+            id="clinic-surg-asa"
+            options={asaOptions}
+            value={draft.asaRisk}
+            onChange={(v) => set({ asaRisk: (v as HubAnestheticRisk) || '' })}
+            placeholder="Não classificado"
+            searchPlaceholder="ASA…"
+            ariaLabel="Risco anestésico"
+            disabled={submitting}
+            clearable
+          />
         </div>
 
         {clinicId && draft.petId ? (
@@ -491,6 +527,11 @@ const SurgCreateForm: React.FC<Props> = ({
                 />
               </div>
             </div>
+
+            <p className="nam-muted">
+              Os exames ficam registrados no atendimento da cirurgia. O PDF com link validável é gerado na ficha,
+              depois de agendar.
+            </p>
           </>
         ) : null}
 

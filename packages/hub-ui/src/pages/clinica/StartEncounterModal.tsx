@@ -32,7 +32,7 @@ function formatTime(iso?: string): string {
 const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, onStart, starting }) => {
   const [activeCases, setActiveCases] = useState<HubClinicalCase[]>([]);
   const [loadingCases, setLoadingCases] = useState(false);
-  const [caseMode, setCaseMode] = useState<'auto' | 'existing' | 'new'>('auto');
+  const [caseMode, setCaseMode] = useState<'existing' | 'new'>('new');
   const [selectedCaseId, setSelectedCaseId] = useState('');
   const [newCaseTitle, setNewCaseTitle] = useState('');
 
@@ -44,16 +44,16 @@ const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, o
   useEffect(() => {
     if (!open || !item) {
       setActiveCases([]);
-      setCaseMode('auto');
+      setCaseMode('new');
       setSelectedCaseId('');
       setNewCaseTitle('');
       return;
     }
     if (!petId || !clinicId) {
       setActiveCases([]);
-      setCaseMode('auto');
+      setCaseMode('new');
       setSelectedCaseId('');
-      setNewCaseTitle(item.notes ?? item.chief_complaint ?? '');
+      setNewCaseTitle(item.title ?? item.notes ?? item.chief_complaint ?? '');
       return;
     }
     setLoadingCases(true);
@@ -62,9 +62,17 @@ const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, o
       .then((r) => {
         const rows = (r.cases ?? []).filter((c) => c.status === 'active' || c.status === 'monitoring');
         setActiveCases(rows);
-        setCaseMode(rows.length > 0 ? 'existing' : 'auto');
-        setSelectedCaseId(rows.length === 1 ? rows[0]!.id : '');
-        setNewCaseTitle(item.notes ?? item.chief_complaint ?? '');
+        // Com casos ativos, força escolha explícita (existente vs novo) — evita colar
+        // no único caso genérico ("Atendimento avulso") sem o usuário perceber.
+        setCaseMode(rows.length > 0 ? 'existing' : 'new');
+        setSelectedCaseId('');
+        const suggested =
+          (item.title && item.title.trim()) ||
+          item.notes ||
+          item.chief_complaint ||
+          item.service_type?.name ||
+          '';
+        setNewCaseTitle(suggested);
       })
       .catch(() => setActiveCases([]))
       .finally(() => setLoadingCases(false));
@@ -92,14 +100,18 @@ const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, o
     if (petId) {
       if (caseMode === 'existing') {
         opts = { hub_case_id: selectedCaseId || null };
-      } else if (caseMode === 'new') {
+      } else {
+        // 'new' (e legado 'auto'): sempre cria caso com o título informado / do agendamento.
+        const suggested =
+          newCaseTitle.trim() ||
+          complaint ||
+          item.title?.trim() ||
+          item.service_type?.name ||
+          null;
         opts = {
           create_new_case: true,
-          new_case_title: newCaseTitle.trim() || complaint || null,
+          new_case_title: suggested,
         };
-      } else if (caseMode === 'auto') {
-        const autoTitle = newCaseTitle.trim() || complaint || null;
-        if (autoTitle) opts = { new_case_title: autoTitle };
       }
     }
     void onStart(item, opts).catch(() => {});
@@ -254,24 +266,8 @@ const StartEncounterModal: React.FC<Props> = ({ open, clinicId, item, onClose, o
                           placeholder="Ex.: dermatite, pós-operatório, tosse…"
                         />
                         <p className="nam-muted" style={{ marginTop: 8, marginBottom: 0 }}>
-                          Esse nome aparece na lista de casos do pet. A queixa principal vira o título se você deixar em branco.
-                        </p>
-                      </div>
-                    ) : null}
-                    {caseMode === 'auto' ? (
-                      <div className="nam-field" style={{ marginTop: 12 }}>
-                        <label className="nam-label" htmlFor="start-enc-auto-case-title">
-                          Título do caso
-                        </label>
-                        <input
-                          id="start-enc-auto-case-title"
-                          className="nam-input"
-                          value={newCaseTitle}
-                          onChange={(e) => setNewCaseTitle(e.target.value)}
-                          placeholder="Ex.: dermatite, pós-operatório, tosse…"
-                        />
-                        <p className="nam-muted" style={{ marginTop: 8, marginBottom: 0 }}>
-                          Um novo caso será criado com este título. Sem nome, usamos a queixa ou a data da consulta.
+                          Esse nome aparece na lista de casos do pet. Se ficar em branco, usamos o título do
+                          agendamento ou a queixa.
                         </p>
                       </div>
                     ) : null}

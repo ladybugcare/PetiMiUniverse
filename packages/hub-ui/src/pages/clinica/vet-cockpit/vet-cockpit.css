@@ -35,6 +35,90 @@
   margin-left: auto;
 }
 
+.vet-cockpit-tabs {
+  margin-bottom: 16px;
+}
+
+.vet-cockpit-history {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.vet-cockpit-history__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.vet-cockpit-history__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(100%, 240px);
+  flex: 1 1 200px;
+}
+
+.vet-cockpit-history__search input {
+  width: 100%;
+}
+
+.vet-cockpit-history__mine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--hc-text-secondary, #6b5a58);
+}
+
+.vet-cockpit-history__kind {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.vet-cockpit-history__kind--encounter {
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.vet-cockpit-history__kind--surgery {
+  background: #fff1e8;
+  color: #9a3412;
+}
+
+.vet-cockpit-history__kind--hospitalization {
+  background: #ecfeff;
+  color: #0e7490;
+}
+
+.hub-dayboard__status-filters {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.hub-dayboard__toggle-btn {
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--hc-text-muted, #a0856b);
+}
+
+.hub-dayboard__toggle-btn--active {
+  background: var(--hc-brand, #c45c26);
+  color: #fff;
+}
+
 .vet-cockpit-ops-sections {
   display: flex;
   flex-direction: column;
@@ -425,6 +509,12 @@
   background: #fef2f2;
   color: #dc2626;
   border: 1px solid #fecaca;
+}
+
+.vet-cockpit-queue__tag--surgery {
+  background: #fff1e8;
+  color: #9a3412;
+  border: 1px solid #fdba74;
 }
 
 .vet-cockpit-queue__tag--info {

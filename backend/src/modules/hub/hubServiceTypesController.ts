@@ -64,6 +64,10 @@ const createServiceTypeBodySchema = z
     is_encounter_application: z.boolean().optional(),
     /** Leva e Traz: valor cadastrado é ida+volta ou por perna. */
     pickup_price_scope: z.enum(['round_trip', 'per_leg']).optional(),
+    /** fixed = valor travado; variable = permite informar na cobrança (com faixa opcional). */
+    price_mode: z.enum(['fixed', 'variable']).optional(),
+    price_min: moneyAmountSchema.optional().nullable(),
+    price_max: moneyAmountSchema.optional().nullable(),
     /** Legado / migração: se enviado, deve coincidir com o slug gerado ou ser único. Preferir omitir. */
     code: z
       .string()
@@ -73,7 +77,12 @@ const createServiceTypeBodySchema = z
       .regex(/^[a-z0-9_]+$/)
       .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.price_min != null && data.price_max != null && data.price_max < data.price_min) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'price_max deve ser ≥ price_min', path: ['price_max'] });
+    }
+  });
 
 const updateServiceTypeBodySchema = z
   .object({
@@ -90,14 +99,22 @@ const updateServiceTypeBodySchema = z
     is_addon: z.boolean().optional(),
     is_encounter_application: z.boolean().optional(),
     pickup_price_scope: z.enum(['round_trip', 'per_leg']).optional(),
+    price_mode: z.enum(['fixed', 'variable']).optional(),
+    price_min: moneyAmountSchema.optional().nullable(),
+    price_max: moneyAmountSchema.optional().nullable(),
     code_locked: z.boolean().optional(),
     active: z.boolean().optional(),
     archived: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.price_min != null && data.price_max != null && data.price_max < data.price_min) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'price_max deve ser ≥ price_min', path: ['price_max'] });
+    }
+  });
 
 const SELECT_FIELDS =
-  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, default_duration_minutes, active, allow_scheduling, is_addon, is_encounter_application, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, price_mode, price_min, price_max, default_duration_minutes, active, allow_scheduling, is_addon, is_encounter_application, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
 
 /** Sem `pickup_price_scope` — fallback se a migração 087 ainda não foi aplicada. */
 const SELECT_FIELDS_LEGACY =
@@ -107,6 +124,10 @@ const SELECT_FIELDS_LEGACY =
 const SELECT_FIELDS_NO_APPLICATION =
   'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
 
+/** Sem price_mode — fallback se a migração 108 ainda não foi aplicada. */
+const SELECT_FIELDS_NO_PRICE_MODE =
+  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, default_duration_minutes, active, allow_scheduling, is_addon, is_encounter_application, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+
 function isMissingPickupPriceScopeColumn(error: { message?: string; code?: string } | null | undefined): boolean {
   const msg = String(error?.message ?? '');
   return msg.includes('pickup_price_scope') && (msg.includes('does not exist') || error?.code === '42703');
@@ -115,6 +136,14 @@ function isMissingPickupPriceScopeColumn(error: { message?: string; code?: strin
 function isMissingEncounterApplicationColumn(error: { message?: string; code?: string } | null | undefined): boolean {
   const msg = String(error?.message ?? '');
   return msg.includes('is_encounter_application') && (msg.includes('does not exist') || error?.code === '42703');
+}
+
+function isMissingPriceModeColumn(error: { message?: string; code?: string } | null | undefined): boolean {
+  const msg = String(error?.message ?? '');
+  return (
+    (msg.includes('price_mode') || msg.includes('price_min') || msg.includes('price_max')) &&
+    (msg.includes('does not exist') || error?.code === '42703')
+  );
 }
 
 type ServiceTypeRow = Record<string, unknown> & {
@@ -137,6 +166,17 @@ function withDefaultPickupPriceScope<T extends ServiceTypeRow>(rows: T[]): Array
       r.pickup_price_scope === 'per_leg' || r.pickup_price_scope === 'round_trip'
         ? String(r.pickup_price_scope)
         : 'round_trip',
+  }));
+}
+
+function withDefaultPriceMode<
+  T extends ServiceTypeRow & { price_mode?: string | null; price_min?: number | null; price_max?: number | null },
+>(rows: T[]): Array<T & { price_mode: string; price_min: number | null; price_max: number | null }> {
+  return rows.map((r) => ({
+    ...r,
+    price_mode: r.price_mode === 'variable' ? 'variable' : 'fixed',
+    price_min: r.price_min == null ? null : Number(r.price_min),
+    price_max: r.price_max == null ? null : Number(r.price_max),
   }));
 }
 
@@ -287,6 +327,24 @@ export const listHubServiceTypes = async (req: Request, res: Response) => {
       error = noApp.error;
     }
 
+    if (error && isMissingPriceModeColumn(error)) {
+      console.warn(
+        '[hub_service_types] list: colunas price_mode ausentes — aplique a migração 108. Usando SELECT sem o campo.',
+      );
+      let qNoPrice = supabaseAdmin
+        .from('hub_service_types')
+        .select(SELECT_FIELDS_NO_PRICE_MODE)
+        .eq('clinic_id', clinic_id)
+        .eq('is_addon', addonsOnly)
+        .order('name', { ascending: true });
+      if (!includeArchived) {
+        qNoPrice = qNoPrice.is('deleted_at', null);
+      }
+      const noPrice = await qNoPrice;
+      data = (noPrice.data as unknown[] | null) ?? null;
+      error = noPrice.error;
+    }
+
     if (error) {
       console.error('[hub_service_types] list', error);
       return res.status(500).json({ error: 'Erro ao listar tipos de serviço' });
@@ -294,7 +352,9 @@ export const listHubServiceTypes = async (req: Request, res: Response) => {
 
     const colorMap = await fetchGroupColorMap(clinic_id);
     const service_types = enrichRowsWithGroupColor(
-      withDefaultEncounterApplication(withDefaultPickupPriceScope((data ?? []) as ServiceTypeRow[])),
+      withDefaultPriceMode(
+        withDefaultEncounterApplication(withDefaultPickupPriceScope((data ?? []) as ServiceTypeRow[])),
+      ),
       colorMap,
     );
 
@@ -326,6 +386,9 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       is_addon: is_addon_raw,
       is_encounter_application: is_encounter_application_raw,
       pickup_price_scope: pickup_price_scope_raw,
+      price_mode: price_mode_raw,
+      price_min: price_min_raw,
+      price_max: price_max_raw,
     } = body.data;
 
     const is_addon = is_addon_raw === true;
@@ -334,6 +397,11 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       !is_addon && group === 'clinica' && is_encounter_application_raw === true;
     const pickup_price_scope =
       group === 'leva_traz' && pickup_price_scope_raw === 'per_leg' ? 'per_leg' : 'round_trip';
+    const price_mode = price_mode_raw === 'variable' ? 'variable' : 'fixed';
+    const price_min =
+      price_mode === 'variable' && price_min_raw != null ? roundMoney2(price_min_raw) : null;
+    const price_max =
+      price_mode === 'variable' && price_max_raw != null ? roundMoney2(price_max_raw) : null;
 
     if (is_addon && (default_duration_minutes == null || default_duration_minutes < 1)) {
       return res.status(400).json({ error: 'Adicionais exigem duração padrão em minutos (≥ 1)' });
@@ -405,6 +473,9 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       default_duration_minutes: default_duration_minutes ?? null,
       pricing_matrix,
       pickup_price_scope,
+      price_mode,
+      price_min,
+      price_max,
       description: description ?? null,
       allow_scheduling: is_addon ? false : is_encounter_application ? false : (allow_scheduling ?? true),
       is_addon,
@@ -429,11 +500,31 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       error = first.error;
     }
 
+    if (error && isMissingPriceModeColumn(error)) {
+      console.warn(
+        '[hub_service_types] create: colunas price_mode ausentes — aplique a migração 108. Inserindo sem o campo.',
+      );
+      const { price_mode: _pm, price_min: _pmin, price_max: _pmax, ...rowNoPrice } = row;
+      const noPrice = await supabaseAdmin
+        .from('hub_service_types')
+        .insert([rowNoPrice])
+        .select(SELECT_FIELDS_NO_PRICE_MODE)
+        .single();
+      data = (noPrice.data as Record<string, unknown> | null) ?? null;
+      error = noPrice.error;
+    }
+
     if (error && isMissingEncounterApplicationColumn(error)) {
       console.warn(
         '[hub_service_types] create: coluna is_encounter_application ausente — aplique a migração 106. Inserindo sem o campo.',
       );
-      const { is_encounter_application: _omitApp, ...rowNoApp } = row;
+      const {
+        is_encounter_application: _omitApp,
+        price_mode: _pm2,
+        price_min: _pmin2,
+        price_max: _pmax2,
+        ...rowNoApp
+      } = row;
       const noApp = await supabaseAdmin
         .from('hub_service_types')
         .insert([rowNoApp])
@@ -467,7 +558,9 @@ export const createHubServiceType = async (req: Request, res: Response) => {
 
     const colorMap = await fetchGroupColorMap(clinic_id);
     const service_type = enrichRowsWithGroupColor(
-      withDefaultEncounterApplication(withDefaultPickupPriceScope([data as ServiceTypeRow])),
+      withDefaultPriceMode(
+        withDefaultEncounterApplication(withDefaultPickupPriceScope([data as ServiceTypeRow])),
+      ),
       colorMap,
     )[0];
 
@@ -511,6 +604,9 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       is_addon: is_addon_patch,
       is_encounter_application: is_encounter_application_patch,
       pickup_price_scope: pickup_price_scope_raw,
+      price_mode: price_mode_raw,
+      price_min: price_min_raw,
+      price_max: price_max_raw,
     } = body.data;
 
     if (
@@ -528,7 +624,10 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       pricing_matrix_raw === undefined &&
       is_addon_patch === undefined &&
       is_encounter_application_patch === undefined &&
-      pickup_price_scope_raw === undefined
+      pickup_price_scope_raw === undefined &&
+      price_mode_raw === undefined &&
+      price_min_raw === undefined &&
+      price_max_raw === undefined
     ) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
     }
@@ -593,6 +692,24 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
     if (internal_notes !== undefined) patch.internal_notes = internal_notes;
     if (code_locked !== undefined) patch.code_locked = code_locked;
     if (active !== undefined) patch.active = active;
+
+    if (price_mode_raw !== undefined) {
+      patch.price_mode = price_mode_raw === 'variable' ? 'variable' : 'fixed';
+      if (price_mode_raw !== 'variable') {
+        patch.price_min = null;
+        patch.price_max = null;
+      }
+    }
+    if (price_min_raw !== undefined) {
+      patch.price_min = price_min_raw == null ? null : roundMoney2(price_min_raw);
+    }
+    if (price_max_raw !== undefined) {
+      patch.price_max = price_max_raw == null ? null : roundMoney2(price_max_raw);
+    }
+    if (patch.price_mode === 'fixed') {
+      patch.price_min = null;
+      patch.price_max = null;
+    }
 
     if (pricing_matrix_raw !== undefined) {
       if (pricing_matrix_raw === null) {

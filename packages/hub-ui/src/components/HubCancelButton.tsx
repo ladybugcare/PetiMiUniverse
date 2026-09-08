@@ -31,7 +31,7 @@ export const HubCancelButton: React.FC<HubCancelButtonProps> = ({
       disabled={disabled}
       aria-label={ariaLabel ?? (typeof children === 'string' ? children : 'Cancelar')}
     >
-      <X size={18} strokeWidth={2} aria-hidden />
+      <X size={16} strokeWidth={2} aria-hidden />
       <span>{children}</span>
     </button>
   );

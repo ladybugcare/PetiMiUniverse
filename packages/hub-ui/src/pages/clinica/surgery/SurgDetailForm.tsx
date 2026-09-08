@@ -4,12 +4,6 @@ import type { HubAnestheticRisk, HubSurgery } from '../../../api/hubClinicalApi'
 import type { HubStaffMember } from '../../../api/hubStaffApi';
 import { HubSearchableCombobox } from '../../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../../components/HubSearchableCombobox';
-import { HubMultiSelectCombobox } from '../../../components/HubMultiSelectCombobox';
-import {
-  EXAM_TYPE_OPTIONS,
-  examTypeLabel,
-  uniqueExamTypes,
-} from '../examOrderOptions';
 import { SURGERY_ASA_OPTIONS } from './SurgCreateForm';
 import '../../agenda/new-appointment-modal.css';
 
@@ -43,14 +37,10 @@ export type SurgTeamRow = {
 };
 
 export type SurgDetailDraft = {
+  staffId: string;
   asaRisk: HubAnestheticRisk | '';
   preOp: {
     notes: string;
-    examTypes: string[];
-    labKind: 'internal' | 'external';
-    labName: string;
-    fastingRequired: boolean;
-    examIndication: string;
   };
   procedure: {
     notes: string;
@@ -78,15 +68,6 @@ function asStr(v: unknown): string {
   return '';
 }
 
-function asBool(v: unknown): boolean {
-  return v === true || v === 'true';
-}
-
-function asStrArr(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return uniqueExamTypes(v.map((x) => asStr(x)));
-}
-
 function emptyTeamRow(): SurgTeamRow {
   return { role: '', staffId: '', name: '' };
 }
@@ -105,14 +86,10 @@ export function parseSurgDetail(surgery: HubSurgery): SurgDetailDraft {
     };
   });
   return {
+    staffId: surgery.hub_staff_member_id ?? '',
     asaRisk: (surgery.anesthetic_risk as HubAnestheticRisk | null) ?? '',
     preOp: {
       notes: asStr(pre.notes),
-      examTypes: asStrArr(pre.exam_types),
-      labKind: asStr(pre.lab_kind) === 'external' ? 'external' : 'internal',
-      labName: asStr(pre.lab_name),
-      fastingRequired: asBool(pre.fasting_required),
-      examIndication: asStr(pre.exam_indication ?? pre.clinical_indication),
     },
     procedure: {
       notes: asStr(proc.notes ?? proc.description),
@@ -132,6 +109,7 @@ export function parseSurgDetail(surgery: HubSurgery): SurgDetailDraft {
 }
 
 export function serializeSurgDetail(draft: SurgDetailDraft): {
+  hub_staff_member_id: string | null;
   anesthetic_risk: HubAnestheticRisk | null;
   pre_op: Record<string, unknown>;
   procedure: Record<string, unknown>;
@@ -139,16 +117,8 @@ export function serializeSurgDetail(draft: SurgDetailDraft): {
   team_notes: string | null;
   post_op: Record<string, unknown>;
 } {
-  const examTypes = uniqueExamTypes(draft.preOp.examTypes);
   const preOp: Record<string, unknown> = {};
   if (draft.preOp.notes.trim()) preOp.notes = draft.preOp.notes.trim();
-  if (examTypes.length) {
-    preOp.exam_types = examTypes;
-    preOp.lab_kind = draft.preOp.labKind;
-    if (draft.preOp.labName.trim()) preOp.lab_name = draft.preOp.labName.trim();
-    preOp.fasting_required = draft.preOp.fastingRequired;
-    if (draft.preOp.examIndication.trim()) preOp.exam_indication = draft.preOp.examIndication.trim();
-  }
   const procedure: Record<string, unknown> = {};
   if (draft.procedure.notes.trim()) procedure.notes = draft.procedure.notes.trim();
   if (draft.procedure.findings.trim()) procedure.findings = draft.procedure.findings.trim();
@@ -170,6 +140,7 @@ export function serializeSurgDetail(draft: SurgDetailDraft): {
   if (draft.postOp.instructions.trim()) postOp.instructions = draft.postOp.instructions.trim();
 
   return {
+    hub_staff_member_id: draft.staffId || null,
     anesthetic_risk: draft.asaRisk || null,
     pre_op: preOp,
     procedure,
@@ -185,21 +156,9 @@ type Props = {
   staff: HubStaffMember[];
   canWrite: boolean;
   onChange: (next: SurgDetailDraft) => void;
-  onIssueExamPdf?: () => void;
-  issuingExamPdf?: boolean;
-  hasExamDocument?: boolean;
 };
 
-const SurgDetailForm: React.FC<Props> = ({
-  tab,
-  draft,
-  staff,
-  canWrite,
-  onChange,
-  onIssueExamPdf,
-  issuingExamPdf = false,
-  hasExamDocument = false,
-}) => {
+const SurgDetailForm: React.FC<Props> = ({ tab, draft, staff, canWrite, onChange }) => {
   const set = (patch: Partial<SurgDetailDraft>) => onChange({ ...draft, ...patch });
   const disabled = !canWrite;
 
@@ -213,19 +172,27 @@ const SurgDetailForm: React.FC<Props> = ({
     [],
   );
 
-  const examTypeOptions = useMemo(() => {
-    const opts = EXAM_TYPE_OPTIONS.map((o) => ({ value: o.key, label: o.key }));
-    for (const cur of draft.preOp.examTypes) {
-      if (cur && !opts.some((o) => o.value === cur)) opts.push({ value: cur, label: cur });
-    }
-    return opts;
-  }, [draft.preOp.examTypes]);
-
   return (
     <div className="nam-form hub-hosp-admit">
       <div className="nam-quick-card">
         {tab === 'pre_op' ? (
           <>
+            <div className="nam-field">
+              <label className="nam-label" htmlFor="clinic-surg-detail-staff">
+                Responsável
+              </label>
+              <HubSearchableCombobox
+                id="clinic-surg-detail-staff"
+                options={staffOptions}
+                value={draft.staffId}
+                onChange={(v) => set({ staffId: v })}
+                placeholder="Veterinário responsável…"
+                searchPlaceholder="Buscar profissional…"
+                ariaLabel="Responsável da cirurgia"
+                disabled={disabled}
+                clearable
+              />
+            </div>
             <div className="nam-field">
               <label className="nam-label" htmlFor="clinic-surg-detail-asa">
                 Risco anestésico
@@ -242,118 +209,6 @@ const SurgDetailForm: React.FC<Props> = ({
                 clearable
               />
             </div>
-            <div className="nam-field">
-              <label className="nam-label" htmlFor="clinic-surg-detail-exams">
-                Exames pré-operatórios
-              </label>
-              <HubMultiSelectCombobox
-                id="clinic-surg-detail-exams"
-                options={examTypeOptions}
-                value={draft.preOp.examTypes}
-                onChange={(next) =>
-                  set({ preOp: { ...draft.preOp, examTypes: uniqueExamTypes(next) } })
-                }
-                placeholder="Hemograma, bioquímica, RX…"
-                searchPlaceholder="Buscar exame…"
-                allowCreate
-                createEntityLabel="exame"
-                resolveLabel={examTypeLabel}
-                ariaLabel="Exames pré-operatórios"
-                disabled={disabled}
-              />
-            </div>
-            {draft.preOp.examTypes.length > 0 ? (
-              <>
-                <div className="nam-row nam-row--cols2">
-                  <div className="nam-field">
-                    <span className="nam-label">Laboratório</span>
-                    <div className="hub-hosp-admit__seg" role="group" aria-label="Laboratório">
-                      <button
-                        type="button"
-                        className={draft.preOp.labKind === 'internal' ? 'is-on' : undefined}
-                        disabled={disabled}
-                        onClick={() => set({ preOp: { ...draft.preOp, labKind: 'internal' } })}
-                      >
-                        Lab interno
-                      </button>
-                      <button
-                        type="button"
-                        className={draft.preOp.labKind === 'external' ? 'is-on' : undefined}
-                        disabled={disabled}
-                        onClick={() => set({ preOp: { ...draft.preOp, labKind: 'external' } })}
-                      >
-                        Lab externo
-                      </button>
-                    </div>
-                  </div>
-                  <div className="nam-field">
-                    <label className="nam-label" htmlFor="clinic-surg-detail-lab">
-                      {draft.preOp.labKind === 'external' ? 'Nome do laboratório' : 'Lab interno'}
-                    </label>
-                    <input
-                      id="clinic-surg-detail-lab"
-                      className="nam-input"
-                      value={draft.preOp.labName}
-                      disabled={disabled}
-                      onChange={(e) => set({ preOp: { ...draft.preOp, labName: e.target.value } })}
-                      placeholder={draft.preOp.labKind === 'external' ? 'Nome do laboratório' : 'Opcional'}
-                    />
-                  </div>
-                </div>
-                <div className="nam-row nam-row--cols2">
-                  <div className="nam-field">
-                    <span className="nam-label">Jejum</span>
-                    <div className="hub-hosp-admit__seg" role="group" aria-label="Jejum">
-                      <button
-                        type="button"
-                        className={!draft.preOp.fastingRequired ? 'is-on' : undefined}
-                        disabled={disabled}
-                        onClick={() => set({ preOp: { ...draft.preOp, fastingRequired: false } })}
-                      >
-                        Sem jejum
-                      </button>
-                      <button
-                        type="button"
-                        className={draft.preOp.fastingRequired ? 'is-on' : undefined}
-                        disabled={disabled}
-                        onClick={() => set({ preOp: { ...draft.preOp, fastingRequired: true } })}
-                      >
-                        Jejum necessário
-                      </button>
-                    </div>
-                  </div>
-                  <div className="nam-field">
-                    <label className="nam-label" htmlFor="clinic-surg-detail-exam-ind">
-                      Indicação dos exames
-                    </label>
-                    <input
-                      id="clinic-surg-detail-exam-ind"
-                      className="nam-input"
-                      value={draft.preOp.examIndication}
-                      disabled={disabled}
-                      onChange={(e) =>
-                        set({ preOp: { ...draft.preOp, examIndication: e.target.value } })
-                      }
-                      placeholder="Pré-operatório, avaliação…"
-                    />
-                  </div>
-                </div>
-                {onIssueExamPdf ? (
-                  <button
-                    type="button"
-                    className="hub-clientes__btn hub-clientes__btn--ghost"
-                    disabled={issuingExamPdf}
-                    onClick={onIssueExamPdf}
-                  >
-                    {issuingExamPdf
-                      ? 'Gerando PDF…'
-                      : hasExamDocument
-                        ? 'Ver / baixar solicitação'
-                        : 'Emitir solicitação de exames'}
-                  </button>
-                ) : null}
-              </>
-            ) : null}
             <div className="nam-field">
               <label className="nam-label" htmlFor="clinic-surg-detail-pre-notes">
                 Observações pré-operatórias

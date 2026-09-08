@@ -70,6 +70,15 @@ export type HubComandaEvent = {
   edit_context?: 'caixa' | 'financeiro' | null;
 };
 
+export type HubComandaPendingPriceApproval = {
+  kind: 'surgery_service' | 'hospitalization_charge';
+  id: string;
+  parent_id: string;
+  service_name: string;
+  unit_amount: number;
+  quantity: number;
+};
+
 export type HubComandaDetailResponse = {
   comanda: Record<string, unknown>;
   items: HubComandaItem[];
@@ -84,6 +93,7 @@ export type HubComandaDetailResponse = {
   pets?: HubPublicComandaPet[];
   package_balances_by_item_id?: Record<string, Array<Record<string, unknown>>>;
   events?: HubComandaEvent[];
+  pending_price_approvals?: HubComandaPendingPriceApproval[];
 };
 
 export type HubComandaPetEmbed = HubPublicComandaPet;

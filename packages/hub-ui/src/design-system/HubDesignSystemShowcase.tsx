@@ -1,5 +1,6 @@
 import React from 'react';
 import { HubDateFieldShowcase } from './HubDateFieldShowcase';
+import { HubTimeFieldShowcase } from './HubTimeFieldShowcase';
 import { HubButtonsShowcase } from './HubButtonsShowcase';
 import { HubToastShowcase } from './HubToastShowcase';
 import './design-system.css';
@@ -22,6 +23,7 @@ export const HubDesignSystemShowcase: React.FC = () => {
       <HubButtonsShowcase />
       <HubToastShowcase />
       <HubDateFieldShowcase />
+      <HubTimeFieldShowcase />
     </div>
   );
 };

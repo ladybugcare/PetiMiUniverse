@@ -16,6 +16,11 @@ import {
 } from './hubComandasController';
 import { fetchHubPetsMapByIds, resolvePrimaryPetIdsByGuardians } from './hubDayBoardPets';
 import {
+  attachEncounterToAppointmentSurgery,
+  listOperationalSurgeriesForDayBoard,
+  type DayBoardSurgeryRow,
+} from './hubSurgeryFromAppointment';
+import {
   careLocationBodyFields,
   careLocationKindSchema,
   loadPartnerClinicMap,
@@ -634,7 +639,10 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
         ),
       ];
       if (stIds.length) {
-        const { data: sts } = await supabaseAdmin.from('hub_service_types').select('id, name').in('id', stIds);
+        const { data: sts } = await supabaseAdmin
+          .from('hub_service_types')
+          .select('id, name, service_group')
+          .in('id', stIds);
         for (const st of sts ?? []) stMap.set((st as { id: string }).id, st as Record<string, unknown>);
       }
     }
@@ -736,6 +744,91 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
       items.push({ kind: 'encounter', encounter_id: e.id, ...enriched });
     }
 
+    const surgeries = await listOperationalSurgeriesForDayBoard({
+      clinicId: clinic_id,
+      from,
+      to,
+      staffMemberId: hub_staff_member_id,
+    });
+    const surgeryByAppt = new Map<string, DayBoardSurgeryRow>();
+    const surgeryByEnc = new Map<string, DayBoardSurgeryRow>();
+    for (const s of surgeries) {
+      if (s.hub_appointment_id) surgeryByAppt.set(s.hub_appointment_id, s);
+      if (s.hub_encounter_id) surgeryByEnc.set(s.hub_encounter_id, s);
+    }
+
+    const attachSurgery = (item: BoardItem, surgery: DayBoardSurgeryRow) => {
+      item.surgery_id = surgery.id;
+      item.surgery_title = surgery.title;
+      item.surgery_status = surgery.status;
+    };
+
+    const seenSurgeryIds = new Set<string>();
+    for (const item of items) {
+      const fromAppt = item.appointment_id ? surgeryByAppt.get(item.appointment_id as string) : undefined;
+      const fromEnc = item.encounter_id ? surgeryByEnc.get(item.encounter_id as string) : undefined;
+      const surgery = fromAppt ?? fromEnc;
+      if (surgery) {
+        attachSurgery(item, surgery);
+        seenSurgeryIds.add(surgery.id);
+        continue;
+      }
+      const group = (item.service_type as { service_group?: string } | null)?.service_group;
+      if (group === 'cirurgia') {
+        item.surgery_title = (item.title as string | null) ?? null;
+        item.surgery_status = (item.appointment_status as string | null) ?? (item.status as string | null) ?? null;
+      }
+    }
+
+    const extraPetIds = new Set<string>();
+    const extraGuIds = new Set<string>();
+    const extraStaffIds = new Set<string>();
+    for (const s of surgeries) {
+      if (seenSurgeryIds.has(s.id)) continue;
+      if (s.pet_id && !petMap.has(s.pet_id)) extraPetIds.add(s.pet_id);
+      if (s.guardian_id && !guMap.has(s.guardian_id)) extraGuIds.add(s.guardian_id);
+      if (s.hub_staff_member_id && !staffMap.has(s.hub_staff_member_id)) extraStaffIds.add(s.hub_staff_member_id);
+    }
+    if (extraPetIds.size > 0) {
+      const extraPets = await fetchHubPetsMapByIds(extraPetIds);
+      for (const [id, pet] of extraPets) petMap.set(id, pet);
+    }
+    if (extraGuIds.size > 0) {
+      const { data: extraGus } = await supabaseAdmin.from('hub_guardians').select('id, full_name').in('id', [...extraGuIds]);
+      for (const g of extraGus ?? []) guMap.set((g as { id: string }).id, g);
+    }
+    if (extraStaffIds.size > 0) {
+      const { data: extraStaff } = await supabaseAdmin
+        .from('hub_staff_members')
+        .select('id, full_name')
+        .in('id', [...extraStaffIds]);
+      for (const s of extraStaff ?? []) staffMap.set((s as { id: string }).id, s);
+    }
+
+    for (const s of surgeries) {
+      if (seenSurgeryIds.has(s.id)) continue;
+      if (s.hub_encounter_id && seenEncounterIds.has(s.hub_encounter_id)) continue;
+      const startsAt = s.started_at || s.scheduled_at || null;
+      items.push({
+        kind: s.hub_encounter_id ? 'encounter' : 'appointment_slot',
+        encounter_id: s.hub_encounter_id,
+        appointment_id: s.hub_appointment_id,
+        starts_at: startsAt,
+        appointment_status: s.status === 'in_progress' ? 'in_progress' : 'confirmed',
+        status: s.hub_encounter_id ? (s.status === 'in_progress' ? 'in_progress' : 'waiting') : undefined,
+        title: s.title,
+        surgery_id: s.id,
+        surgery_title: s.title,
+        surgery_status: s.status,
+        pet: s.pet_id ? petMap.get(s.pet_id) ?? null : null,
+        guardian: s.guardian_id ? guMap.get(s.guardian_id) ?? null : null,
+        staff_member: s.hub_staff_member_id ? staffMap.get(s.hub_staff_member_id) ?? null : null,
+        pet_id: s.pet_id,
+        guardian_id: s.guardian_id,
+        hub_staff_member_id: s.hub_staff_member_id,
+      });
+    }
+
     items.sort((a, b) => {
       const ta = new Date(
         (a.starts_at as string) || (a.started_at as string) || (a.appointment as { starts_at?: string })?.starts_at || 0,
@@ -777,6 +870,8 @@ export const listHubEncounters = async (req: Request, res: Response) => {
     const clinic_id = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic_id.success) return res.status(400).json({ error: 'clinic_id obrigatório' });
     const pet_id = req.query.pet_id ? uuidStr.safeParse(req.query.pet_id) : null;
+    const status = req.query.status ? encounterStatusSchema.safeParse(req.query.status) : null;
+    const staff_id = req.query.hub_staff_member_id ? String(req.query.hub_staff_member_id) : '';
 
     let q = supabaseAdmin
       .from('hub_encounters')
@@ -787,6 +882,9 @@ export const listHubEncounters = async (req: Request, res: Response) => {
       .limit(100);
 
     if (pet_id?.success) q = q.eq('pet_id', pet_id.data);
+    if (status?.success) q = q.eq('status', status.data);
+    if (staff_id === '__na__') q = q.is('hub_staff_member_id', null);
+    else if (staff_id) q = q.eq('hub_staff_member_id', staff_id);
 
     const { data, error } = await q;
     if (error) return res.status(500).json({ error: error.message });
@@ -1232,6 +1330,13 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
       })
       .eq('id', hub_appointment_id)
       .eq('clinic_id', clinic_id);
+
+    await attachEncounterToAppointmentSurgery({
+      clinicId: clinic_id,
+      appointmentId: hub_appointment_id,
+      encounterId: (data as Record<string, unknown>).id as string,
+      caseId,
+    });
 
     if (petId) {
       await recordTimelineEvent({

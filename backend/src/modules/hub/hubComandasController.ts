@@ -98,6 +98,7 @@ function round2(n: number): number {
 }
 
 import { buildBoardingComandaLine } from './boardingBilling';
+import { buildHospitalizationDailyItems } from './hubHospitalizationBilling';
 import { comandaOriginSchema } from './hubComandaSchemas';
 
 async function resolveClinicDefaultUnitId(clinicId: string): Promise<string | null> {
@@ -1211,6 +1212,153 @@ async function buildComandaItemsFromEncounter(
     subtotal += amount;
   }
 
+  // 5. Serviços de cirurgia vinculados a este atendimento
+  const coveredApptSvcIds = new Set(
+    allItems
+      .filter((it) => it.origin_type === 'appointment_service' && it.origin_id)
+      .map((it) => it.origin_id as string),
+  );
+  const { data: surgeryRows, error: surgeryErr } = await supabaseAdmin
+    .from('hub_surgeries')
+    .select('id')
+    .eq('hub_encounter_id', encounterId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null);
+  const surgeryList = surgeryErr && isMissingPostgrestRelation(surgeryErr) ? [] : surgeryRows ?? [];
+  const surgeryIds = surgeryList.map((s) => (s as { id: string }).id);
+  if (surgeryIds.length > 0) {
+    const { data: surgSvcRows, error: surgSvcErr } = await supabaseAdmin
+      .from('hub_surgery_services')
+      .select(
+        'id, surgery_id, hub_service_type_id, hub_appointment_service_id, service_name, quantity, unit_amount, billing_mode, price_status',
+      )
+      .in('surgery_id', surgeryIds)
+      .eq('billing_mode', 'charge')
+      .eq('price_status', 'confirmed')
+      .is('deleted_at', null);
+    const surgSvcList = surgSvcErr && isMissingPostgrestRelation(surgSvcErr) ? [] : surgSvcRows ?? [];
+    for (const raw of surgSvcList) {
+      const row = raw as Record<string, unknown>;
+      const apptSvcId = row.hub_appointment_service_id as string | null;
+      if (apptSvcId && coveredApptSvcIds.has(apptSvcId)) continue;
+      const qty = Number(row.quantity ?? 1) || 1;
+      const unit = Number(row.unit_amount ?? 0);
+      const lineTotal = round2(qty * unit);
+      allItems.push({
+        pet_id: petId,
+        item_kind: 'service',
+        hub_service_type_id: (row.hub_service_type_id as string | null) ?? null,
+        hub_inventory_item_id: null,
+        hub_inventory_lot_id: null,
+        description: `Cirurgia: ${String(row.service_name || 'Procedimento')}`,
+        quantity: qty,
+        unit_amount: unit,
+        discount_amount: 0,
+        line_total: lineTotal,
+        service_date: null,
+        origin_type: 'surgery_service',
+        origin_id: row.id as string,
+        sort_order: allItems.length,
+      });
+      subtotal += lineTotal;
+    }
+  }
+
+  // 6. Diárias e lançamentos de internação vinculados a este atendimento
+  const { data: hospRows, error: hospErr } = await supabaseAdmin
+    .from('hub_hospitalizations')
+    .select(
+      'id, pet_id, status, admitted_at, discharged_at, daily_hub_service_type_id, daily_unit_amount',
+    )
+    .eq('hub_encounter_id', encounterId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null);
+  const hospList = hospErr && isMissingPostgrestRelation(hospErr) ? [] : hospRows ?? [];
+  const dailyServiceIds = [
+    ...new Set(
+      hospList
+        .map((h) => (h as { daily_hub_service_type_id?: string | null }).daily_hub_service_type_id)
+        .filter(Boolean) as string[],
+    ),
+  ];
+  const dailyNameById = new Map<string, string>();
+  if (dailyServiceIds.length > 0) {
+    const { data: dailySvcs } = await supabaseAdmin
+      .from('hub_service_types')
+      .select('id, name')
+      .in('id', dailyServiceIds);
+    for (const s of dailySvcs ?? []) {
+      dailyNameById.set((s as { id: string }).id, String((s as { name: string }).name));
+    }
+  }
+  for (const raw of hospList) {
+    const hosp = raw as Record<string, unknown>;
+    const built = buildHospitalizationDailyItems({
+      id: hosp.id as string,
+      pet_id: (hosp.pet_id as string | null) ?? petId,
+      status: String(hosp.status ?? ''),
+      admitted_at: String(hosp.admitted_at ?? ''),
+      discharged_at: (hosp.discharged_at as string | null) ?? null,
+      daily_hub_service_type_id: (hosp.daily_hub_service_type_id as string | null) ?? null,
+      daily_unit_amount: hosp.daily_unit_amount == null ? null : Number(hosp.daily_unit_amount),
+      service_name: hosp.daily_hub_service_type_id
+        ? dailyNameById.get(hosp.daily_hub_service_type_id as string) ?? null
+        : null,
+    });
+    if (built) {
+      allItems.push({
+        ...built.line,
+        sort_order: allItems.length,
+      });
+      subtotal += built.subtotal;
+    }
+  }
+  const hospIds = hospList.map((h) => (h as { id: string }).id);
+  if (hospIds.length > 0) {
+    const { data: chargeRows, error: chargeErr } = await supabaseAdmin
+      .from('hub_hospitalization_charges')
+      .select(
+        'id, hub_service_type_id, hub_inventory_item_id, hub_inventory_lot_id, service_name, quantity, unit_amount, billing_mode, price_status, service_date, charge_kind',
+      )
+      .in('hospitalization_id', hospIds)
+      .eq('billing_mode', 'charge')
+      .eq('price_status', 'confirmed')
+      .is('deleted_at', null);
+    const chargeList = chargeErr && isMissingPostgrestRelation(chargeErr) ? [] : chargeRows ?? [];
+    for (const raw of chargeList) {
+      const row = raw as Record<string, unknown>;
+      const qty = Number(row.quantity ?? 1) || 1;
+      const unit = Number(row.unit_amount ?? 0);
+      const lineTotal = round2(qty * unit);
+      const kind = String(row.charge_kind ?? 'other');
+      const prefix =
+        kind === 'medication'
+          ? 'Medicação (internação)'
+          : kind === 'material'
+            ? 'Material (internação)'
+            : kind === 'procedure'
+              ? 'Procedimento (internação)'
+              : 'Internação';
+      allItems.push({
+        pet_id: petId,
+        item_kind: row.hub_inventory_item_id ? 'product' : 'service',
+        hub_service_type_id: (row.hub_service_type_id as string | null) ?? null,
+        hub_inventory_item_id: (row.hub_inventory_item_id as string | null) ?? null,
+        hub_inventory_lot_id: (row.hub_inventory_lot_id as string | null) ?? null,
+        description: `${prefix}: ${String(row.service_name || 'Item')}`,
+        quantity: qty,
+        unit_amount: unit,
+        discount_amount: 0,
+        line_total: lineTotal,
+        service_date: (row.service_date as string | null) ?? null,
+        origin_type: 'hospitalization_charge',
+        origin_id: row.id as string,
+        sort_order: allItems.length,
+      });
+      subtotal += lineTotal;
+    }
+  }
+
   // Fallback: generic consultation fee if nothing was found
   if (allItems.length === 0) {
     allItems.push({
@@ -1936,6 +2084,11 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
 
   const events = await listComandaEvents(comandaId, clinicId);
 
+  const encounterIdForPending =
+    (comandaRow.hub_encounter_id as string | null) ||
+    (String(comandaRow.origin_type) === 'encounter' ? (comandaRow.origin_id as string | null) : null);
+  const pending_price_approvals = await listPendingClinicalPriceApprovals(clinicId, encounterIdForPending);
+
   return {
     comanda: { ...comanda, guardian, pet },
     items: enrichedItems,
@@ -1950,7 +2103,101 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     allowed_guardians: allowedGuardians,
     package_balances_by_item_id: packageBalancesByItemId,
     events,
+    pending_price_approvals,
   };
+}
+
+/** Preços de cirurgia/internação ainda pendentes de aprovação financeira (não entram na comanda até confirmar). */
+async function listPendingClinicalPriceApprovals(
+  clinicId: string,
+  encounterId: string | null,
+): Promise<
+  Array<{
+    kind: 'surgery_service' | 'hospitalization_charge';
+    id: string;
+    parent_id: string;
+    service_name: string;
+    unit_amount: number;
+    quantity: number;
+  }>
+> {
+  if (!encounterId) return [];
+  const out: Array<{
+    kind: 'surgery_service' | 'hospitalization_charge';
+    id: string;
+    parent_id: string;
+    service_name: string;
+    unit_amount: number;
+    quantity: number;
+  }> = [];
+
+  const { data: surgeries, error: surgErr } = await supabaseAdmin
+    .from('hub_surgeries')
+    .select('id')
+    .eq('hub_encounter_id', encounterId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null);
+  if (!surgErr || !isMissingPostgrestRelation(surgErr)) {
+    const surgeryIds = (surgeries ?? []).map((s) => (s as { id: string }).id);
+    if (surgeryIds.length > 0) {
+      const { data: rows, error } = await supabaseAdmin
+        .from('hub_surgery_services')
+        .select('id, surgery_id, service_name, unit_amount, quantity')
+        .in('surgery_id', surgeryIds)
+        .eq('clinic_id', clinicId)
+        .eq('billing_mode', 'charge')
+        .eq('price_status', 'pending_approval')
+        .is('deleted_at', null);
+      if (!error || !isMissingPostgrestRelation(error)) {
+        for (const raw of rows ?? []) {
+          const row = raw as Record<string, unknown>;
+          out.push({
+            kind: 'surgery_service',
+            id: row.id as string,
+            parent_id: row.surgery_id as string,
+            service_name: String(row.service_name || 'Serviço de cirurgia'),
+            unit_amount: Number(row.unit_amount ?? 0),
+            quantity: Number(row.quantity ?? 1) || 1,
+          });
+        }
+      }
+    }
+  }
+
+  const { data: hosps, error: hospErr } = await supabaseAdmin
+    .from('hub_hospitalizations')
+    .select('id')
+    .eq('hub_encounter_id', encounterId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null);
+  if (!hospErr || !isMissingPostgrestRelation(hospErr)) {
+    const hospIds = (hosps ?? []).map((h) => (h as { id: string }).id);
+    if (hospIds.length > 0) {
+      const { data: rows, error } = await supabaseAdmin
+        .from('hub_hospitalization_charges')
+        .select('id, hospitalization_id, service_name, unit_amount, quantity')
+        .in('hospitalization_id', hospIds)
+        .eq('clinic_id', clinicId)
+        .eq('billing_mode', 'charge')
+        .eq('price_status', 'pending_approval')
+        .is('deleted_at', null);
+      if (!error || !isMissingPostgrestRelation(error)) {
+        for (const raw of rows ?? []) {
+          const row = raw as Record<string, unknown>;
+          out.push({
+            kind: 'hospitalization_charge',
+            id: row.id as string,
+            parent_id: row.hospitalization_id as string,
+            service_name: String(row.service_name || 'Lançamento de internação'),
+            unit_amount: Number(row.unit_amount ?? 0),
+            quantity: Number(row.quantity ?? 1) || 1,
+          });
+        }
+      }
+    }
+  }
+
+  return out;
 }
 
 async function loadComandaPdfPayload(comandaId: string, clinicId: string) {

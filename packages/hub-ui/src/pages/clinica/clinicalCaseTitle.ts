@@ -1,5 +1,5 @@
 const GENERIC_CASE_TITLE_RE =
-  /^(atendimento avulso|consulta|caso clínico|atendimento clínico)(\s*[—–-]\s*\d{2}\/\d{2}\/\d{4})?$/i;
+  /^(atendimento avulso|caso avulso|consulta|caso clínico|atendimento clínico)(\s*[—–-]\s*\d{2}\/\d{2}\/\d{4})?$/i;
 
 export function isGenericClinicalCaseTitle(title?: string | null): boolean {
   const t = (title ?? '').trim();

@@ -5,13 +5,23 @@ import type {
   HubSpecialistReferralStatus,
 } from '../../../api/hubClinicalApi';
 
-export type ClinicRecordsTabId = 'casos' | 'timeline' | 'prescricoes' | 'vacinas' | 'exames' | 'flags';
+export type ClinicRecordsTabId =
+  | 'casos'
+  | 'timeline'
+  | 'prescricoes'
+  | 'vacinas'
+  | 'cirurgias'
+  | 'internacoes'
+  | 'exames'
+  | 'flags';
 
 export const CLINIC_RECORDS_TABS: Array<{ id: ClinicRecordsTabId; label: string }> = [
   { id: 'casos', label: 'Casos clínicos' },
   { id: 'timeline', label: 'Linha do tempo' },
   { id: 'prescricoes', label: 'Prescrições e receitas' },
   { id: 'vacinas', label: 'Vacinas' },
+  { id: 'cirurgias', label: 'Cirurgias' },
+  { id: 'internacoes', label: 'Internações' },
   { id: 'exames', label: 'Exames e encaminhamentos' },
   { id: 'flags', label: 'Alertas' },
 ];

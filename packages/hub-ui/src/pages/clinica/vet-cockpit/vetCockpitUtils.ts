@@ -96,8 +96,13 @@ export function computeTurnSummary(items: DayBoardItem[], selected?: DayBoardIte
   };
 }
 
+export function isDayBoardSurgery(item: DayBoardItem): boolean {
+  if (item.surgery_id) return true;
+  return item.service_type?.service_group === 'cirurgia';
+}
+
 export function itemKey(item: DayBoardItem): string {
-  return item.encounter_id || item.appointment_id || `${item.pet_id}-${itemStartsAt(item)}`;
+  return item.encounter_id || item.appointment_id || item.surgery_id || `${item.pet_id}-${itemStartsAt(item)}`;
 }
 
 export const VET_COCKPIT_SELECTION_KEY = 'hub-vet-cockpit-selected';

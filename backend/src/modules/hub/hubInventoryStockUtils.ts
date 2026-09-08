@@ -1,6 +1,12 @@
 import { supabaseAdmin } from '../../config/supabase.js';
 import { computeBalances } from './hubInventoryController.js';
-import { notifyLowStockIfCrossed } from './hubInventoryStockAlerts.js';
+import {
+  notifyLowStockIfCrossed,
+  notifyNearlyEmptyLotIfCrossed,
+} from './hubInventoryStockAlerts.js';
+import { stockQtyFromConsumption } from './hubInventoryContentUtils.js';
+
+export { stockQtyFromConsumption };
 
 export type EncounterStockOutParams = {
   clinicId: string;
@@ -11,12 +17,19 @@ export type EncounterStockOutParams = {
   referenceType: string;
   referenceId: string;
   createdBy?: string | null;
+  /** Quando informado, dispara aviso de embalagem quase vazia após a baixa. */
+  contentQty?: number | null;
+  contentUnit?: string | null;
+  itemName?: string | null;
+  unitLabel?: string | null;
 };
 
 export async function assertClinicInventoryItem(clinicId: string, itemId: string) {
   const { data, error } = await supabaseAdmin
     .from('hub_inventory_items')
-    .select('id, clinic_id, name, sale_amount, cost_amount, deleted_at, active')
+    .select(
+      'id, clinic_id, name, sale_amount, cost_amount, deleted_at, active, unit_label, content_qty, content_unit, allow_fractional',
+    )
     .eq('id', itemId)
     .maybeSingle();
   if (error || !data || data.clinic_id !== clinicId || data.deleted_at) return null;
@@ -28,6 +41,10 @@ export async function assertClinicInventoryItem(clinicId: string, itemId: string
     cost_amount: number;
     deleted_at: string | null;
     active: boolean;
+    unit_label: string | null;
+    content_qty: number | null;
+    content_unit: string | null;
+    allow_fractional: boolean;
   };
 }
 
@@ -89,6 +106,7 @@ async function createStockOutMovement(
 
   const balances = await computeBalances(params.clinicId);
   const qtyBefore = balances.byItem.get(params.itemId) ?? 0;
+  const lotQtyBefore = balances.byLot.get(params.lotId) ?? 0;
 
   const stockErr = await validateLotStockForOut(
     params.clinicId,
@@ -125,6 +143,20 @@ async function createStockOutMovement(
     qtyBefore,
     qtyAfter: qtyBefore - qty,
   });
+
+  if (movementType === 'encounter_out') {
+    void notifyNearlyEmptyLotIfCrossed({
+      clinicId: params.clinicId,
+      itemId: params.itemId,
+      lotId: params.lotId,
+      lotQtyBefore,
+      lotQtyAfter: lotQtyBefore - qty,
+      contentQty: params.contentQty,
+      contentUnit: params.contentUnit,
+      itemName: params.itemName,
+      unitLabel: params.unitLabel,
+    });
+  }
 
   return { id: (mov as { id: string }).id };
 }

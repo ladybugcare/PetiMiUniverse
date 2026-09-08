@@ -8,6 +8,10 @@ import {
   filterEncounterApplicationServices,
   filterMedicationItemsForInClinic,
 } from './inClinicMedicationCatalog';
+import {
+  formatStockQty,
+  stockQtyFromConsumption,
+} from '../../pages/estoque/inventoryContentUtils';
 
 export type InClinicMedicationDraft = {
   hub_service_type_id: string;
@@ -101,7 +105,18 @@ export function HubInClinicMedicationForm({
   const selectedService = services.find((s) => s.id === draft.hub_service_type_id) ?? null;
   const selectedItem = items.find((v) => v.id === draft.hub_inventory_item_id) ?? null;
   const selectedLot = lotsForItem.find((l) => l.id === draft.hub_inventory_lot_id) ?? null;
-  const unitLabel = selectedItem?.unit_label?.trim() || 'un.';
+  const stockUnitLabel = selectedItem?.unit_label?.trim() || 'un.';
+  const contentQty =
+    selectedItem?.content_qty != null && Number(selectedItem.content_qty) > 0
+      ? Number(selectedItem.content_qty)
+      : null;
+  const qtyUnitLabel =
+    contentQty != null ? selectedItem?.content_unit?.trim() || 'ml' : stockUnitLabel;
+  const consumedQty = Number(String(draft.quantity).replace(',', '.'));
+  const convertedStockQty =
+    Number.isFinite(consumedQty) && consumedQty > 0
+      ? stockQtyFromConsumption(consumedQty, contentQty)
+      : null;
 
   const serviceOptions = useMemo(
     () =>
@@ -116,24 +131,35 @@ export function HubInClinicMedicationForm({
     () =>
       items.map((it) => ({
         value: it.id,
-        label: it.unit_label ? `${it.name} (${it.unit_label})` : it.name,
+        label: it.unit_label
+          ? it.content_qty != null && it.content_unit
+            ? `${it.name} (${it.unit_label} · ${it.content_qty} ${it.content_unit})`
+            : `${it.name} (${it.unit_label})`
+          : it.name,
       })),
     [items],
   );
 
   const lotOptions = useMemo(
     () =>
-      lotsForItem.map((lot) => ({
-        value: lot.id,
-        label: [
-          lot.lot_code || 'Sem código',
-          `saldo ${lot.qty_on_hand} ${unitLabel}`,
-          lot.expiry_date ? `val. ${lot.expiry_date.slice(0, 10)}` : null,
-        ]
-          .filter(Boolean)
-          .join(' — '),
-      })),
-    [lotsForItem, unitLabel],
+      lotsForItem.map((lot) => {
+        const stockPart = `saldo ${formatStockQty(lot.qty_on_hand)} ${stockUnitLabel}`;
+        const contentPart =
+          contentQty != null
+            ? ` (~${formatStockQty(lot.qty_on_hand * contentQty)} ${qtyUnitLabel})`
+            : '';
+        return {
+          value: lot.id,
+          label: [
+            lot.lot_code || 'Sem código',
+            `${stockPart}${contentPart}`,
+            lot.expiry_date ? `val. ${lot.expiry_date.slice(0, 10)}` : null,
+          ]
+            .filter(Boolean)
+            .join(' — '),
+        };
+      }),
+    [lotsForItem, stockUnitLabel, contentQty, qtyUnitLabel],
   );
 
   const canSubmit =
@@ -215,7 +241,7 @@ export function HubInClinicMedicationForm({
             ) : null}
           </div>
           <div className="hub-clinic-field hub-cws-field-tight">
-            <label htmlFor="med-qty">Quantidade ({unitLabel})</label>
+            <label htmlFor="med-qty">Quantidade ({qtyUnitLabel})</label>
             <input
               id="med-qty"
               inputMode="decimal"
@@ -224,6 +250,19 @@ export function HubInClinicMedicationForm({
               onChange={(e) => set({ quantity: e.target.value })}
               placeholder="1"
             />
+            {contentQty != null && convertedStockQty != null && Number.isFinite(convertedStockQty) ? (
+              <p className="hub-cws-exam-form__hint">
+                {formatStockQty(consumedQty)} {qtyUnitLabel} = {formatStockQty(convertedStockQty)}{' '}
+                {stockUnitLabel}
+                {selectedLot
+                  ? ` · saldo ${formatStockQty(selectedLot.qty_on_hand)} ${stockUnitLabel}${
+                      contentQty
+                        ? ` (~${formatStockQty(selectedLot.qty_on_hand * contentQty)} ${qtyUnitLabel})`
+                        : ''
+                    }`
+                  : ''}
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -280,9 +319,13 @@ export function HubInClinicMedicationForm({
         <p className="hub-cws-exam-form__hint">
           Na comanda: {formatMoneyBrl(Number(selectedService.sale_amount ?? 0))} ({selectedService.name})
           {selectedItem
-            ? ` · baixa ${draft.quantity || '1'} ${unitLabel} de ${selectedItem.name}${
+            ? ` · baixa ${draft.quantity || '1'} ${qtyUnitLabel} de ${selectedItem.name}${
                 selectedLot ? ` (lote ${selectedLot.lot_code || 'sem código'})` : ''
-              } — sem cobrança do produto`
+              }${
+                contentQty != null && convertedStockQty != null
+                  ? ` = ${formatStockQty(convertedStockQty)} ${stockUnitLabel}`
+                  : ''
+              } — sem cobrança do produto · exige confirmação`
             : ''}
           .
         </p>

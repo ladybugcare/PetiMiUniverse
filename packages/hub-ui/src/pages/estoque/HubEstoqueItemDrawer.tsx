@@ -9,6 +9,10 @@ import { HubDateField } from '../../components/HubDateField';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import HubEstoqueFilterChips from './HubEstoqueFilterChips';
 import { kindLabel, kindNewLabel } from './estoqueShared';
+import {
+  stockUnitRequiresContent,
+  stockUnitShowsContentFields,
+} from './inventoryContentUtils';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
 import '../servicos/servicos-page.css';
@@ -36,6 +40,8 @@ export type InventoryFormState = {
   generates_staff_commission: boolean;
   min_stock_qty: string;
   expiry_alert_policy: HubExpiryAlertPolicy;
+  content_qty: string;
+  content_unit: string;
   initial_received_at: string;
   initial_expiry_date: string;
   initial_qty: string;
@@ -71,6 +77,14 @@ const ALERT_OPTIONS: HubComboboxOption[] = [
   { value: 'd30', label: '30 dias antes' },
   { value: 'd60', label: '60 dias antes' },
   { value: 'd90', label: '90 dias antes' },
+];
+
+const CONTENT_UNIT_BASE: HubComboboxOption[] = [
+  { value: 'ml', label: 'ml' },
+  { value: 'Litro', label: 'Litro' },
+  { value: 'g', label: 'g' },
+  { value: 'Unidade', label: 'Unidade' },
+  { value: 'Dose', label: 'Dose' },
 ];
 
 function withCurrentOption(options: HubComboboxOption[], current: string): HubComboboxOption[] {
@@ -128,6 +142,12 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
     () => withCurrentOption(PURPOSE_BASE, form.sale_purpose),
     [form.sale_purpose],
   );
+  const contentUnitOptions = useMemo(
+    () => withCurrentOption(CONTENT_UNIT_BASE, form.content_unit),
+    [form.content_unit],
+  );
+  const showContentFields = stockUnitShowsContentFields(form.unit_label);
+  const contentRequired = stockUnitRequiresContent(form.unit_label);
 
   return (
     <HubSidePanel
@@ -235,7 +255,18 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
                   className="hub-combobox--clientes"
                   options={unitOptions}
                   value={form.unit_label}
-                  onChange={(v) => setForm((f) => ({ ...f, unit_label: v }))}
+                  onChange={(v) =>
+                    setForm((f) => {
+                      const next = { ...f, unit_label: v };
+                      if (!stockUnitShowsContentFields(v)) {
+                        next.content_qty = '';
+                        next.content_unit = '';
+                      } else if (stockUnitRequiresContent(v) && !f.content_unit.trim()) {
+                        next.content_unit = 'ml';
+                      }
+                      return next;
+                    })
+                  }
                   placeholder="Selecionar unidade"
                   searchPlaceholder="Buscar ou criar unidade…"
                   allowCreate={canWrite}
@@ -265,17 +296,57 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
                 />
               </div>
             </div>
+            {showContentFields ? (
+              <div className="hub-estoque-drawer__row">
+                <div className="hub-clientes__field">
+                  <label className="hub-clientes__label" htmlFor="inv-content-qty">
+                    Conteúdo por {form.unit_label.trim() || 'unidade'}
+                    {contentRequired ? ' *' : ''}
+                  </label>
+                  <input
+                    id="inv-content-qty"
+                    className="hub-clientes__input"
+                    inputMode="decimal"
+                    required={contentRequired}
+                    value={form.content_qty}
+                    onChange={(e) => setForm((f) => ({ ...f, content_qty: e.target.value }))}
+                    placeholder="Ex.: 10"
+                  />
+                </div>
+                <div className="hub-clientes__field">
+                  <label className="hub-clientes__label" htmlFor="inv-content-unit">
+                    Unidade do conteúdo
+                    {contentRequired ? ' *' : ''}
+                  </label>
+                  <HubSearchableCombobox
+                    id="inv-content-unit"
+                    className="hub-combobox--clientes"
+                    options={contentUnitOptions}
+                    value={form.content_unit}
+                    onChange={(v) => setForm((f) => ({ ...f, content_unit: v }))}
+                    placeholder="Ex.: ml"
+                    searchPlaceholder="Buscar unidade…"
+                    allowCreate={canWrite}
+                    createEntityLabel="unidade de conteúdo"
+                    createEntityGender="f"
+                    emptyResultsLabel="Nenhuma unidade encontrada"
+                    ariaLabel="Unidade do conteúdo"
+                  />
+                </div>
+              </div>
+            ) : null}
             <div className="hub-clientes__field">
               <HubCheckbox
-                checked={form.allow_fractional}
+                checked={form.allow_fractional || Boolean(form.content_qty.trim())}
                 onChange={(allow_fractional) => setForm((f) => ({ ...f, allow_fractional }))}
               >
                 Permite quantidades fracionadas
               </HubCheckbox>
               {activeKind === 'medication' ? (
                 <p className="hub-estoque__hint-ean" style={{ marginTop: 8 }}>
-                  Na consulta, a Qtd. baixada usa a mesma unidade deste cadastro (ex.: frasco ou ml). A cobrança do
-                  tutor é o serviço de aplicação, não o preço de venda deste item.
+                  {showContentFields
+                    ? 'Na consulta, informe a quantidade na unidade do conteúdo (ex.: ml). O sistema converte e baixa a fração do frasco/ampola. A cobrança do tutor é o serviço de aplicação, não o preço de venda deste item.'
+                    : 'Na consulta, a Qtd. baixada usa a mesma unidade deste cadastro. A cobrança do tutor é o serviço de aplicação, não o preço de venda deste item.'}
                 </p>
               ) : null}
             </div>

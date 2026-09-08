@@ -9,6 +9,11 @@ import type { HubComboboxOption } from '../../../components/HubSearchableCombobo
 import ClinicalCaseLinkFields, {
   type ClinicalCaseLinkValue,
 } from '../../../components/clinical/ClinicalCaseLinkFields';
+import {
+  HubClinicalServicePicker,
+  type ClinicalServicePick,
+} from '../../../components/clinical/HubClinicalServicePicker';
+import { HubCwsChoiceChips } from '../HubCwsChoiceChips';
 import { isCatSpecies, isDogSpecies } from '../anamnesisOptions';
 import { HOSP_ADMIT_REASON_OPTIONS, buildHospAdmitReason } from './hospDisplay';
 import '../../agenda/new-appointment-modal.css';
@@ -22,6 +27,8 @@ export type HospAdmitDraft = {
   notes: string;
   staffId: string;
   caseLink: ClinicalCaseLinkValue;
+  dailyServicePick: ClinicalServicePick;
+  dailyIncludesMedication: boolean;
 };
 
 type Props = {
@@ -342,6 +349,37 @@ const HospAdmitForm: React.FC<Props> = ({
               clearable
             />
           </div>
+        </div>
+
+        <div className="nam-field">
+          <HubClinicalServicePicker
+            clinicId={clinicId}
+            group="internacao"
+            value={draft.dailyServicePick}
+            onChange={(dailyServicePick) => set({ dailyServicePick })}
+            label="Diária cobrável"
+            placeholder="Buscar diária do catálogo…"
+            disabled={submitting}
+            allowPriceOverride
+            id="clinic-admit-daily"
+          />
+        </div>
+
+        <div className="nam-field">
+          <span className="nam-label">Medicações nesta internação</span>
+          <HubCwsChoiceChips
+            options={[
+              { key: 'extra', label: 'Cobrar à parte', level: 'info' },
+              { key: 'included', label: 'Inclusas na diária' },
+            ]}
+            value={draft.dailyIncludesMedication ? 'included' : 'extra'}
+            ariaLabel="Padrão de cobrança de medicação"
+            disabled={submitting}
+            onChange={(next) => set({ dailyIncludesMedication: next === 'included' })}
+          />
+          <p className="nam-muted" style={{ marginTop: 6 }}>
+            Você pode mudar item a item ao registrar cada medicação.
+          </p>
         </div>
 
         <div className="nam-field">

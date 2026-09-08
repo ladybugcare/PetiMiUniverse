@@ -230,3 +230,11 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 105. **`105_create_hub_encounter_medication_administrations.sql`** — Medicação aplicada na consulta: serviço cobrável + estoque/lote opcional, com snapshot de preço para a comanda. Executar depois de `025b`, `003`, `008` e `025i`.
 
 106. **`106_alter_hub_service_types_encounter_application.sql`** — Coluna `is_encounter_application` em `hub_service_types` (serviços de aplicação na consulta no grupo Clínica). Executar depois de `003` / `004`.
+
+107. **`107_alter_clinical_modules_billable_services.sql`** — Cobrança de cirurgia/internação: `hub_appointment_id` em `hub_surgeries`; tabelas `hub_surgery_services` e `hub_hospitalization_charges`; diária (`daily_hub_service_type_id`, `daily_unit_amount`, `daily_includes_medication`) em `hub_hospitalizations`. Executar depois de `025k`/`025l`/`025s`/`025t`, `003`, `012`/`015` e `008`.
+
+108. **`108_alter_hub_service_types_variable_price.sql`** — `price_mode` (`fixed` | `variable`), `price_min` e `price_max` em `hub_service_types` (valor alterável na hora de cobrar, com faixa opcional e aprovação financeira). Executar depois de `003` / `005`.
+
+109. **`109_alter_inventory_clinical_content.sql`** — `content_qty` / `content_unit` em `hub_inventory_items` (conteúdo por embalagem, ex.: 10 ml/frasco) e `quantity_unit` / `stock_qty` em `hub_encounter_medication_administrations` (snapshot do consumo clínico vs baixa convertida). Executar depois de `008` e `105`.
+
+110. **`110_alter_hub_hospitalizations_appointment.sql`** — `hub_appointment_id` em `hub_hospitalizations` (espelho da admissão na agenda) + atualiza o comentário de `hub_surgeries.hub_appointment_id` (origem Agenda ou Consultório). Executar depois de `025k`/`025s`, `012` e `107`.

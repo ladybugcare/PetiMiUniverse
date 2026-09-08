@@ -29,6 +29,13 @@ import {
 import { hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
 import { normalizeSeriesBillingForInsert } from './hubSeriesBillingService';
 import {
+  MAX_OCCURRENCES,
+  generateOccurrenceDates,
+  normalizeRecurrenceRule,
+  seriesDaysOfWeek,
+  type RecurrenceRule,
+} from './hubRecurrenceService';
+import {
   DEFAULT_SERIES_ENDING_MAX_REMAINING,
   DEFAULT_SERIES_ENDING_WITHIN_DAYS,
   filterEndingSoonSeries,
@@ -47,6 +54,7 @@ import {
   type ResolvedSpecialPrice,
 } from './hubSpecialPrices';
 import { upsertSpecialPriceFromAppointment } from './hubSpecialPricesController';
+import { syncSurgeryForAppointmentSafe } from './hubSurgeryFromAppointment';
 
 function validateLevaTrazServiceType(st: ServiceTypePricingRow | undefined): string | null {
   if (!st) return 'Tipo de serviço de Leva e Traz inválido.';
@@ -771,65 +779,6 @@ async function refreshSnapshotsForAppointment(
 
 // ── Recurrence helpers ──────────────────────────────────────────────────────
 
-const MAX_OCCURRENCES = 52;
-
-type RecurrenceRule = {
-  kind: 'daily' | 'weekly' | 'monthly';
-  interval_value: number;
-  days_of_week?: number[] | null;
-  day_of_month?: number | null;
-  until_date?: string | null;
-  occurrences?: number | null;
-};
-
-function generateOccurrenceDates(startDate: string, rule: RecurrenceRule): string[] {
-  const dates: string[] = [];
-  let current = new Date(startDate + 'T00:00:00Z');
-  const cap = Math.min(rule.occurrences ?? MAX_OCCURRENCES, MAX_OCCURRENCES);
-  const until = rule.until_date ? new Date(rule.until_date + 'T23:59:59Z') : null;
-
-  while (dates.length < cap) {
-    if (until && current > until) break;
-
-    if (rule.kind === 'daily') {
-      dates.push(current.toISOString().slice(0, 10));
-      current = new Date(current);
-      current.setUTCDate(current.getUTCDate() + rule.interval_value);
-    } else if (rule.kind === 'weekly') {
-      const targetDays = rule.days_of_week && rule.days_of_week.length > 0 ? rule.days_of_week : [1];
-      // iso weekday: 1=mon..7=sun
-      const dow = ((current.getUTCDay() + 6) % 7) + 1;
-      if (targetDays.includes(dow)) {
-        dates.push(current.toISOString().slice(0, 10));
-      }
-      current = new Date(current);
-      current.setUTCDate(current.getUTCDate() + 1);
-      // skip to next week start if past all target days this week
-      if (dates.length > 0 && rule.interval_value > 1) {
-        const curDow = ((current.getUTCDay() + 6) % 7) + 1;
-        const maxTarget = Math.max(...targetDays);
-        if (curDow > maxTarget) {
-          // jump to monday of next Nth week
-          const daysUntilMon = (8 - current.getUTCDay()) % 7 || 7;
-          current.setUTCDate(current.getUTCDate() + daysUntilMon + (rule.interval_value - 1) * 7);
-        }
-      }
-      if (dates.length >= cap) break;
-      continue;
-    } else {
-      // monthly
-      dates.push(current.toISOString().slice(0, 10));
-      current = new Date(current);
-      current.setUTCMonth(current.getUTCMonth() + rule.interval_value);
-      if (rule.day_of_month) {
-        const maxDay = new Date(current.getUTCFullYear(), current.getUTCMonth() + 1, 0).getUTCDate();
-        current.setUTCDate(Math.min(rule.day_of_month, maxDay));
-      }
-    }
-  }
-  return dates;
-}
-
 function shiftTimestampToDate(originalTs: string, newDate: string): string {
   // keep time portion from originalTs, apply to newDate
   const orig = new Date(originalTs);
@@ -1112,7 +1061,7 @@ const pickupRoutePricingSchema = z
   .strict();
 
 const recurrenceSchema = z.object({
-  kind: z.enum(['daily', 'weekly', 'monthly']),
+  kind: z.enum(['daily', 'weekly', 'biweekly', 'monthly']),
   interval_value: z.number().int().positive().default(1),
   days_of_week: z.array(z.number().int().min(1).max(7)).optional().nullable(),
   day_of_month: z.number().int().min(1).max(31).optional().nullable(),
@@ -1427,6 +1376,8 @@ async function syncExtraBlocksForParent(
     }));
     const { error: bSvcErr } = await supabaseAdmin.from('hub_appointment_services').insert(blockSvcInsert);
     if (bSvcErr) return { error: bSvcErr.message, status: 500 };
+
+    await syncSurgeryForAppointmentSafe({ clinicId, appointmentId: blockId });
   }
 
   const now = new Date().toISOString();
@@ -1437,6 +1388,7 @@ async function syncExtraBlocksForParent(
       .update({ deleted_at: now })
       .eq('id', childId)
       .eq('clinic_id', clinicId);
+    await syncSurgeryForAppointmentSafe({ clinicId, appointmentId: childId });
   }
 
   return {};
@@ -2025,7 +1977,10 @@ export const createHubAppointment = async (req: Request, res: Response) => {
     }
 
     if (b.recurrence) {
-      const rule = b.recurrence;
+      const rule = normalizeRecurrenceRule(b.recurrence);
+      const seriesStartDate = b.starts_at.slice(0, 10);
+      // Persistir o dia da semana efetivo (mesmo fallback usado na geração das datas).
+      const seriesDows = seriesDaysOfWeek(seriesStartDate, rule);
       const billingFields = normalizeSeriesBillingForInsert({
         billing_mode: rule.billing_mode ?? 'per_occurrence',
         invoice_issue_rule: rule.invoice_issue_rule,
@@ -2057,9 +2012,9 @@ export const createHubAppointment = async (req: Request, res: Response) => {
           clinic_id: b.clinic_id,
           kind: rule.kind,
           interval_value: rule.interval_value ?? 1,
-          days_of_week: rule.days_of_week ?? null,
+          days_of_week: seriesDows,
           day_of_month: rule.day_of_month ?? null,
-          start_date: b.starts_at.slice(0, 10),
+          start_date: seriesStartDate,
           until_date: rule.until_date ?? null,
           occurrences: rule.occurrences ?? null,
           ...billingFields,
@@ -2075,9 +2030,9 @@ export const createHubAppointment = async (req: Request, res: Response) => {
               clinic_id: b.clinic_id,
               kind: rule.kind,
               interval_value: rule.interval_value ?? 1,
-              days_of_week: rule.days_of_week ?? null,
+              days_of_week: seriesDows,
               day_of_month: rule.day_of_month ?? null,
-              start_date: b.starts_at.slice(0, 10),
+              start_date: seriesStartDate,
               until_date: rule.until_date ?? null,
               occurrences: rule.occurrences ?? null,
             })
@@ -2212,6 +2167,8 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       const svcInsert = appointmentServiceInsertRows(apptId, snapRows);
       const { error: svcErr } = await supabaseAdmin.from('hub_appointment_services').insert(svcInsert);
       if (svcErr) return res.status(500).json({ error: svcErr.message });
+
+      await syncSurgeryForAppointmentSafe({ clinicId: b.clinic_id, appointmentId: apptId, userId });
 
       const ltCfg = b.pickup_route_pricing;
       const hasBefore = Boolean(b.with_pickup_route_before);
@@ -2456,6 +2413,8 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         }));
         const { error: bSvcErr } = await supabaseAdmin.from('hub_appointment_services').insert(blockSvcInsert);
         if (bSvcErr) return res.status(500).json({ error: bSvcErr.message });
+
+        await syncSurgeryForAppointmentSafe({ clinicId: b.clinic_id, appointmentId: blockId, userId });
       }
     }
 
@@ -2532,33 +2491,28 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     // soft-delete scoped
     if (b.deleted === true) {
       const now = new Date().toISOString();
-      if (scope === 'this') {
-        await supabaseAdmin
+      const deleteSeriesId = (existing as Record<string, unknown>).series_id as string | null;
+      let deletedIds = [id];
+      if (scope !== 'this' && deleteSeriesId) {
+        let seriesQ = supabaseAdmin
           .from('hub_appointments')
-          .update({ deleted_at: now })
-          .eq('id', id)
-          .eq('clinic_id', b.clinic_id);
-      } else if (scope === 'future' && (existing as Record<string, unknown>).series_id) {
-        await supabaseAdmin
-          .from('hub_appointments')
-          .update({ deleted_at: now })
+          .select('id')
           .eq('clinic_id', b.clinic_id)
-          .eq('series_id', (existing as Record<string, unknown>).series_id as string)
-          .gte('starts_at', (existing as Record<string, unknown>).starts_at as string)
+          .eq('series_id', deleteSeriesId)
           .is('deleted_at', null);
-      } else if (scope === 'all' && (existing as Record<string, unknown>).series_id) {
-        await supabaseAdmin
-          .from('hub_appointments')
-          .update({ deleted_at: now })
-          .eq('clinic_id', b.clinic_id)
-          .eq('series_id', (existing as Record<string, unknown>).series_id as string)
-          .is('deleted_at', null);
-      } else {
-        await supabaseAdmin
-          .from('hub_appointments')
-          .update({ deleted_at: now })
-          .eq('id', id)
-          .eq('clinic_id', b.clinic_id);
+        if (scope === 'future') {
+          seriesQ = seriesQ.gte('starts_at', (existing as Record<string, unknown>).starts_at as string);
+        }
+        const { data: seriesRows } = await seriesQ;
+        deletedIds = (seriesRows ?? []).map((r: Record<string, unknown>) => r.id as string);
+      }
+      await supabaseAdmin
+        .from('hub_appointments')
+        .update({ deleted_at: now })
+        .in('id', deletedIds)
+        .eq('clinic_id', b.clinic_id);
+      for (const did of deletedIds) {
+        await syncSurgeryForAppointmentSafe({ clinicId: b.clinic_id, appointmentId: did });
       }
       return res.status(204).send();
     }
@@ -2838,6 +2792,10 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
           );
         }
       }
+    }
+
+    for (const tid of targetIds) {
+      await syncSurgeryForAppointmentSafe({ clinicId: b.clinic_id, appointmentId: tid, userId: req.user?.id });
     }
 
     if (patch.status === 'cancelled') {

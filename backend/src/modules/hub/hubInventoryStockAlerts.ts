@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../../config/supabase.js';
-import { notifyHubStockAlert, notifyHubStockExpiryAlert } from './hubNotifyEvents.js';
+import { notifyHubStockAlert, notifyHubStockExpiryAlert, notifyHubNearlyEmptyLot } from './hubNotifyEvents.js';
+import { crossedNearlyEmptyThreshold, roundStockQty } from './hubInventoryContentUtils.js';
 
 /**
  * Avisa o estoque quando uma saída derruba o item abaixo do mínimo.
@@ -40,6 +41,75 @@ export async function notifyLowStockIfCrossed(opts: {
     });
   } catch (e) {
     console.error('notifyLowStockIfCrossed', opts.itemId, e);
+  }
+}
+
+/**
+ * Avisa quando o último recipiente do lote fica com menos de 20% do conteúdo.
+ * Só dispara na travessia do limiar (antes ≥ 0,20 → depois < 0,20).
+ */
+export async function notifyNearlyEmptyLotIfCrossed(opts: {
+  clinicId: string;
+  itemId: string;
+  lotId: string;
+  lotQtyBefore: number;
+  lotQtyAfter: number;
+  contentQty?: number | null;
+  contentUnit?: string | null;
+  itemName?: string | null;
+  unitLabel?: string | null;
+  lotCode?: string | null;
+}): Promise<void> {
+  try {
+    let contentQty = opts.contentQty ?? null;
+    let contentUnit = opts.contentUnit ?? null;
+    let itemName = opts.itemName ?? null;
+    let unitLabel = opts.unitLabel ?? null;
+    let lotCode = opts.lotCode ?? null;
+
+    if (contentQty == null || itemName == null || unitLabel == null) {
+      const { data } = await supabaseAdmin
+        .from('hub_inventory_items')
+        .select('name, unit_label, content_qty, content_unit')
+        .eq('id', opts.itemId)
+        .maybeSingle();
+      itemName = itemName ?? ((data?.name as string | null) ?? null);
+      unitLabel = unitLabel ?? ((data?.unit_label as string | null) ?? null);
+      contentQty = contentQty ?? (data?.content_qty != null ? Number(data.content_qty) : null);
+      contentUnit = contentUnit ?? ((data?.content_unit as string | null) ?? null);
+    }
+
+    if (lotCode == null) {
+      const { data: lot } = await supabaseAdmin
+        .from('hub_inventory_lots')
+        .select('lot_code')
+        .eq('id', opts.lotId)
+        .maybeSingle();
+      lotCode = (lot?.lot_code as string | null) ?? null;
+    }
+
+    const hasContent = contentQty != null && Number(contentQty) > 0;
+    if (!crossedNearlyEmptyThreshold(opts.lotQtyBefore, opts.lotQtyAfter, hasContent)) {
+      return;
+    }
+
+    const remainingStock = roundStockQty(opts.lotQtyAfter);
+    const remainingContent =
+      hasContent && contentQty ? roundStockQty(remainingStock * Number(contentQty)) : null;
+
+    await notifyHubNearlyEmptyLot({
+      clinicId: opts.clinicId,
+      itemId: opts.itemId,
+      lotId: opts.lotId,
+      itemName: String(itemName || 'Item'),
+      lotCode,
+      remainingStock,
+      unitLabel: unitLabel || 'un.',
+      remainingContent,
+      contentUnit: contentUnit || null,
+    });
+  } catch (e) {
+    console.error('notifyNearlyEmptyLotIfCrossed', opts.lotId, e);
   }
 }
 

@@ -17,7 +17,7 @@ const SERVICE_CONSULTA_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0005';
 const ITEM_ID = 'ffffffff-ffff-4fff-8fff-ffffffffff06';
 const LOT_ID = '11111111-1111-4111-8111-111111110007';
 
-function medicationFixture() {
+function medicationFixture(opts?: { contentQty?: number | null; contentUnit?: string | null; lotQty?: number }) {
   configureSupabaseMock({
     tables: {
       hub_service_types: [
@@ -52,6 +52,10 @@ function medicationFixture() {
           deleted_at: null,
           active: true,
           item_kind: 'medication',
+          unit_label: 'Frasco',
+          content_qty: opts?.contentQty ?? null,
+          content_unit: opts?.contentUnit ?? null,
+          allow_fractional: true,
         },
       ],
       hub_inventory_lots: [
@@ -71,7 +75,7 @@ function medicationFixture() {
           item_id: ITEM_ID,
           lot_id: LOT_ID,
           movement_type: 'purchase_in',
-          qty: 5,
+          qty: opts?.lotQty ?? 5,
         },
       ],
       hub_encounter_medication_administrations: [],
@@ -95,8 +99,8 @@ describe('API clínica — medicação na consulta', () => {
     expect(String(res.body.error || '')).toMatch(/Aplicação na consulta/i);
   });
 
-  it('POST com aplicação e lote baixa estoque', async () => {
-    medicationFixture();
+  it('POST com lote sem confirm_stock_out rejeita e não baixa estoque', async () => {
+    medicationFixture({ contentQty: 10, contentUnit: 'ml' });
     const res = await request(app)
       .post('/api/hub/clinical/medication-administrations')
       .send({
@@ -106,16 +110,42 @@ describe('API clínica — medicação na consulta', () => {
         hub_service_type_id: SERVICE_APP_ID,
         hub_inventory_item_id: ITEM_ID,
         hub_inventory_lot_id: LOT_ID,
-        quantity: 0.2,
+        quantity: 2,
+      });
+
+    expect(res.status).toBe(400);
+    expect(String(res.body.error || '')).toMatch(/Confirme a baixa/i);
+
+    const client = getMockSupabaseClient();
+    const movements = client._state.tables.hub_stock_movements ?? [];
+    expect(movements.some((m) => m.movement_type === 'encounter_out')).toBe(false);
+    expect(client._state.tables.hub_encounter_medication_administrations ?? []).toHaveLength(0);
+  });
+
+  it('POST com confirmação e content_qty converte ml para frasco', async () => {
+    medicationFixture({ contentQty: 10, contentUnit: 'ml' });
+    const res = await request(app)
+      .post('/api/hub/clinical/medication-administrations')
+      .send({
+        clinic_id: CLINIC_ID,
+        pet_id: PET_ID,
+        hub_encounter_id: ENCOUNTER_ID,
+        hub_service_type_id: SERVICE_APP_ID,
+        hub_inventory_item_id: ITEM_ID,
+        hub_inventory_lot_id: LOT_ID,
+        quantity: 2,
         dose: '2 ml',
         use_route: 'IM',
+        confirm_stock_out: true,
       });
 
     expect(res.status).toBe(201);
     expect(res.body.administration.service_name).toBe('Aplicação IM');
     expect(res.body.administration.service_price).toBe(35);
     expect(res.body.administration.stock_movement_id).toBeTruthy();
-    expect(Number(res.body.administration.quantity)).toBe(0.2);
+    expect(Number(res.body.administration.quantity)).toBe(2);
+    expect(res.body.administration.quantity_unit).toBe('ml');
+    expect(Number(res.body.administration.stock_qty)).toBe(0.2);
 
     const client = getMockSupabaseClient();
     const movements = client._state.tables.hub_stock_movements ?? [];

@@ -9,8 +9,10 @@ import {
   type HubComandaDetailResponse,
   type HubComandaEditContext,
   type HubComandaGuardianEmbed,
+  type HubComandaPendingPriceApproval,
   type HubComandaPetEmbed,
 } from '../../api/hubComandaApi';
+import { hubClinicalApi } from '../../api/hubClinicalApi';
 import { hubInventoryApi, type HubInventoryItem, type HubInventoryLotRow } from '../../api/hubInventoryApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { useAlert } from '../../components/AlertProvider';
@@ -82,6 +84,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
   const unitId = useSelectedUnitId();
 
   const canWrite = hasPermission('hub.receivables.create');
+  const canApprovePrices = hasPermission('hub.financial.write');
 
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(comandaId);
   const [saving, setSaving] = useState(false);
@@ -98,6 +101,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
   const [showCheckout, setShowCheckout] = useState(false);
   const [showReceivableDrawer, setShowReceivableDrawer] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState('');
+  const [approvingPriceId, setApprovingPriceId] = useState<string | null>(null);
 
   const newItemCounterRef = useRef(0);
 
@@ -206,6 +210,27 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
       }
     },
     [comandaId, clinicId, editContext, showError]
+  );
+
+  const handleApprovePendingPrice = useCallback(
+    async (item: HubComandaPendingPriceApproval) => {
+      if (!clinicId || !canApprovePrices) return;
+      setApprovingPriceId(item.id);
+      try {
+        if (item.kind === 'surgery_service') {
+          await hubClinicalApi.approveSurgeryServicePrice(item.parent_id, item.id, clinicId);
+        } else {
+          await hubClinicalApi.approveHospitalizationChargePrice(item.parent_id, item.id, clinicId);
+        }
+        showSuccess('Preço aprovado. A comanda será atualizada.');
+        await load();
+      } catch (e: unknown) {
+        showError((e as Error)?.message || 'Erro ao aprovar preço');
+      } finally {
+        setApprovingPriceId(null);
+      }
+    },
+    [clinicId, canApprovePrices, load, showError, showSuccess],
   );
 
   const packageBalancesByItemId = (payload?.package_balances_by_item_id ?? {}) as Record<
@@ -587,6 +612,10 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
       onApplyProduct={applyProductToItem}
       packageBalancesByItemId={packageBalancesByItemId}
       onTogglePackage={String(comandaRow?.origin_type) !== 'package' ? handleTogglePackage : undefined}
+      pendingPriceApprovals={payload.pending_price_approvals ?? []}
+      canApprovePrices={canApprovePrices}
+      approvingPriceId={approvingPriceId}
+      onApprovePrice={(item) => void handleApprovePendingPrice(item)}
     />
   );
 

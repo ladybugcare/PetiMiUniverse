@@ -140,7 +140,8 @@ export type HubSeriesEndingSoon = {
 };
 
 export type HubAppointmentRecurrenceRule = {
-  kind: 'daily' | 'weekly' | 'monthly';
+  /** Quinzenal viaja como 'weekly' com interval_value 2 (o backend também aceita 'biweekly'). */
+  kind: 'daily' | 'weekly' | 'biweekly' | 'monthly';
   interval_value?: number;
   days_of_week?: number[] | null;
   day_of_month?: number | null;

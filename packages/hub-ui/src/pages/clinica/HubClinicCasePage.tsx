@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   BedDouble,
+  Check,
   ChevronRight,
   Coins,
   FileText,
@@ -16,6 +17,7 @@ import {
   Share2,
   Stethoscope,
   Syringe,
+  X,
 } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
@@ -186,10 +188,14 @@ const HubClinicCasePage: React.FC = () => {
   const [reopenReason, setReopenReason] = useState('');
   const [reopenAction, setReopenAction] = useState<'encounter' | 'status' | 'internacao' | 'cirurgia' | null>(null);
   const [reopening, setReopening] = useState(false);
-  const [editingDetails, setEditingDetails] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editingSummary, setEditingSummary] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [summaryDraft, setSummaryDraft] = useState('');
-  const [savingDetails, setSavingDetails] = useState(false);
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [savingSummary, setSavingSummary] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const summaryInputRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(async () => {
     if (!clinicId || !caseId) return;
@@ -287,12 +293,42 @@ const HubClinicCasePage: React.FC = () => {
     )[0] ?? null;
   }, [encounters]);
 
-  const startDetailsEdit = () => {
-    const suggested = titleIsGeneric && !isGenericClinicalCaseTitle(displayTitle) ? displayTitle : clinicalCase?.title ?? '';
+  const startTitleEdit = () => {
+    if (!canWrite) return;
+    const suggested =
+      titleIsGeneric && !isGenericClinicalCaseTitle(displayTitle) ? displayTitle : clinicalCase?.title ?? '';
     setTitleDraft(isGenericClinicalCaseTitle(suggested) ? '' : suggested);
-    setSummaryDraft(clinicalCase?.summary ?? '');
-    setEditingDetails(true);
+    setEditingTitle(true);
   };
+
+  const cancelTitleEdit = () => {
+    setEditingTitle(false);
+    setTitleDraft('');
+  };
+
+  const startSummaryEdit = () => {
+    if (!canWrite) return;
+    setSummaryDraft(clinicalCase?.summary ?? '');
+    setEditingSummary(true);
+  };
+
+  const cancelSummaryEdit = () => {
+    setEditingSummary(false);
+    setSummaryDraft('');
+  };
+
+  useEffect(() => {
+    if (!editingTitle) return;
+    const el = titleInputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [editingTitle]);
+
+  useEffect(() => {
+    if (!editingSummary) return;
+    summaryInputRef.current?.focus();
+  }, [editingSummary]);
 
   const startEncounterInCase = async (reopenReasonValue?: string) => {
     if (!clinicId || !clinicalCase || !canWrite || startingEncounter) return;
@@ -419,27 +455,56 @@ const HubClinicCasePage: React.FC = () => {
     }
   };
 
-  const handleDetailsSave = async () => {
-    if (!clinicId || !caseId || !canWrite) return;
+  const handleTitleSave = async () => {
+    if (!clinicId || !caseId || !canWrite || savingTitle) return;
     const nextTitle = titleDraft.trim();
     if (!nextTitle) {
       showError('Informe um título para o caso.');
+      titleInputRef.current?.focus();
       return;
     }
-    setSavingDetails(true);
+    const stored = clinicalCase?.title?.trim() ?? '';
+    if (nextTitle === stored) {
+      setEditingTitle(false);
+      return;
+    }
+    setSavingTitle(true);
     try {
       const { case: updated } = await hubClinicalCasesApi.patch(caseId, {
         clinic_id: clinicId,
         title: nextTitle,
-        summary: summaryDraft.trim() || null,
       });
       setClinicalCase(updated);
-      setEditingDetails(false);
-      showSuccess('Caso atualizado');
+      setEditingTitle(false);
+      showSuccess('Título do caso atualizado');
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao atualizar caso');
+      showError((e as Error)?.message || 'Erro ao atualizar o título');
     } finally {
-      setSavingDetails(false);
+      setSavingTitle(false);
+    }
+  };
+
+  const handleSummarySave = async () => {
+    if (!clinicId || !caseId || !canWrite || savingSummary) return;
+    const nextSummary = summaryDraft.trim() || null;
+    const stored = clinicalCase?.summary?.trim() || null;
+    if (nextSummary === stored) {
+      setEditingSummary(false);
+      return;
+    }
+    setSavingSummary(true);
+    try {
+      const { case: updated } = await hubClinicalCasesApi.patch(caseId, {
+        clinic_id: clinicId,
+        summary: nextSummary,
+      });
+      setClinicalCase(updated);
+      setEditingSummary(false);
+      showSuccess('Resumo clínico atualizado');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao atualizar o resumo');
+    } finally {
+      setSavingSummary(false);
     }
   };
 
@@ -520,6 +585,8 @@ const HubClinicCasePage: React.FC = () => {
 
   const stats: Array<{ id: TabId; label: string; value: number; Icon: typeof Stethoscope }> = [
     { id: 'atendimentos', label: 'Atendimentos', value: counts.encounters, Icon: Stethoscope },
+    { id: 'cirurgias', label: 'Cirurgias', value: counts.surgeries, Icon: Scissors },
+    { id: 'internacoes', label: 'Internações', value: counts.hospitalizations, Icon: BedDouble },
     { id: 'prescricoes', label: 'Prescrições', value: counts.prescriptions, Icon: FileText },
     { id: 'exames', label: 'Exames', value: counts.exams, Icon: FlaskConical },
     { id: 'encaminhamentos', label: 'Encaminhamentos', value: counts.referrals, Icon: Share2 },
@@ -546,63 +613,83 @@ const HubClinicCasePage: React.FC = () => {
             </div>
             <div className="hub-clinic-records__title-text">
               <p className="hub-clinic-records__kicker">Caso clínico</p>
-              {editingDetails ? (
-                <div className="hub-clinic-case-page__title-edit">
-                  <label className="hub-clientes__label" htmlFor="case-title-draft">
+              {editingTitle ? (
+                <form
+                  className="hub-clinic-case-page__title-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleTitleSave();
+                  }}
+                >
+                  <label className="hub-clinic-case-page__sr-only" htmlFor="case-title-draft">
                     Título do caso
                   </label>
                   <input
+                    ref={titleInputRef}
                     id="case-title-draft"
-                    className="hub-clientes__input hub-clinic-case-page__title-input"
+                    className="hub-clinic-case-page__title-input"
                     value={titleDraft}
                     onChange={(e) => setTitleDraft(e.target.value)}
-                    placeholder="Ex.: dermatite, pós-operatório, tosse…"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelTitleEdit();
+                      }
+                    }}
+                    placeholder="Nomeie o caso: dermatite, pós-operatório, tosse…"
                     maxLength={500}
+                    disabled={savingTitle}
+                    aria-describedby="case-title-hint"
                   />
-                  <label className="hub-clientes__label" htmlFor="case-summary-draft">
-                    Resumo clínico
-                  </label>
-                  <textarea
-                    id="case-summary-draft"
-                    className="hub-clientes__input"
-                    rows={3}
-                    value={summaryDraft}
-                    onChange={(e) => setSummaryDraft(e.target.value)}
-                    placeholder="Síntese do episódio para a equipe encontrar o caso depois."
-                    maxLength={4000}
-                  />
-                  <div className="hub-clinic-case-page__status-edit">
+                  <div className="hub-clinic-case-page__title-actions">
                     <button
-                      type="button"
-                      className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                      disabled={savingDetails}
-                      onClick={() => void handleDetailsSave()}
+                      type="submit"
+                      className="hub-clinic-case-page__title-icon-btn hub-clinic-case-page__title-icon-btn--save"
+                      disabled={savingTitle || !titleDraft.trim()}
+                      aria-label={savingTitle ? 'Salvando título' : 'Salvar título'}
                     >
-                      {savingDetails ? 'Salvando…' : 'Salvar'}
+                      <Check size={16} strokeWidth={2.25} aria-hidden />
                     </button>
                     <button
                       type="button"
-                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                      onClick={() => setEditingDetails(false)}
+                      className="hub-clinic-case-page__title-icon-btn"
+                      disabled={savingTitle}
+                      onClick={cancelTitleEdit}
+                      aria-label="Cancelar edição do título"
                     >
-                      Cancelar
+                      <X size={16} strokeWidth={2.25} aria-hidden />
                     </button>
                   </div>
-                </div>
-              ) : (
-                <>
-                  <h1 className="hub-clinic-case-page__title">{displayTitle}</h1>
-                  <p className="hub-clinic-records__pet-meta">
-                    <Link to={`/hub/clinica/prontuarios?petId=${clinicalCase.pet_id}`} className="hub-clientes__link">
-                      {petName}
-                    </Link>
-                    {petMeta ? ` · ${petMeta}` : ''}
-                    {clinicalCase.guardian_snapshot?.full_name
-                      ? ` · Tutor: ${clinicalCase.guardian_snapshot.full_name}`
-                      : ''}
+                  <p id="case-title-hint" className="hub-clinic-case-page__title-hint">
+                    {savingTitle ? 'Salvando…' : 'Enter para salvar · Esc para cancelar'}
                   </p>
-                </>
+                </form>
+              ) : (
+                <h1 className="hub-clinic-case-page__title">
+                  {canWrite ? (
+                    <button
+                      type="button"
+                      className="hub-clinic-case-page__title-btn"
+                      onClick={startTitleEdit}
+                      title="Editar título do caso"
+                    >
+                      <span>{displayTitle}</span>
+                      <Pencil size={16} strokeWidth={2} aria-hidden />
+                    </button>
+                  ) : (
+                    displayTitle
+                  )}
+                </h1>
               )}
+              <p className="hub-clinic-records__pet-meta">
+                <Link to={`/hub/clinica/prontuarios?petId=${clinicalCase.pet_id}`} className="hub-clientes__link">
+                  {petName}
+                </Link>
+                {petMeta ? ` · ${petMeta}` : ''}
+                {clinicalCase.guardian_snapshot?.full_name
+                  ? ` · Tutor: ${clinicalCase.guardian_snapshot.full_name}`
+                  : ''}
+              </p>
             </div>
           </div>
 
@@ -641,33 +728,32 @@ const HubClinicCasePage: React.FC = () => {
                 <span className={`hub-clinic-cases__badge hub-clinic-cases__badge--${clinicalCase.status}`}>
                   {STATUS_LABELS[clinicalCase.status]}
                 </span>
-                {canWrite && !editingDetails ? (
-                  <>
-                    <button
-                      type="button"
-                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                      onClick={startDetailsEdit}
-                    >
-                      <Pencil size={14} aria-hidden /> Editar caso
-                    </button>
-                    <button
-                      type="button"
-                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                      onClick={() => setEditingStatus(true)}
-                    >
-                      Alterar status
-                    </button>
-                  </>
+                {canWrite ? (
+                  <button
+                    type="button"
+                    className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                    onClick={() => setEditingStatus(true)}
+                  >
+                    Alterar status
+                  </button>
                 ) : null}
               </>
             )}
           </div>
         </div>
 
-        {titleIsGeneric && !editingDetails ? (
-          <p className="hub-clinic-case-page__generic-hint">
-            Este caso ainda está com um título genérico. Edite para identificar o episódio (ex.: dermatite, pós-operatório).
-          </p>
+        {titleIsGeneric && !editingTitle ? (
+          canWrite ? (
+            <button type="button" className="hub-clinic-case-page__generic-hint" onClick={startTitleEdit}>
+              Este caso ainda está com um título genérico. Clique para identificar o episódio (ex.: dermatite,
+              pós-operatório).
+            </button>
+          ) : (
+            <p className="hub-clinic-case-page__generic-hint">
+              Este caso ainda está com um título genérico. Edite para identificar o episódio (ex.: dermatite,
+              pós-operatório).
+            </p>
+          )
         ) : null}
 
         <div className="hub-clinic-records__facts" aria-label="Dados do caso">
@@ -766,8 +852,65 @@ const HubClinicCasePage: React.FC = () => {
       {tab === 'resumo' && (
         <div className="hub-clinic-case-page__resumo-grid">
           <section className="hub-clinic-case-page__block">
-            <h2 className="hub-clinic-case-page__block-title">Resumo clínico</h2>
-            {clinicalCase.summary ? (
+            <div className="hub-clinic-case-page__block-head">
+              <h2 className="hub-clinic-case-page__block-title">Resumo clínico</h2>
+              {canWrite && !editingSummary ? (
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                  onClick={startSummaryEdit}
+                >
+                  <Pencil size={14} aria-hidden /> {clinicalCase.summary ? 'Editar' : 'Adicionar'}
+                </button>
+              ) : null}
+            </div>
+            {editingSummary ? (
+              <form
+                className="hub-clinic-case-page__summary-edit"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleSummarySave();
+                }}
+              >
+                <label className="hub-clinic-case-page__sr-only" htmlFor="case-summary-draft">
+                  Resumo clínico
+                </label>
+                <textarea
+                  ref={summaryInputRef}
+                  id="case-summary-draft"
+                  className="hub-clientes__input"
+                  rows={4}
+                  value={summaryDraft}
+                  onChange={(e) => setSummaryDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      cancelSummaryEdit();
+                    }
+                  }}
+                  placeholder="Síntese do episódio para a equipe encontrar o caso depois."
+                  maxLength={4000}
+                  disabled={savingSummary}
+                />
+                <div className="hub-clinic-case-page__status-edit">
+                  <button
+                    type="submit"
+                    className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                    disabled={savingSummary}
+                  >
+                    {savingSummary ? 'Salvando…' : 'Salvar'}
+                  </button>
+                  <button
+                    type="button"
+                    className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                    disabled={savingSummary}
+                    onClick={cancelSummaryEdit}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            ) : clinicalCase.summary ? (
               <p className="hub-clinic-records__card-body">{clinicalCase.summary}</p>
             ) : (
               <p className="hub-clinic-records__tab-empty">Nenhum resumo textual cadastrado para este caso.</p>
@@ -1018,6 +1161,9 @@ const HubClinicCasePage: React.FC = () => {
                     {SURGERY_STATUS_LABELS[s.status] ?? s.status}
                     {s.scheduled_at ? ` · ${formatRecordDateTime(s.scheduled_at)}` : ''}
                   </p>
+                  <Link to={`/hub/clinica/cirurgias/${s.id}`} className="hub-clientes__link">
+                    Abrir ficha
+                  </Link>
                 </article>
               ))}
             </div>

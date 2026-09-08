@@ -1,0 +1,238 @@
+/* HubTimeField — horário HH:mm (tokens alinhados a HubDateField) */
+
+.hub-time-field {
+  --hub-time-border: #d6d6d6;
+  --hub-time-border-hover: #c9b8b4;
+  --hub-time-border-focus: #c86a4d;
+  --hub-time-ring: rgba(200, 106, 77, 0.14);
+  --hub-time-text: #4a3b3a;
+  --hub-time-muted: #8e6e67;
+  --hub-time-icon: #8e6e67;
+  --hub-time-icon-focus: #c86a4d;
+  --hub-time-bg: #ffffff;
+  --hub-time-bg-disabled: #faf8f6;
+  --hub-time-selected: #2563eb;
+
+  width: 100%;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.hub-time-field__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--hub-time-muted);
+  cursor: default;
+}
+
+.hub-time-field__row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+.hub-time-field__control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--hub-time-border);
+  border-radius: 10px;
+  background: var(--hub-time-bg);
+  box-sizing: border-box;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hub-time-field:not(.hub-time-field--disabled) .hub-time-field__control:hover {
+  border-color: var(--hub-time-border-hover);
+}
+
+.hub-time-field__control:focus-within,
+.hub-time-field__control--open {
+  border-color: var(--hub-time-border-focus);
+  box-shadow: 0 0 0 3px var(--hub-time-ring);
+}
+
+.hub-time-field__control:focus-within .hub-time-field__icon-btn,
+.hub-time-field__control--open .hub-time-field__icon-btn {
+  color: var(--hub-time-icon-focus);
+}
+
+.hub-time-field--disabled .hub-time-field__control {
+  background: var(--hub-time-bg-disabled);
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
+.hub-time-field__icon-btn {
+  display: flex;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--hub-time-icon);
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 0;
+}
+
+.hub-time-field__icon-btn:hover:not(:disabled) {
+  background: rgba(200, 106, 77, 0.1);
+  color: var(--hub-time-icon-focus);
+}
+
+.hub-time-field__icon-btn:disabled {
+  cursor: not-allowed;
+}
+
+.hub-time-field__input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--hub-time-text);
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-time-field__input:focus {
+  outline: none;
+}
+
+.hub-time-field__input::placeholder {
+  color: var(--hub-time-muted);
+  opacity: 0.85;
+}
+
+.hub-time-field__input:disabled {
+  cursor: not-allowed;
+}
+
+.hub-time-field__now {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--hub-time-border-focus);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--hub-time-border-focus);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.hub-time-field__now:hover:not(:disabled) {
+  background: rgba(200, 106, 77, 0.08);
+}
+
+.hub-time-field__now:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-time-field--invalid .hub-time-field__control {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.hub-time-field__hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--hub-time-muted);
+}
+
+.hub-time-field__error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #b91c1c;
+}
+
+/* ── Popover hora / minuto ──────────────────────────────────────────────── */
+
+.hub-time-picker--portal {
+  box-sizing: border-box;
+}
+
+.hub-time-picker {
+  display: flex;
+  gap: 0;
+  background: #fff;
+  border: 1px solid #e8e4e0;
+  border-radius: 12px;
+  box-shadow:
+    0 4px 6px -1px rgba(74, 59, 58, 0.08),
+    0 16px 32px -8px rgba(74, 59, 58, 0.14);
+  overflow: hidden;
+  font-family: inherit;
+  color: var(--hub-time-text, #4a3b3a);
+}
+
+.hub-time-picker__col {
+  flex: 1;
+  min-width: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  scrollbar-width: thin;
+}
+
+.hub-time-picker__col + .hub-time-picker__col {
+  border-left: 1px solid #f0ede9;
+}
+
+.hub-time-picker__option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #4a3b3a;
+  cursor: pointer;
+}
+
+.hub-time-picker__option:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.hub-time-picker__option--selected {
+  background: var(--hub-time-selected);
+  color: #fff;
+  font-weight: 600;
+  border-color: #1e3a8a;
+}
+
+.hub-time-picker__option--selected:hover {
+  background: #1d4ed8;
+  color: #fff;
+}

@@ -34,6 +34,10 @@ export interface HubServiceType {
   is_addon?: boolean;
   /** Aplicação na consulta (grupo Clínica). Migration 106. */
   is_encounter_application?: boolean;
+  /** fixed = valor de catálogo; variable = permite alterar na cobrança. Migration 108. */
+  price_mode?: 'fixed' | 'variable';
+  price_min?: number | null;
+  price_max?: number | null;
 }
 
 export type HubServiceGroup = HubServiceType['service_group'];
@@ -78,6 +82,9 @@ export const hubServiceTypesApi = {
     pickup_price_scope?: 'round_trip' | 'per_leg';
     is_addon?: boolean;
     is_encounter_application?: boolean;
+    price_mode?: 'fixed' | 'variable';
+    price_min?: number | null;
+    price_max?: number | null;
   }): Promise<{ service_type: HubServiceType }> {
     return apiRequest(basePath, {
       method: 'POST',
@@ -104,6 +111,9 @@ export const hubServiceTypesApi = {
       pickup_price_scope?: 'round_trip' | 'per_leg';
       is_addon?: boolean;
       is_encounter_application?: boolean;
+      price_mode?: 'fixed' | 'variable';
+      price_min?: number | null;
+      price_max?: number | null;
     }
   ): Promise<{
     service_type: HubServiceType;

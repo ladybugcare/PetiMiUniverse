@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
+import { HubTimeField } from '../../components/HubTimeField';
 import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import {
@@ -252,21 +253,19 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
           <div className="nam-section">
             <div className="nam-row nam-row--cols2">
               <div className="nam-field">
-                <label className="nam-label">Início</label>
-                <input
-                  className="nam-input"
-                  type="time"
-                  value={block.starts_hm}
-                  onChange={(e) => onStartsChange(e.target.value)}
+                <HubTimeField
+                  id={`nam-eb-starts-${block.key}`}
+                  label="Início"
+                  valueHm={block.starts_hm}
+                  onChangeHm={onStartsChange}
                 />
               </div>
               <div className="nam-field">
-                <label className="nam-label">Fim previsto</label>
-                <input
-                  className="nam-input"
-                  type="time"
-                  value={block.ends_hm}
-                  onChange={(e) => onChange({ ...block, ends_hm: e.target.value })}
+                <HubTimeField
+                  id={`nam-eb-ends-${block.key}`}
+                  label="Fim previsto"
+                  valueHm={block.ends_hm}
+                  onChangeHm={(ends_hm) => onChange({ ...block, ends_hm })}
                 />
               </div>
             </div>

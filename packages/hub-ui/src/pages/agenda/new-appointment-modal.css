@@ -2099,7 +2099,9 @@
   .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__footer .hub-btn,
   .hub-side-panel__sheet:has(.rqr-form) .hub-side-panel__footer .hub-btn,
   .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__footer .hub-clientes__btn,
-  .hub-side-panel__sheet:has(.rqr-form) .hub-side-panel__footer .hub-clientes__btn {
+  .hub-side-panel__sheet:has(.rqr-form) .hub-side-panel__footer .hub-clientes__btn,
+  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__footer .hub-cancel-btn,
+  .hub-side-panel__sheet:has(.rqr-form) .hub-side-panel__footer .hub-cancel-btn {
     width: 100%;
     justify-content: center;
     min-height: 44px;

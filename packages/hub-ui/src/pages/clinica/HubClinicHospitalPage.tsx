@@ -70,6 +70,8 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
     notes: '',
     staffId: myStaffMember?.id ?? '',
     caseLink: {},
+    dailyServicePick: { hub_service_type_id: '', unit_amount: '' },
+    dailyIncludesMedication: false,
   });
   const [admitDraft, setAdmitDraft] = useState<HospAdmitDraft>(emptyAdmitDraft);
   const [hasActiveCases, setHasActiveCases] = useState(false);
@@ -182,6 +184,11 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
         hub_staff_member_id: admitDraft.staffId || null,
         guardian_id: admitDraft.guardianId || null,
         unit_id: getSelectedUnitId(),
+        daily_hub_service_type_id: admitDraft.dailyServicePick.hub_service_type_id || null,
+        daily_unit_amount: admitDraft.dailyServicePick.unit_amount
+          ? Number(admitDraft.dailyServicePick.unit_amount.replace(',', '.'))
+          : null,
+        daily_includes_medication: admitDraft.dailyIncludesMedication,
         ...caseLink,
       });
       setAdmitOpen(false);

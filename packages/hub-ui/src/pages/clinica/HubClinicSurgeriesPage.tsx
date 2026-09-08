@@ -1,19 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Check, FileText, Link2, Play, Scissors } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
-import {
-  hubClinicalApi,
-  hubClinicalExamsApi,
-  openBlankPdfPreviewTab,
-  openHubClinicalDocumentPdf,
-  type HubClinicalDocumentRow,
-  type HubSurgery,
-} from '../../api/hubClinicalApi';
+import { hubClinicalApi, hubClinicalExamsApi, type HubSurgery } from '../../api/hubClinicalApi';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubCancelButton } from '../../components/HubCancelButton';
-import { HubClinicalDocumentIssuePanel } from '../../components/clinical/HubClinicalDocumentIssuePanel';
 import ClinicalCaseLinkFields, {
   type ClinicalCaseLinkValue,
   isCaseLinkResolved,
@@ -23,36 +15,7 @@ import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { uniqueExamTypes } from './examOrderOptions';
 import { formatHospDateTime, petInitials } from './hospital/hospDisplay';
 import SurgCreateForm, { emptySurgCreateDraft, type SurgCreateDraft } from './surgery/SurgCreateForm';
-import SurgDetailForm, {
-  parseSurgDetail,
-  serializeSurgDetail,
-  SURG_DETAIL_TABS,
-  type SurgDetailDraft,
-  type SurgDetailTab,
-} from './surgery/SurgDetailForm';
-
-const EXAM_ORDER_DISCLAIMERS = [
-  'Documento gerado pelo PetMi Hub para validação de autenticidade. Não substitui guias oficiais de convênios ou laboratórios.',
-  'A realização dos exames é de responsabilidade do laboratório indicado e do tutor, conforme orientação veterinária.',
-  'Este documento não garante aceitação por convênios ou laboratórios externos.',
-];
-
-function examOrderPdfPath(documentId: string, clinicId: string): string {
-  const q = new URLSearchParams({ clinic_id: clinicId, document_id: documentId });
-  return `/api/hub/clinical/exams/${encodeURIComponent(documentId)}/pdf?${q}`;
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  scheduled: 'Agendada',
-  in_progress: 'Em andamento',
-  completed: 'Concluída',
-  cancelled: 'Cancelada',
-};
-
-type DetailPanel = {
-  surgery: HubSurgery;
-  tab: SurgDetailTab;
-};
+import { futureSurgeryStartCopy, isSurgeryScheduledInFuture, SURGERY_STATUS_LABEL } from './surgery/surgDisplay';
 
 export type HubClinicSurgeriesPageProps = {
   /** Lista embutida no Consultório (sem botão primário de criação). */
@@ -72,7 +35,7 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
 }) => {
   const clinicId = getStoredClinicId();
   const navigate = useNavigate();
-  const { showError, showSuccess } = useAlert();
+  const { showAlert, showError, showSuccess } = useAlert();
   const { hasPermission } = usePermissions();
   const { myStaffMember, staffList } = useMyStaffMember();
   const [searchParams] = useSearchParams();
@@ -86,31 +49,11 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
     onCreateOpenChange?.(open);
     if (!createControlled) setCreateOpenInternal(open);
   };
-  const [detail, setDetail] = useState<DetailPanel | null>(null);
   const emptyCreateDraft = (): SurgCreateDraft => emptySurgCreateDraft(myStaffMember?.id ?? '');
   const [createDraft, setCreateDraft] = useState<SurgCreateDraft>(emptyCreateDraft);
   const [hasActiveCases, setHasActiveCases] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [createCompleted, setCreateCompleted] = useState(false);
-  const [examIssueOpen, setExamIssueOpen] = useState(false);
-  const [examIssueLoading, setExamIssueLoading] = useState(false);
-  const [examIssueError, setExamIssueError] = useState<string | null>(null);
-  const [issuedExamDoc, setIssuedExamDoc] = useState<HubClinicalDocumentRow | null>(null);
-  const [issuedExamUrl, setIssuedExamUrl] = useState<string | null>(null);
-  const [issuedExamHash, setIssuedExamHash] = useState<string | null>(null);
-  const [downloadingExamPdf, setDownloadingExamPdf] = useState(false);
 
-  // Detail edit state
-  const [detailSaving, setDetailSaving] = useState(false);
-  const [detailDraft, setDetailDraft] = useState<SurgDetailDraft | null>(null);
-  const [detailExamIssueOpen, setDetailExamIssueOpen] = useState(false);
-  const [detailExamIssueLoading, setDetailExamIssueLoading] = useState(false);
-  const [detailExamIssueError, setDetailExamIssueError] = useState<string | null>(null);
-  const [detailIssuedDoc, setDetailIssuedDoc] = useState<HubClinicalDocumentRow | null>(null);
-  const [detailIssuedUrl, setDetailIssuedUrl] = useState<string | null>(null);
-  const [detailIssuedHash, setDetailIssuedHash] = useState<string | null>(null);
-
-  // Link-case for orphan surgeries
   const [linkCaseSurg, setLinkCaseSurg] = useState<HubSurgery | null>(null);
   const [linkCaseValue, setLinkCaseValue] = useState<ClinicalCaseLinkValue>({});
   const [linkCaseHasActive, setLinkCaseHasActive] = useState(false);
@@ -125,40 +68,6 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
     if (!clinicId || !canRead) return;
     void reload().catch(() => setRows([]));
   }, [clinicId, canRead]);
-
-  useEffect(() => {
-    if (!detail) {
-      setDetailDraft(null);
-      setDetailExamIssueOpen(false);
-      setDetailExamIssueError(null);
-      setDetailIssuedDoc(null);
-      setDetailIssuedUrl(null);
-      setDetailIssuedHash(null);
-      return;
-    }
-    setDetailDraft(parseSurgDetail(detail.surgery));
-    setDetailExamIssueOpen(false);
-    setDetailExamIssueError(null);
-    if (!clinicId || !detail.surgery.hub_encounter_id) {
-      setDetailIssuedDoc(null);
-      setDetailIssuedUrl(null);
-      setDetailIssuedHash(null);
-      return;
-    }
-    void hubClinicalExamsApi
-      .listOrderDocumentsByEncounter(detail.surgery.hub_encounter_id, clinicId)
-      .then((r) => {
-        const doc = (r.documents ?? []).find((d) => d.document_status !== 'revoked') ?? r.documents?.[0] ?? null;
-        setDetailIssuedDoc(doc);
-        setDetailIssuedUrl(doc?.validation_url ?? doc?.public_url ?? null);
-        setDetailIssuedHash(doc?.content_hash_short ?? null);
-      })
-      .catch(() => {
-        setDetailIssuedDoc(null);
-        setDetailIssuedUrl(null);
-        setDetailIssuedHash(null);
-      });
-  }, [detail?.surgery.id, clinicId]);
 
   useEffect(() => {
     if (!createOpen) return;
@@ -186,13 +95,6 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
   const resetCreateForm = () => {
     setCreateDraft(emptyCreateDraft());
     setHasActiveCases(false);
-    setCreateCompleted(false);
-    setExamIssueOpen(false);
-    setExamIssueLoading(false);
-    setExamIssueError(null);
-    setIssuedExamDoc(null);
-    setIssuedExamUrl(null);
-    setIssuedExamHash(null);
   };
 
   const closeCreatePanel = () => {
@@ -200,27 +102,20 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
     resetCreateForm();
   };
 
-  const downloadExamPdf = async (documentId: string) => {
-    if (!clinicId) return;
-    const pdfPreviewWindow = openBlankPdfPreviewTab();
-    setDownloadingExamPdf(true);
-    try {
-      const mode = await openHubClinicalDocumentPdf(
-        examOrderPdfPath(documentId, clinicId),
-        `solicitacao-exames-${documentId.slice(0, 8)}.pdf`,
-        pdfPreviewWindow,
-      );
-      if (mode === 'download') showSuccess('PDF baixado — verifique a pasta Downloads');
-    } catch (e: unknown) {
-      pdfPreviewWindow?.close();
-      showError((e as Error)?.message || 'Erro ao abrir PDF');
-    } finally {
-      setDownloadingExamPdf(false);
-    }
+  const openSurgery = (id: string, opts?: { focusExams?: boolean }) => {
+    const q = opts?.focusExams ? '?exames=1' : '';
+    navigate(`/hub/clinica/cirurgias/${id}${q}`);
   };
 
   const create = async () => {
-    if (!clinicId || !createDraft.guardianId || !createDraft.petId || !createDraft.title.trim() || !createDraft.scheduledAt) {
+    if (
+      !clinicId ||
+      !createDraft.guardianId ||
+      !createDraft.petId ||
+      !createDraft.title.trim() ||
+      !createDraft.scheduledDate ||
+      !createDraft.scheduledTime
+    ) {
       return;
     }
     if (!isCaseLinkResolved(createDraft.caseLink, hasActiveCases)) {
@@ -235,210 +130,118 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
           new_case_title: createDraft.caseLink.new_case_title?.trim() || title,
         }
       : createDraft.caseLink;
+    // Exames viram registros do atendimento; aqui o pré-op guarda só as observações da cirurgia.
     const preOp: Record<string, unknown> = {};
     if (createDraft.notes.trim()) preOp.notes = createDraft.notes.trim();
-    if (examTypes.length) {
-      preOp.exam_types = examTypes;
-      preOp.lab_kind = createDraft.labKind;
-      if (createDraft.labName.trim()) preOp.lab_name = createDraft.labName.trim();
-      preOp.fasting_required = createDraft.fastingRequired;
-      if (createDraft.examIndication.trim()) preOp.exam_indication = createDraft.examIndication.trim();
-    }
-    const pdfPreviewWindow = examTypes.length ? openBlankPdfPreviewTab() : null;
     setSubmitting(true);
     try {
       const { surgery } = await hubClinicalApi.createSurgery({
         clinic_id: clinicId,
         pet_id: createDraft.petId,
         title,
-        scheduled_at: new Date(createDraft.scheduledAt).toISOString(),
+        scheduled_at: new Date(`${createDraft.scheduledDate}T${createDraft.scheduledTime}`).toISOString(),
         anesthetic_risk: createDraft.asaRisk || null,
         pre_op: preOp,
-        hub_staff_member_id: createDraft.staffId || null,
+        hub_staff_member_id: createDraft.staffId || myStaffMember?.id || null,
         guardian_id: createDraft.guardianId || null,
         unit_id: getSelectedUnitId(),
+        services: createDraft.servicePick.hub_service_type_id
+          ? [
+              {
+                hub_service_type_id: createDraft.servicePick.hub_service_type_id,
+                unit_amount: createDraft.servicePick.unit_amount
+                  ? Number(createDraft.servicePick.unit_amount.replace(',', '.'))
+                  : null,
+              },
+            ]
+          : [],
         ...caseLink,
       });
-      await reload();
 
-      if (!examTypes.length) {
-        pdfPreviewWindow?.close();
-        closeCreatePanel();
-        showSuccess('Cirurgia agendada');
-        return;
-      }
-
-      const shared = {
-        clinic_id: clinicId,
-        pet_id: createDraft.petId,
-        hub_case_id: surgery.hub_case_id ?? null,
-        hub_encounter_id: surgery.hub_encounter_id ?? null,
-        guardian_id: createDraft.guardianId || null,
-        lab_kind: createDraft.labKind,
-        lab_name: createDraft.labKind === 'internal' ? createDraft.labName.trim() || null : null,
-        external_lab_name: createDraft.labKind === 'external' ? createDraft.labName.trim() || null : null,
-        clinical_indication: createDraft.examIndication.trim() || `Pré-operatório — ${title}`,
-        fasting_required: createDraft.fastingRequired,
-        requested_by: createDraft.staffId || null,
-      };
-      try {
-        for (const exam_type of examTypes) {
-          await hubClinicalExamsApi.create({ ...shared, exam_type });
-        }
-      } catch (e: unknown) {
-        pdfPreviewWindow?.close();
-        setCreateCompleted(true);
-        showError(`Cirurgia agendada, mas os exames não foram solicitados: ${(e as Error)?.message || 'Erro ao solicitar exames'}`);
-        return;
-      }
-
-      setCreateCompleted(true);
-      showSuccess('Cirurgia agendada e exames solicitados — o PDF fica disponível neste painel');
-
-      const encounterId = surgery.hub_encounter_id;
-      if (!encounterId) {
-        pdfPreviewWindow?.close();
-        showError('Exames criados, mas sem atendimento para emitir o PDF. Abra o caso para gerar a solicitação.');
-        return;
-      }
-
-      setExamIssueOpen(true);
-      setExamIssueLoading(true);
-      setExamIssueError(null);
-      try {
-        const res = await hubClinicalExamsApi.issueOrderDocument({
+      let examError: string | null = null;
+      if (examTypes.length && surgery.hub_encounter_id) {
+        const shared = {
           clinic_id: clinicId,
-          hub_encounter_id: encounterId,
-          scope: 'encounter_bundle',
-          issued_by: createDraft.staffId || null,
-        });
-        setIssuedExamDoc(res.document);
-        setIssuedExamUrl(res.public_url ?? res.document.public_url ?? res.document.validation_url ?? null);
-        setIssuedExamHash(res.content_hash_short ?? res.document.content_hash_short ?? null);
+          pet_id: createDraft.petId,
+          hub_case_id: surgery.hub_case_id ?? null,
+          hub_encounter_id: surgery.hub_encounter_id,
+          guardian_id: createDraft.guardianId || null,
+          lab_kind: createDraft.labKind,
+          lab_name: createDraft.labKind === 'internal' ? createDraft.labName.trim() || null : null,
+          external_lab_name: createDraft.labKind === 'external' ? createDraft.labName.trim() || null : null,
+          clinical_indication: createDraft.examIndication.trim() || `Pré-operatório — ${title}`,
+          fasting_required: createDraft.fastingRequired,
+          requested_by: createDraft.staffId || myStaffMember?.id || null,
+        };
         try {
-          const mode = await openHubClinicalDocumentPdf(
-            examOrderPdfPath(res.document.id, clinicId),
-            `solicitacao-exames-${res.document.id.slice(0, 8)}.pdf`,
-            pdfPreviewWindow,
-          );
-          if (mode === 'download') showSuccess('PDF baixado — verifique a pasta Downloads');
-        } catch (pdfErr: unknown) {
-          pdfPreviewWindow?.close();
-          showError((pdfErr as Error)?.message || 'Documento emitido, mas não foi possível abrir o PDF.');
+          for (const exam_type of examTypes) {
+            await hubClinicalExamsApi.create({ ...shared, exam_type });
+          }
+        } catch (e: unknown) {
+          examError = (e as Error)?.message || 'Erro ao solicitar exames';
         }
-      } catch (e: unknown) {
-        pdfPreviewWindow?.close();
-        const message = (e as Error)?.message || 'Erro ao emitir solicitação de exames';
-        setExamIssueError(message);
-        showError(message);
-      } finally {
-        setExamIssueLoading(false);
       }
+
+      closeCreatePanel();
+      if (examError) {
+        showError(`Cirurgia agendada, mas os exames não foram solicitados: ${examError}`);
+        openSurgery(surgery.id, { focusExams: true });
+        return;
+      }
+      showSuccess(
+        examTypes.length
+          ? 'Cirurgia agendada — exames solicitados, gere o PDF na ficha'
+          : 'Cirurgia agendada',
+      );
+      openSurgery(surgery.id, { focusExams: examTypes.length > 0 });
     } catch (e: unknown) {
-      pdfPreviewWindow?.close();
       showError((e as Error)?.message || 'Erro ao criar cirurgia');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const patchStatus = async (id: string, status: string) => {
+  const patchStatus = async (id: string, status: string, row?: HubSurgery) => {
     if (!clinicId) return;
+    const movedAgenda = status === 'in_progress' && row && isSurgeryScheduledInFuture(row);
     try {
-      await hubClinicalApi.patchSurgery(id, { clinic_id: clinicId, status });
+      await hubClinicalApi.patchSurgery(id, {
+        clinic_id: clinicId,
+        status,
+        ...(status === 'in_progress'
+          ? { started_at: new Date().toISOString(), hub_staff_member_id: myStaffMember?.id || row?.hub_staff_member_id || null }
+          : {}),
+      });
       await reload();
+      if (status === 'in_progress') {
+        showSuccess(
+          movedAgenda
+            ? 'Cirurgia iniciada — o horário na agenda foi atualizado e o pet entrou na sua fila'
+            : 'Cirurgia iniciada',
+        );
+      }
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao atualizar cirurgia');
     }
   };
 
-  const saveDetail = async () => {
-    if (!detail || !clinicId || !detailDraft) return;
-    setDetailSaving(true);
-    try {
-      const payload = serializeSurgDetail(detailDraft);
-      const res = (await hubClinicalApi.patchSurgery(detail.surgery.id, {
-        clinic_id: clinicId,
-        ...payload,
-      })) as { surgery?: HubSurgery };
-      if (res.surgery) {
-        setDetail((d) => (d ? { ...d, surgery: res.surgery! } : d));
-        setDetailDraft(parseSurgDetail(res.surgery));
-      }
-      await reload();
-      showSuccess('Cirurgia atualizada');
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao salvar');
-    } finally {
-      setDetailSaving(false);
-    }
-  };
-
-  const issueDetailExamPdf = async () => {
-    if (!clinicId || !detail || !detailDraft) return;
-    const examTypes = uniqueExamTypes(detailDraft.preOp.examTypes);
-    if (!examTypes.length) {
-      showError('Selecione ao menos um exame para emitir a solicitação.');
-      return;
-    }
-    const encounterId = detail.surgery.hub_encounter_id;
-    if (!encounterId) {
-      showError('Esta cirurgia ainda não tem atendimento para emitir o PDF.');
-      return;
-    }
-    const pdfPreviewWindow = openBlankPdfPreviewTab();
-    setDetailExamIssueOpen(true);
-    setDetailExamIssueLoading(true);
-    setDetailExamIssueError(null);
-    try {
-      const existing = await hubClinicalExamsApi.list(clinicId, { encounterId });
-      const have = new Set((existing.exams ?? []).map((e) => e.exam_type));
-      const shared = {
-        clinic_id: clinicId,
-        pet_id: detail.surgery.pet_id,
-        hub_case_id: detail.surgery.hub_case_id ?? null,
-        hub_encounter_id: encounterId,
-        guardian_id: detail.surgery.guardian_id ?? null,
-        lab_kind: detailDraft.preOp.labKind,
-        lab_name: detailDraft.preOp.labKind === 'internal' ? detailDraft.preOp.labName.trim() || null : null,
-        external_lab_name: detailDraft.preOp.labKind === 'external' ? detailDraft.preOp.labName.trim() || null : null,
-        clinical_indication: detailDraft.preOp.examIndication.trim() || `Pré-operatório — ${detail.surgery.title}`,
-        fasting_required: detailDraft.preOp.fastingRequired,
-        requested_by: detail.surgery.hub_staff_member_id ?? null,
-      };
-      for (const exam_type of examTypes) {
-        if (!have.has(exam_type)) {
-          await hubClinicalExamsApi.create({ ...shared, exam_type });
-        }
-      }
-      const res = await hubClinicalExamsApi.issueOrderDocument({
-        clinic_id: clinicId,
-        hub_encounter_id: encounterId,
-        scope: 'encounter_bundle',
-        issued_by: detail.surgery.hub_staff_member_id ?? null,
+  const confirmStartSurgery = (row: HubSurgery) => {
+    if (isSurgeryScheduledInFuture(row)) {
+      const copy = futureSurgeryStartCopy(formatHospDateTime(row.scheduled_at));
+      showAlert({
+        type: 'warning',
+        title: copy.title,
+        message: copy.message,
+        showCancel: true,
+        confirmText: 'Iniciar agora',
+        cancelText: 'Manter na data',
+        onConfirm: () => {
+          void patchStatus(row.id, 'in_progress', row);
+        },
       });
-      setDetailIssuedDoc(res.document);
-      setDetailIssuedUrl(res.public_url ?? res.document.public_url ?? res.document.validation_url ?? null);
-      setDetailIssuedHash(res.content_hash_short ?? res.document.content_hash_short ?? null);
-      try {
-        const mode = await openHubClinicalDocumentPdf(
-          examOrderPdfPath(res.document.id, clinicId),
-          `solicitacao-exames-${res.document.id.slice(0, 8)}.pdf`,
-          pdfPreviewWindow,
-        );
-        if (mode === 'download') showSuccess('PDF baixado — verifique a pasta Downloads');
-      } catch (pdfErr: unknown) {
-        pdfPreviewWindow?.close();
-        showError((pdfErr as Error)?.message || 'Documento emitido, mas não foi possível abrir o PDF.');
-      }
-    } catch (e: unknown) {
-      pdfPreviewWindow?.close();
-      const message = (e as Error)?.message || 'Erro ao emitir solicitação de exames';
-      setDetailExamIssueError(message);
-      showError(message);
-    } finally {
-      setDetailExamIssueLoading(false);
+      return;
     }
+    void patchStatus(row.id, 'in_progress', row);
   };
 
   const confirmLinkCase = async () => {
@@ -449,9 +252,16 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
     }
     setLinkCaseSubmitting(true);
     try {
+      const caseLink = linkCaseValue.create_new_case
+        ? {
+            create_new_case: true as const,
+            new_case_title:
+              linkCaseValue.new_case_title?.trim() || linkCaseSurg.title || null,
+          }
+        : linkCaseValue;
       await hubClinicalApi.patchSurgery(linkCaseSurg.id, {
         clinic_id: clinicId,
-        ...linkCaseValue,
+        ...caseLink,
       });
       setLinkCaseSurg(null);
       setLinkCaseValue({});
@@ -464,16 +274,12 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
     }
   };
 
-  const openDetail = (surgery: HubSurgery) => {
-    setDetail({ surgery, tab: 'pre_op' });
-  };
-
   const canSubmitCreate =
-    !createCompleted &&
     !!createDraft.guardianId &&
     !!createDraft.petId &&
     !!createDraft.title.trim() &&
-    !!createDraft.scheduledAt &&
+    !!createDraft.scheduledDate &&
+    !!createDraft.scheduledTime &&
     !submitting &&
     isCaseLinkResolved(createDraft.caseLink, hasActiveCases);
 
@@ -523,7 +329,7 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
                   <tr
                     key={s.id}
                     className="hub-dayboard__row-click"
-                    onClick={() => openDetail(s)}
+                    onClick={() => openSurgery(s.id)}
                   >
                     <td>
                       <div className="hub-clientes__tutor-cell">
@@ -539,12 +345,19 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
                     <td>{s.anesthetic_risk ? `ASA ${s.anesthetic_risk}` : <span className="hub-clientes__muted">—</span>}</td>
                     <td>
                       <span className={`hub-dayboard__op-badge hub-dayboard__op-badge--${s.status}`}>
-                        {STATUS_LABEL[s.status] || s.status}
+                        {SURGERY_STATUS_LABEL[s.status] || s.status}
                       </span>
                     </td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       {s.hub_case_id ? (
-                        <span className="hub-clientes__pill hub-dayboard__pill--open">Vinculado</span>
+                        <button
+                          type="button"
+                          className="hub-clientes__pill hub-dayboard__pill--open hub-dayboard__pill--link"
+                          title="Abrir caso clínico"
+                          onClick={() => navigate(`/hub/clinica/casos/${s.hub_case_id}`)}
+                        >
+                          {s.hub_clinical_cases?.title?.trim() || 'Vinculado'}
+                        </button>
                       ) : (
                         <span className="hub-clientes__pill hub-dayboard__pill--none">Sem caso</span>
                       )}
@@ -556,7 +369,7 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
                           className="hub-dayboard__action-btn"
                           title="Abrir cirurgia"
                           aria-label="Abrir cirurgia"
-                          onClick={() => openDetail(s)}
+                          onClick={() => openSurgery(s.id)}
                         >
                           <Scissors size={15} strokeWidth={2} />
                         </button>
@@ -591,7 +404,7 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
                             className="hub-dayboard__action-btn"
                             title="Iniciar"
                             aria-label="Iniciar cirurgia"
-                            onClick={() => void patchStatus(s.id, 'in_progress')}
+                            onClick={() => confirmStartSurgery(s)}
                           >
                             <Play size={15} strokeWidth={2} />
                           </button>
@@ -617,7 +430,6 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
         </div>
       )}
 
-      {/* Painel de criação */}
       <HubSidePanel
         open={createOpen}
         onClose={closeCreatePanel}
@@ -626,74 +438,33 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
         size="wide"
         footer={
           <div className="hub-clientes__panel-footer">
-            {createCompleted ? (
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--primary"
-                onClick={closeCreatePanel}
-              >
-                Concluir
-              </button>
-            ) : (
-              <>
-                <HubCancelButton onClick={closeCreatePanel} />
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--primary"
-                  disabled={!canSubmitCreate}
-                  onClick={() => void create()}
-                >
-                  {submitting ? 'Salvando…' : 'Agendar cirurgia'}
-                </button>
-              </>
-            )}
+            <HubCancelButton onClick={closeCreatePanel} />
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              disabled={!canSubmitCreate}
+              onClick={() => void create()}
+            >
+              {submitting ? 'Salvando…' : 'Agendar cirurgia'}
+            </button>
           </div>
         }
       >
         {clinicId ? (
-          createCompleted && examIssueOpen ? (
-            <HubClinicalDocumentIssuePanel
-              embedded
-              open
-              onClose={closeCreatePanel}
-              loading={examIssueLoading}
-              error={examIssueError}
-              document={issuedExamDoc}
-              publicUrl={issuedExamUrl}
-              contentHashShort={issuedExamHash}
-              titleLoading="Gerando solicitação de exames validável…"
-              titleReady="Solicitação de exames emitida"
-              subtitleLoading="Aguarde enquanto preparamos o PDF, o link e o código de validação."
-              disclaimers={EXAM_ORDER_DISCLAIMERS}
-              downloading={downloadingExamPdf}
-              onDownloadPdf={issuedExamDoc ? () => void downloadExamPdf(issuedExamDoc.id) : undefined}
-              onCopySuccess={showSuccess}
-              onCopyError={showError}
-            />
-          ) : (
-            <>
-              {createCompleted ? (
-                <p className="nam-muted" role="status">
-                  Cirurgia agendada.
-                </p>
-              ) : null}
-              <SurgCreateForm
-                clinicId={clinicId}
-                open={createOpen}
-                staff={staffList}
-                draft={createDraft}
-                onChange={setCreateDraft}
-                onHasActiveCases={setHasActiveCases}
-                submitting={submitting || createCompleted}
-              />
-            </>
-          )
+          <SurgCreateForm
+            clinicId={clinicId}
+            open={createOpen}
+            staff={staffList}
+            draft={createDraft}
+            onChange={setCreateDraft}
+            onHasActiveCases={setHasActiveCases}
+            submitting={submitting}
+          />
         ) : (
           <p className="hub-clientes__muted">Selecione uma clínica para agendar a cirurgia.</p>
         )}
       </HubSidePanel>
 
-      {/* Painel de vincular caso (órfão) */}
       <HubSidePanel
         open={!!linkCaseSurg}
         onClose={() => { setLinkCaseSurg(null); setLinkCaseValue({}); }}
@@ -718,10 +489,8 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
               clinicId={clinicId}
               petId={linkCaseSurg.pet_id}
               value={linkCaseValue}
-              onChange={(v) => {
-                setLinkCaseValue(v);
-                setLinkCaseHasActive(true);
-              }}
+              onChange={setLinkCaseValue}
+              onHasActiveCases={setLinkCaseHasActive}
               disabled={linkCaseSubmitting}
               suggestedTitle={linkCaseSurg.title}
               emptyActiveHint="Nenhum caso ativo — um novo caso será criado para esta cirurgia."
@@ -730,119 +499,6 @@ const HubClinicSurgeriesPage: React.FC<HubClinicSurgeriesPageProps> = ({
             />
           )}
         </div>
-      </HubSidePanel>
-
-      {/* Painel de detalhes */}
-      <HubSidePanel
-        open={!!detail}
-        onClose={() => setDetail(null)}
-        title={detail?.surgery.title ?? 'Cirurgia'}
-        titleIcon={<Scissors size={22} strokeWidth={2} aria-hidden />}
-        size="wide"
-        footer={
-          canWrite ? (
-            <div className="hub-clientes__panel-footer">
-              <HubCancelButton onClick={() => setDetail(null)} />
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--primary"
-                disabled={detailSaving || !detailDraft}
-                onClick={() => void saveDetail()}
-              >
-                {detailSaving ? 'Salvando…' : 'Salvar'}
-              </button>
-            </div>
-          ) : null
-        }
-      >
-        {detail && detailDraft ? (
-          <div className="hub-hosp-admit">
-            <p className="nam-muted">
-              {[
-                detail.surgery.hub_pets?.name,
-                detail.surgery.hub_guardians?.full_name,
-                formatHospDateTime(detail.surgery.scheduled_at),
-                STATUS_LABEL[detail.surgery.status] || detail.surgery.status,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </p>
-            {detail.surgery.hub_case_id ? (
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--ghost"
-                onClick={() => navigate(`/hub/clinica/casos/${detail.surgery.hub_case_id}`)}
-              >
-                <FileText size={15} strokeWidth={2} /> Ver caso clínico
-              </button>
-            ) : null}
-            <div className="hub-hosp-admit__seg hub-hosp-admit__seg--tabs" role="tablist" aria-label="Seções da cirurgia">
-              {SURG_DETAIL_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={detail.tab === tab.id}
-                  className={detail.tab === tab.id ? 'is-on' : undefined}
-                  onClick={() => setDetail((d) => (d ? { ...d, tab: tab.id } : d))}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            {detailExamIssueOpen ? (
-              <HubClinicalDocumentIssuePanel
-                embedded
-                open
-                onClose={() => setDetailExamIssueOpen(false)}
-                loading={detailExamIssueLoading}
-                error={detailExamIssueError}
-                document={detailIssuedDoc}
-                publicUrl={detailIssuedUrl}
-                contentHashShort={detailIssuedHash}
-                titleLoading="Gerando solicitação de exames validável…"
-                titleReady="Solicitação de exames emitida"
-                subtitleLoading="Aguarde enquanto preparamos o PDF, o link e o código de validação."
-                disclaimers={EXAM_ORDER_DISCLAIMERS}
-                downloading={downloadingExamPdf}
-                onDownloadPdf={detailIssuedDoc ? () => void downloadExamPdf(detailIssuedDoc.id) : undefined}
-                onCopySuccess={showSuccess}
-                onCopyError={showError}
-              />
-            ) : null}
-            <SurgDetailForm
-              tab={detail.tab}
-              draft={detailDraft}
-              staff={staffList}
-              canWrite={canWrite}
-              onChange={setDetailDraft}
-              issuingExamPdf={detailExamIssueLoading}
-              hasExamDocument={!!detailIssuedDoc}
-              onIssueExamPdf={
-                clinicId
-                  ? () => {
-                      if (detailIssuedDoc) {
-                        setDetailExamIssueOpen(true);
-                        void downloadExamPdf(detailIssuedDoc.id);
-                        return;
-                      }
-                      void issueDetailExamPdf();
-                    }
-                  : undefined
-              }
-            />
-            {canWrite &&
-            detail.tab === 'post_op' &&
-            (detail.surgery.status === 'in_progress' || detail.surgery.status === 'completed') ? (
-              <Link
-                to={`/hub/clinica?admit=1&pet_id=${encodeURIComponent(detail.surgery.pet_id)}${detail.surgery.hub_case_id ? `&hub_case_id=${encodeURIComponent(detail.surgery.hub_case_id)}` : ''}`}
-                className="hub-clientes__btn hub-clientes__btn--ghost"
-              >
-                Internar pós-operatório
-              </Link>
-            ) : null}
-          </div>
-        ) : null}
       </HubSidePanel>
     </div>
   );

@@ -1,12 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   hubClinicalApi,
+  type HubClinicalBillingMode,
   type HubHospitalizationEventKind,
   type HubPrescriptionLookupKind,
   type HubPrescriptionLookupOption,
 } from '../../../api/hubClinicalApi';
 import { HubSearchableCombobox } from '../../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../../components/HubSearchableCombobox';
+import {
+  HubClinicalServicePicker,
+  type ClinicalServicePick,
+} from '../../../components/clinical/HubClinicalServicePicker';
 import { useAlert } from '../../../components/AlertProvider';
 import { HubCwsChoiceChips } from '../HubCwsChoiceChips';
 import { HubAnamnesisChipPicker } from '../HubAnamnesisChipPicker';
@@ -32,7 +37,16 @@ type HospEventFormProps = {
   species?: string | null;
   canCreateLookups?: boolean;
   submitting?: boolean;
-  onSubmit: (kind: HubHospitalizationEventKind, payload: Record<string, unknown>) => Promise<void> | void;
+  /** Padrão da internação: medicações inclusas na diária. */
+  defaultIncludesMedication?: boolean;
+  onSubmit: (
+    kind: HubHospitalizationEventKind,
+    payload: Record<string, unknown>,
+    billing?: {
+      billing_mode: HubClinicalBillingMode;
+      servicePick: ClinicalServicePick;
+    },
+  ) => Promise<void> | void;
 };
 
 const EMPTY: Record<string, string> = {};
@@ -102,6 +116,7 @@ const HospEventForm: React.FC<HospEventFormProps> = ({
   species,
   canCreateLookups = false,
   submitting = false,
+  defaultIncludesMedication = false,
   onSubmit,
 }) => {
   const { showError, showSuccess } = useAlert();
@@ -111,6 +126,13 @@ const HospEventForm: React.FC<HospEventFormProps> = ({
   const [procedures, setProcedures] = useState<string[]>([]);
   const [medicationLookups, setMedicationLookups] = useState<HubPrescriptionLookupOption[]>([]);
   const [presentationLookups, setPresentationLookups] = useState<HubPrescriptionLookupOption[]>([]);
+  const [billingMode, setBillingMode] = useState<HubClinicalBillingMode>(
+    defaultIncludesMedication ? 'included' : 'charge',
+  );
+  const [servicePick, setServicePick] = useState<ClinicalServicePick>({
+    hub_service_type_id: '',
+    unit_amount: '',
+  });
 
   const setField = (key: string, value: string) => {
     setFields((prev) => ({ ...prev, [key]: value }));
@@ -120,6 +142,8 @@ const HospEventForm: React.FC<HospEventFormProps> = ({
     setFields(EMPTY);
     setFoodTypes([]);
     setProcedures([]);
+    setBillingMode(defaultIncludesMedication ? 'included' : 'charge');
+    setServicePick({ hub_service_type_id: '', unit_amount: '' });
   };
 
   const payload = useMemo(() => {
@@ -226,7 +250,18 @@ const HospEventForm: React.FC<HospEventFormProps> = ({
       delete nextPayload.notes;
       if (text) nextPayload.text = text;
     }
-    await onSubmit(kind, nextPayload);
+    if (kind === 'medication') {
+      nextPayload.billing_mode = billingMode;
+      if (servicePick.hub_service_type_id) {
+        nextPayload.hub_service_type_id = servicePick.hub_service_type_id;
+        nextPayload.unit_amount = servicePick.unit_amount
+          ? Number(servicePick.unit_amount.replace(',', '.'))
+          : undefined;
+      }
+      await onSubmit(kind, nextPayload, { billing_mode: billingMode, servicePick });
+    } else {
+      await onSubmit(kind, nextPayload);
+    }
     reset();
   };
 
@@ -391,6 +426,31 @@ const HospEventForm: React.FC<HospEventFormProps> = ({
               />
             </div>
           </div>
+          <div className="hub-cws-an-block hub-cws-an-block--tight">
+            <div className="hub-cws-an-block__title">Cobrança</div>
+            <HubCwsChoiceChips
+              options={[
+                { key: 'charge', label: 'Cobrar à parte', level: 'info' },
+                { key: 'included', label: 'Incluso na diária' },
+              ]}
+              value={billingMode}
+              ariaLabel="Modo de cobrança da medicação"
+              onChange={(next) => setBillingMode(next === 'included' ? 'included' : 'charge')}
+            />
+          </div>
+          {billingMode === 'charge' ? (
+            <HubClinicalServicePicker
+              clinicId={clinicId}
+              group="internacao"
+              value={servicePick}
+              onChange={setServicePick}
+              label="Serviço cobrável (opcional)"
+              placeholder="Buscar serviço de medicação…"
+              disabled={submitting}
+              allowPriceOverride
+              id="hosp-rx-service"
+            />
+          ) : null}
         </>
       ) : null}
 

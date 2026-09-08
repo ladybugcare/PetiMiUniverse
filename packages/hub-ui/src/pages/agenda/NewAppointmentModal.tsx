@@ -7,6 +7,7 @@ import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubDateField } from '../../components/HubDateField';
+import { HubTimeField } from '../../components/HubTimeField';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import {
@@ -23,6 +24,7 @@ import {
   type HubAppointmentRecurrenceRule,
 } from '../../api/hubAgendaApi';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
+import type { HubGuardian } from '../../api/hubGuardiansApi';
 import { hubClinicalCasesApi, type HubClinicalCase } from '../../api/hubClinicalApi';
 import { hubClinicSettingsApi } from '../../api/hubClinicSettingsApi';
 import { hubSpecialPricesApi } from '../../api/hubSpecialPricesApi';
@@ -152,7 +154,7 @@ export type NewAppointmentInitial = {
   /** Pré-ativa recorrência (ex.: agendar saldo de pacote). */
   suggest_recurrence?: {
     occurrences: number;
-    kind?: 'daily' | 'weekly' | 'monthly';
+    kind?: 'daily' | 'weekly' | 'biweekly' | 'monthly';
     interval_value?: number;
   } | null;
   package_balance_hint?: string | null;
@@ -209,8 +211,37 @@ type PickupSubBlock = {
 
 const PICKUP_ROUTE_LEG_DURATION_MIN = 60;
 
+/** «Quinzenal» é apenas a forma de escolher semanal a cada 2 semanas. */
+type RecurrenceKind = 'daily' | 'weekly' | 'biweekly' | 'monthly';
+
+const RECURRENCE_LABELS: Record<RecurrenceKind, string> = {
+  daily: 'Diária',
+  weekly: 'Semanal',
+  biweekly: 'Quinzenal',
+  monthly: 'Mensal',
+};
+
+/** Persistência/API só conhecem daily/weekly/monthly + intervalo. */
+function toRecurrenceApiKind(kind: RecurrenceKind): 'daily' | 'weekly' | 'monthly' {
+  return kind === 'biweekly' ? 'weekly' : kind;
+}
+
+function fromRecurrenceApiKind(
+  kind: RecurrenceKind | undefined,
+  intervalValue: number | undefined,
+): RecurrenceKind {
+  if (kind === 'biweekly') return 'biweekly';
+  if (kind === 'weekly' && intervalValue === 2) return 'biweekly';
+  return kind ?? 'weekly';
+}
+
+function recurrenceIntervalFor(kind: RecurrenceKind, intervalValue: number | undefined): number {
+  if (kind === 'biweekly') return 2;
+  return Math.max(1, Math.floor(intervalValue ?? 1) || 1);
+}
+
 type RecurrenceForm = {
-  kind: 'daily' | 'weekly' | 'monthly';
+  kind: RecurrenceKind;
   interval_value: number;
   days_of_week: number[];
   end_kind: 'until' | 'occurrences';
@@ -240,6 +271,20 @@ const DEFAULT_RECURRENCE: RecurrenceForm = {
 };
 
 const DOW_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+
+const GUARDIAN_SEARCH_PLACEHOLDER = 'Buscar por nome, CPF ou telefone…';
+
+function guardianComboboxOption(g: HubGuardian): HubComboboxOption {
+  const phone = (g.phone ?? '').trim();
+  const taxId = (g.tax_id ?? '').trim();
+  const searchParts = [phone, phone.replace(/\D/g, ''), taxId, taxId.replace(/\D/g, '')].filter(Boolean);
+  return {
+    value: g.id,
+    label: g.full_name,
+    icon: <User size={18} strokeWidth={2} aria-hidden />,
+    searchText: searchParts.length > 0 ? searchParts.join(' ') : undefined,
+  };
+}
 
 function mapInitialExtraBlocks(
   blocks: NonNullable<NewAppointmentInitial['extra_blocks']>,
@@ -620,11 +665,15 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
       if (initial.financial_notes) setFinancialNotes(initial.financial_notes);
       if (!isWalkIn && initial.suggest_recurrence && initial.suggest_recurrence.occurrences >= 2) {
+        const suggestedKind = fromRecurrenceApiKind(
+          initial.suggest_recurrence.kind,
+          initial.suggest_recurrence.interval_value,
+        );
         setWithRecurrence(true);
         setRecurrence({
           ...DEFAULT_RECURRENCE,
-          kind: initial.suggest_recurrence.kind ?? 'weekly',
-          interval_value: initial.suggest_recurrence.interval_value ?? 1,
+          kind: suggestedKind,
+          interval_value: recurrenceIntervalFor(suggestedKind, initial.suggest_recurrence.interval_value),
           end_kind: 'occurrences',
           occurrences: Math.min(52, Math.max(2, Math.floor(initial.suggest_recurrence.occurrences))),
         });
@@ -685,13 +734,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setGuardiansLoading(true);
     try {
       const { guardians } = await hubGuardiansApi.list(clinicId, false, { status: 'active' });
-      setGuardianOptions(
-        guardians.map((g) => ({
-          value: g.id,
-          label: g.full_name,
-          icon: <User size={18} strokeWidth={2} aria-hidden />,
-        })),
-      );
+      setGuardianOptions(guardians.map(guardianComboboxOption));
     } catch {
       setGuardianOptions([]);
     } finally {
@@ -793,13 +836,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     hubGuardiansApi
       .list(clinicId, false, { status: 'active' })
       .then(({ guardians }) => {
-        setGuardianOptions(
-          guardians.map((g) => ({
-            value: g.id,
-            label: g.full_name,
-            icon: <User size={18} strokeWidth={2} aria-hidden />,
-          })),
-        );
+        setGuardianOptions(guardians.map(guardianComboboxOption));
       })
       .catch(() => setGuardianOptions([]))
       .finally(() => setGuardiansLoading(false));
@@ -2088,10 +2125,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
 
       if (!isWalkIn && withRecurrence) {
+        const apiKind = toRecurrenceApiKind(recurrence.kind);
         const rule: HubAppointmentRecurrenceRule = {
-          kind: recurrence.kind,
-          interval_value: recurrence.interval_value,
-          days_of_week: recurrence.kind === 'weekly' && recurrence.days_of_week.length > 0 ? recurrence.days_of_week : undefined,
+          kind: apiKind,
+          interval_value: recurrenceIntervalFor(recurrence.kind, recurrence.interval_value),
+          days_of_week:
+            apiKind === 'weekly' && recurrence.days_of_week.length > 0
+              ? [...recurrence.days_of_week].sort((a, b) => a - b)
+              : undefined,
           day_of_month: recurrence.kind === 'monthly' ? new Date(startsAt).getDate() : undefined,
           billing_mode: recurrence.billing_mode,
         };
@@ -2553,8 +2594,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Repetição</p>
           <p className="nam-aside__item">
-            {recurrence.kind === 'daily' ? 'Diária' : recurrence.kind === 'weekly' ? 'Semanal' : 'Mensal'}
-            {recurrence.interval_value > 1 ? ` a cada ${recurrence.interval_value}` : ''}
+            {RECURRENCE_LABELS[recurrence.kind]}
+            {recurrence.kind !== 'biweekly' && recurrence.interval_value > 1
+              ? ` a cada ${recurrence.interval_value}`
+              : ''}
           </p>
           {recurrence.end_kind === 'occurrences'
             ? <p className="nam-aside__muted">{recurrence.occurrences} ocorrências</p>
@@ -2689,7 +2732,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                         setGuardianId(v);
                         setGuardianName(guardianOptions.find((o) => o.value === v)?.label ?? '');
                       }}
-                      placeholder="Buscar tutor…"
+                      placeholder={GUARDIAN_SEARCH_PLACEHOLDER}
+                      searchPlaceholder={GUARDIAN_SEARCH_PLACEHOLDER}
                       triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
                       ariaLabel="Selecionar tutor"
                     />
@@ -2762,21 +2806,12 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   />
                 </div>
                 <div className="nam-field">
-                  <label className="nam-label" htmlFor="nam-cr-time">
-                    Horário
-                  </label>
-                  <div className="nam-intake-time-row">
-                    <span className="nam-intake-time-row__icon" aria-hidden>
-                      <Clock size={18} strokeWidth={2} />
-                    </span>
-                    <input
-                      id="nam-cr-time"
-                      className="nam-input nam-intake-time-row__input"
-                      type="time"
-                      value={startsHm}
-                      onChange={(e) => setStartsHm(e.target.value)}
-                    />
-                  </div>
+                  <HubTimeField
+                    id="nam-cr-time"
+                    label="Horário"
+                    valueHm={startsHm}
+                    onChangeHm={setStartsHm}
+                  />
                 </div>
               </div>
 
@@ -3028,7 +3063,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                       setPetId('');
                       setPetName('');
                     }}
-                    placeholder="Buscar tutor…"
+                    placeholder={GUARDIAN_SEARCH_PLACEHOLDER}
+                    searchPlaceholder={GUARDIAN_SEARCH_PLACEHOLDER}
                     triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
                     ariaLabel="Selecionar tutor"
                   />
@@ -3360,21 +3396,19 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         <div className="nam-section">
           <div className="nam-row nam-row--cols2">
             <div className="nam-field">
-              <label className="nam-label">Início</label>
-              <input
-                className="nam-input"
-                type="time"
-                value={startsHm}
-                onChange={(e) => setStartsHm(e.target.value)}
+              <HubTimeField
+                id="nam-starts"
+                label="Início"
+                valueHm={startsHm}
+                onChangeHm={setStartsHm}
               />
             </div>
             <div className="nam-field">
-              <label className="nam-label">Fim previsto</label>
-              <input
-                className="nam-input"
-                type="time"
-                value={endsHm}
-                onChange={(e) => setEndsHm(e.target.value)}
+              <HubTimeField
+                id="nam-ends"
+                label="Fim previsto"
+                valueHm={endsHm}
+                onChangeHm={setEndsHm}
               />
             </div>
           </div>
@@ -3590,13 +3624,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   </p>
                   <div className="nam-row nam-row--cols2">
                     <div className="nam-field">
-                      <label className="nam-label">Início do retorno</label>
-                      <input
-                        className="nam-input"
-                        type="time"
-                        value={pickupAfter.starts_hm}
-                        onChange={(e) => {
-                          const starts_hm = e.target.value;
+                      <HubTimeField
+                        id="nam-standalone-pickup-after-start"
+                        label="Início do retorno"
+                        valueHm={pickupAfter.starts_hm}
+                        onChangeHm={(starts_hm) => {
                           setPickupAfter((b) => ({
                             ...b,
                             starts_hm,
@@ -3711,12 +3743,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               <p className="nam-pickup__title">Busca (antes do atendimento)</p>
               <div className="nam-row nam-row--cols2">
                 <div className="nam-field">
-                  <label className="nam-label">Início</label>
-                  <input
-                    className="nam-input"
-                    type="time"
-                    value={pickupBefore.starts_hm}
-                    onChange={(e) => setPickupBefore((b) => ({ ...b, starts_hm: e.target.value }))}
+                  <HubTimeField
+                    id="nam-pickup-before-start"
+                    label="Início"
+                    valueHm={pickupBefore.starts_hm}
+                    onChangeHm={(starts_hm) => setPickupBefore((b) => ({ ...b, starts_hm }))}
                   />
                 </div>
                 <div className="nam-field">
@@ -3768,13 +3799,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               ) : null}
               <div className="nam-row nam-row--cols2">
                 <div className="nam-field">
-                  <label className="nam-label">Início</label>
-                  <input
-                    className="nam-input"
-                    type="time"
-                    value={pickupAfter.starts_hm}
-                    onChange={(e) => {
-                      const starts_hm = e.target.value;
+                  <HubTimeField
+                    id="nam-pickup-after-start"
+                    label="Início"
+                    valueHm={pickupAfter.starts_hm}
+                    onChangeHm={(starts_hm) => {
                       setPickupAfter((b) => ({
                         ...b,
                         starts_hm,
@@ -3832,29 +3861,47 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   <select
                     className="nam-select"
                     value={recurrence.kind}
-                    onChange={(e) =>
-                      setRecurrence((r) => ({ ...r, kind: e.target.value as RecurrenceForm['kind'] }))
-                    }
+                    onChange={(e) => {
+                      const kind = e.target.value as RecurrenceKind;
+                      setRecurrence((r) => ({
+                        ...r,
+                        kind,
+                        interval_value: recurrenceIntervalFor(
+                          kind,
+                          r.kind === 'biweekly' ? 1 : r.interval_value,
+                        ),
+                      }));
+                    }}
                   >
-                    <option value="daily">Diária</option>
-                    <option value="weekly">Semanal</option>
-                    <option value="monthly">Mensal</option>
+                    <option value="daily">{RECURRENCE_LABELS.daily}</option>
+                    <option value="weekly">{RECURRENCE_LABELS.weekly}</option>
+                    <option value="biweekly">{RECURRENCE_LABELS.biweekly}</option>
+                    <option value="monthly">{RECURRENCE_LABELS.monthly}</option>
                   </select>
                 </div>
-                <div className="nam-field">
-                  <label className="nam-label">A cada</label>
-                  <input
-                    className="nam-input"
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={recurrence.interval_value}
-                    onChange={(e) => setRecurrence((r) => ({ ...r, interval_value: Number(e.target.value) }))}
-                  />
-                </div>
+                {recurrence.kind === 'biweekly' ? (
+                  <div className="nam-field">
+                    <label className="nam-label">Intervalo</label>
+                    <p className="nam-aside__muted" style={{ marginTop: 8 }}>
+                      A cada 2 semanas
+                    </p>
+                  </div>
+                ) : (
+                  <div className="nam-field">
+                    <label className="nam-label">A cada</label>
+                    <input
+                      className="nam-input"
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={recurrence.interval_value}
+                      onChange={(e) => setRecurrence((r) => ({ ...r, interval_value: Number(e.target.value) }))}
+                    />
+                  </div>
+                )}
               </div>
 
-              {recurrence.kind === 'weekly' && (
+              {(recurrence.kind === 'weekly' || recurrence.kind === 'biweekly') && (
                 <div className="nam-dow-chips">
                   {DOW_LABELS.map((label, i) => {
                     const dow = i + 1;

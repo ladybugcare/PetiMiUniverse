@@ -68,11 +68,34 @@ const HubClinicHospitalizationPage: React.FC = () => {
       .finally(() => setLoading(false));
   }, [clinicId, hospitalizationId, canRead]);
 
-  const addEvent = async (kind: HubHospitalizationEventKind, payload: Record<string, unknown>) => {
-    if (!hospitalizationId) return;
+  const addEvent = async (
+    kind: HubHospitalizationEventKind,
+    payload: Record<string, unknown>,
+    billing?: {
+      billing_mode: 'charge' | 'included';
+      servicePick: { hub_service_type_id: string; unit_amount: string };
+    },
+  ) => {
+    if (!hospitalizationId || !clinicId) return;
     setEventSubmitting(true);
     try {
       await hubClinicalApi.createHospEvent(hospitalizationId, { kind, payload }, clinicId);
+      if (kind === 'medication' && billing) {
+        const medName = String(payload.medication_name ?? 'Medicação');
+        await hubClinicalApi.createHospitalizationCharge(hospitalizationId, {
+          clinic_id: clinicId,
+          charge_kind: 'medication',
+          hub_service_type_id: billing.servicePick.hub_service_type_id || null,
+          service_name: medName,
+          unit_amount: billing.servicePick.unit_amount
+            ? Number(billing.servicePick.unit_amount.replace(',', '.'))
+            : billing.billing_mode === 'included'
+              ? 0
+              : null,
+          billing_mode: billing.billing_mode,
+          notes: String(payload.dosage ?? '') || null,
+        });
+      }
       const r = await hubClinicalApi.listHospEvents(hospitalizationId, undefined, clinicId);
       setEvents(r.events ?? []);
       showSuccess('Evento registrado');
@@ -202,6 +225,7 @@ const HubClinicHospitalizationPage: React.FC = () => {
             species={hosp.hub_pets?.species}
             canCreateLookups={canWrite}
             submitting={eventSubmitting}
+            defaultIncludesMedication={Boolean(hosp.daily_includes_medication)}
             onSubmit={addEvent}
           />
         </section>

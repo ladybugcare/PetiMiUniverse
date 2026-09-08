@@ -81,7 +81,20 @@ export async function issueExamOrderDocument(opts: {
   | { ok: true; result: { document: Record<string, unknown>; snapshot: ExamOrderSnapshot; public_url: string; content_hash_short: string } }
   | { ok: false; status: number; error: string }
 > {
-  const partiesLoaded = await loadEncounterIssueParties(opts.clinicId, opts.hubEncounterId);
+  let partiesLoaded = await loadEncounterIssueParties(opts.clinicId, opts.hubEncounterId);
+  if (
+    !partiesLoaded.ok &&
+    partiesLoaded.error === 'Atendimento sem veterinário responsável' &&
+    opts.issuedBy
+  ) {
+    await supabaseAdmin
+      .from('hub_encounters')
+      .update({ hub_staff_member_id: opts.issuedBy })
+      .eq('id', opts.hubEncounterId)
+      .eq('clinic_id', opts.clinicId)
+      .is('hub_staff_member_id', null);
+    partiesLoaded = await loadEncounterIssueParties(opts.clinicId, opts.hubEncounterId);
+  }
   if (!partiesLoaded.ok) return partiesLoaded;
 
   const { parties } = partiesLoaded;

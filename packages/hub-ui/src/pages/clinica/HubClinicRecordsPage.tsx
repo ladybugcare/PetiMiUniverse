@@ -15,9 +15,11 @@ import {
   type HubClinicalExam,
   type HubClinicalTimelineEvent,
   type HubEncounter,
+  type HubHospitalization,
   type HubPetClinicalFlag,
   type HubPrescription,
   type HubSpecialistReferral,
+  type HubSurgery,
   type HubVaccination,
 } from '../../api/hubClinicalApi';
 import { hubPetsApi, type HubPet, type HubPetProfileChange } from '../../api/hubPetsApi';
@@ -35,6 +37,8 @@ const TAB_IDS = new Set<ClinicRecordsTabId>([
   'timeline',
   'prescricoes',
   'vacinas',
+  'cirurgias',
+  'internacoes',
   'exames',
   'flags',
 ]);
@@ -71,6 +75,8 @@ const HubClinicRecordsPage: React.FC = () => {
   const [attachments, setAttachments] = useState<HubClinicalAttachment[]>([]);
   const [exams, setExams] = useState<HubClinicalExam[]>([]);
   const [referrals, setReferrals] = useState<HubSpecialistReferral[]>([]);
+  const [surgeries, setSurgeries] = useState<HubSurgery[]>([]);
+  const [hospitalizations, setHospitalizations] = useState<HubHospitalization[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const loadedPetIdRef = useRef<string | null>(null);
@@ -133,6 +139,8 @@ const HubClinicRecordsPage: React.FC = () => {
       hubPetsApi.listProfileChanges(clinicId, selectedId),
       hubClinicalExamsApi.list(clinicId, { petId: selectedId }),
       hubSpecialistReferralsApi.list(clinicId, { petId: selectedId }),
+      hubClinicalApi.listSurgeries(clinicId, undefined, undefined, selectedId),
+      hubClinicalApi.listHospitalizations(clinicId, undefined, undefined, selectedId),
     ]);
     const pick = <T,>(i: number, fallback: T): T => {
       const r = results[i];
@@ -148,6 +156,8 @@ const HubClinicRecordsPage: React.FC = () => {
     setProfileChanges(pick(7, { changes: [] }).changes ?? []);
     setExams(pick(8, { exams: [] }).exams ?? []);
     setReferrals(pick(9, { referrals: [] }).referrals ?? []);
+    setSurgeries(pick(10, { surgeries: [] }).surgeries ?? []);
+    setHospitalizations(pick(11, { hospitalizations: [] }).hospitalizations ?? []);
 
     const failed = results
       .map((r, i) => (r.status === 'rejected' ? i : -1))
@@ -299,6 +309,8 @@ const HubClinicRecordsPage: React.FC = () => {
         attachments={attachments}
         exams={exams}
         referrals={referrals}
+        surgeries={surgeries}
+        hospitalizations={hospitalizations}
         profileChanges={profileChanges}
         newFlagKey={newFlagKey}
         newFlagLabel={newFlagLabel}

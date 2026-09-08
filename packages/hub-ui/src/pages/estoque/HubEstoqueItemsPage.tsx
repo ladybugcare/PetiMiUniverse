@@ -31,6 +31,7 @@ import {
   type EstoqueKindFilter,
   type EstoqueStockFilter,
 } from './estoqueShared';
+import { stockUnitRequiresContent, stockUnitShowsContentFields } from './inventoryContentUtils';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
 import '../pets/pets-page.css';
@@ -90,6 +91,8 @@ const emptyForm = (itemKind: InventoryFormState['item_kind'] = 'product'): Inven
   generates_staff_commission: false,
   min_stock_qty: '0',
   expiry_alert_policy: 'none',
+  content_qty: '',
+  content_unit: '',
   initial_received_at: new Date().toISOString().slice(0, 10),
   initial_expiry_date: '',
   initial_qty: '',
@@ -116,6 +119,8 @@ const fromRow = (t: HubInventoryItem): InventoryFormState => ({
   generates_staff_commission: Boolean(t.generates_staff_commission),
   min_stock_qty: String(t.min_stock_qty ?? 0),
   expiry_alert_policy: (t.expiry_alert_policy as HubExpiryAlertPolicy) || 'none',
+  content_qty: t.content_qty != null ? String(t.content_qty) : '',
+  content_unit: t.content_unit ?? '',
   initial_received_at: new Date().toISOString().slice(0, 10),
   initial_expiry_date: '',
   initial_qty: '',
@@ -426,6 +431,30 @@ const HubEstoqueItemsPage: React.FC = () => {
       return;
     }
 
+    let content_qty: number | null = null;
+    let content_unit: string | null = null;
+    if (stockUnitShowsContentFields(form.unit_label)) {
+      const cq = form.content_qty.trim();
+      const cu = form.content_unit.trim();
+      if (stockUnitRequiresContent(form.unit_label) && (!cq || !cu)) {
+        showError('Informe o conteúdo por frasco/ampola (quantidade e unidade, ex.: 10 ml).');
+        return;
+      }
+      if ((cq && !cu) || (!cq && cu)) {
+        showError('Preencha quantidade e unidade de conteúdo juntos, ou deixe ambos vazios.');
+        return;
+      }
+      if (cq) {
+        const n = Number(cq.replace(',', '.'));
+        if (!Number.isFinite(n) || n <= 0) {
+          showError('Conteúdo por unidade deve ser maior que zero.');
+          return;
+        }
+        content_qty = n;
+        content_unit = cu;
+      }
+    }
+
     let initial_lot: {
       received_at: string;
       expiry_date?: string | null;
@@ -463,7 +492,7 @@ const HubEstoqueItemsPage: React.FC = () => {
           name,
           unit_label: form.unit_label.trim() || null,
           manufacturer_id: form.manufacturer_id || null,
-          allow_fractional: form.allow_fractional,
+          allow_fractional: form.allow_fractional || content_qty != null,
           store_sku: form.store_sku.trim() || null,
           sale_purpose: form.sale_purpose.trim() || null,
           product_group: form.product_group.trim() || null,
@@ -477,6 +506,8 @@ const HubEstoqueItemsPage: React.FC = () => {
           generates_staff_commission: form.generates_staff_commission,
           min_stock_qty: minStock,
           expiry_alert_policy: form.expiry_alert_policy,
+          content_qty,
+          content_unit,
           initial_lot,
         });
         showSuccess('Produto criado');
@@ -487,7 +518,7 @@ const HubEstoqueItemsPage: React.FC = () => {
           name,
           unit_label: form.unit_label.trim() || null,
           manufacturer_id: form.manufacturer_id || null,
-          allow_fractional: form.allow_fractional,
+          allow_fractional: form.allow_fractional || content_qty != null,
           store_sku: form.store_sku.trim() || null,
           sale_purpose: form.sale_purpose.trim() || null,
           product_group: form.product_group.trim() || null,
@@ -501,6 +532,8 @@ const HubEstoqueItemsPage: React.FC = () => {
           generates_staff_commission: form.generates_staff_commission,
           min_stock_qty: minStock,
           expiry_alert_policy: form.expiry_alert_policy,
+          content_qty,
+          content_unit,
         });
         showSuccess('Produto atualizado');
       }

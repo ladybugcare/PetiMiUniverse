@@ -4,8 +4,13 @@ import {
   type HubEncounter,
   type HubMedicationAdministration,
 } from '../../api/hubClinicalApi';
+import { hubInventoryApi } from '../../api/hubInventoryApi';
 import { useAlert } from '../AlertProvider';
 import { HubCwsStatusPills } from '../../pages/clinica/HubCwsStatusPills';
+import {
+  formatStockQty,
+  stockQtyFromConsumption,
+} from '../../pages/estoque/inventoryContentUtils';
 import {
   emptyInClinicMedicationDraft,
   HubInClinicMedicationForm,
@@ -30,7 +35,7 @@ export function HubWorkspaceInClinicMedications({
   /** Mantido por compatibilidade com o card tabulado. */
   formOnly?: boolean;
 }) {
-  const { showError, showSuccess } = useAlert();
+  const { showError, showSuccess, showConfirm } = useAlert();
   const [items, setItems] = useState<HubMedicationAdministration[]>([]);
   const [draft, setDraft] = useState<InClinicMedicationDraft>(emptyInClinicMedicationDraft);
   const [submitting, setSubmitting] = useState(false);
@@ -55,6 +60,41 @@ export function HubWorkspaceInClinicMedications({
     return { total: items.length, comEstoque, semEstoque: items.length - comEstoque };
   }, [items]);
 
+  const submitAdministration = async (confirmStockOut: boolean) => {
+    if (!encounter.pet_id) return;
+    const qty = Number(String(draft.quantity).replace(',', '.'));
+    setSubmitting(true);
+    try {
+      await hubClinicalApi.createMedicationAdministration({
+        clinic_id: clinicId,
+        pet_id: encounter.pet_id,
+        hub_encounter_id: encounter.id,
+        hub_case_id: encounter.hub_case_id ?? undefined,
+        hub_staff_member_id: encounter.hub_staff_member_id ?? undefined,
+        hub_service_type_id: draft.hub_service_type_id,
+        hub_inventory_item_id: draft.hub_inventory_item_id || undefined,
+        hub_inventory_lot_id: draft.hub_inventory_lot_id || undefined,
+        dose: draft.dose.trim() || undefined,
+        use_route: draft.use_route.trim() || undefined,
+        quantity: qty,
+        notes: draft.notes.trim() || undefined,
+        confirm_stock_out: confirmStockOut || undefined,
+      });
+      setDraft(emptyInClinicMedicationDraft());
+      await reload();
+      showSuccess(
+        draft.hub_inventory_item_id
+          ? 'Medicação registrada. Serviço entra na comanda; estoque baixado (sem cobrança do produto).'
+          : 'Medicação registrada. O serviço de aplicação entra na comanda ao cobrar.',
+      );
+      onClinicalRefresh?.();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao registrar medicação');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const add = async () => {
     if (readOnly || submitting) return;
     if (!encounter.pet_id) {
@@ -74,34 +114,40 @@ export function HubWorkspaceInClinicMedications({
       showError('Informe uma quantidade válida.');
       return;
     }
-    setSubmitting(true);
+
+    if (!draft.hub_inventory_item_id) {
+      await submitAdministration(false);
+      return;
+    }
+
     try {
-      await hubClinicalApi.createMedicationAdministration({
-        clinic_id: clinicId,
-        pet_id: encounter.pet_id,
-        hub_encounter_id: encounter.id,
-        hub_case_id: encounter.hub_case_id ?? undefined,
-        hub_staff_member_id: encounter.hub_staff_member_id ?? undefined,
-        hub_service_type_id: draft.hub_service_type_id,
-        hub_inventory_item_id: draft.hub_inventory_item_id || undefined,
-        hub_inventory_lot_id: draft.hub_inventory_lot_id || undefined,
-        dose: draft.dose.trim() || undefined,
-        use_route: draft.use_route.trim() || undefined,
-        quantity: qty,
-        notes: draft.notes.trim() || undefined,
-      });
-      setDraft(emptyInClinicMedicationDraft());
-      await reload();
-      showSuccess(
-        draft.hub_inventory_item_id
-          ? 'Medicação registrada. Serviço entra na comanda; estoque baixado (sem cobrança do produto).'
-          : 'Medicação registrada. O serviço de aplicação entra na comanda ao cobrar.',
+      const [itemsRes, lotsRes] = await Promise.all([
+        hubInventoryApi.items.list(clinicId, false, 'medication'),
+        hubInventoryApi.lots.list(clinicId),
+      ]);
+      const inv = (itemsRes.items ?? []).find((i) => i.id === draft.hub_inventory_item_id);
+      const lot = (lotsRes.lots ?? []).find((l) => l.id === draft.hub_inventory_lot_id);
+      const contentQty =
+        inv?.content_qty != null && Number(inv.content_qty) > 0 ? Number(inv.content_qty) : null;
+      const qtyUnit =
+        contentQty != null ? inv?.content_unit?.trim() || 'ml' : inv?.unit_label?.trim() || 'un.';
+      const stockUnit = inv?.unit_label?.trim() || 'un.';
+      const stockQty = stockQtyFromConsumption(qty, contentQty);
+      const stockPart =
+        contentQty != null
+          ? `${formatStockQty(qty)} ${qtyUnit} (${formatStockQty(stockQty)} ${stockUnit}`
+          : `${formatStockQty(qty)} ${stockUnit}`;
+      const lotPart = lot?.lot_code ? `, lote ${lot.lot_code}` : '';
+      const name = inv?.name || 'medicamento';
+      showConfirm(
+        `Confirmar baixa de ${stockPart}${contentQty != null ? ')' : ''}${lotPart} de ${name}? O estoque só será reduzido depois desta confirmação.`,
+        () => {
+          void submitAdministration(true);
+        },
+        'Confirmar baixa de estoque',
       );
-      onClinicalRefresh?.();
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao registrar medicação');
-    } finally {
-      setSubmitting(false);
+      showError((e as Error)?.message || 'Erro ao preparar confirmação de baixa');
     }
   };
 
@@ -120,8 +166,8 @@ export function HubWorkspaceInClinicMedications({
       />
 
       <p className="hub-cws-an-block__hint">
-        Registre o que foi aplicado agora. O tutor paga o tipo de aplicação; medicamento e lote são baixa de estoque,
-        sem cobrança do produto.
+        Registre o que foi aplicado agora. O tutor paga o tipo de aplicação; medicamento e lote baixam o estoque só
+        após confirmação, sem cobrança do produto.
       </p>
 
       {blockReason ? (
@@ -168,11 +214,19 @@ export function HubWorkspaceInClinicMedications({
                       {it.batch_number ? (
                         <div style={{ fontSize: 12 }}>lote {it.batch_number}</div>
                       ) : null}
-                      {it.hub_inventory_item_id && it.quantity != null && it.quantity !== 1 ? (
-                        <div style={{ fontSize: 12 }}>qtd. {it.quantity}</div>
+                      {it.hub_inventory_item_id && it.quantity != null ? (
+                        <div style={{ fontSize: 12 }}>
+                          qtd. {it.quantity}
+                          {it.quantity_unit ? ` ${it.quantity_unit}` : ''}
+                          {it.stock_qty != null && it.stock_qty !== it.quantity
+                            ? ` → ${it.stock_qty} no estoque`
+                            : ''}
+                        </div>
                       ) : null}
                     </td>
-                    <td className="hub-clientes__muted">{[it.dose, it.use_route].filter(Boolean).join(' · ') || '—'}</td>
+                    <td className="hub-clientes__muted">
+                      {[it.dose, it.use_route].filter(Boolean).join(' · ') || '—'}
+                    </td>
                     <td>{formatMoneyBrl(it.service_price)}</td>
                     <td className="hub-clientes__muted">
                       {it.administered_at

@@ -15,6 +15,7 @@ import { hubSpecialtiesApi } from '../../api/hubSpecialtiesApi';
 import { specialtyCategoryForJobTitle, specialtyLabel } from '../../utils/staffSpecialties';
 import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
 import { HubDateField } from '../../components/HubDateField';
+import { HubTimeField } from '../../components/HubTimeField';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
@@ -1020,28 +1021,20 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
 
                     <div className="hub-equipe-drawer__row">
                       <div className="hub-clientes__field">
-                        <label className="hub-clientes__label" htmlFor="st-ws">
-                          Horário de início
-                        </label>
-                        <input
+                        <HubTimeField
                           id="st-ws"
-                          type="time"
-                          className="hub-clientes__input"
-                          value={form.work_start}
-                          onChange={(e) => setForm((f) => ({ ...f, work_start: e.target.value }))}
+                          label="Horário de início"
+                          valueHm={form.work_start}
+                          onChangeHm={(work_start) => setForm((f) => ({ ...f, work_start }))}
                           disabled={!canWrite}
                         />
                       </div>
                       <div className="hub-clientes__field">
-                        <label className="hub-clientes__label" htmlFor="st-we">
-                          Horário de fim
-                        </label>
-                        <input
+                        <HubTimeField
                           id="st-we"
-                          type="time"
-                          className="hub-clientes__input"
-                          value={form.work_end}
-                          onChange={(e) => setForm((f) => ({ ...f, work_end: e.target.value }))}
+                          label="Horário de fim"
+                          valueHm={form.work_end}
+                          onChangeHm={(work_end) => setForm((f) => ({ ...f, work_end }))}
                           disabled={!canWrite}
                         />
                       </div>
