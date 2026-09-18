@@ -1,9 +1,11 @@
 import React, { useMemo } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import type { HubAnestheticRisk, HubSurgery } from '../../../api/hubClinicalApi';
+import type { HubAnestheticRisk, HubSurgery, HubSurgeryPayable } from '../../../api/hubClinicalApi';
 import type { HubStaffMember } from '../../../api/hubStaffApi';
 import { HubSearchableCombobox } from '../../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../../components/HubSearchableCombobox';
+import { HubDateField } from '../../../components/HubDateField';
+import { staffAffiliationLabel, isGuestAffiliation } from '../../../constants/hubStaffAffiliation';
 import { SURGERY_ASA_OPTIONS } from './SurgCreateForm';
 import '../../agenda/new-appointment-modal.css';
 
@@ -24,16 +26,40 @@ const TEAM_ROLE_OPTIONS: HubComboboxOption[] = [
   { value: 'Monitoramento', label: 'Monitoramento' },
 ];
 
+const FEE_STATUS_OPTIONS: HubComboboxOption[] = [
+  { value: '', label: 'Sem lançamento' },
+  { value: 'pending', label: 'Pendente (a pagar)' },
+  { value: 'paid', label: 'Já pago' },
+];
+
+const FEE_PAYMENT_OPTIONS: HubComboboxOption[] = [
+  { value: 'pix', label: 'PIX' },
+  { value: 'cash', label: 'Dinheiro' },
+  { value: 'transfer', label: 'Transferência' },
+  { value: 'credit_card', label: 'Cartão de crédito' },
+  { value: 'debit_card', label: 'Cartão de débito' },
+  { value: 'other', label: 'Outro' },
+];
+
 const LATERALITY_OPTIONS: HubComboboxOption[] = [
   { value: 'left', label: 'Esquerdo' },
   { value: 'right', label: 'Direito' },
   { value: 'bilateral', label: 'Bilateral' },
 ];
 
+export type SurgTeamFeeStatus = '' | 'pending' | 'paid';
+
 export type SurgTeamRow = {
   role: string;
   staffId: string;
   name: string;
+  /** Valor que a clínica paga ao profissional (não vai para a comanda do tutor). */
+  feeAmount: string;
+  feeStatus: SurgTeamFeeStatus;
+  feeDueDate: string;
+  feePaymentMethod: string;
+  /** Título já liquidado no financeiro — campos de honorário ficam só leitura. */
+  feeLockedPaid: boolean;
 };
 
 export type SurgDetailDraft = {
@@ -69,20 +95,54 @@ function asStr(v: unknown): string {
 }
 
 function emptyTeamRow(): SurgTeamRow {
-  return { role: '', staffId: '', name: '' };
+  return {
+    role: '',
+    staffId: '',
+    name: '',
+    feeAmount: '',
+    feeStatus: '',
+    feeDueDate: '',
+    feePaymentMethod: '',
+    feeLockedPaid: false,
+  };
 }
 
-export function parseSurgDetail(surgery: HubSurgery): SurgDetailDraft {
+function matchPayable(
+  payables: HubSurgeryPayable[] | undefined,
+  staffId: string,
+  role: string,
+): HubSurgeryPayable | undefined {
+  if (!payables?.length || !staffId || !role) return undefined;
+  return payables.find(
+    (p) => p.payee_staff_member_id === staffId && (p.source_role || '').trim() === role.trim(),
+  );
+}
+
+export function parseSurgDetail(
+  surgery: HubSurgery,
+  payables?: HubSurgeryPayable[],
+): SurgDetailDraft {
   const pre = asRecord(surgery.pre_op);
   const proc = asRecord(surgery.procedure);
   const post = asRecord(surgery.post_op);
   const teamRaw = Array.isArray(surgery.team) ? surgery.team : [];
   const team = teamRaw.map((row) => {
     const r = asRecord(row);
+    const role = asStr(r.role);
+    const staffId = asStr(r.staff_id ?? r.hub_staff_member_id);
+    const payable = matchPayable(payables, staffId, role);
+    const feeLockedPaid = payable?.status === 'paid';
     return {
-      role: asStr(r.role),
-      staffId: asStr(r.staff_id ?? r.hub_staff_member_id),
+      role,
+      staffId,
       name: asStr(r.name ?? r.full_name),
+      feeAmount: payable ? String(payable.amount) : '',
+      feeStatus: (payable?.status === 'paid' || payable?.status === 'pending'
+        ? payable.status
+        : '') as SurgTeamFeeStatus,
+      feeDueDate: payable?.due_date ? String(payable.due_date).slice(0, 10) : '',
+      feePaymentMethod: payable?.payment_method ? String(payable.payment_method) : '',
+      feeLockedPaid,
     };
   });
   return {
@@ -128,11 +188,24 @@ export function serializeSurgDetail(draft: SurgDetailDraft): {
 
   const team = draft.team
     .filter((row) => row.role || row.staffId || row.name)
-    .map((row) => ({
-      role: row.role || null,
-      staff_id: row.staffId || null,
-      name: row.name || null,
-    }));
+    .map((row) => {
+      const base: Record<string, unknown> = {
+        role: row.role || null,
+        staff_id: row.staffId || null,
+        name: row.name || null,
+      };
+      const amountRaw = row.feeAmount.trim().replace(',', '.');
+      const amount = amountRaw ? Number(amountRaw) : NaN;
+      if (row.feeStatus && Number.isFinite(amount) && amount > 0) {
+        base.fee_amount = amount;
+        base.fee_status = row.feeStatus;
+        if (row.feeStatus === 'pending' && row.feeDueDate) base.fee_due_date = row.feeDueDate;
+        if (row.feeStatus === 'paid' && row.feePaymentMethod) {
+          base.fee_payment_method = row.feePaymentMethod;
+        }
+      }
+      return base;
+    });
 
   const postOp: Record<string, unknown> = {};
   if (draft.postOp.notes.trim()) postOp.notes = draft.postOp.notes.trim();
@@ -163,7 +236,15 @@ const SurgDetailForm: React.FC<Props> = ({ tab, draft, staff, canWrite, onChange
   const disabled = !canWrite;
 
   const staffOptions: HubComboboxOption[] = useMemo(
-    () => staff.filter((s) => s.active !== false).map((s) => ({ value: s.id, label: s.full_name })),
+    () =>
+      staff
+        .filter((s) => s.active !== false)
+        .map((s) => ({
+          value: s.id,
+          label: isGuestAffiliation(s.affiliation)
+            ? `${s.full_name} · ${staffAffiliationLabel(s.affiliation)}`
+            : s.full_name,
+        })),
     [staff],
   );
 
@@ -195,32 +276,32 @@ const SurgDetailForm: React.FC<Props> = ({ tab, draft, staff, canWrite, onChange
             </div>
             <div className="nam-field">
               <label className="nam-label" htmlFor="clinic-surg-detail-asa">
-                Risco anestésico
+                Risco anestésico (ASA)
               </label>
               <HubSearchableCombobox
                 id="clinic-surg-detail-asa"
                 options={asaOptions}
                 value={draft.asaRisk}
-                onChange={(v) => set({ asaRisk: (v as HubAnestheticRisk) || '' })}
-                placeholder="Não classificado"
-                searchPlaceholder="ASA…"
+                onChange={(v) => set({ asaRisk: v as HubAnestheticRisk | '' })}
+                placeholder="Classificação ASA…"
+                searchPlaceholder="Buscar…"
                 ariaLabel="Risco anestésico"
                 disabled={disabled}
                 clearable
               />
             </div>
             <div className="nam-field">
-              <label className="nam-label" htmlFor="clinic-surg-detail-pre-notes">
+              <label className="nam-label" htmlFor="clinic-surg-detail-preop-notes">
                 Observações pré-operatórias
               </label>
               <textarea
-                id="clinic-surg-detail-pre-notes"
+                id="clinic-surg-detail-preop-notes"
                 className="nam-textarea"
-                rows={3}
+                rows={4}
                 value={draft.preOp.notes}
                 disabled={disabled}
                 onChange={(e) => set({ preOp: { ...draft.preOp, notes: e.target.value } })}
-                placeholder="Medicações, alergias, restrições…"
+                placeholder="Jejum, exames, intercorrências…"
               />
             </div>
           </>
@@ -228,6 +309,49 @@ const SurgDetailForm: React.FC<Props> = ({ tab, draft, staff, canWrite, onChange
 
         {tab === 'procedure' ? (
           <>
+            <div className="nam-field">
+              <label className="nam-label" htmlFor="clinic-surg-detail-proc-notes">
+                Descrição do procedimento
+              </label>
+              <textarea
+                id="clinic-surg-detail-proc-notes"
+                className="nam-textarea"
+                rows={4}
+                value={draft.procedure.notes}
+                disabled={disabled}
+                onChange={(e) => set({ procedure: { ...draft.procedure, notes: e.target.value } })}
+              />
+            </div>
+            <div className="nam-row nam-row--cols2">
+              <div className="nam-field">
+                <label className="nam-label" htmlFor="clinic-surg-detail-findings">
+                  Achados
+                </label>
+                <textarea
+                  id="clinic-surg-detail-findings"
+                  className="nam-textarea"
+                  rows={3}
+                  value={draft.procedure.findings}
+                  disabled={disabled}
+                  onChange={(e) => set({ procedure: { ...draft.procedure, findings: e.target.value } })}
+                />
+              </div>
+              <div className="nam-field">
+                <label className="nam-label" htmlFor="clinic-surg-detail-complications">
+                  Complicações
+                </label>
+                <textarea
+                  id="clinic-surg-detail-complications"
+                  className="nam-textarea"
+                  rows={3}
+                  value={draft.procedure.complications}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    set({ procedure: { ...draft.procedure, complications: e.target.value } })
+                  }
+                />
+              </div>
+            </div>
             <div className="nam-row nam-row--cols2">
               <div className="nam-field">
                 <label className="nam-label" htmlFor="clinic-surg-detail-duration">
@@ -236,143 +360,197 @@ const SurgDetailForm: React.FC<Props> = ({ tab, draft, staff, canWrite, onChange
                 <input
                   id="clinic-surg-detail-duration"
                   className="nam-input"
-                  inputMode="numeric"
                   value={draft.procedure.durationMinutes}
                   disabled={disabled}
                   onChange={(e) =>
                     set({ procedure: { ...draft.procedure, durationMinutes: e.target.value } })
                   }
-                  placeholder="Ex.: 45"
+                  inputMode="numeric"
                 />
               </div>
               <div className="nam-field">
-                <label className="nam-label" htmlFor="clinic-surg-detail-lat">
-                  Lateridade
+                <label className="nam-label" htmlFor="clinic-surg-detail-laterality">
+                  Lateralidade
                 </label>
                 <HubSearchableCombobox
-                  id="clinic-surg-detail-lat"
+                  id="clinic-surg-detail-laterality"
                   options={LATERALITY_OPTIONS}
                   value={draft.procedure.laterality}
                   onChange={(v) => set({ procedure: { ...draft.procedure, laterality: v } })}
-                  placeholder="Não se aplica"
-                  searchPlaceholder="Lado…"
-                  ariaLabel="Lateridade"
+                  placeholder="Opcional…"
+                  searchPlaceholder="Lateralidade…"
+                  ariaLabel="Lateralidade"
                   disabled={disabled}
                   clearable
                 />
               </div>
-            </div>
-            <div className="nam-field">
-              <label className="nam-label" htmlFor="clinic-surg-detail-proc">
-                Relato do procedimento
-              </label>
-              <textarea
-                id="clinic-surg-detail-proc"
-                className="nam-textarea"
-                rows={4}
-                value={draft.procedure.notes}
-                disabled={disabled}
-                onChange={(e) => set({ procedure: { ...draft.procedure, notes: e.target.value } })}
-                placeholder="O que foi feito, técnica, achados intraoperatórios…"
-              />
-            </div>
-            <div className="nam-field">
-              <label className="nam-label" htmlFor="clinic-surg-detail-findings">
-                Achados
-              </label>
-              <textarea
-                id="clinic-surg-detail-findings"
-                className="nam-textarea"
-                rows={3}
-                value={draft.procedure.findings}
-                disabled={disabled}
-                onChange={(e) =>
-                  set({ procedure: { ...draft.procedure, findings: e.target.value } })
-                }
-                placeholder="O que foi encontrado…"
-              />
-            </div>
-            <div className="nam-field">
-              <label className="nam-label" htmlFor="clinic-surg-detail-compl">
-                Intercorrências
-              </label>
-              <textarea
-                id="clinic-surg-detail-compl"
-                className="nam-textarea"
-                rows={3}
-                value={draft.procedure.complications}
-                disabled={disabled}
-                onChange={(e) =>
-                  set({ procedure: { ...draft.procedure, complications: e.target.value } })
-                }
-                placeholder="Nenhuma, ou descreva…"
-              />
             </div>
           </>
         ) : null}
 
         {tab === 'team' ? (
           <>
-            {draft.team.map((row, index) => (
-              <div key={`team-${index}`} className="nam-row nam-row--cols2 hub-surg-team-row">
-                <div className="nam-field">
-                  <label className="nam-label" htmlFor={`clinic-surg-team-role-${index}`}>
-                    Função
-                  </label>
-                  <HubSearchableCombobox
-                    id={`clinic-surg-team-role-${index}`}
-                    options={TEAM_ROLE_OPTIONS}
-                    value={row.role}
-                    onChange={(v) => {
-                      const team = draft.team.map((r, i) => (i === index ? { ...r, role: v } : r));
-                      set({ team });
-                    }}
-                    placeholder="Cirurgião, anestesista…"
-                    searchPlaceholder="Função…"
-                    ariaLabel={`Função ${index + 1}`}
-                    disabled={disabled}
-                    allowCreate
-                    createEntityLabel="função"
-                    createEntityGender="f"
-                  />
-                </div>
-                <div className="nam-field">
-                  <label className="nam-label" htmlFor={`clinic-surg-team-staff-${index}`}>
-                    Profissional
-                  </label>
-                  <div className="hub-surg-team-row__staff">
-                    <HubSearchableCombobox
-                      id={`clinic-surg-team-staff-${index}`}
-                      options={staffOptions}
-                      value={row.staffId}
-                      onChange={(v) => {
-                        const member = staff.find((s) => s.id === v);
-                        const team = draft.team.map((r, i) =>
-                          i === index ? { ...r, staffId: v, name: member?.full_name || r.name } : r,
-                        );
-                        set({ team });
-                      }}
-                      placeholder="Quem assumiu…"
-                      searchPlaceholder="Buscar profissional…"
-                      ariaLabel={`Profissional ${index + 1}`}
-                      disabled={disabled}
-                      clearable
-                    />
-                    {canWrite && draft.team.length > 1 ? (
-                      <button
-                        type="button"
-                        className="hub-dayboard__action-btn"
-                        title="Remover da equipe"
-                        aria-label="Remover da equipe"
-                        onClick={() => set({ team: draft.team.filter((_, i) => i !== index) })}
-                      >
-                        <Trash2 size={15} strokeWidth={2} />
-                      </button>
-                    ) : null}
+            <p className="hub-clientes__muted" style={{ marginBottom: 12 }}>
+              Valor que a clínica paga ao profissional. Não aparece na cobrança do tutor.
+            </p>
+            {draft.team.map((row, index) => {
+              const feeDisabled = disabled || row.feeLockedPaid;
+              return (
+                <div key={`team-${index}`} className="hub-surg-team-row" style={{ marginBottom: 16 }}>
+                  <div className="nam-row nam-row--cols2">
+                    <div className="nam-field">
+                      <label className="nam-label" htmlFor={`clinic-surg-team-role-${index}`}>
+                        Função
+                      </label>
+                      <HubSearchableCombobox
+                        id={`clinic-surg-team-role-${index}`}
+                        options={TEAM_ROLE_OPTIONS}
+                        value={row.role}
+                        onChange={(v) => {
+                          const team = draft.team.map((r, i) => (i === index ? { ...r, role: v } : r));
+                          set({ team });
+                        }}
+                        placeholder="Cirurgião, anestesista…"
+                        searchPlaceholder="Função…"
+                        ariaLabel={`Função ${index + 1}`}
+                        disabled={feeDisabled}
+                        allowCreate
+                        createEntityLabel="função"
+                        createEntityGender="f"
+                      />
+                    </div>
+                    <div className="nam-field">
+                      <label className="nam-label" htmlFor={`clinic-surg-team-staff-${index}`}>
+                        Profissional
+                      </label>
+                      <div className="hub-surg-team-row__staff">
+                        <HubSearchableCombobox
+                          id={`clinic-surg-team-staff-${index}`}
+                          options={staffOptions}
+                          value={row.staffId}
+                          onChange={(v) => {
+                            const member = staff.find((s) => s.id === v);
+                            const team = draft.team.map((r, i) =>
+                              i === index ? { ...r, staffId: v, name: member?.full_name || r.name } : r,
+                            );
+                            set({ team });
+                          }}
+                          placeholder="Quem assumiu…"
+                          searchPlaceholder="Buscar profissional…"
+                          ariaLabel={`Profissional ${index + 1}`}
+                          disabled={feeDisabled}
+                          clearable
+                        />
+                        {canWrite && draft.team.length > 1 && !row.feeLockedPaid ? (
+                          <button
+                            type="button"
+                            className="hub-dayboard__action-btn"
+                            title="Remover da equipe"
+                            aria-label="Remover da equipe"
+                            onClick={() => set({ team: draft.team.filter((_, i) => i !== index) })}
+                          >
+                            <Trash2 size={15} strokeWidth={2} />
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
+                  <div className="nam-row nam-row--cols2" style={{ marginTop: 8 }}>
+                    <div className="nam-field">
+                      <label className="nam-label" htmlFor={`clinic-surg-team-fee-${index}`}>
+                        Honorário (R$)
+                      </label>
+                      <input
+                        id={`clinic-surg-team-fee-${index}`}
+                        className="nam-input"
+                        value={row.feeAmount}
+                        disabled={feeDisabled}
+                        inputMode="decimal"
+                        placeholder="Ex.: 800"
+                        onChange={(e) => {
+                          const team = draft.team.map((r, i) =>
+                            i === index ? { ...r, feeAmount: e.target.value } : r,
+                          );
+                          set({ team });
+                        }}
+                      />
+                    </div>
+                    <div className="nam-field">
+                      <label className="nam-label" htmlFor={`clinic-surg-team-fee-status-${index}`}>
+                        Situação do pagamento
+                      </label>
+                      <HubSearchableCombobox
+                        id={`clinic-surg-team-fee-status-${index}`}
+                        options={FEE_STATUS_OPTIONS}
+                        value={row.feeStatus}
+                        onChange={(v) => {
+                          const team = draft.team.map((r, i) =>
+                            i === index
+                              ? {
+                                  ...r,
+                                  feeStatus: v as SurgTeamFeeStatus,
+                                  feePaymentMethod:
+                                    v === 'paid' ? r.feePaymentMethod || 'pix' : r.feePaymentMethod,
+                                }
+                              : r,
+                          );
+                          set({ team });
+                        }}
+                        placeholder="Sem lançamento…"
+                        searchPlaceholder="Situação…"
+                        ariaLabel={`Situação do honorário ${index + 1}`}
+                        disabled={feeDisabled}
+                      />
+                    </div>
+                  </div>
+                  {row.feeStatus === 'pending' ? (
+                    <div className="nam-field" style={{ marginTop: 8 }}>
+                      <HubDateField
+                        id={`clinic-surg-team-fee-due-${index}`}
+                        label="Vencimento"
+                        valueIso={row.feeDueDate}
+                        onChangeIso={(iso) => {
+                          const team = draft.team.map((r, i) =>
+                            i === index ? { ...r, feeDueDate: iso } : r,
+                          );
+                          set({ team });
+                        }}
+                        disabled={feeDisabled}
+                        showTodayButton={false}
+                      />
+                    </div>
+                  ) : null}
+                  {row.feeStatus === 'paid' ? (
+                    <div className="nam-field" style={{ marginTop: 8 }}>
+                      <label className="nam-label" htmlFor={`clinic-surg-team-fee-pay-${index}`}>
+                        Forma de pagamento
+                      </label>
+                      <HubSearchableCombobox
+                        id={`clinic-surg-team-fee-pay-${index}`}
+                        options={FEE_PAYMENT_OPTIONS}
+                        value={row.feePaymentMethod}
+                        onChange={(v) => {
+                          const team = draft.team.map((r, i) =>
+                            i === index ? { ...r, feePaymentMethod: v } : r,
+                          );
+                          set({ team });
+                        }}
+                        placeholder="PIX, transferência…"
+                        searchPlaceholder="Forma…"
+                        ariaLabel={`Forma de pagamento ${index + 1}`}
+                        disabled={feeDisabled}
+                      />
+                    </div>
+                  ) : null}
+                  {row.feeLockedPaid ? (
+                    <p className="hub-clientes__muted" style={{ marginTop: 6, fontSize: 13 }}>
+                      Honorário já liquidado no financeiro — alterações de valor só pelo módulo Contas a
+                      pagar (não reabre o título daqui).
+                    </p>
+                  ) : null}
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {canWrite ? (
               <button
                 type="button"
@@ -382,7 +560,7 @@ const SurgDetailForm: React.FC<Props> = ({ tab, draft, staff, canWrite, onChange
                 <Plus size={15} strokeWidth={2} /> Adicionar profissional
               </button>
             ) : null}
-            <div className="nam-field">
+            <div className="nam-field" style={{ marginTop: 12 }}>
               <label className="nam-label" htmlFor="clinic-surg-detail-team-notes">
                 Observações da equipe
               </label>
@@ -402,6 +580,19 @@ const SurgDetailForm: React.FC<Props> = ({ tab, draft, staff, canWrite, onChange
         {tab === 'post_op' ? (
           <>
             <div className="nam-field">
+              <label className="nam-label" htmlFor="clinic-surg-detail-postop-notes">
+                Observações pós-operatórias
+              </label>
+              <textarea
+                id="clinic-surg-detail-postop-notes"
+                className="nam-textarea"
+                rows={3}
+                value={draft.postOp.notes}
+                disabled={disabled}
+                onChange={(e) => set({ postOp: { ...draft.postOp, notes: e.target.value } })}
+              />
+            </div>
+            <div className="nam-field">
               <label className="nam-label" htmlFor="clinic-surg-detail-recovery">
                 Recuperação
               </label>
@@ -412,37 +603,19 @@ const SurgDetailForm: React.FC<Props> = ({ tab, draft, staff, canWrite, onChange
                 value={draft.postOp.recovery}
                 disabled={disabled}
                 onChange={(e) => set({ postOp: { ...draft.postOp, recovery: e.target.value } })}
-                placeholder="Extubação, dor, estabilidade…"
               />
             </div>
             <div className="nam-field">
-              <label className="nam-label" htmlFor="clinic-surg-detail-post-notes">
-                Observações pós-operatórias
-              </label>
-              <textarea
-                id="clinic-surg-detail-post-notes"
-                className="nam-textarea"
-                rows={3}
-                value={draft.postOp.notes}
-                disabled={disabled}
-                onChange={(e) => set({ postOp: { ...draft.postOp, notes: e.target.value } })}
-                placeholder="Medicações, curativo, restrições imediatas…"
-              />
-            </div>
-            <div className="nam-field">
-              <label className="nam-label" htmlFor="clinic-surg-detail-instr">
+              <label className="nam-label" htmlFor="clinic-surg-detail-instructions">
                 Orientações ao tutor
               </label>
               <textarea
-                id="clinic-surg-detail-instr"
+                id="clinic-surg-detail-instructions"
                 className="nam-textarea"
                 rows={3}
                 value={draft.postOp.instructions}
                 disabled={disabled}
-                onChange={(e) =>
-                  set({ postOp: { ...draft.postOp, instructions: e.target.value } })
-                }
-                placeholder="Colar, alimentação, retorno, sinais de alerta…"
+                onChange={(e) => set({ postOp: { ...draft.postOp, instructions: e.target.value } })}
               />
             </div>
           </>

@@ -113,6 +113,13 @@ export type GroomingDrawerAddonOption = {
   sale_amount: number | null;
 };
 
+export type GroomingRequestableService = {
+  id: string;
+  name: string;
+  is_addon: boolean;
+  sale_amount: number | null;
+};
+
 export type GroomingSessionDrawerResponse = {
   session: GroomingSession & Record<string, unknown>;
   pet: GroomingDayBoardPet | null;
@@ -123,6 +130,7 @@ export type GroomingSessionDrawerResponse = {
   appointment_lines: GroomingDrawerAppointmentLine[];
   extras: GroomingDrawerExtra[];
   available_addons: GroomingDrawerAddonOption[];
+  requestable_services?: GroomingRequestableService[];
 };
 
 export const hubGroomingApi = {
@@ -234,6 +242,31 @@ export const hubGroomingApi = {
         clinic_id: clinicId,
         event_type: 'note',
         body,
+      }),
+    }) as Promise<{ event: GroomingSessionEvent }>;
+  },
+
+  /** Salão pede outro serviço (ex.: desembolo): a recepção pede autorização ao tutor. */
+  requestSessionExtra(
+    sessionId: string,
+    payload: {
+      clinic_id: string;
+      extra_name: string;
+      hub_service_type_id?: string | null;
+      created_by_staff_id?: string | null;
+    },
+  ) {
+    return apiRequest(`${groomingBase}/sessions/${encodeURIComponent(sessionId)}/events`, {
+      method: 'POST',
+      body: JSON.stringify({
+        clinic_id: payload.clinic_id,
+        event_type: 'extra_request',
+        body: payload.extra_name,
+        payload: {
+          name: payload.extra_name,
+          hub_service_type_id: payload.hub_service_type_id ?? null,
+        },
+        created_by_staff_id: payload.created_by_staff_id ?? null,
       }),
     }) as Promise<{ event: GroomingSessionEvent }>;
   },

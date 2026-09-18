@@ -70,6 +70,31 @@ export async function notifyHubPetReady(opts: {
   });
 }
 
+/** Salão pediu outro serviço (ex.: desembolo) — recepção pede autorização ao tutor. */
+export async function notifyHubGroomingExtraRequest(opts: {
+  clinicId: string;
+  unitId?: string | null;
+  petId?: string | null;
+  sessionId: string;
+  extraName: string;
+  excludeUserIds?: readonly string[];
+}): Promise<void> {
+  const pet = await resolvePetName(opts.petId);
+  const service = opts.extraName.trim() || 'outro serviço';
+  await hubNotifyStaff({
+    clinicId: opts.clinicId,
+    unitId: opts.unitId,
+    areas: ['recepcao'],
+    excludeUserIds: opts.excludeUserIds,
+    type: 'hub_grooming_extra_request',
+    title: 'Serviço precisa de autorização',
+    message: `${pet}: a equipe pediu ${service}. Peça autorização ao tutor e inclua o serviço.`,
+    link: '/hub/banho-tosa',
+    entityType: 'grooming_session',
+    entityId: opts.sessionId,
+  });
+}
+
 /** Pet embarcado no leva e traz, a caminho da clínica — recepção se prepara. */
 export async function notifyHubPetOnTheWay(opts: {
   clinicId: string;
@@ -90,6 +115,54 @@ export async function notifyHubPetOnTheWay(opts: {
     link: '/hub/leva-e-traz',
     entityType: 'pickup_stop',
     entityId: opts.stopId,
+  });
+}
+
+/** Pet desembarcou do leva e traz na unidade — recepção + módulo operacional. */
+export async function notifyHubPetArrived(opts: {
+  clinicId: string;
+  unitId?: string | null;
+  petId?: string | null;
+  module?: 'grooming' | 'clinical' | 'boarding' | null;
+  appointmentId: string;
+  excludeUserIds?: readonly string[];
+}): Promise<void> {
+  const pet = await resolvePetName(opts.petId);
+  const areas =
+    opts.module === 'grooming'
+      ? (['recepcao', 'banho_tosa'] as const)
+      : opts.module === 'clinical'
+        ? (['recepcao', 'clinica'] as const)
+        : opts.module === 'boarding'
+          ? (['recepcao', 'hotel_creche'] as const)
+          : (['recepcao'] as const);
+  const link =
+    opts.module === 'grooming'
+      ? '/hub/banho-tosa'
+      : opts.module === 'clinical'
+        ? '/hub/clinica/atendimentos'
+        : opts.module === 'boarding'
+          ? '/hub/hotel-creche'
+          : '/hub/leva-e-traz';
+  const where =
+    opts.module === 'grooming'
+      ? 'e entrou na fila de banho e tosa'
+      : opts.module === 'clinical'
+        ? 'e aguarda no consultório'
+        : opts.module === 'boarding'
+          ? 'e deu entrada no hotel/creche'
+          : 'via leva e traz';
+  await hubNotifyStaff({
+    clinicId: opts.clinicId,
+    unitId: opts.unitId,
+    areas: [...areas],
+    excludeUserIds: opts.excludeUserIds,
+    type: 'hub_pet_arrived',
+    title: 'Pet chegou na clínica',
+    message: `${pet} chegou ${where}.`,
+    link,
+    entityType: 'appointment',
+    entityId: opts.appointmentId,
   });
 }
 

@@ -15,6 +15,7 @@ import {
   hubEncountersApi,
   type HubEncounter,
   type HubSurgery,
+  type HubSurgeryPayable,
   type HubSurgeryService,
 } from '../../api/hubClinicalApi';
 import {
@@ -99,19 +100,19 @@ const HubClinicSurgeryPage: React.FC = () => {
   const examsBlockRef = useRef<HTMLDivElement | null>(null);
   const scrolledToExamsRef = useRef(false);
 
-  const applySurgery = (row: HubSurgery) => {
+  const applySurgery = (row: HubSurgery, payables?: HubSurgeryPayable[]) => {
     setSurgery(row);
-    const parsed = parseSurgDetail(row);
+    const parsed = parseSurgDetail(row, payables);
     setDraft(parsed.staffId || !myStaffMember?.id ? parsed : { ...parsed, staffId: myStaffMember.id });
   };
 
   const reload = async () => {
     if (!clinicId || !surgeryId) return;
-    const [{ surgery: row }, svcRes] = await Promise.all([
+    const [{ surgery: row, payables }, svcRes] = await Promise.all([
       hubClinicalApi.getSurgery(surgeryId, clinicId),
       hubClinicalApi.listSurgeryServices(surgeryId, clinicId).catch(() => ({ services: [] as HubSurgeryService[] })),
     ]);
-    applySurgery(row);
+    applySurgery(row, payables);
     setServices(svcRes.services ?? []);
     if (!row.hub_encounter_id) {
       setEncounter(null);
@@ -193,8 +194,8 @@ const HubClinicSurgeryPage: React.FC = () => {
                 : {}),
             }
           : {}),
-      })) as { surgery?: HubSurgery };
-      if (res.surgery) applySurgery(res.surgery);
+      })) as { surgery?: HubSurgery; payables?: HubSurgeryPayable[] };
+      if (res.surgery) applySurgery(res.surgery, res.payables);
       else await reload();
       showSuccess(
         status === 'in_progress'

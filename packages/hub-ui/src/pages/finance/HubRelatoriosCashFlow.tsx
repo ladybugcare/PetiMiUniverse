@@ -110,7 +110,7 @@ export const HubRelatoriosCashFlow: React.FC<Props> = ({ clinicId, unitId, perio
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Despesas + sangrias</div>
+            <div className="hub-servicos__metric-label">Despesas + AP + sangrias</div>
             <div className="hub-servicos__metric-value">
               {formatBrl(summary.expenses_out + summary.withdrawals_out)}
             </div>
@@ -156,7 +156,7 @@ export const HubRelatoriosCashFlow: React.FC<Props> = ({ clinicId, unitId, perio
                   <th>Data</th>
                   <th className="hub-finance-page__th-num">Pagamentos</th>
                   <th className="hub-finance-page__th-num">Depósitos</th>
-                  <th className="hub-finance-page__th-num">Despesas</th>
+                  <th className="hub-finance-page__th-num">Despesas / AP</th>
                   <th className="hub-finance-page__th-num">Sangrias</th>
                   <th className="hub-finance-page__th-num">Líquido</th>
                 </tr>

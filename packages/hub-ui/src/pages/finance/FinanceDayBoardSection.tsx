@@ -25,7 +25,13 @@ function normalizeText(s: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-function datesForView(cursorIso: string, view: HubViewMode): string[] {
+function rangeForView(cursorIso: string, view: HubViewMode): { from: string; to: string } | null {
+  if (view === 'all') return null;
+  const dates = datesForView(cursorIso, view);
+  return { from: dates[0], to: dates[dates.length - 1] };
+}
+
+function datesForView(cursorIso: string, view: Exclude<HubViewMode, 'all'>): string[] {
   const cursor = parseIsoYmd(cursorIso) ?? new Date();
   if (view === 'day') return [formatYmd(cursor)];
   if (view === 'week') {
@@ -56,7 +62,7 @@ function mergeDayBoardItems(itemsArrays: HubFinanceDayBoardItem[][]): HubFinance
   });
 }
 
-function shiftCursorDate(cursorIso: string, view: HubViewMode, delta: number): string {
+function shiftCursorDate(cursorIso: string, view: Exclude<HubViewMode, 'all'>, delta: number): string {
   const d = parseIsoYmd(cursorIso) ?? new Date();
   if (view === 'day') return formatYmd(addDays(d, delta));
   if (view === 'week') return formatYmd(addDays(d, delta * 7));
@@ -66,13 +72,39 @@ function shiftCursorDate(cursorIso: string, view: HubViewMode, delta: number): s
 }
 
 type StatusFilter = 'all' | 'pendente' | 'parcial' | 'enviado_caixa';
+type OriginFilter =
+  | 'all'
+  | 'appointment'
+  | 'grooming_session'
+  | 'boarding_reservation'
+  | 'encounter'
+  | 'quote'
+  | 'other';
 
 const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
-  { id: 'all', label: 'Todos' },
-  { id: 'enviado_caixa', label: 'Enviado pelo caixa' },
-  { id: 'pendente', label: 'Pendente' },
+  { id: 'pendente', label: 'Cobrança pendente' },
   { id: 'parcial', label: 'Parcialmente pago' },
+  { id: 'enviado_caixa', label: 'Enviado pelo caixa' },
+  { id: 'all', label: 'Todas as cobranças' },
 ];
+
+const ORIGIN_FILTERS: { id: OriginFilter; label: string }[] = [
+  { id: 'all', label: 'Todas as origens' },
+  { id: 'appointment', label: 'Agenda' },
+  { id: 'grooming_session', label: 'Banho e tosa' },
+  { id: 'boarding_reservation', label: 'Hotel & Creche' },
+  { id: 'encounter', label: 'Atendimento clínico' },
+  { id: 'quote', label: 'Orçamento' },
+  { id: 'other', label: 'Outras' },
+];
+
+const KNOWN_ORIGINS = new Set([
+  'appointment',
+  'grooming_session',
+  'boarding_reservation',
+  'encounter',
+  'quote',
+]);
 
 export type FinanceDayBoardSectionProps = {
   clinicId: string;
@@ -99,9 +131,10 @@ export function FinanceDayBoardSection({
   const { showError, showSuccess } = useAlert();
   const [dayBoardItems, setDayBoardItems] = useState<HubFinanceDayBoardItem[]>([]);
   const [dayBoardDate, setDayBoardDate] = useState(() => todayYmd());
-  const [view, setView] = useState<HubViewMode>('day');
+  const [view, setView] = useState<HubViewMode>('all');
   const [dayBoardBusy, setDayBoardBusy] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('pendente');
+  const [originFilter, setOriginFilter] = useState<OriginFilter>('all');
   const [dayBoardSearch, setDayBoardSearch] = useState('');
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
   const [receivableDrawer, setReceivableDrawer] = useState<ReceivableDrawerState | null>(null);
@@ -117,11 +150,21 @@ export function FinanceDayBoardSection({
       const activeView = viewOverride ?? view;
       setDayBoardBusy(true);
       try {
-        const dates = datesForView(date, activeView);
-        const results = await Promise.all(
-          dates.map((d) => hubFinancialApi.getDayBoard(clinicId, unitId, d, { billing_scope: 'financeiro' })),
-        );
-        setDayBoardItems(mergeDayBoardItems(results));
+        if (activeView === 'all') {
+          const items = await hubFinancialApi.getDayBoard(clinicId, unitId, null, {
+            billing_scope: 'financeiro',
+            open: true,
+          });
+          setDayBoardItems(mergeDayBoardItems([items]));
+        } else {
+          const range = rangeForView(date, activeView);
+          const items = await hubFinancialApi.getDayBoard(clinicId, unitId, date, {
+            billing_scope: 'financeiro',
+            from: range?.from,
+            to: range?.to,
+          });
+          setDayBoardItems(mergeDayBoardItems([items]));
+        }
         onLoaded?.();
       } catch {
         setDayBoardItems([]);
@@ -138,7 +181,7 @@ export function FinanceDayBoardSection({
 
   useEffect(() => {
     setSelectedKeys(new Set());
-  }, [dayBoardDate, view, statusFilter, dayBoardSearch]);
+  }, [dayBoardDate, view, statusFilter, originFilter, dayBoardSearch]);
 
   const dayBoardFiltered = useMemo(() => {
     const searchTerm = normalizeText(dayBoardSearch.trim());
@@ -161,8 +204,15 @@ export function FinanceDayBoardSection({
       });
     }
 
+    if (originFilter !== 'all') {
+      result = result.filter((it) => {
+        if (originFilter === 'other') return !KNOWN_ORIGINS.has(it.origin_type);
+        return it.origin_type === originFilter;
+      });
+    }
+
     return result;
-  }, [dayBoardItems, dayBoardSearch, statusFilter]);
+  }, [dayBoardItems, dayBoardSearch, statusFilter, originFilter]);
 
   const onEditComanda = (item: HubFinanceDayBoardItem) => {
     if (!item.billing.comanda_id) return;
@@ -223,8 +273,9 @@ export function FinanceDayBoardSection({
 
   const handleDateChange = (iso: string) => {
     setDayBoardDate(iso);
-    if (iso === todayYmd()) setView('day');
-    void loadDayBoard(iso);
+    const nextView: HubViewMode = view === 'all' || iso === todayYmd() ? 'day' : view;
+    if (nextView !== view) setView(nextView);
+    void loadDayBoard(iso, nextView);
   };
 
   const handleViewChange = (next: HubViewMode) => {
@@ -233,11 +284,13 @@ export function FinanceDayBoardSection({
   };
 
   const emptyMessage =
-    view === 'day'
-      ? 'Nenhum atendimento com cobrança relevante para esta data nesta unidade.'
-      : view === 'week'
-        ? 'Nenhum atendimento com cobrança relevante nesta semana nesta unidade.'
-        : 'Nenhum atendimento com cobrança relevante neste mês nesta unidade.';
+    view === 'all'
+      ? 'Nenhuma conta a receber em aberto nesta unidade.'
+      : view === 'day'
+        ? 'Nenhuma conta a receber relevante para esta data nesta unidade.'
+        : view === 'week'
+          ? 'Nenhuma conta a receber nesta semana nesta unidade.'
+          : 'Nenhuma conta a receber neste mês nesta unidade.';
 
   const selectedItems = useMemo(
     () => dayBoardFiltered.filter((it) => selectedKeys.has(itemKey(it))),
@@ -309,11 +362,13 @@ export function FinanceDayBoardSection({
         dateIso={dayBoardDate}
         onDateChange={handleDateChange}
         onNavigatePrev={() => {
+          if (view === 'all') return;
           const prev = shiftCursorDate(dayBoardDate, view, -1);
           setDayBoardDate(prev);
           void loadDayBoard(prev);
         }}
         onNavigateNext={() => {
+          if (view === 'all') return;
           const next = shiftCursorDate(dayBoardDate, view, 1);
           setDayBoardDate(next);
           void loadDayBoard(next);
@@ -323,19 +378,34 @@ export function FinanceDayBoardSection({
         searchValue={dayBoardSearch}
         onSearchChange={setDayBoardSearch}
         searchPlaceholder="Buscar pet, tutor ou serviço…"
+        allowAllView
       />
 
-      <div className="hub-dayboard__status-filters" role="group" aria-label="Filtrar por status">
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            className={`hub-dayboard__toggle-btn${statusFilter === f.id ? ' hub-dayboard__toggle-btn--active' : ''}`}
-            onClick={() => setStatusFilter(f.id)}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="hub-dayboard__filters-row">
+        <div className="hub-dayboard__status-filters" role="group" aria-label="Filtrar por situação da cobrança">
+          {STATUS_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`hub-dayboard__toggle-btn${statusFilter === f.id ? ' hub-dayboard__toggle-btn--active' : ''}`}
+              onClick={() => setStatusFilter(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="hub-dayboard__status-filters" role="group" aria-label="Filtrar por origem">
+          {ORIGIN_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`hub-dayboard__toggle-btn${originFilter === f.id ? ' hub-dayboard__toggle-btn--active' : ''}`}
+              onClick={() => setOriginFilter(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {selectedKeys.size > 0 && canCreateReceivable ? (
@@ -362,7 +432,7 @@ export function FinanceDayBoardSection({
       ) : null}
 
       {dayBoardBusy ? (
-        <HubLoading variant="block" label="Carregando atendimentos…" />
+        <HubLoading variant="block" label="Carregando contas a receber…" />
       ) : dayBoardFiltered.length === 0 ? (
         <div className="hub-dayboard__empty">{emptyMessage}</div>
       ) : (

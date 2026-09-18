@@ -44,7 +44,7 @@ const HubTechnicalManagerField: React.FC<HubTechnicalManagerFieldProps> = ({
       </HubCheckbox>
       {isSelf ? (
         <p className="hub-clientes__subtitle" style={{ margin: '8px 0 0' }}>
-          Será registado como: <strong>{selfDisplayName.trim() || '—'}</strong>
+          Será registrado como: <strong>{selfDisplayName.trim() || '—'}</strong>
         </p>
       ) : (
         <div style={{ marginTop: 12 }}>

@@ -28,9 +28,9 @@ A Agenda **não substitui** o prontuário nem o Caixa. Ela é o ponto de partida
 
 | Aba | Uso recomendado |
 |-----|-----------------|
-| **Dia** | Operação do plantão: grade por colunas (desktop) ou lista por horário (celular). |
-| **Semana** | Planejamento da semana; células com até 3 cards e atalho **+N atendimento(s)**. |
-| **Mês** | Visão mensal com contagem por dia; clique no dia abre a vista **Dia**. |
+| **Dia** | Operação do plantão: grade por colunas (desktop) ou lista por horário (celular). Arraste o card para remarcar o horário. |
+| **Semana** | Planejamento da semana; células com até 3 cards e atalho **+N atendimento(s)**. Arraste o card para outro dia (ou outra linha de profissional/recurso). |
+| **Mês** | Visão mensal com cards compactos por dia; clique no dia abre a vista **Dia**. Arraste o card para outro dia. |
 
 Na vista **Semana** podem aparecer contadores extras, como **Hotel** e **Leva e traz**.
 
@@ -57,10 +57,15 @@ Na seção **Filtros** você pode restringir por:
 
 Os filtros ficam lembrados na sessão do navegador.
 
-### 2.4 Interação na grade (Dia)
+### 2.4 Interação na grade
 
-- Clique em um horário **vazio** → abre **Novo agendamento** já com data, horário e (quando houver) profissional/recurso.
-- Arraste um card **editável** para mudar horário (e, conforme o agrupamento, profissional ou recurso).
+- Clique em um horário **vazio** (vista **Dia**, desktop) → abre **Novo agendamento** já com data, horário e (quando houver) profissional/recurso.
+- Arraste um card **editável**:
+  - na vista **Dia**, para mudar o **horário** (e, conforme o agrupamento, profissional ou recurso);
+  - na vista **Semana**, para outro **dia** (mantém o horário) e, se o agrupamento for profissional/recurso, para outra linha;
+  - na vista **Mês**, para outro **dia** (mantém o horário).
+- Só entram no arraste agendamentos **A confirmar** ou **Confirmados** cujo horário de início ainda não passou.
+- Conflito de profissional ou sala pede confirmação (**Agendar mesmo assim**).
 - A cor do card segue o **grupo de serviço** (veja a legenda **Grupos**).
 
 ---
@@ -458,7 +463,7 @@ Não confundir com **Adicionar outro bloco no dia** no modal de agendamento: iss
 ### E) Remarcar ou cancelar
 
 1. Abrir o painel  
-2. Se editável: lápis **Editar** ou arrastar na grade  
+2. Se editável: lápis **Editar** ou arrastar o card (horário na vista Dia; dia na Semana/Mês)  
 3. Se for série: escolher o escopo (só este / futuros / toda a série)  
 4. Ou **Cancelar** → confirmar  
 5. Se houver pagamento antecipado, resolver o ajuste no Caixa

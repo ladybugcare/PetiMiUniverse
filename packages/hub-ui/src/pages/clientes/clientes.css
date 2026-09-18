@@ -79,6 +79,9 @@
 }
 
 .hub-clientes__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px 16px;
   border: none;
   background: transparent;
@@ -98,6 +101,38 @@
 .hub-clientes__tab--active {
   color: var(--hc-brand);
   border-bottom-color: var(--hc-brand);
+}
+
+.hub-clientes__tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  background: var(--hc-brand, #c86a4d);
+}
+
+.hub-clientes__tab:not(.hub-clientes__tab--active) .hub-clientes__tab-badge {
+  background: #a89a96;
+}
+
+.hub-clientes__tabs-sep {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 1px;
+  margin: 6px 8px 8px;
+  background: var(--hc-border, #e5dcd6);
+}
+
+.hub-clientes__tab--secondary {
+  font-weight: 550;
+  color: var(--hc-text-muted, #7a6e6a);
 }
 
 /* Rotas com NavLink (Estoque, Serviços) — mesmo visual que botões Tutores/Empresas */

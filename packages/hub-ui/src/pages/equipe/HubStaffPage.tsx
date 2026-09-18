@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { Pencil, UserX } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { hubStaffApi, type HubStaffMember } from '../../api/hubStaffApi';
+import { staffAffiliationLabel, isGuestAffiliation } from '../../constants/hubStaffAffiliation';
 import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { type GroupJobMappings } from '../../utils/staffServiceCompatibility';
@@ -213,6 +214,7 @@ const HubStaffPage: React.FC = () => {
                 <tr>
                   <th>Nome</th>
                   <th>Função</th>
+                  <th>Vínculo</th>
                   <th>Unidade</th>
                   <th>Estado</th>
                   <th>Acesso Hub</th>
@@ -222,7 +224,7 @@ const HubStaffPage: React.FC = () => {
               <tbody>
                 {staff.length === 0 ? (
                   <tr>
-                    <td colSpan={canWrite ? 6 : 5} className="hub-clientes__muted">
+                    <td colSpan={canWrite ? 7 : 6} className="hub-clientes__muted">
                       Nenhum profissional encontrado.
                     </td>
                   </tr>
@@ -243,6 +245,17 @@ const HubStaffPage: React.FC = () => {
                         ) : null}
                       </td>
                       <td>{m.job_title}</td>
+                      <td>
+                        <span
+                          className={`hub-clientes__pill ${
+                            isGuestAffiliation(m.affiliation)
+                              ? 'hub-equipe__pill--guest'
+                              : 'hub-equipe__pill--internal'
+                          }`}
+                        >
+                          {staffAffiliationLabel(m.affiliation)}
+                        </span>
+                      </td>
                       <td>{m.default_unit_name || '—'}</td>
                       <td className="hub-clientes__td-status">
                         <span
@@ -317,6 +330,7 @@ const HubStaffPage: React.FC = () => {
                       <span className="hub-clientes__mobile-card-name">{m.full_name}</span>
                       <span className="hub-clientes__muted hub-clientes__mobile-card-contact">
                         {m.job_title}
+                        {` · ${staffAffiliationLabel(m.affiliation)}`}
                         {m.default_unit_name ? ` · ${m.default_unit_name}` : ''}
                       </span>
                     </div>

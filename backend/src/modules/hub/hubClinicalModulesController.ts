@@ -38,6 +38,11 @@ import {
   rescheduleLinkedAppointment,
   setLinkedAppointmentStatus,
 } from './hubClinicalAppointmentMirror';
+import {
+  listPayablesForSurgery,
+  stripTeamFinancialFields,
+  syncSurgeryTeamPayables,
+} from './hubPayablesService';
 import { roundMoney2 } from './hubVariablePrice';
 
 const uuidStr = z.string().uuid();
@@ -1760,7 +1765,8 @@ export const getHubSurgery = async (req: Request, res: Response) => {
   if (error) return res.status(500).json({ error: error.message });
   if (!data) return res.status(404).json({ error: 'Cirurgia não encontrada' });
   const [surgery] = await attachSurgeryCaseSummaries([data as Record<string, unknown>]);
-  return res.json({ surgery });
+  const { payables } = await listPayablesForSurgery(clinic_id.data, id.data);
+  return res.json({ surgery, payables });
 };
 
 const jsonbField = z.record(z.string(), z.unknown()).optional().nullable();
@@ -1871,7 +1877,7 @@ export const createHubSurgery = async (req: Request, res: Response) => {
       anesthetic_risk: b.anesthetic_risk ?? null,
       pre_op: b.pre_op ?? {},
       procedure: b.procedure ?? {},
-      team: b.team ?? [],
+      team: stripTeamFinancialFields(b.team ?? []),
       materials: b.materials ?? [],
       post_op: b.post_op ?? {},
       anesthesia_notes: b.anesthesia_notes ?? null,
@@ -1885,6 +1891,26 @@ export const createHubSurgery = async (req: Request, res: Response) => {
   if (error) return res.status(500).json({ error: error.message });
 
   const surgeryId = (data as { id: string }).id;
+  let payables: Awaited<ReturnType<typeof syncSurgeryTeamPayables>>['payables'] = [];
+  const unitForPayable = (b.unit_id as string | null | undefined) ?? null;
+  if (unitForPayable && Array.isArray(b.team) && b.team.length) {
+    const synced = await syncSurgeryTeamPayables({
+      clinicId: b.clinic_id,
+      unitId: unitForPayable,
+      surgeryId,
+      surgeryTitle: b.title,
+      team: b.team,
+      createdByUserId: req.user?.id ?? null,
+    });
+    if (synced.error && String(synced.error).includes('hub_payables')) {
+      // migração ainda não aplicada — não bloqueia criação da ficha
+      payables = [];
+    } else if (synced.error) {
+      return res.status(400).json({ error: synced.error, surgery: data });
+    } else {
+      payables = synced.payables;
+    }
+  }
   if (b.services.length > 0) {
     try {
       await insertSurgeryServicesBatch({
@@ -1923,7 +1949,7 @@ export const createHubSurgery = async (req: Request, res: Response) => {
     .is('deleted_at', null)
     .order('sort_order', { ascending: true });
 
-  return res.status(201).json({ surgery: data, services: services ?? [] });
+  return res.status(201).json({ surgery: data, services: services ?? [], payables });
 };
 
 export const patchHubSurgery = async (req: Request, res: Response) => {
@@ -1959,14 +1985,18 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
   const { data: existing } = await supabaseAdmin
     .from('hub_surgeries')
     .select(
-      'pet_id, guardian_id, unit_id, hub_case_id, hub_encounter_id, hub_staff_member_id, hub_appointment_id, title, status',
+      'pet_id, guardian_id, unit_id, hub_case_id, hub_encounter_id, hub_staff_member_id, hub_appointment_id, title, status, team',
     )
     .eq('id', id.data)
     .eq('clinic_id', clinic_id)
     .maybeSingle();
   if (!existing) return res.status(404).json({ error: 'Cirurgia não encontrada' });
 
+  const rawTeamForSync = Array.isArray(patch.team) ? patch.team : null;
   const update: Record<string, unknown> = { ...patch };
+  if (Array.isArray(patch.team)) {
+    update.team = stripTeamFinancialFields(patch.team);
+  }
   const existingStatus = (existing as { status?: string }).status;
   const linkedAppointmentId = (existing as { hub_appointment_id?: string | null }).hub_appointment_id;
 
@@ -2122,7 +2152,35 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
     });
   }
 
-  return res.json({ surgery: responseRow });
+  let payables: Awaited<ReturnType<typeof listPayablesForSurgery>>['payables'] = [];
+  const unitId =
+    ((responseRow as { unit_id?: string | null }).unit_id as string | null) ??
+    ((existing as { unit_id?: string | null }).unit_id as string | null) ??
+    null;
+  const surgeryTitle =
+    ((responseRow as { title?: string }).title as string) ||
+    ((existing as { title?: string }).title as string) ||
+    'Cirurgia';
+
+  if (rawTeamForSync && unitId) {
+    const synced = await syncSurgeryTeamPayables({
+      clinicId: clinic_id,
+      unitId,
+      surgeryId: id.data,
+      surgeryTitle,
+      team: rawTeamForSync,
+      createdByUserId: req.user?.id ?? null,
+    });
+    if (synced.error && !String(synced.error).includes('hub_payables')) {
+      return res.status(400).json({ error: synced.error, surgery: responseRow });
+    }
+    payables = synced.payables;
+  } else {
+    const listed = await listPayablesForSurgery(clinic_id, id.data);
+    payables = listed.payables;
+  }
+
+  return res.json({ surgery: responseRow, payables });
 };
 
 /** Alertas simples: vacinas com próxima dose nos próximos 30 dias. */

@@ -410,6 +410,9 @@ const HubDashboardPage: React.FC = () => {
             Despesas no período:{' '}
             <strong>{loading ? '—' : formatBrl(summary?.expenses_total_period ?? 0)}</strong>
             {' · '}
+            A pagar:{' '}
+            <strong>{loading ? '—' : formatBrl(summary?.payables_outstanding ?? 0)}</strong>
+            {' · '}
             Saldo operacional:{' '}
             <strong>{loading ? '—' : formatBrl(summary?.net_operational_period ?? 0)}</strong>
           </div>

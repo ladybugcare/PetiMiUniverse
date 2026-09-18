@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { hubClinicalApi } from '../../api/hubClinicalApi';
 import { PET_CLINICAL_FLAG_OPTIONS, defaultClinicalFlagLabel } from './petClinicalFlags';
 import { useAlert } from '../../components/AlertProvider';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
+import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 
 type Props = {
   clinicId: string;
@@ -19,11 +21,18 @@ export const PetOperationalAddAlert: React.FC<Props> = ({
   onAdded,
 }) => {
   const { showError, showSuccess } = useAlert();
-  const available = PET_CLINICAL_FLAG_OPTIONS.filter((o) => !existingFlagKeys.includes(o.key));
-  const [flagKey, setFlagKey] = useState(available[0]?.key ?? 'allergy');
+  const flagOptions = useMemo<HubComboboxOption[]>(
+    () =>
+      PET_CLINICAL_FLAG_OPTIONS.filter((o) => !existingFlagKeys.includes(o.key)).map((o) => ({
+        value: o.key,
+        label: o.label,
+      })),
+    [existingFlagKeys],
+  );
+  const [flagKey, setFlagKey] = useState(flagOptions[0]?.value ?? 'allergy');
   const [busy, setBusy] = useState(false);
 
-  if (available.length === 0) return null;
+  if (flagOptions.length === 0) return null;
 
   const add = async () => {
     setBusy(true);
@@ -50,19 +59,18 @@ export const PetOperationalAddAlert: React.FC<Props> = ({
 
   return (
     <div className="hub-pet-add-alert" style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <select
-        className="hub-clientes__input"
-        style={{ minWidth: 160, flex: '1 1 140px' }}
+      <HubSearchableCombobox
+        id="pet-operational-add-alert"
+        className="hub-combobox--clientes"
+        options={flagOptions}
         value={flagKey}
-        onChange={(e) => setFlagKey(e.target.value)}
+        onChange={setFlagKey}
+        placeholder="Selecione o alerta…"
+        searchPlaceholder="Buscar alerta…"
+        ariaLabel="Selecionar alerta"
         disabled={busy}
-      >
-        {available.map((o) => (
-          <option key={o.key} value={o.key}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        clearable={false}
+      />
       <button
         type="button"
         className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"

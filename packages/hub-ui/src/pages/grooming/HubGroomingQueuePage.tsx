@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { hubGroomingApi, type GroomingDayBoardItem } from '../../api/hubGroomingApi';
@@ -16,27 +17,42 @@ import {
   loadAgendaPersistedFilters,
   saveAgendaPersistedUnit,
 } from '../agenda/agendaFilters';
-import { getItemBoardStage, type GroomingStage } from './groomingStages';
+import { getItemBoardStage, groomingOpenSessionStage, type GroomingStage } from './groomingStages';
+import { isGroomingFloorStaff } from './groomingAccess';
 import GroomingQueueBoard, { type GroomingQuickAction } from './GroomingQueueBoard';
 import GroomingAppointmentDrawer from './GroomingAppointmentDrawer';
 import GroomingWalkInPanel from './GroomingWalkInPanel';
 import { PORTE_LABELS, PORTE_VALUES } from '../../utils/hubServiceTypesPricingMatrix';
-import '../clinica/clinica-page.css';
-import '../clientes/clientes.css';
-import './grooming-page.css';
 
 const POLL_MS = 30_000;
+const MOBILE_MQ = '(max-width: 900px)';
 
 const PORTE_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'all', label: 'Todos os portes' },
   ...PORTE_VALUES.map((p) => ({ value: p, label: PORTE_LABELS[p] })),
 ];
 
+function useIsNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_MQ);
+    const onChange = () => setNarrow(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return narrow;
+}
+
 const HubGroomingQueuePage: React.FC = () => {
-  const { showError, showSuccess } = useAlert();
+  const { showError } = useAlert();
   const { role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
+  const navigate = useNavigate();
   const clinicId = getStoredClinicId();
+  const isNarrow = useIsNarrowViewport();
   const accessAllowed = hasPermission('grooming.queue.read');
   const canWrite =
     hasPermission('grooming.queue.manage') && hasPermission('hub.appointments.write');
@@ -45,8 +61,10 @@ const HubGroomingQueuePage: React.FC = () => {
   const showWriteGateHint =
     accessAllowed && !canWrite && hasPermission('grooming.queue.manage');
   const canViewFinancial = hasPermission('hub.financial.read');
-  const canDragQueue = hasPermission('grooming.queue.manage');
+  const canDragQueue = hasPermission('grooming.queue.manage') && !isNarrow;
   const canPauseQueue = hasPermission('grooming.queue.manage');
+  /** Tosador / CSTAFF de chão → Minha fila (padrão L&T motorista). */
+  const isFloorStaff = isGroomingFloorStaff(authRole, hasPermission('hub.appointments.write'));
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadSeqRef = useRef(0);
@@ -54,8 +72,9 @@ const HubGroomingQueuePage: React.FC = () => {
   const [filterLtOnly, setFilterLtOnly] = useState(false);
   const [filterPorte, setFilterPorte] = useState('all');
   const [filterBanhoOnly, setFilterBanhoOnly] = useState(false);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [items, setItems] = useState<GroomingDayBoardItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [actionBusy, setActionBusy] = useState(false);
   const [staff, setStaff] = useState<HubStaffMember[]>([]);
   const [staffFilter, setStaffFilter] = useState('');
@@ -99,63 +118,75 @@ const HubGroomingQueuePage: React.FC = () => {
     return match?.id;
   }, [unitFilter, units]);
 
-
-  const load = useCallback(async (opts?: { soft?: boolean }) => {
-    if (!clinicId) return;
-    const seq = ++loadSeqRef.current;
-    if (!opts?.soft) setLoading(true);
-    try {
-      const res = await hubGroomingApi.dayBoard(clinicId, dayRange, {
-        staffId: staffFilter || undefined,
-        unitId: unitIdParam,
-      });
-      if (seq !== loadSeqRef.current) return;
-      setItems(res.items ?? []);
-      setGroomingTypesConfigured(res.grooming_types_configured !== false);
-      setSelected((prev) => {
-        if (!prev) return null;
-        const key = prev.session_id || prev.appointment_id;
-        return res.items?.find((i) => (i.session_id || i.appointment_id) === key) ?? prev;
-      });
-    } catch (e: unknown) {
-      if (seq !== loadSeqRef.current) return;
-      showError((e as Error)?.message || 'Erro ao carregar fila de Banho & Tosa');
-      setItems([]);
-      setGroomingTypesConfigured(true);
-    } finally {
-      if (seq === loadSeqRef.current) setLoading(false);
-    }
-  }, [clinicId, dayRange, staffFilter, unitIdParam, showError]);
+  const load = useCallback(
+    async () => {
+      if (!clinicId) return;
+      const seq = ++loadSeqRef.current;
+      begin();
+      try {
+        const res = await hubGroomingApi.dayBoard(clinicId, dayRange, {
+          staffId: staffFilter || undefined,
+          unitId: unitIdParam,
+        });
+        if (seq !== loadSeqRef.current) return;
+        setItems(res.items ?? []);
+        setGroomingTypesConfigured(res.grooming_types_configured !== false);
+        setSelected((prev) => {
+          if (!prev) return null;
+          const key = prev.session_id || prev.appointment_id;
+          return res.items?.find((i) => (i.session_id || i.appointment_id) === key) ?? prev;
+        });
+        succeed();
+      } catch (e: unknown) {
+        if (seq !== loadSeqRef.current) return;
+        showError((e as Error)?.message || 'Erro ao carregar fila de Banho & Tosa');
+        setItems([]);
+        setGroomingTypesConfigured(true);
+      } finally {
+        if (seq === loadSeqRef.current) finish();
+      }
+    },
+    [clinicId, dayRange, staffFilter, unitIdParam, showError, begin, succeed, finish],
+  );
 
   useEffect(() => {
     if (permLoading) return;
-    if (!accessAllowed) redirectAwayFromHub(authRole as AppRole);
-  }, [permLoading, accessAllowed, authRole]);
+    if (!accessAllowed) {
+      redirectAwayFromHub(authRole as AppRole);
+      return;
+    }
+    if (isFloorStaff) {
+      navigate('/hub/banho-tosa/minha-fila', { replace: true });
+    }
+  }, [permLoading, accessAllowed, authRole, isFloorStaff, navigate]);
 
   useEffect(() => {
-    if (!clinicId || !accessAllowed) return;
+    if (!clinicId || !accessAllowed || isFloorStaff) return;
     void load();
-  }, [clinicId, accessAllowed, load]);
+  }, [clinicId, accessAllowed, isFloorStaff, load]);
 
   useEffect(() => {
-    if (!clinicId || !accessAllowed) return;
-    const id = window.setInterval(() => void load({ soft: true }), POLL_MS);
+    if (!clinicId || !accessAllowed || isFloorStaff) return;
+    const id = window.setInterval(() => void load(), POLL_MS);
     return () => window.clearInterval(id);
-  }, [clinicId, accessAllowed, load]);
+  }, [clinicId, accessAllowed, isFloorStaff, load]);
 
   useEffect(() => {
-    if (!clinicId) return;
-    void hubStaffApi.list(clinicId).then((r) => setStaff(r.staff ?? [])).catch(() => setStaff([]));
-  }, [clinicId]);
+    if (!clinicId || isFloorStaff) return;
+    void hubStaffApi
+      .list(clinicId)
+      .then((r) => setStaff(r.staff ?? []))
+      .catch(() => setStaff([]));
+  }, [clinicId, isFloorStaff]);
 
   useEffect(() => {
-    if (!clinicId) return;
+    if (!clinicId || isFloorStaff) return;
     void (apiRequest(`/units/clinic/${encodeURIComponent(clinicId)}?activeOnly=true`) as Promise<{
       units?: { id: string; name: string }[];
     }>)
       .then((r) => setUnits(r.units ?? []))
       .catch(() => setUnits([]));
-  }, [clinicId]);
+  }, [clinicId, isFloorStaff]);
 
   const handleUnitFilterChange = (value: string) => {
     setUnitFilter(value);
@@ -169,11 +200,15 @@ const HubGroomingQueuePage: React.FC = () => {
       if (action.type === 'confirm_appointment' && item.appointment_id) {
         await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'confirmed' });
       } else if (action.type === 'check_in' && item.appointment_id) {
-        await hubGroomingApi.openFromAppointment(clinicId, item.appointment_id);
+        await hubGroomingApi.openFromAppointment(
+          clinicId,
+          item.appointment_id,
+          groomingOpenSessionStage(item),
+        );
       } else if (action.type === 'advance' && item.session_id) {
         await hubGroomingApi.advanceSession(item.session_id, clinicId);
       }
-      await load({ soft: true });
+      await load();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao atualizar atendimento');
     } finally {
@@ -183,11 +218,16 @@ const HubGroomingQueuePage: React.FC = () => {
 
   const handleStageDrop = useCallback(
     async (item: GroomingDayBoardItem, stage: GroomingStage) => {
-      if (!clinicId || !item.session_id || !canDragQueue) return;
+      if (!clinicId || !canDragQueue) return;
+      if (!item.session_id && !item.appointment_id) return;
       setActionBusy(true);
       try {
-        await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, grooming_stage: stage });
-        await load({ soft: true });
+        if (item.session_id) {
+          await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, grooming_stage: stage });
+        } else if (item.appointment_id) {
+          await hubGroomingApi.openFromAppointment(clinicId, item.appointment_id, stage);
+        }
+        await load();
       } catch (e: unknown) {
         showError((e as Error)?.message || 'Transição não permitida');
       } finally {
@@ -203,7 +243,7 @@ const HubGroomingQueuePage: React.FC = () => {
     try {
       const nextPaused = !item.paused_at;
       await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, paused: nextPaused });
-      await load({ soft: true });
+      await load();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao pausar ou retomar atendimento');
     } finally {
@@ -217,7 +257,7 @@ const HubGroomingQueuePage: React.FC = () => {
     try {
       const next = (item.priority ?? 0) > 0 ? 0 : 1;
       await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, priority: next });
-      await load({ soft: true });
+      await load();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao alterar prioridade');
     } finally {
@@ -237,7 +277,7 @@ const HubGroomingQueuePage: React.FC = () => {
         operational_notes: payload.notes.trim() || null,
       });
       setWalkInOpen(false);
-      await load({ soft: true });
+      await load();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao registrar avulso');
     } finally {
@@ -276,9 +316,29 @@ const HubGroomingQueuePage: React.FC = () => {
       const s = getItemBoardStage(i);
       return s === 'in_service' || s === 'finishing';
     }).length;
+    const ready = items.filter((i) => getItemBoardStage(i) === 'ready').length;
     const late = items.filter((i) => i.is_late).length;
-    return { total, inService, late };
+    return { total, inService, ready, late };
   }, [items]);
+
+  const hasActiveFilters =
+    filterPorte !== 'all' || filterBanhoOnly || filterPriorityOnly || filterLtOnly;
+
+  const clearFilters = () => {
+    setFilterPorte('all');
+    setFilterBanhoOnly(false);
+    setFilterPriorityOnly(false);
+    setFilterLtOnly(false);
+  };
+
+  const isToday = useMemo(() => {
+    const now = new Date();
+    return (
+      cursor.getFullYear() === now.getFullYear() &&
+      cursor.getMonth() === now.getMonth() &&
+      cursor.getDate() === now.getDate()
+    );
+  }, [cursor]);
 
   if (!permLoading && !clinicId) {
     return (
@@ -286,7 +346,7 @@ const HubGroomingQueuePage: React.FC = () => {
     );
   }
 
-  if (permLoading || !accessAllowed) {
+  if (permLoading || !accessAllowed || isFloorStaff) {
     return (
       <div className="hub-clinic-page__pad">
         <HubLoading variant="block" />
@@ -300,8 +360,35 @@ const HubGroomingQueuePage: React.FC = () => {
     month: 'long',
   });
 
+  const unitStaffFilters = (
+    <>
+      <div className="hub-servicos__filter-field hub-clinic-atendimentos__staff-filter">
+        <HubSearchableCombobox
+          id="hub-grooming-unit-filter"
+          className="hub-combobox--clientes"
+          options={unitOptions}
+          value={unitFilter}
+          onChange={handleUnitFilterChange}
+          placeholder="Unidade"
+          allowCreate={false}
+        />
+      </div>
+      <div className="hub-servicos__filter-field hub-clinic-atendimentos__staff-filter">
+        <HubSearchableCombobox
+          id="hub-grooming-staff-filter"
+          className="hub-combobox--clientes"
+          options={staffOptions}
+          value={staffFilter}
+          onChange={setStaffFilter}
+          placeholder="Profissional"
+          allowCreate={false}
+        />
+      </div>
+    </>
+  );
+
   return (
-    <div className="hub-grooming-page">
+    <div className="hub-grooming-queue-page">
       {!groomingTypesConfigured && !loading ? (
         <div className="hub-clinic-banner">
           <p>
@@ -317,10 +404,8 @@ const HubGroomingQueuePage: React.FC = () => {
       {showWriteGateHint ? (
         <div className="hub-clinic-banner hub-grooming-page__perm-banner" role="status">
           <p>
-            Tem permissão de fila (<code>grooming.queue.manage</code>), mas as ações de edição nesta página também
-            exigem <code>hub.appointments.write</code> (edição da Agenda): check-in na sessão, checklist, adicionais,
-            marcar serviço como executado, avulso e notas operacionais. Peça a um gestor para associar as duas
-            permissões ao seu utilizador.
+            Você pode acompanhar a fila, mas não alterar atendimentos. Peça a um gestor para liberar a edição da
+            Agenda. No celular, use a aba <strong>Minha fila</strong>.
           </p>
         </div>
       ) : null}
@@ -333,10 +418,19 @@ const HubGroomingQueuePage: React.FC = () => {
           <button type="button" className="hub-clientes__icon-btn" onClick={() => shiftDay(-1)} aria-label="Dia anterior">
             <ChevronLeft size={18} />
           </button>
-          <span className="hub-clinic-atendimentos__date-label">{dateLabel}</span>
+          <span className="hub-clinic-atendimentos__date-label hub-grooming-page__date-label">{dateLabel}</span>
           <button type="button" className="hub-clientes__icon-btn" onClick={() => shiftDay(1)} aria-label="Próximo dia">
             <ChevronRight size={18} />
           </button>
+          {!isToday ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+              onClick={() => setCursor(new Date())}
+            >
+              Hoje
+            </button>
+          ) : null}
         </div>
         <div className="hub-clientes__search hub-clinic-atendimentos__search">
           <Search size={16} aria-hidden />
@@ -348,33 +442,12 @@ const HubGroomingQueuePage: React.FC = () => {
             onChange={(e) => setSearchQ(e.target.value)}
           />
         </div>
-        <div className="hub-servicos__filter-field hub-clinic-atendimentos__staff-filter">
-          <HubSearchableCombobox
-            id="hub-grooming-unit-filter"
-            className="hub-combobox--clientes"
-            options={unitOptions}
-            value={unitFilter}
-            onChange={handleUnitFilterChange}
-            placeholder="Unidade"
-            allowCreate={false}
-          />
-        </div>
-        <div className="hub-servicos__filter-field hub-clinic-atendimentos__staff-filter">
-          <HubSearchableCombobox
-            id="hub-grooming-staff-filter"
-            className="hub-combobox--clientes"
-            options={staffOptions}
-            value={staffFilter}
-            onChange={setStaffFilter}
-            placeholder="Profissional"
-            allowCreate={false}
-          />
-        </div>
+        {!isNarrow ? unitStaffFilters : null}
         <button
           type="button"
           className="hub-clientes__btn hub-clientes__btn--ghost"
           onClick={() => void load()}
-          disabled={loading}
+          disabled={loading || refreshing}
           aria-label="Atualizar fila"
         >
           <RefreshCw size={16} />
@@ -385,30 +458,42 @@ const HubGroomingQueuePage: React.FC = () => {
           </button>
         ) : null}
         <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--ghost">
+          <CalendarDays size={16} aria-hidden />
           Agenda
         </Link>
       </div>
 
-      <div className="hub-grooming-page__filters" role="toolbar" aria-label="Filtros da fila">
-        <label className="hub-grooming-page__filter-field hub-clientes__muted">
-          <span className="hub-grooming-page__filter-label">Porte</span>
-          <select
-            className="hub-clientes__select hub-grooming-page__filter-select"
-            value={filterPorte}
-            onChange={(e) => setFilterPorte(e.target.value)}
+      {isNarrow ? (
+        <div className="hub-grooming-page__more-filters">
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+            onClick={() => setMoreFiltersOpen((v) => !v)}
+            aria-expanded={moreFiltersOpen}
           >
-            {PORTE_FILTER_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            {moreFiltersOpen ? 'Ocultar filtros' : 'Mais filtros'}
+          </button>
+          {moreFiltersOpen ? <div className="hub-grooming-page__more-filters-body">{unitStaffFilters}</div> : null}
+        </div>
+      ) : null}
+
+      <div className="hub-grooming-page__filters" role="toolbar" aria-label="Filtros da fila">
+        <span className="hub-grooming-page__filters-label">Filtros</span>
+        {PORTE_FILTER_OPTIONS.filter((o) => o.value !== 'all').map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            className={`hub-clientes__btn hub-clientes__btn--sm${filterPorte === o.value ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
+            onClick={() => setFilterPorte((cur) => (cur === o.value ? 'all' : o.value))}
+          >
+            {o.label}
+          </button>
+        ))}
         <button
           type="button"
           className={`hub-clientes__btn hub-clientes__btn--sm${filterBanhoOnly ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
           onClick={() => setFilterBanhoOnly((v) => !v)}
-          title="Serviços de grooming do item sem «tosa» no nome ou código (heurística)"
+          title="Serviços de grooming do item sem «tosa» no nome ou código"
         >
           Só banho
         </button>
@@ -426,14 +511,41 @@ const HubGroomingQueuePage: React.FC = () => {
         >
           Só leva e traz
         </button>
+        {hasActiveFilters ? (
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-grooming-page__filters-clear"
+            onClick={clearFilters}
+          >
+            Limpar
+          </button>
+        ) : null}
       </div>
 
       {!loading ? (
-        <p className="hub-clientes__muted hub-grooming-page__metrics">
-          {metrics.total} na fila · {metrics.inService} em atendimento
-          {metrics.late > 0 ? ` · ${metrics.late} em atraso` : ''}
-        </p>
+        <div className="hub-clientes__metrics hub-clinic-metrics hub-grooming-page__metrics-grid">
+          <div className="hub-clientes__metric-card">
+            <span className="hub-clientes__metric-label">Na fila</span>
+            <span className="hub-clientes__metric-value">{metrics.total}</span>
+          </div>
+          <div className="hub-clientes__metric-card">
+            <span className="hub-clientes__metric-label">Em atendimento</span>
+            <span className="hub-clientes__metric-value">{metrics.inService}</span>
+          </div>
+          <div className="hub-clientes__metric-card">
+            <span className="hub-clientes__metric-label">Prontos</span>
+            <span className="hub-clientes__metric-value">{metrics.ready}</span>
+          </div>
+          <div
+            className={`hub-clientes__metric-card${metrics.late > 0 ? ' hub-grooming-page__metric-card--late' : ''}`}
+          >
+            <span className="hub-clientes__metric-label">Atrasados</span>
+            <span className="hub-clientes__metric-value">{metrics.late}</span>
+          </div>
+        </div>
       ) : null}
+
+      <HubRefreshingBanner show={refreshing} label="Atualizando fila…" />
 
       {loading ? (
         <HubLoading variant="block" label="Carregando fila…" className="hub-clinic-page__pad" />
@@ -443,7 +555,16 @@ const HubGroomingQueuePage: React.FC = () => {
           aparecem aqui automaticamente.
         </p>
       ) : items.length > 0 && itemsFiltered.length === 0 ? (
-        <p className="hub-clientes__muted hub-clinic-page__pad">Nenhum card corresponde aos filtros.</p>
+        <div className="hub-grooming-page__empty-filters">
+          <p className="hub-clientes__muted">Nenhum card corresponde aos filtros.</p>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+            onClick={clearFilters}
+          >
+            Limpar filtros
+          </button>
+        </div>
       ) : (
         <GroomingQueueBoard
           items={itemsFiltered}
@@ -469,12 +590,12 @@ const HubGroomingQueuePage: React.FC = () => {
         busy={actionBusy}
         onClose={() => setSelected(null)}
         onQuickAction={handleQuickAction}
-        onSessionUpdated={() => void load({ soft: true })}
+        onSessionUpdated={() => void load()}
         checkoutEnabled={false}
         canViewFinancial={canViewFinancial}
+        onTogglePriority={canWrite ? (item) => void handleTogglePriority(item) : undefined}
+        canAddExtras={canWrite}
       />
-
-      {/* Checkout centralizado no Caixa — removido daqui */}
 
       <GroomingWalkInPanel
         open={walkInOpen}

@@ -1,77 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import {
-  Building2,
-  Store,
-  FileText,
-  MapPin,
-  Phone,
-  Pencil,
-  Hash,
-  AlignLeft,
-  User,
-} from 'lucide-react';
+import { Building2, Hash, Pencil, Phone, Plus, Store } from 'lucide-react';
+import { useAlert, formatBrPhoneDisplay, HubLoading } from '@petimi/hub-ui';
+import { usePermissions } from '@petimi/web-core';
+import '@petimi/hub-ui/pages/clientes/clientes.css';
 import HubProfilePhotoPicker from '../components/HubProfilePhotoPicker';
 import HubClinicEditPanel from '../components/clinic-profile/HubClinicEditPanel';
 import HubUnitEditPanel from '../components/clinic-profile/HubUnitEditPanel';
-import { useAlert, formatBrPhoneDisplay } from '@petimi/hub-ui';
-import { usePermissions } from '@petimi/web-core';
-import '@petimi/hub-ui/pages/clientes/clientes.css';
+import {
+  HubAccountProfileCard,
+  HubAccountProfileEmpty,
+  HubAccountProfileFields,
+  HubAccountProfileHero,
+  HubAccountProfileShell,
+  HubAccountProfileUnitCard,
+  formatProfileAddress,
+  formatProfileDate,
+  profileDash,
+} from '../components/profile';
 import { useHubUnit } from '../contexts/HubUnitContext';
 import { hubClinicProfileApi } from '../services/hubClinicProfileApi';
 import { hubUnitsApi } from '../services/hubUnitsApi';
 import { formatCNPJ } from '../utils/brValidators';
 import { clearHubUnitIncompleteHint } from '../utils/hubOnboardingState';
 import type { HubClinicProfile, HubUnitProfile } from '../types/hubClinicProfile';
-
-const terracotta = '#c86a4d';
-
-function formatDatePt(iso?: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function dash(value?: string | null): string {
-  const t = value?.trim();
-  return t || '—';
-}
-
-function formatAddress(parts: { address?: string | null; city?: string | null; state?: string | null }): string {
-  const line = [parts.address, parts.city, parts.state].map((p) => p?.trim()).filter(Boolean);
-  return line.length ? line.join(' · ') : '—';
-}
-
-function unitStatusLabel(status?: string | null): string {
-  const s = (status || '').toLowerCase();
-  if (s === 'active' || s === 'approved') return 'Ativo';
-  if (s === 'pending_review' || s === 'pending_approval') return 'Pendente';
-  if (s === 'suspended' || s === 'rejected') return 'Inativo';
-  return status?.trim() || '—';
-}
-
-function UnitStatusPill({ status }: { status?: string | null }) {
-  const s = (status || '').toLowerCase();
-  if (s === 'active' || s === 'approved') {
-    return <span className="hub-clientes__pill hub-clientes__pill--active">Ativo</span>;
-  }
-  if (s === 'suspended' || s === 'rejected') {
-    return <span className="hub-clientes__pill hub-clientes__pill--inactive-alert">Inativo</span>;
-  }
-  return <span className="hub-clientes__pill hub-clientes__pill--inactive">{unitStatusLabel(status)}</span>;
-}
-
-type CellProps = { icon: React.ReactNode; label: string; value: React.ReactNode };
-
-const InfoCell: React.FC<CellProps> = ({ icon, label, value }) => (
-  <div className="hub-meu-perfil__cell">
-    <div className="hub-meu-perfil__cell-icon" aria-hidden>
-      {icon}
-    </div>
-    <div className="hub-meu-perfil__cell-label">{label}</div>
-    <div className="hub-meu-perfil__cell-value">{value}</div>
-  </div>
-);
 
 function unitFromListRow(row: {
   id: string;
@@ -104,16 +55,17 @@ function unitFromListRow(row: {
 }
 
 const HubClinicaPerfilPage: React.FC = () => {
-  const { clinicId, clinicName, selectedUnit, units, reload, loading: unitContextLoading } = useHubUnit();
-  const { role: clinicRole } = usePermissions();
-  const canEditClinicProfile =
-    clinicRole === 'CADMIN' || clinicRole === 'CMANAGER';
+  const { clinicId, clinicName, selectedUnit, reload, loading: unitContextLoading } = useHubUnit();
+  const { role: clinicRole, hasPermission } = usePermissions();
+  const canEditClinicProfile = clinicRole === 'CADMIN' || clinicRole === 'CMANAGER';
+  const canCreateUnit = hasPermission('unit.create');
   const { showSuccess, showError } = useAlert();
   const [clinic, setClinic] = useState<HubClinicProfile | null>(null);
-  const [unit, setUnit] = useState<HubUnitProfile | null>(null);
+  const [allUnits, setAllUnits] = useState<HubUnitProfile[]>([]);
+  const [editingUnit, setEditingUnit] = useState<HubUnitProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [editClinicOpen, setEditClinicOpen] = useState(false);
-  const [editUnitOpen, setEditUnitOpen] = useState(false);
+  const [createUnitOpen, setCreateUnitOpen] = useState(false);
 
   useEffect(() => {
     if (!clinicId) {
@@ -124,46 +76,21 @@ const HubClinicaPerfilPage: React.FC = () => {
     let cancelled = false;
     setLoading(true);
 
-    const resolveUnitId = () => {
-      if (selectedUnit?.id) return selectedUnit.id;
-      const main = units.find((u) => u.is_main);
-      return main?.id ?? units[0]?.id ?? null;
-    };
-
     (async () => {
-      const unitId = resolveUnitId();
       try {
         const [clinicRes, unitsRes] = await Promise.all([
           hubClinicProfileApi.getById(clinicId),
           hubUnitsApi.getByClinic(clinicId, false),
         ]);
         if (cancelled) return;
-
         setClinic(clinicRes.clinic);
-
-        const list = unitsRes.units || [];
-        const fromList =
-          (unitId ? list.find((u) => u.id === unitId) : null) ||
-          list.find((u) => u.is_main) ||
-          list[0];
-
-        if (unitId) {
-          try {
-            const detail = await hubUnitsApi.getById(unitId);
-            if (!cancelled) setUnit(detail.unit);
-          } catch {
-            if (!cancelled) setUnit(fromList ? unitFromListRow(fromList) : null);
-          }
-        } else if (!cancelled) {
-          setUnit(fromList ? unitFromListRow(fromList) : selectedUnit ? unitFromListRow(selectedUnit) : null);
-        }
-
-        if (!cancelled) clearHubUnitIncompleteHint();
+        setAllUnits((unitsRes.units || []).map(unitFromListRow));
+        clearHubUnitIncompleteHint();
       } catch (e: unknown) {
         if (!cancelled) {
           showError((e as Error)?.message || 'Erro ao carregar perfil da clínica');
           setClinic(null);
-          if (selectedUnit) setUnit(unitFromListRow(selectedUnit));
+          if (selectedUnit) setAllUnits([unitFromListRow(selectedUnit)]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -173,47 +100,48 @@ const HubClinicaPerfilPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [clinicId, selectedUnit, units, showError]);
+  }, [clinicId, showError]);
 
   const displayName = clinic?.name?.trim() || clinicName || 'Clínica';
-  const unitLabel = selectedUnit?.nickname?.trim() || selectedUnit?.name || '—';
-  const badge = selectedUnit?.is_main ? 'Unidade principal' : 'Clínica';
-  const cnpjDisplay = clinic?.cnpj ? formatCNPJ(clinic.cnpj) : '—';
-  const memberSince = formatDatePt(clinic?.created_at);
-  const unitSince = formatDatePt(unit?.created_at);
+  const cnpjDisplay = clinic?.cnpj ? formatCNPJ(clinic.cnpj) : 'CNPJ não informado';
+  const unitCountLabel =
+    allUnits.length === 1 ? '1 unidade' : allUnits.length > 1 ? `${allUnits.length} unidades` : 'Nenhuma unidade';
+
+  const openEditUnit = (row: HubUnitProfile) => {
+    setEditingUnit(row);
+  };
 
   if (unitContextLoading || loading) {
     return (
-      <div className="hub-meu-perfil">
-        <p className="hub-meu-perfil__panel-sub">A carregar perfil da clínica…</p>
-      </div>
+      <HubAccountProfileShell>
+        <HubLoading variant="block" label="Carregando perfil da clínica…" />
+      </HubAccountProfileShell>
     );
   }
 
   if (!clinicId) {
     return (
-      <div className="hub-meu-perfil">
-        <p className="hub-meu-perfil__panel-sub">Nenhuma clínica associada à sua conta.</p>
-        <p className="hub-meu-perfil__panel-sub" style={{ marginTop: 8 }}>
-          Se acabou de concluir o cadastro, tente{' '}
-          <button
-            type="button"
-            className="hub-meu-perfil__btn-outline"
-            style={{ display: 'inline-flex', marginTop: 8 }}
-            onClick={() => void reload()}
-          >
-            recarregar dados da clínica
-          </button>
-          .
-        </p>
-      </div>
+      <HubAccountProfileShell>
+        <HubAccountProfileEmpty
+          icon={Building2}
+          title="Nenhuma clínica associada"
+          subtitle="Se você acabou de concluir o cadastro, recarregue os dados da clínica."
+          action={
+            <button type="button" className="hub-ap__btn hub-ap__btn--outline" onClick={() => void reload()}>
+              Recarregar dados
+            </button>
+          }
+        />
+      </HubAccountProfileShell>
     );
   }
 
   return (
-    <div className="hub-meu-perfil">
-      <aside className="hub-meu-perfil__sidebar">
-        <div className="hub-meu-perfil__card hub-meu-perfil__summary">
+    <HubAccountProfileShell>
+      <HubAccountProfileHero
+        kicker="Perfil da clínica"
+        name={displayName}
+        photo={
           <HubProfilePhotoPicker
             mode={{
               kind: 'clinic',
@@ -222,109 +150,92 @@ const HubClinicaPerfilPage: React.FC = () => {
             }}
             photoUrl={clinic?.photo_url ?? undefined}
             displayName={displayName}
-            size={96}
-            disabled={!clinicId || !canEditClinicProfile}
+            size={88}
+            disabled={!canEditClinicProfile}
           />
-          <h2 className="hub-meu-perfil__sidebar-name">{displayName}</h2>
-          <span className="hub-meu-perfil__badge">{badge}</span>
-          <div className="hub-meu-perfil__contact">
-            <span>{cnpjDisplay !== '—' ? `CNPJ ${cnpjDisplay}` : 'CNPJ não informado'}</span>
-            <span>{formatBrPhoneDisplay(clinic?.phone)}</span>
-            <span>Unidade atual: {unitLabel}</span>
-          </div>
-        </div>
+        }
+        badges={['Clínica']}
+        chips={[
+          { icon: Hash, label: cnpjDisplay },
+          { icon: Phone, label: formatBrPhoneDisplay(clinic?.phone) },
+          { icon: Store, label: unitCountLabel },
+        ]}
+        meta={[{ label: 'Na PetMi desde', value: formatProfileDate(clinic?.created_at) }]}
+      />
 
-        <div className="hub-meu-perfil__card hub-meu-perfil__aside-meta">
-          <div className="hub-meu-perfil__meta-row">
-            <span className="hub-meu-perfil__meta-label">Clínica desde</span>
-            <span className="hub-meu-perfil__meta-value">{memberSince}</span>
-          </div>
-          {unit ? (
-            <div className="hub-meu-perfil__meta-row">
-              <span className="hub-meu-perfil__meta-label">Unidade cadastrada</span>
-              <span className="hub-meu-perfil__meta-value">{unitSince}</span>
-            </div>
-          ) : null}
-        </div>
-      </aside>
+      <HubAccountProfileCard
+        title="Organização"
+        subtitle="Razão social, contato e endereço legal da clínica."
+        actions={
+          canEditClinicProfile ? (
+            <button
+              type="button"
+              className="hub-ap__btn hub-ap__btn--outline"
+              onClick={() => setEditClinicOpen(true)}
+              disabled={!clinic}
+            >
+              <Pencil size={16} aria-hidden />
+              Editar clínica
+            </button>
+          ) : null
+        }
+      >
+        <HubAccountProfileFields
+          fields={[
+            { label: 'Nome da clínica', value: profileDash(clinic?.name) },
+            { label: 'CNPJ', value: clinic?.cnpj ? formatCNPJ(clinic.cnpj) : '—' },
+            { label: 'Telefone comercial', value: formatBrPhoneDisplay(clinic?.phone) },
+            { label: 'Endereço', value: formatProfileAddress(clinic ?? {}) },
+            { label: 'Descrição', value: profileDash(clinic?.description), block: Boolean(clinic?.description?.trim()) },
+          ]}
+        />
+      </HubAccountProfileCard>
 
-      <div className="hub-meu-perfil__main">
-        <section className="hub-meu-perfil__panel">
-          <header className="hub-meu-perfil__panel-head">
-            <div>
-              <h2 className="hub-meu-perfil__panel-title">Dados da organização</h2>
-              <p className="hub-meu-perfil__panel-sub">
-                Informações legais e de contacto da clínica (razão social).
-              </p>
-            </div>
-            {canEditClinicProfile ? (
-              <button
-                type="button"
-                className="hub-meu-perfil__btn-outline"
-                onClick={() => setEditClinicOpen(true)}
-                disabled={!clinic}
-              >
-                <Pencil size={16} aria-hidden />
-                Editar clínica
-              </button>
-            ) : null}
-          </header>
-          <div className="hub-meu-perfil__grid">
-            <InfoCell icon={<Building2 size={20} color={terracotta} />} label="Nome da clínica" value={dash(clinic?.name)} />
-            <InfoCell icon={<Hash size={20} color={terracotta} />} label="CNPJ" value={cnpjDisplay} />
-            <InfoCell icon={<Phone size={20} color={terracotta} />} label="Telefone comercial" value={formatBrPhoneDisplay(clinic?.phone)} />
-            <InfoCell
-              icon={<MapPin size={20} color={terracotta} />}
-              label="Endereço"
-              value={formatAddress(clinic ?? {})}
-            />
-            <InfoCell
-              icon={<AlignLeft size={20} color={terracotta} />}
-              label="Descrição"
-              value={dash(clinic?.description)}
-            />
+      <HubAccountProfileCard
+        title="Unidades"
+        subtitle="Cada unidade é um local operacional — agenda, caixa e equipe ficam separados por endereço."
+        actions={
+          canCreateUnit ? (
+            <button type="button" className="hub-ap__btn hub-ap__btn--primary" onClick={() => setCreateUnitOpen(true)}>
+              <Plus size={16} aria-hidden />
+              Nova unidade
+            </button>
+          ) : null
+        }
+      >
+        {allUnits.length > 0 ? (
+          <div className="hub-ap__units">
+            {allUnits.map((row) => (
+              <HubAccountProfileUnitCard
+                key={row.id}
+                name={profileDash(row.name)}
+                nickname={row.nickname}
+                addressLine={formatProfileAddress(row)}
+                phone={formatBrPhoneDisplay(row.phone)}
+                technicalManager={profileDash(row.technical_manager)}
+                isMain={row.is_main}
+                status={row.status}
+                canEdit={canEditClinicProfile}
+                onEdit={() => openEditUnit(row)}
+              />
+            ))}
           </div>
-        </section>
-
-        {unit ? (
-          <section className="hub-meu-perfil__panel hub-meu-perfil__panel--spaced">
-            <header className="hub-meu-perfil__panel-head">
-              <div>
-                <h2 className="hub-meu-perfil__panel-title">Unidade operacional</h2>
-                <p className="hub-meu-perfil__panel-sub">
-                  Dados da unidade selecionada no header ({unitLabel}).
-                </p>
-              </div>
-              {canEditClinicProfile ? (
-                <button type="button" className="hub-meu-perfil__btn-outline" onClick={() => setEditUnitOpen(true)}>
-                  <Pencil size={16} aria-hidden />
-                  Editar unidade
+        ) : (
+          <HubAccountProfileEmpty
+            icon={Store}
+            title="Nenhuma unidade cadastrada"
+            subtitle="Cadastre o primeiro local para operar agenda, caixa e equipe."
+            action={
+              canCreateUnit ? (
+                <button type="button" className="hub-ap__btn hub-ap__btn--primary" onClick={() => setCreateUnitOpen(true)}>
+                  <Plus size={16} aria-hidden />
+                  Nova unidade
                 </button>
-              ) : null}
-            </header>
-            <div className="hub-meu-perfil__grid">
-              <InfoCell icon={<Store size={20} color={terracotta} />} label="Nome da unidade" value={dash(unit.name)} />
-              <InfoCell icon={<FileText size={20} color={terracotta} />} label="Apelido (agenda)" value={dash(unit.nickname)} />
-              <InfoCell icon={<Phone size={20} color={terracotta} />} label="Telefone da unidade" value={formatBrPhoneDisplay(unit.phone)} />
-              <InfoCell
-                icon={<User size={20} color={terracotta} />}
-                label="Responsável técnico"
-                value={dash(unit.technical_manager)}
-              />
-              <InfoCell
-                icon={<MapPin size={20} color={terracotta} />}
-                label="Endereço"
-                value={formatAddress(unit)}
-              />
-              <InfoCell
-                icon={<Store size={20} color={terracotta} />}
-                label="Status"
-                value={<UnitStatusPill status={unit.status} />}
-              />
-            </div>
-          </section>
-        ) : null}
-      </div>
+              ) : null
+            }
+          />
+        )}
+      </HubAccountProfileCard>
 
       {clinic ? (
         <HubClinicEditPanel
@@ -341,21 +252,41 @@ const HubClinicaPerfilPage: React.FC = () => {
         />
       ) : null}
 
-      {unit ? (
+      {editingUnit ? (
         <HubUnitEditPanel
-          open={editUnitOpen}
-          onClose={() => setEditUnitOpen(false)}
+          open
+          onClose={() => setEditingUnit(null)}
           clinicId={clinicId}
-          unit={unit}
+          unit={editingUnit}
           onSaved={(u) => {
-            setUnit(u);
+            setAllUnits((prev) => prev.map((row) => (row.id === u.id ? { ...row, ...u } : row)));
+            setEditingUnit(null);
             void reload();
           }}
           onError={showError}
           onSuccess={showSuccess}
         />
       ) : null}
-    </div>
+
+      <HubUnitEditPanel
+        open={createUnitOpen}
+        onClose={() => setCreateUnitOpen(false)}
+        clinicId={clinicId}
+        mode="create"
+        defaultIsMain={allUnits.length === 0}
+        clinicDefaults={{
+          address: clinic?.address,
+          city: clinic?.city,
+          state: clinic?.state,
+        }}
+        onSaved={(u) => {
+          setAllUnits((prev) => (prev.some((row) => row.id === u.id) ? prev : [...prev, u]));
+          void reload();
+        }}
+        onError={showError}
+        onSuccess={showSuccess}
+      />
+    </HubAccountProfileShell>
   );
 };
 

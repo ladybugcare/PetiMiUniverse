@@ -1,3 +1,78 @@
+.hub-equipe__affiliation {
+  margin-bottom: 20px;
+}
+
+.hub-equipe__affiliation-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .hub-equipe__affiliation-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-equipe__affiliation-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.hub-equipe__affiliation-card:hover:not(:disabled) {
+  border-color: #94a3b8;
+}
+
+.hub-equipe__affiliation-card--selected {
+  border-color: #0f766e;
+  background: #f0fdfa;
+}
+
+.hub-equipe__affiliation-card:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.hub-equipe__affiliation-card__title {
+  font-size: 14px;
+  font-weight: 650;
+  color: #0f172a;
+}
+
+.hub-equipe__affiliation-card__hint {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.hub-equipe__affiliation-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #475569;
+}
+
+.hub-equipe__pill--guest {
+  background: #ecfeff;
+  color: #0e7490;
+  border: 1px solid #a5f3fc;
+}
+
+.hub-equipe__pill--internal {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+
 .hub-equipe-drawer__content {
   display: flex;
   flex-direction: column;

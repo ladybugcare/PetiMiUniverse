@@ -1,4 +1,5 @@
 import { apiRequest } from '@petimi/web-core';
+import type { HubStaffAffiliation } from '../constants/hubStaffAffiliation';
 
 const basePath = '/api/hub/staff';
 
@@ -11,6 +12,8 @@ export type HubProfessionalKind =
   | 'caretaker'
   | 'assistant'
   | 'other';
+
+export type { HubStaffAffiliation };
 
 export type HubStaffAccessRole =
   | 'CADMIN'
@@ -51,6 +54,8 @@ export interface HubStaffMember {
   crmv_uf: string | null;
   internal_notes: string | null;
   active: boolean;
+  /** Equipe fixa vs convidado pontual. Ausente em bases antigas → tratar como internal. */
+  affiliation?: HubStaffAffiliation | null;
   has_hub_access: boolean;
   hub_access_email: string | null;
   hub_access_role: HubStaffAccessRole | null;

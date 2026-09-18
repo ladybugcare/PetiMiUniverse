@@ -5,6 +5,7 @@ import { fetchHubPetsMapByIds, resolvePrimaryPetIdsByGuardians } from './hubDayB
 import { syncOpenComandasAfterAppointmentOperationalComplete } from './hubComandasController';
 import { notifyHubPetOnTheWay } from './hubNotifyEvents';
 import { partitionStopsIntoBatches } from './hubPickupSuggestBatches';
+import { handlePickupStopArrival } from './pickupArrival';
 
 const uuidStr = z.string().uuid();
 const UUID_RE = /^[0-9a-f-]{36}$/;
@@ -1505,6 +1506,18 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
       });
     }
 
+    if (newStatus && newStatus !== cur.status) {
+      void handlePickupStopArrival({
+        clinicId: clinic_id,
+        direction: cur.direction,
+        newStatus,
+        previousStatus: cur.status,
+        pickupAppointmentId: cur.hub_appointment_id,
+        routeId: cur.hub_pickup_route_id,
+        excludeUserIds: req.user?.id ? [req.user.id] : undefined,
+      });
+    }
+
     // Auto-concluir rota se todas as paradas estiverem concluídas ou com falha
     if (newStatus && ['completed', 'failed'].includes(newStatus) && cur.hub_pickup_route_id) {
       const { data: remainingStops } = await supabaseAdmin
@@ -1668,6 +1681,18 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
         appointmentId: hub_appointment_id,
         actorUserId: req.user?.id ?? null,
         petId: a.pet_id,
+      });
+    }
+
+    if (statusChanged) {
+      void handlePickupStopArrival({
+        clinicId: clinic_id,
+        direction,
+        newStatus: status,
+        previousStatus: fromStatus,
+        pickupAppointmentId: hub_appointment_id,
+        routeId: null,
+        excludeUserIds: req.user?.id ? [req.user.id] : undefined,
       });
     }
 

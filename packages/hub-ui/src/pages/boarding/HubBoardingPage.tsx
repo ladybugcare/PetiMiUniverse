@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { CalendarDays, ChevronLeft, ChevronRight, PlusCircle, RefreshCw, Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, getSupabase, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
@@ -16,12 +16,14 @@ import {
   saveAgendaPersistedUnit,
 } from '../agenda/agendaFilters';
 import type { BoardingMode } from './boardingStages';
+import { isBoardingFloorStaff } from './boardingAccess';
 import BoardingDayBoard from './BoardingDayBoard';
 import BoardingReservationDrawer from './BoardingReservationDrawer';
 import BoardingCalendarView from './BoardingCalendarView';
 import BoardingWalkInPanel from './BoardingWalkInPanel';
 import '../clinica/clinica-page.css';
 import '../clientes/clientes.css';
+import '../grooming/grooming-page.css';
 import './boarding-page.css';
 
 const POLL_MS = 30_000;
@@ -30,11 +32,14 @@ const HubBoardingPage: React.FC = () => {
   const { showError } = useAlert();
   const { role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
+  const navigate = useNavigate();
   const clinicId = getStoredClinicId();
 
   const accessAllowed = hasPermission('boarding.reservations.read');
   const canWrite =
     hasPermission('boarding.reservations.manage') && hasPermission('hub.appointments.write');
+  /** CSTAFF de chão → Minha fila (padrão Banho & Tosa). */
+  const isFloorStaff = isBoardingFloorStaff(authRole, hasPermission('hub.appointments.write'));
   const canDailyReport = hasPermission('boarding.daily_report.write');
   const canManageFinance = hasPermission('hub.receivables.create');
   const canWriteInventory = hasPermission('hub.inventory.write');
@@ -95,18 +100,21 @@ const HubBoardingPage: React.FC = () => {
   useEffect(() => {
     if (permLoading) return;
     if (!accessAllowed) redirectAwayFromHub(authRole as AppRole);
-  }, [permLoading, accessAllowed, authRole]);
+    if (isFloorStaff) {
+      navigate('/hub/hotel-creche/minha-fila', { replace: true });
+    }
+  }, [permLoading, accessAllowed, authRole, isFloorStaff, navigate]);
 
   useEffect(() => {
-    if (!clinicId || !accessAllowed) return;
+    if (!clinicId || !accessAllowed || isFloorStaff) return;
     void load();
-  }, [clinicId, accessAllowed, load]);
+  }, [clinicId, accessAllowed, isFloorStaff, load]);
 
   useEffect(() => {
-    if (!clinicId || !accessAllowed) return;
+    if (!clinicId || !accessAllowed || isFloorStaff) return;
     const id = window.setInterval(() => void load({ soft: true }), POLL_MS);
     return () => window.clearInterval(id);
-  }, [clinicId, accessAllowed, load]);
+  }, [clinicId, accessAllowed, isFloorStaff, load]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -123,7 +131,7 @@ const HubBoardingPage: React.FC = () => {
   // Realtime: escuta mudanças em hub_boarding_reservations para o clinic_id atual.
   // Complementa o polling (não o substitui) para reduzir latência de atualizações.
   useEffect(() => {
-    if (!clinicId || !accessAllowed) return;
+    if (!clinicId || !accessAllowed || isFloorStaff) return;
     const supabase = getSupabase();
     if (!supabase) return;
     const channel = supabase
@@ -140,16 +148,16 @@ const HubBoardingPage: React.FC = () => {
       )
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [clinicId, accessAllowed, load]);
+  }, [clinicId, accessAllowed, isFloorStaff, load]);
 
   useEffect(() => {
-    if (!clinicId) return;
+    if (!clinicId || isFloorStaff) return;
     void (apiRequest(`/units/clinic/${encodeURIComponent(clinicId)}?activeOnly=true`) as Promise<{
       units?: { id: string; name: string }[];
     }>)
       .then((r) => setUnits(r.units ?? []))
       .catch(() => setUnits([]));
-  }, [clinicId]);
+  }, [clinicId, isFloorStaff]);
 
   const loadOccupancy = useCallback(async () => {
     if (!clinicId) return;
@@ -166,8 +174,9 @@ const HubBoardingPage: React.FC = () => {
   }, [clinicId, unitIdParam, dayRange.dateYmd, activeMode]);
 
   useEffect(() => {
+    if (isFloorStaff) return;
     void loadOccupancy();
-  }, [loadOccupancy]);
+  }, [isFloorStaff, loadOccupancy]);
 
   const handleUnitFilterChange = (value: string) => {
     setUnitFilter(value);
@@ -282,7 +291,7 @@ const HubBoardingPage: React.FC = () => {
     );
   }
 
-  if (permLoading || !accessAllowed) {
+  if (permLoading || !accessAllowed || isFloorStaff) {
     return (
       <div className="hub-clinic-page__pad">
         <HubLoading variant="block" />
@@ -307,7 +316,7 @@ const HubBoardingPage: React.FC = () => {
   const hasOverbooking = overHotel || overDaycare;
 
   return (
-    <div className="hub-grooming-page hub-boarding-page">
+    <div className="hub-boarding-queue-page">
       {!boardingTypesConfigured && !loading && (
         <div className="hub-clinic-banner">
           <p>

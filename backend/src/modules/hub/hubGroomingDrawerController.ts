@@ -58,6 +58,30 @@ async function getGroomingTypeIdSet(clinicId: string): Promise<Set<string>> {
   return new Set((data ?? []).map((r: { id: string }) => r.id));
 }
 
+async function listRequestableGroomingServices(
+  clinicId: string,
+  excludeTypeIds: string[],
+): Promise<Array<{ id: string; name: string; is_addon: boolean; sale_amount: number | null }>> {
+  const excluded = new Set(excludeTypeIds);
+  const { data: types, error } = await supabaseAdmin
+    .from('hub_service_types')
+    .select('id, name, sale_amount, is_addon')
+    .eq('clinic_id', clinicId)
+    .eq('service_group', GROOMING_SERVICE_GROUP)
+    .is('deleted_at', null)
+    .order('name', { ascending: true });
+  if (error) throw error;
+  return (types ?? [])
+    .filter((t) => !excluded.has(t.id as string))
+    .map((t) => ({
+      id: t.id as string,
+      name: String(t.name),
+      is_addon: t.is_addon === true,
+      sale_amount: t.sale_amount != null ? Number(t.sale_amount) : null,
+    }))
+    .sort((a, b) => Number(a.is_addon) - Number(b.is_addon) || a.name.localeCompare(b.name, 'pt-BR'));
+}
+
 async function listAvailableAddonsForParents(
   clinicId: string,
   parentServiceTypeIds: string[],
@@ -234,6 +258,13 @@ export const getHubGroomingSessionDrawer = async (req: Request, res: Response) =
     }
 
     const available_addons = await listAvailableAddonsForParents(clinic_id.data, parentIds);
+    const alreadyOnSession = [
+      ...appointment_lines.map((l) => l.hub_service_type_id),
+      ...((extrasRes.data ?? []) as Array<{ hub_service_type_id?: string }>).map((e) =>
+        String(e.hub_service_type_id ?? ''),
+      ),
+    ].filter(Boolean);
+    const requestable_services = await listRequestableGroomingServices(clinic_id.data, alreadyOnSession);
 
     return res.json({
       session,
@@ -245,6 +276,7 @@ export const getHubGroomingSessionDrawer = async (req: Request, res: Response) =
       appointment_lines,
       extras: extrasRes.data ?? [],
       available_addons,
+      requestable_services,
     });
   } catch (e: unknown) {
     console.error('getHubGroomingSessionDrawer', e);

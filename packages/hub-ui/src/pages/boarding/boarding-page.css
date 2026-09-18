@@ -168,6 +168,35 @@
   }
 }
 
+/* ─── Minha fila (chão / celular) ─────────────────────────────────────────── */
+
+.hub-boarding-floor.hub-grooming-floor .hub-grooming-floor__tabs,
+.hub-boarding-floor__tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.hub-boarding-floor__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hub-boarding-floor__avatar-fallback {
+  width: 48px;
+  height: 48px;
+  font-size: 20px;
+}
+
+.hub-boarding-floor .hub-grooming-floor__tab {
+  font-size: 0.8125rem;
+}
+
+.hub-boarding-floor .hub-grooming-floor__queue-meta {
+  max-width: 58%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Mobile: coluna única */
 @media (max-width: 900px) {
   .hub-boarding-page .hub-clinic-queue {

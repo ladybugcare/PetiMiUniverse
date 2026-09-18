@@ -56,6 +56,13 @@
   flex-wrap: wrap;
 }
 
+.hub-view-date-toolbar__all-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--hvt-muted);
+  line-height: 1.35;
+}
+
 .hub-view-date-toolbar__icon-btn {
   width: 36px;
   height: 36px;

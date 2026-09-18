@@ -87,7 +87,9 @@ export { default as HubStaffPage } from './pages/equipe/HubStaffPage';
 export { default as HubAgendaPage } from './pages/agenda/HubAgendaPage';
 export { default as HubClinicRoutes } from './pages/clinica/HubClinicRoutes';
 export { default as HubStandalonePrescriptionPage } from './pages/clinica/HubStandalonePrescriptionPage';
+export { default as HubGroomingRoutes } from './pages/grooming/HubGroomingRoutes';
 export { default as HubGroomingQueuePage } from './pages/grooming/HubGroomingQueuePage';
+export { default as HubGroomingFloorPage } from './pages/grooming/HubGroomingFloorPage';
 export { hubGroomingApi } from './api/hubGroomingApi';
 export type { GroomingDayBoardItem, GroomingDayBoardResponse } from './api/hubGroomingApi';
 export { default as HubPickupPage } from './pages/pickup/HubPickupPage';
@@ -110,7 +112,9 @@ export type {
 export { default as PickupStopDrawer } from './pages/pickup/PickupStopDrawer';
 export type { PickupStopDrawerProps } from './pages/pickup/PickupStopDrawer';
 export { default as PickupDriverView } from './pages/pickup/PickupDriverView';
+export { default as HubBoardingRoutes } from './pages/boarding/HubBoardingRoutes';
 export { default as HubBoardingPage } from './pages/boarding/HubBoardingPage';
+export { default as HubBoardingFloorPage } from './pages/boarding/HubBoardingFloorPage';
 export { hubBoardingApi } from './api/hubBoardingApi';
 export type {
   BoardingDayBoardItem,

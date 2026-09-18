@@ -31,6 +31,7 @@ export type HubFinanceDayBoardBilling = {
   finance_handoff_at?: string | null;
   active_receivable_id?: string | null;
   due_date?: string | null;
+  receivable_amount?: number | null;
 };
 
 export type HubFinanceDayBoardItem = {
@@ -175,6 +176,9 @@ export type HubFinanceDashboardSummary = {
   receivables_outstanding: number;
   payments_total_period: number;
   expenses_total_period: number;
+  /** Soma de contas a pagar pendentes (custo interno ainda não liquidado). */
+  payables_outstanding?: number;
+  payables_pending_count?: number;
   net_operational_period: number;
   /** Pets distintos com agendamento no período (início do slot dentro do intervalo; exclui cancelados). */
   pets_attended_distinct?: number;
@@ -217,6 +221,34 @@ export type HubFinanceExpense = {
   expense_date: string;
   payment_method?: string | null;
   notes?: string | null;
+  created_at: string;
+};
+
+export type HubFinancePayableCategory =
+  | 'professional_fee'
+  | HubFinanceExpenseCategory;
+
+export type HubFinancePayableStatus = 'pending' | 'paid' | 'cancelled';
+
+export type HubFinancePayable = {
+  id: string;
+  clinic_id: string;
+  unit_id: string;
+  amount: number;
+  category: HubFinancePayableCategory;
+  description: string;
+  notes?: string | null;
+  payee_staff_member_id?: string | null;
+  payee_supplier_id?: string | null;
+  payee_name: string;
+  source_type: 'surgery' | 'manual';
+  source_id?: string | null;
+  source_role?: string | null;
+  source_label?: string;
+  status: HubFinancePayableStatus;
+  due_date?: string | null;
+  paid_at?: string | null;
+  payment_method?: string | null;
   created_at: string;
 };
 
@@ -638,11 +670,23 @@ export const hubFinancialApi = {
     clinicId: string,
     unitId?: string | null,
     date?: string | null,
-    opts?: { billing_scope?: 'financeiro' },
+    opts?: {
+      billing_scope?: 'financeiro';
+      from?: string | null;
+      to?: string | null;
+      open?: boolean;
+    },
   ): Promise<HubFinanceDayBoardItem[]> {
     const q = new URLSearchParams({ clinic_id: clinicId });
     if (unitId) q.set('unit_id', unitId);
-    if (date) q.set('date', date);
+    if (opts?.open) {
+      q.set('open', '1');
+    } else if (opts?.from && opts?.to) {
+      q.set('from', opts.from);
+      q.set('to', opts.to);
+    } else if (date) {
+      q.set('date', date);
+    }
     if (opts?.billing_scope) q.set('billing_scope', opts.billing_scope);
     const res = (await apiRequest(`${base}/day-board?${q.toString()}`)) as {
       items?: HubFinanceDayBoardItem[];
@@ -1062,6 +1106,77 @@ export const hubFinancialApi = {
     return apiRequest(`${base}/expenses`, { method: 'POST', body: JSON.stringify(body) }) as Promise<{
       expense: HubFinanceExpense;
     }>;
+  },
+
+  async listPayables(
+    clinicId: string,
+    unitId: string,
+    opts?: { from?: string; to?: string; status?: HubFinancePayableStatus; source_type?: 'surgery' | 'manual' }
+  ): Promise<HubFinancePayable[]> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    if (opts?.status) q.set('status', opts.status);
+    if (opts?.source_type) q.set('source_type', opts.source_type);
+    const res = (await apiRequest(`${base}/payables?${q}`)) as { payables?: HubFinancePayable[] };
+    return res.payables ?? [];
+  },
+
+  async createPayable(body: {
+    clinic_id: string;
+    unit_id: string;
+    amount: number;
+    category?: HubFinancePayableCategory;
+    description: string;
+    notes?: string | null;
+    payee_staff_member_id?: string | null;
+    payee_supplier_id?: string | null;
+    payee_name?: string;
+    status?: 'pending' | 'paid';
+    due_date?: string | null;
+    payment_method?: string | null;
+    paid_at?: string | null;
+  }): Promise<{ payable: HubFinancePayable }> {
+    return apiRequest(`${base}/payables`, { method: 'POST', body: JSON.stringify(body) }) as Promise<{
+      payable: HubFinancePayable;
+    }>;
+  },
+
+  async patchPayable(
+    id: string,
+    body: {
+      clinic_id: string;
+      amount?: number;
+      category?: HubFinancePayableCategory;
+      description?: string;
+      notes?: string | null;
+      payee_staff_member_id?: string | null;
+      payee_supplier_id?: string | null;
+      payee_name?: string;
+      due_date?: string | null;
+    }
+  ): Promise<{ payable: HubFinancePayable }> {
+    return apiRequest(`${base}/payables/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }) as Promise<{ payable: HubFinancePayable }>;
+  },
+
+  async payPayable(
+    id: string,
+    body: { clinic_id: string; payment_method: string; paid_at?: string | null }
+  ): Promise<{ payable: HubFinancePayable }> {
+    return apiRequest(`${base}/payables/${encodeURIComponent(id)}/pay`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ payable: HubFinancePayable }>;
+  },
+
+  async cancelPayable(id: string, body: { clinic_id: string }): Promise<{ payable: HubFinancePayable }> {
+    return apiRequest(`${base}/payables/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ payable: HubFinancePayable }>;
   },
 
   async createCashMovement(

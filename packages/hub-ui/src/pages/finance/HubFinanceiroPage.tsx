@@ -1,10 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
-import { AlertCircle, LayoutDashboard, Receipt, TrendingDown, TrendingUp } from 'lucide-react';
+import {
+  Info,
+  LayoutDashboard,
+  Link2,
+  Plus,
+  Receipt,
+  Scale,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
+import { HubCancelButton } from '../../components/HubCancelButton';
 import { HubDateField } from '../../components/HubDateField';
 import { HubLoading } from '../../components/HubLoading';
+import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubTabs } from '../../components/HubTabs';
 import {
   hubFinancialApi,
@@ -21,6 +32,7 @@ import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTyp
 import { hubComandaApi } from '../../api/hubComandaApi';
 import HubCancellationAdjustmentsPanel from './HubCancellationAdjustmentsPanel';
 import HubPaymentReversalPanel from './HubPaymentReversalPanel';
+import HubPayablesSection from './HubPayablesSection';
 import { FinanceDayBoardSection } from './FinanceDayBoardSection';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import '../clientes/clientes.css';
@@ -50,7 +62,7 @@ function commissionRuleServiceLabel(rule: HubCommissionRule, types: HubServiceTy
 
 const COMMISSION_BASIS_LABELS: Record<HubCommissionBasis, string> = {
   percent_of_sale: '% sobre valor da linha',
-  fixed_per_sale: 'Valor fixo por linha (até ao total da linha)',
+  fixed_per_sale: 'Valor fixo por linha (até o total da linha)',
 };
 
 const EXPENSE_CATEGORY_LABELS: Record<HubFinanceExpenseCategory, string> = {
@@ -87,9 +99,16 @@ function statusLabel(status: string): string {
   return RECEIVABLE_STATUS_LABELS[status] ?? status;
 }
 
-type FinanceTab = 'receivables' | 'expenses' | 'cashflow' | 'commissions' | 'adjustments';
+type FinanceTab = 'receivables' | 'expenses' | 'payables' | 'cashflow' | 'commissions' | 'adjustments';
 
-const VALID_FINANCE_TABS = new Set<FinanceTab>(['receivables', 'expenses', 'cashflow', 'commissions', 'adjustments']);
+const VALID_FINANCE_TABS = new Set<FinanceTab>([
+  'receivables',
+  'expenses',
+  'payables',
+  'cashflow',
+  'commissions',
+  'adjustments',
+]);
 
 function tabFromSearchParams(params: URLSearchParams): FinanceTab {
   const raw = params.get('tab');
@@ -118,6 +137,8 @@ const HubFinanceiroPage: React.FC = () => {
   const [expDesc, setExpDesc] = useState('');
   const [expAmount, setExpAmount] = useState('');
   const [expDate, setExpDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [showExpensePanel, setShowExpensePanel] = useState(false);
+  const [creatingExpense, setCreatingExpense] = useState(false);
   const [expListFrom, setExpListFrom] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
@@ -286,6 +307,24 @@ const HubFinanceiroPage: React.FC = () => {
     [setSearchParams],
   );
 
+  const resetExpenseForm = () => {
+    setExpCategory('other');
+    setExpDesc('');
+    setExpAmount('');
+    setExpDate(new Date().toISOString().slice(0, 10));
+  };
+
+  const openExpensePanel = () => {
+    resetExpenseForm();
+    setShowExpensePanel(true);
+  };
+
+  const closeExpensePanel = () => {
+    if (creatingExpense) return;
+    setShowExpensePanel(false);
+    resetExpenseForm();
+  };
+
   const onCreateExpense = async () => {
     if (!clinicId || !unitId) return;
     if (!hasPermission('hub.financial.write')) {
@@ -297,6 +336,7 @@ const HubFinanceiroPage: React.FC = () => {
       showError('Preencha descrição e valor válidos.');
       return;
     }
+    setCreatingExpense(true);
     try {
       await hubFinancialApi.createExpense({
         clinic_id: clinicId,
@@ -307,11 +347,13 @@ const HubFinanceiroPage: React.FC = () => {
         expense_date: expDate,
       });
       showSuccess('Despesa registrada.');
-      setExpDesc('');
-      setExpAmount('');
+      resetExpenseForm();
+      setShowExpensePanel(false);
       await Promise.all([loadExpenses(), loadSummary()]);
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao registrar');
+    } finally {
+      setCreatingExpense(false);
     }
   };
 
@@ -333,7 +375,7 @@ const HubFinanceiroPage: React.FC = () => {
       return;
     }
     if (commBasis === 'percent_of_sale' && rate > 100) {
-      showError('Percentagem não pode exceder 100.');
+      showError('Porcentagem não pode exceder 100.');
       return;
     }
     try {
@@ -344,11 +386,11 @@ const HubFinanceiroPage: React.FC = () => {
         rate,
         notes: commNotes.trim() || null,
       });
-      showSuccess('Regra guardada.');
+      showSuccess('Regra salva.');
       setCommNotes('');
       await loadCommissions();
     } catch (e) {
-      showError((e as Error)?.message || 'Erro ao guardar regra');
+      showError((e as Error)?.message || 'Erro ao salvar regra');
     }
   };
 
@@ -420,97 +462,152 @@ const HubFinanceiroPage: React.FC = () => {
 
   return shell(
     <>
+      <div className="hub-finance-page__topbar">
+        <div
+          className="hub-finance-page__summary"
+          aria-live="polite"
+          aria-label="Resumo financeiro dos últimos 30 dias"
+        >
+          <button
+            type="button"
+            className="hub-finance-page__summary-item"
+            onClick={() => switchTab('receivables')}
+          >
+            <span className="hub-finance-page__summary-label">A receber</span>
+            <span className="hub-finance-page__summary-value">
+              {summaryLoading ? '—' : formatBrl(summary?.receivables_outstanding ?? 0)}
+            </span>
+            <span className="hub-finance-page__summary-meta">
+              {summaryLoading
+                ? '…'
+                : `${summary?.receivables_pending_count ?? summary?.receivables_open_count ?? 0} em aberto`}
+              {!summaryLoading && (summary?.pending_billing_count ?? 0) > 0
+                ? ` · ${summary?.pending_billing_count} sem cobrança`
+                : ''}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="hub-finance-page__summary-item"
+            onClick={() => switchTab('payables')}
+          >
+            <span className="hub-finance-page__summary-label">A pagar</span>
+            <span className="hub-finance-page__summary-value">
+              {summaryLoading ? '—' : formatBrl(summary?.payables_outstanding ?? 0)}
+            </span>
+            <span className="hub-finance-page__summary-meta">
+              {summaryLoading ? '…' : `${summary?.payables_pending_count ?? 0} título(s)`}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="hub-finance-page__summary-item"
+            onClick={() => switchTab('cashflow')}
+          >
+            <span className="hub-finance-page__summary-label">Pagamentos · 30d</span>
+            <span className="hub-finance-page__summary-value">
+              {summaryLoading ? '—' : formatBrl(summary?.payments_total_period ?? 0)}
+            </span>
+            <span className="hub-finance-page__summary-meta">
+              {summaryLoading
+                ? '…'
+                : `Despesas ${formatBrl(summary?.expenses_total_period ?? 0)}`}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`hub-finance-page__summary-item hub-finance-page__summary-item--result${
+              !summaryLoading && summaryNet < 0 ? ' hub-finance-page__summary-item--neg' : ''
+            }`}
+            onClick={() => switchTab('cashflow')}
+          >
+            <span className="hub-finance-page__summary-label">Saldo · 30d</span>
+            <span
+              className={`hub-finance-page__summary-value${
+                summaryLoading
+                  ? ''
+                  : summaryNet >= 0
+                    ? ' hub-finance-page__summary-value--pos'
+                    : ' hub-finance-page__summary-value--neg'
+              }`}
+            >
+              {summaryLoading ? '—' : formatBrl(summaryNet)}
+            </span>
+            <span className="hub-finance-page__summary-meta">Pagamentos − saídas</span>
+          </button>
+
+          {cancellationPendingCount > 0 ? (
+            <button
+              type="button"
+              className="hub-finance-page__summary-item hub-finance-page__summary-item--alert"
+              onClick={() => switchTab('adjustments')}
+            >
+              <span className="hub-finance-page__summary-label">Ajustes</span>
+              <span className="hub-finance-page__summary-value">{cancellationPendingCount}</span>
+              <span className="hub-finance-page__summary-meta">Cancelamento(s)</span>
+            </button>
+          ) : null}
+        </div>
+
+        <div className="hub-finance-page__topbar-actions">
+          <Link to="/hub/caixa" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
+            <Wallet size={15} strokeWidth={1.75} aria-hidden />
+            Caixa
+          </Link>
+          <Link to="/hub/dashboard" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
+            <LayoutDashboard size={15} strokeWidth={1.75} aria-hidden />
+            Dashboard
+          </Link>
+          <Link to="/hub/relatorios" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
+            <Link2 size={15} strokeWidth={1.75} aria-hidden />
+            Relatórios
+          </Link>
+        </div>
+      </div>
+
       <HubTabs
         ariaLabel="Seções financeiras"
         items={[
-          { id: 'receivables', label: 'Atendimentos' },
-          { id: 'adjustments', label: 'Ajustes' },
+          {
+            id: 'receivables',
+            label: 'Contas a receber',
+            badge: summary?.receivables_pending_count ?? summary?.receivables_open_count ?? null,
+          },
+          {
+            id: 'payables',
+            label: 'Contas a pagar',
+            badge: summary?.payables_pending_count ?? null,
+          },
           { id: 'expenses', label: 'Despesas' },
           { id: 'cashflow', label: 'Fluxo de caixa' },
-          { id: 'commissions', label: 'Comissões' },
+          {
+            id: 'adjustments',
+            label: 'Ajustes',
+            badge: cancellationPendingCount || null,
+            secondary: true,
+          },
+          { id: 'commissions', label: 'Comissões', secondary: true },
         ]}
         activeId={tab}
         onTabChange={(id) => switchTab(id as FinanceTab)}
       />
 
-      <div className="hub-servicos__metrics" aria-live="polite">
-        <div className="hub-servicos__metric-card">
-          <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Pendentes de cobrança</div>
-            <div className="hub-servicos__metric-value">{summaryLoading ? '—' : String(summary?.pending_billing_count ?? 0)}</div>
-            <div className="hub-servicos__metric-sub">Cobrar ou editar na aba Atendimentos</div>
-          </div>
-          <div className="hub-servicos__metric-icon" aria-hidden>
-            <AlertCircle size={22} strokeWidth={1.75} />
-          </div>
-        </div>
-        <div className="hub-servicos__metric-card">
-          <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Recebíveis em aberto</div>
-            <div className="hub-servicos__metric-value">
-              {summaryLoading ? '—' : String(summary?.receivables_pending_count ?? summary?.receivables_open_count ?? 0)}
-            </div>
-            <div className="hub-servicos__metric-sub">
-              {summaryLoading ? '—' : `${formatBrl(summary?.receivables_outstanding ?? 0)} a receber`}
-            </div>
-          </div>
-          <div className="hub-servicos__metric-icon" aria-hidden>
-            <Receipt size={22} strokeWidth={1.75} />
-          </div>
-        </div>
-        <div className="hub-servicos__metric-card">
-          <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Pagamentos (30 dias)</div>
-            <div className="hub-servicos__metric-value">{summaryLoading ? '—' : formatBrl(summary?.payments_total_period ?? 0)}</div>
-          </div>
-          <div className="hub-servicos__metric-icon" aria-hidden>
-            <TrendingUp size={22} strokeWidth={1.75} />
-          </div>
-        </div>
-        <div className="hub-servicos__metric-card">
-          <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Despesas (30 dias)</div>
-            <div className="hub-servicos__metric-value">{summaryLoading ? '—' : formatBrl(summary?.expenses_total_period ?? 0)}</div>
-          </div>
-          <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
-            <TrendingDown size={22} strokeWidth={1.75} />
-          </div>
-        </div>
-        <button
-          type="button"
-          className="hub-servicos__metric-card hub-servicos__metric-card--clickable"
-          onClick={() => switchTab('adjustments')}
-          style={{ textAlign: 'left', cursor: 'pointer', border: 'none', background: 'inherit' }}
-        >
-          <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Cancelamentos pendentes</div>
-            <div className="hub-servicos__metric-value">{String(cancellationPendingCount)}</div>
-            <div className="hub-servicos__metric-sub">Resolver em Ajustes</div>
-          </div>
-          <div className="hub-servicos__metric-icon" aria-hidden>
-            <AlertCircle size={22} strokeWidth={1.75} />
-          </div>
-        </button>
-        <div className="hub-servicos__metric-card">
-          <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Saldo operacional</div>
-            <div className="hub-servicos__metric-value" style={{ color: summaryNet >= 0 ? '#15803d' : '#b91c1c' }}>
-              {summaryLoading ? '—' : formatBrl(summaryNet)}
-            </div>
-            <div className="hub-servicos__metric-sub">Pagamentos menos despesas</div>
-          </div>
-          <div className="hub-servicos__metric-icon" aria-hidden>
-            <LayoutDashboard size={22} strokeWidth={1.75} />
-          </div>
-        </div>
-      </div>
-
       {tab === 'receivables' ? (
         <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">Atendimentos</h2>
-          <p className="hub-clientes__muted" style={{ marginBottom: 16 }}>
-            Comandas enviadas pelo caixa e cobranças pendentes ou parciais desta unidade.
-          </p>
+          <div className="hub-finance-page__section-head">
+            <div>
+              <h2 className="hub-clientes__form-title">Contas a receber</h2>
+              <p className="hub-clientes__muted">
+                Lista o que ainda precisa de cobrança financeira. A coluna Atendimento é o andamento do
+                serviço; a coluna Cobrança é o recebível (pendente / vencimento). Um atendimento
+                &quot;Confirmado&quot; ou até &quot;Pago&quot; no operacional ainda pode ter cobrança em
+                aberto.
+              </p>
+            </div>
+          </div>
           <FinanceDayBoardSection
             clinicId={clinicId}
             unitId={unitId}
@@ -523,71 +620,36 @@ const HubFinanceiroPage: React.FC = () => {
 
       {tab === 'expenses' ? (
         <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">Despesas</h2>
-          {hasPermission('hub.financial.write') ? (
-            <div className="hub-finance-page__expense-toolbar">
-              <div className="hub-clientes__field hub-finance-page__field-compact">
-                <label className="hub-clientes__label" htmlFor="fin-exp-cat">
-                  Categoria
-                </label>
-                <select
-                  id="fin-exp-cat"
-                  className="hub-clientes__select-input"
-                  value={expCategory}
-                  onChange={(e) => setExpCategory(e.target.value as HubFinanceExpenseCategory)}
-                >
-                  {(Object.keys(EXPENSE_CATEGORY_LABELS) as HubFinanceExpenseCategory[]).map((k) => (
-                    <option key={k} value={k}>
-                      {EXPENSE_CATEGORY_LABELS[k]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="hub-clientes__field hub-finance-page__field-grow">
-                <label className="hub-clientes__label" htmlFor="fin-exp-desc">
-                  Descrição
-                </label>
-                <input
-                  id="fin-exp-desc"
-                  className="hub-clientes__input"
-                  value={expDesc}
-                  onChange={(e) => setExpDesc(e.target.value)}
-                  placeholder="Ex.: Compra de shampoo"
-                />
-              </div>
-              <div className="hub-clientes__field hub-finance-page__field-compact">
-                <label className="hub-clientes__label" htmlFor="fin-exp-amt">
-                  Valor (R$)
-                </label>
-                <input
-                  id="fin-exp-amt"
-                  className="hub-clientes__input"
-                  value={expAmount}
-                  onChange={(e) => setExpAmount(e.target.value)}
-                  inputMode="decimal"
-                />
-              </div>
-              <div className="hub-clientes__field hub-finance-page__field-compact">
-                <HubDateField
-                  id="fin-exp-date"
-                  label="Data"
-                  valueIso={expDate}
-                  onChangeIso={setExpDate}
-                  showTodayButton={false}
-                />
-              </div>
+          <div className="hub-finance-page__section-head">
+            <div>
+              <h2 className="hub-clientes__form-title">Despesas</h2>
+              <p className="hub-clientes__muted">
+                Saídas já liquidadas (caixa ou registro manual). Para obrigações pendentes — honorários,
+                fornecedores — use Contas a pagar.
+              </p>
+            </div>
+            {hasPermission('hub.financial.write') ? (
               <button
                 type="button"
-                className="hub-clientes__btn hub-clientes__btn--primary hub-finance-page__btn-align"
-                onClick={() => void onCreateExpense()}
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                onClick={openExpensePanel}
               >
-                Registrar despesa
+                <Plus size={16} strokeWidth={2} aria-hidden />
+                Nova despesa
               </button>
-            </div>
-          ) : (
+            ) : null}
+          </div>
+          <div className="hub-finance-page__callout hub-finance-page__callout--hint">
+            <Info className="hub-finance-page__callout-icon" size={18} strokeWidth={1.75} aria-hidden />
+            <span>
+              <strong>Despesa</strong> = já paga. <strong>Conta a pagar</strong> = ainda deve (ou acabou de
+              liquidar um título). Honorários de cirurgia sincronizam em Contas a pagar.
+            </span>
+          </div>
+          {!hasPermission('hub.financial.write') ? (
             <p className="hub-clientes__muted">Apenas leitura — sem permissão para registrar despesas.</p>
-          )}
-          <div className="hub-clientes__toolbar" style={{ marginTop: 16, marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
+          ) : null}
+          <div className="hub-clientes__toolbar" style={{ marginTop: 8, marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
             <div className="hub-clientes__field hub-finance-page__field-compact">
               <HubDateField
                 id="fin-exp-list-from"
@@ -613,7 +675,26 @@ const HubFinanceiroPage: React.FC = () => {
           {expLoading ? (
             <HubLoading variant="block" label="Carregando despesas…" />
           ) : expenses.length === 0 ? (
-            <p className="hub-clientes__muted">Nenhuma despesa nesta unidade.</p>
+            <div className="hub-finance-page__empty" role="status">
+              <span className="hub-finance-page__empty-icon" aria-hidden>
+                <Receipt size={24} strokeWidth={1.75} />
+              </span>
+              <p className="hub-finance-page__empty-title">Nenhuma despesa no período</p>
+              <p className="hub-finance-page__empty-desc">
+                Registre saídas já pagas aqui, ou confira Contas a pagar se ainda houver títulos em aberto.
+              </p>
+              {hasPermission('hub.financial.write') ? (
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--primary"
+                  style={{ marginTop: 12 }}
+                  onClick={openExpensePanel}
+                >
+                  <Plus size={16} strokeWidth={2} aria-hidden />
+                  Nova despesa
+                </button>
+              ) : null}
+            </div>
           ) : (
             <div className="hub-clientes__table-wrap">
               <table className="hub-clientes__table hub-finance-page__table">
@@ -638,20 +719,121 @@ const HubFinanceiroPage: React.FC = () => {
               </table>
             </div>
           )}
+
+          {hasPermission('hub.financial.write') ? (
+            <HubSidePanel
+              open={showExpensePanel}
+              onClose={closeExpensePanel}
+              title="Nova despesa"
+              titleIcon={<Receipt size={20} strokeWidth={1.75} aria-hidden />}
+              subtitle="Lança uma saída já realizada nesta unidade."
+              contentKey={showExpensePanel ? 'open' : 'closed'}
+              footer={
+                <div className="hub-finance-page__drawer-footer">
+                  <HubCancelButton onClick={closeExpensePanel} disabled={creatingExpense} />
+                  <button
+                    type="button"
+                    className="hub-clientes__btn hub-clientes__btn--primary"
+                    disabled={creatingExpense}
+                    onClick={() => void onCreateExpense()}
+                  >
+                    {creatingExpense ? 'Registrando…' : 'Registrar despesa'}
+                  </button>
+                </div>
+              }
+            >
+              <div className="hub-finance-page__form-grid">
+                <div className="hub-clientes__field hub-finance-page__field-span-6">
+                  <label className="hub-clientes__label" htmlFor="fin-exp-cat">
+                    Categoria
+                  </label>
+                  <select
+                    id="fin-exp-cat"
+                    className="hub-clientes__select-input"
+                    value={expCategory}
+                    onChange={(e) => setExpCategory(e.target.value as HubFinanceExpenseCategory)}
+                  >
+                    {(Object.keys(EXPENSE_CATEGORY_LABELS) as HubFinanceExpenseCategory[]).map((k) => (
+                      <option key={k} value={k}>
+                        {EXPENSE_CATEGORY_LABELS[k]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="hub-clientes__field hub-finance-page__field-span-6">
+                  <HubDateField
+                    id="fin-exp-date"
+                    label="Data"
+                    valueIso={expDate}
+                    onChangeIso={setExpDate}
+                    showTodayButton={false}
+                  />
+                </div>
+                <div className="hub-clientes__field hub-finance-page__field-span-6">
+                  <label className="hub-clientes__label" htmlFor="fin-exp-desc">
+                    Descrição
+                  </label>
+                  <input
+                    id="fin-exp-desc"
+                    className="hub-clientes__input"
+                    value={expDesc}
+                    onChange={(e) => setExpDesc(e.target.value)}
+                    placeholder="Ex.: Compra de shampoo"
+                  />
+                </div>
+                <div className="hub-clientes__field hub-finance-page__field-span-6">
+                  <label className="hub-clientes__label" htmlFor="fin-exp-amt">
+                    Valor (R$)
+                  </label>
+                  <input
+                    id="fin-exp-amt"
+                    className="hub-clientes__input"
+                    value={expAmount}
+                    onChange={(e) => setExpAmount(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </div>
+              </div>
+            </HubSidePanel>
+          ) : null}
         </section>
+      ) : null}
+
+      {tab === 'payables' && clinicId && unitId ? (
+        <HubPayablesSection
+          clinicId={clinicId}
+          unitId={unitId}
+          canWrite={hasPermission('hub.financial.write')}
+          showError={showError}
+          showSuccess={showSuccess}
+          onChanged={() => void loadSummary()}
+        />
       ) : null}
 
       {tab === 'cashflow' ? (
         <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">Fluxo de caixa (diário)</h2>
-          <p className="hub-clientes__subtitle" style={{ marginBottom: 16 }}>
-            {flowPeriod ? `Período: ${flowPeriod.from} — ${flowPeriod.to}. ` : ''}
-            Entradas: pagamentos de recebíveis desta unidade e suprimentos no caixa. Saídas: despesas e sangrias.
-          </p>
+          <div className="hub-finance-page__section-head">
+            <div>
+              <h2 className="hub-clientes__form-title">Fluxo de caixa (diário)</h2>
+              <p className="hub-clientes__subtitle">
+                {flowPeriod ? `Período: ${flowPeriod.from} — ${flowPeriod.to}. ` : ''}
+                Entradas: pagamentos de recebíveis e suprimentos. Saídas: despesas, contas a pagar
+                liquidadas e sangrias.
+              </p>
+            </div>
+          </div>
           {flowLoading ? (
             <HubLoading variant="block" label="Carregando fluxo de caixa…" />
           ) : flowDays.length === 0 ? (
-            <p className="hub-clientes__muted">Sem dados no intervalo.</p>
+            <div className="hub-finance-page__empty" role="status">
+              <span className="hub-finance-page__empty-icon" aria-hidden>
+                <TrendingUp size={24} strokeWidth={1.75} />
+              </span>
+              <p className="hub-finance-page__empty-title">Sem movimentos no intervalo</p>
+              <p className="hub-finance-page__empty-desc">
+                O fluxo aparece quando houver pagamentos, despesas, sangrias ou suprimentos na unidade.
+              </p>
+            </div>
           ) : (
             <div className="hub-clientes__table-wrap hub-finance-page__table-wrap--scroll">
               <table className="hub-clientes__table hub-finance-page__table">
@@ -660,7 +842,7 @@ const HubFinanceiroPage: React.FC = () => {
                     <th>Data</th>
                     <th className="hub-finance-page__th-num">Pagamentos</th>
                     <th className="hub-finance-page__th-num">Suprimentos</th>
-                    <th className="hub-finance-page__th-num">Despesas</th>
+                    <th className="hub-finance-page__th-num">Despesas / AP</th>
                     <th className="hub-finance-page__th-num">Sangrias</th>
                     <th className="hub-finance-page__th-num">Líquido</th>
                   </tr>
@@ -698,85 +880,97 @@ const HubFinanceiroPage: React.FC = () => {
 
       {tab === 'commissions' ? (
         <section className="hub-finance-page__section">
-          <h2 className="hub-clientes__form-title">Comissões por tipo de serviço</h2>
-          <p className="hub-clientes__subtitle" style={{ marginBottom: 16 }}>
-            Defina percentagem sobre o valor da linha do recebível ou valor fixo por linha (limitado ao total da linha).
-            Salvar com o mesmo tipo de serviço atualiza a regra existente.
-          </p>
+          <div className="hub-finance-page__section-head">
+            <div>
+              <h2 className="hub-clientes__form-title">Comissões por tipo de serviço</h2>
+              <p className="hub-clientes__subtitle">
+                Defina porcentagem sobre o valor da linha do recebível ou valor fixo por linha (limitado ao
+                total da linha). Salvar com o mesmo tipo de serviço atualiza a regra existente.
+              </p>
+            </div>
+          </div>
           {commLoading ? (
             <HubLoading variant="block" label="Carregando comissões…" />
           ) : (
             <>
               {hasPermission('hub.financial.write') ? (
-                <div className="hub-finance-page__expense-toolbar" style={{ marginBottom: 20 }}>
-                  <div className="hub-clientes__field hub-finance-page__field-grow">
-                    <label className="hub-clientes__label" htmlFor="fin-comm-svc">
-                      Tipo de serviço
-                    </label>
-                    <select
-                      id="fin-comm-svc"
-                      className="hub-clientes__select-input"
-                      value={commSvcId}
-                      onChange={(e) => setCommSvcId(e.target.value)}
-                    >
-                      <option value="">—</option>
-                      {commissionServiceTypes
-                        .filter((s) => s.active && !s.deleted_at)
-                        .map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} ({s.code})
+                <div className="hub-finance-page__form-card">
+                  <h3 className="hub-finance-page__form-card-title">Nova regra ou atualização</h3>
+                  <p className="hub-finance-page__form-card-sub">
+                    Uma regra ativa por tipo de serviço. Inativos não entram na prévia.
+                  </p>
+                  <div className="hub-finance-page__form-grid">
+                    <div className="hub-clientes__field hub-finance-page__field-span-4">
+                      <label className="hub-clientes__label" htmlFor="fin-comm-svc">
+                        Tipo de serviço
+                      </label>
+                      <select
+                        id="fin-comm-svc"
+                        className="hub-clientes__select-input"
+                        value={commSvcId}
+                        onChange={(e) => setCommSvcId(e.target.value)}
+                      >
+                        <option value="">—</option>
+                        {commissionServiceTypes
+                          .filter((s) => s.active && !s.deleted_at)
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({s.code})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="hub-clientes__field hub-finance-page__field-span-3">
+                      <label className="hub-clientes__label" htmlFor="fin-comm-basis">
+                        Critério
+                      </label>
+                      <select
+                        id="fin-comm-basis"
+                        className="hub-clientes__select-input"
+                        value={commBasis}
+                        onChange={(e) => setCommBasis(e.target.value as HubCommissionBasis)}
+                      >
+                        {(Object.keys(COMMISSION_BASIS_LABELS) as HubCommissionBasis[]).map((k) => (
+                          <option key={k} value={k}>
+                            {COMMISSION_BASIS_LABELS[k]}
                           </option>
                         ))}
-                    </select>
+                      </select>
+                    </div>
+                    <div className="hub-clientes__field hub-finance-page__field-span-2">
+                      <label className="hub-clientes__label" htmlFor="fin-comm-rate">
+                        {commBasis === 'percent_of_sale' ? 'Taxa (%)' : 'Valor (R$)'}
+                      </label>
+                      <input
+                        id="fin-comm-rate"
+                        className="hub-clientes__input"
+                        value={commRate}
+                        onChange={(e) => setCommRate(e.target.value)}
+                        inputMode="decimal"
+                      />
+                    </div>
+                    <div className="hub-clientes__field hub-finance-page__field-span-3">
+                      <label className="hub-clientes__label" htmlFor="fin-comm-notes">
+                        Notas (opcional)
+                      </label>
+                      <input
+                        id="fin-comm-notes"
+                        className="hub-clientes__input"
+                        value={commNotes}
+                        onChange={(e) => setCommNotes(e.target.value)}
+                        placeholder="Ex.: comissão groomer"
+                      />
+                    </div>
+                    <div className="hub-finance-page__form-actions">
+                      <button
+                        type="button"
+                        className="hub-clientes__btn hub-clientes__btn--primary"
+                        onClick={() => void onUpsertCommissionRule()}
+                      >
+                        Salvar regra
+                      </button>
+                    </div>
                   </div>
-                  <div className="hub-clientes__field hub-finance-page__field-compact">
-                    <label className="hub-clientes__label" htmlFor="fin-comm-basis">
-                      Critério
-                    </label>
-                    <select
-                      id="fin-comm-basis"
-                      className="hub-clientes__select-input"
-                      value={commBasis}
-                      onChange={(e) => setCommBasis(e.target.value as HubCommissionBasis)}
-                    >
-                      {(Object.keys(COMMISSION_BASIS_LABELS) as HubCommissionBasis[]).map((k) => (
-                        <option key={k} value={k}>
-                          {COMMISSION_BASIS_LABELS[k]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="hub-clientes__field hub-finance-page__field-compact">
-                    <label className="hub-clientes__label" htmlFor="fin-comm-rate">
-                      {commBasis === 'percent_of_sale' ? 'Taxa (%)' : 'Valor (R$)'}
-                    </label>
-                    <input
-                      id="fin-comm-rate"
-                      className="hub-clientes__input"
-                      value={commRate}
-                      onChange={(e) => setCommRate(e.target.value)}
-                      inputMode="decimal"
-                    />
-                  </div>
-                  <div className="hub-clientes__field hub-finance-page__field-grow">
-                    <label className="hub-clientes__label" htmlFor="fin-comm-notes">
-                      Notas (opcional)
-                    </label>
-                    <input
-                      id="fin-comm-notes"
-                      className="hub-clientes__input"
-                      value={commNotes}
-                      onChange={(e) => setCommNotes(e.target.value)}
-                      placeholder="Ex.: comissão groomer"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="hub-clientes__btn hub-clientes__btn--primary hub-finance-page__btn-align"
-                    onClick={() => void onUpsertCommissionRule()}
-                  >
-                    Salvar regra
-                  </button>
                 </div>
               ) : (
                 <p className="hub-clientes__muted" style={{ marginBottom: 16 }}>
@@ -784,11 +978,17 @@ const HubFinanceiroPage: React.FC = () => {
                 </p>
               )}
 
-              <h3 className="hub-clientes__form-title" style={{ fontSize: '1rem', marginBottom: 8 }}>
-                Regras
-              </h3>
+              <h3 className="hub-finance-page__subsection-title">Regras</h3>
               {commissionRules.length === 0 ? (
-                <p className="hub-clientes__muted">Nenhuma regra definida para esta clínica.</p>
+                <div className="hub-finance-page__empty" role="status">
+                  <span className="hub-finance-page__empty-icon" aria-hidden>
+                    <Scale size={24} strokeWidth={1.75} />
+                  </span>
+                  <p className="hub-finance-page__empty-title">Nenhuma regra definida</p>
+                  <p className="hub-finance-page__empty-desc">
+                    Cadastre uma comissão por tipo de serviço para estimar valores na prévia abaixo.
+                  </p>
+                </div>
               ) : (
                 <div className="hub-clientes__table-wrap">
                   <table className="hub-clientes__table hub-finance-page__table">
@@ -810,21 +1010,22 @@ const HubFinanceiroPage: React.FC = () => {
                           <td>{r.active ? 'Sim' : 'Não'}</td>
                           {hasPermission('hub.financial.write') ? (
                             <td>
-                              <button
-                                type="button"
-                                className="hub-clientes__btn hub-clientes__btn--ghost"
-                                style={{ marginRight: 8 }}
-                                onClick={() => void onToggleCommissionRule(r)}
-                              >
-                                {r.active ? 'Desativar' : 'Ativar'}
-                              </button>
-                              <button
-                                type="button"
-                                className="hub-clientes__btn hub-clientes__btn--ghost"
-                                onClick={() => void onDeleteCommissionRule(r.id)}
-                              >
-                                Remover
-                              </button>
+                              <div className="hub-finance-page__row-actions">
+                                <button
+                                  type="button"
+                                  className="hub-clientes__btn hub-clientes__btn--ghost"
+                                  onClick={() => void onToggleCommissionRule(r)}
+                                >
+                                  {r.active ? 'Desativar' : 'Ativar'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hub-clientes__btn hub-clientes__btn--ghost"
+                                  onClick={() => void onDeleteCommissionRule(r.id)}
+                                >
+                                  Remover
+                                </button>
+                              </div>
                             </td>
                           ) : null}
                         </tr>
@@ -834,44 +1035,48 @@ const HubFinanceiroPage: React.FC = () => {
                 </div>
               )}
 
-              <h3 className="hub-clientes__form-title" style={{ fontSize: '1rem', marginTop: 24, marginBottom: 8 }}>
-                Pré-visualização por recebível
+              <h3 className="hub-finance-page__subsection-title" style={{ marginTop: 24 }}>
+                Prévia por recebível
               </h3>
               <p className="hub-clientes__subtitle" style={{ marginBottom: 12 }}>
-                Usa as linhas do recebível e as regras <strong>ativas</strong> desta clínica (até 80 recebíveis recentes
-                desta unidade).
+                Usa as linhas do recebível e as regras <strong>ativas</strong> desta clínica (até 80
+                recebíveis recentes desta unidade).
               </p>
-              <div className="hub-finance-page__expense-toolbar" style={{ marginBottom: 16 }}>
-                <div className="hub-clientes__field hub-finance-page__field-grow">
-                  <label className="hub-clientes__label" htmlFor="fin-comm-prev-rec">
-                    Recebível
-                  </label>
-                  <select
-                    id="fin-comm-prev-rec"
-                    className="hub-clientes__select-input"
-                    value={previewReceivableId}
-                    onChange={(e) => {
-                      setPreviewReceivableId(e.target.value);
-                      setCommPreview(null);
-                    }}
-                  >
-                    <option value="">—</option>
-                    {commPreviewReceivables.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {statusLabel(r.status)} · {formatBrl(Number(r.final_amount))} · {sourceLabel(r.source_type)}{' '}
-                        ({r.source_id.slice(0, 8)}…)
-                      </option>
-                    ))}
-                  </select>
+              <div className="hub-finance-page__form-card">
+                <div className="hub-finance-page__form-grid">
+                  <div className="hub-clientes__field hub-finance-page__field-span-6">
+                    <label className="hub-clientes__label" htmlFor="fin-comm-prev-rec">
+                      Recebível
+                    </label>
+                    <select
+                      id="fin-comm-prev-rec"
+                      className="hub-clientes__select-input"
+                      value={previewReceivableId}
+                      onChange={(e) => {
+                        setPreviewReceivableId(e.target.value);
+                        setCommPreview(null);
+                      }}
+                    >
+                      <option value="">—</option>
+                      {commPreviewReceivables.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {statusLabel(r.status)} · {formatBrl(Number(r.final_amount))} ·{' '}
+                          {sourceLabel(r.source_type)} ({r.source_id.slice(0, 8)}…)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="hub-finance-page__form-actions">
+                    <button
+                      type="button"
+                      className="hub-clientes__btn hub-clientes__btn--primary"
+                      disabled={!previewReceivableId || commPreviewLoading}
+                      onClick={() => void onRunCommissionPreview()}
+                    >
+                      {commPreviewLoading ? 'Calculando…' : 'Calcular'}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--primary hub-finance-page__btn-align"
-                  disabled={!previewReceivableId || commPreviewLoading}
-                  onClick={() => void onRunCommissionPreview()}
-                >
-                  {commPreviewLoading ? 'Calculando…' : 'Calcular'}
-                </button>
               </div>
               {commPreview ? (
                 <>
@@ -912,7 +1117,6 @@ const HubFinanceiroPage: React.FC = () => {
           )}
         </section>
       ) : null}
-
     </>
   );
 };

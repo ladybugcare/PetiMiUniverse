@@ -137,6 +137,8 @@ export type DayBoardBilling = {
   active_receivable_id: string | null;
   /** Vencimento do recebível ativo (pendente/parcial), quando houver. */
   due_date: string | null;
+  /** Valor final do recebível ativo (para filtrar cobranças zeradas). */
+  receivable_amount?: number | null;
 };
 
 export function isBilledViaComandaHandoff(billing: DayBoardBilling): boolean {

@@ -13,6 +13,10 @@ export type HubTabNavItem = {
 export type HubTabButtonItem = {
   id: string;
   label: string;
+  /** Contagem opcional (ex.: pendências). Fica visual; não altera o nome acessível da aba. */
+  badge?: number | string | null;
+  /** Agrupa abas secundárias (ex.: Ajustes, Comissões) após um separador visual. */
+  secondary?: boolean;
 };
 
 export type HubTabItem = HubTabNavItem | HubTabButtonItem;
@@ -72,7 +76,7 @@ export const HubTabs: React.FC<HubTabsProps> = ({
 
   return (
     <nav className={containerClass} aria-label={ariaLabel}>
-      {items.map((item) => {
+      {items.map((item, index) => {
         if (isNavItem(item)) {
           return (
             <NavLink
@@ -90,16 +94,40 @@ export const HubTabs: React.FC<HubTabsProps> = ({
           );
         }
         const active = item.id === activeId;
+        const badgeRaw = item.badge;
+        const badgeNum = typeof badgeRaw === 'number' ? badgeRaw : Number(badgeRaw);
+        const showBadge =
+          badgeRaw != null &&
+          badgeRaw !== '' &&
+          !(typeof badgeRaw === 'number' && badgeRaw <= 0) &&
+          !(Number.isFinite(badgeNum) && badgeNum <= 0);
+        const prev = index > 0 ? items[index - 1] : null;
+        const showSecondarySep =
+          Boolean(item.secondary) && !(prev && !isNavItem(prev) && prev.secondary);
         return (
-          <button
-            key={item.id}
-            type="button"
-            className={buttonTabClass(active)}
-            aria-current={active ? 'page' : undefined}
-            onClick={() => onTabChange?.(item.id)}
-          >
-            {item.label}
-          </button>
+          <React.Fragment key={item.id}>
+            {showSecondarySep ? (
+              <span className="hub-clientes__tabs-sep" aria-hidden="true" />
+            ) : null}
+            <button
+              type="button"
+              className={[
+                buttonTabClass(active),
+                item.secondary ? 'hub-clientes__tab--secondary' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              aria-current={active ? 'page' : undefined}
+              onClick={() => onTabChange?.(item.id)}
+            >
+              <span className="hub-clientes__tab-label">{item.label}</span>
+              {showBadge ? (
+                <span className="hub-clientes__tab-badge" aria-hidden="true">
+                  {badgeRaw}
+                </span>
+              ) : null}
+            </button>
+          </React.Fragment>
         );
       })}
     </nav>

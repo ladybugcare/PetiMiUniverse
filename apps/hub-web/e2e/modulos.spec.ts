@@ -60,10 +60,16 @@ test.describe('módulos autenticados', () => {
 
     await expect(page.getByRole('heading', { name: 'Financeiro' })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('navigation', { name: 'Seções financeiras' })).toBeVisible();
-    await expect(page.getByText('Pendentes de cobrança')).toBeVisible();
+    await expect(page.getByLabel('Resumo financeiro dos últimos 30 dias')).toBeVisible();
+    await expect(page.getByRole('button', { name: /A receber/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Contas a receber' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Despesas' }).click();
     await expect(page.getByRole('heading', { name: 'Despesas' })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Contas a pagar' }).click();
+    await expect(page.getByRole('heading', { name: 'Contas a pagar' })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Contas a receber' }).click();
+    await expect(page.getByRole('heading', { name: 'Contas a receber' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Erro' })).toHaveCount(0);
   });
 
@@ -120,9 +126,11 @@ test.describe('módulos autenticados', () => {
     await page.goto('/hub/perfil-clinica');
 
     await expect(page.getByRole('heading', { name: 'Perfil da Clínica' })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText('A carregar perfil da clínica…')).toBeHidden({ timeout: 20_000 });
-    await expect(page.getByRole('heading', { name: 'Dados da organização' })).toBeVisible();
+    await expect(page.getByText('Carregando perfil da clínica…')).toBeHidden({ timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: 'Organização' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Unidades' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Editar clínica' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Nova unidade' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Erro' })).toHaveCount(0);
   });
 });

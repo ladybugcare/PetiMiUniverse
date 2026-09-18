@@ -7,6 +7,10 @@ import {
   HUB_JOB_FUNCTION_OPTIONS,
   VET_JOB_TITLE_VALUE,
 } from '../../constants/hubJobFunctions';
+import {
+  HUB_STAFF_AFFILIATION_LABELS,
+  type HubStaffAffiliation,
+} from '../../constants/hubStaffAffiliation';
 import { suggestServiceTypeIdsForJobTitle, type GroupJobMappings } from '../../utils/staffServiceCompatibility';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
@@ -98,6 +102,7 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
   }, []);
 
   const [form, setForm] = useState<HubStaffFormState>(emptyStaffForm());
+  const [guestShowExtras, setGuestShowExtras] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -138,6 +143,10 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
       setEditingId(staff.id);
       setForm(staffFormFromRow(staff, activeIds));
       setLoginLinked(Boolean(staff.clinic_user_id));
+      setGuestShowExtras(
+        staff.affiliation === 'guest' &&
+          (Boolean(staff.accepts_appointments) || (staff.service_types?.length ?? 0) > 0),
+      );
     } else {
       setEditingId(null);
       const blank = emptyStaffForm();
@@ -146,6 +155,7 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
       }
       setForm(blank);
       setLoginLinked(false);
+      setGuestShowExtras(false);
     }
     // `units` propositalmente fora das deps: só pré-preenche na abertura; se chegar depois, o efeito abaixo completa.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- units handled separately
@@ -580,6 +590,53 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
       ) : (
         <div className="hub-equipe-drawer__content hub-equipe-drawer">
 <form onSubmit={handleSave}>
+              <section className="hub-equipe__affiliation" aria-labelledby="st-affiliation-title">
+                <h3 id="st-affiliation-title" className="hub-servicos__form-section-title">
+                  Vínculo com a clínica
+                </h3>
+                <div className="hub-equipe__affiliation-options" role="radiogroup" aria-label="Vínculo">
+                  {(['internal', 'guest'] as HubStaffAffiliation[]).map((value) => {
+                    const selected = form.affiliation === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        className={`hub-equipe__affiliation-card${selected ? ' hub-equipe__affiliation-card--selected' : ''}`}
+                        aria-pressed={selected}
+                        disabled={!canWrite}
+                        onClick={() => {
+                          setForm((f) => ({
+                            ...f,
+                            affiliation: value,
+                            ...(value === 'guest' && !f.accepts_appointments
+                              ? {}
+                              : value === 'guest'
+                                ? { accepts_appointments: false }
+                                : {}),
+                          }));
+                          if (value === 'guest') setGuestShowExtras(false);
+                        }}
+                      >
+                        <span className="hub-equipe__affiliation-card__title">
+                          {HUB_STAFF_AFFILIATION_LABELS[value]}
+                        </span>
+                        <span className="hub-equipe__affiliation-card__hint">
+                          {value === 'internal'
+                            ? 'Profissional da casa (fixixo).'
+                            : 'Pontual — ex.: anestesista convidado. Pode ganhar acesso ao Hub depois.'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {form.affiliation === 'guest' ? (
+                  <p className="hub-equipe__affiliation-note">
+                    Cadastro leve: nome, função e CRMV (se vet) bastam. Serviços, agenda e acesso ao Hub
+                    ficam opcionais.
+                  </p>
+                ) : null}
+              </section>
+
               <div className="hub-pets-photo-field">
                 <div className="hub-pets-photo-field__label-row">
                   <span className="hub-pets-photo-field__title">Foto do profissional</span>
@@ -896,6 +953,18 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                 </button>
               </section>
 
+              {form.affiliation === 'guest' && !guestShowExtras ? (
+                <div style={{ marginTop: 16, marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    className="hub-clientes__btn hub-clientes__btn--ghost"
+                    onClick={() => setGuestShowExtras(true)}
+                  >
+                    Mostrar serviços e agenda (opcional)
+                  </button>
+                </div>
+              ) : (
+                <>
               <section className="hub-equipe__service-groups" aria-labelledby="st-services-title">
                 <div className="hub-equipe__service-group-header">
                   <h3 id="st-services-title" className="hub-servicos__form-section-title">
@@ -1097,11 +1166,18 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                   </div>
                 ) : null}
               </section>
+                </>
+              )}
 
               <section className="hub-equipe__hub-access" aria-labelledby="st-hub-access-title">
                 <h3 id="st-hub-access-title" className="hub-servicos__form-section-title hub-equipe__form-section-title-spaced">
                   Acesso ao PetMi Hub
                 </h3>
+                {form.affiliation === 'guest' && !form.has_hub_access ? (
+                  <p className="hub-equipe__affiliation-note" style={{ marginTop: 0 }}>
+                    Opcional. Convidados podem receber login depois, sem mudar o vínculo.
+                  </p>
+                ) : null}
 
                 {isSelfEdit && (
                   <p className="hub-equipe__self-edit-warn">

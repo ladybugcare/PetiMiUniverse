@@ -35,15 +35,21 @@ export function resolveWalkInAppointmentKind(
 
 export type OperationalModule = 'clinical' | 'grooming' | 'boarding';
 
-export function resolveOperationalModuleForAppointment(
-  appt: Pick<AgendaAppointment, 'group' | 'serviceGroups'>,
+export function resolveOperationalModuleFromServiceGroups(
+  groups: Array<string | null | undefined>,
 ): OperationalModule | null {
-  const groups = appt.serviceGroups?.length ? appt.serviceGroups : [appt.group];
   const slugs = groups.map((g) => normalizeServiceGroupSlug(g));
   if (slugs.some((g) => isOperationalClinicalGroup(g))) return 'clinical';
   if (slugs.some((g) => g === OPERATIONAL_GROOMING_SERVICE_GROUP)) return 'grooming';
   if (slugs.some((g) => g === 'hotel' || g === 'creche')) return 'boarding';
   return null;
+}
+
+export function resolveOperationalModuleForAppointment(
+  appt: Pick<AgendaAppointment, 'group' | 'serviceGroups'>,
+): OperationalModule | null {
+  const groups = appt.serviceGroups?.length ? appt.serviceGroups : [appt.group];
+  return resolveOperationalModuleFromServiceGroups(groups);
 }
 
 export function operationalOpenLabel(module: OperationalModule): string {

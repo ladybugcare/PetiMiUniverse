@@ -12,6 +12,7 @@ Documento espelhado do plano aprovado. **Fonte de trabalho:** manter este fichei
 | **2** | 04–06 | Dashboard gerencial, despesas, fluxo de caixa — **entregue (mai/2026):** migração `037_create_hub_expenses.sql`; API `GET /finance/dashboard-summary`, `GET /finance/cash-flow`, `GET|POST /finance/expenses`, `POST /finance/cash-sessions/:id/movements`; UI `/hub/dashboard`, separadores Despesas e Fluxo em `/hub/financeiro`, sangria/suprimento no Caixa. |
 | **3** | 07 | Comissões por `hub_service_type_id` — **entregue (mai/2026):** migração `038_create_hub_commission_rules.sql`; API `GET|POST /finance/commission-rules`, `PATCH|DELETE /finance/commission-rules/:id`, `GET /finance/commission-preview`; separador **Comissões** em `/hub/financeiro`. |
 | **4** | 08–09 | Integrações (interface), relatórios |
+| **5** | contas a pagar | **`hub_payables`** (migração `113_create_hub_payables.sql`): honorário / obrigação pendente ou já paga; sync na equipe da cirurgia; aba **Contas a pagar**; saídas liquidadas no fluxo/dashboard. Separado de `hub_expenses`. |
 | **Defer** | 10 | Centro de custos (colunas reservadas) |
 
 ## Princípios

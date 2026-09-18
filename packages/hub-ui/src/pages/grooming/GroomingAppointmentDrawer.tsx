@@ -1,6 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  Calendar,
+  Clock,
+  ExternalLink,
+  Loader,
+  MessageCircle,
+  Scissors,
+  User,
+} from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import {
   hubGroomingApi,
   type GroomingDayBoardItem,
@@ -8,15 +18,16 @@ import {
   type GroomingSessionEvent,
 } from '../../api/hubGroomingApi';
 import { getStoredClinicId } from '@petimi/web-core';
+import { useAlert } from '../../components/AlertProvider';
 import { petAgeDetailedLabel } from '../pets/petAge';
 import { PORTE_LABELS, type PetBodyPorteValue } from '../../utils/hubServiceTypesPricingMatrix';
 import {
-  GROOMING_NEXT_STAGE,
   GROOMING_STAGE_LABELS,
   getItemBoardStage,
+  resolveGroomingQuickAction,
+  type GroomingQuickAction,
   type GroomingStage,
 } from './groomingStages';
-import type { GroomingQuickAction } from './GroomingQueueBoard';
 import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
@@ -24,6 +35,8 @@ import { renderTemplate } from '../../utils/hubMessageTemplates';
 import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 import { PetOperationalAddAlert } from '../pets/PetOperationalAddAlert';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
+import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 
 const ADVANCE_LABEL: Partial<Record<GroomingStage, string>> = {
   scheduled: 'Check-in',
@@ -53,6 +66,12 @@ export type GroomingAppointmentDrawerProps = {
   /** Exibir botão de checkout (ex.: permissão + unidade resolvida). */
   checkoutEnabled?: boolean;
   canViewFinancial?: boolean;
+  /** Priorizar/despriorizar sessão (ação movida do card para o drawer). */
+  onTogglePriority?: (item: GroomingDayBoardItem) => void | Promise<void>;
+  /** Recepção/gestão lança adicional na comanda. */
+  canAddExtras?: boolean;
+  /** Salão avisa a recepção para pedir autorização de outro serviço. */
+  canRequestServices?: boolean;
 };
 
 function formatHm(iso: string): string {
@@ -78,20 +97,19 @@ function formatBrl(n: number | null | undefined): string {
   return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function stageBadgeVariant(stage: GroomingStage): string {
+  if (stage === 'ready') return 'ready';
+  if (stage === 'delivered' || stage === 'closed') return 'done';
+  if (stage === 'in_service' || stage === 'finishing') return 'progress';
+  if (stage === 'queued' || stage === 'checked_in') return 'waiting';
+  return 'neutral';
+}
 
-function resolveDrawerQuickAction(item: GroomingDayBoardItem, canWrite: boolean): GroomingQuickAction | null {
-  if (!canWrite) return null;
-  const stage = getItemBoardStage(item);
-  if (!item.session_id && item.appointment_id && item.appointment_status === 'pending_confirm') {
-    return { type: 'confirm_appointment' };
-  }
-  if (!item.session_id && item.appointment_id && stage === 'scheduled') {
-    return { type: 'check_in' };
-  }
-  if (item.session_id && GROOMING_NEXT_STAGE[stage]) {
-    return { type: 'advance' };
-  }
-  return null;
+function petInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'P';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
 }
 
 const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
@@ -104,15 +122,18 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
   onClose,
   onQuickAction,
   onSessionUpdated,
-  onOpenCheckout,
-  checkoutEnabled = false,
+  onOpenCheckout: _onOpenCheckout,
+  checkoutEnabled: _checkoutEnabled = false,
   canViewFinancial = false,
+  onTogglePriority,
+  canAddExtras = false,
+  canRequestServices = false,
   busy,
 }) => {
+  const { showError, showSuccess } = useAlert();
   const clinicId = getStoredClinicId();
   const templateOverrides = useMessageTemplates();
   const [events, setEvents] = useState<GroomingSessionEvent[]>([]);
-  const [noteDraft, setNoteDraft] = useState('');
   const [noteBusy, setNoteBusy] = useState(false);
   const [drawer, setDrawer] = useState<GroomingSessionDrawerResponse | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
@@ -121,10 +142,11 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
   const [checklistBusyKey, setChecklistBusyKey] = useState<string | null>(null);
   const [lineBusyId, setLineBusyId] = useState<string | null>(null);
   const [extraAddonId, setExtraAddonId] = useState('');
+  const [requestServiceId, setRequestServiceId] = useState('');
   const [extraBusy, setExtraBusy] = useState(false);
 
   const stage = item ? getItemBoardStage(item) : 'scheduled';
-  const quick = item ? resolveDrawerQuickAction(item, canWrite) : null;
+  const quick = item ? resolveGroomingQuickAction(item, canWrite) : null;
   const pauseEligible =
     Boolean(canPauseQueue && onPauseToggle && item?.session_id) &&
     (stage === 'in_service' || stage === 'finishing');
@@ -161,7 +183,11 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
   const primaryLabel = useMemo(() => {
     if (!quick || !item) return null;
     if (quick.type === 'confirm_appointment') return 'Confirmar agendamento';
-    if (quick.type === 'check_in') return 'Check-in';
+    if (quick.type === 'check_in') {
+      if (stage === 'queued') return 'Iniciar';
+      if (stage === 'checked_in') return 'Enviar para fila';
+      return 'Check-in';
+    }
     return ADVANCE_LABEL[stage] || 'Avançar';
   }, [quick, item, stage]);
 
@@ -178,21 +204,6 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
       onSessionUpdated?.();
     } finally {
       setChecklistBusyKey(null);
-    }
-  };
-
-  const saveOperationalNotes = async () => {
-    if (!clinicId || !item?.session_id) return;
-    setOperationalBusy(true);
-    try {
-      await hubGroomingApi.patchSession(item.session_id, {
-        clinic_id: clinicId,
-        operational_notes: operationalDraft.trim() || null,
-      });
-      await refreshDrawer();
-      onSessionUpdated?.();
-    } finally {
-      setOperationalBusy(false);
     }
   };
 
@@ -224,6 +235,31 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
       setExtraAddonId('');
       await refreshDrawer();
       onSessionUpdated?.();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao adicionar adicional');
+    } finally {
+      setExtraBusy(false);
+    }
+  };
+
+  const requestService = async () => {
+    if (!clinicId || !item?.session_id || !requestServiceId) return;
+    const service = (drawer?.requestable_services ?? []).find((s) => s.id === requestServiceId);
+    if (!service) return;
+    setExtraBusy(true);
+    try {
+      await hubGroomingApi.requestSessionExtra(item.session_id, {
+        clinic_id: clinicId,
+        extra_name: service.name,
+        hub_service_type_id: requestServiceId,
+        created_by_staff_id: auditStaffId,
+      });
+      setRequestServiceId('');
+      const res = await hubGroomingApi.listEvents(item.session_id, clinicId);
+      setEvents(res.events ?? []);
+      showSuccess('Recepção avisada. Ela pede autorização ao tutor e inclui o serviço.');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao avisar a recepção');
     } finally {
       setExtraBusy(false);
     }
@@ -234,6 +270,11 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
     if (fromDrawer.length) return fromDrawer;
     return item?.clinical_tags ?? [];
   }, [drawer?.clinical_tags, item?.clinical_tags]);
+
+  const extraRequests = useMemo(
+    () => events.filter((e) => e.event_type === 'extra_request'),
+    [events],
+  );
 
   const extrasTotal = useMemo(() => {
     if (!showOperationalPricing) return null;
@@ -255,6 +296,27 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
     return any ? sum : null;
   }, [drawer?.extras, drawer?.appointment_lines, showOperationalPricing]);
 
+  const requestServiceOptions = useMemo<HubComboboxOption[]>(
+    () =>
+      (drawer?.requestable_services ?? []).map((s) => ({
+        value: s.id,
+        label: s.is_addon ? `${s.name} (adicional)` : s.name,
+      })),
+    [drawer?.requestable_services],
+  );
+
+  const extraAddonOptions = useMemo<HubComboboxOption[]>(
+    () =>
+      (drawer?.available_addons ?? []).map((a) => ({
+        value: a.id,
+        label:
+          showOperationalPricing && a.sale_amount != null
+            ? `${a.name} (${formatBrl(a.sale_amount)})`
+            : a.name,
+      })),
+    [drawer?.available_addons, showOperationalPricing],
+  );
+
   if (!item) return null;
 
   const petName = item.pet?.name || 'Pet';
@@ -267,89 +329,225 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
   const porte =
     item.pet?.size_tier && PORTE_LABELS[item.pet.size_tier as PetBodyPorteValue]
       ? PORTE_LABELS[item.pet.size_tier as PetBodyPorteValue]
-      : item.pet?.size_tier || '—';
+      : item.pet?.size_tier || null;
+  const ageLabel = item.pet?.birth_date ? petAgeDetailedLabel(item.pet.birth_date) : null;
+  const heroMeta = [item.pet?.breed || null, ageLabel, porte, item.pet?.coat_type || null]
+    .filter(Boolean)
+    .join(' · ');
+  const timeRange = `${formatHm(item.starts_at)}${item.ends_at !== item.starts_at ? ` – ${formatHm(item.ends_at)}` : ''}`;
+  const lastVisitLabel = drawer?.last_grooming_closed_at
+    ? formatDate(drawer.last_grooming_closed_at)
+    : '—';
+  const executedCount = drawer?.appointment_lines.filter((ln) => ln.executed_at).length ?? 0;
+  const linesCount = drawer?.appointment_lines.length ?? 0;
+  const checklistDone = checklistRows.filter((r) => r.done).length;
+  const waitingDrawer = Boolean(item.session_id && drawerLoading && !drawer);
 
-  const addNote = async () => {
-    if (!clinicId || !item.session_id || !noteDraft.trim()) return;
+  const saveNote = async () => {
+    if (!clinicId || !item.session_id || !operationalDraft.trim()) return;
+    setOperationalBusy(true);
     setNoteBusy(true);
     try {
-      await hubGroomingApi.addNote(item.session_id, clinicId, noteDraft.trim());
-      setNoteDraft('');
+      await hubGroomingApi.patchSession(item.session_id, {
+        clinic_id: clinicId,
+        operational_notes: operationalDraft.trim() || null,
+      });
+      await hubGroomingApi.addNote(item.session_id, clinicId, operationalDraft.trim());
       const res = await hubGroomingApi.listEvents(item.session_id, clinicId);
       setEvents(res.events ?? []);
+      await refreshDrawer();
+      onSessionUpdated?.();
     } finally {
+      setOperationalBusy(false);
       setNoteBusy(false);
     }
   };
 
+  const logReadyMessage = () => {
+    void logMessageAttempt({
+      clinic_id: clinicId ?? '',
+      guardian_id: item.guardian?.id ?? null,
+      pet_id: item.pet?.id ?? null,
+      channel: 'whatsapp_link',
+      template_key: 'pet_ready',
+    });
+  };
+
   const footer = (
     <div className="hub-grooming-drawer__footer">
-      {pauseEligible ? (
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--ghost"
-          disabled={busy}
-          onClick={() => void onPauseToggle?.(item)}
-        >
-          {item.paused_at ? 'Retomar atendimento' : 'Pausar atendimento'}
-        </button>
-      ) : null}
       {primaryLabel && quick ? (
         <button
           type="button"
-          className="hub-clientes__btn hub-clientes__btn--primary"
+          className="hub-grooming-drawer__advance-btn"
           disabled={busy}
           onClick={() => void onQuickAction(item, quick)}
         >
+          {busy ? <Loader size={16} className="spin" aria-hidden /> : null}
           {primaryLabel}
         </button>
       ) : null}
-      {/* Checkout de fim de atendimento removido — use o Caixa (Atendimentos do dia). */}
-      {item.appointment_id ? (
-        <Link
-          to={`/hub/appointments?date=${encodeURIComponent(item.starts_at.slice(0, 10))}`}
-          className="hub-clientes__btn hub-clientes__btn--ghost"
-        >
-          Ver na agenda
-        </Link>
+      {pauseEligible || (canWrite && item.session_id && onTogglePriority) ? (
+        <div className="hub-grooming-drawer__footer-secondary">
+          {pauseEligible ? (
+            <button
+              type="button"
+              className="hub-grooming-drawer__secondary-btn"
+              disabled={busy}
+              onClick={() => void onPauseToggle?.(item)}
+            >
+              {item.paused_at ? 'Retomar' : 'Pausar'}
+            </button>
+          ) : null}
+          {canWrite && item.session_id && onTogglePriority ? (
+            <button
+              type="button"
+              className="hub-grooming-drawer__secondary-btn"
+              disabled={busy}
+              onClick={() => void onTogglePriority(item)}
+            >
+              {(item.priority ?? 0) > 0 ? 'Tirar prioridade' : 'Priorizar'}
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
-
-  const lastVisitLabel = drawer?.last_grooming_closed_at
-    ? formatDate(drawer.last_grooming_closed_at)
-    : '—';
 
   return (
     <HubSidePanel
       open={open}
       onClose={onClose}
       title={petName}
-      subtitle={`${formatDate(item.starts_at)} · ${formatHm(item.starts_at)}${item.ends_at !== item.starts_at ? ` – ${formatHm(item.ends_at)}` : ''}`}
+      titleIcon={<Scissors size={16} aria-hidden />}
+      subtitle={`${formatDate(item.starts_at)} · ${timeRange}`}
+      contentKey={item.session_id ?? item.appointment_id ?? petName}
       footer={footer}
     >
       <div className="hub-grooming-drawer">
-        <p className="hub-grooming-drawer__status">
-          Estágio: <strong>{GROOMING_STAGE_LABELS[stage]}</strong>
-          {item.paused_at ? (
-            <span className="hub-grooming-queue__badge hub-grooming-queue__badge--paused"> Pausado</span>
+        <HubRefreshingBanner show={Boolean(drawer && drawerLoading)} label="Atualizando detalhes…" />
+
+        <div className="hub-grooming-drawer__hero">
+          {item.pet?.avatar_url ? (
+            <img src={item.pet.avatar_url} alt="" className="hub-grooming-drawer__avatar" />
+          ) : (
+            <div className="hub-grooming-drawer__avatar hub-grooming-drawer__avatar--fallback" aria-hidden>
+              {petInitials(petName)}
+            </div>
+          )}
+          <div className="hub-grooming-drawer__hero-info">
+            <p className="hub-grooming-drawer__hero-name">{petName}</p>
+            {heroMeta ? <p className="hub-grooming-drawer__hero-meta">{heroMeta}</p> : null}
+            <div className="hub-grooming-drawer__badges">
+              <span
+                className={`hub-grooming-drawer__stage hub-grooming-drawer__stage--${stageBadgeVariant(stage)}`}
+              >
+                {GROOMING_STAGE_LABELS[stage]}
+              </span>
+              {item.paused_at ? (
+                <span className="hub-grooming-drawer__stage hub-grooming-drawer__stage--paused">Pausado</span>
+              ) : null}
+              {item.is_late ? (
+                <span className="hub-grooming-drawer__flag hub-grooming-drawer__flag--late">Em atraso</span>
+              ) : null}
+              {(item.priority ?? 0) > 0 ? (
+                <span className="hub-grooming-drawer__flag hub-grooming-drawer__flag--priority">Prioritário</span>
+              ) : null}
+              {item.is_walk_in ? <span className="hub-grooming-drawer__flag">Avulso</span> : null}
+              {item.appointment_kind === 'pickup_route' ? (
+                <span className="hub-grooming-drawer__flag">Leva e traz</span>
+              ) : null}
+              {item.pet?.is_first_grooming_visit ? (
+                <span className="hub-grooming-drawer__flag hub-grooming-drawer__flag--first">1ª visita</span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className={`hub-grooming-drawer__contact${phone ? '' : ' hub-grooming-drawer__contact--no-phone'}`}>
+          <div className="hub-grooming-drawer__contact-info">
+            <p className="hub-grooming-drawer__contact-kicker">Tutor</p>
+            <p className="hub-grooming-drawer__contact-name">{tutor}</p>
+            {phone ? (
+              <p className="hub-grooming-drawer__contact-phone">{formatBrPhoneDisplay(phone)}</p>
+            ) : (
+              <p className="hub-grooming-drawer__contact-phone hub-grooming-drawer__contact-phone--empty">
+                Sem telefone
+              </p>
+            )}
+          </div>
+          {notifyTutorHref ? (
+            <a
+              className="hub-grooming-drawer__whatsapp"
+              href={notifyTutorHref}
+              target="_blank"
+              rel="noreferrer"
+              onClick={logReadyMessage}
+            >
+              <MessageCircle size={16} aria-hidden />
+              Avisar tutor
+            </a>
           ) : null}
-          {item.is_late ? <span className="hub-grooming-queue__late-tag"> · Em atraso</span> : null}
-        </p>
+        </div>
+
+        {stage === 'ready' ? (
+          <div className="hub-grooming-drawer__ready-banner" role="status">
+            {notifyTutorHref
+              ? `${petName} está pronto para retirada. Avise o tutor pelo WhatsApp.`
+              : `${petName} está pronto para retirada. Sem telefone do tutor para avisar.`}
+          </div>
+        ) : null}
+
+        <div className="hub-grooming-drawer__facts">
+          <div className="hub-grooming-drawer__fact">
+            <Clock size={14} className="hub-grooming-drawer__fact-icon" aria-hidden />
+            <span className="hub-grooming-drawer__fact-label">Horário</span>
+            <span className="hub-grooming-drawer__fact-value">{timeRange}</span>
+          </div>
+          <div className="hub-grooming-drawer__fact">
+            <User size={14} className="hub-grooming-drawer__fact-icon" aria-hidden />
+            <span className="hub-grooming-drawer__fact-label">Profissional</span>
+            <span className="hub-grooming-drawer__fact-value">
+              {item.staff_member?.full_name || 'Sem profissional'}
+            </span>
+          </div>
+          {item.estimated_duration_minutes ? (
+            <div className="hub-grooming-drawer__fact">
+              <Clock size={14} className="hub-grooming-drawer__fact-icon" aria-hidden />
+              <span className="hub-grooming-drawer__fact-label">Duração</span>
+              <span className="hub-grooming-drawer__fact-value">~{item.estimated_duration_minutes} min</span>
+            </div>
+          ) : null}
+          {item.session_id ? (
+            <div className="hub-grooming-drawer__fact">
+              <Calendar size={14} className="hub-grooming-drawer__fact-icon" aria-hidden />
+              <span className="hub-grooming-drawer__fact-label">Última visita</span>
+              <span className="hub-grooming-drawer__fact-value">
+                {drawerLoading && !drawer ? '…' : lastVisitLabel}
+              </span>
+            </div>
+          ) : null}
+        </div>
 
         <FinancialAdjustmentPendingBadge
           pending={Boolean(item.financial_adjustment_pending)}
           showCaixaLink={canViewFinancial}
         />
 
+        {waitingDrawer ? (
+          <HubLoading variant="block" label="Carregando detalhes…" className="hub-grooming-drawer__loading" />
+        ) : null}
+
         {tags.length > 0 ? (
-          <div className="hub-grooming-tags" aria-label="Alertas e preferências">
-            {tags.map((t) => (
-              <span key={t.key} className="hub-grooming-tags__pill">
-                {t.label}
-              </span>
-            ))}
-          </div>
+          <section className="hub-grooming-drawer__section" aria-label="Alertas e preferências">
+            <h4 className="hub-grooming-drawer__heading">Alertas</h4>
+            <div className="hub-grooming-tags hub-grooming-tags--drawer">
+              {tags.map((t) => (
+                <span key={t.key} className="hub-grooming-tags__pill">
+                  {t.label}
+                </span>
+              ))}
+            </div>
+          </section>
         ) : null}
 
         {(canWrite || canPauseQueue) && clinicId && item.pet_id ? (
@@ -365,91 +563,56 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
           />
         ) : null}
 
-        <section className="hub-grooming-drawer__section">
-          <h4 className="hub-grooming-drawer__heading">Última visita (Banho & Tosa encerrada)</h4>
-          <p className="hub-clientes__muted">{item.session_id ? (drawerLoading ? 'Carregando…' : lastVisitLabel) : '—'}</p>
-        </section>
+        {item.pet?.notes?.trim() || item.notes?.trim() || item.description?.trim() ? (
+          <section className="hub-grooming-drawer__section hub-grooming-drawer__callout hub-grooming-drawer__callout--notes">
+            <h4 className="hub-grooming-drawer__heading">Observações do tutor</h4>
+            {item.pet?.notes?.trim() ? <p>{item.pet.notes.trim()}</p> : null}
+            {item.description?.trim() ? <p className="hub-grooming-drawer__muted">{item.description.trim()}</p> : null}
+            {item.notes?.trim() ? <p className="hub-grooming-drawer__muted">{item.notes.trim()}</p> : null}
+          </section>
+        ) : null}
 
         <section className="hub-grooming-drawer__section">
-          <h4 className="hub-grooming-drawer__heading">Tutor</h4>
-          <p>{tutor}</p>
-          {phone ? <p className="hub-clientes__muted">Tel.: {formatBrPhoneDisplay(phone)}</p> : null}
-          {notifyTutorHref ? (
-            <a
-              className="hub-clientes__btn hub-clientes__btn--primary"
-              href={notifyTutorHref}
-              target="_blank"
-              rel="noreferrer"
-              style={{ marginTop: 10 }}
-              onClick={() => {
-                void logMessageAttempt({
-                  clinic_id: clinicId ?? '',
-                  guardian_id: item.guardian?.id ?? null,
-                  pet_id: item.pet?.id ?? null,
-                  channel: 'whatsapp_link',
-                  template_key: 'pet_ready',
-                });
-              }}
-            >
-              Avisar tutor
-            </a>
-          ) : null}
-        </section>
-
-        <section className="hub-grooming-drawer__section">
-          <h4 className="hub-grooming-drawer__heading">Pet</h4>
-          <p className="hub-clientes__muted">
-            {item.pet?.breed || 'Raça não informada'}
-            {item.pet?.birth_date ? ` · ${petAgeDetailedLabel(item.pet.birth_date)}` : ''}
-          </p>
-          <p className="hub-clientes__muted">Porte: {porte}</p>
-        </section>
-
-        <section className="hub-grooming-drawer__section">
-          <h4 className="hub-grooming-drawer__heading">Serviços agendados</h4>
+          <div className="hub-grooming-drawer__heading-row">
+            <h4 className="hub-grooming-drawer__heading">Serviços</h4>
+            {linesCount > 0 ? (
+              <span className="hub-grooming-drawer__count">
+                {executedCount}/{linesCount} feitos
+              </span>
+            ) : null}
+          </div>
           {item.session_id && drawer && drawer.appointment_lines.length > 0 ? (
             <ul className="hub-grooming-drawer__lines">
-              {drawer.appointment_lines.map((ln) => (
-                <li key={ln.id} className="hub-grooming-drawer__line">
-                  <span className="hub-grooming-drawer__line-name">{ln.name}</span>
-                  {showOperationalPricing && ln.sale_amount_applied != null ? (
-                    <span className="hub-clientes__muted hub-grooming-drawer__line-price">
-                      {formatBrl(ln.sale_amount_applied)}
-                    </span>
-                  ) : null}
-                  {canWrite ? (
-                    <label className="hub-grooming-drawer__executed">
-                      <input
-                        type="checkbox"
-                        checked={!!ln.executed_at}
-                        disabled={lineBusyId === ln.id}
-                        onChange={(e) => void toggleLineExecuted(ln.id, e.target.checked)}
-                      />
-                      <span>Executado</span>
-                    </label>
-                  ) : ln.executed_at ? (
-                    <span className="hub-clientes__muted">Executado</span>
-                  ) : null}
-                </li>
-              ))}
+              {drawer.appointment_lines.map((ln) => {
+                const done = Boolean(ln.executed_at);
+                return (
+                  <li
+                    key={ln.id}
+                    className={`hub-grooming-drawer__line${done ? ' hub-grooming-drawer__line--done' : ''}`}
+                  >
+                    {canWrite ? (
+                      <label className="hub-grooming-drawer__executed">
+                        <input
+                          type="checkbox"
+                          checked={done}
+                          disabled={lineBusyId === ln.id}
+                          onChange={(e) => void toggleLineExecuted(ln.id, e.target.checked)}
+                        />
+                        <span className="hub-grooming-drawer__line-name">{ln.name}</span>
+                      </label>
+                    ) : (
+                      <span className="hub-grooming-drawer__line-name">{ln.name}</span>
+                    )}
+                    {showOperationalPricing && ln.sale_amount_applied != null ? (
+                      <span className="hub-grooming-drawer__line-price">{formatBrl(ln.sale_amount_applied)}</span>
+                    ) : null}
+                    {!canWrite && done ? <span className="hub-grooming-drawer__line-state">Feito</span> : null}
+                  </li>
+                );
+              })}
             </ul>
-          ) : item.session_id && drawer && !drawerLoading && item.appointment_id && drawer.appointment_lines.length === 0 ? (
-            <>
-              <p className="hub-clientes__muted hub-grooming-drawer__sync-hint">
-                Estes serviços vêm da Agenda. Para marcar <strong>Executado</strong> aqui, o agendamento precisa de
-                linhas de serviço do grupo <strong>Banho & Tosa</strong> gravadas na Agenda. Abra o compromisso na
-                Agenda e confirme as linhas (o tipo principal sozinho pode não criar linha editável neste painel).
-              </p>
-              <ul className="hub-grooming-drawer__list">
-                {(item.services?.length ? item.services : [{ name: item.service_type?.name || 'Serviço' }]).map(
-                  (s, i) => (
-                    <li key={`${s.name}-${i}`}>{s.name}</li>
-                  ),
-                )}
-              </ul>
-            </>
           ) : (
-            <ul className="hub-grooming-drawer__list">
+            <ul className="hub-grooming-drawer__service-list">
               {(item.services?.length ? item.services : [{ name: item.service_type?.name || 'Serviço' }]).map(
                 (s, i) => (
                   <li key={`${s.name}-${i}`}>{s.name}</li>
@@ -457,65 +620,26 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
               )}
             </ul>
           )}
-          {item.estimated_duration_minutes ? (
-            <p className="hub-clientes__muted">Duração estimada: ~{item.estimated_duration_minutes} min</p>
+          {item.session_id && drawer && !drawerLoading && item.appointment_id && drawer.appointment_lines.length === 0 ? (
+            <p className="hub-grooming-drawer__hint">
+              Para marcar os serviços como feitos, o agendamento precisa das linhas de Banho & Tosa gravadas na
+              Agenda.
+            </p>
           ) : null}
         </section>
 
-        {item.session_id && canWrite && drawer && drawer.available_addons.length > 0 ? (
-          <section className="hub-grooming-drawer__section">
-            <h4 className="hub-grooming-drawer__heading">Adicionais</h4>
-            <div className="hub-grooming-drawer__extra-row">
-              <select
-                className="hub-clientes__select"
-                value={extraAddonId}
-                onChange={(e) => setExtraAddonId(e.target.value)}
-                aria-label="Selecionar adicional"
-              >
-                <option value="">Selecione…</option>
-                {drawer.available_addons.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                    {showOperationalPricing && a.sale_amount != null ? ` (${formatBrl(a.sale_amount)})` : ''}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                disabled={extraBusy || !extraAddonId}
-                onClick={() => void addExtra()}
-              >
-                {extraBusy ? '…' : 'Adicionar'}
-              </button>
-            </div>
-            {drawer.extras.length > 0 ? (
-              <ul className="hub-grooming-drawer__list hub-grooming-drawer__list--compact">
-                {drawer.extras.map((ex) => (
-                  <li key={ex.id}>
-                    {ex.name_snapshot}
-                    {showOperationalPricing && ex.sale_amount_snapshot != null
-                      ? ` · ${formatBrl(ex.sale_amount_snapshot)}`
-                      : ''}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {showOperationalPricing && extrasTotal != null ? (
-              <p className="hub-clientes__muted">
-                Subtotal referência (linhas + adicionais): <strong>{formatBrl(extrasTotal)}</strong>
-              </p>
-            ) : null}
-          </section>
-        ) : null}
-
         {item.session_id && drawer && checklistRows.length > 0 ? (
           <section className="hub-grooming-drawer__section">
-            <h4 className="hub-grooming-drawer__heading">Checklist</h4>
+            <div className="hub-grooming-drawer__heading-row">
+              <h4 className="hub-grooming-drawer__heading">Checklist</h4>
+              <span className="hub-grooming-drawer__count">
+                {checklistDone}/{checklistRows.length}
+              </span>
+            </div>
             <ul className="hub-grooming-drawer__checklist">
               {checklistRows.map((row) => (
                 <li key={row.key}>
-                  <label>
+                  <label className={row.done ? 'hub-grooming-drawer__check-row hub-grooming-drawer__check-row--done' : 'hub-grooming-drawer__check-row'}>
                     <input
                       type="checkbox"
                       checked={row.done}
@@ -530,76 +654,150 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
           </section>
         ) : null}
 
-        <section className="hub-grooming-drawer__section">
-          <h4 className="hub-grooming-drawer__heading">Equipe</h4>
-          <p>{item.staff_member?.full_name || 'Sem profissional atribuído'}</p>
-        </section>
+        {item.session_id && drawer && (canRequestServices || extraRequests.length > 0) ? (
+          <section className="hub-grooming-drawer__section hub-grooming-drawer__callout hub-grooming-drawer__callout--request">
+            <h4 className="hub-grooming-drawer__heading">
+              {canRequestServices ? 'Pedir serviço à recepção' : 'Autorização pendente'}
+            </h4>
+            {canRequestServices ? (
+              <p className="hub-grooming-drawer__hint">
+                Se no salão aparecer outro serviço (ex.: desembolo), avise a recepção. Ela pede autorização ao
+                tutor e inclui no atendimento.
+              </p>
+            ) : (
+              <p className="hub-grooming-drawer__hint">
+                O salão pediu autorização do tutor para incluir serviço. Confirme e lance na Agenda.
+              </p>
+            )}
+            {extraRequests.length > 0 ? (
+              <ul className="hub-grooming-drawer__request-list" aria-label="Pedidos à recepção">
+                {extraRequests.map((ev) => (
+                  <li key={ev.id}>
+                    <span className="hub-grooming-drawer__request-dot" aria-hidden />
+                    {ev.body?.trim() || ev.title}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {canRequestServices && requestServiceOptions.length > 0 ? (
+              <div className="hub-grooming-drawer__extra-row">
+                <HubSearchableCombobox
+                  id="grooming-drawer-request-service"
+                  className="hub-combobox--clientes"
+                  options={requestServiceOptions}
+                  value={requestServiceId}
+                  onChange={setRequestServiceId}
+                  placeholder="Selecione o serviço…"
+                  searchPlaceholder="Buscar serviço…"
+                  ariaLabel="Selecionar serviço"
+                  disabled={extraBusy}
+                />
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                  disabled={extraBusy || !requestServiceId}
+                  onClick={() => void requestService()}
+                >
+                  {extraBusy ? '…' : 'Avisar recepção'}
+                </button>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
-        {item.pet?.notes?.trim() || item.notes?.trim() || item.description?.trim() ? (
-          <section className="hub-grooming-drawer__section hub-grooming-drawer__section--highlight">
-            <h4 className="hub-grooming-drawer__heading">Observações do tutor / agendamento</h4>
-            {item.pet?.notes?.trim() ? <p>{item.pet.notes.trim()}</p> : null}
-            {item.description?.trim() ? <p className="hub-clientes__muted">{item.description.trim()}</p> : null}
-            {item.notes?.trim() ? <p className="hub-clientes__muted">{item.notes.trim()}</p> : null}
+        {item.session_id && drawer && canAddExtras && drawer.available_addons.length > 0 ? (
+          <section className="hub-grooming-drawer__section">
+            <h4 className="hub-grooming-drawer__heading">Adicionais</h4>
+            {drawer.extras.length > 0 ? (
+              <ul className="hub-grooming-drawer__chips">
+                {drawer.extras.map((ex) => (
+                  <li key={ex.id} className="hub-grooming-drawer__chip">
+                    {ex.name_snapshot}
+                    {showOperationalPricing && ex.sale_amount_snapshot != null
+                      ? ` · ${formatBrl(ex.sale_amount_snapshot)}`
+                      : ''}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="hub-grooming-drawer__hint">Nenhum adicional lançado ainda.</p>
+            )}
+            <div className="hub-grooming-drawer__extra-row">
+              <HubSearchableCombobox
+                id="grooming-drawer-extra-addon"
+                className="hub-combobox--clientes"
+                options={extraAddonOptions}
+                value={extraAddonId}
+                onChange={setExtraAddonId}
+                placeholder="Selecione o adicional…"
+                searchPlaceholder="Buscar adicional…"
+                ariaLabel="Selecionar adicional"
+                disabled={extraBusy}
+              />
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                disabled={extraBusy || !extraAddonId}
+                onClick={() => void addExtra()}
+              >
+                {extraBusy ? '…' : 'Adicionar'}
+              </button>
+            </div>
+            {showOperationalPricing && extrasTotal != null ? (
+              <p className="hub-grooming-drawer__subtotal">
+                Referência (linhas + adicionais): <strong>{formatBrl(extrasTotal)}</strong>
+              </p>
+            ) : null}
+          </section>
+        ) : item.session_id && drawer && drawer.extras.length > 0 && !canAddExtras ? (
+          <section className="hub-grooming-drawer__section">
+            <h4 className="hub-grooming-drawer__heading">Adicionais</h4>
+            <ul className="hub-grooming-drawer__chips">
+              {drawer.extras.map((ex) => (
+                <li key={ex.id} className="hub-grooming-drawer__chip">
+                  {ex.name_snapshot}
+                </li>
+              ))}
+            </ul>
           </section>
         ) : null}
 
         {item.session_id && canWrite ? (
           <section className="hub-grooming-drawer__section">
-            <h4 className="hub-grooming-drawer__heading">Notas do atendimento</h4>
+            <h4 className="hub-grooming-drawer__heading">Notas da equipe</h4>
             <textarea
-              className="hub-clientes__textarea"
+              className="hub-clientes__textarea hub-grooming-drawer__notes"
               rows={3}
               value={operationalDraft}
               onChange={(e) => setOperationalDraft(e.target.value)}
-              placeholder="Resumo para a equipe (persistido na sessão)…"
+              placeholder="Comportamento, intercorrência, recado para a equipe…"
             />
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-              disabled={operationalBusy}
-              onClick={() => void saveOperationalNotes()}
+              disabled={operationalBusy || noteBusy || !operationalDraft.trim()}
+              onClick={() => void saveNote()}
             >
-              {operationalBusy ? 'Salvando…' : 'Salvar notas'}
-            </button>
-          </section>
-        ) : null}
-
-        {item.session_id && canWrite ? (
-          <section className="hub-grooming-drawer__section">
-            <h4 className="hub-grooming-drawer__heading">Nota na timeline</h4>
-            <textarea
-              className="hub-clientes__textarea"
-              rows={2}
-              value={noteDraft}
-              onChange={(e) => setNoteDraft(e.target.value)}
-              placeholder="Comportamento, intercorrência…"
-            />
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-              disabled={noteBusy || !noteDraft.trim()}
-              onClick={() => void addNote()}
-            >
-              {noteBusy ? 'Salvando…' : 'Adicionar nota'}
+              {operationalBusy || noteBusy ? 'Salvando…' : 'Salvar nota'}
             </button>
           </section>
         ) : null}
 
         {item.session_id ? (
           <section className="hub-grooming-drawer__section">
-            <h4 className="hub-grooming-drawer__heading">Timeline</h4>
+            <h4 className="hub-grooming-drawer__heading">Histórico</h4>
             {events.length === 0 ? (
-              <p className="hub-clientes__muted">Nenhum evento registrado.</p>
+              <p className="hub-grooming-drawer__hint">Nenhum evento registrado ainda.</p>
             ) : (
               <ul className="hub-grooming-drawer__timeline">
                 {events.map((ev) => (
                   <li key={ev.id} className="hub-grooming-drawer__timeline-item">
-                    <p className="hub-grooming-drawer__timeline-title">{ev.title}</p>
-                    <p className="hub-clientes__muted hub-grooming-drawer__timeline-meta">
-                      {formatEventAt(ev.created_at)}
-                    </p>
-                    {ev.body?.trim() ? <p className="hub-grooming-drawer__timeline-body">{ev.body}</p> : null}
+                    <span className="hub-grooming-drawer__timeline-dot" aria-hidden />
+                    <div>
+                      <p className="hub-grooming-drawer__timeline-title">{ev.title}</p>
+                      <p className="hub-grooming-drawer__timeline-meta">{formatEventAt(ev.created_at)}</p>
+                      {ev.body?.trim() ? <p className="hub-grooming-drawer__timeline-body">{ev.body}</p> : null}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -607,8 +805,14 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
           </section>
         ) : null}
 
-        {item.appointment_kind === 'pickup_route' ? (
-          <p className="hub-grooming-queue__badge">Agendamento com leva e traz</p>
+        {item.appointment_id ? (
+          <Link
+            to={`/hub/appointments?date=${encodeURIComponent(item.starts_at.slice(0, 10))}`}
+            className="hub-grooming-drawer__agenda"
+          >
+            <ExternalLink size={13} aria-hidden />
+            Ver na agenda
+          </Link>
         ) : null}
       </div>
     </HubSidePanel>

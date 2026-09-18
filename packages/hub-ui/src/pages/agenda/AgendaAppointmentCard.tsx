@@ -19,7 +19,7 @@ import {
   isPartnerCareLocation,
 } from './agendaModel';
 
-export type AgendaAppointmentCardVariant = 'day' | 'week';
+export type AgendaAppointmentCardVariant = 'day' | 'week' | 'month';
 
 export interface AgendaAppointmentCardProps {
   appointment: AgendaAppointment;
@@ -27,9 +27,11 @@ export interface AgendaAppointmentCardProps {
   heightPx?: number;
   selected?: boolean;
   draggable?: boolean;
+  dragging?: boolean;
   showProfessional?: boolean;
   onClick?: (e: React.MouseEvent) => void;
   onDragStart?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
 }
 
 function CardBadges({
@@ -151,35 +153,69 @@ export function AgendaAppointmentCard({
   heightPx,
   selected = false,
   draggable = false,
+  dragging = false,
   showProfessional = false,
   onClick,
   onDragStart,
+  onDragEnd,
 }: AgendaAppointmentCardProps) {
   const color = resolveServiceAccentColor(a.agendaColor, a.group);
   const st = STATUS_META[a.status];
   const serviceLabel = a.displayServiceLabel ?? a.serviceName;
   const isWeek = variant === 'week';
+  const isMonth = variant === 'month';
 
-  const size: AgendaCardSize =
-    isWeek ? 'medium' : heightPx != null ? agendaCardSizeFromHeight(heightPx) : 'tall';
+  const size: AgendaCardSize = isWeek || isMonth
+    ? 'medium'
+    : heightPx != null
+      ? agendaCardSizeFromHeight(heightPx)
+      : 'tall';
 
   const classNames = [
     'hub-agenda-card',
     isWeek ? 'hub-agenda-card--week' : '',
+    isMonth ? 'hub-agenda-card--month' : '',
     `hub-agenda-card--${size}`,
     selected ? 'hub-agenda-card--selected' : '',
     a.conflict ? 'hub-agenda-card--conflict' : '',
     isPartnerCareLocation(a) ? 'hub-agenda-card--partner' : '',
+    draggable ? 'hub-agenda-card--draggable' : '',
+    dragging ? 'hub-agenda-card--dragging' : '',
   ]
     .filter(Boolean)
     .join(' ');
+
+  const dragAttrs = {
+    draggable,
+    onDragStart,
+    onDragEnd,
+    title: draggable ? 'Arraste para remarcar horário ou dia' : undefined,
+  };
+
+  if (isMonth) {
+    return (
+      <button
+        type="button"
+        {...dragAttrs}
+        className={classNames}
+        style={{
+          backgroundColor: `${color}24`,
+          borderLeft: `4px solid ${color}`,
+          color: '#2d2424',
+        }}
+        onClick={onClick}
+      >
+        <span className="hub-agenda-card__time hub-agenda-card__time--inline">{formatHm(a.start)}</span>
+        <span className="hub-agenda-card__pet hub-agenda-card__pet--inline">{a.petName}</span>
+      </button>
+    );
+  }
 
   if (isWeek) {
     return (
       <button
         type="button"
-        draggable={draggable}
-        onDragStart={onDragStart}
+        {...dragAttrs}
         className={classNames}
         style={{
           backgroundColor: `${color}24`,
@@ -207,8 +243,7 @@ export function AgendaAppointmentCard({
     return (
       <button
         type="button"
-        draggable={draggable}
-        onDragStart={onDragStart}
+        {...dragAttrs}
         className={classNames}
         style={{
           backgroundColor: `${color}24`,
@@ -235,8 +270,7 @@ export function AgendaAppointmentCard({
     return (
       <button
         type="button"
-        draggable={draggable}
-        onDragStart={onDragStart}
+        {...dragAttrs}
         className={classNames}
         style={{
           backgroundColor: `${color}24`,
@@ -270,8 +304,7 @@ export function AgendaAppointmentCard({
   return (
     <button
       type="button"
-      draggable={draggable}
-      onDragStart={onDragStart}
+      {...dragAttrs}
       className={classNames}
       style={{
         backgroundColor: `${color}24`,

@@ -52,6 +52,7 @@ import {
   isSameDay,
   startOfDay,
   startOfMonth,
+  shiftAppointmentToDay,
   monthMatrix,
   serviceGroupLabel,
   laneKeyForAppointment,
@@ -68,7 +69,7 @@ import { AgendaAppointmentCard } from './AgendaAppointmentCard';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
 import { hubGroomingApi } from '../../api/hubGroomingApi';
 import { hubBoardingApi } from '../../api/hubBoardingApi';
-import { isWalkInAppointmentKind } from './walkInUtils';
+import { isWalkInAppointmentKind, resolveOperationalModuleFromServiceGroups } from './walkInUtils';
 import {
   SCHEDULE_OVERLAP_CANCEL_TEXT,
   SCHEDULE_OVERLAP_CONFIRM_TEXT,
@@ -175,6 +176,9 @@ const HubAgendaPage: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailMode, setDetailMode] = useState<'view' | 'edit'>('view');
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropHoverKey, setDropHoverKey] = useState<string | null>(null);
+  const skipClickAfterDragRef = useRef(false);
 
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
@@ -436,6 +440,24 @@ const HubAgendaPage: React.FC = () => {
         showSuccess('Encaixe registrado com check-in.');
         bumpReload();
         focusAppointmentOnAgenda(appointment.id, appointment.starts_at);
+        const groups = [
+          appointment.service_type?.service_group,
+          ...(appointment.services ?? []).map((s) => s.service_type?.service_group),
+        ];
+        if (
+          resolveOperationalModuleFromServiceGroups(groups) === 'grooming' &&
+          clinicId &&
+          canGroomingWrite
+        ) {
+          void hubGroomingApi
+            .openFromAppointment(clinicId, appointment.id, 'queued')
+            .catch((e: unknown) => {
+              showError(
+                (e as Error)?.message ||
+                  'Encaixe criado, mas não foi possível abrir na fila de Banho & Tosa.',
+              );
+            });
+        }
         return;
       }
 
@@ -468,7 +490,7 @@ const HubAgendaPage: React.FC = () => {
         },
       });
     },
-    [showAlert, showSuccess, openCreateModal, focusAppointmentOnAgenda, bumpReload, navigate],
+    [showAlert, showSuccess, showError, openCreateModal, focusAppointmentOnAgenda, bumpReload, navigate, clinicId, canGroomingWrite],
   );
 
   const openWalkInParam = searchParams.get('openWalkIn') === '1';
@@ -1218,7 +1240,7 @@ const HubAgendaPage: React.FC = () => {
     async (appointmentId: string) => {
       if (!clinicId || !canGroomingWrite) return;
       try {
-        await hubGroomingApi.openFromAppointment(clinicId, appointmentId, 'checked_in');
+        await hubGroomingApi.openFromAppointment(clinicId, appointmentId, 'queued');
         showSuccess('Pet adicionado à fila de Banho & Tosa.');
         navigate('/hub/banho-tosa');
       } catch (e: unknown) {
@@ -1408,10 +1430,82 @@ const HubAgendaPage: React.FC = () => {
     }
   };
 
+  const consumeSkipClickAfterDrag = () => {
+    if (!skipClickAfterDragRef.current) return false;
+    skipClickAfterDragRef.current = false;
+    return true;
+  };
+
+  const readDraggedAppointmentId = (e: React.DragEvent) =>
+    e.dataTransfer.getData('text/appt-id') || e.dataTransfer.getData('text/plain') || draggingId;
+
+  const assignmentPatchFromColKey = (
+    colKey: string | undefined,
+  ): { hub_staff_member_id?: string | null; resource_label?: string | null } => {
+    if (!colKey) return {};
+    if (groupMode === 'professional') {
+      return { hub_staff_member_id: colKey === '__na__' ? null : colKey };
+    }
+    if (groupMode === 'resource') {
+      return { resource_label: colKey === '__none__' ? null : colKey };
+    }
+    return {};
+  };
+
+  const appointmentDragHandlers = (a: AgendaAppointment) => {
+    const canDrag = canWrite && canEditAgendaAppointment(a, { canWrite });
+    return {
+      draggable: canDrag,
+      dragging: draggingId === a.id,
+      onDragStart: canDrag
+        ? (e: React.DragEvent) => {
+            skipClickAfterDragRef.current = true;
+            e.dataTransfer.setData('text/appt-id', a.id);
+            e.dataTransfer.setData('text/plain', a.id);
+            e.dataTransfer.effectAllowed = 'move';
+            setDraggingId(a.id);
+          }
+        : undefined,
+      onDragEnd: () => {
+        setDraggingId(null);
+        setDropHoverKey(null);
+      },
+    };
+  };
+
+  const moveAppointmentTo = async (
+    id: string,
+    newStart: Date,
+    newEnd: Date,
+    colKey?: string,
+  ) => {
+    if (!canWrite || !clinicId) return;
+    const ap = allAppointments.find((x) => x.id === id);
+    if (!ap || !canEditAgendaAppointment(ap, { canWrite })) return;
+    const assignment = assignmentPatchFromColKey(colKey);
+    const sameStart = ap.start.getTime() === newStart.getTime();
+    const sameEnd = ap.end.getTime() === newEnd.getTime();
+    const sameStaff =
+      assignment.hub_staff_member_id === undefined ||
+      (assignment.hub_staff_member_id ?? null) === (ap.professionalId ?? null);
+    const currentResource = ap.resourceLabel === '—' ? null : ap.resourceLabel;
+    const sameResource =
+      assignment.resource_label === undefined ||
+      (assignment.resource_label ?? null) === currentResource;
+    if (sameStart && sameEnd && sameStaff && sameResource) return;
+    await patchMoveWithOverlapConfirm(id, {
+      clinic_id: clinicId,
+      starts_at: newStart.toISOString(),
+      ends_at: newEnd.toISOString(),
+      ...assignment,
+    });
+  };
+
   const handleDropOnLane = async (e: React.DragEvent, colKey: string) => {
     e.preventDefault();
-    if (!canWrite || !clinicId) return;
-    const id = e.dataTransfer.getData('text/appt-id');
+    e.stopPropagation();
+    setDropHoverKey(null);
+    const id = readDraggedAppointmentId(e);
     if (!id) return;
     const ap = allAppointments.find((x) => x.id === id);
     if (!ap || !canEditAgendaAppointment(ap, { canWrite })) return;
@@ -1423,22 +1517,36 @@ const HubAgendaPage: React.FC = () => {
     const newStart = new Date(dayStart.getTime() + snapped * 60_000);
     const durMs = ap.end.getTime() - ap.start.getTime();
     const newEnd = new Date(newStart.getTime() + durMs);
-    const base = {
-      clinic_id: clinicId,
-      starts_at: newStart.toISOString(),
-      ends_at: newEnd.toISOString(),
-    };
-    if (groupMode === 'professional') {
-      const staffId = colKey === '__na__' ? null : colKey;
-      await patchMoveWithOverlapConfirm(id, { ...base, hub_staff_member_id: staffId });
-      return;
-    }
-    if (groupMode === 'resource') {
-      const label = colKey === '__none__' ? null : colKey;
-      await patchMoveWithOverlapConfirm(id, { ...base, resource_label: label });
-      return;
-    }
-    await patchMoveWithOverlapConfirm(id, base);
+    await moveAppointmentTo(id, newStart, newEnd, colKey);
+  };
+
+  const handleDropOnCalendarDay = async (
+    e: React.DragEvent,
+    targetDay: Date,
+    colKey?: string,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropHoverKey(null);
+    const id = readDraggedAppointmentId(e);
+    if (!id) return;
+    const ap = allAppointments.find((x) => x.id === id);
+    if (!ap || !canEditAgendaAppointment(ap, { canWrite })) return;
+    const moved = shiftAppointmentToDay(ap.start, ap.end, targetDay);
+    await moveAppointmentTo(id, moved.start, moved.end, colKey);
+  };
+
+  const allowAppointmentDrop = (e: React.DragEvent, hoverKey: string) => {
+    if (!canWrite) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dropHoverKey !== hoverKey) setDropHoverKey(hoverKey);
+  };
+
+  const clearDropHover = (e: React.DragEvent, hoverKey: string) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && (e.currentTarget as HTMLElement).contains(next)) return;
+    setDropHoverKey((k) => (k === hoverKey ? null : k));
   };
 
   const navLabel = useMemo(() => {
@@ -1459,6 +1567,10 @@ const HubAgendaPage: React.FC = () => {
 
   const handleLaneClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>, colKey: string) => {
+      if (skipClickAfterDragRef.current) {
+        skipClickAfterDragRef.current = false;
+        return;
+      }
       if (!canWrite) return;
       const lane = e.currentTarget.getBoundingClientRect();
       const y = e.clientY - lane.top;
@@ -1486,17 +1598,17 @@ const HubAgendaPage: React.FC = () => {
   const renderDayLane = (colKey: string) => {
     const list = apptsForDayColumn(colKey);
     const lines: React.ReactNode[] = [];
+    const hoverKey = `day:${colKey}`;
     for (let h = startHour; h <= endHour; h++) {
       const top = ((h - startHour) * 60) * pxPerMin;
       lines.push(<div key={h} className="hub-agenda-day__hour-line" style={{ top }} />);
     }
     return (
       <div
-        className="hub-agenda-day__lane"
+        className={`hub-agenda-day__lane${dropHoverKey === hoverKey ? ' hub-agenda-day__lane--drop-hover' : ''}`}
         style={{ ['--ag-lane-h' as string]: `${laneH}px` }}
-        onDragOver={(e) => {
-          if (canWrite) e.preventDefault();
-        }}
+        onDragOver={(e) => allowAppointmentDrop(e, hoverKey)}
+        onDragLeave={(e) => clearDropHover(e, hoverKey)}
         onDrop={(e) => void handleDropOnLane(e, colKey)}
         onClick={(e) => handleLaneClick(e, colKey)}
       >
@@ -1515,14 +1627,11 @@ const HubAgendaPage: React.FC = () => {
                 appointment={a}
                 heightPx={h}
                 selected={selectedId === a.id}
-                draggable={canWrite && canEditAgendaAppointment(a, { canWrite })}
                 showProfessional={groupMode !== 'professional'}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/appt-id', a.id);
-                  e.dataTransfer.effectAllowed = 'move';
-                }}
+                {...appointmentDragHandlers(a)}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (consumeSkipClickAfterDrag()) return;
                   openAppointmentDetail(a.id);
                 }}
               />
@@ -1922,7 +2031,7 @@ const HubAgendaPage: React.FC = () => {
             {appointmentsError ? ' · Erro ao carregar' : null}
           </p>
 
-          <div className="hub-agenda__calendar-wrap">
+          <div className={`hub-agenda__calendar-wrap${draggingId ? ' hub-agenda--dnd-active' : ''}`}>
             {remoteLoading && rawList.length === 0 && !appointmentsError ? (
               <HubLoading variant="block" label="Carregando agenda…" />
             ) : (
@@ -1993,16 +2102,25 @@ const HubAgendaPage: React.FC = () => {
                         const cell = apptsForWeekCell(row.key, d).sort((a, b) => a.start.getTime() - b.start.getTime());
                         const show = cell.slice(0, 3);
                         const more = cell.length - show.length;
+                        const hoverKey = `week:${row.key}:${toYmd(d)}`;
                         return (
                           <td key={toYmd(d)}>
-                            <div className="hub-agenda-week__cell-stack">
+                            <div
+                              className={`hub-agenda-week__cell-stack${dropHoverKey === hoverKey ? ' hub-agenda-week__cell-stack--hover' : ''}`}
+                              onDragOver={(e) => allowAppointmentDrop(e, hoverKey)}
+                              onDragLeave={(e) => clearDropHover(e, hoverKey)}
+                              onDrop={(e) => void handleDropOnCalendarDay(e, d, row.key)}
+                            >
                               {show.map((a) => (
                                 <AgendaAppointmentCard
                                   key={a.id}
                                   appointment={a}
                                   variant="week"
                                   selected={selectedId === a.id}
-                                  onClick={() => {
+                                  {...appointmentDragHandlers(a)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (consumeSkipClickAfterDrag()) return;
                                     openAppointmentDetail(a.id);
                                     setCursorDate(startOfDay(d));
                                     setView('day');
@@ -2014,6 +2132,7 @@ const HubAgendaPage: React.FC = () => {
                                   type="button"
                                   className="hub-agenda-week__more"
                                   onClick={() => {
+                                    if (consumeSkipClickAfterDrag()) return;
                                     setCursorDate(startOfDay(d));
                                     setView('day');
                                   }}
@@ -2056,71 +2175,74 @@ const HubAgendaPage: React.FC = () => {
                   const inMonth = d.getMonth() === cursorDate.getMonth();
                   const k = toYmd(d);
                   const list = monthDayMap.get(k) ?? [];
+                  const sorted = [...list].sort((a, b) => a.start.getTime() - b.start.getTime());
+                  const show = sorted.slice(0, 3);
+                  const more = sorted.length - show.length;
                   const busy = list.length >= 8;
                   const isToday = isSameDay(d, new Date());
                   const blk = blockByYmd.get(k);
+                  const hoverKey = `month:${k}`;
                   const blockCls =
                     blk?.kind === 'holiday'
                       ? ' hub-agenda-month__day--holiday'
                       : blk
                         ? ' hub-agenda-month__day--blocked'
                         : '';
-                  const groupsCount = new Map<string, number>();
-                  for (const a of list) {
-                    groupsCount.set(a.group, (groupsCount.get(a.group) ?? 0) + 1);
-                  }
-                  const topGroups = Array.from(groupsCount.entries())
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 3);
+                  const dropCls = dropHoverKey === hoverKey ? ' hub-agenda-month__day--drop-hover' : '';
                   return (
                     <div
                       key={k}
-                      role="button"
-                      tabIndex={0}
                       title={blk?.label}
-                      className={`hub-agenda-month__day ${!inMonth ? 'hub-agenda-month__day--muted' : ''} ${busy ? 'hub-agenda-month__day--busy' : ''} ${isToday ? 'hub-agenda-month__day--today' : ''}${blockCls}`}
+                      className={`hub-agenda-month__day ${!inMonth ? 'hub-agenda-month__day--muted' : ''} ${busy ? 'hub-agenda-month__day--busy' : ''} ${isToday ? 'hub-agenda-month__day--today' : ''}${blockCls}${dropCls}`}
+                      onDragOver={(e) => allowAppointmentDrop(e, hoverKey)}
+                      onDragLeave={(e) => clearDropHover(e, hoverKey)}
+                      onDrop={(e) => void handleDropOnCalendarDay(e, d)}
                       onClick={() => {
+                        if (consumeSkipClickAfterDrag()) return;
                         setCursorDate(startOfDay(d));
                         setView('day');
                       }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setCursorDate(startOfDay(d));
-                          setView('day');
-                        }
-                      }}
                     >
                       <div className="hub-agenda-month__day-num">{d.getDate()}</div>
-                      <div className="hub-agenda-month__counts">
-                        {list.length === 0 ? (
-                          blk ? (
-                            <div className="hub-agenda-month__block-chip" title={blk.label}>
-                              {blk.kind === 'holiday' ? 'Feriado' : blk.label}
-                            </div>
-                          ) : (
-                            '—'
-                          )
-                        ) : (
-                          <>
-                            <strong>{list.length}</strong> atend.
-                            {topGroups.length > 0 ? (
-                              <div>
-                                {topGroups.map(([g, n]) => (
-                                  <div key={g}>
-                                    {n} {serviceGroupLabel(g)}
-                                  </div>
-                                ))}
-                              </div>
-                            ) : null}
-                            {blk ? (
-                              <div className="hub-agenda-month__block-chip" title={blk.label}>
-                                {blk.kind === 'holiday' ? 'Feriado' : blk.label}
-                              </div>
-                            ) : null}
-                          </>
-                        )}
-                      </div>
+                      {show.length > 0 ? (
+                        <div className="hub-agenda-month__chips">
+                          {show.map((a) => (
+                            <AgendaAppointmentCard
+                              key={a.id}
+                              appointment={a}
+                              variant="month"
+                              selected={selectedId === a.id}
+                              {...appointmentDragHandlers(a)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (consumeSkipClickAfterDrag()) return;
+                                openAppointmentDetail(a.id);
+                              }}
+                            />
+                          ))}
+                          {more > 0 ? (
+                            <button
+                              type="button"
+                              className="hub-agenda-week__more"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (consumeSkipClickAfterDrag()) return;
+                                setCursorDate(startOfDay(d));
+                                setView('day');
+                              }}
+                            >
+                              +{more} atendimento{more > 1 ? 's' : ''}
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="hub-agenda-month__counts">{blk ? null : '—'}</div>
+                      )}
+                      {blk ? (
+                        <div className="hub-agenda-month__block-chip" title={blk.label}>
+                          {blk.kind === 'holiday' ? 'Feriado' : blk.label}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}

@@ -235,6 +235,23 @@ export function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+/**
+ * Reposiciona o intervalo no dia alvo, preservando o horário local e a duração.
+ * Usado ao arrastar um card da semana/mês para outro dia.
+ */
+export function shiftAppointmentToDay(
+  start: Date,
+  end: Date,
+  targetDay: Date,
+): { start: Date; end: Date } {
+  const origDay = startOfDay(start);
+  const destDay = startOfDay(targetDay);
+  const offsetMs = start.getTime() - origDay.getTime();
+  const durMs = Math.max(end.getTime() - start.getTime(), 0);
+  const newStart = new Date(destDay.getTime() + offsetMs);
+  return { start: newStart, end: new Date(newStart.getTime() + durMs) };
+}
+
 export function startOfMonth(d: Date): Date {
   const x = new Date(d.getFullYear(), d.getMonth(), 1);
   x.setHours(0, 0, 0, 0);

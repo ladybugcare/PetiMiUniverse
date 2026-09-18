@@ -40,6 +40,21 @@ export function matchesFinanceiroDayBoardScope(billing: DayBoardBilling): boolea
   return false;
 }
 
+/** Contas a receber: ignora títulos/estimativas com valor efetivo zerado. */
+export function hasFinanceiroChargeableAmount(opts: {
+  estimated_amount: number;
+  billing: DayBoardBilling;
+}): boolean {
+  const recvAmt = Number(opts.billing.receivable_amount ?? 0);
+  if (
+    opts.billing.receivable_status === 'pending' ||
+    opts.billing.receivable_status === 'partially_paid'
+  ) {
+    return recvAmt > 0.009;
+  }
+  return Number(opts.estimated_amount ?? 0) > 0.009;
+}
+
 export function aggregateReceivableStatus(statuses: string[]): 'pending' | 'partially_paid' | 'paid' | null {
   if (statuses.length === 0) return null;
   if (statuses.some((s) => s === 'pending')) return 'pending';

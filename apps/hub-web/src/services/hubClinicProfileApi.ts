@@ -21,6 +21,17 @@ export type PatchHubUnitProfileBody = {
   is_main?: boolean;
 };
 
+export type CreateHubUnitBody = {
+  name: string;
+  nickname: string;
+  address: string;
+  city: string;
+  state: string;
+  phone?: string | null;
+  technical_manager: string;
+  is_main?: boolean;
+};
+
 export const hubClinicProfileApi = {
   getById(clinicId: string): Promise<{ clinic: HubClinicProfile }> {
     return apiRequest(`/clinics/${encodeURIComponent(clinicId)}`) as Promise<{ clinic: HubClinicProfile }>;
@@ -45,5 +56,12 @@ export const hubClinicProfileApi = {
         body: JSON.stringify(body),
       },
     ) as Promise<{ unit: HubUnitProfile }>;
+  },
+
+  createUnit(clinicId: string, body: CreateHubUnitBody): Promise<{ unit: HubUnitProfile }> {
+    return apiRequest(`/api/hub/units?clinic_id=${encodeURIComponent(clinicId)}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ unit: HubUnitProfile }>;
   },
 };

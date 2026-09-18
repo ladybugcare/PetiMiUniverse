@@ -104,7 +104,7 @@
   grid-column: 1 / -1;
 }
 
-.hub-onboarding-field label {
+.hub-onboarding-field label:not(.hub-checkbox) {
   display: block;
   font-size: 13px;
   font-weight: 600;
@@ -116,7 +116,7 @@
   width: 100%;
 }
 
-.hub-onboarding-field input,
+.hub-onboarding-field input:not(.hub-checkbox__input),
 .hub-onboarding-field textarea,
 .hub-onboarding-field select {
   width: 100%;

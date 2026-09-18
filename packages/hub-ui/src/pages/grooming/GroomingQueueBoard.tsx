@@ -1,5 +1,4 @@
 import React, { useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
 import {
   DndContext,
   PointerSensor,
@@ -15,13 +14,17 @@ import { petAgeDetailedLabel } from '../pets/petAge';
 import { PORTE_LABELS, type PetBodyPorteValue } from '../../utils/hubServiceTypesPricingMatrix';
 import {
   GROOMING_BOARD_COLUMNS,
-  GROOMING_NEXT_STAGE,
   GROOMING_STAGE_LABELS,
+  canOpenGroomingSessionFromAppointment,
   getItemBoardStage,
   itemBoardKey,
   pickDropTargetStage,
+  resolveGroomingQuickAction,
+  type GroomingQuickAction,
   type GroomingStage,
 } from './groomingStages';
+
+export type { GroomingQuickAction };
 
 const ADVANCE_LABEL: Partial<Record<GroomingStage, string>> = {
   scheduled: 'Check-in',
@@ -35,11 +38,6 @@ const ADVANCE_LABEL: Partial<Record<GroomingStage, string>> = {
 
 const DRAG_CARD_PREFIX = 'grooming-card-';
 const DROP_COL_PREFIX = 'grooming-col-';
-
-export type GroomingQuickAction =
-  | { type: 'confirm_appointment' }
-  | { type: 'check_in' }
-  | { type: 'advance' };
 
 function formatTime(iso?: string): string {
   if (!iso) return '—';
@@ -69,25 +67,14 @@ function porteLabel(tier?: string): string | null {
   return PORTE_LABELS[tier as PetBodyPorteValue] ?? tier;
 }
 
-function resolveQuickAction(item: GroomingDayBoardItem, canWrite: boolean): GroomingQuickAction | null {
-  if (!canWrite) return null;
-  const stage = getItemBoardStage(item);
-
-  if (!item.session_id && item.appointment_id && item.appointment_status === 'pending_confirm') {
-    return { type: 'confirm_appointment' };
-  }
-  if (!item.session_id && item.appointment_id && stage === 'scheduled') {
-    return { type: 'check_in' };
-  }
-  if (item.session_id && GROOMING_NEXT_STAGE[stage]) {
-    return { type: 'advance' };
-  }
-  return null;
-}
-
 function quickActionLabel(action: GroomingQuickAction, item: GroomingDayBoardItem): string {
   if (action.type === 'confirm_appointment') return 'Confirmar';
-  if (action.type === 'check_in') return 'Check-in';
+  if (action.type === 'check_in') {
+    const stage = getItemBoardStage(item);
+    if (stage === 'queued') return 'Iniciar';
+    if (stage === 'checked_in') return 'Para fila';
+    return 'Check-in';
+  }
   const stage = getItemBoardStage(item);
   return ADVANCE_LABEL[stage] || 'Avançar';
 }
@@ -173,12 +160,9 @@ const GroomingQueueBoard: React.FC<Props> = ({
   canWrite,
   canDragQueue = false,
   onStageDrop,
-  canPauseQueue = false,
-  onPauseToggle,
   searchQ,
   onSelect,
   onQuickAction,
-  onTogglePriority,
 }) => {
   const q = searchQ.trim().toLowerCase();
   const filtered = useMemo(
@@ -201,7 +185,8 @@ const GroomingQueueBoard: React.FC<Props> = ({
       const { active, over } = event;
       if (!over) return;
       const item = findItemByDragId(filtered, active.id);
-      if (!item?.session_id) return;
+      if (!item) return;
+      if (!item.session_id && !canOpenGroomingSessionFromAppointment(item)) return;
       const overId = String(over.id);
       if (!overId.startsWith(DROP_COL_PREFIX)) return;
       const colId = overId.slice(DROP_COL_PREFIX.length);
@@ -226,13 +211,15 @@ const GroomingQueueBoard: React.FC<Props> = ({
       item.estimated_duration_minutes != null && item.estimated_duration_minutes > 0
         ? `${item.estimated_duration_minutes} min`
         : null;
-    const quick = resolveQuickAction(item, canWrite);
+    const quick = resolveGroomingQuickAction(item, canWrite);
     const priority = (item.priority ?? 0) > 0;
     const dragId = `${DRAG_CARD_PREFIX}${itemBoardKey(item)}`;
-    const dragEnabled = Boolean(canDragQueue && item.session_id && onStageDrop);
+    const dragEnabled = Boolean(
+      canDragQueue &&
+        onStageDrop &&
+        (item.session_id || canOpenGroomingSessionFromAppointment(item)),
+    );
     const paused = Boolean(item.paused_at);
-    const canPauseThis =
-      Boolean(canPauseQueue && onPauseToggle && item.session_id && (stage === 'in_service' || stage === 'finishing'));
 
     const inner = (
       <>
@@ -250,13 +237,18 @@ const GroomingQueueBoard: React.FC<Props> = ({
             <span className={pillClass(stage)}>{GROOMING_STAGE_LABELS[stage]}</span>
           </div>
         </div>
-        {item.pet?.is_first_grooming_visit ? (
-          <p className="hub-grooming-queue__badge hub-grooming-queue__badge--first">1ª visita B&T</p>
-        ) : null}
-        {item.is_late ? <p className="hub-grooming-queue__late-tag">Em atraso</p> : null}
-        {item.is_walk_in ? <p className="hub-grooming-queue__badge">Avulso</p> : null}
-        {paused ? <p className="hub-grooming-queue__badge hub-grooming-queue__badge--paused">Pausado</p> : null}
-        {priority ? <p className="hub-grooming-queue__priority-tag">Prioritário</p> : null}
+        <div className="hub-grooming-queue__badges">
+          {item.pet?.is_first_grooming_visit ? (
+            <span className="hub-grooming-queue__badge hub-grooming-queue__badge--first">1ª visita B&T</span>
+          ) : null}
+          {item.is_late ? <span className="hub-grooming-queue__late-tag">Em atraso</span> : null}
+          {item.is_walk_in ? <span className="hub-grooming-queue__badge">Avulso</span> : null}
+          {paused ? <span className="hub-grooming-queue__badge hub-grooming-queue__badge--paused">Pausado</span> : null}
+          {priority ? <span className="hub-grooming-queue__priority-tag">Prioritário</span> : null}
+          {item.appointment_kind === 'pickup_route' ? (
+            <span className="hub-grooming-queue__badge">Leva e traz</span>
+          ) : null}
+        </div>
         <p className="hub-clientes__muted hub-clinic-queue__meta">{servicesLabel(item)}</p>
         <p className="hub-clientes__muted hub-clinic-queue__meta">
           {time} · {tutor}
@@ -266,7 +258,6 @@ const GroomingQueueBoard: React.FC<Props> = ({
           {porte ? ` · ${porte}` : ''}
           {duration ? ` · ~${duration}` : ''}
         </p>
-        {item.appointment_kind === 'pickup_route' ? <p className="hub-grooming-queue__badge">Leva e traz</p> : null}
         {item.clinical_tags && item.clinical_tags.length > 0 ? (
           <div className="hub-grooming-tags hub-grooming-tags--card" aria-label="Alertas">
             {item.clinical_tags.map((t) => (
@@ -292,46 +283,16 @@ const GroomingQueueBoard: React.FC<Props> = ({
               {quickActionLabel(quick, item)}
             </button>
           ) : null}
-          {canWrite && item.session_id ? (
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                void onTogglePriority(item);
-              }}
-            >
-              {priority ? 'Normal' : 'Priorizar'}
-            </button>
-          ) : null}
-          {canPauseThis ? (
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                void onPauseToggle?.(item);
-              }}
-            >
-              {paused ? 'Retomar' : 'Pausar'}
-            </button>
-          ) : null}
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-            onClick={() => onSelect(item)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(item);
+            }}
           >
             Detalhes
           </button>
-          {item.appointment_id ? (
-            <Link
-              to={`/hub/appointments?date=${encodeURIComponent(item.starts_at.slice(0, 10))}`}
-              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-              onClick={(e) => e.stopPropagation()}
-            >
-              Agenda
-            </Link>
-          ) : null}
         </div>
       </>
     );

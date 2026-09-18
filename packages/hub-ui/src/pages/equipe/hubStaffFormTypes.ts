@@ -1,4 +1,4 @@
-import type { HubStaffAccessRole, HubStaffMember } from '../../api/hubStaffApi';
+import type { HubStaffAccessRole, HubStaffAffiliation, HubStaffMember } from '../../api/hubStaffApi';
 import { professionalKindFromJobTitle, VET_JOB_TITLE_VALUE } from '../../constants/hubJobFunctions';
 import { parseStaffSpecialties, staffSpecialtiesForApi } from '../../utils/staffSpecialties';
 import { formatBrPhoneFromApi } from '../../utils/formatBrPhone';
@@ -64,6 +64,7 @@ export type HubStaffFormState = {
   crmv_uf: string;
   internal_notes: string;
   active: boolean;
+  affiliation: HubStaffAffiliation;
   has_hub_access: boolean;
   hub_access_email: string;
   hub_access_role: HubStaffAccessRole | '';
@@ -92,6 +93,7 @@ export const emptyStaffForm = (): HubStaffFormState => ({
   crmv_uf: '',
   internal_notes: '',
   active: true,
+  affiliation: 'internal',
   has_hub_access: false,
   hub_access_email: '',
   hub_access_role: '',
@@ -149,6 +151,7 @@ export function staffFormFromRow(m: HubStaffMember, activeServiceTypeIds?: Set<s
     crmv_uf: m.crmv_uf ?? '',
     internal_notes: m.internal_notes ?? '',
     active: m.active,
+    affiliation: m.affiliation === 'guest' ? 'guest' : 'internal',
     has_hub_access: m.has_hub_access,
     hub_access_email: m.hub_access_email ?? '',
     hub_access_role: (m.hub_access_role as HubStaffAccessRole) ?? '',
@@ -184,6 +187,7 @@ export function buildStaffPayload(clinicId: string, form: HubStaffFormState, isV
     crmv_uf: isVetJobTitle ? form.crmv_uf.trim().toUpperCase() || null : null,
     internal_notes: form.internal_notes.trim() || null,
     active: form.active,
+    affiliation: form.affiliation,
     has_hub_access: form.has_hub_access,
     hub_access_email: form.has_hub_access ? form.hub_access_email.trim() || null : null,
     hub_access_role: form.has_hub_access && form.hub_access_role ? form.hub_access_role : null,

@@ -5,6 +5,7 @@ import {
   LogIn,
   LogOut,
   PackageMinus,
+  Scissors,
   Sparkles,
   Truck,
   UserPlus,
@@ -30,6 +31,7 @@ const FALLBACK: HubNotificationVisual = {
 const VISUALS: Record<string, HubNotificationVisual> = {
   hub_pet_ready: { Icon: Sparkles, label: 'Pet pronto', color: '#15803d', tint: '#dcfce7' },
   hub_pet_on_the_way: { Icon: Truck, label: 'Pet a caminho', color: '#1d4ed8', tint: '#dbeafe' },
+  hub_pet_arrived: { Icon: LogIn, label: 'Pet chegou', color: '#1d4ed8', tint: '#dbeafe' },
   hub_payment_due: { Icon: CircleDollarSign, label: 'Cobrança', color: '#b45309', tint: '#fef3c7' },
   hub_cancellation_pending: {
     Icon: AlertTriangle,
@@ -40,6 +42,12 @@ const VISUALS: Record<string, HubNotificationVisual> = {
   hub_stock_alert: { Icon: PackageMinus, label: 'Estoque', color: '#c2410c', tint: '#ffedd5' },
   hub_boarding_checkin: { Icon: LogIn, label: 'Check-in', color: '#0f766e', tint: '#ccfbf1' },
   hub_boarding_checkout: { Icon: LogOut, label: 'Check-out', color: '#a16207', tint: '#fef9c3' },
+  hub_grooming_extra_request: {
+    Icon: Scissors,
+    label: 'Serviço no salão',
+    color: '#c86a4d',
+    tint: '#fdece6',
+  },
   unit_invitation: { Icon: UserPlus, label: 'Convite', color: '#c86a4d', tint: '#fdece6' },
 };
 

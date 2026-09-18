@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
-import { notifyHubPetReady } from './hubNotifyEvents';
+import { notifyHubGroomingExtraRequest, notifyHubPetReady } from './hubNotifyEvents';
 import {
   GROOMING_STAGES,
   GROOMING_EVENT_TITLES,
@@ -476,7 +476,7 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
       const appointment_status = a.status as string;
       const grooming_stage = session
         ? (session.grooming_stage as GroomingStage)
-        : boardStageFromAppointmentStatus(appointment_status);
+        : boardStageFromAppointmentStatus(appointment_status, a.appointment_kind as string | null);
       const is_late =
         ['scheduled', 'checked_in', 'queued'].includes(grooming_stage) &&
         ['pending_confirm', 'confirmed', 'checked_in', 'in_progress'].includes(appointment_status) &&
@@ -633,7 +633,6 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
     const parsed = openFromAppointmentSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const { clinic_id, hub_appointment_id } = parsed.data;
-    const targetStage: GroomingStage = parsed.data.grooming_stage ?? 'checked_in';
 
     const { data: existing } = await supabaseAdmin
       .from('hub_grooming_sessions')
@@ -649,7 +648,7 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
 
     const { data: appt, error: apptErr } = await supabaseAdmin
       .from('hub_appointments')
-      .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes')
+      .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, appointment_kind, status')
       .eq('id', hub_appointment_id)
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
@@ -657,6 +656,10 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
     if (apptErr) return res.status(500).json({ error: apptErr.message });
     if (!appt) return res.status(404).json({ error: 'Agendamento não encontrado' });
     if (!appt.pet_id) return res.status(400).json({ error: 'Agendamento sem pet associado' });
+
+    const alreadyWaiting =
+      appt.appointment_kind === 'walk_in' || appt.status === 'checked_in' || appt.status === 'in_progress';
+    const targetStage: GroomingStage = parsed.data.grooming_stage ?? (alreadyWaiting ? 'queued' : 'checked_in');
 
     let tutorSnapshot: string | null = null;
     if (appt.pet_id) {
@@ -732,7 +735,7 @@ export const createHubGroomingSession = async (req: Request, res: Response) => {
         pet_id: b.pet_id,
         guardian_id: b.guardian_id ?? null,
         hub_staff_member_id: b.hub_staff_member_id,
-        grooming_stage: 'checked_in',
+        grooming_stage: 'queued',
         checked_in_at: now,
         operational_notes: b.operational_notes ?? null,
       })
@@ -911,6 +914,7 @@ const postEventSchema = z
       'staff_change',
       'stage_change',
       'note',
+      'extra_request',
       'ready',
       'delivered',
       'closed',
@@ -933,7 +937,7 @@ export const postHubGroomingSessionEvent = async (req: Request, res: Response) =
 
     const { data: session } = await supabaseAdmin
       .from('hub_grooming_sessions')
-      .select('id')
+      .select('id, pet_id, unit_id')
       .eq('id', id.data)
       .eq('clinic_id', b.clinic_id)
       .is('deleted_at', null)
@@ -954,6 +958,21 @@ export const postHubGroomingSessionEvent = async (req: Request, res: Response) =
       .select('id, event_type, title, body, payload, created_at, created_by_staff_id')
       .single();
     if (error) return res.status(500).json({ error: error.message });
+
+    if (b.event_type === 'extra_request') {
+      const extraName =
+        (typeof b.body === 'string' && b.body.trim()) ||
+        (typeof b.payload?.name === 'string' ? b.payload.name : '') ||
+        'outro serviço';
+      void notifyHubGroomingExtraRequest({
+        clinicId: b.clinic_id,
+        unitId: (session as { unit_id?: string | null }).unit_id,
+        petId: (session as { pet_id?: string | null }).pet_id,
+        sessionId: id.data,
+        extraName,
+        excludeUserIds: req.user?.id ? [req.user.id] : undefined,
+      });
+    }
 
     return res.status(201).json({ event: data });
   } catch (e: unknown) {

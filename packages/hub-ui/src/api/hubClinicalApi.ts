@@ -320,6 +320,20 @@ export type HubHospitalizationCharge = {
   sort_order?: number;
 };
 
+export type HubSurgeryPayable = {
+  id: string;
+  amount: number;
+  category: string;
+  description: string;
+  payee_staff_member_id?: string | null;
+  payee_name: string;
+  source_role?: string | null;
+  status: 'pending' | 'paid' | 'cancelled';
+  due_date?: string | null;
+  paid_at?: string | null;
+  payment_method?: string | null;
+};
+
 export type HubSurgery = {
   id: string;
   clinic_id: string;
@@ -982,7 +996,10 @@ export const hubClinicalApi = {
   },
   getSurgery(id: string, clinicId: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
-    return apiRequest(`${clinicalBase}/surgeries/${id}?${q}`) as Promise<{ surgery: HubSurgery }>;
+    return apiRequest(`${clinicalBase}/surgeries/${id}?${q}`) as Promise<{
+      surgery: HubSurgery;
+      payables?: HubSurgeryPayable[];
+    }>;
   },
   createSurgery(payload: {
     clinic_id: string;
@@ -1013,7 +1030,10 @@ export const hubClinicalApi = {
     }>;
   },
   patchSurgery(id: string, payload: Record<string, unknown>) {
-    return apiRequest(`${clinicalBase}/surgeries/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+    return apiRequest(`${clinicalBase}/surgeries/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ surgery: HubSurgery; payables?: HubSurgeryPayable[] }>;
   },
   listSurgeryServices(surgeryId: string, clinicId: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });

@@ -43,7 +43,20 @@ Pagamento liquidado: `receivable_id`, `amount`, `payment_method` (`pix` | `cash`
 
 ### `hub_expenses` (Fase 2)
 
-Despesa operacional por unidade: `clinic_id`, `unit_id`, `amount`, `category` (supplies, services, utilities, payroll, rent, marketing, other), `description`, `expense_date`, `payment_method` opcional, notas. Usada no dashboard gerencial e no fluxo de caixa (saídas).
+Despesa operacional por unidade: `clinic_id`, `unit_id`, `amount`, `category` (supplies, services, utilities, payroll, rent, marketing, other), `description`, `expense_date`, `payment_method` opcional, notas. Usada no dashboard gerencial e no fluxo de caixa (saídas). Modelo **caixa** — o registro já representa a saída realizada.
+
+### `hub_payables` (contas a pagar)
+
+Obrigação da clínica a um credor (honorário profissional, serviço terceiro, etc.):
+
+- `payee_staff_member_id` / `payee_name` — credor (preferir staff da equipe; nome livre no lançamento manual).
+- `source_type`: `surgery` | `manual`; `source_id` + `source_role` (ex.: Anestesista) para idempotência na equipe cirúrgica.
+- `status`: `pending` | `paid` | `cancelled`; `due_date`; liquidação v1 em `paid_at` + `payment_method`.
+- `category`: `professional_fee` | mesmas de `hub_expenses`.
+
+**Regra de produto:** o valor em `hub_payables` é **custo interno da clínica**. Não entra na comanda nem no recebível do tutor. Se a clínica quiser cobrar anestesia/serviço ao tutor, usa o catálogo (`hub_surgery_services` com `billing_mode = charge`) de forma independente.
+
+Saídas no dashboard / fluxo de caixa = `hub_expenses` + payables com `status = paid` no período (`paid_at`). KPI separado: soma dos `pending`.
 
 ### Caixa (`hub_cash_sessions`, `hub_cash_movements`)
 

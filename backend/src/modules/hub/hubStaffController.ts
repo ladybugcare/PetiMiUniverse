@@ -21,7 +21,7 @@ import {
 const uuidStr = z.string().uuid();
 
 const STAFF_SELECT =
-  'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
+  'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, affiliation, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
 
 const professionalKindSchema = z.enum([
   'vet',
@@ -33,6 +33,8 @@ const professionalKindSchema = z.enum([
   'assistant',
   'other',
 ]);
+
+const affiliationSchema = z.enum(['internal', 'guest']);
 
 const hubAccessRoleSchema = z.enum([
   'CADMIN',
@@ -98,6 +100,7 @@ const createStaffSchema = z
     crmv_uf: optionalTrim(4).optional(),
     internal_notes: optionalTrim(8000).optional(),
     active: z.boolean().optional(),
+    affiliation: affiliationSchema.optional(),
     has_hub_access: z.boolean().optional(),
     hub_access_email: z.union([z.string().email().max(254), z.literal(''), z.null()]).optional().nullable(),
     hub_access_role: hubAccessRoleSchema.optional().nullable(),
@@ -328,6 +331,7 @@ export const createHubStaff = async (req: Request, res: Response) => {
       crmv_uf: d.crmv_uf ?? null,
       internal_notes: d.internal_notes ?? null,
       active: d.active ?? true,
+      affiliation: d.affiliation ?? 'internal',
       has_hub_access: d.has_hub_access ?? false,
       hub_access_email: hubEmailNorm,
       hub_access_role: d.hub_access_role ?? null,
@@ -418,6 +422,7 @@ export const patchHubStaff = async (req: Request, res: Response) => {
     if (d.crmv_uf !== undefined) patch.crmv_uf = d.crmv_uf;
     if (d.internal_notes !== undefined) patch.internal_notes = d.internal_notes;
     if (d.active !== undefined) patch.active = d.active;
+    if (d.affiliation !== undefined) patch.affiliation = d.affiliation;
     if (d.has_hub_access !== undefined) patch.has_hub_access = d.has_hub_access;
     if (d.hub_access_email !== undefined) patch.hub_access_email = d.hub_access_email === '' ? null : d.hub_access_email;
     if (d.hub_access_role !== undefined) patch.hub_access_role = d.hub_access_role;

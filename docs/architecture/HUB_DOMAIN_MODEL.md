@@ -251,6 +251,7 @@ Objetivo: cadastro utilizável para agenda e check-in.
 
 - **Modelo**: `hub_staff_members` por `clinic_id` — nome, função obrigatórios; tipo de profissional; CRMV/UF; serviços ligados a `hub_service_types`; campos de agenda (dias, horário, intervalo, unidade, cor); `has_hub_access` + e-mail/perfil para convite.
 - **Sem login**: `has_hub_access = false` e `clinic_user_id` null — continua na lista para futuros agendamentos; **não** autentica no Hub.
+- **Vínculo (`affiliation`)**: `internal` (Equipe) ou `guest` (Convidado / pontual, ex. anestesista). Independente de acesso ao Hub — convidado pode ganhar login depois.
 - **Inativo**: `active = false` — não deve aparecer para **novos** atendimentos (filtros de agenda quando existirem).
 - **Próximos atendimentos**: a API devolve `next_appointments_count: 0` e `meta.next_appointments_placeholder` até existir API de agenda/compromissos no Hub.
 

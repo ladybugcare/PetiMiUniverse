@@ -285,6 +285,8 @@ Ficha de cirurgia futura → "Iniciar antes do dia" → aviso de que não é hoj
 - Serviços do grupo `cirurgia` vinculam-se em `hub_surgery_services` e entram na **comanda do atendimento** (`origin_type: surgery_service`).
 - Se a cirurgia tem `hub_appointment_id` e o slot já cobrou o mesmo serviço em `hub_appointment_services`, a linha da cirurgia **adota** aquela linha (dedupe) em vez de duplicar o valor.
 - Preço variável: o vet propõe o valor; dentro da faixa confirma; fora/sem faixa exige `hub.financial.write`. Detalhes em [HUB_CLINICAL_BILLABLE_SERVICES.md](architecture/HUB_CLINICAL_BILLABLE_SERVICES.md).
+- **Honorário de profissional na equipe** (ex.: anestesista externo cadastrado em `hub_staff_members`): na aba Equipe da ficha, a clínica pode lançar valor + pendente/já pago. Isso cria/atualiza `hub_payables` (`source_type = surgery`) — **custo interno**, separado da cobrança do tutor. O JSON `team` do prontuário guarda só `{ role, staff_id, name }`. Ver [HUB_FINANCIAL_MODEL.md](architecture/HUB_FINANCIAL_MODEL.md).
+- Cobrar anestesia/serviço ao tutor (quando a clínica quiser) continua sendo linha de serviço na cirurgia/comanda, **independente** do valor do contas a pagar.
 
 ### 5.7 Impactos em estoque
 

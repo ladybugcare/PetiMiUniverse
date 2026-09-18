@@ -45,9 +45,25 @@ Documento de arquitetura da **operação de transporte de pets (Leva e Traz)** (
 - Entrega: `pending → en_route → arrived → completed | failed` (sem `in_transit`)
 
 **Sync do agendamento (`hub_appointments.status`):**
-- `pending|en_route|arrived|in_transit` da parada → `in_progress`
-- `completed` da parada → `done`
+- `pending|en_route|arrived|in_transit` da parada → `in_progress` (perna `pickup_route`)
+- `completed` da parada → `done` (perna `pickup_route`)
 - `pending` (criação de parada solta) → `confirmed`
+
+### Chegada na unidade → módulo do agendamento pai
+
+Quando a **coleta** (`direction=pickup`) ou o **desembarque** (`clinic_return`) vai para `completed` (= pet na clínica), o backend propaga a chegada ao agendamento pai (`parent_appointment_id`), sem iniciar atendimento profissional:
+
+| Módulo do pai | Ação operacional | Status do pai na agenda |
+|---------------|------------------|-------------------------|
+| Banho & Tosa | Abre/avança sessão para `queued` (Na fila) | `checked_in` |
+| Clínica / internação / cirurgia | Só marca presença | `checked_in` (Aguardando) |
+| Hotel / creche | Check-in da reserva | `in_progress` |
+
+- **Não** abre `hub_encounters` automaticamente (consultório continua exigindo «Atender»).
+- **Não** regride se o pai já estiver em serviço / finalizado / cancelado.
+- Entrega (`delivery` → `completed`) **não** dispara este fluxo (pet saindo).
+- Notificações: `hub_pet_arrived` (banho/clínica/avulso) ou `hub_boarding_checkin` (hotel/creche). Em lote no `clinic_return`, uma notificação por pet.
+- Implementação: `backend/src/modules/hub/pickupArrival.ts` (chamado de `patchHubPickupStop` e `createOrUpdateLooseStop`).
 
 ---
 

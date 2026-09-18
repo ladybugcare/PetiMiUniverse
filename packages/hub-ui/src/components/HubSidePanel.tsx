@@ -33,6 +33,7 @@ export type HubSidePanelProps = {
 /**
  * Painel lateral (metade da tela à direita) com fundo desfocado e escurecido.
  * Mesma composição de conteúdo que {@link HubModal}: corpo principal + aside opcional + footer.
+ * Fecha só por Cancelar/Fechar ou Escape — clique no overlay e arraste para fora não fecham.
  */
 export const HubSidePanel: React.FC<HubSidePanelProps> = ({
   open,
@@ -77,21 +78,15 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
 
   if (!open) return null;
 
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onClose();
-  };
-
   return createPortal(
     <div
       className="hub-side-panel__overlay"
-      onClick={handleOverlayClick}
       aria-modal="true"
       role="dialog"
       aria-label={ariaLabel || title}
     >
       <div
         className={`hub-side-panel__sheet${size === 'wide' ? ' hub-side-panel__sheet--wide' : ''}`}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="hub-side-panel__header">
           <div className="hub-side-panel__header-text">

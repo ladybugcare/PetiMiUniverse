@@ -1,5 +1,6 @@
 import {
   aggregateReceivableStatus,
+  hasFinanceiroChargeableAmount,
   isDayBoardOperationallyComplete,
   isDayBoardPaidAndComplete,
   matchesFinanceiroDayBoardScope,
@@ -62,6 +63,44 @@ describe('hubFinancialDayBoard', () => {
         due_date: null,
         })
       ).toBe(false);
+    });
+  });
+
+  describe('hasFinanceiroChargeableAmount', () => {
+    it('exclui recebível pendente com valor zerado', () => {
+      expect(
+        hasFinanceiroChargeableAmount({
+          estimated_amount: 0,
+          billing: {
+            comanda_id: 'c1',
+            comanda_status: 'fechada',
+            has_receivable: true,
+            receivable_status: 'pending',
+            finance_handoff_at: null,
+            active_receivable_id: 'r1',
+            due_date: null,
+            receivable_amount: 0,
+          },
+        })
+      ).toBe(false);
+    });
+
+    it('inclui recebível pendente com valor', () => {
+      expect(
+        hasFinanceiroChargeableAmount({
+          estimated_amount: 0,
+          billing: {
+            comanda_id: 'c1',
+            comanda_status: 'fechada',
+            has_receivable: true,
+            receivable_status: 'pending',
+            finance_handoff_at: null,
+            active_receivable_id: 'r1',
+            due_date: null,
+            receivable_amount: 50,
+          },
+        })
+      ).toBe(true);
     });
   });
 

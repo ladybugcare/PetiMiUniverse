@@ -55,6 +55,8 @@ export function appointmentStatusForGroomingStage(stage: GroomingStage): string 
       return 'confirmed';
     case 'checked_in':
     case 'queued':
+      // Pet na unidade / na fila — ainda não em serviço no salão.
+      return 'checked_in';
     case 'in_service':
     case 'finishing':
       return 'in_progress';
@@ -68,7 +70,11 @@ export function appointmentStatusForGroomingStage(stage: GroomingStage): string 
   }
 }
 
-export function boardStageFromAppointmentStatus(status: string): GroomingStage {
+export function boardStageFromAppointmentStatus(status: string, appointmentKind?: string | null): GroomingStage {
+  // Encaixe já fez check-in na agenda; no kanban entra em Aguardando até existir sessão.
+  if (appointmentKind === 'walk_in' && (status === 'checked_in' || status === 'in_progress')) {
+    return 'queued';
+  }
   if (status === 'pending_confirm' || status === 'confirmed') return 'scheduled';
   if (status === 'checked_in') return 'checked_in';
   if (status === 'in_progress') return 'checked_in';
@@ -85,6 +91,7 @@ export const GROOMING_EVENT_TITLES: Record<string, string> = {
   staff_change: 'Profissional alterado',
   stage_change: 'Estágio atualizado',
   note: 'Observação',
+  extra_request: 'Pedido de serviço',
   ready: 'Pet pronto',
   delivered: 'Pet entregue',
   closed: 'Atendimento encerrado',

@@ -13,11 +13,13 @@ import { sanitizeOperationalAreas, type HubOperationalArea } from '../../utils/o
 export type HubStaffNotificationType =
   | 'hub_pet_ready'
   | 'hub_pet_on_the_way'
+  | 'hub_pet_arrived'
   | 'hub_payment_due'
   | 'hub_cancellation_pending'
   | 'hub_stock_alert'
   | 'hub_boarding_checkin'
-  | 'hub_boarding_checkout';
+  | 'hub_boarding_checkout'
+  | 'hub_grooming_extra_request';
 
 /** Papéis de governança que acompanham tudo que é crítico na unidade. */
 export const HUB_MANAGER_ROLES = ['CADMIN', 'CMANAGER'] as const;

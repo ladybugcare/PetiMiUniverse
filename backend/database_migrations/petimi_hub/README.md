@@ -238,3 +238,13 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 109. **`109_alter_inventory_clinical_content.sql`** — `content_qty` / `content_unit` em `hub_inventory_items` (conteúdo por embalagem, ex.: 10 ml/frasco) e `quantity_unit` / `stock_qty` em `hub_encounter_medication_administrations` (snapshot do consumo clínico vs baixa convertida). Executar depois de `008` e `105`.
 
 110. **`110_alter_hub_hospitalizations_appointment.sql`** — `hub_appointment_id` em `hub_hospitalizations` (espelho da admissão na agenda) + atualiza o comentário de `hub_surgeries.hub_appointment_id` (origem Agenda ou Consultório). Executar depois de `025k`/`025s`, `012` e `107`.
+
+111. **`111_alter_grooming_extra_request.sql`** — `extra_request` em `hub_grooming_events` e tipo `hub_grooming_extra_request` em `notifications` (salão pede outro serviço, ex. desembolo; recepção pede autorização ao tutor). Executar depois de `031` e `101`.
+
+112. **`112_alter_notifications_hub_pet_arrived.sql`** — Tipo `hub_pet_arrived` em `notifications` (pet desembarcou do leva e traz; recepção + módulo do agendamento pai). Executar depois do item 111 (ou 101 se 111 ainda não existir no ambiente).
+
+113. **`113_create_hub_payables.sql`** — `hub_payables` (contas a pagar: honorário profissional, pendente/pago; origem `surgery` | `manual`). Separado de `hub_expenses` (despesa caixa). Executar depois dos itens 9, 25l/25t (cirurgias) e 37. Ver [HUB_FINANCIAL_MODEL.md](../../docs/architecture/HUB_FINANCIAL_MODEL.md).
+
+114. **`114_alter_hub_staff_affiliation.sql`** — coluna `affiliation` em `hub_staff_members` (`internal` | `guest`). Convidado = cadastro leve / pontual; independente de `has_hub_access`. Executar depois do item 9.
+
+115. **`115_alter_hub_payables_supplier.sql`** — `payee_supplier_id` em `hub_payables` (fornecedor do estoque como credor). Executar depois dos itens 113 e 8.

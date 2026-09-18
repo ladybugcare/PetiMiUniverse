@@ -31,7 +31,14 @@ export const STATUS_OP_LABEL: Record<string, string> = {
   completed: 'Concluído',
   reserved: 'Reservado',
   checked_in_boarding: 'Hospedado',
+  closed: 'Encerrado',
 };
+
+/** No Financeiro, status operacional "paid" confunde com recebível quitado. */
+export function operationalStatusLabel(status: string, mode: 'caixa' | 'financeiro'): string {
+  if (mode === 'financeiro' && status === 'paid') return 'Finalizado';
+  return STATUS_OP_LABEL[status] ?? status;
+}
 
 export function petInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -42,7 +49,7 @@ export function petInitials(name: string): string {
 
 export function ComandaStatusBadge({ billing }: { billing: HubFinanceDayBoardItem['billing'] }) {
   if (billing.receivable_status === 'paid') {
-    return <span className="hub-clientes__pill hub-dayboard__pill--paid">Pago</span>;
+    return <span className="hub-clientes__pill hub-dayboard__pill--paid">Recebido</span>;
   }
   if (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid') {
     return (
@@ -56,7 +63,7 @@ export function ComandaStatusBadge({ billing }: { billing: HubFinanceDayBoardIte
   if (billing.comanda_id && billing.comanda_status === 'aberta') {
     return <span className="hub-clientes__pill hub-dayboard__pill--open">Comanda aberta</span>;
   }
-  return <span className="hub-clientes__pill hub-dayboard__pill--none">Sem comanda</span>;
+  return <span className="hub-clientes__pill hub-dayboard__pill--none">Sem cobrança</span>;
 }
 
 export type FinanceDayBoardTableProps = {
@@ -132,8 +139,8 @@ export function FinanceDayBoardTable({
             <th>Serviços</th>
             <th>Tutor</th>
             <th>Horário</th>
-            <th>Status</th>
-            <th>Cobrança</th>
+            <th title="Andamento do serviço (agenda, banho, hotel…)">Atendimento</th>
+            <th title="Situação do recebível / vencimento">Cobrança</th>
             <th className="hub-clientes__th-actions">Ações</th>
           </tr>
         </thead>
@@ -145,7 +152,7 @@ export function FinanceDayBoardTable({
             const canCheckout = isCaixa ? canCaixaCheckoutDayBoardItem(item) : canFinanceiroCheckoutDayBoardItem(item);
             const checkoutLabel = resolveDayBoardCheckoutLabel(mode, item);
             const isViewOnly = isDayBoardViewOnly(item);
-            const opLabel = STATUS_OP_LABEL[item.operational_status] ?? item.operational_status;
+            const opLabel = operationalStatusLabel(item.operational_status, mode);
             const timeStr = item.starts_at
               ? new Date(item.starts_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
               : '—';

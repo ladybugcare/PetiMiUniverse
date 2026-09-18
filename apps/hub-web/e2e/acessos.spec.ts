@@ -84,7 +84,7 @@ test.describe('acessos Hub', () => {
     if (!skipIfMissing(creds, 'CSTAFF banho_tosa')) return;
 
     await loginAs(page, creds.email, creds.password);
-    await expect(page).toHaveURL(/\/hub\/banho-tosa(?:\?|$)/, { timeout: 20_000 });
+    await expect(page).toHaveURL(/\/hub\/banho-tosa\/minha-fila(?:\?|$)/, { timeout: 20_000 });
 
     await expectNav(page, {
       visiveis: ['Banho & Tosa', 'Agenda', 'Clientes', 'Pets'],
@@ -110,7 +110,7 @@ test.describe('acessos Hub', () => {
     if (!skipIfMissing(creds, 'CSTAFF hotel_creche')) return;
 
     await loginAs(page, creds.email, creds.password);
-    await expect(page).toHaveURL(/\/hub\/hotel-creche(?:\?|$)/, { timeout: 20_000 });
+    await expect(page).toHaveURL(/\/hub\/hotel-creche\/minha-fila(?:\?|$)/, { timeout: 20_000 });
 
     await expectNav(page, {
       visiveis: ['Hotel & Creche', 'Agenda'],

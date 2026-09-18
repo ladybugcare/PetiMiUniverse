@@ -22,8 +22,8 @@ import {
   HubAgendaPage,
   HubOrcamentosRoutes,
   HubClinicRoutes,
-  HubGroomingQueuePage,
-  HubBoardingPage,
+  HubGroomingRoutes,
+  HubBoardingRoutes,
   HubPickupPage,
   PickupDriverView,
   PickupMyRoutePage,
@@ -144,8 +144,8 @@ const router = createBrowserRouter(
         <Route path="orcamentos/*" element={<HubOrcamentosRoutes />} />
         <Route path="servicos/*" element={<HubServicosRoutes />} />
         <Route path="clinica/*" element={<HubClinicRoutes />} />
-        <Route path="hotel-creche" element={<HubBoardingPage />} />
-        <Route path="banho-tosa" element={<HubGroomingQueuePage />} />
+        <Route path="hotel-creche/*" element={<HubBoardingRoutes />} />
+        <Route path="banho-tosa/*" element={<HubGroomingRoutes />} />
         <Route path="leva-e-traz" element={<HubPickupPage />} />
         <Route path="leva-e-traz/minha-rota" element={<PickupMyRoutePage />} />
         <Route path="leva-e-traz/motorista/:routeId" element={<PickupDriverViewPage />} />

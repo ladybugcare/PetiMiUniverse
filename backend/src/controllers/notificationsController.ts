@@ -24,11 +24,13 @@ interface NotificationData {
     | 'report_approved'
     | 'hub_pet_ready'
     | 'hub_pet_on_the_way'
+    | 'hub_pet_arrived'
     | 'hub_payment_due'
     | 'hub_cancellation_pending'
     | 'hub_stock_alert'
     | 'hub_boarding_checkin'
-    | 'hub_boarding_checkout';
+    | 'hub_boarding_checkout'
+    | 'hub_grooming_extra_request';
   title: string;
   message: string;
   link?: string;

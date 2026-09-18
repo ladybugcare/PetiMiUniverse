@@ -78,7 +78,7 @@ import {
 import { listHubStaff, getHubStaff, createHubStaff, patchHubStaff, inviteHubStaff, linkHubStaffAccount, getHubStaffPendingInvite } from '../hubStaffController';
 import { postHubStaffPhoto } from '../hubStaffPhotoController';
 import { postHubClinicProfilePhoto, postHubUserProfilePhoto } from '../hubProfilePhotoController.js';
-import { patchHubClinicProfile, patchHubUnitProfile } from '../hubClinicProfileController.js';
+import { patchHubClinicProfile, patchHubUnitProfile, postHubUnit } from '../hubClinicProfileController.js';
 import { getHubSessionContext } from '../hubSessionController.js';
 import { getHubSubscriptionPlans } from '../hubSubscriptionController.js';
 import {
@@ -296,6 +296,11 @@ import {
   getHubFinancePackagesReport,
   listHubFinanceExpenses,
   postHubFinanceExpense,
+  listHubFinancePayables,
+  postHubFinancePayable,
+  patchHubFinancePayable,
+  postHubFinancePayablePay,
+  postHubFinancePayableCancel,
   postHubFinanceCashMovement,
   postHubFinanceReceivableProductLine,
   deleteHubFinanceReceivableProductLine,
@@ -407,6 +412,7 @@ router.get('/subscription/plans', authenticateUser, getHubSubscriptionPlans);
 router.post('/profile/me/photo', authenticateUser, postHubUserProfilePhoto);
 router.post('/clinic/profile/photo', authenticateUser, postHubClinicProfilePhoto);
 router.patch('/clinic/profile', authenticateUser, patchHubClinicProfile);
+router.post('/units', authenticateUser, postHubUnit);
 router.patch('/units/:unitId', authenticateUser, patchHubUnitProfile);
 
 router.get(
@@ -668,8 +674,8 @@ router.delete(
 );
 
 /* --- Inventário / Estoque --- */
-router.get('/inventory/suppliers', authenticateUser, requirePermission('hub.inventory.read'), listHubSuppliers);
-router.post('/inventory/suppliers', authenticateUser, requirePermission('hub.inventory.write'), createHubSupplier);
+router.get('/inventory/suppliers', authenticateUser, requirePermission(['hub.inventory.read', 'hub.financial.read']), listHubSuppliers);
+router.post('/inventory/suppliers', authenticateUser, requirePermission(['hub.inventory.write', 'hub.financial.write']), createHubSupplier);
 router.patch('/inventory/suppliers/:id', authenticateUser, requirePermission('hub.inventory.write'), patchHubSupplier);
 
 router.get('/inventory/manufacturers', authenticateUser, requirePermission('hub.inventory.read'), listHubManufacturers);
@@ -1736,6 +1742,36 @@ router.post(
   authenticateUser,
   requirePermission('hub.financial.write'),
   postHubFinanceExpense
+);
+router.get(
+  '/finance/payables',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  listHubFinancePayables
+);
+router.post(
+  '/finance/payables',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubFinancePayable
+);
+router.patch(
+  '/finance/payables/:id',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  patchHubFinancePayable
+);
+router.post(
+  '/finance/payables/:id/pay',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubFinancePayablePay
+);
+router.post(
+  '/finance/payables/:id/cancel',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubFinancePayableCancel
 );
 router.post(
   '/finance/cash-sessions/:id/movements',

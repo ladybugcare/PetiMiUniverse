@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase.js';
-import { checkClinicAccess } from '../../middleware/authMiddleware.js';
+import { checkClinicAccess, checkPermission } from '../../middleware/authMiddleware.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { ValidationError } from '../../utils/errors.js';
 
@@ -19,6 +19,11 @@ async function userCanEditClinicProfile(userId: string, clinicId: string): Promi
     .eq('status', 'active')
     .maybeSingle();
   return !!data?.role && CLINIC_EDIT_ROLES.has(String(data.role).toUpperCase());
+}
+
+async function userCanCreateClinicUnit(userId: string, clinicId: string): Promise<boolean> {
+  if (userId === clinicId) return true;
+  return checkPermission(userId, clinicId, 'unit.create');
 }
 
 const patchClinicBodySchema = z.object({
@@ -39,6 +44,89 @@ const patchUnitBodySchema = z.object({
   phone: z.string().trim().max(30).optional().nullable(),
   technical_manager: z.string().trim().min(2).max(200).optional(),
   is_main: z.boolean().optional(),
+});
+
+const createUnitBodySchema = z.object({
+  name: z.string().trim().min(2).max(300),
+  nickname: z.string().trim().min(1).max(100),
+  address: z.string().trim().min(3).max(500),
+  city: z.string().trim().min(2).max(120),
+  state: z.string().trim().min(2).max(2),
+  phone: z.string().trim().max(30).optional().nullable(),
+  technical_manager: z.string().trim().min(2).max(200),
+  is_main: z.boolean().optional(),
+});
+
+/** POST /api/hub/units?clinic_id=... */
+export const postHubUnit = asyncHandler(async (req: Request, res: Response) => {
+  const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+  if (!clinicParsed.success) {
+    throw new ValidationError('clinic_id inválido na query');
+  }
+
+  const bodyParsed = createUnitBodySchema.safeParse(req.body);
+  if (!bodyParsed.success) {
+    throw new ValidationError(bodyParsed.error.issues.map((i) => i.message).join('; '));
+  }
+
+  const clinicId = clinicParsed.data;
+  const userId = req.user!.id;
+
+  const hasAccess = await checkClinicAccess(userId, clinicId);
+  if (!hasAccess) {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+
+  const canCreate = await userCanCreateClinicUnit(userId, clinicId);
+  if (!canCreate) {
+    return res.status(403).json({ error: 'Sem permissão para criar unidades.' });
+  }
+
+  const payload = bodyParsed.data;
+  const nickname = payload.nickname.trim();
+  const state = payload.state.toUpperCase();
+
+  const { data: nickConflict } = await supabaseAdmin
+    .from('units')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('nickname', nickname)
+    .maybeSingle();
+
+  if (nickConflict) {
+    return res.status(400).json({ error: 'Já existe uma unidade com este apelido.' });
+  }
+
+  const isMain = payload.is_main === true;
+  if (isMain) {
+    await supabaseAdmin
+      .from('units')
+      .update({ is_main: false, updated_at: new Date().toISOString() })
+      .eq('clinic_id', clinicId);
+  }
+
+  const { data: unit, error } = await supabaseAdmin
+    .from('units')
+    .insert({
+      clinic_id: clinicId,
+      name: payload.name,
+      nickname,
+      address: payload.address,
+      city: payload.city,
+      state,
+      phone: payload.phone?.trim() || null,
+      technical_manager: payload.technical_manager.trim(),
+      is_main: isMain,
+      status: 'active',
+    })
+    .select()
+    .single();
+
+  if (error || !unit) {
+    return res.status(500).json({ error: 'Erro ao criar unidade.' });
+  }
+
+  res.status(201).json({ unit });
 });
 
 /** PATCH /api/hub/clinic/profile?clinic_id=... */

@@ -1,16 +1,17 @@
 import React from 'react';
-import {
-  User,
-  Mail,
-  Phone,
-  Calendar,
-  Globe,
-  Lock,
-  Pencil,
-} from 'lucide-react';
+import { Lock, Mail, Pencil, Phone } from 'lucide-react';
 import { useAuth, usePermissions } from '@petimi/web-core';
 import { useAlert, formatBrPhoneDisplay } from '@petimi/hub-ui';
 import HubProfilePhotoPicker from '../components/HubProfilePhotoPicker';
+import {
+  HubAccountProfileActionRow,
+  HubAccountProfileCard,
+  HubAccountProfileFields,
+  HubAccountProfileHero,
+  HubAccountProfileShell,
+  formatProfileDate,
+  formatProfileDateTime,
+} from '../components/profile';
 import {
   getHubUserDisplayName,
   getHubUserPhotoUrl,
@@ -21,25 +22,9 @@ import {
 } from '../utils/hubUserDisplay';
 import { hubProfileAccessBadge, hubAccessTypeLabel } from '../utils/hubAccessLabel';
 
-const terracotta = '#c86a4d';
-
-function formatDateTimePt(iso?: string): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' });
-}
-
-function formatDatePt(iso?: string): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
 function formatBirthDisplay(raw?: string): string {
   if (!raw) return '—';
-  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return formatDatePt(raw);
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return formatProfileDate(raw);
   return raw;
 }
 
@@ -51,18 +36,6 @@ function localeLabel(code?: string): string {
   if (c === 'es') return 'Español';
   return code;
 }
-
-type CellProps = { icon: React.ReactNode; label: string; value: string };
-
-const InfoCell: React.FC<CellProps> = ({ icon, label, value }) => (
-  <div className="hub-meu-perfil__cell">
-    <div className="hub-meu-perfil__cell-icon" aria-hidden>
-      {icon}
-    </div>
-    <div className="hub-meu-perfil__cell-label">{label}</div>
-    <div className="hub-meu-perfil__cell-value">{value}</div>
-  </div>
-);
 
 const HubMeuPerfilPage: React.FC = () => {
   const { user, role: authRole } = useAuth();
@@ -79,73 +52,65 @@ const HubMeuPerfilPage: React.FC = () => {
   const cargo = hubAccessTypeLabel(clinicRole, authRole);
   const birth = formatBirthDisplay(getHubUserBirthDate(user));
   const idioma = localeLabel(getHubUserLocaleCode(user));
-
-  const lastAccess = formatDateTimePt(u?.last_sign_in_at);
-  const memberSince = formatDatePt(u?.created_at);
+  const lastAccess = formatProfileDateTime(u?.last_sign_in_at);
+  const memberSince = formatProfileDate(u?.created_at);
 
   const emBreve = () => showInfo('Esta ação estará disponível em breve.', 'PetMi Hub');
 
   return (
-    <div className="hub-meu-perfil">
-      <aside className="hub-meu-perfil__sidebar">
-        <div className="hub-meu-perfil__card hub-meu-perfil__summary">
-          <HubProfilePhotoPicker mode={{ kind: 'user' }} photoUrl={photoUrl} displayName={displayName} size={96} />
-          <h2 className="hub-meu-perfil__sidebar-name">{displayName}</h2>
-          <span className="hub-meu-perfil__badge">{badge}</span>
-          <div className="hub-meu-perfil__contact">
-            <span>{email}</span>
-            <span>{phone}</span>
-          </div>
-        </div>
+    <HubAccountProfileShell>
+      <HubAccountProfileHero
+        kicker="Seu perfil"
+        name={displayName}
+        photo={
+          <HubProfilePhotoPicker mode={{ kind: 'user' }} photoUrl={photoUrl} displayName={displayName} size={88} />
+        }
+        badges={[badge]}
+        chips={[
+          { icon: Mail, label: email },
+          { icon: Phone, label: phone },
+        ]}
+        meta={[
+          { label: 'Membro desde', value: memberSince },
+          { label: 'Último acesso', value: lastAccess },
+        ]}
+      />
 
-        <div className="hub-meu-perfil__card hub-meu-perfil__aside-meta">
-          <div className="hub-meu-perfil__meta-row">
-            <span className="hub-meu-perfil__meta-label">Último acesso</span>
-            <span className="hub-meu-perfil__meta-value">{lastAccess}</span>
-          </div>
-          <div className="hub-meu-perfil__meta-row">
-            <span className="hub-meu-perfil__meta-label">Membro desde</span>
-            <span className="hub-meu-perfil__meta-value">{memberSince}</span>
-          </div>
-        </div>
-      </aside>
+      <HubAccountProfileCard
+        title="Dados pessoais"
+        subtitle="Informações usadas no Hub e nos documentos da clínica."
+        actions={
+          <button type="button" className="hub-ap__btn hub-ap__btn--outline" onClick={emBreve}>
+            <Pencil size={16} aria-hidden />
+            Editar
+          </button>
+        }
+      >
+        <HubAccountProfileFields
+          fields={[
+            { label: 'Nome completo', value: fullName },
+            { label: 'E-mail', value: email },
+            { label: 'Telefone', value: phone },
+            { label: 'Cargo', value: cargo },
+            { label: 'Data de nascimento', value: birth },
+            { label: 'Idioma', value: idioma },
+          ]}
+        />
+      </HubAccountProfileCard>
 
-      <div className="hub-meu-perfil__main">
-        <section className="hub-meu-perfil__panel">
-          <header className="hub-meu-perfil__panel-head">
-            <div>
-              <h2 className="hub-meu-perfil__panel-title">Informações Pessoais</h2>
-              <p className="hub-meu-perfil__panel-sub">Atualize os seus dados pessoais e de contato.</p>
-            </div>
-            <button type="button" className="hub-meu-perfil__btn-outline" onClick={emBreve}>
-              <Pencil size={16} aria-hidden />
-              Editar informações
-            </button>
-          </header>
-          <div className="hub-meu-perfil__grid">
-            <InfoCell icon={<User size={20} color={terracotta} />} label="Nome completo" value={fullName} />
-            <InfoCell icon={<Mail size={20} color={terracotta} />} label="E-mail" value={email} />
-            <InfoCell icon={<Phone size={20} color={terracotta} />} label="Telefone" value={phone} />
-            <InfoCell icon={<User size={20} color={terracotta} />} label="Cargo / Função" value={cargo} />
-            <InfoCell icon={<Calendar size={20} color={terracotta} />} label="Data de nascimento" value={birth} />
-            <InfoCell icon={<Globe size={20} color={terracotta} />} label="Idioma" value={idioma} />
-          </div>
-        </section>
-
-        <section className="hub-meu-perfil__panel hub-meu-perfil__panel--spaced">
-          <header className="hub-meu-perfil__panel-head">
-            <div>
-              <h2 className="hub-meu-perfil__panel-title">Senha</h2>
-              <p className="hub-meu-perfil__panel-sub">Altere a sua senha de acesso.</p>
-            </div>
-            <button type="button" className="hub-meu-perfil__btn-outline" onClick={emBreve}>
+      <HubAccountProfileCard title="Acesso e segurança" subtitle="Credenciais da sua conta PetMi Hub.">
+        <HubAccountProfileActionRow
+          title="Senha"
+          subtitle="Altere a senha de acesso quando quiser. Use uma combinação forte e exclusiva."
+          action={
+            <button type="button" className="hub-ap__btn hub-ap__btn--ghost" onClick={emBreve}>
               <Lock size={16} aria-hidden />
               Alterar senha
             </button>
-          </header>
-        </section>
-      </div>
-    </div>
+          }
+        />
+      </HubAccountProfileCard>
+    </HubAccountProfileShell>
   );
 };
 
