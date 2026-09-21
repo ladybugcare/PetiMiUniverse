@@ -1,6 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Copy, Eye, Save, Search, Send, Trash2, Zap } from 'lucide-react';
+import {
+  CalendarClock,
+  Copy,
+  Eye,
+  MessageSquare,
+  Dog,
+  Save,
+  Search,
+  Send,
+  Sparkles,
+  StickyNote,
+  Trash2,
+} from 'lucide-react';
 import {
   hubQuotesApi,
   type HubQuote,
@@ -113,6 +125,16 @@ function linePricingVariantFromQuote(l: HubQuoteLine, serviceTypes: HubServiceTy
 
 function fmtBrlShort(n: number): string {
   return Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtBrl(n: number): string {
+  return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function formatYmdBr(ymd: string): string {
+  const [y, m, d] = ymd.split('-');
+  if (!y || !m || !d) return ymd;
+  return `${d}/${m}/${y}`;
 }
 
 function variantComboboxOptions(matrix: HubServicePricingMatrix): HubComboboxOption[] {
@@ -454,6 +476,71 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
 
   const petsRef = useRef(pets);
   petsRef.current = pets;
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+
+  const suggestUnitPriceForPet = useCallback(
+    async (
+      hubServiceTypeId: string,
+      pet: QuotePetRow,
+      pricingVariant: HubQuotePricingVariant | null,
+    ): Promise<{ unit_price: string; pricing_variant: HubQuotePricingVariant | null }> => {
+      try {
+        const res = await hubQuotesApi.suggestPrice({
+          clinic_id: clinicId,
+          hub_service_type_id: hubServiceTypeId,
+          pet: {
+            size_tier: pet.size_tier,
+            coat_type: pet.coat_type ?? null,
+            birth_date: null,
+          },
+          pricing_variant: pricingVariant ?? undefined,
+        });
+        return {
+          unit_price: String(res.unit_price ?? 0),
+          pricing_variant: res.pricing_variant ?? pricingVariant,
+        };
+      } catch {
+        return { unit_price: '0', pricing_variant: pricingVariant };
+      }
+    },
+    [clinicId],
+  );
+
+  /** Preenche/atualiza o preço sugerido de um pet em todas as linhas que já têm serviço. */
+  const refreshSuggestedPricesForPet = useCallback(
+    (petIndex: number, petOverride?: QuotePetRow) => {
+      void (async () => {
+        const pet = petOverride ?? petsRef.current[petIndex];
+        if (!pet) return;
+        const snapshot = linesRef.current;
+        const results = await Promise.all(
+          snapshot.map(async (ln) => {
+            if (!ln.hub_service_type_id.trim()) return null;
+            const suggested = await suggestUnitPriceForPet(
+              ln.hub_service_type_id,
+              pet,
+              ln.pricing_variant,
+            );
+            return { key: ln.key, unit_price: suggested.unit_price };
+          }),
+        );
+        setLines((prev) =>
+          prev.map((row) => {
+            const hit = results.find((r) => r && r.key === row.key);
+            if (!hit) return row;
+            const nextPrices = Array.from(
+              { length: Math.max(row.unitPricesByPetIndex.length, petIndex + 1) },
+              (_, i) => row.unitPricesByPetIndex[i] ?? '0',
+            );
+            nextPrices[petIndex] = hit.unit_price;
+            return { ...row, unitPricesByPetIndex: nextPrices };
+          }),
+        );
+      })();
+    },
+    [suggestUnitPriceForPet],
+  );
 
   const grouped = useMemo(() => groupServiceTypes(serviceTypes), [serviceTypes]);
 
@@ -487,8 +574,12 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
     }));
 
   const addPet = () => {
-    setPets((p) => [...p, emptyPet()]);
-    setLines((ln) => resizeLinePetPrices(ln, pets.length + 1));
+    const newPet = emptyPet();
+    const newIndex = pets.length;
+    setPets((p) => [...p, newPet]);
+    setLines((ln) => resizeLinePetPrices(ln, newIndex + 1));
+    // Preenche preço sugerido do novo pet nas linhas que já têm serviço
+    refreshSuggestedPricesForPet(newIndex, newPet);
   };
 
   const removePet = (i: number) => {
@@ -505,7 +596,15 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
   };
 
   const updatePet = (i: number, patch: Partial<QuotePetRow>) => {
+    const current = pets[i];
+    const nextRow = current ? { ...current, ...patch } : null;
     setPets((prev) => prev.map((row, j) => (j === i ? { ...row, ...patch } : row)));
+    const pricingTouched =
+      Object.prototype.hasOwnProperty.call(patch, 'size_tier') ||
+      Object.prototype.hasOwnProperty.call(patch, 'coat_type');
+    if (pricingTouched && nextRow) {
+      refreshSuggestedPricesForPet(i, nextRow);
+    }
   };
 
   const handleSpeciesChange = (i: number, species: string) => {
@@ -581,23 +680,9 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         const nextPrices: string[] = [];
         let normalizedPv: HubQuotePricingVariant | null = pricingVariant;
         for (let pi = 0; pi < list.length; pi++) {
-          const pet = list[pi];
-          try {
-            const res = await hubQuotesApi.suggestPrice({
-              clinic_id: clinicId,
-              hub_service_type_id: hubServiceTypeId,
-              pet: {
-                size_tier: pet.size_tier,
-                coat_type: pet.coat_type ?? null,
-                birth_date: null,
-              },
-              pricing_variant: pricingVariant ?? undefined,
-            });
-            if (res.pricing_variant != null) normalizedPv = res.pricing_variant;
-            nextPrices.push(String(res.unit_price ?? 0));
-          } catch {
-            nextPrices.push('0');
-          }
+          const suggested = await suggestUnitPriceForPet(hubServiceTypeId, list[pi], pricingVariant);
+          if (suggested.pricing_variant != null) normalizedPv = suggested.pricing_variant;
+          nextPrices.push(suggested.unit_price);
         }
         setLines((prev) =>
           prev.map((row, j) =>
@@ -613,7 +698,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         );
       })();
     },
-    [clinicId, serviceTypes],
+    [serviceTypes, suggestUnitPriceForPet],
   );
 
   const applyLinePricingVariantFromCombo = useCallback(
@@ -628,23 +713,9 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         const nextPrices: string[] = [];
         let normalizedPv: HubQuotePricingVariant | null = parsed;
         for (let pi = 0; pi < list.length; pi++) {
-          const pet = list[pi];
-          try {
-            const res = await hubQuotesApi.suggestPrice({
-              clinic_id: clinicId,
-              hub_service_type_id: row.hub_service_type_id,
-              pet: {
-                size_tier: pet.size_tier,
-                coat_type: pet.coat_type ?? null,
-                birth_date: null,
-              },
-              pricing_variant: parsed,
-            });
-            if (res.pricing_variant != null) normalizedPv = res.pricing_variant;
-            nextPrices.push(String(res.unit_price ?? 0));
-          } catch {
-            nextPrices.push('0');
-          }
+          const suggested = await suggestUnitPriceForPet(row.hub_service_type_id, list[pi], parsed);
+          if (suggested.pricing_variant != null) normalizedPv = suggested.pricing_variant;
+          nextPrices.push(suggested.unit_price);
         }
         setLines((prev) =>
           prev.map((r, j) =>
@@ -653,7 +724,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         );
       })();
     },
-    [clinicId, serviceTypes],
+    [serviceTypes, suggestUnitPriceForPet],
   );
 
   const summary = useMemo(() => {
@@ -795,207 +866,300 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
 
   const activeId = persistedQuoteId ?? quote?.id ?? null;
 
+  const applyValidDays = (raw: number) => {
+    const n = Math.min(90, Math.max(1, raw));
+    setValidDays(n);
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    setExpiresYmd(ymdLocal(d));
+  };
+
   if (!canWrite) {
     return <p className="hub-clientes__muted">Sem permissão para editar.</p>;
   }
 
   return (
-    <div className="hub-orcamento-novo__grid">
-      <div className="hub-orcamento-novo__main">
-        <section className="hub-orcamento-novo__card">
-          <div className="hub-orcamento-novo__card-header">
-            <div>
-              <h2 className="hub-orcamento-novo__card-title">2. Pets deste orçamento</h2>
-              <p className="hub-orcamento-novo__card-subtitle">Dados temporários só para precificação e envio.</p>
+    <div className="hub-orcamento-novo__workspace">
+      <div className="hub-orcamento-novo__sticky-actions">
+        <div className="hub-orcamento-novo__sticky-actions-meta">
+          <span>
+            {pets.length} {pets.length === 1 ? 'pet' : 'pets'}
+          </span>
+          <span aria-hidden>·</span>
+          <span>
+            {lines.length} {lines.length === 1 ? 'serviço' : 'serviços'}
+          </span>
+          {summary.estMin ? (
+            <>
+              <span aria-hidden>·</span>
+              <span>~{summary.estMin} min</span>
+            </>
+          ) : null}
+          <strong className="hub-orcamento-novo__sticky-total">{fmtBrl(summary.total)}</strong>
+        </div>
+        <div className="hub-orcamento-novo__sticky-actions-btns">
+          <button
+            type="button"
+            className="hub-orcamento-novo__btn"
+            disabled={saving}
+            onClick={() => void handleSaveClick()}
+          >
+            <Save size={16} strokeWidth={2} aria-hidden />
+            Salvar rascunho
+          </button>
+          {!hideGenerateAndSend ? (
+            <button
+              type="button"
+              className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary"
+              disabled={saving}
+              onClick={() => void handleSend()}
+            >
+              <Send size={16} strokeWidth={2} aria-hidden />
+              Gerar e enviar
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="hub-orcamento-novo__grid">
+        <div className="hub-orcamento-novo__main">
+          <section className="hub-orcamento-novo__card">
+            <div className="hub-orcamento-novo__card-header hub-orcamento-novo__card-header--icon">
+              <span className="hub-orcamento-novo__card-ic" aria-hidden>
+                <Dog size={18} strokeWidth={1.75} />
+              </span>
+              <div>
+                <h2 className="hub-orcamento-novo__card-title">Pets deste orçamento</h2>
+                <p className="hub-orcamento-novo__card-subtitle">
+                  Dados temporários só para precificação e envio ao cliente.
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="hub-orcamento-novo__pets">
-            {pets.map((p, i) => (
-              <div key={i} className="hub-orcamento-novo__pet">
-                <div className="hub-orcamento-novo__pet-row">
-                  <div className="hub-orcamento-novo__field">
-                    <label className="hub-orcamento-novo__label">Nome do pet</label>
-                    <input
-                      className="hub-orcamento-novo__input"
-                      placeholder={`Pet ${i + 1}`}
-                      value={p.display_name ?? ''}
-                      onChange={(e) => updatePet(i, { display_name: e.target.value })}
-                    />
-                  </div>
-                  <div className="hub-orcamento-novo__field">
-                    <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-species`}>
-                      Espécie
-                    </label>
-                    <HubSearchableCombobox
-                      id={`hub-quote-pet-${i}-species`}
-                      className="hub-orcamento-novo__combobox"
-                      options={mergeSpeciesComboboxOptions(p.species)}
-                      value={p.species}
-                      onChange={(v) => handleSpeciesChange(i, v)}
-                      placeholder="Selecionar espécie"
-                      searchPlaceholder="Buscar espécie…"
-                      allowCreate
-                      createEntityLabel="espécie"
-                      ariaLabel="Espécie"
-                    />
-                  </div>
-                  <div className="hub-orcamento-novo__field">
-                    <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-breed`}>
-                      Raça
-                    </label>
-                    <HubSearchableCombobox
-                      id={`hub-quote-pet-${i}-breed`}
-                      className="hub-orcamento-novo__combobox"
-                      options={mergeBreedComboboxOptions(p.species, p.breed)}
-                      value={p.breed}
-                      onChange={(v) => {
-                        const sp = p.species.trim();
-                        const sug = sp ? defaultBodyPorteForBreed(sp, v) : '';
-                        const tierOk = !!sug && SIZE_TIERS.some((t) => t.value === sug);
-                        updatePet(i, {
-                          breed: v,
-                          ...(tierOk ? { size_tier: sug as HubQuotePetInput['size_tier'] } : {}),
-                        });
-                      }}
-                      placeholder="Selecionar raça"
-                      searchPlaceholder="Buscar raça…"
-                      allowCreate
-                      createEntityLabel="raça"
-                      disabled={!p.species.trim()}
-                      ariaLabel="Raça"
-                    />
-                  </div>
-                  <div className="hub-orcamento-novo__field">
-                    <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-size`}>
-                      Porte
-                    </label>
-                    <HubSearchableCombobox
-                      id={`hub-quote-pet-${i}-size`}
-                      className="hub-orcamento-novo__combobox"
-                      options={SIZE_TIER_COMBO_OPTIONS}
-                      value={p.size_tier}
-                      onChange={(v) => updatePet(i, { size_tier: v as HubQuotePetInput['size_tier'] })}
-                      placeholder="Porte"
-                      searchPlaceholder="Buscar porte…"
-                      clearable={false}
-                      ariaLabel="Porte"
-                    />
-                  </div>
-                  <div className="hub-orcamento-novo__field">
-                    <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-coat`}>
-                      Pelagem
-                    </label>
-                    <HubSearchableCombobox
-                      id={`hub-quote-pet-${i}-coat`}
-                      className="hub-orcamento-novo__combobox"
-                      options={COAT_COMBO_OPTIONS}
-                      value={p.coat_type ?? ''}
-                      onChange={(v) => updatePet(i, { coat_type: v || null })}
-                      placeholder="Pelagem"
-                      searchPlaceholder="Buscar pelagem…"
-                      ariaLabel="Pelagem"
-                    />
-                  </div>
-                  <div className="hub-orcamento-novo__pet-remove">
+            <div className="hub-orcamento-novo__pets">
+              {pets.map((p, i) => (
+                <div key={i} className="hub-orcamento-novo__pet">
+                  <div className="hub-orcamento-novo__pet-head">
+                    <span className="hub-orcamento-novo__pet-badge">
+                      {p.display_name?.trim() || `Pet ${i + 1}`}
+                    </span>
                     <button
                       type="button"
                       className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost hub-orcamento-novo__btn--icon"
                       aria-label="Remover pet"
+                      title={pets.length <= 1 ? 'É preciso manter pelo menos um pet' : 'Remover pet'}
+                      disabled={pets.length <= 1}
                       onClick={() => removePet(i)}
                     >
-                      <Trash2 size={18} />
+                      <Trash2 size={16} />
                     </button>
                   </div>
+                  <div className="hub-orcamento-novo__pet-row">
+                    <div className="hub-orcamento-novo__field">
+                      <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-name`}>
+                        Nome do pet
+                      </label>
+                      <input
+                        id={`hub-quote-pet-${i}-name`}
+                        className="hub-orcamento-novo__input"
+                        placeholder={`Pet ${i + 1}`}
+                        value={p.display_name ?? ''}
+                        onChange={(e) => updatePet(i, { display_name: e.target.value })}
+                      />
+                    </div>
+                    <div className="hub-orcamento-novo__field">
+                      <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-species`}>
+                        Espécie
+                      </label>
+                      <HubSearchableCombobox
+                        id={`hub-quote-pet-${i}-species`}
+                        className="hub-orcamento-novo__combobox"
+                        options={mergeSpeciesComboboxOptions(p.species)}
+                        value={p.species}
+                        onChange={(v) => handleSpeciesChange(i, v)}
+                        placeholder="Selecionar espécie"
+                        searchPlaceholder="Buscar espécie…"
+                        allowCreate
+                        createEntityLabel="espécie"
+                        ariaLabel="Espécie"
+                      />
+                    </div>
+                    <div className="hub-orcamento-novo__field">
+                      <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-breed`}>
+                        Raça
+                      </label>
+                      <HubSearchableCombobox
+                        id={`hub-quote-pet-${i}-breed`}
+                        className="hub-orcamento-novo__combobox"
+                        options={mergeBreedComboboxOptions(p.species, p.breed)}
+                        value={p.breed}
+                        onChange={(v) => {
+                          const sp = p.species.trim();
+                          const sug = sp ? defaultBodyPorteForBreed(sp, v) : '';
+                          const tierOk = !!sug && SIZE_TIERS.some((t) => t.value === sug);
+                          updatePet(i, {
+                            breed: v,
+                            ...(tierOk ? { size_tier: sug as HubQuotePetInput['size_tier'] } : {}),
+                          });
+                        }}
+                        placeholder="Selecionar raça"
+                        searchPlaceholder="Buscar raça…"
+                        allowCreate
+                        createEntityLabel="raça"
+                        disabled={!p.species.trim()}
+                        ariaLabel="Raça"
+                      />
+                    </div>
+                    <div className="hub-orcamento-novo__field">
+                      <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-size`}>
+                        Porte
+                      </label>
+                      <HubSearchableCombobox
+                        id={`hub-quote-pet-${i}-size`}
+                        className="hub-orcamento-novo__combobox"
+                        options={SIZE_TIER_COMBO_OPTIONS}
+                        value={p.size_tier}
+                        onChange={(v) => updatePet(i, { size_tier: v as HubQuotePetInput['size_tier'] })}
+                        placeholder="Porte"
+                        searchPlaceholder="Buscar porte…"
+                        clearable={false}
+                        ariaLabel="Porte"
+                      />
+                    </div>
+                    <div className="hub-orcamento-novo__field">
+                      <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-coat`}>
+                        Pelagem
+                      </label>
+                      <HubSearchableCombobox
+                        id={`hub-quote-pet-${i}-coat`}
+                        className="hub-orcamento-novo__combobox"
+                        options={COAT_COMBO_OPTIONS}
+                        value={p.coat_type ?? ''}
+                        onChange={(v) => updatePet(i, { coat_type: v || null })}
+                        placeholder="Pelagem"
+                        searchPlaceholder="Buscar pelagem…"
+                        ariaLabel="Pelagem"
+                      />
+                    </div>
+                  </div>
                 </div>
+              ))}
+              <button
+                type="button"
+                className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline hub-orcamento-novo__add"
+                onClick={addPet}
+              >
+                + Adicionar outro pet
+              </button>
+            </div>
+          </section>
+
+          <section className="hub-orcamento-novo__card">
+            <div className="hub-orcamento-novo__card-header hub-orcamento-novo__card-header--icon">
+              <span className="hub-orcamento-novo__card-ic" aria-hidden>
+                <Sparkles size={18} strokeWidth={1.75} />
+              </span>
+              <div className="hub-orcamento-novo__card-header-text">
+                <h2 className="hub-orcamento-novo__card-title">Serviços e valores</h2>
+                <p className="hub-orcamento-novo__card-subtitle">
+                  Informe o preço por pet. Em creche, consulta ou leva e traz, escolha a opção de preço.
+                </p>
               </div>
-            ))}
-            <button
-              type="button"
-              className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline hub-orcamento-novo__add"
-              onClick={addPet}
-            >
-              + Adicionar outro pet
-            </button>
-          </div>
-        </section>
-
-        <section className="hub-orcamento-novo__card">
-          <div className="hub-orcamento-novo__card-header">
-            <div>
-              <h2 className="hub-orcamento-novo__card-title">3. Serviços e valores</h2>
-              <p className="hub-orcamento-novo__card-subtitle">
-                Preço por pet; ao escolher creche, consulta ou leva e traz, selecione a opção de preço na coluna ao lado.
-              </p>
+              <button type="button" className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline" onClick={addLine}>
+                + Adicionar serviço
+              </button>
             </div>
-            <button type="button" className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline" onClick={addLine}>
-              + Adicionar serviço
-            </button>
-          </div>
 
-          <div className="hub-orcamento-novo__services-toolbar">
-            <div className="hub-orcamento-novo__services-search-wrap">
-              <Search size={17} className="hub-orcamento-novo__services-search-icon" aria-hidden />
-              <input
-                type="search"
-                className="hub-orcamento-novo__input hub-orcamento-novo__services-search-input"
-                placeholder="Buscar serviço"
-                value={serviceSearch}
-                onChange={(e) => setServiceSearch(e.target.value)}
-                aria-label="Buscar serviço"
-              />
-            </div>
-          </div>
+            {lines.length === 0 ? (
+              <div className="hub-orcamento-novo__empty">
+                <p className="hub-orcamento-novo__empty-title">Nenhum serviço ainda</p>
+                <p className="hub-orcamento-novo__empty-text">
+                  Adicione pelo menos um serviço com valor para salvar o rascunho ou enviar ao cliente.
+                </p>
+                <button type="button" className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary" onClick={addLine}>
+                  + Adicionar serviço
+                </button>
+              </div>
+            ) : (
+              <div className="hub-orcamento-novo__svc-list">
+                {lines.length > 2 ? (
+                  <div className="hub-orcamento-novo__services-toolbar">
+                    <div className="hub-orcamento-novo__services-search-wrap">
+                      <Search size={17} className="hub-orcamento-novo__services-search-icon" aria-hidden />
+                      <input
+                        type="search"
+                        className="hub-orcamento-novo__input hub-orcamento-novo__services-search-input"
+                        placeholder="Filtrar opções do catálogo…"
+                        value={serviceSearch}
+                        onChange={(e) => setServiceSearch(e.target.value)}
+                        aria-label="Filtrar serviços do catálogo"
+                      />
+                    </div>
+                  </div>
+                ) : null}
 
-          {lines.length === 0 ? (
-            <p className="hub-orcamento-novo__help">Adicione pelo menos um serviço com valores para salvar o rascunho ou enviar.</p>
-          ) : (
-            <div className="hub-orcamento-novo__services-scroller">
-              <table className="hub-orcamento-novo__services-table">
-                <thead>
-                  <tr>
-                    <th>Serviço</th>
-                    <th className="hub-orcamento-novo__services-table-col--narrow">Duração</th>
-                    <th className="hub-orcamento-novo__services-table-col--variant">Opção de preço</th>
-                    {pets.map((p, pi) => (
-                      <th key={pi} className="right hub-orcamento-novo__services-th-pet">
-                        <span className="hub-orcamento-novo__services-th-pet-name">
-                          {p.display_name?.trim() || `Pet ${pi + 1}`}
-                        </span>
-                        <span className="hub-orcamento-novo__services-th-pet-val">Valor (R$)</span>
-                      </th>
-                    ))}
-                    <th className="hub-orcamento-novo__services-table-col--action" aria-label="Ações" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((ln, li) => {
-                    const st = ln.hub_service_type_id ? serviceTypes.find((s) => s.id === ln.hub_service_type_id) : undefined;
-                    const matrix = st ? coercePricingMatrixFromApi(st.pricing_matrix) : null;
-                    const showVariant = !!(matrix && needsMatrixVariantChoice(matrix));
-                    const variantOpts = showVariant && matrix ? variantComboboxOptions(matrix) : [];
-                    const variantValue =
-                      showVariant && matrix
-                        ? variantToComboValue(matrix, ln.pricing_variant ?? defaultPricingVariant(matrix))
-                        : '';
-                    return (
-                      <tr key={ln.key}>
-                        <td style={{ minWidth: 200 }}>
+                {lines.map((ln, li) => {
+                  const st = ln.hub_service_type_id
+                    ? serviceTypes.find((s) => s.id === ln.hub_service_type_id)
+                    : undefined;
+                  const matrix = st ? coercePricingMatrixFromApi(st.pricing_matrix) : null;
+                  const showVariant = !!(matrix && needsMatrixVariantChoice(matrix));
+                  const variantOpts = showVariant && matrix ? variantComboboxOptions(matrix) : [];
+                  const variantValue =
+                    showVariant && matrix
+                      ? variantToComboValue(matrix, ln.pricing_variant ?? defaultPricingVariant(matrix))
+                      : '';
+                  const durationLabel = formatDurationMin(st?.default_duration_minutes);
+                  const serviceLabel = st?.name?.trim() || `Serviço ${li + 1}`;
+
+                  return (
+                    <article key={ln.key} className="hub-orcamento-novo__svc">
+                      <div className="hub-orcamento-novo__svc-head">
+                        <span className="hub-orcamento-novo__svc-badge">{serviceLabel}</span>
+                        <div className="hub-orcamento-novo__svc-head-meta">
+                          {durationLabel !== '—' ? (
+                            <span className="hub-orcamento-novo__svc-duration" title="Duração estimada">
+                              {durationLabel}
+                            </span>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost hub-orcamento-novo__btn--icon"
+                            aria-label="Remover serviço"
+                            onClick={() => removeLine(li)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        className={
+                          showVariant
+                            ? 'hub-orcamento-novo__svc-fields'
+                            : 'hub-orcamento-novo__svc-fields hub-orcamento-novo__svc-fields--single'
+                        }
+                      >
+                        <div className="hub-orcamento-novo__field hub-orcamento-novo__svc-field--service">
+                          <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-svc-${ln.key}`}>
+                            Serviço
+                          </label>
                           <HubSearchableCombobox
                             id={`hub-quote-svc-${ln.key}`}
                             className="hub-orcamento-novo__combobox hub-orcamento-novo__service-combobox"
                             options={serviceComboboxOptions}
                             value={ln.hub_service_type_id}
                             onChange={(v) => applyLineServiceChange(li, v)}
-                            placeholder="— Serviço —"
+                            placeholder="Selecionar serviço"
                             searchPlaceholder="Buscar na lista…"
                             ariaLabel="Serviço"
                           />
-                        </td>
-                        <td className="hub-orcamento-novo__services-table-cell--muted">
-                          {formatDurationMin(st?.default_duration_minutes)}
-                        </td>
-                        <td className="hub-orcamento-novo__services-table-cell--variant">
-                          {showVariant && matrix ? (
+                        </div>
+
+                        {showVariant && matrix ? (
+                          <div className="hub-orcamento-novo__field hub-orcamento-novo__svc-field--variant">
+                            <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-var-${ln.key}`}>
+                              Opção de preço
+                            </label>
                             <HubSearchableCombobox
                               id={`hub-quote-var-${ln.key}`}
                               className="hub-orcamento-novo__combobox hub-orcamento-novo__variant-combobox"
@@ -1009,235 +1173,233 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
                               clearable={false}
                               ariaLabel="Opção de preço do serviço"
                             />
-                          ) : (
-                            <span className="hub-orcamento-novo__services-table-cell--muted">—</span>
-                          )}
-                        </td>
-                        {pets.map((_, pi) => (
-                          <td key={pi} className="right" style={{ minWidth: 100 }}>
-                            <input
-                              className="hub-orcamento-novo__input"
-                              value={ln.unitPricesByPetIndex[pi] ?? '0'}
-                              onChange={(e) => {
-                                const next = [...ln.unitPricesByPetIndex];
-                                next[pi] = e.target.value;
-                                updateLine(li, { unitPricesByPetIndex: next });
-                              }}
-                            />
-                          </td>
-                        ))}
-                        <td>
-                          <button
-                            type="button"
-                            className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost hub-orcamento-novo__btn--icon"
-                            aria-label="Remover linha"
-                            onClick={() => removeLine(li)}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+                          </div>
+                        ) : null}
+                      </div>
 
-        <div className="hub-orcamento-novo__footer-row">
-          <div className="hub-orcamento-novo__card hub-orcamento-novo__footer-card">
-            <h3 className="hub-orcamento-novo__footer-card-title">Desconto</h3>
-            <DiscountControl
-              idPrefix="hub-quote"
-              kind={discountKind}
-              valueStr={discountValueStr}
-              onKindChange={setDiscountKind}
-              onValueStrChange={setDiscountValueStr}
-              disabled={saving}
-            />
-          </div>
-          <div className="hub-orcamento-novo__card hub-orcamento-novo__footer-card">
-            <h3 className="hub-orcamento-novo__footer-card-title">Observação para o cliente (opcional)</h3>
-            <div className="hub-orcamento-novo__field hub-orcamento-novo__field--wide">
-              <textarea
-                className="hub-orcamento-novo__textarea hub-orcamento-novo__textarea--client"
-                rows={4}
-                maxLength={200}
-                value={clientNotes}
-                onChange={(e) => setClientNotes(e.target.value)}
-                placeholder="Mensagem que será exibida no orçamento enviado…"
+                      <div className="hub-orcamento-novo__svc-prices">
+                        <p className="hub-orcamento-novo__svc-prices-label">Valor por pet (R$)</p>
+                        <div className="hub-orcamento-novo__svc-prices-grid">
+                          {pets.map((p, pi) => {
+                            const petName = p.display_name?.trim() || `Pet ${pi + 1}`;
+                            return (
+                              <div key={pi} className="hub-orcamento-novo__field hub-orcamento-novo__svc-price">
+                                <label
+                                  className="hub-orcamento-novo__label"
+                                  htmlFor={`hub-quote-price-${ln.key}-${pi}`}
+                                >
+                                  {petName}
+                                </label>
+                                <div className="hub-orcamento-novo__svc-price-input">
+                                  <span className="hub-orcamento-novo__svc-price-prefix" aria-hidden>
+                                    R$
+                                  </span>
+                                  <input
+                                    id={`hub-quote-price-${ln.key}-${pi}`}
+                                    className="hub-orcamento-novo__input"
+                                    inputMode="decimal"
+                                    value={ln.unitPricesByPetIndex[pi] ?? '0'}
+                                    onChange={(e) => {
+                                      const next = [...ln.unitPricesByPetIndex];
+                                      next[pi] = e.target.value;
+                                      updateLine(li, { unitPricesByPetIndex: next });
+                                    }}
+                                    aria-label={`Valor para ${petName}`}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section className="hub-orcamento-novo__card">
+            <div className="hub-orcamento-novo__card-header hub-orcamento-novo__card-header--icon">
+              <span className="hub-orcamento-novo__card-ic" aria-hidden>
+                <MessageSquare size={18} strokeWidth={1.75} />
+              </span>
+              <div>
+                <h2 className="hub-orcamento-novo__card-title">Mensagens</h2>
+                <p className="hub-orcamento-novo__card-subtitle">
+                  Texto visível no orçamento do cliente e anotação só para a equipe.
+                </p>
+              </div>
+            </div>
+            <div className="hub-orcamento-novo__notes-grid">
+              <div className="hub-orcamento-novo__field">
+                <label className="hub-orcamento-novo__label" htmlFor="hub-quote-client-notes">
+                  Observação para o cliente
+                </label>
+                <textarea
+                  id="hub-quote-client-notes"
+                  className="hub-orcamento-novo__textarea hub-orcamento-novo__textarea--client"
+                  rows={4}
+                  maxLength={200}
+                  value={clientNotes}
+                  onChange={(e) => setClientNotes(e.target.value)}
+                  placeholder="Mensagem que aparece no orçamento enviado…"
+                />
+                <p className="hub-orcamento-novo__char-count">{clientNotes.length}/200</p>
+              </div>
+              <div className="hub-orcamento-novo__field">
+                <label className="hub-orcamento-novo__label" htmlFor="hub-quote-internal-notes">
+                  <StickyNote size={12} strokeWidth={2} aria-hidden /> Observação interna
+                </label>
+                <textarea
+                  id="hub-quote-internal-notes"
+                  className="hub-orcamento-novo__textarea"
+                  rows={4}
+                  maxLength={300}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Só a equipe vê"
+                />
+                <p className="hub-orcamento-novo__char-count">{notes.length}/300</p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside className="hub-orcamento-novo__sidebar">
+          <FinancialSummaryCard
+            title="Resumo do orçamento"
+            subtotal={summary.subtotal}
+            discountAmount={summary.discountAmt}
+            total={summary.total}
+            extraRows={pets.map((p, i) => ({
+              label: p.display_name?.trim() || `Pet ${i + 1}`,
+              value: summary.petSubtotals[i] ?? 0,
+            }))}
+            discountControl={
+              <DiscountControl
+                idPrefix="hub-quote"
+                kind={discountKind}
+                valueStr={discountValueStr}
+                onKindChange={setDiscountKind}
+                onValueStrChange={setDiscountValueStr}
+                disabled={saving}
               />
-              <p className="hub-orcamento-novo__char-count">{clientNotes.length}/200</p>
+            }
+          />
+
+          <div className="hub-orcamento-novo__card">
+            <div className="hub-orcamento-novo__card-header hub-orcamento-novo__card-header--icon">
+              <span className="hub-orcamento-novo__card-ic" aria-hidden>
+                <CalendarClock size={18} strokeWidth={1.75} />
+              </span>
+              <div>
+                <h3 className="hub-orcamento-novo__card-title">Validade</h3>
+                <p className="hub-orcamento-novo__card-subtitle">Conta a partir da data de envio.</p>
+              </div>
+            </div>
+            <div className="hub-orcamento-novo__chips" role="group" aria-label="Prazo rápido">
+              {[7, 15, 30].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  className={`hub-orcamento-novo__chip${validDays === d ? ' hub-orcamento-novo__chip--active' : ''}`}
+                  onClick={() => applyValidDays(d)}
+                >
+                  {d} dias
+                </button>
+              ))}
+            </div>
+            <div className="hub-orcamento-novo__field hub-orcamento-novo__field--spaced">
+              <label className="hub-orcamento-novo__label" htmlFor="hub-quote-valid-days">
+                Dias após o envio
+              </label>
+              <input
+                id="hub-quote-valid-days"
+                className="hub-orcamento-novo__input"
+                type="number"
+                min={1}
+                max={90}
+                value={validDays}
+                onChange={(e) => applyValidDays(Number.parseInt(e.target.value, 10) || 7)}
+              />
+            </div>
+            <p className="hub-orcamento-novo__validity-hint">
+              Prévia: válido até <strong>{formatYmdBr(expiresYmd)}</strong>
+            </p>
+            <details className="hub-orcamento-novo__validity-advanced">
+              <summary>Definir data exata</summary>
+              <div className="hub-orcamento-novo__field hub-orcamento-novo__field--spaced">
+                <HubDateField
+                  id="hub-quote-expires"
+                  label="Válido até"
+                  valueIso={expiresYmd}
+                  onChangeIso={setExpiresYmd}
+                />
+              </div>
+            </details>
+          </div>
+
+          <div className="hub-orcamento-novo__card hub-orcamento-novo__card--soft">
+            <h3 className="hub-orcamento-novo__card-title">Neste orçamento</h3>
+            <div className="hub-orcamento-novo__info-row">
+              <span>Pets</span>
+              <span>{pets.length}</span>
+            </div>
+            <div className="hub-orcamento-novo__info-row">
+              <span>Serviços</span>
+              <span>{lines.length}</span>
+            </div>
+            <div className="hub-orcamento-novo__info-row">
+              <span>Duração estimada</span>
+              <span>{summary.estMin ? `${summary.estMin} min` : '—'}</span>
             </div>
           </div>
-        </div>
 
-        <section className="hub-orcamento-novo__card">
-          <div className="hub-orcamento-novo__field hub-orcamento-novo__field--wide">
-            <label className="hub-orcamento-novo__label">Observação interna</label>
-            <textarea
-              className="hub-orcamento-novo__textarea"
-              rows={2}
-              maxLength={300}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Só a equipe vê"
-            />
-            <p className="hub-orcamento-novo__char-count">{notes.length}/300</p>
-          </div>
-        </section>
-      </div>
-
-      <aside className="hub-orcamento-novo__sidebar">
-        <FinancialSummaryCard
-          title="Resumo do orçamento"
-          subtotal={summary.subtotal}
-          discountAmount={summary.discountAmt}
-          total={summary.total}
-          extraRows={pets.map((p, i) => ({
-            label: p.display_name?.trim() || `Pet ${i + 1}`,
-            value: summary.petSubtotals[i] ?? 0,
-          }))}
-        />
-
-        <div className="hub-orcamento-novo__card">
-          <h3 className="hub-orcamento-novo__card-title">Validade do orçamento</h3>
-          <p className="hub-orcamento-novo__help">Após envio, a validade conta a partir da data de envio (usa “dias válidos”).</p>
-          <div className="hub-orcamento-novo__field" style={{ marginTop: 8 }}>
-            <HubDateField
-              id="hub-quote-expires"
-              label="Válido até"
-              valueIso={expiresYmd}
-              onChangeIso={setExpiresYmd}
-            />
-          </div>
-          <div className="hub-orcamento-novo__field" style={{ marginTop: 8 }}>
-            <label className="hub-orcamento-novo__label">Dias após envio</label>
-            <input
-              className="hub-orcamento-novo__input"
-              type="number"
-              min={1}
-              max={90}
-              value={validDays}
-              onChange={(e) => {
-                const n = Math.min(90, Math.max(1, Number.parseInt(e.target.value, 10) || 7));
-                setValidDays(n);
-                const d = new Date();
-                d.setDate(d.getDate() + n);
-                setExpiresYmd(ymdLocal(d));
-              }}
-            />
-          </div>
-          <div className="hub-orcamento-novo__chips">
-            <button
-              type="button"
-              className={`hub-orcamento-novo__chip${validDays === 7 ? ' hub-orcamento-novo__chip--active' : ''}`}
-              onClick={() => {
-                setValidDays(7);
-                const d = new Date();
-                d.setDate(d.getDate() + 7);
-                setExpiresYmd(ymdLocal(d));
-              }}
-            >
-              7 dias
-            </button>
-            <button
-              type="button"
-              className={`hub-orcamento-novo__chip${validDays === 15 ? ' hub-orcamento-novo__chip--active' : ''}`}
-              onClick={() => {
-                setValidDays(15);
-                const d = new Date();
-                d.setDate(d.getDate() + 15);
-                setExpiresYmd(ymdLocal(d));
-              }}
-            >
-              15 dias
-            </button>
-          </div>
-        </div>
-
-        <div className="hub-orcamento-novo__card">
-          <h3 className="hub-orcamento-novo__card-title">Informações</h3>
-          <div className="hub-orcamento-novo__info-row">
-            <span>Pets</span>
-            <span>{pets.length}</span>
-          </div>
-          <div className="hub-orcamento-novo__info-row">
-            <span>Serviços (linhas)</span>
-            <span>{lines.length}</span>
-          </div>
-          <div className="hub-orcamento-novo__info-row">
-            <span>Duração estimada</span>
-            <span>{summary.estMin ? `${summary.estMin} min` : '—'}</span>
-          </div>
-        </div>
-
-        <div className="hub-orcamento-novo__card">
-          <div className="hub-quote-detail__card-head">
-            <Zap size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
-            <div>
-              <h3 className="hub-quote-detail__card-title">Ações rápidas</h3>
-              <p className="hub-quote-detail__card-sub">
-                Salve o rascunho, abra a vista do orçamento ou envie ao cliente quando estiver pronto.
-              </p>
+          <div className="hub-orcamento-novo__card">
+            <div className="hub-quote-detail__card-head hub-quote-detail__card-head--with-sub">
+              <Eye size={20} strokeWidth={1.75} className="hub-quote-detail__card-ic" aria-hidden />
+              <div>
+                <h3 className="hub-quote-detail__card-title">Mais opções</h3>
+                <p className="hub-quote-detail__card-sub">
+                  Visualize ou copie o link interno depois de salvar o rascunho.
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="hub-quote-detail__convert-grid">
-            <button
-              type="button"
-              className="hub-quote-detail__convert-tile"
-              disabled={!activeId}
-              onClick={() => activeId && navigate(`/hub/orcamentos/${activeId}`)}
-            >
-              <Eye size={22} strokeWidth={1.75} aria-hidden />
-              <span className="hub-quote-detail__convert-tile-title">Visualizar orçamento</span>
-              <span className="hub-quote-detail__convert-tile-sub">Abrir vista completa</span>
-            </button>
-            <button
-              type="button"
-              className="hub-quote-detail__convert-tile"
-              disabled={!activeId}
-              onClick={() => {
-                if (!activeId) return;
-                const url = `${window.location.origin}/hub/orcamentos/${activeId}`;
-                void navigator.clipboard.writeText(url).then(() => showSuccess('Link copiado'));
-              }}
-            >
-              <Copy size={22} strokeWidth={1.75} aria-hidden />
-              <span className="hub-quote-detail__convert-tile-title">Copiar link interno</span>
-              <span className="hub-quote-detail__convert-tile-sub">URL da equipa</span>
-            </button>
-            <button
-              type="button"
-              className="hub-quote-detail__convert-tile"
-              disabled={saving}
-              onClick={() => void handleSaveClick()}
-            >
-              <Save size={22} strokeWidth={1.75} aria-hidden />
-              <span className="hub-quote-detail__convert-tile-title">Salvar rascunho</span>
-              <span className="hub-quote-detail__convert-tile-sub">Gravar alterações</span>
-            </button>
-            {!hideGenerateAndSend ? (
+            <div className="hub-quote-detail__convert-grid hub-orcamento-novo__side-actions">
               <button
                 type="button"
                 className="hub-quote-detail__convert-tile"
-                disabled={saving}
-                onClick={() => void handleSend()}
+                disabled={!activeId}
+                onClick={() => activeId && navigate(`/hub/orcamentos/${activeId}`)}
               >
-                <Send size={22} strokeWidth={1.75} aria-hidden />
-                <span className="hub-quote-detail__convert-tile-title">Gerar e enviar</span>
-                <span className="hub-quote-detail__convert-tile-sub">Enviar ao cliente</span>
+                <Eye size={22} strokeWidth={1.75} aria-hidden />
+                <span className="hub-quote-detail__convert-tile-title">Visualizar</span>
+                <span className="hub-quote-detail__convert-tile-sub">Abrir visualização completa</span>
               </button>
+              <button
+                type="button"
+                className="hub-quote-detail__convert-tile"
+                disabled={!activeId}
+                onClick={() => {
+                  if (!activeId) return;
+                  const url = `${window.location.origin}/hub/orcamentos/${activeId}`;
+                  void navigator.clipboard.writeText(url).then(() => showSuccess('Link copiado'));
+                }}
+              >
+                <Copy size={22} strokeWidth={1.75} aria-hidden />
+                <span className="hub-quote-detail__convert-tile-title">Copiar link interno</span>
+                <span className="hub-quote-detail__convert-tile-sub">URL da equipe</span>
+              </button>
+            </div>
+            {!activeId ? (
+              <p className="hub-quote-detail__muted hub-quote-detail__convert-hint">
+                Salve o rascunho ao menos uma vez para habilitar visualizar e copiar o link.
+              </p>
             ) : null}
           </div>
-          {!activeId ? (
-            <p className="hub-quote-detail__muted hub-quote-detail__convert-hint">
-              Guarde o rascunho ao menos uma vez para habilitar visualizar e copiar o link interno.
-            </p>
-          ) : null}
-        </div>
-      </aside>
+        </aside>
+      </div>
     </div>
   );
 };

@@ -113,15 +113,17 @@ const HubQuoteEditPage: React.FC = () => {
     <div className="hub-orcamento-novo">
       <header className="hub-orcamento-novo__topbar">
         <div>
-          <p style={{ margin: 0 }}>
+          <p className="hub-orcamento-novo__breadcrumb">
             <Link to={`/hub/orcamentos/${id}`} className="hub-clientes__link-btn">
-              ← Vista do orçamento
+              ← Visualização do orçamento
             </Link>
           </p>
-          <h1 className="hub-orcamento-novo__topbar-title" style={{ marginTop: 8 }}>
+          <h1 className="hub-orcamento-novo__topbar-title hub-orcamento-novo__topbar-title--edit">
             Editar orçamento
           </h1>
-          <p className="hub-orcamento-novo__topbar-subtitle">Rascunho — altere pets, serviços e valores; depois envie ao cliente.</p>
+          <p className="hub-orcamento-novo__topbar-subtitle">
+            Rascunho — altere pets, serviços e valores; depois envie ao cliente.
+          </p>
         </div>
         <div className="hub-orcamento-novo__topbar-actions">
           <HubCancelButton onClick={() => navigate(`/hub/orcamentos/${id}`)}>Fechar editor</HubCancelButton>

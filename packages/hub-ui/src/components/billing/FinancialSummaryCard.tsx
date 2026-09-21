@@ -53,7 +53,7 @@ export const FinancialSummaryCard: React.FC<FinancialSummaryCardProps> = ({
       </div>
 
       {discountControl ? (
-        <div style={{ margin: '8px 0' }}>{discountControl}</div>
+        <div className="hub-orcamento-novo__summary-discount">{discountControl}</div>
       ) : null}
 
       {discountAmount > 0 && (

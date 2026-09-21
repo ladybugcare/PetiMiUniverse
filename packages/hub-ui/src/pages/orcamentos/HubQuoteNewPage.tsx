@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { User } from 'lucide-react';
 import {
   useAuth,
   getStoredClinicId,
@@ -141,14 +142,6 @@ const HubQuoteNewPage: React.FC = () => {
         </div>
         <div className="hub-orcamento-novo__topbar-actions">
           <HubCancelButton onClick={() => navigate('/hub/orcamentos')} />
-          <button
-            type="button"
-            className="hub-orcamento-novo__btn hub-orcamento-novo__btn--icon hub-orcamento-novo__btn--ghost"
-            aria-label="Fechar"
-            onClick={() => navigate('/hub/orcamentos')}
-          >
-            ×
-          </button>
         </div>
       </header>
 
@@ -156,49 +149,69 @@ const HubQuoteNewPage: React.FC = () => {
         <HubLoading variant="block" label="Carregando contato…" />
       ) : (
         <>
-          <section className="hub-orcamento-novo__card" style={{ marginBottom: 16 }}>
-            <div className="hub-orcamento-novo__card-header">
+          <section className="hub-orcamento-novo__card hub-orcamento-novo__contact-card">
+            <div className="hub-orcamento-novo__card-header hub-orcamento-novo__card-header--icon">
+              <span className="hub-orcamento-novo__card-ic" aria-hidden>
+                <User size={18} strokeWidth={1.75} />
+              </span>
               <div>
-                <h2 className="hub-orcamento-novo__card-title">1. Dados do contato</h2>
-                <p className="hub-orcamento-novo__card-subtitle">Vinculados apenas a este orçamento (prospect).</p>
+                <h2 className="hub-orcamento-novo__card-title">Dados do contato</h2>
+                <p className="hub-orcamento-novo__card-subtitle">
+                  Vinculados apenas a este orçamento (prospect).
+                </p>
               </div>
             </div>
             {resolvedProspectId && prospectLabel ? (
-              <p style={{ margin: 0, color: '#4a3b3a' }}>
+              <p className="hub-orcamento-novo__prospect-pill">
                 <strong>Contato:</strong> {prospectLabel}
               </p>
             ) : !prospectIdParam ? (
               <div className="hub-orcamento-novo__field-grid">
                 <div className="hub-orcamento-novo__field">
-                  <label className="hub-orcamento-novo__label">Nome *</label>
+                  <label className="hub-orcamento-novo__label" htmlFor="hub-quote-contact-name">
+                    Nome *
+                  </label>
                   <input
+                    id="hub-quote-contact-name"
                     className="hub-orcamento-novo__input"
                     value={inline.full_name}
                     onChange={(e) => setInline((s) => ({ ...s, full_name: e.target.value }))}
+                    autoComplete="name"
                   />
                 </div>
                 <div className="hub-orcamento-novo__field">
-                  <label className="hub-orcamento-novo__label">Telefone *</label>
+                  <label className="hub-orcamento-novo__label" htmlFor="hub-quote-contact-phone">
+                    Telefone *
+                  </label>
                   <HubBrPhoneInput
+                    id="hub-quote-contact-phone"
                     className="hub-orcamento-novo__input"
                     value={inline.phone}
                     onChange={(phone) => setInline((s) => ({ ...s, phone }))}
                   />
                 </div>
                 <div className="hub-orcamento-novo__field">
-                  <label className="hub-orcamento-novo__label">CPF / CNPJ *</label>
+                  <label className="hub-orcamento-novo__label" htmlFor="hub-quote-contact-tax">
+                    CPF / CNPJ *
+                  </label>
                   <HubBrTaxIdInput
+                    id="hub-quote-contact-tax"
                     className="hub-orcamento-novo__input"
                     value={inline.tax_id}
                     onChange={(tax_id) => setInline((s) => ({ ...s, tax_id }))}
                   />
                 </div>
                 <div className="hub-orcamento-novo__field">
-                  <label className="hub-orcamento-novo__label">E-mail</label>
+                  <label className="hub-orcamento-novo__label" htmlFor="hub-quote-contact-email">
+                    E-mail
+                  </label>
                   <input
+                    id="hub-quote-contact-email"
                     className="hub-orcamento-novo__input"
+                    type="email"
                     value={inline.email}
                     onChange={(e) => setInline((s) => ({ ...s, email: e.target.value }))}
+                    autoComplete="email"
                   />
                 </div>
               </div>
@@ -219,9 +232,10 @@ const HubQuoteNewPage: React.FC = () => {
               createContext={createContext}
             />
           ) : (
-            <p className="hub-orcamento-novo__help">
-              Preencha nome, telefone e CPF (11 dígitos) ou CNPJ (14 dígitos) do contato para habilitar pets e serviços.
-            </p>
+            <div className="hub-orcamento-novo__callout" role="status">
+              Preencha nome, telefone e CPF (11 dígitos) ou CNPJ (14 dígitos) para liberar pets, serviços e o
+              resumo do orçamento.
+            </div>
           )}
         </>
       )}
