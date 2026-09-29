@@ -1,82 +1,166 @@
-/** Título da página no header, alinhado às rotas do Hub (rotas mais específicas primeiro). */
-const ROUTES: { path: string; title: string }[] = [
-  { path: '/hub/pets/novo', title: 'Novo pet' },
-  { path: '/hub/estoque/itens', title: 'Estoque — Itens' },
-  { path: '/hub/estoque/produtos', title: 'Estoque — Itens' },
-  { path: '/hub/estoque/medicamentos', title: 'Estoque — Itens' },
-  { path: '/hub/estoque/vacinas', title: 'Estoque — Itens' },
-  { path: '/hub/estoque/movimentos', title: 'Estoque — Movimentos' },
-  { path: '/hub/estoque/entradas', title: 'Estoque — Movimentos' },
-  { path: '/hub/estoque/saidas', title: 'Estoque — Movimentos' },
-  { path: '/hub/estoque/validade', title: 'Estoque — Alertas' },
-  { path: '/hub/estoque/alertas', title: 'Estoque — Alertas' },
-  { path: '/hub/estoque/inventario', title: 'Estoque — Inventário' },
-  { path: '/hub/estoque/fornecedores', title: 'Estoque — Fornecedores' },
-  { path: '/hub/configuracoes-sistema/checklists', title: 'Configurações — Checklists operacionais' },
-  { path: '/hub/configuracoes-sistema/formas-pagamento', title: 'Configurações — Formas de pagamento' },
-  { path: '/hub/configuracoes-sistema/templates-mensagem', title: 'Configurações — Templates de Mensagem' },
-  { path: '/hub/configuracoes-sistema/servicos-funcoes', title: 'Configurações — Serviços e Funções' },
-  { path: '/hub/configuracoes-sistema', title: 'Configurações do Sistema' },
-  { path: '/hub/clinica/atendimentos', title: 'Clínica — Consultório' },
-  { path: '/hub/clinica/consultorio', title: 'Clínica — Consultório' },
-  { path: '/hub/clinica/prontuarios', title: 'Clínica — Prontuários' },
-  { path: '/hub/clinica/evolucoes', title: 'Clínica — Evoluções' },
-  { path: '/hub/clinica/prescricoes', title: 'Clínica — Prescrições' },
-  { path: '/hub/clinica/receitas/nova', title: 'Clínica — Nova receita' },
-  { path: '/hub/clinica/vacinas', title: 'Clínica — Vacinas' },
-  { path: '/hub/clinica/exames', title: 'Clínica — Exames' },
-  { path: '/hub/clinica/internacoes', title: 'Clínica — Internações' },
-  { path: '/hub/clinica/cirurgias', title: 'Clínica — Cirurgias' },
-  { path: '/hub/onboarding/clinica', title: 'Configurar clínica' },
-  { path: '/signup', title: 'Criar conta' },
-  { path: '/email-confirmed', title: 'Confirmar e-mail' },
-  { path: '/hub/clinica', title: 'Clínica — Consultório' },
-  { path: '/hub/leva-e-traz/monitoramento', title: 'Leva e Traz — Monitoramento' },
-  { path: '/hub/leva-e-traz/minha-rota', title: 'Leva e Traz — Minha rota' },
-  { path: '/hub/leva-e-traz', title: 'Leva e Traz' },
-  { path: '/hub/caixa', title: 'Caixa' },
-  { path: '/hub/hotel-creche/minha-fila', title: 'Hotel & Creche — Minha fila' },
-  { path: '/hub/hotel-creche', title: 'Hotel & Creche — Fila do dia' },
-  { path: '/hub/banho-tosa/minha-fila', title: 'Banho & Tosa — Minha fila' },
-  { path: '/hub/banho-tosa', title: 'Banho & Tosa — Fila do dia' },
-  { path: '/hub/orcamentos/contatos', title: 'Orçamento — Contatos' },
-  { path: '/hub/orcamentos/novo', title: 'Orçamento — Novo' },
-  { path: '/hub/orcamentos', title: 'Orçamento' },
-  { path: '/orcamento', title: 'Orçamento (público)' },
-  { path: '/hub/dashboard', title: 'Dashboard' },
-  { path: '/hub/appointments', title: 'Agenda' },
-  { path: '/hub/clientes', title: 'Clientes' },
-  { path: '/hub/pets', title: 'Pets' },
-  { path: '/hub/financeiro', title: 'Financeiro' },
-  { path: '/hub/servicos/adicionais/novo', title: 'Adicionais — Novo' },
-  { path: '/hub/servicos/adicionais', title: 'Adicionais' },
-  { path: '/hub/servicos/servicos/novo', title: 'Serviços — Novo' },
-  { path: '/hub/servicos/servicos', title: 'Serviços' },
-  { path: '/hub/estoque', title: 'Estoque' },
-  { path: '/hub/equipe', title: 'Equipe' },
-  { path: '/hub/relatorios', title: 'Relatórios' },
-  { path: '/hub/encounters', title: 'Atendimentos' },
-  { path: '/hub/notificacoes', title: 'Notificações' },
-  { path: '/hub/meu-perfil', title: 'Meu Perfil' },
-  { path: '/hub/perfil-clinica', title: 'Perfil da Clínica' },
+/** Crumbs do header (pai opcional + página atual). Rotas mais específicas primeiro. */
+export type HubPageCrumb = {
+  label: string;
+  /** Link do crumb pai; o último normalmente não tem. */
+  to?: string;
+};
+
+type RouteTitle = {
+  path: string;
+  crumbs: HubPageCrumb[];
+};
+
+const ROUTES: RouteTitle[] = [
+  { path: '/hub/pets/novo', crumbs: [{ label: 'Pets', to: '/hub/pets' }, { label: 'Novo pet' }] },
+  { path: '/hub/estoque/itens', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Itens' }] },
+  { path: '/hub/estoque/produtos', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Itens' }] },
+  { path: '/hub/estoque/medicamentos', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Itens' }] },
+  { path: '/hub/estoque/vacinas', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Itens' }] },
+  { path: '/hub/estoque/movimentos', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Movimentos' }] },
+  { path: '/hub/estoque/entradas', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Movimentos' }] },
+  { path: '/hub/estoque/saidas', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Movimentos' }] },
+  { path: '/hub/estoque/validade', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Alertas' }] },
+  { path: '/hub/estoque/alertas', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Alertas' }] },
+  { path: '/hub/estoque/inventario', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Inventário' }] },
+  { path: '/hub/estoque/fornecedores', crumbs: [{ label: 'Estoque', to: '/hub/estoque' }, { label: 'Fornecedores' }] },
+  {
+    path: '/hub/configuracoes-sistema/checklists',
+    crumbs: [{ label: 'Configurações', to: '/hub/configuracoes-sistema' }, { label: 'Checklists operacionais' }],
+  },
+  {
+    path: '/hub/configuracoes-sistema/formas-pagamento',
+    crumbs: [{ label: 'Configurações', to: '/hub/configuracoes-sistema' }, { label: 'Formas de pagamento' }],
+  },
+  {
+    path: '/hub/configuracoes-sistema/templates-mensagem',
+    crumbs: [{ label: 'Configurações', to: '/hub/configuracoes-sistema' }, { label: 'Templates de mensagem' }],
+  },
+  {
+    path: '/hub/configuracoes-sistema/servicos-funcoes',
+    crumbs: [{ label: 'Configurações', to: '/hub/configuracoes-sistema' }, { label: 'Serviços e funções' }],
+  },
+  { path: '/hub/configuracoes-sistema', crumbs: [{ label: 'Configurações do Sistema' }] },
+  { path: '/hub/clinica/atendimentos', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Consultório' }] },
+  { path: '/hub/clinica/consultorio', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Consultório' }] },
+  { path: '/hub/clinica/prontuarios', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Prontuários' }] },
+  { path: '/hub/clinica/evolucoes', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Evoluções' }] },
+  { path: '/hub/clinica/prescricoes', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Prescrições' }] },
+  {
+    path: '/hub/clinica/receitas/nova',
+    crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Nova receita' }],
+  },
+  { path: '/hub/clinica/vacinas', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Vacinas' }] },
+  { path: '/hub/clinica/exames', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Exames' }] },
+  { path: '/hub/clinica/internacoes', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Internações' }] },
+  { path: '/hub/clinica/cirurgias', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Cirurgias' }] },
+  { path: '/hub/onboarding/clinica', crumbs: [{ label: 'Configurar clínica' }] },
+  { path: '/signup', crumbs: [{ label: 'Criar conta' }] },
+  { path: '/email-confirmed', crumbs: [{ label: 'Confirmar e-mail' }] },
+  { path: '/hub/clinica', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Consultório' }] },
+  {
+    path: '/hub/leva-e-traz/monitoramento',
+    crumbs: [{ label: 'Leva e Traz', to: '/hub/leva-e-traz' }, { label: 'Monitoramento' }],
+  },
+  {
+    path: '/hub/leva-e-traz/minha-rota',
+    crumbs: [{ label: 'Leva e Traz', to: '/hub/leva-e-traz' }, { label: 'Minha rota' }],
+  },
+  { path: '/hub/leva-e-traz', crumbs: [{ label: 'Leva e Traz' }] },
+  { path: '/hub/caixa', crumbs: [{ label: 'Caixa' }] },
+  {
+    path: '/hub/hotel-creche/minha-fila',
+    crumbs: [{ label: 'Hotel & Creche', to: '/hub/hotel-creche' }, { label: 'Minha fila' }],
+  },
+  {
+    path: '/hub/hotel-creche',
+    crumbs: [{ label: 'Hotel & Creche', to: '/hub/hotel-creche' }, { label: 'Fila do dia' }],
+  },
+  {
+    path: '/hub/banho-tosa/minha-fila',
+    crumbs: [{ label: 'Banho & Tosa', to: '/hub/banho-tosa' }, { label: 'Minha fila' }],
+  },
+  {
+    path: '/hub/banho-tosa',
+    crumbs: [{ label: 'Banho & Tosa', to: '/hub/banho-tosa' }, { label: 'Fila do dia' }],
+  },
+  { path: '/hub/orcamentos/contatos', crumbs: [{ label: 'Orçamento', to: '/hub/orcamentos' }, { label: 'Contatos' }] },
+  { path: '/hub/orcamentos/novo', crumbs: [{ label: 'Orçamento', to: '/hub/orcamentos' }, { label: 'Novo' }] },
+  { path: '/hub/orcamentos', crumbs: [{ label: 'Orçamento' }] },
+  { path: '/orcamento', crumbs: [{ label: 'Orçamento (público)' }] },
+  { path: '/hub/dashboard', crumbs: [{ label: 'Dashboard' }] },
+  { path: '/hub/appointments', crumbs: [{ label: 'Agenda' }] },
+  { path: '/hub/clientes', crumbs: [{ label: 'Clientes' }] },
+  { path: '/hub/pets', crumbs: [{ label: 'Pets' }] },
+  { path: '/hub/financeiro', crumbs: [{ label: 'Financeiro' }] },
+  {
+    path: '/hub/servicos/adicionais/novo',
+    crumbs: [{ label: 'Serviços', to: '/hub/servicos' }, { label: 'Adicionais' }, { label: 'Novo' }],
+  },
+  {
+    path: '/hub/servicos/adicionais',
+    crumbs: [{ label: 'Serviços', to: '/hub/servicos' }, { label: 'Adicionais' }],
+  },
+  {
+    path: '/hub/servicos/servicos/novo',
+    crumbs: [{ label: 'Serviços', to: '/hub/servicos' }, { label: 'Novo serviço' }],
+  },
+  { path: '/hub/servicos/servicos', crumbs: [{ label: 'Serviços' }] },
+  { path: '/hub/estoque', crumbs: [{ label: 'Estoque' }] },
+  { path: '/hub/equipe', crumbs: [{ label: 'Equipe' }] },
+  { path: '/hub/relatorios', crumbs: [{ label: 'Relatórios' }] },
+  { path: '/hub/encounters', crumbs: [{ label: 'Atendimentos' }] },
+  { path: '/hub/notificacoes', crumbs: [{ label: 'Notificações' }] },
+  { path: '/hub/meu-perfil', crumbs: [{ label: 'Meu Perfil' }] },
+  { path: '/hub/perfil-clinica', crumbs: [{ label: 'Perfil da Clínica' }] },
 ];
 
 const ROUTES_BY_SPECIFICITY = [...ROUTES].sort((a, b) => b.path.length - a.path.length);
 
-export function hubPageTitleFromPath(pathname: string): string {
-  if (/^\/hub\/pets\/[^/]+\/editar$/.test(pathname)) return 'Editar pet';
-  if (/^\/hub\/clinica\/atendimentos\/[^/]+$/.test(pathname)) return 'Clínica — Atendimento';
-  if (/^\/hub\/clinica\/internacoes\/[^/]+$/.test(pathname)) return 'Clínica — Internação';
-  if (/^\/hub\/clinica\/cirurgias\/[^/]+$/.test(pathname)) return 'Clínica — Cirurgia';
-  if (/^\/hub\/clientes\/[^/]+$/.test(pathname)) return 'Cliente';
-  if (/^\/hub\/orcamentos\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Orçamento — Pronto para envio';
-  if (/^\/hub\/financeiro\/cobranca-lote\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Cobrança — Pronto para envio';
-  if (/^\/hub\/caixa\/comanda\/[^/]+\/pronto-para-envio$/.test(pathname)) return 'Comanda — Pronto para envio';
-  if (/^\/hub\/caixa\/comanda\/[^/]+$/.test(pathname)) return 'Comanda';
-  if (/^\/cobranca\//.test(pathname)) return 'Cobrança (público)';
-  if (/^\/comanda\//.test(pathname)) return 'Comanda (público)';
-  if (/^\/receita\//.test(pathname)) return 'Receita (público)';
-  if (pathname === '/validar-receita') return 'Validar receita';
+function matchDynamicCrumbs(pathname: string): HubPageCrumb[] | null {
+  if (/^\/hub\/pets\/[^/]+\/editar$/.test(pathname)) {
+    return [{ label: 'Pets', to: '/hub/pets' }, { label: 'Editar pet' }];
+  }
+  if (/^\/hub\/clinica\/atendimentos\/[^/]+$/.test(pathname)) {
+    return [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Atendimento' }];
+  }
+  if (/^\/hub\/clinica\/internacoes\/[^/]+$/.test(pathname)) {
+    return [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Internação' }];
+  }
+  if (/^\/hub\/clinica\/cirurgias\/[^/]+$/.test(pathname)) {
+    return [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Cirurgia' }];
+  }
+  if (/^\/hub\/clientes\/[^/]+$/.test(pathname)) {
+    return [{ label: 'Clientes', to: '/hub/clientes' }, { label: 'Detalhe' }];
+  }
+  if (/^\/hub\/orcamentos\/[^/]+\/pronto-para-envio$/.test(pathname)) {
+    return [{ label: 'Orçamento', to: '/hub/orcamentos' }, { label: 'Pronto para envio' }];
+  }
+  if (/^\/hub\/financeiro\/cobranca-lote\/[^/]+\/pronto-para-envio$/.test(pathname)) {
+    return [{ label: 'Financeiro', to: '/hub/financeiro' }, { label: 'Pronto para envio' }];
+  }
+  if (/^\/hub\/caixa\/comanda\/[^/]+\/pronto-para-envio$/.test(pathname)) {
+    return [{ label: 'Caixa', to: '/hub/caixa' }, { label: 'Pronto para envio' }];
+  }
+  if (/^\/hub\/caixa\/comanda\/[^/]+$/.test(pathname)) {
+    return [{ label: 'Caixa', to: '/hub/caixa' }, { label: 'Comanda' }];
+  }
+  if (/^\/cobranca\//.test(pathname)) return [{ label: 'Cobrança (público)' }];
+  if (/^\/comanda\//.test(pathname)) return [{ label: 'Comanda (público)' }];
+  if (/^\/receita\//.test(pathname)) return [{ label: 'Receita (público)' }];
+  if (pathname === '/validar-receita') return [{ label: 'Validar receita' }];
+  return null;
+}
+
+export function hubPageCrumbsFromPath(pathname: string): HubPageCrumb[] {
+  const dynamic = matchDynamicCrumbs(pathname);
+  if (dynamic) return dynamic;
+
   const hit = ROUTES_BY_SPECIFICITY.find((r) => pathname === r.path || pathname.startsWith(`${r.path}/`));
-  return hit?.title ?? 'PetMi Hub';
+  return hit?.crumbs ?? [{ label: 'PetMi Hub' }];
+}
+
+/** Título plano (document.title / fallbacks). */
+export function hubPageTitleFromPath(pathname: string): string {
+  const crumbs = hubPageCrumbsFromPath(pathname);
+  return crumbs.map((c) => c.label).join(' · ');
 }

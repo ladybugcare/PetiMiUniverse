@@ -6,7 +6,11 @@ import HubAvatar from './HubAvatar';
 import { getHubUserDisplayName, getHubUserPhotoUrl } from '../utils/hubUserDisplay';
 import { hubAccessTypeLabel } from '../utils/hubAccessLabel';
 
-const HubSidebarUserMenu: React.FC = () => {
+type HubSidebarUserMenuProps = {
+  collapsed?: boolean;
+};
+
+const HubSidebarUserMenu: React.FC<HubSidebarUserMenuProps> = ({ collapsed = false }) => {
   const navigate = useNavigate();
   const { user, logout, isLoggingOut, role: authRole } = useAuth();
   const { role: clinicRole } = usePermissions();
@@ -32,29 +36,45 @@ const HubSidebarUserMenu: React.FC = () => {
   };
 
   return (
-    <div className="hub-sidebar__user" ref={menuRef}>
+    <div
+      className={['hub-sidebar__user', collapsed ? 'hub-sidebar__user--collapsed' : ''].filter(Boolean).join(' ')}
+      ref={menuRef}
+    >
       <button
         type="button"
         className="hub-sidebar__user-trigger"
         aria-expanded={menuOpen}
         aria-haspopup="menu"
         aria-label={`Menu do usuário: ${displayName}`}
+        title={collapsed ? displayName : undefined}
         onClick={() => setMenuOpen((o) => !o)}
       >
-        <HubAvatar src={photoUrl} name={displayName} size={40} />
-        <span className="hub-sidebar__user-text">
-          <span className="hub-sidebar__user-name">{displayName}</span>
-          <span className="hub-sidebar__user-role">{accessLabel}</span>
-        </span>
-        <ChevronDown
-          size={18}
-          strokeWidth={2}
-          className={`hub-sidebar__user-chevron${menuOpen ? ' hub-sidebar__user-chevron--open' : ''}`}
-          aria-hidden
-        />
+        <HubAvatar src={photoUrl} name={displayName} size={collapsed ? 36 : 40} />
+        {!collapsed && (
+          <>
+            <span className="hub-sidebar__user-text">
+              <span className="hub-sidebar__user-name">{displayName}</span>
+              <span className="hub-sidebar__user-role">{accessLabel}</span>
+            </span>
+            <ChevronDown
+              size={18}
+              strokeWidth={2}
+              className={`hub-sidebar__user-chevron${menuOpen ? ' hub-sidebar__user-chevron--open' : ''}`}
+              aria-hidden
+            />
+          </>
+        )}
       </button>
       {menuOpen && (
-        <div className="hub-sidebar__user-dropdown" role="menu">
+        <div
+          className={[
+            'hub-sidebar__user-dropdown',
+            collapsed ? 'hub-sidebar__user-dropdown--collapsed' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          role="menu"
+        >
           <button
             type="button"
             className="hub-sidebar__user-dropdown-item"
@@ -82,7 +102,7 @@ const HubSidebarUserMenu: React.FC = () => {
             onClick={() => void logout().then(() => setMenuOpen(false))}
           >
             <LogOut size={16} aria-hidden />
-            <span>{isLoggingOut ? 'A sair…' : 'Sair'}</span>
+            <span>{isLoggingOut ? 'Saindo…' : 'Sair'}</span>
           </button>
         </div>
       )}

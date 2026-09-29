@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { NavLink } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   CalendarDays,
@@ -17,6 +17,9 @@ import {
   UserSquare2,
   BarChart3,
   Settings,
+  ChevronDown,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react';
 import { usePermissions } from '@petimi/web-core';
 import HubSidebarFooter from './HubSidebarFooter';
@@ -24,6 +27,8 @@ import { useHubCashSession } from '../contexts/HubCashSessionContext';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const logoSrc = `${baseUrl}petmi-hub-logo.png`;
+
+const EXPANDED_SECTIONS_KEY = 'hub.sidebar.expandedSections';
 
 type NavItem = {
   to: string;
@@ -119,23 +124,50 @@ function itemAllowed(hasPermission: (p: string) => boolean, permission: string |
   return hasPermission(permission);
 }
 
+function itemMatchesPath(item: NavItem, pathname: string): boolean {
+  if (item.end) return pathname === item.to;
+  return pathname === item.to || pathname.startsWith(`${item.to}/`);
+}
+
+function sectionContainsPath(section: NavSection, pathname: string): boolean {
+  return section.items.some((item) => itemMatchesPath(item, pathname));
+}
+
+function loadExpandedSections(sectionIds: string[]): Set<string> {
+  try {
+    const raw = localStorage.getItem(EXPANDED_SECTIONS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        const allowed = new Set(sectionIds);
+        return new Set(parsed.filter((id): id is string => typeof id === 'string' && allowed.has(id)));
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return new Set(sectionIds);
+}
+
 const linkClass = ({ isActive }: { isActive: boolean }) =>
-  [
-    'hub-sidebar__link',
-    isActive ? 'hub-sidebar__link--active' : '',
-  ].join(' ');
+  ['hub-sidebar__link', isActive ? 'hub-sidebar__link--active' : ''].join(' ');
 
 type HubSidebarProps = {
   isOpen?: boolean;
   isMobile?: boolean;
+  collapsed?: boolean;
   onClose?: () => void;
+  onToggleCollapsed?: () => void;
 };
 
 const HubSidebar: React.FC<HubSidebarProps> = ({
   isOpen = true,
   isMobile = false,
+  collapsed = false,
   onClose,
+  onToggleCollapsed,
 }) => {
+  const { pathname } = useLocation();
   const { hasPermission, loading: permLoading } = usePermissions();
   const { isOpen: caixaOpen, pendingBillingCount } = useHubCashSession();
 
@@ -149,59 +181,190 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
       .filter((section) => section.items.length > 0);
   }, [hasPermission, permLoading]);
 
+  const sectionIds = useMemo(() => visibleSections.map((s) => s.id), [visibleSections]);
+
+  const activeSectionId = useMemo(() => {
+    const match = visibleSections.find((section) => sectionContainsPath(section, pathname));
+    return match?.id ?? null;
+  }, [visibleSections, pathname]);
+
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() =>
+    typeof window !== 'undefined' ? loadExpandedSections(navSections.map((s) => s.id)) : new Set(navSections.map((s) => s.id)),
+  );
+
+  // Garante que a seção da rota atual fique aberta.
+  useEffect(() => {
+    if (!activeSectionId) return;
+    setExpandedSections((prev) => {
+      if (prev.has(activeSectionId)) return prev;
+      const next = new Set(prev);
+      next.add(activeSectionId);
+      return next;
+    });
+  }, [activeSectionId]);
+
+  // Remove ids de seções que o usuário não vê mais.
+  useEffect(() => {
+    setExpandedSections((prev) => {
+      const allowed = new Set(sectionIds);
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (allowed.has(id)) next.add(id);
+        else changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [sectionIds]);
+
+  useEffect(() => {
+    localStorage.setItem(EXPANDED_SECTIONS_KEY, JSON.stringify(Array.from(expandedSections)));
+  }, [expandedSections]);
+
+  const toggleSection = useCallback(
+    (sectionId: string) => {
+      if (sectionId === activeSectionId) return;
+      setExpandedSections((prev) => {
+        const next = new Set(prev);
+        if (next.has(sectionId)) next.delete(sectionId);
+        else next.add(sectionId);
+        return next;
+      });
+    },
+    [activeSectionId],
+  );
+
   const handleNavClick = () => {
     if (isMobile && onClose) onClose();
   };
 
+  const showLabels = !collapsed || isMobile;
+
   return (
     <aside
-      className={['hub-sidebar', isOpen ? 'hub-sidebar--open' : ''].filter(Boolean).join(' ')}
+      className={[
+        'hub-sidebar',
+        isOpen ? 'hub-sidebar--open' : '',
+        collapsed && !isMobile ? 'hub-sidebar--collapsed' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       aria-label="Navegação principal"
       aria-hidden={isMobile && !isOpen ? true : undefined}
+      data-collapsed={collapsed && !isMobile ? 'true' : undefined}
     >
       <div className="hub-sidebar__brand">
         <div className="hub-sidebar__logo-wrap">
           <img src={logoSrc} alt="PetMi Hub" className="hub-sidebar__logo" decoding="async" />
         </div>
+        {!isMobile && onToggleCollapsed && (
+          <button
+            type="button"
+            className="hub-sidebar__collapse-btn"
+            onClick={onToggleCollapsed}
+            aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+            title={collapsed ? 'Expandir menu' : 'Recolher menu'}
+          >
+            {collapsed ? (
+              <PanelLeft size={18} strokeWidth={1.75} aria-hidden />
+            ) : (
+              <PanelLeftClose size={18} strokeWidth={1.75} aria-hidden />
+            )}
+          </button>
+        )}
       </div>
 
       <div className="hub-sidebar__divider" />
 
       <nav className="hub-sidebar__nav">
-        {visibleSections.map((section) => (
-          <div key={section.id} className="hub-sidebar__section">
-            <p className="hub-sidebar__section-title">{section.title}</p>
-            <div className="hub-sidebar__section-items">
-              {section.items.map(({ to, label, icon: Icon, end }) => (
-                <NavLink key={to} to={to} className={linkClass} end={end} onClick={handleNavClick}>
-                  <Icon size={18} strokeWidth={1.75} className="hub-sidebar__icon" aria-hidden />
-                  <span>{label}</span>
-                  {to === '/hub/caixa' && caixaOpen && (
-                    <span
-                      style={{
-                        marginLeft: 'auto',
-                        fontSize: 10,
-                        fontWeight: 600,
-                        lineHeight: 1,
-                        padding: '2px 6px',
-                        borderRadius: 10,
-                        background: pendingBillingCount > 0 ? '#fde68a' : '#d1fae5',
-                        color: pendingBillingCount > 0 ? '#92400e' : '#065f46',
-                        flexShrink: 0,
-                      }}
-                      aria-label={`Caixa aberto${pendingBillingCount > 0 ? `, ${pendingBillingCount} pendente(s)` : ''}`}
-                    >
-                      {pendingBillingCount > 0 ? pendingBillingCount : 'Aberto'}
-                    </span>
-                  )}
-                </NavLink>
-              ))}
+        {visibleSections.map((section) => {
+          const isExpanded = collapsed && !isMobile ? true : expandedSections.has(section.id);
+          const isActiveSection = section.id === activeSectionId;
+          const panelId = `hub-sidebar-section-${section.id}`;
+
+          return (
+            <div
+              key={section.id}
+              className={[
+                'hub-sidebar__section',
+                isExpanded ? 'hub-sidebar__section--expanded' : '',
+                isActiveSection ? 'hub-sidebar__section--active' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+            >
+              {showLabels && (
+                <button
+                  type="button"
+                  className="hub-sidebar__section-toggle"
+                  onClick={() => toggleSection(section.id)}
+                  aria-expanded={isExpanded}
+                  aria-controls={panelId}
+                  disabled={isActiveSection && isExpanded}
+                >
+                  <span className="hub-sidebar__section-title">{section.title}</span>
+                  <ChevronDown
+                    size={14}
+                    strokeWidth={2}
+                    className={[
+                      'hub-sidebar__section-chevron',
+                      isExpanded ? 'hub-sidebar__section-chevron--open' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    aria-hidden
+                  />
+                </button>
+              )}
+
+              <div
+                id={panelId}
+                className="hub-sidebar__section-items"
+                role="group"
+                aria-label={section.title}
+                hidden={!isExpanded}
+              >
+                {section.items.map(({ to, label, icon: Icon, end }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    className={linkClass}
+                    end={end}
+                    onClick={handleNavClick}
+                    title={!showLabels ? label : undefined}
+                    aria-label={!showLabels ? label : undefined}
+                  >
+                    <Icon size={18} strokeWidth={1.75} className="hub-sidebar__icon" aria-hidden />
+                    {showLabels && <span>{label}</span>}
+                    {showLabels && to === '/hub/caixa' && caixaOpen && (
+                      <span
+                        className={[
+                          'hub-sidebar__badge',
+                          pendingBillingCount > 0 ? 'hub-sidebar__badge--warn' : 'hub-sidebar__badge--ok',
+                        ].join(' ')}
+                        aria-label={`Caixa aberto${pendingBillingCount > 0 ? `, ${pendingBillingCount} pendente(s)` : ''}`}
+                      >
+                        {pendingBillingCount > 0 ? pendingBillingCount : 'Aberto'}
+                      </span>
+                    )}
+                    {!showLabels && to === '/hub/caixa' && caixaOpen && (
+                      <span
+                        className={[
+                          'hub-sidebar__dot',
+                          pendingBillingCount > 0 ? 'hub-sidebar__dot--warn' : 'hub-sidebar__dot--ok',
+                        ].join(' ')}
+                        aria-hidden
+                      />
+                    )}
+                  </NavLink>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </nav>
 
-      <HubSidebarFooter />
+      <HubSidebarFooter collapsed={collapsed && !isMobile} />
     </aside>
   );
 };

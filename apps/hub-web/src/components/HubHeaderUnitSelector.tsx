@@ -18,6 +18,9 @@ const HubHeaderUnitSelector: React.FC = () => {
     '—';
   const primaryLabel = clinicId ? clinicName : 'Sem clínica';
   const secondaryLabel = clinicId ? unitLabel || '—' : '—';
+  const sameName =
+    primaryLabel.trim().localeCompare(secondaryLabel.trim(), 'pt-BR', { sensitivity: 'accent' }) === 0;
+  const showSecondary = Boolean(clinicId) && !sameName && secondaryLabel !== '—';
 
   useEffect(() => {
     if (!open) return;
@@ -35,11 +38,13 @@ const HubHeaderUnitSelector: React.FC = () => {
           <Home size={18} strokeWidth={1.75} />
         </span>
         <span className="hub-header-unit__text">
-          <span className="hub-header-unit__name">A carregar…</span>
+          <span className="hub-header-unit__name">Carregando…</span>
         </span>
       </div>
     );
   }
+
+  const ariaUnit = showSecondary ? `${primaryLabel}, ${secondaryLabel}` : primaryLabel;
 
   const body = (
     <>
@@ -48,7 +53,7 @@ const HubHeaderUnitSelector: React.FC = () => {
       </span>
       <span className="hub-header-unit__text">
         <span className="hub-header-unit__name">{primaryLabel}</span>
-        <span className="hub-header-unit__sub">{secondaryLabel}</span>
+        {showSecondary && <span className="hub-header-unit__sub">{secondaryLabel}</span>}
       </span>
       {hasMultiple && (
         <ChevronDown
@@ -69,13 +74,13 @@ const HubHeaderUnitSelector: React.FC = () => {
           className="hub-header-unit"
           aria-expanded={open}
           aria-haspopup="listbox"
-          aria-label={`Unidade: ${primaryLabel}, ${secondaryLabel}. Escolher unidade`}
+          aria-label={`Unidade: ${ariaUnit}. Escolher unidade`}
           onClick={() => setOpen((o) => !o)}
         >
           {body}
         </button>
       ) : (
-        <div className="hub-header-unit hub-header-unit--static" aria-label={`Unidade: ${primaryLabel}, ${secondaryLabel}`}>
+        <div className="hub-header-unit hub-header-unit--static" aria-label={`Unidade: ${ariaUnit}`}>
           {body}
         </div>
       )}

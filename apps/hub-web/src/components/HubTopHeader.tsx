@@ -1,9 +1,9 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
-import { Menu, X } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { ChevronRight, Menu, X } from 'lucide-react';
 import HubNotificationBell from './HubNotificationBell';
 import HubHeaderUnitSelector from './HubHeaderUnitSelector';
-import { hubPageTitleFromPath } from '../utils/hubPageTitle';
+import { hubPageCrumbsFromPath } from '../utils/hubPageTitle';
 
 type HubTopHeaderProps = {
   onMenuClick?: () => void;
@@ -17,7 +17,9 @@ const HubTopHeader: React.FC<HubTopHeaderProps> = ({
   showMenuButton = false,
 }) => {
   const { pathname } = useLocation();
-  const pageTitle = hubPageTitleFromPath(pathname);
+  const crumbs = hubPageCrumbsFromPath(pathname);
+  const current = crumbs[crumbs.length - 1];
+  const parents = crumbs.slice(0, -1);
 
   return (
     <header className="hub-top-header">
@@ -34,7 +36,28 @@ const HubTopHeader: React.FC<HubTopHeaderProps> = ({
               {isMenuOpen ? <X size={22} strokeWidth={2} /> : <Menu size={22} strokeWidth={2} />}
             </button>
           )}
-          <h1 className="hub-top-header__page">{pageTitle}</h1>
+          <nav className="hub-top-header__crumbs" aria-label="Localização">
+            {parents.map((crumb, index) => (
+              <React.Fragment key={`${crumb.label}-${index}`}>
+                {crumb.to ? (
+                  <Link to={crumb.to} className="hub-top-header__crumb hub-top-header__crumb--link">
+                    {crumb.label}
+                  </Link>
+                ) : (
+                  <span className="hub-top-header__crumb">{crumb.label}</span>
+                )}
+                <ChevronRight
+                  size={14}
+                  strokeWidth={2.25}
+                  className="hub-top-header__crumb-sep"
+                  aria-hidden
+                />
+              </React.Fragment>
+            ))}
+            <h1 className="hub-top-header__page" aria-current="page">
+              {current?.label ?? 'PetMi Hub'}
+            </h1>
+          </nav>
         </div>
         <div className="hub-top-header__right">
           <HubNotificationBell />
