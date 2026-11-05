@@ -2198,6 +2198,10 @@ body {
   color: #8e6e67;
 }
 
+.hub-login-page-nowrap {
+  white-space: nowrap;
+}
+
 .hub-login-page-footer a {
   font-weight: 600;
   color: #c86a4d;

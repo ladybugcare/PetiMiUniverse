@@ -153,6 +153,51 @@
   border-top-color: #e5dcd6;
 }
 
+/* Card estreito (cadastro): Cancelar + Anterior + ação não cabem numa linha
+   e o wrap deixa o Cancelar solto, com vão à direita. */
+.hub-login-page-card .hub-onboarding__footer {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.hub-login-page-card .hub-onboarding__footer > .hub-cancel-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.hub-login-page-card .hub-onboarding__footer > .pet-wizard__footer-right {
+  width: 100%;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.hub-login-page-card .hub-onboarding__footer .pet-wizard__btn {
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  padding: 12px 14px;
+  white-space: nowrap;
+}
+
+/* Só Cancelar + ação principal: os dois lado a lado, na mesma largura. */
+.hub-login-page-card .hub-onboarding__footer:not(:has(.pet-wizard__btn--outline)) {
+  flex-direction: row;
+  flex-wrap: nowrap;
+}
+
+.hub-login-page-card .hub-onboarding__footer:not(:has(.pet-wizard__btn--outline)) > .hub-cancel-btn,
+.hub-login-page-card
+  .hub-onboarding__footer:not(:has(.pet-wizard__btn--outline))
+  > .pet-wizard__footer-right {
+  width: auto;
+  flex: 1 1 0;
+}
+
+.hub-login-page-card .hub-onboarding__footer:not(:has(.pet-wizard__btn--outline)) .pet-wizard__btn {
+  width: 100%;
+}
+
 .hub-onboarding__footer-spacer {
   display: block;
   min-width: 1px;

@@ -225,7 +225,8 @@ const HubSignUpPage: React.FC = () => {
         <p className="hub-login-page-footer">
           Já tem conta? <Link to="/login">Entrar</Link>
           <br />
-          Recebeu um convite da equipe? Abra o link do e-mail — não crie outra conta aqui.
+          Recebeu um convite da equipe? Abra o link do{' '}
+          <span className="hub-login-page-nowrap">e-mail</span> — não crie outra conta aqui.
         </p>
       </div>
     </div>
