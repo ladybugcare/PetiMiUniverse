@@ -1,5 +1,4 @@
 import React from 'react';
-import { Sparkles } from 'lucide-react';
 import { HubCheckbox } from '@petimi/hub-ui';
 
 type Props = {
@@ -7,41 +6,40 @@ type Props = {
   onTermsChange: (accepted: boolean) => void;
 };
 
-/** Card único do Programa Beta no onboarding (pré-MVP). */
+/** Única opção do cadastro enquanto o Hub não foi lançado. */
 const HubBetaPlanCard: React.FC<Props> = ({ termsAccepted, onTermsChange }) => {
   return (
-    <div className="hub-beta-plan-card">
-      <div className="hub-onboarding-section-head">
-        <div className="hub-onboarding-section-icon hub-beta-plan-card__icon">
-          <Sparkles size={22} />
-        </div>
-        <div>
-          <h2 className="hub-clientes__title" style={{ fontSize: 18, margin: 0 }}>
-            Programa Beta
-          </h2>
-          <p className="hub-clientes__subtitle" style={{ margin: '4px 0 0' }}>
-            Única opção disponível neste momento
-          </p>
-        </div>
-      </div>
-
-      <ul className="hub-beta-plan-card__perks">
-        <li>Acesso completo a todos os módulos do Hub</li>
-        <li>Grátis durante o pré-MVP — sem cartão de crédito</li>
-        <li>Clínica, Banho &amp; Tosa, Hotel &amp; Creche e operação core inclusos</li>
-      </ul>
-
-      <p className="hub-beta-plan-card__note">
-        Depois do lançamento comercial, você poderá escolher plano base e módulos. Até lá, o
-        Programa Beta libera tudo.
-      </p>
-
+    <div className="hub-onboarding-founder">
+      <section className="hub-assinatura__founder" aria-current="true">
+        <p className="hub-assinatura__founder-seal">
+          Programa Fundador ativo · condições especiais no lançamento
+        </p>
+        <article className="hub-assinatura__beta">
+          <div className="hub-assinatura__beta-status">
+            <span className="hub-assinatura__beta-kicker">Parceiro fundador</span>
+            <h2 className="hub-assinatura__beta-title">Você faz parte do Programa Fundador</h2>
+            <p className="hub-assinatura__beta-lead">
+              Acesso completo e gratuito até o lançamento oficial.
+            </p>
+          </div>
+          <div className="hub-assinatura__beta-benefit">
+            <p className="hub-assinatura__beta-copy">
+              Por entrar antes da abertura do PetMi Hub, você terá uma condição especial de
+              lançamento, com valor diferenciado em relação aos planos públicos.
+            </p>
+            <p className="hub-assinatura__beta-copy">
+              Antes de qualquer cobrança, enviaremos sua proposta com antecedência. Você poderá
+              escolher seu plano e só seguirá se fizer sentido para sua operação.
+            </p>
+          </div>
+        </article>
+      </section>
       <HubCheckbox
         className="hub-onboarding-toggle-row hub-onboarding-field--full"
         checked={termsAccepted}
         onChange={onTermsChange}
       >
-        Li e aceito participar do Programa Beta do PetMi Hub
+        Li e aceito participar do Programa Fundador do PetMi Hub
       </HubCheckbox>
     </div>
   );

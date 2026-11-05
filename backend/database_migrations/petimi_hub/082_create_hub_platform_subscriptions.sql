@@ -95,7 +95,7 @@ INSERT INTO public.hub_platform_plans (
   (
     'a1000000-0000-4000-8000-000000000002',
     'solo',
-    'Solo',
+    'Essencial',
     '1 unidade, time pequeno. Ativo após o MVP.',
     1,
     5,
@@ -107,7 +107,7 @@ INSERT INTO public.hub_platform_plans (
   (
     'a1000000-0000-4000-8000-000000000003',
     'growth',
-    'Crescimento',
+    'Expansão',
     'Até 3 unidades. Ativo após o MVP.',
     3,
     20,

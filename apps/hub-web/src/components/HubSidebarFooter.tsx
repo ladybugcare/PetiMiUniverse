@@ -1,5 +1,5 @@
 import React from 'react';
-import HubSidebarUserMenu from './HubSidebarUserMenu';
+import HubHeaderUnitSelector from './HubHeaderUnitSelector';
 
 type HubSidebarFooterProps = {
   collapsed?: boolean;
@@ -8,7 +8,7 @@ type HubSidebarFooterProps = {
 const HubSidebarFooter: React.FC<HubSidebarFooterProps> = ({ collapsed = false }) => {
   return (
     <div className={['hub-sidebar__footer', collapsed ? 'hub-sidebar__footer--collapsed' : ''].filter(Boolean).join(' ')}>
-      <HubSidebarUserMenu collapsed={collapsed} />
+      <HubHeaderUnitSelector collapsed={collapsed} />
     </div>
   );
 };

@@ -5,7 +5,11 @@ import { useHubCashSession } from '../contexts/HubCashSessionContext';
 import type { HubUnit } from '../types/hubUnit';
 import { unitShortLabel } from '../utils/hubUnitDisplay';
 
-const HubHeaderUnitSelector: React.FC = () => {
+type HubHeaderUnitSelectorProps = {
+  collapsed?: boolean;
+};
+
+const HubHeaderUnitSelector: React.FC<HubHeaderUnitSelectorProps> = ({ collapsed = false }) => {
   const { clinicId, clinicName, selectedUnit, units, setSelectedUnit, loading } = useHubUnit();
   const { isOpen: caixaOpen, pendingBillingCount } = useHubCashSession();
   const [open, setOpen] = useState(false);
@@ -31,15 +35,25 @@ const HubHeaderUnitSelector: React.FC = () => {
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
 
+  const wrapClass = [
+    'hub-header-unit-wrap',
+    'hub-header-unit-wrap--sidebar',
+    collapsed ? 'hub-header-unit-wrap--collapsed' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   if (loading) {
     return (
-      <div className="hub-header-unit hub-header-unit--loading" aria-busy="true">
-        <span className="hub-header-unit__icon-wrap" aria-hidden>
-          <Home size={18} strokeWidth={1.75} />
-        </span>
-        <span className="hub-header-unit__text">
-          <span className="hub-header-unit__name">Carregando…</span>
-        </span>
+      <div className={wrapClass}>
+        <div className="hub-header-unit hub-header-unit--loading" aria-busy="true">
+          <span className="hub-header-unit__icon-wrap" aria-hidden>
+            <Home size={18} strokeWidth={1.75} />
+          </span>
+          <span className="hub-header-unit__text">
+            <span className="hub-header-unit__name">Carregando…</span>
+          </span>
+        </div>
       </div>
     );
   }
@@ -78,7 +92,7 @@ const HubHeaderUnitSelector: React.FC = () => {
   };
 
   return (
-    <div className="hub-header-unit-wrap" ref={wrapRef}>
+    <div className={wrapClass} ref={wrapRef}>
       {hasMultiple ? (
         <button
           type="button"
@@ -86,12 +100,17 @@ const HubHeaderUnitSelector: React.FC = () => {
           aria-expanded={open}
           aria-haspopup="listbox"
           aria-label={`Unidade operacional: ${ariaUnit}. Escolher unidade`}
+          title={collapsed ? ariaUnit : undefined}
           onClick={() => setOpen((o) => !o)}
         >
           {body}
         </button>
       ) : (
-        <div className="hub-header-unit hub-header-unit--static" aria-label={`Unidade: ${ariaUnit}`}>
+        <div
+          className="hub-header-unit hub-header-unit--static"
+          aria-label={`Unidade: ${ariaUnit}`}
+          title={collapsed ? ariaUnit : undefined}
+        >
           {body}
         </div>
       )}

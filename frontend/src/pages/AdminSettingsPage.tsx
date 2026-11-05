@@ -151,7 +151,7 @@ const AdminSettingsPage: React.FC = () => {
             <div style={styles.placeholderSection}>
               <h3 style={styles.sectionTitle}>Catálogo comercial (pós-MVP)</h3>
               <p style={styles.placeholderText}>
-                Em breve: planos Solo / Crescimento / Rede + módulos operacionais (Clínica, Banho
+                Em breve: planos Essencial / Expansão / Rede + módulos operacionais (Clínica, Banho
                 &amp; Tosa, Hotel &amp; Creche).
               </p>
             </div>

@@ -65,6 +65,16 @@ export const hubSessionApi = {
   getPlans() {
     return apiRequest('/api/hub/subscription/plans') as Promise<{
       mode: 'beta_only' | 'catalog';
+      mercado_pago_configured?: boolean;
+      paid_plans?: Array<{
+        slug: string;
+        name: string;
+        description: string | null;
+        max_units: number | null;
+        max_users: number | null;
+        monthly_price_cents: number | null;
+        sort_order: number;
+      }>;
       plans: Array<{
         slug: string;
         name: string;

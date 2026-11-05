@@ -6,11 +6,7 @@ import HubAvatar from './HubAvatar';
 import { getHubUserDisplayName, getHubUserPhotoUrl } from '../utils/hubUserDisplay';
 import { hubAccessTypeLabel } from '../utils/hubAccessLabel';
 
-type HubSidebarUserMenuProps = {
-  collapsed?: boolean;
-};
-
-const HubSidebarUserMenu: React.FC<HubSidebarUserMenuProps> = ({ collapsed = false }) => {
+const HubSidebarUserMenu: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout, isLoggingOut, role: authRole } = useAuth();
   const { role: clinicRole } = usePermissions();
@@ -36,48 +32,32 @@ const HubSidebarUserMenu: React.FC<HubSidebarUserMenuProps> = ({ collapsed = fal
   };
 
   return (
-    <div
-      className={['hub-sidebar__user', collapsed ? 'hub-sidebar__user--collapsed' : ''].filter(Boolean).join(' ')}
-      ref={menuRef}
-    >
+    <div className="hub-top-header__profile" ref={menuRef}>
       <button
         type="button"
-        className="hub-sidebar__user-trigger"
+        className="hub-top-header__user-trigger"
         aria-expanded={menuOpen}
         aria-haspopup="menu"
         aria-label={`Menu do usuário: ${displayName}`}
-        title={collapsed ? displayName : undefined}
         onClick={() => setMenuOpen((o) => !o)}
       >
-        <HubAvatar src={photoUrl} name={displayName} size={collapsed ? 36 : 40} />
-        {!collapsed && (
-          <>
-            <span className="hub-sidebar__user-text">
-              <span className="hub-sidebar__user-name">{displayName}</span>
-              <span className="hub-sidebar__user-role">{accessLabel}</span>
-            </span>
-            <ChevronDown
-              size={18}
-              strokeWidth={2}
-              className={`hub-sidebar__user-chevron${menuOpen ? ' hub-sidebar__user-chevron--open' : ''}`}
-              aria-hidden
-            />
-          </>
-        )}
+        <HubAvatar src={photoUrl} name={displayName} size={36} />
+        <span className="hub-top-header__user-text">
+          <span className="hub-top-header__user-name">{displayName}</span>
+          <span className="hub-top-header__user-role">{accessLabel}</span>
+        </span>
+        <ChevronDown
+          size={18}
+          strokeWidth={2}
+          className={`hub-top-header__chevron${menuOpen ? ' hub-top-header__chevron--open' : ''}`}
+          aria-hidden
+        />
       </button>
       {menuOpen && (
-        <div
-          className={[
-            'hub-sidebar__user-dropdown',
-            collapsed ? 'hub-sidebar__user-dropdown--collapsed' : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          role="menu"
-        >
+        <div className="hub-top-header__dropdown" role="menu">
           <button
             type="button"
-            className="hub-sidebar__user-dropdown-item"
+            className="hub-top-header__dropdown-item"
             role="menuitem"
             onClick={() => goHub('/hub/meu-perfil')}
           >
@@ -86,17 +66,17 @@ const HubSidebarUserMenu: React.FC<HubSidebarUserMenuProps> = ({ collapsed = fal
           </button>
           <button
             type="button"
-            className="hub-sidebar__user-dropdown-item"
+            className="hub-top-header__dropdown-item"
             role="menuitem"
             onClick={() => goHub('/hub/perfil-clinica')}
           >
             <Building2 size={16} aria-hidden />
             <span>Perfil da Clínica</span>
           </button>
-          <div className="hub-sidebar__user-dropdown-divider" aria-hidden />
+          <div className="hub-top-header__dropdown-divider" aria-hidden />
           <button
             type="button"
-            className="hub-sidebar__user-dropdown-item hub-sidebar__user-dropdown-item--danger"
+            className="hub-top-header__dropdown-item hub-top-header__dropdown-item--danger"
             role="menuitem"
             disabled={isLoggingOut}
             onClick={() => void logout().then(() => setMenuOpen(false))}

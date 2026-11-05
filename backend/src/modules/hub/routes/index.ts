@@ -81,7 +81,12 @@ import { postHubStaffPhoto } from '../hubStaffPhotoController';
 import { postHubClinicProfilePhoto, postHubUserProfilePhoto } from '../hubProfilePhotoController.js';
 import { patchHubClinicProfile, patchHubUnitProfile, postHubUnit } from '../hubClinicProfileController.js';
 import { getHubSessionContext } from '../hubSessionController.js';
-import { getHubSubscriptionPlans } from '../hubSubscriptionController.js';
+import {
+  getHubSubscriptionMe,
+  getHubSubscriptionPlans,
+  postHubSubscriptionCheckout,
+  postHubSubscriptionSync,
+} from '../hubSubscriptionController.js';
 import {
   listHubAppointments,
   getHubAppointmentsStatsByServiceGroup,
@@ -416,6 +421,9 @@ router.post('/invitations/accept', authenticateUser, acceptHubInvitation);
 router.post('/onboarding/clinic', authenticateUser, postHubOnboardingClinic);
 router.get('/session/context', authenticateUser, getHubSessionContext);
 router.get('/subscription/plans', authenticateUser, getHubSubscriptionPlans);
+router.get('/subscription', authenticateUser, getHubSubscriptionMe);
+router.post('/subscription/checkout', authenticateUser, postHubSubscriptionCheckout);
+router.post('/subscription/sync', authenticateUser, postHubSubscriptionSync);
 
 router.get(
   '/day-ops-summary',

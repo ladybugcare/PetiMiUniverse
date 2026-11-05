@@ -153,7 +153,7 @@
   border-top-color: #e5dcd6;
 }
 
-/* Card estreito (cadastro): Cancelar + Anterior + ação não cabem numa linha
+/* Card de 420px: Cancelar + Anterior + ação não cabem numa linha
    e o wrap deixa o Cancelar solto, com vão à direita. */
 .hub-login-page-card .hub-onboarding__footer {
   flex-direction: column;
@@ -182,8 +182,9 @@
 
 /* Só Cancelar + ação principal: os dois lado a lado, na mesma largura. */
 .hub-login-page-card .hub-onboarding__footer:not(:has(.pet-wizard__btn--outline)) {
-  flex-direction: row;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .hub-login-page-card .hub-onboarding__footer:not(:has(.pet-wizard__btn--outline)) > .hub-cancel-btn,
@@ -192,6 +193,7 @@
   > .pet-wizard__footer-right {
   width: auto;
   flex: 1 1 0;
+  min-width: 0;
 }
 
 .hub-login-page-card .hub-onboarding__footer:not(:has(.pet-wizard__btn--outline)) .pet-wizard__btn {
@@ -208,6 +210,28 @@
   height: 56px;
   margin: 0 auto 16px;
   color: #059669;
+}
+
+.hub-onboarding-founder {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hub-onboarding-founder .hub-assinatura__founder {
+  max-width: none;
+}
+
+.hub-onboarding-founder .hub-assinatura__beta {
+  grid-template-columns: 1fr;
+}
+
+.hub-onboarding-founder .hub-assinatura__beta-benefit {
+  align-self: stretch;
+  padding-left: 0;
+  border-left: 0;
+  padding-top: 12px;
+  border-top: 1px solid #eadfd8;
 }
 
 .hub-beta-plan-card__icon {
@@ -236,6 +260,407 @@
   font-size: 13px;
   color: #6b6560;
   line-height: 1.45;
+}
+
+.hub-plan-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.hub-plan-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid #e5dcd6;
+  border-radius: 12px;
+  background: #fff;
+  color: #3d3330;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub-plan-card--selected {
+  border-color: #c86a4d;
+  box-shadow: inset 0 0 0 1px #c86a4d;
+}
+
+.hub-plan-card:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.hub-plan-card__name {
+  font-weight: 650;
+  font-size: 15px;
+}
+
+.hub-plan-card__price {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #2b211e;
+}
+
+.hub-plan-card__period {
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b6560;
+}
+
+.hub-plan-card__desc {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #6b6560;
+}
+
+.hub-plan-card__limits {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #3d3330;
+}
+
+.hub-plan-card__limits li + li {
+  margin-top: 4px;
+}
+
+.hub-plan-beta-link {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #c86a4d;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.hub-assinatura.hub-clientes {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20px;
+  min-height: 0;
+  max-width: 1120px;
+}
+
+.hub-assinatura__head {
+  margin-bottom: 0;
+  max-width: 640px;
+}
+
+.hub-assinatura__notice {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e5dcd6;
+  color: #3d3330;
+  font-size: 14px;
+}
+
+.hub-assinatura__catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.hub-assinatura__founder {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 760px;
+}
+
+.hub-assinatura__founder-seal {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f3ebe6;
+  color: #8a5a48;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.hub-assinatura__beta {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 18px 28px;
+  width: 100%;
+  padding: 18px 20px;
+  border: 1px solid #e7cfc4;
+  border-radius: 16px;
+  background: #fdf6f2;
+}
+
+.hub-assinatura__beta-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hub-assinatura__beta-kicker {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #c86a4d;
+}
+
+.hub-assinatura__beta-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #2b211e;
+}
+
+.hub-assinatura__beta-lead {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.4;
+  color: #3d3330;
+}
+
+.hub-assinatura__beta-copy {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #5c514c;
+}
+
+.hub-assinatura__beta-benefit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: center;
+  padding-left: 22px;
+  border-left: 1px solid #eadfd8;
+}
+
+.hub-assinatura__beta-copy + .hub-assinatura__beta-copy {
+  margin-top: 0;
+}
+
+.hub-assinatura__later-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 640px;
+}
+
+.hub-assinatura__later {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8a817c;
+}
+
+.hub-assinatura__later-note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #5c514c;
+}
+
+.hub-assinatura__plans {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.hub-assinatura__plans--with-beta {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.hub-assinatura__choices {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  gap: 14px;
+}
+
+.hub-assinatura__plans--with-beta .hub-assinatura__choices {
+  grid-column: 2 / -1;
+}
+
+.hub-plan-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 100%;
+  padding: 16px 16px 18px;
+  border: 1px solid #e5dcd6;
+  border-radius: 14px;
+  background: #fff;
+  color: #3d3330;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.hub-plan-offer--current {
+  cursor: default;
+  background: #faf7f4;
+}
+
+.hub-plan-offer--selected {
+  border-color: #c86a4d;
+  background: #fdf6f2;
+  box-shadow: inset 0 0 0 1px #c86a4d;
+}
+
+.hub-plan-offer:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.hub-plan-offer--quiet {
+  cursor: default;
+  background: #fff;
+}
+
+.hub-plan-offer__public {
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 12px;
+  color: #8a817c;
+}
+
+.hub-plan-offer__badge {
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f3ebe6;
+  color: #8a5a48;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.hub-plan-offer__badge--empty {
+  background: transparent;
+}
+
+.hub-plan-offer--current .hub-plan-offer__badge {
+  background: #efe8e2;
+  color: #5c514c;
+}
+
+.hub-plan-offer__name {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.hub-plan-offer__price {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #2b211e;
+}
+
+.hub-plan-offer__period {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: #6b6560;
+}
+
+.hub-plan-offer__limits {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #4a3b3a;
+}
+
+.hub-plan-offer__limits li + li {
+  margin-top: 4px;
+}
+
+.hub-assinatura__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 520px;
+}
+
+.hub-assinatura__note {
+  margin: 0;
+  font-size: 14px;
+  color: #6b6560;
+  line-height: 1.45;
+}
+
+.hub-assinatura__pay {
+  align-self: flex-start;
+  width: auto;
+  margin-top: 0;
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 18px;
+  background: #c86a4d;
+  color: #fff;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hub-assinatura__pay:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+@media (max-width: 720px) {
+  .hub-assinatura__beta {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-assinatura__beta-benefit {
+    padding-left: 0;
+    border-left: 0;
+    padding-top: 12px;
+    border-top: 1px solid #eadfd8;
+  }
+}
+
+@media (max-width: 1100px) {
+  .hub-assinatura__plans,
+  .hub-assinatura__plans--with-beta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hub-assinatura__choices,
+  .hub-assinatura__plans--with-beta .hub-assinatura__choices {
+    display: contents;
+  }
+}
+
+@media (max-width: 700px) {
+  .hub-assinatura__plans,
+  .hub-assinatura__plans--with-beta {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {

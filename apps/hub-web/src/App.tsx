@@ -58,6 +58,7 @@ import PublicSpecialistReferralPage from './pages/PublicSpecialistReferralPage';
 import ValidateExamOrderPage from './pages/ValidateExamOrderPage';
 import ValidateSpecialistReferralPage from './pages/ValidateSpecialistReferralPage';
 import HubHomePage from './pages/HubHomePage';
+import HubAssinaturaPage from './pages/HubAssinaturaPage';
 
 /** Providers do hub autenticado — ficam fora do shell visual para o contexto sempre envolver o Outlet. */
 function HubAuthenticatedLayout() {
@@ -140,6 +141,7 @@ const router = createBrowserRouter(
         <Route path="perfil-clinica" element={<HubClinicaPerfilPage />} />
         <Route path="design-system" element={<HubDesignSystemPage />} />
         <Route path="configuracoes-sistema/*" element={<HubSystemSettingsRoutes />} />
+        <Route path="assinatura" element={<HubAssinaturaPage />} />
       </Route>
       <Route path="/" element={<HubHomePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

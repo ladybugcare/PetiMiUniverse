@@ -11,9 +11,9 @@ import HubOnboardingFooter from '../components/HubOnboardingFooter';
 import HubTechnicalManagerField from '../components/HubTechnicalManagerField';
 import HubBetaPlanCard from '../components/onboarding/HubBetaPlanCard';
 import { hubSignupApi } from '../services/hubSignupApi';
+import { applyHubSessionContext, hubSessionApi } from '../services/hubSessionApi';
 import { formatCNPJ, validateCNPJ, BRAZILIAN_UF_COMBO_OPTIONS } from '../utils/brValidators';
 import { markHubOnboardingComplete } from '../utils/hubOnboardingState';
-import { applyHubSessionContext, hubSessionApi } from '../services/hubSessionApi';
 import { getHubUserDisplayName } from '../utils/hubUserDisplay';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');

@@ -5,6 +5,7 @@ import HubSidebar from './HubSidebar';
 import HubTopHeader from './HubTopHeader';
 import HubUnitIncompleteBanner from './HubUnitIncompleteBanner';
 import HubCashOpenBanner from './HubCashOpenBanner';
+import HubSubscriptionBanner from './HubSubscriptionBanner';
 
 const MOBILE_MQ = '(max-width: 900px)';
 const COLLAPSED_KEY = 'hub.sidebar.collapsed';
@@ -100,6 +101,7 @@ const HubAppShell: React.FC = () => {
         />
         <div className="hub-app-shell__outlet">
           <HubUnitIncompleteBanner />
+          <HubSubscriptionBanner />
           <HubCashOpenBanner />
           <Outlet />
         </div>

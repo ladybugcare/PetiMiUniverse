@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ChevronRight, Menu, X } from 'lucide-react';
 import HubNotificationBell from './HubNotificationBell';
-import HubHeaderUnitSelector from './HubHeaderUnitSelector';
+import HubSidebarUserMenu from './HubSidebarUserMenu';
 import { hubPageCrumbsFromPath } from '../utils/hubPageTitle';
 
 type HubTopHeaderProps = {
@@ -61,7 +61,7 @@ const HubTopHeader: React.FC<HubTopHeaderProps> = ({
         </div>
         <div className="hub-top-header__right">
           <HubNotificationBell />
-          <HubHeaderUnitSelector />
+          <HubSidebarUserMenu />
         </div>
       </div>
     </header>

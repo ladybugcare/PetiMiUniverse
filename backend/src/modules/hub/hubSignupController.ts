@@ -7,7 +7,11 @@ import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog.js'
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { ValidationError } from '../../utils/errors.js';
 import { ensureDefaultGroupJobFunctions } from './hubServiceGroupsController.js';
-import { createBetaSubscription } from './hubSubscriptionService.js';
+import {
+  createBetaSubscription,
+  createPendingPlanSubscription,
+  HubPlanError,
+} from './hubSubscriptionService.js';
 import { sendHubSignupConfirmationEmail } from './sendHubSignupConfirmation.js';
 
 function resolveHubWebUrl(): string {
@@ -304,15 +308,35 @@ export const postHubOnboardingClinic = asyncHandler(async (req: Request, res: Re
     console.warn('[hub_onboarding] ensureDefaultGroupJobFunctions', bootstrapErr);
   }
 
+  const planSlug = (parsed.data.plan_slug || 'beta').trim().toLowerCase();
   let subscription = null;
   try {
-    subscription = await createBetaSubscription(finalClinicId, {
-      notes: parsed.data.beta_terms_accepted
-        ? 'Programa Beta — termos aceitos no onboarding'
-        : 'Programa Beta (pré-MVP)',
-    });
+    if (planSlug && planSlug !== 'beta') {
+      subscription = await createPendingPlanSubscription(finalClinicId, planSlug);
+    } else {
+      subscription = await createBetaSubscription(finalClinicId, {
+        notes: parsed.data.beta_terms_accepted
+          ? 'Programa Beta — termos aceitos no onboarding'
+          : 'Programa Beta (pré-MVP)',
+      });
+    }
   } catch (subErr) {
-    console.warn('[hub_onboarding] createBetaSubscription', subErr);
+    if (planSlug !== 'beta') {
+      await supabaseAdmin.from('units').delete().eq('id', unit.id);
+      await supabaseAdmin.from('clinics').delete().eq('id', finalClinicId);
+      await supabaseAdmin
+        .from('clinic_users')
+        .update({
+          clinic_id: null,
+          unit_id: null,
+          status: 'pending_clinic',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', clinicUser.id);
+      if (subErr instanceof HubPlanError) throw new ValidationError(subErr.message);
+      throw subErr;
+    }
+    console.warn('[hub_onboarding] subscription', subErr);
   }
 
   const adminFullName =
