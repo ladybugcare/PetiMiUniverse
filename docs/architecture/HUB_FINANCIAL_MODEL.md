@@ -50,9 +50,10 @@ Despesa operacional por unidade: `clinic_id`, `unit_id`, `amount`, `category` (s
 Obrigação da clínica a um credor (honorário profissional, serviço terceiro, etc.):
 
 - `payee_staff_member_id` / `payee_name` — credor (preferir staff da equipe; nome livre no lançamento manual).
-- `source_type`: `surgery` | `manual`; `source_id` + `source_role` (ex.: Anestesista) para idempotência na equipe cirúrgica.
+- `source_type`: `surgery` | `manual` | `recurrence`; `source_id` + `source_role` (ex.: Anestesista) para idempotência na equipe cirúrgica. Em recorrência, `source_id` aponta o contrato.
 - `status`: `pending` | `paid` | `cancelled`; `due_date`; liquidação v1 em `paid_at` + `payment_method`.
 - `category`: `professional_fee` | mesmas de `hub_expenses`.
+- `hub_payable_schedules`: contrato contínuo (semanal, quinzenal ou mensal) com credor, valor e `until_date` opcional. Ao abrir a lista ou o resumo do dia, o sistema materializa títulos `pending` só do mês corrente e do próximo (`America/Sao_Paulo`). Título pago não muda. Competência editada à mão (`recurrence_detached`) sai do contrato. Pausar interrompe a geração; encerrar cancela pendentes com vencimento depois de hoje.
 
 **Regra de produto:** o valor em `hub_payables` é **custo interno da clínica**. Não entra na comanda nem no recebível do tutor. Se a clínica quiser cobrar anestesia/serviço ao tutor, usa o catálogo (`hub_surgery_services` com `billing_mode = charge`) de forma independente.
 

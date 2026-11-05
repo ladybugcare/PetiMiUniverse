@@ -241,14 +241,37 @@ export type HubFinancePayable = {
   payee_staff_member_id?: string | null;
   payee_supplier_id?: string | null;
   payee_name: string;
-  source_type: 'surgery' | 'manual';
+  source_type: 'surgery' | 'manual' | 'recurrence';
   source_id?: string | null;
   source_role?: string | null;
   source_label?: string;
+  recurrence_detached?: boolean;
   status: HubFinancePayableStatus;
   due_date?: string | null;
   paid_at?: string | null;
   payment_method?: string | null;
+  created_at: string;
+};
+
+export type HubPayableScheduleFrequency = 'weekly' | 'biweekly' | 'monthly';
+export type HubPayableScheduleStatus = 'active' | 'paused' | 'ended';
+
+export type HubPayableSchedule = {
+  id: string;
+  clinic_id: string;
+  unit_id: string;
+  amount: number;
+  category: HubFinancePayableCategory;
+  description: string;
+  notes?: string | null;
+  payee_staff_member_id?: string | null;
+  payee_supplier_id?: string | null;
+  payee_name: string;
+  frequency: HubPayableScheduleFrequency;
+  anchor_date: string;
+  until_date?: string | null;
+  status: HubPayableScheduleStatus;
+  next_due_date?: string | null;
   created_at: string;
 };
 
@@ -1111,7 +1134,12 @@ export const hubFinancialApi = {
   async listPayables(
     clinicId: string,
     unitId: string,
-    opts?: { from?: string; to?: string; status?: HubFinancePayableStatus; source_type?: 'surgery' | 'manual' }
+    opts?: {
+      from?: string;
+      to?: string;
+      status?: HubFinancePayableStatus;
+      source_type?: 'surgery' | 'manual' | 'recurrence';
+    }
   ): Promise<HubFinancePayable[]> {
     const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
     if (opts?.from) q.set('from', opts.from);
@@ -1177,6 +1205,59 @@ export const hubFinancialApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }) as Promise<{ payable: HubFinancePayable }>;
+  },
+
+  async listPayableSchedules(clinicId: string, unitId: string): Promise<HubPayableSchedule[]> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    const res = (await apiRequest(`${base}/payable-schedules?${q}`)) as { schedules?: HubPayableSchedule[] };
+    return res.schedules ?? [];
+  },
+
+  async createPayableSchedule(body: {
+    clinic_id: string;
+    unit_id: string;
+    amount: number;
+    category?: HubFinancePayableCategory;
+    description: string;
+    notes?: string | null;
+    payee_staff_member_id?: string | null;
+    payee_supplier_id?: string | null;
+    payee_name?: string;
+    frequency: HubPayableScheduleFrequency;
+    anchor_date: string;
+    until_date?: string | null;
+  }): Promise<{ schedule: HubPayableSchedule }> {
+    return apiRequest(`${base}/payable-schedules`, { method: 'POST', body: JSON.stringify(body) }) as Promise<{
+      schedule: HubPayableSchedule;
+    }>;
+  },
+
+  async patchPayableSchedule(
+    id: string,
+    body: {
+      clinic_id: string;
+      amount?: number;
+      category?: HubFinancePayableCategory;
+      description?: string;
+      notes?: string | null;
+      payee_staff_member_id?: string | null;
+      payee_supplier_id?: string | null;
+      payee_name?: string;
+      until_date?: string | null;
+      status?: 'active' | 'paused';
+    }
+  ): Promise<{ schedule: HubPayableSchedule }> {
+    return apiRequest(`${base}/payable-schedules/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }) as Promise<{ schedule: HubPayableSchedule }>;
+  },
+
+  async endPayableSchedule(id: string, body: { clinic_id: string }): Promise<{ schedule: HubPayableSchedule }> {
+    return apiRequest(`${base}/payable-schedules/${encodeURIComponent(id)}/end`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ schedule: HubPayableSchedule }>;
   },
 
   async createCashMovement(

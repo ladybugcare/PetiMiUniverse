@@ -248,3 +248,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 114. **`114_alter_hub_staff_affiliation.sql`** — coluna `affiliation` em `hub_staff_members` (`internal` | `guest`). Convidado = cadastro leve / pontual; independente de `has_hub_access`. Executar depois do item 9.
 
 115. **`115_alter_hub_payables_supplier.sql`** — `payee_supplier_id` em `hub_payables` (fornecedor do estoque como credor). Executar depois dos itens 113 e 8.
+
+117. **`117_create_hub_payable_schedules.sql`** — contrato recorrente (`hub_payable_schedules`) e `source_type = recurrence` em `hub_payables`. Gera só o mês atual e o próximo. Executar depois dos itens 113 e 115.

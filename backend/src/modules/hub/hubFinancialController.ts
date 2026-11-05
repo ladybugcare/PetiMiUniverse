@@ -36,9 +36,16 @@ import { findSeriesInvoiceCoverageForAppointments } from './hubSeriesBillingServ
 import {
   PAYABLE_CATEGORIES,
   PAYABLE_PAYMENT_METHODS,
+  PAYABLE_SCHEDULE_FREQUENCIES,
+  endPayableSchedule,
+  ensurePayableScheduleHorizon,
+  listPayableSchedules,
+  propagatePayableSchedule,
+  todayYmdSaoPaulo,
   sumPaidPayablesInPeriod,
   sumPendingPayables,
   type HubPayableRow,
+  type HubPayableScheduleRow,
 } from './hubPayablesService';
 
 const uuidStr = z.string().uuid();
@@ -4558,12 +4565,30 @@ const missingPayablesTable = (msg: string) =>
     ? 'Tabela hub_payables não encontrada. Aplique a migração 113_create_hub_payables.sql.'
     : null;
 
+const missingPayableSchedulesTable = (msg: string) =>
+  String(msg || '').includes('hub_payable_schedules') || String(msg || '').includes('recurrence_detached')
+    ? 'Recorrência de contas a pagar indisponível. Aplique a migração 117_create_hub_payable_schedules.sql.'
+    : null;
+
+function payableSourceLabel(
+  payable: HubPayableRow,
+  surgeryMeta: Map<string, { title: string; pet_name?: string | null }>,
+): string {
+  if (payable.source_type === 'recurrence') return 'Recorrente';
+  if (payable.source_type === 'surgery' && payable.source_id) {
+    const meta = surgeryMeta.get(payable.source_id);
+    if (!meta) return 'Cirurgia';
+    return meta.pet_name ? `Cirurgia: ${meta.title} (${meta.pet_name})` : `Cirurgia: ${meta.title}`;
+  }
+  return 'Manual';
+}
+
 const listPayablesQuerySchema = z
   .object({
     clinic_id: uuidStr,
     unit_id: uuidStr,
     status: payableStatusSchema.optional(),
-    source_type: z.enum(['surgery', 'manual']).optional(),
+    source_type: z.enum(['surgery', 'manual', 'recurrence']).optional(),
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   })
@@ -4576,6 +4601,10 @@ export const listHubFinancePayables = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'clinic_id e unit_id obrigatórios' });
     }
     const { clinic_id, unit_id, status, source_type, from, to } = parsed.data;
+    const horizon = await ensurePayableScheduleHorizon({ clinicId: clinic_id, unitId: unit_id });
+    if (horizon.error && !horizon.missingTable) {
+      console.error('ensurePayableScheduleHorizon', horizon.error);
+    }
     let q = supabaseAdmin
       .from('hub_payables')
       .select('*')
@@ -4634,14 +4663,7 @@ export const listHubFinancePayables = async (req: Request, res: Response) => {
     return res.json({
       payables: payables.map((p) => ({
         ...p,
-        source_label:
-          p.source_type === 'surgery' && p.source_id
-            ? (() => {
-                const meta = surgeryMeta.get(p.source_id as string);
-                if (!meta) return 'Cirurgia';
-                return meta.pet_name ? `Cirurgia: ${meta.title} (${meta.pet_name})` : `Cirurgia: ${meta.title}`;
-              })()
-            : 'Manual',
+        source_label: payableSourceLabel(p, surgeryMeta),
       })),
     });
   } catch (e: unknown) {
@@ -4891,6 +4913,10 @@ export const patchHubFinancePayable = async (req: Request, res: Response) => {
       return res.json({ payable: existing });
     }
 
+    if (existing.source_type === 'recurrence') {
+      update.recurrence_detached = true;
+    }
+
     const { data, error } = await supabaseAdmin
       .from('hub_payables')
       .update(update)
@@ -4903,6 +4929,11 @@ export const patchHubFinancePayable = async (req: Request, res: Response) => {
         return res.status(503).json({
           error: 'Coluna payee_supplier_id ausente. Aplique a migração 115_alter_hub_payables_supplier.sql.',
         });
+      }
+      const scheduleHint = missingPayableSchedulesTable(error.message);
+      if (scheduleHint) return res.status(503).json({ error: scheduleHint });
+      if (error.code === '23505' || String(error.message || '').includes('uniq_hub_payables_recurrence_due')) {
+        return res.status(409).json({ error: 'Já existe uma competência desta recorrência nessa data.' });
       }
       return res.status(500).json({ error: error.message });
     }
@@ -5014,6 +5045,287 @@ export const postHubFinancePayableCancel = async (req: Request, res: Response) =
     return res.json({ payable: data });
   } catch (e: unknown) {
     console.error('postHubFinancePayableCancel', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+const payableScheduleFrequencySchema = z.enum(PAYABLE_SCHEDULE_FREQUENCIES);
+
+const schedulePayeeSchema = z
+  .object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr.optional(),
+    amount: z.number().positive(),
+    category: payableCategorySchema.optional(),
+    description: z.string().trim().min(1).max(2000),
+    notes: z.string().trim().max(4000).optional().nullable(),
+    payee_staff_member_id: uuidStr.optional().nullable(),
+    payee_supplier_id: uuidStr.optional().nullable(),
+    payee_name: z.string().trim().min(1).max(200).optional(),
+    frequency: payableScheduleFrequencySchema.optional(),
+    anchor_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    until_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    status: z.enum(['active', 'paused']).optional(),
+  })
+  .strict();
+
+async function resolvePayablePayee(params: {
+  clinicId: string;
+  payeeStaffId: string | null;
+  payeeSupplierId: string | null;
+  payeeName: string;
+}): Promise<{ payeeName: string; payeeStaffId: string | null; payeeSupplierId: string | null; error?: string }> {
+  let payeeName = params.payeeName.trim();
+  const payeeStaffId = params.payeeStaffId;
+  const payeeSupplierId = params.payeeSupplierId;
+  if (payeeStaffId && payeeSupplierId) {
+    return { payeeName, payeeStaffId, payeeSupplierId, error: 'Informe profissional ou fornecedor, não os dois' };
+  }
+  if (payeeStaffId) {
+    const { data: staff } = await supabaseAdmin
+      .from('hub_staff_members')
+      .select('id, full_name, display_name')
+      .eq('id', payeeStaffId)
+      .eq('clinic_id', params.clinicId)
+      .maybeSingle();
+    if (!staff) {
+      return { payeeName, payeeStaffId, payeeSupplierId, error: 'Profissional não encontrado nesta clínica' };
+    }
+    if (!payeeName) payeeName = String(staff.full_name || staff.display_name || 'Profissional');
+  }
+  if (payeeSupplierId) {
+    const { data: supplier } = await supabaseAdmin
+      .from('hub_suppliers')
+      .select('id, name, party_name')
+      .eq('id', payeeSupplierId)
+      .eq('clinic_id', params.clinicId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!supplier) {
+      return { payeeName, payeeStaffId, payeeSupplierId, error: 'Fornecedor não encontrado nesta clínica' };
+    }
+    if (!payeeName) payeeName = String(supplier.name || supplier.party_name || 'Fornecedor');
+  }
+  if (!payeeStaffId && !payeeSupplierId && !payeeName) {
+    return { payeeName, payeeStaffId, payeeSupplierId, error: 'Informe o profissional, o fornecedor ou o nome do credor' };
+  }
+  return { payeeName, payeeStaffId, payeeSupplierId };
+}
+
+export const listHubFinancePayableSchedules = async (req: Request, res: Response) => {
+  try {
+    const parsed = z
+      .object({ clinic_id: uuidStr, unit_id: uuidStr })
+      .strict()
+      .safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: 'clinic_id e unit_id obrigatórios' });
+    const listed = await listPayableSchedules({
+      clinicId: parsed.data.clinic_id,
+      unitId: parsed.data.unit_id,
+    });
+    if (listed.missingTable) {
+      return res.status(503).json({
+        error: 'Recorrência de contas a pagar indisponível. Aplique a migração 117_create_hub_payable_schedules.sql.',
+      });
+    }
+    if (listed.error) return res.status(500).json({ error: listed.error });
+    return res.json({ schedules: listed.schedules });
+  } catch (e: unknown) {
+    console.error('listHubFinancePayableSchedules', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+export const postHubFinancePayableSchedule = async (req: Request, res: Response) => {
+  try {
+    const parsed = schedulePayeeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+    }
+    const b = parsed.data;
+    if (!b.unit_id) return res.status(400).json({ error: 'unit_id obrigatório' });
+    if (!b.frequency) return res.status(400).json({ error: 'Informe a frequência' });
+    if (!b.anchor_date) return res.status(400).json({ error: 'Informe o primeiro vencimento' });
+    if (b.until_date && b.until_date < b.anchor_date) {
+      return res.status(400).json({ error: 'A data final não pode ser anterior ao primeiro vencimento' });
+    }
+    const payee = await resolvePayablePayee({
+      clinicId: b.clinic_id,
+      payeeStaffId: b.payee_staff_member_id ?? null,
+      payeeSupplierId: b.payee_supplier_id ?? null,
+      payeeName: b.payee_name ?? '',
+    });
+    if (payee.error) return res.status(400).json({ error: payee.error });
+
+    const { data, error } = await supabaseAdmin
+      .from('hub_payable_schedules')
+      .insert({
+        clinic_id: b.clinic_id,
+        unit_id: b.unit_id,
+        amount: round2(b.amount),
+        category: b.category ?? 'rent',
+        description: b.description,
+        notes: b.notes ?? null,
+        payee_staff_member_id: payee.payeeStaffId,
+        payee_supplier_id: payee.payeeSupplierId,
+        payee_name: payee.payeeName,
+        frequency: b.frequency,
+        anchor_date: b.anchor_date,
+        until_date: b.until_date ?? null,
+        status: 'active',
+        created_by_user_id: req.user?.id ?? null,
+      })
+      .select('*')
+      .single();
+    if (error) {
+      const hint = missingPayableSchedulesTable(error.message);
+      if (hint) return res.status(503).json({ error: hint });
+      return res.status(500).json({ error: error.message });
+    }
+    const schedule = data as HubPayableScheduleRow;
+    const horizon = await ensurePayableScheduleHorizon({
+      clinicId: b.clinic_id,
+      unitId: b.unit_id,
+    });
+    if (horizon.error && !horizon.missingTable) {
+      return res.status(500).json({ error: horizon.error });
+    }
+    return res.status(201).json({
+      schedule: {
+        ...schedule,
+        anchor_date: String(schedule.anchor_date).slice(0, 10),
+        until_date: schedule.until_date ? String(schedule.until_date).slice(0, 10) : null,
+      },
+    });
+  } catch (e: unknown) {
+    console.error('postHubFinancePayableSchedule', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+export const patchHubFinancePayableSchedule = async (req: Request, res: Response) => {
+  try {
+    const id = uuidStr.safeParse(req.params.id);
+    const parsed = schedulePayeeSchema
+      .partial()
+      .extend({ clinic_id: uuidStr })
+      .safeParse(req.body);
+    if (!id.success || !parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: parsed.success ? undefined : parsed.error.flatten() });
+    }
+    const b = parsed.data;
+    const { data: existing, error: exErr } = await supabaseAdmin
+      .from('hub_payable_schedules')
+      .select('*')
+      .eq('id', id.data)
+      .eq('clinic_id', b.clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (exErr) {
+      const hint = missingPayableSchedulesTable(exErr.message);
+      if (hint) return res.status(503).json({ error: hint });
+      return res.status(500).json({ error: exErr.message });
+    }
+    if (!existing) return res.status(404).json({ error: 'Recorrência não encontrada' });
+    if (existing.status === 'ended') {
+      return res.status(409).json({ error: 'Recorrência encerrada não pode ser alterada' });
+    }
+
+    const nextAnchor = String(existing.anchor_date).slice(0, 10);
+    const nextUntil =
+      b.until_date !== undefined ? b.until_date : existing.until_date ? String(existing.until_date).slice(0, 10) : null;
+    if (nextUntil && nextUntil < nextAnchor) {
+      return res.status(400).json({ error: 'A data final não pode ser anterior ao primeiro vencimento' });
+    }
+
+    const nextStaff =
+      b.payee_staff_member_id !== undefined
+        ? b.payee_staff_member_id
+        : (existing.payee_staff_member_id as string | null);
+    const nextSupplier =
+      b.payee_supplier_id !== undefined
+        ? b.payee_supplier_id
+        : (existing.payee_supplier_id as string | null);
+    const payee = await resolvePayablePayee({
+      clinicId: b.clinic_id,
+      payeeStaffId: nextStaff,
+      payeeSupplierId: nextSupplier,
+      payeeName: b.payee_name ?? String(existing.payee_name ?? ''),
+    });
+    if (payee.error) return res.status(400).json({ error: payee.error });
+
+    const update: Record<string, unknown> = {
+      payee_staff_member_id: payee.payeeStaffId,
+      payee_supplier_id: payee.payeeSupplierId,
+      payee_name: payee.payeeName,
+    };
+    if (b.amount != null) update.amount = round2(b.amount);
+    if (b.category != null) update.category = b.category;
+    if (b.description != null) update.description = b.description;
+    if (b.notes !== undefined) update.notes = b.notes;
+    if (b.until_date !== undefined) update.until_date = b.until_date;
+    if (b.status != null) update.status = b.status;
+
+    const { data, error } = await supabaseAdmin
+      .from('hub_payable_schedules')
+      .update(update)
+      .eq('id', id.data)
+      .eq('clinic_id', b.clinic_id)
+      .select('*')
+      .maybeSingle();
+    if (error) {
+      const hint = missingPayableSchedulesTable(error.message);
+      if (hint) return res.status(503).json({ error: hint });
+      return res.status(500).json({ error: error.message });
+    }
+    if (!data) return res.status(404).json({ error: 'Recorrência não encontrada' });
+    const schedule = data as HubPayableScheduleRow;
+    const propagated = await propagatePayableSchedule(schedule);
+    if (propagated.error) return res.status(500).json({ error: propagated.error });
+    if (schedule.status === 'active') {
+      const horizon = await ensurePayableScheduleHorizon({
+        clinicId: schedule.clinic_id,
+        unitId: schedule.unit_id,
+      });
+      if (horizon.error && !horizon.missingTable) {
+        return res.status(500).json({ error: horizon.error });
+      }
+    }
+    return res.json({ schedule });
+  } catch (e: unknown) {
+    console.error('patchHubFinancePayableSchedule', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+export const postHubFinancePayableScheduleEnd = async (req: Request, res: Response) => {
+  try {
+    const id = uuidStr.safeParse(req.params.id);
+    const parsed = z.object({ clinic_id: uuidStr }).strict().safeParse(req.body);
+    if (!id.success || !parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
+    const { data: existing, error: exErr } = await supabaseAdmin
+      .from('hub_payable_schedules')
+      .select('*')
+      .eq('id', id.data)
+      .eq('clinic_id', parsed.data.clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (exErr) {
+      const hint = missingPayableSchedulesTable(exErr.message);
+      if (hint) return res.status(503).json({ error: hint });
+      return res.status(500).json({ error: exErr.message });
+    }
+    if (!existing) return res.status(404).json({ error: 'Recorrência não encontrada' });
+    if (existing.status === 'ended') return res.json({ schedule: existing });
+    const ended = await endPayableSchedule({ schedule: existing as HubPayableScheduleRow, todayYmd: todayYmdSaoPaulo() });
+    if (ended.error) {
+      const hint = missingPayableSchedulesTable(ended.error);
+      if (hint) return res.status(503).json({ error: hint });
+      return res.status(500).json({ error: ended.error });
+    }
+    return res.json({ schedule: { ...existing, status: 'ended' } });
+  } catch (e: unknown) {
+    console.error('postHubFinancePayableScheduleEnd', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };

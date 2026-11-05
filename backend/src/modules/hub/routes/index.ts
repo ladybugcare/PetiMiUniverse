@@ -301,6 +301,10 @@ import {
   patchHubFinancePayable,
   postHubFinancePayablePay,
   postHubFinancePayableCancel,
+  listHubFinancePayableSchedules,
+  postHubFinancePayableSchedule,
+  patchHubFinancePayableSchedule,
+  postHubFinancePayableScheduleEnd,
   postHubFinanceCashMovement,
   postHubFinanceReceivableProductLine,
   deleteHubFinanceReceivableProductLine,
@@ -1772,6 +1776,30 @@ router.post(
   authenticateUser,
   requirePermission('hub.financial.write'),
   postHubFinancePayableCancel
+);
+router.get(
+  '/finance/payable-schedules',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  listHubFinancePayableSchedules
+);
+router.post(
+  '/finance/payable-schedules',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubFinancePayableSchedule
+);
+router.patch(
+  '/finance/payable-schedules/:id',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  patchHubFinancePayableSchedule
+);
+router.post(
+  '/finance/payable-schedules/:id/end',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  postHubFinancePayableScheduleEnd
 );
 router.post(
   '/finance/cash-sessions/:id/movements',
