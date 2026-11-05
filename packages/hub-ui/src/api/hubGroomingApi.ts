@@ -33,6 +33,8 @@ export type GroomingDayBoardItem = {
   ends_at: string;
   appointment_status?: string | null;
   appointment_kind?: string;
+  /** True quando o agendamento pai tem pernas L&T (`pickup_route`). */
+  has_pickup_legs?: boolean;
   title?: string | null;
   notes?: string | null;
   description?: string | null;
@@ -85,6 +87,7 @@ export type GroomingSessionEvent = {
   event_type: string;
   title: string;
   body?: string | null;
+  payload?: Record<string, unknown> | null;
   created_at: string;
 };
 

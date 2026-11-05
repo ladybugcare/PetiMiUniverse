@@ -8,8 +8,8 @@ import {
 } from './groomingStages';
 
 describe('getItemBoardStage', () => {
-  it('mapeia status de encaixe (checked_in) para o estágio de check-in', () => {
-    expect(getItemBoardStage({ appointment_status: 'checked_in' })).toBe('checked_in');
+  it('mapeia status de encaixe (checked_in) para a fila operacional', () => {
+    expect(getItemBoardStage({ appointment_status: 'checked_in' })).toBe('queued');
   });
 });
 
@@ -18,6 +18,11 @@ describe('appointmentStatusForGroomingStage', () => {
     expect(appointmentStatusForGroomingStage('queued')).toBe('checked_in');
     expect(appointmentStatusForGroomingStage('checked_in')).toBe('checked_in');
     expect(appointmentStatusForGroomingStage('in_service')).toBe('in_progress');
+  });
+
+  it('encerrado operacional espelha agenda done (paid só no caixa)', () => {
+    expect(appointmentStatusForGroomingStage('ready')).toBe('done');
+    expect(appointmentStatusForGroomingStage('closed')).toBe('done');
   });
 });
 

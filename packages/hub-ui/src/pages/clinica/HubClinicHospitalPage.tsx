@@ -360,9 +360,16 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
                         {HOSP_STATUS_LABEL[h.status] || h.status}
                       </span>
                     </td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       {h.hub_case_id ? (
-                        <span className="hub-clientes__pill hub-dayboard__pill--open">Vinculado</span>
+                        <button
+                          type="button"
+                          className="hub-clientes__pill hub-dayboard__pill--open hub-dayboard__pill--link"
+                          title="Abrir caso clínico"
+                          onClick={() => navigate(`/hub/clinica/casos/${h.hub_case_id}`)}
+                        >
+                          {h.hub_clinical_cases?.title?.trim() || 'Vinculado'}
+                        </button>
                       ) : (
                         <span className="hub-clientes__pill hub-dayboard__pill--none">Sem caso</span>
                       )}

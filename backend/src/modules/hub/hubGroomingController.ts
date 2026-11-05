@@ -183,6 +183,21 @@ async function syncAppointmentStatusForStage(
   if (!appointmentId) return;
   const nextStatus = appointmentStatusForGroomingStage(stage);
   if (!nextStatus) return;
+
+  const { data: current } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('status')
+    .eq('id', appointmentId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  // Quitação financeira (`paid`) não é rebaixada por encerramento operacional (`done`).
+  if (current?.status === 'paid' && nextStatus !== 'paid') {
+    if (nextStatus === 'done') {
+      void syncOpenComandasAfterAppointmentOperationalComplete(clinicId, appointmentId);
+    }
+    return;
+  }
+
   await supabaseAdmin
     .from('hub_appointments')
     .update({ status: nextStatus })
@@ -314,6 +329,22 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
     );
     const groomingApptIds = appointments.map((a) => a.id as string);
 
+    const parentIdsWithPickup = new Set<string>();
+    if (groomingApptIds.length > 0) {
+      const { data: pickupLegs, error: pickupLegsErr } = await supabaseAdmin
+        .from('hub_appointments')
+        .select('parent_appointment_id')
+        .eq('clinic_id', clinic_id)
+        .eq('appointment_kind', 'pickup_route')
+        .in('parent_appointment_id', groomingApptIds)
+        .is('deleted_at', null);
+      if (pickupLegsErr) return res.status(500).json({ error: pickupLegsErr.message });
+      for (const row of pickupLegs ?? []) {
+        const pid = (row as { parent_appointment_id: string | null }).parent_appointment_id;
+        if (pid) parentIdsWithPickup.add(pid);
+      }
+    }
+
     let sessQ = supabaseAdmin
       .from('hub_grooming_sessions')
       .select(SESSION_SELECT)
@@ -404,19 +435,88 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
     const guMap = new Map((gusRes.data ?? []).map((g: { id: string }) => [g.id, g]));
     const staffMap = new Map((staffRes.data ?? []).map((s: { id: string }) => [s.id, s]));
 
-    const closedCountsByPet = new Map<string, number>();
+    const priorVisitCountsByPet = new Map<string, number>();
     if (petIds.size) {
-      const { data: closedRows, error: crErr } = await supabaseAdmin
+      const todayApptIdSet = new Set(groomingApptIds);
+      const COMPLETED_STAGES = new Set(['ready', 'delivered', 'closed']);
+
+      const { data: priorSessionRows, error: priorSessErr } = await supabaseAdmin
         .from('hub_grooming_sessions')
-        .select('pet_id')
+        .select('pet_id, hub_appointment_id, grooming_stage, ready_at, delivered_at, closed_at, checked_in_at, created_at')
         .eq('clinic_id', clinic_id)
         .in('pet_id', [...petIds])
-        .not('closed_at', 'is', null)
         .is('deleted_at', null);
-      if (!crErr && closedRows) {
-        for (const row of closedRows) {
-          const pid = row.pet_id as string;
-          closedCountsByPet.set(pid, (closedCountsByPet.get(pid) ?? 0) + 1);
+
+      if (!priorSessErr && priorSessionRows) {
+        for (const row of priorSessionRows) {
+          const pid = row.pet_id as string | null;
+          if (!pid) continue;
+          const stage = String(row.grooming_stage || '');
+          const completed =
+            Boolean(row.closed_at) ||
+            Boolean(row.delivered_at) ||
+            Boolean(row.ready_at) ||
+            COMPLETED_STAGES.has(stage);
+          if (!completed) continue;
+
+          const aid = row.hub_appointment_id as string | null;
+          if (aid && todayApptIdSet.has(aid)) continue;
+          const checkedIn = row.checked_in_at as string | null;
+          if (!aid && checkedIn && checkedIn >= from && checkedIn <= to) continue;
+          const created = row.created_at as string | null;
+          if (!aid && !checkedIn && created && created >= from && created <= to) continue;
+
+          priorVisitCountsByPet.set(pid, (priorVisitCountsByPet.get(pid) ?? 0) + 1);
+        }
+      }
+
+      const { data: priorApptRows, error: priorApptErr } = await supabaseAdmin
+        .from('hub_appointments')
+        .select('id, pet_id, hub_service_type_id')
+        .eq('clinic_id', clinic_id)
+        .in('pet_id', [...petIds])
+        .in('status', ['done', 'paid'])
+        .lt('starts_at', from)
+        .is('deleted_at', null);
+
+      if (!priorApptErr && priorApptRows && priorApptRows.length > 0) {
+        const priorApptIds = priorApptRows.map((a) => a.id as string);
+        const priorLineTypeIdsByAppt = new Map<string, string[]>();
+        const { data: priorLines } = await supabaseAdmin
+          .from('hub_appointment_services')
+          .select('appointment_id, hub_service_type_id')
+          .in('appointment_id', priorApptIds);
+        for (const row of priorLines ?? []) {
+          const aid = (row as { appointment_id: string }).appointment_id;
+          const list = priorLineTypeIdsByAppt.get(aid) ?? [];
+          list.push((row as { hub_service_type_id: string }).hub_service_type_id);
+          priorLineTypeIdsByAppt.set(aid, list);
+        }
+
+        const countedSessionApptIds = new Set(
+          (priorSessionRows ?? [])
+            .filter((r) => {
+              const stage = String(r.grooming_stage || '');
+              return (
+                Boolean(r.closed_at) ||
+                Boolean(r.delivered_at) ||
+                Boolean(r.ready_at) ||
+                COMPLETED_STAGES.has(stage)
+              );
+            })
+            .map((r) => r.hub_appointment_id as string | null)
+            .filter((id): id is string => Boolean(id)),
+        );
+
+        for (const a of priorApptRows) {
+          if (!appointmentMatchesGroomingTypes(a as Record<string, unknown>, groomingTypeSet, priorLineTypeIdsByAppt)) {
+            continue;
+          }
+          const aid = a.id as string;
+          if (countedSessionApptIds.has(aid)) continue;
+          const pid = a.pet_id as string | null;
+          if (!pid) continue;
+          priorVisitCountsByPet.set(pid, (priorVisitCountsByPet.get(pid) ?? 0) + 1);
         }
       }
     }
@@ -425,8 +525,8 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
       if (!pid) return null;
       const raw = petMap.get(pid) as Record<string, unknown> | undefined;
       if (!raw) return null;
-      const closedCount = closedCountsByPet.get(pid) ?? 0;
-      return { ...raw, is_first_grooming_visit: closedCount === 0 };
+      const priorVisits = priorVisitCountsByPet.get(pid) ?? 0;
+      return { ...raw, is_first_grooming_visit: priorVisits === 0 };
     };
 
     const flagsByPet = new Map<string, Array<{ flag_key: string; label: string }>>();
@@ -487,6 +587,8 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
       let petId = coalesceAppointmentPetId(a.pet_id as string | null, session?.pet_id as string | null);
       if (!petId && guardianId) petId = petByGuardian.get(guardianId) ?? null;
 
+      const has_pickup_legs = parentIdsWithPickup.has(apptId);
+
       if (session) {
         seenSessionIds.add(session.id as string);
         items.push({
@@ -499,6 +601,7 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
           starts_at: startsAt,
           ends_at: a.ends_at,
           appointment_kind: a.appointment_kind,
+          has_pickup_legs,
           title: a.title,
           notes: a.notes,
           description: a.description,
@@ -529,6 +632,7 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
           starts_at: startsAt,
           ends_at: a.ends_at,
           appointment_kind: a.appointment_kind,
+          has_pickup_legs,
           title: a.title,
           notes: a.notes,
           description: a.description,
@@ -566,6 +670,7 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
         starts_at: checkedIn,
         ends_at: checkedIn,
         appointment_kind: 'standard',
+        has_pickup_legs: false,
         title: 'Avulso',
         service_type: null,
         services: [],
@@ -657,9 +762,8 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
     if (!appt) return res.status(404).json({ error: 'Agendamento não encontrado' });
     if (!appt.pet_id) return res.status(400).json({ error: 'Agendamento sem pet associado' });
 
-    const alreadyWaiting =
-      appt.appointment_kind === 'walk_in' || appt.status === 'checked_in' || appt.status === 'in_progress';
-    const targetStage: GroomingStage = parsed.data.grooming_stage ?? (alreadyWaiting ? 'queued' : 'checked_in');
+    // Check-in operacional entra direto na fila (caminho enxuto do dia a dia).
+    const targetStage: GroomingStage = parsed.data.grooming_stage ?? 'queued';
 
     let tutorSnapshot: string | null = null;
     if (appt.pet_id) {

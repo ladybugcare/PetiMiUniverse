@@ -33,6 +33,7 @@ import { notifyHubPaymentDue } from './hubNotifyEvents';
 import { syncChargeBundleStatusForReceivable } from './hubChargeBundlesService';
 import { applyPackageCoverageToEstimate, hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
 import { findSeriesInvoiceCoverageForAppointments } from './hubSeriesBillingService';
+import { markHubAppointmentPaidFromReceivable } from './appointmentPaidFromBilling';
 import {
   PAYABLE_CATEGORIES,
   PAYABLE_PAYMENT_METHODS,
@@ -192,6 +193,19 @@ async function recalculateReceivableStatus(receivableId: string): Promise<string
   const finalAmount = Number(rec.final_amount ?? 0);
   const nextStatus = paid <= 0.009 ? 'pending' : paid >= finalAmount - 0.009 ? 'paid' : 'partially_paid';
   await supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', receivableId);
+  if (nextStatus === 'paid') {
+    const { data: recClinic } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('clinic_id')
+      .eq('id', receivableId)
+      .maybeSingle();
+    if (recClinic?.clinic_id) {
+      void markHubAppointmentPaidFromReceivable({
+        clinicId: recClinic.clinic_id as string,
+        receivableId,
+      });
+    }
+  }
   return nextStatus;
 }
 
@@ -1170,6 +1184,10 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
       } catch (closeErr) {
         console.error('postHubFinanceReceivablePayment tryAutoCloseComanda', rec.comanda_id, closeErr);
       }
+    }
+
+    if (nextStatus === 'paid') {
+      void markHubAppointmentPaidFromReceivable({ clinicId: clinic_id, receivableId });
     }
 
     // Saldo remanescente é dívida em aberto: caixa e financeiro precisam saber.

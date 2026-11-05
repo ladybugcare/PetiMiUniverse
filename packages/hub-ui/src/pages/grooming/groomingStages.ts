@@ -22,13 +22,17 @@ export const GROOMING_STAGE_LABELS: Record<GroomingStage, string> = {
   closed: 'Encerrado',
 };
 
+/**
+ * Caminho enxuto do dia a dia: fila → em serviço → pronto → encerrado
+ * (`finishing` / `delivered` ficam no enum só para sessões antigas).
+ */
 export const GROOMING_NEXT_STAGE: Partial<Record<GroomingStage, GroomingStage>> = {
-  scheduled: 'checked_in',
+  scheduled: 'queued',
   checked_in: 'queued',
   queued: 'in_service',
-  in_service: 'finishing',
+  in_service: 'ready',
   finishing: 'ready',
-  ready: 'delivered',
+  ready: 'closed',
   delivered: 'closed',
 };
 
@@ -45,30 +49,22 @@ export function appointmentStatusForGroomingStage(stage: GroomingStage): string 
       return 'in_progress';
     case 'ready':
     case 'delivered':
-      return 'done';
     case 'closed':
-      return 'paid';
+      // Encerrado operacionalmente espelha agenda `done`; `paid` só após quitação no caixa.
+      return 'done';
     default:
       return null;
   }
 }
 
-export const GROOMING_BOARD_COLUMNS: { id: string; title: string; stages: GroomingStage[] }[] = [
-  { id: 'confirmed', title: 'Confirmados', stages: ['scheduled', 'checked_in'] },
-  { id: 'queued', title: 'Aguardando', stages: ['queued'] },
-  { id: 'service', title: 'Em atendimento', stages: ['in_service'] },
-  { id: 'finishing', title: 'Finalização', stages: ['finishing', 'ready'] },
-  { id: 'done', title: 'Finalizados', stages: ['delivered', 'closed'] },
-];
-
-/** Espelha `backend/src/modules/hub/groomingStages.ts` — transições válidas para DnD e PATCH. */
+/** Espelha `backend/src/modules/hub/groomingStages.ts` — transições válidas para PATCH. */
 const ALLOWED_TRANSITIONS: Record<GroomingStage, GroomingStage[]> = {
-  scheduled: ['checked_in'],
+  scheduled: ['checked_in', 'queued'],
   checked_in: ['queued', 'scheduled'],
   queued: ['in_service', 'checked_in'],
-  in_service: ['finishing', 'queued'],
+  in_service: ['ready', 'finishing', 'queued'],
   finishing: ['ready', 'in_service'],
-  ready: ['delivered', 'finishing'],
+  ready: ['closed', 'delivered', 'finishing', 'in_service'],
   delivered: ['closed', 'ready'],
   closed: [],
 };
@@ -76,17 +72,6 @@ const ALLOWED_TRANSITIONS: Record<GroomingStage, GroomingStage[]> = {
 export function canTransitionGroomingStage(from: GroomingStage, to: GroomingStage): boolean {
   if (from === to) return true;
   return ALLOWED_TRANSITIONS[from]?.includes(to) ?? false;
-}
-
-/** Primeiro estágio da coluna de destino alcançável num único passo a partir do atual. */
-export function pickDropTargetStage(
-  current: GroomingStage,
-  columnStages: GroomingStage[],
-): GroomingStage | null {
-  for (const s of columnStages) {
-    if (canTransitionGroomingStage(current, s)) return s;
-  }
-  return null;
 }
 
 export function getItemBoardStage(item: {
@@ -98,8 +83,8 @@ export function getItemBoardStage(item: {
   }
   const st = item.appointment_status || 'confirmed';
   if (st === 'pending_confirm' || st === 'confirmed') return 'scheduled';
-  if (st === 'checked_in') return 'checked_in';
-  if (st === 'in_progress') return 'checked_in';
+  if (st === 'checked_in') return 'queued';
+  if (st === 'in_progress') return 'in_service';
   if (st === 'done') return 'ready';
   if (st === 'paid') return 'closed';
   return 'scheduled';
@@ -147,11 +132,11 @@ export function resolveGroomingQuickAction(
 
 /**
  * Estágio inicial da sessão ao abrir a partir de um slot da agenda.
- * Encaixe já fez check-in na recepção → entra direto em Aguardando (arrastável).
+ * Encaixe já fez check-in na recepção → entra direto em Aguardando.
  */
 export function groomingOpenSessionStage(item: GroomingActionItem): GroomingStage | undefined {
   const stage = getItemBoardStage(item);
-  // Já está na coluna Aguardando sem sessão: o próximo passo operacional é iniciar.
+  // Já está em Aguardando sem sessão: o próximo passo operacional é iniciar.
   if (!item.session_id && stage === 'queued') return 'in_service';
   if (stage === 'checked_in' || item.appointment_status === 'checked_in' || item.appointment_kind === 'walk_in') {
     return 'queued';

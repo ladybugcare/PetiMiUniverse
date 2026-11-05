@@ -321,6 +321,18 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
         form.price_mode === 'variable' ? parseMoneyInput(form.price_min) : null,
       price_max:
         form.price_mode === 'variable' ? parseMoneyInput(form.price_max) : null,
+      checklist_items:
+        !isAddon && form.service_group === 'banho_tosa'
+          ? form.checklist_mode === 'custom'
+            ? form.checklist_items
+                .map((item) => ({
+                  key: item.key.trim(),
+                  label: item.label.trim(),
+                  default_checked: Boolean(item.default_checked),
+                }))
+                .filter((item) => item.label)
+            : null
+          : undefined,
     };
   };
 
@@ -520,6 +532,98 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
                       <p className="hub-servicos__margin-info" style={{ marginTop: 6 }}>
                         Marque para IM, IV, SC etc. Aparece só no dropdown da Medicação e entra na comanda como taxa de aplicação.
                       </p>
+                    </div>
+                  ) : null}
+                  {!isAddon && form.service_group === 'banho_tosa' ? (
+                    <div className="pet-wizard__field--full">
+                      <span className="pet-wizard__label">Checklist operacional</span>
+                      <p className="hub-servicos__margin-info" style={{ marginTop: 0, marginBottom: 8 }}>
+                        Por padrão usa o checklist do grupo (Configurações → Checklists). Personalize só
+                        neste serviço se Banho e Tosa precisarem de itens diferentes.
+                      </p>
+                      <div className="hub-servicos__seg" role="group" aria-label="Modo do checklist">
+                        <button
+                          type="button"
+                          className={form.checklist_mode === 'inherit' ? 'hub-servicos__seg--active' : ''}
+                          onClick={() => setForm((f) => ({ ...f, checklist_mode: 'inherit' }))}
+                        >
+                          Usar padrão do grupo
+                        </button>
+                        <button
+                          type="button"
+                          className={form.checklist_mode === 'custom' ? 'hub-servicos__seg--active' : ''}
+                          onClick={() =>
+                            setForm((f) => ({
+                              ...f,
+                              checklist_mode: 'custom',
+                              checklist_items:
+                                f.checklist_items.length > 0
+                                  ? f.checklist_items
+                                  : [{ draftKey: `new_${Date.now()}`, key: '', label: '', default_checked: false }],
+                            }))
+                          }
+                        >
+                          Personalizar neste serviço
+                        </button>
+                      </div>
+                      {form.checklist_mode === 'custom' ? (
+                        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                          {form.checklist_items.map((item, index) => (
+                            <div
+                              key={item.draftKey}
+                              style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}
+                            >
+                              <input
+                                className="pet-wizard__input"
+                                style={{ flex: '1 1 220px' }}
+                                value={item.label}
+                                placeholder="Ex.: Unhas cortadas"
+                                onChange={(e) =>
+                                  setForm((f) => ({
+                                    ...f,
+                                    checklist_items: f.checklist_items.map((row, i) =>
+                                      i === index ? { ...row, label: e.target.value } : row,
+                                    ),
+                                  }))
+                                }
+                              />
+                              <button
+                                type="button"
+                                className="hub-cancel-btn"
+                                onClick={() =>
+                                  setForm((f) => ({
+                                    ...f,
+                                    checklist_items: f.checklist_items.filter((_, i) => i !== index),
+                                  }))
+                                }
+                              >
+                                Remover
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            className="hub-servicos__seg--active"
+                            style={{ justifySelf: 'start', padding: '6px 12px', borderRadius: 8, border: 'none' }}
+                            onClick={() =>
+                              setForm((f) => ({
+                                ...f,
+                                checklist_items: [
+                                  ...f.checklist_items,
+                                  {
+                                    draftKey: `new_${Date.now()}`,
+                                    key: '',
+                                    label: '',
+                                    default_checked: false,
+                                  },
+                                ],
+                              }))
+                            }
+                          >
+                            + Item
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   <div className="pet-wizard__field--full">

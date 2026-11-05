@@ -56,7 +56,7 @@ test.describe('acessos Hub', () => {
     });
   });
 
-  test('CSTAFF leva_traz: só Leva e Traz, dashboard muted e sem Nova rota', async ({ page }) => {
+  test('CSTAFF leva_traz: só Leva e Traz, dashboard operacional e sem Nova rota', async ({ page }) => {
     const creds = hubCstaffCredentials();
     if (!skipIfMissing(creds, 'CSTAFF leva_traz')) return;
 
@@ -70,9 +70,12 @@ test.describe('acessos Hub', () => {
 
     await page.goto('/hub/dashboard');
     await expect(page).toHaveURL(/\/hub\/dashboard(?:\?|$)/);
-    await expect(
-      page.getByText('O dashboard financeiro requer a permissão de leitura financeira'),
-    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: 'Hoje na unidade' })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByRole('heading', { name: 'Operação agora' })).toBeVisible();
+    await expect(page.locator('a.hub-today-dash__ops-card').filter({ hasText: /Leva e Traz/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Financeiro do dia' })).toHaveCount(0);
 
     await page.goto('/hub/leva-e-traz');
     await expect(page).toHaveURL(/\/hub\/leva-e-traz\/minha-rota(?:\?|$)/, { timeout: 20_000 });

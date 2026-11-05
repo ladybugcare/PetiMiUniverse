@@ -3,6 +3,7 @@ import { Home, ChevronDown, Check } from 'lucide-react';
 import { useHubUnit } from '../contexts/HubUnitContext';
 import { useHubCashSession } from '../contexts/HubCashSessionContext';
 import type { HubUnit } from '../types/hubUnit';
+import { unitShortLabel } from '../utils/hubUnitDisplay';
 
 const HubHeaderUnitSelector: React.FC = () => {
   const { clinicId, clinicName, selectedUnit, units, setSelectedUnit, loading } = useHubUnit();
@@ -12,15 +13,14 @@ const HubHeaderUnitSelector: React.FC = () => {
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const hasMultiple = units.length > 1;
-  const unitLabel =
-    selectedUnit?.name?.trim() ||
-    (units.length === 1 ? units[0]?.name?.trim() : '') ||
-    '—';
   const primaryLabel = clinicId ? clinicName : 'Sem clínica';
-  const secondaryLabel = clinicId ? unitLabel || '—' : '—';
-  const sameName =
-    primaryLabel.trim().localeCompare(secondaryLabel.trim(), 'pt-BR', { sensitivity: 'accent' }) === 0;
-  const showSecondary = Boolean(clinicId) && !sameName && secondaryLabel !== '—';
+  const selectedShort = selectedUnit
+    ? unitShortLabel(selectedUnit, clinicName)
+    : units.length === 1
+      ? unitShortLabel(units[0], clinicName)
+      : '—';
+  /** Com várias unidades, sempre mostra o rótulo curto (Matriz / Granja) — mesma estrutura para todas. */
+  const showSecondary = Boolean(clinicId) && hasMultiple && selectedShort !== '—';
 
   useEffect(() => {
     if (!open) return;
@@ -44,7 +44,7 @@ const HubHeaderUnitSelector: React.FC = () => {
     );
   }
 
-  const ariaUnit = showSecondary ? `${primaryLabel}, ${secondaryLabel}` : primaryLabel;
+  const ariaUnit = showSecondary ? `${primaryLabel}, ${selectedShort}` : primaryLabel;
 
   const body = (
     <>
@@ -53,7 +53,7 @@ const HubHeaderUnitSelector: React.FC = () => {
       </span>
       <span className="hub-header-unit__text">
         <span className="hub-header-unit__name">{primaryLabel}</span>
-        {showSecondary && <span className="hub-header-unit__sub">{secondaryLabel}</span>}
+        {showSecondary ? <span className="hub-header-unit__sub">{selectedShort}</span> : null}
       </span>
       {hasMultiple && (
         <ChevronDown
@@ -66,6 +66,17 @@ const HubHeaderUnitSelector: React.FC = () => {
     </>
   );
 
+  const pickUnit = (unit: HubUnit) => {
+    const already = selectedUnit?.id === unit.id;
+    if (!already && caixaOpen && pendingBillingCount > 0) {
+      setPendingUnit(unit);
+      setOpen(false);
+    } else {
+      setSelectedUnit(unit);
+      setOpen(false);
+    }
+  };
+
   return (
     <div className="hub-header-unit-wrap" ref={wrapRef}>
       {hasMultiple ? (
@@ -74,7 +85,7 @@ const HubHeaderUnitSelector: React.FC = () => {
           className="hub-header-unit"
           aria-expanded={open}
           aria-haspopup="listbox"
-          aria-label={`Unidade: ${ariaUnit}. Escolher unidade`}
+          aria-label={`Unidade operacional: ${ariaUnit}. Escolher unidade`}
           onClick={() => setOpen((o) => !o)}
         >
           {body}
@@ -85,10 +96,19 @@ const HubHeaderUnitSelector: React.FC = () => {
         </div>
       )}
 
-      {open && hasMultiple && (
+      {open && hasMultiple ? (
         <div className="hub-header-unit__menu" role="listbox" aria-label="Unidades">
+          <p className="hub-header-unit__menu-hint">
+            Unidade operacional (caixa e lançamentos). Nas filas e na Agenda, use o filtro{' '}
+            <strong>Todas as unidades</strong> para ver as duas juntas.
+          </p>
           {units.map((unit) => {
             const active = selectedUnit?.id === unit.id;
+            const short = unitShortLabel(unit, clinicName);
+            const fullName = unit.name?.trim() || '';
+            const showFull =
+              Boolean(fullName) &&
+              fullName.localeCompare(short, 'pt-BR', { sensitivity: 'accent' }) !== 0;
             return (
               <button
                 key={unit.id}
@@ -96,95 +116,49 @@ const HubHeaderUnitSelector: React.FC = () => {
                 role="option"
                 aria-selected={active}
                 className={`hub-header-unit__option${active ? ' hub-header-unit__option--active' : ''}`}
-                onClick={() => {
-                  const active = selectedUnit?.id === unit.id;
-                  if (!active && caixaOpen && pendingBillingCount > 0) {
-                    setPendingUnit(unit);
-                    setOpen(false);
-                  } else {
-                    setSelectedUnit(unit);
-                    setOpen(false);
-                  }
-                }}
+                onClick={() => pickUnit(unit)}
               >
                 <span className="hub-header-unit__option-text">
-                  <span className="hub-header-unit__option-name">{unit.name}</span>
-                  {unit.is_main && <span className="hub-header-unit__option-badge">Matriz</span>}
+                  <span className="hub-header-unit__option-name">{short}</span>
+                  {showFull ? <span className="hub-header-unit__option-sub">{fullName}</span> : null}
                 </span>
-                {active && <Check size={16} strokeWidth={2.25} aria-hidden />}
+                {active ? <Check size={16} strokeWidth={2.25} aria-hidden /> : null}
               </button>
             );
           })}
         </div>
-      )}
+      ) : null}
 
-      {pendingUnit && (
+      {pendingUnit ? (
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="unit-switch-title"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(0,0,0,0.45)',
-          }}
+          className="hub-header-unit__dialog-backdrop"
         >
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: 16,
-              padding: '24px 28px',
-              maxWidth: 380,
-              width: '100%',
-              margin: '0 16px',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-            }}
-          >
-            <h2
-              id="unit-switch-title"
-              style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}
-            >
+          <div className="hub-header-unit__dialog">
+            <h2 id="unit-switch-title" className="hub-header-unit__dialog-title">
               Caixa aberto na unidade atual
             </h2>
-            <p style={{ margin: '0 0 18px', fontSize: 14, color: '#555', lineHeight: 1.5 }}>
+            <p className="hub-header-unit__dialog-text">
               Há <strong>{pendingBillingCount}</strong> item(ns) pendente(s) no caixa de{' '}
-              <strong>{selectedUnit?.name}</strong>. A sessão permanecerá aberta ao trocar de unidade.
+              <strong>{selectedUnit ? unitShortLabel(selectedUnit, clinicName) : '—'}</strong>. A sessão
+              permanecerá aberta ao trocar de unidade.
             </p>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div className="hub-header-unit__dialog-actions">
               <button
                 type="button"
+                className="hub-header-unit__dialog-btn hub-header-unit__dialog-btn--ghost"
                 onClick={() => setPendingUnit(null)}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 10,
-                  border: '1px solid #e5e5e5',
-                  background: '#f5f5f5',
-                  fontWeight: 600,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
               >
                 Cancelar
               </button>
               <button
                 type="button"
+                className="hub-header-unit__dialog-btn hub-header-unit__dialog-btn--primary"
                 onClick={() => {
                   setSelectedUnit(pendingUnit);
                   setPendingUnit(null);
-                }}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: '#f0642f',
-                  color: '#fff',
-                  fontWeight: 600,
-                  fontSize: 13,
-                  cursor: 'pointer',
                 }}
               >
                 Trocar mesmo assim
@@ -192,7 +166,7 @@ const HubHeaderUnitSelector: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

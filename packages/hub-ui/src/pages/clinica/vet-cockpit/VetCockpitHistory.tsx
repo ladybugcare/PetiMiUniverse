@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Search } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { FileText, History, Search } from 'lucide-react';
 import { HubLoading, HubRefreshingBanner } from '../../../components/HubLoading';
 import {
   hubClinicalApi,
@@ -9,12 +9,15 @@ import {
   type HubHospitalization,
   type HubSurgery,
 } from '../../../api/hubClinicalApi';
-import { formatHospDateTime } from '../hospital/hospDisplay';
+import { formatHospDate } from '../hospital/hospDisplay';
 import { petInitials } from './vetCockpitUtils';
 import {
   buildCockpitHistoryRows,
+  displayHistoryTitle,
   filterCockpitHistoryRows,
   HISTORY_KIND_LABEL,
+  HISTORY_PERIOD_LABEL,
+  historyStatusTone,
   type CockpitHistoryKind,
   type CockpitHistoryPeriod,
 } from './cockpitHistoryRows';
@@ -37,14 +40,21 @@ const PERIOD_FILTERS: Array<{ id: CockpitHistoryPeriod; label: string }> = [
   { id: '30d', label: '30 dias' },
 ];
 
+function formatHistoryTime(value: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
 const VetCockpitHistory: React.FC<Props> = ({ clinicId, staffId }) => {
+  const navigate = useNavigate();
   const [encounters, setEncounters] = useState<HubEncounter[]>([]);
   const [surgeries, setSurgeries] = useState<HubSurgery[]>([]);
   const [hospitalizations, setHospitalizations] = useState<HubHospitalization[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [kind, setKind] = useState<CockpitHistoryKind | 'all'>('all');
-  const [period, setPeriod] = useState<CockpitHistoryPeriod>('7d');
+  const [period, setPeriod] = useState<CockpitHistoryPeriod>('30d');
   const [query, setQuery] = useState('');
   const [mineOnly, setMineOnly] = useState(Boolean(staffId));
 
@@ -78,123 +88,209 @@ const VetCockpitHistory: React.FC<Props> = ({ clinicId, staffId }) => {
     void load();
   }, [load]);
 
+  const builtRows = useMemo(
+    () => buildCockpitHistoryRows({ encounters, surgeries, hospitalizations }),
+    [encounters, surgeries, hospitalizations],
+  );
+
+  const periodRows = useMemo(
+    () => filterCockpitHistoryRows(builtRows, { kind: 'all', query: '', period }),
+    [builtRows, period],
+  );
+
+  const kindCounts = useMemo(() => {
+    const counts: Record<CockpitHistoryKind | 'all', number> = {
+      all: periodRows.length,
+      encounter: 0,
+      surgery: 0,
+      hospitalization: 0,
+    };
+    for (const row of periodRows) counts[row.kind] += 1;
+    return counts;
+  }, [periodRows]);
+
   const rows = useMemo(
-    () =>
-      filterCockpitHistoryRows(buildCockpitHistoryRows({ encounters, surgeries, hospitalizations }), {
-        kind,
-        query,
-        period,
-      }),
-    [encounters, surgeries, hospitalizations, kind, query, period],
+    () => filterCockpitHistoryRows(builtRows, { kind, query, period }),
+    [builtRows, kind, query, period],
   );
 
   return (
     <div className="vet-cockpit-history hub-loading-host">
       <HubRefreshingBanner show={refreshing} label="Atualizando histórico…" />
-      <div className="vet-cockpit-history__filters">
-        <div className="hub-dayboard__status-filters" role="group" aria-label="Tipo">
-          {KIND_FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              className={`hub-dayboard__toggle-btn${kind === f.id ? ' hub-dayboard__toggle-btn--active' : ''}`}
-              onClick={() => setKind(f.id)}
-            >
-              {f.label}
-            </button>
-          ))}
+
+      <div className="vet-cockpit-history__toolbar">
+        <div className="vet-cockpit-history__filter-groups">
+          <div className="vet-cockpit-history__seg" role="group" aria-label="Tipo">
+            {KIND_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className={`vet-cockpit-history__seg-btn${kind === f.id ? ' vet-cockpit-history__seg-btn--active' : ''}`}
+                onClick={() => setKind(f.id)}
+              >
+                {f.label}
+                <span className="vet-cockpit-history__seg-count">{kindCounts[f.id]}</span>
+              </button>
+            ))}
+          </div>
+          <div className="vet-cockpit-history__seg" role="group" aria-label="Período">
+            {PERIOD_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className={`vet-cockpit-history__seg-btn${period === f.id ? ' vet-cockpit-history__seg-btn--active' : ''}`}
+                onClick={() => setPeriod(f.id)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="hub-dayboard__status-filters" role="group" aria-label="Período">
-          {PERIOD_FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              className={`hub-dayboard__toggle-btn${period === f.id ? ' hub-dayboard__toggle-btn--active' : ''}`}
-              onClick={() => setPeriod(f.id)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        <label className="vet-cockpit-history__search">
-          <Search size={16} aria-hidden />
-          <input
-            className="hub-clientes__input"
-            type="search"
-            placeholder="Buscar pet ou procedimento…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
-        {staffId ? (
-          <label className="vet-cockpit-history__mine">
-            <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} />
-            Só os meus
+
+        <div className="vet-cockpit-history__tools">
+          <label className="vet-cockpit-history__search">
+            <Search size={16} aria-hidden />
+            <input
+              className="hub-clientes__input"
+              type="search"
+              placeholder="Buscar pet ou procedimento…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </label>
-        ) : null}
+          {staffId ? (
+            <button
+              type="button"
+              className={`vet-cockpit-history__mine-btn${mineOnly ? ' vet-cockpit-history__mine-btn--active' : ''}`}
+              aria-pressed={mineOnly}
+              onClick={() => setMineOnly((v) => !v)}
+            >
+              Só os meus
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {!loading || rows.length > 0 ? (
+        <div className="vet-cockpit-history__meta" aria-live="polite">
+          <span>
+            {rows.length === 0
+              ? 'Nenhum registro'
+              : `${rows.length} ${rows.length === 1 ? 'registro' : 'registros'}`}
+          </span>
+          <span className="vet-cockpit-history__meta-sep" aria-hidden>
+            ·
+          </span>
+          <span>{HISTORY_PERIOD_LABEL[period]}</span>
+          {mineOnly ? (
+            <>
+              <span className="vet-cockpit-history__meta-sep" aria-hidden>
+                ·
+              </span>
+              <span>somente os meus</span>
+            </>
+          ) : null}
+        </div>
+      ) : null}
 
       {loading && rows.length === 0 ? (
         <HubLoading variant="block" label="Carregando histórico…" />
       ) : rows.length === 0 ? (
-        <p className="hub-clientes__muted">Nenhum item encerrado neste filtro.</p>
+        <div className="vet-cockpit-history__empty">
+          <div className="vet-cockpit-history__empty-icon" aria-hidden>
+            <History size={22} strokeWidth={1.75} />
+          </div>
+          <h3 className="vet-cockpit-history__empty-title">Nada encerrado neste filtro</h3>
+          <p className="vet-cockpit-history__empty-text">
+            Amplie o período, limpe a busca ou troque o tipo para ver atendimentos, cirurgias e
+            internações finalizados.
+          </p>
+        </div>
       ) : (
-        <div className="hub-clientes__table-wrap">
-          <table className="hub-clientes__table hub-dayboard__table">
+        <div className="hub-clientes__table-wrap vet-cockpit-history__table-wrap">
+          <table className="hub-clientes__table hub-dayboard__table vet-cockpit-history__table">
             <thead>
               <tr>
                 <th>Quando</th>
                 <th>Tipo</th>
                 <th>Pet</th>
-                <th>O quê</th>
+                <th>Procedimento</th>
                 <th>Status</th>
                 <th className="hub-clientes__th-actions"> </th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.key}>
-                  <td className="hub-dayboard__time-cell">{formatHospDateTime(row.at)}</td>
-                  <td>
-                    <span className={`vet-cockpit-history__kind vet-cockpit-history__kind--${row.kind}`}>
-                      {HISTORY_KIND_LABEL[row.kind]}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="hub-clientes__tutor-cell">
-                      <span className="hub-clientes__avatar">{petInitials(row.petName)}</span>
-                      {row.petId ? (
+              {rows.map((row) => {
+                const title = displayHistoryTitle(row.title, row.petName);
+                const tone = historyStatusTone(row.status);
+                return (
+                  <tr
+                    key={row.key}
+                    className="hub-dayboard__row-click vet-cockpit-history__row"
+                    onClick={() => navigate(row.href)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        navigate(row.href);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`Abrir ${HISTORY_KIND_LABEL[row.kind]} de ${row.petName}`}
+                  >
+                    <td className="vet-cockpit-history__when">
+                      <span className="vet-cockpit-history__when-date">{formatHospDate(row.at)}</span>
+                      <span className="vet-cockpit-history__when-time">{formatHistoryTime(row.at)}</span>
+                    </td>
+                    <td>
+                      <span className={`vet-cockpit-history__kind vet-cockpit-history__kind--${row.kind}`}>
+                        {HISTORY_KIND_LABEL[row.kind]}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="hub-clientes__tutor-cell">
+                        <span className="hub-clientes__avatar">{petInitials(row.petName)}</span>
+                        {row.petId ? (
+                          <Link
+                            to={`/hub/clinica/prontuarios?petId=${encodeURIComponent(row.petId)}`}
+                            className="hub-clientes__link vet-cockpit-history__pet-link"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {row.petName}
+                          </Link>
+                        ) : (
+                          <span className="hub-clientes__tutor-name">{row.petName}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <span className="vet-cockpit-history__title" title={title}>
+                        {title}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`vet-cockpit-history__status vet-cockpit-history__status--${tone}`}>
+                        {row.statusLabel}
+                      </span>
+                    </td>
+                    <td className="hub-clientes__td-actions" onClick={(e) => e.stopPropagation()}>
+                      {row.caseId ? (
                         <Link
-                          to={`/hub/clinica/prontuarios?petId=${encodeURIComponent(row.petId)}`}
-                          className="hub-clientes__link"
+                          to={`/hub/clinica/casos/${row.caseId}`}
+                          className="vet-cockpit-history__case-btn"
+                          title="Abrir caso clínico vinculado"
+                          aria-label={`Abrir caso clínico de ${row.petName}`}
                         >
-                          {row.petName}
+                          <FileText size={14} strokeWidth={2} aria-hidden />
+                          Ver caso
                         </Link>
                       ) : (
-                        row.petName
+                        <span className="vet-cockpit-history__no-case">Sem caso</span>
                       )}
-                    </div>
-                  </td>
-                  <td>{row.title}</td>
-                  <td>
-                    <span className={`hub-dayboard__op-badge hub-dayboard__op-badge--${row.status}`}>
-                      {row.statusLabel}
-                    </span>
-                  </td>
-                  <td className="hub-clientes__td-actions">
-                    <div className="hub-clientes__td-actions-inner">
-                      <Link to={row.href} className="hub-clientes__link">
-                        Abrir
-                      </Link>
-                      {row.caseId ? (
-                        <Link to={`/hub/clinica/casos/${row.caseId}`} className="hub-clientes__link">
-                          Caso
-                        </Link>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

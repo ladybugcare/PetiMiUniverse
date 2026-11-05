@@ -112,5 +112,7 @@ describe('appointmentStatusForGroomingStage (chegada L&T)', () => {
   it('mapeia serviço ativo para in_progress', () => {
     expect(appointmentStatusForGroomingStage('in_service')).toBe('in_progress');
     expect(appointmentStatusForGroomingStage('finishing')).toBe('in_progress');
+    expect(appointmentStatusForGroomingStage('ready')).toBe('done');
+    expect(appointmentStatusForGroomingStage('closed')).toBe('done');
   });
 });

@@ -277,6 +277,7 @@ export type HubHospitalization = {
   hub_pets?: { name: string; species?: string | null } | null;
   hub_hospital_beds?: { code: string; label?: string | null } | null;
   hub_guardians?: { full_name: string } | null;
+  hub_clinical_cases?: { id: string; title: string; status?: string | null } | null;
 };
 
 export type HubSurgeryStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';

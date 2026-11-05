@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, Scissors, Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
@@ -17,9 +17,9 @@ import {
   loadAgendaPersistedFilters,
   saveAgendaPersistedUnit,
 } from '../agenda/agendaFilters';
-import { getItemBoardStage, groomingOpenSessionStage, type GroomingStage } from './groomingStages';
+import { getItemBoardStage, groomingOpenSessionStage, type GroomingQuickAction } from './groomingStages';
 import { isGroomingFloorStaff } from './groomingAccess';
-import GroomingQueueBoard, { type GroomingQuickAction } from './GroomingQueueBoard';
+import GroomingDayList from './GroomingDayList';
 import GroomingAppointmentDrawer from './GroomingAppointmentDrawer';
 import GroomingWalkInPanel from './GroomingWalkInPanel';
 import { PORTE_LABELS, PORTE_VALUES } from '../../utils/hubServiceTypesPricingMatrix';
@@ -27,10 +27,22 @@ import { PORTE_LABELS, PORTE_VALUES } from '../../utils/hubServiceTypesPricingMa
 const POLL_MS = 30_000;
 const MOBILE_MQ = '(max-width: 900px)';
 
-const PORTE_FILTER_OPTIONS: { value: string; label: string }[] = [
+type MetricFocus = 'waiting' | 'in_service' | 'ready' | 'late' | null;
+
+const PORTE_FILTER_OPTIONS: HubComboboxOption[] = [
   { value: 'all', label: 'Todos os portes' },
   ...PORTE_VALUES.map((p) => ({ value: p, label: PORTE_LABELS[p] })),
 ];
+
+function matchesMetricFocus(item: GroomingDayBoardItem, focus: MetricFocus): boolean {
+  if (!focus) return true;
+  if (focus === 'late') return Boolean(item.is_late);
+  const stage = getItemBoardStage(item);
+  if (focus === 'waiting') return stage === 'scheduled' || stage === 'checked_in' || stage === 'queued';
+  if (focus === 'in_service') return stage === 'in_service' || stage === 'finishing';
+  if (focus === 'ready') return stage === 'ready';
+  return true;
+}
 
 function useIsNarrowViewport(): boolean {
   const [narrow, setNarrow] = useState(() =>
@@ -61,7 +73,6 @@ const HubGroomingQueuePage: React.FC = () => {
   const showWriteGateHint =
     accessAllowed && !canWrite && hasPermission('grooming.queue.manage');
   const canViewFinancial = hasPermission('hub.financial.read');
-  const canDragQueue = hasPermission('grooming.queue.manage') && !isNarrow;
   const canPauseQueue = hasPermission('grooming.queue.manage');
   /** Tosador / CSTAFF de chão → Minha fila (padrão L&T motorista). */
   const isFloorStaff = isGroomingFloorStaff(authRole, hasPermission('hub.appointments.write'));
@@ -72,6 +83,7 @@ const HubGroomingQueuePage: React.FC = () => {
   const [filterLtOnly, setFilterLtOnly] = useState(false);
   const [filterPorte, setFilterPorte] = useState('all');
   const [filterBanhoOnly, setFilterBanhoOnly] = useState(false);
+  const [metricFocus, setMetricFocus] = useState<MetricFocus>(null);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [items, setItems] = useState<GroomingDayBoardItem[]>([]);
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
@@ -87,14 +99,21 @@ const HubGroomingQueuePage: React.FC = () => {
   const [walkInBusy, setWalkInBusy] = useState(false);
   const [cursor, setCursor] = useState(() => new Date());
 
-  const itemsFiltered = useMemo(() => {
+  const itemsAfterChips = useMemo(() => {
     let list = items;
     if (filterPriorityOnly) list = list.filter((i) => (i.priority ?? 0) > 0);
-    if (filterLtOnly) list = list.filter((i) => i.appointment_kind === 'pickup_route');
+    if (filterLtOnly) {
+      list = list.filter((i) => i.has_pickup_legs || i.appointment_kind === 'pickup_route');
+    }
     if (filterPorte !== 'all') list = list.filter((i) => (i.pet?.size_tier || '') === filterPorte);
     if (filterBanhoOnly) list = list.filter((i) => i.grooming_service_mix === 'banho_only');
     return list;
   }, [items, filterPriorityOnly, filterLtOnly, filterPorte, filterBanhoOnly]);
+
+  const itemsFiltered = useMemo(
+    () => itemsAfterChips.filter((i) => matchesMetricFocus(i, metricFocus)),
+    [itemsAfterChips, metricFocus],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -216,27 +235,6 @@ const HubGroomingQueuePage: React.FC = () => {
     }
   };
 
-  const handleStageDrop = useCallback(
-    async (item: GroomingDayBoardItem, stage: GroomingStage) => {
-      if (!clinicId || !canDragQueue) return;
-      if (!item.session_id && !item.appointment_id) return;
-      setActionBusy(true);
-      try {
-        if (item.session_id) {
-          await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, grooming_stage: stage });
-        } else if (item.appointment_id) {
-          await hubGroomingApi.openFromAppointment(clinicId, item.appointment_id, stage);
-        }
-        await load();
-      } catch (e: unknown) {
-        showError((e as Error)?.message || 'Transição não permitida');
-      } finally {
-        setActionBusy(false);
-      }
-    },
-    [clinicId, canDragQueue, load, showError],
-  );
-
   const handlePauseToggle = async (item: GroomingDayBoardItem) => {
     if (!clinicId || !item.session_id || !canPauseQueue) return;
     setActionBusy(true);
@@ -311,25 +309,35 @@ const HubGroomingQueuePage: React.FC = () => {
   };
 
   const metrics = useMemo(() => {
-    const total = items.length;
-    const inService = items.filter((i) => {
+    const waiting = itemsAfterChips.filter((i) => {
+      const s = getItemBoardStage(i);
+      return s === 'scheduled' || s === 'checked_in' || s === 'queued';
+    }).length;
+    const inService = itemsAfterChips.filter((i) => {
       const s = getItemBoardStage(i);
       return s === 'in_service' || s === 'finishing';
     }).length;
-    const ready = items.filter((i) => getItemBoardStage(i) === 'ready').length;
-    const late = items.filter((i) => i.is_late).length;
-    return { total, inService, ready, late };
-  }, [items]);
+    const ready = itemsAfterChips.filter((i) => getItemBoardStage(i) === 'ready').length;
+    const late = itemsAfterChips.filter((i) => i.is_late).length;
+    return { waiting, inService, ready, late };
+  }, [itemsAfterChips]);
 
   const hasActiveFilters =
-    filterPorte !== 'all' || filterBanhoOnly || filterPriorityOnly || filterLtOnly;
+    filterPorte !== 'all' || filterBanhoOnly || filterPriorityOnly || filterLtOnly || metricFocus != null;
 
   const clearFilters = () => {
     setFilterPorte('all');
     setFilterBanhoOnly(false);
     setFilterPriorityOnly(false);
     setFilterLtOnly(false);
+    setMetricFocus(null);
   };
+
+  const toggleMetricFocus = (focus: Exclude<MetricFocus, null>) => {
+    setMetricFocus((cur) => (cur === focus ? null : focus));
+  };
+
+  const dayIsEmpty = !loading && items.length === 0;
 
   const isToday = useMemo(() => {
     const now = new Date();
@@ -477,71 +485,101 @@ const HubGroomingQueuePage: React.FC = () => {
         </div>
       ) : null}
 
-      <div className="hub-grooming-page__filters" role="toolbar" aria-label="Filtros da fila">
-        <span className="hub-grooming-page__filters-label">Filtros</span>
-        {PORTE_FILTER_OPTIONS.filter((o) => o.value !== 'all').map((o) => (
-          <button
-            key={o.value}
-            type="button"
-            className={`hub-clientes__btn hub-clientes__btn--sm${filterPorte === o.value ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
-            onClick={() => setFilterPorte((cur) => (cur === o.value ? 'all' : o.value))}
-          >
-            {o.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          className={`hub-clientes__btn hub-clientes__btn--sm${filterBanhoOnly ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
-          onClick={() => setFilterBanhoOnly((v) => !v)}
-          title="Serviços de grooming do item sem «tosa» no nome ou código"
-        >
-          Só banho
-        </button>
-        <button
-          type="button"
-          className={`hub-clientes__btn hub-clientes__btn--sm${filterPriorityOnly ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
-          onClick={() => setFilterPriorityOnly((v) => !v)}
-        >
-          Só prioritários
-        </button>
-        <button
-          type="button"
-          className={`hub-clientes__btn hub-clientes__btn--sm${filterLtOnly ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
-          onClick={() => setFilterLtOnly((v) => !v)}
-        >
-          Só leva e traz
-        </button>
-        {hasActiveFilters ? (
+      {!dayIsEmpty ? (
+        <div className="hub-grooming-page__filters" role="toolbar" aria-label="Filtros da fila">
+          <div className="hub-grooming-page__filters-porte">
+            <HubSearchableCombobox
+              id="hub-grooming-porte-filter"
+              className="hub-combobox--clientes"
+              options={PORTE_FILTER_OPTIONS}
+              value={filterPorte}
+              onChange={setFilterPorte}
+              placeholder="Porte"
+              allowCreate={false}
+            />
+          </div>
           <button
             type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-grooming-page__filters-clear"
-            onClick={clearFilters}
+            className={`hub-clientes__btn hub-clientes__btn--sm${filterBanhoOnly ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
+            onClick={() => setFilterBanhoOnly((v) => !v)}
+            title="Serviços de grooming do item sem «tosa» no nome ou código"
           >
-            Limpar
+            Só banho
           </button>
-        ) : null}
-      </div>
+          <button
+            type="button"
+            className={`hub-clientes__btn hub-clientes__btn--sm${filterPriorityOnly ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
+            onClick={() => setFilterPriorityOnly((v) => !v)}
+          >
+            Só prioritários
+          </button>
+          <button
+            type="button"
+            className={`hub-clientes__btn hub-clientes__btn--sm${filterLtOnly ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
+            onClick={() => setFilterLtOnly((v) => !v)}
+          >
+            Só leva e traz
+          </button>
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-grooming-page__filters-clear"
+              onClick={clearFilters}
+            >
+              Limpar
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
-      {!loading ? (
-        <div className="hub-clientes__metrics hub-clinic-metrics hub-grooming-page__metrics-grid">
-          <div className="hub-clientes__metric-card">
-            <span className="hub-clientes__metric-label">Na fila</span>
-            <span className="hub-clientes__metric-value">{metrics.total}</span>
-          </div>
-          <div className="hub-clientes__metric-card">
+      {!loading && !dayIsEmpty ? (
+        <div
+          className="hub-clientes__metrics hub-clinic-metrics hub-grooming-page__metrics-grid"
+          role="toolbar"
+          aria-label="Resumo da fila"
+        >
+          <button
+            type="button"
+            className={`hub-clientes__metric-card hub-grooming-page__metric-btn${metricFocus === 'waiting' ? ' hub-grooming-page__metric-btn--active' : ''}`}
+            onClick={() => toggleMetricFocus('waiting')}
+            aria-pressed={metricFocus === 'waiting'}
+          >
+            <span className="hub-clientes__metric-label">Aguardando</span>
+            <span className="hub-clientes__metric-value hub-grooming-page__metric-value--waiting">
+              {metrics.waiting}
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`hub-clientes__metric-card hub-grooming-page__metric-btn${metricFocus === 'in_service' ? ' hub-grooming-page__metric-btn--active' : ''}`}
+            onClick={() => toggleMetricFocus('in_service')}
+            aria-pressed={metricFocus === 'in_service'}
+          >
             <span className="hub-clientes__metric-label">Em atendimento</span>
-            <span className="hub-clientes__metric-value">{metrics.inService}</span>
-          </div>
-          <div className="hub-clientes__metric-card">
+            <span className="hub-clientes__metric-value hub-grooming-page__metric-value--service">
+              {metrics.inService}
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`hub-clientes__metric-card hub-grooming-page__metric-btn${metricFocus === 'ready' ? ' hub-grooming-page__metric-btn--active' : ''}${metrics.ready > 0 ? ' hub-grooming-page__metric-card--ready' : ''}`}
+            onClick={() => toggleMetricFocus('ready')}
+            aria-pressed={metricFocus === 'ready'}
+          >
             <span className="hub-clientes__metric-label">Prontos</span>
-            <span className="hub-clientes__metric-value">{metrics.ready}</span>
-          </div>
-          <div
-            className={`hub-clientes__metric-card${metrics.late > 0 ? ' hub-grooming-page__metric-card--late' : ''}`}
+            <span className="hub-clientes__metric-value hub-grooming-page__metric-value--ready">
+              {metrics.ready}
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`hub-clientes__metric-card hub-grooming-page__metric-btn${metricFocus === 'late' ? ' hub-grooming-page__metric-btn--active' : ''}${metrics.late > 0 ? ' hub-grooming-page__metric-card--late' : ''}`}
+            onClick={() => toggleMetricFocus('late')}
+            aria-pressed={metricFocus === 'late'}
           >
             <span className="hub-clientes__metric-label">Atrasados</span>
             <span className="hub-clientes__metric-value">{metrics.late}</span>
-          </div>
+          </button>
         </div>
       ) : null}
 
@@ -549,14 +587,37 @@ const HubGroomingQueuePage: React.FC = () => {
 
       {loading ? (
         <HubLoading variant="block" label="Carregando fila…" className="hub-clinic-page__pad" />
-      ) : items.length === 0 ? (
-        <p className="hub-clientes__muted hub-clinic-page__pad">
-          Nenhum agendamento de Banho & Tosa neste dia. Os serviços agendados na Agenda com grupo Banho & Tosa
-          aparecem aqui automaticamente.
-        </p>
+      ) : dayIsEmpty ? (
+        <div className="hub-grooming-page__empty-day" role="status">
+          <div className="hub-grooming-page__empty-day-icon" aria-hidden>
+            <Scissors size={28} strokeWidth={1.75} />
+          </div>
+          <h2 className="hub-grooming-page__empty-day-title">
+            {isToday ? 'Nenhum pet na fila hoje' : 'Nenhum pet neste dia'}
+          </h2>
+          <p className="hub-grooming-page__empty-day-text">
+            Agendamentos da Agenda com grupo Banho & Tosa aparecem aqui automaticamente. Você também
+            pode registrar um atendimento avulso.
+          </p>
+          <div className="hub-grooming-page__empty-day-actions">
+            {canWrite ? (
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                onClick={() => setWalkInOpen(true)}
+              >
+                Registrar avulso
+              </button>
+            ) : null}
+            <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--ghost">
+              <CalendarDays size={16} aria-hidden />
+              Abrir Agenda
+            </Link>
+          </div>
+        </div>
       ) : items.length > 0 && itemsFiltered.length === 0 ? (
         <div className="hub-grooming-page__empty-filters">
-          <p className="hub-clientes__muted">Nenhum card corresponde aos filtros.</p>
+          <p className="hub-clientes__muted">Nenhum atendimento corresponde aos filtros.</p>
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
@@ -566,17 +627,13 @@ const HubGroomingQueuePage: React.FC = () => {
           </button>
         </div>
       ) : (
-        <GroomingQueueBoard
+        <GroomingDayList
           items={itemsFiltered}
           canWrite={canWrite}
-          canDragQueue={canDragQueue}
-          canPauseQueue={canPauseQueue}
-          onStageDrop={handleStageDrop}
-          onPauseToggle={(item) => void handlePauseToggle(item)}
           searchQ={searchQ}
           onSelect={setSelected}
           onQuickAction={(item, action) => void handleQuickAction(item, action)}
-          onTogglePriority={(item) => void handleTogglePriority(item)}
+          onClearSearch={() => setSearchQ('')}
         />
       )}
 

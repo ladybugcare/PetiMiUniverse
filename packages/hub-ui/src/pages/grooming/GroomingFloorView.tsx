@@ -15,9 +15,9 @@ const ADVANCE_LABEL: Partial<Record<GroomingStage, string>> = {
   scheduled: 'Check-in',
   checked_in: 'Para fila',
   queued: 'Iniciar',
-  in_service: 'Finalizar',
+  in_service: 'Pronto',
   finishing: 'Pronto',
-  ready: 'Entregar',
+  ready: 'Encerrar',
   delivered: 'Encerrar',
 };
 
@@ -254,7 +254,7 @@ const GroomingFloorView: React.FC<GroomingFloorViewProps> = ({
               <span className="hub-grooming-queue__badge hub-grooming-queue__badge--first">1ª visita B&T</span>
             ) : null}
             {featured.is_walk_in ? <span className="hub-grooming-queue__badge">Avulso</span> : null}
-            {featured.appointment_kind === 'pickup_route' ? (
+            {featured.has_pickup_legs || featured.appointment_kind === 'pickup_route' ? (
               <span className="hub-grooming-queue__badge">Leva e traz</span>
             ) : null}
             {(featured.priority ?? 0) > 0 ? (

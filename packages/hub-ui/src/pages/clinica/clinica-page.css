@@ -766,6 +766,7 @@
   color: #92400e;
 }
 
+.hub-clinic-hospital button.hub-dayboard__pill--link,
 .hub-clinic-surgeries button.hub-dayboard__pill--link {
   appearance: none;
   border: none;
@@ -779,6 +780,7 @@
   text-underline-offset: 2px;
 }
 
+.hub-clinic-hospital button.hub-dayboard__pill--link:hover,
 .hub-clinic-surgeries button.hub-dayboard__pill--link:hover {
   filter: brightness(0.97);
 }

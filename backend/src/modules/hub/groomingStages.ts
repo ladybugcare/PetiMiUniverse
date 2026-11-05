@@ -22,24 +22,28 @@ export const GROOMING_STAGE_LABELS: Record<GroomingStage, string> = {
   closed: 'Encerrado',
 };
 
-/** Próximo estágio na ação rápida «Avançar». */
+/**
+ * Próximo estágio na ação rápida «Avançar».
+ * Caminho enxuto do dia a dia: fila → em serviço → pronto → encerrado
+ * (`finishing` / `delivered` ficam no enum só para sessões antigas).
+ */
 export const GROOMING_NEXT_STAGE: Partial<Record<GroomingStage, GroomingStage>> = {
-  scheduled: 'checked_in',
+  scheduled: 'queued',
   checked_in: 'queued',
   queued: 'in_service',
-  in_service: 'finishing',
+  in_service: 'ready',
   finishing: 'ready',
-  ready: 'delivered',
+  ready: 'closed',
   delivered: 'closed',
 };
 
 const ALLOWED_TRANSITIONS: Record<GroomingStage, GroomingStage[]> = {
-  scheduled: ['checked_in'],
+  scheduled: ['checked_in', 'queued'],
   checked_in: ['queued', 'scheduled'],
   queued: ['in_service', 'checked_in'],
-  in_service: ['finishing', 'queued'],
+  in_service: ['ready', 'finishing', 'queued'],
   finishing: ['ready', 'in_service'],
-  ready: ['delivered', 'finishing'],
+  ready: ['closed', 'delivered', 'finishing', 'in_service'],
   delivered: ['closed', 'ready'],
   closed: [],
 };
@@ -62,23 +66,24 @@ export function appointmentStatusForGroomingStage(stage: GroomingStage): string 
       return 'in_progress';
     case 'ready':
     case 'delivered':
-      return 'done';
     case 'closed':
-      return 'paid';
+      // Encerrado operacionalmente espelha agenda `done`; `paid` só após quitação no caixa.
+      return 'done';
     default:
       return null;
   }
 }
 
 export function boardStageFromAppointmentStatus(status: string, appointmentKind?: string | null): GroomingStage {
-  // Encaixe já fez check-in na agenda; no kanban entra em Aguardando até existir sessão.
+  // Encaixe já fez check-in na agenda; na fila entra em Aguardando até existir sessão.
   if (appointmentKind === 'walk_in' && (status === 'checked_in' || status === 'in_progress')) {
     return 'queued';
   }
   if (status === 'pending_confirm' || status === 'confirmed') return 'scheduled';
-  if (status === 'checked_in') return 'checked_in';
-  if (status === 'in_progress') return 'checked_in';
+  if (status === 'checked_in') return 'queued';
+  if (status === 'in_progress') return 'in_service';
   if (status === 'done') return 'ready';
+  // `paid` = quitação financeira; sessão pode já ter sido encerrada operacionalmente.
   if (status === 'paid') return 'closed';
   return 'scheduled';
 }

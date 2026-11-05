@@ -42,43 +42,228 @@
 .vet-cockpit-history {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
+  padding-top: 4px;
 }
 
-.vet-cockpit-history__filters {
+.vet-cockpit-history__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 18px;
+}
+
+.vet-cockpit-history__filter-groups {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 14px;
 }
 
+.vet-cockpit-history__seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--hc-surface-2, #fdfaf8);
+  border: 1px solid var(--hc-border, #e8ddd8);
+  flex-wrap: wrap;
+}
+
+.vet-cockpit-history__seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--hc-text-muted, #a0856b);
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.vet-cockpit-history__seg-btn:hover {
+  color: var(--hc-text, #3a2a20);
+}
+
+.vet-cockpit-history__seg-btn--active {
+  background: #fff;
+  color: var(--hc-brand, #c45c26);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(58, 42, 32, 0.08);
+}
+
+.vet-cockpit-history__seg-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  padding: 0 5px;
+  height: 1.15rem;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: rgba(58, 42, 32, 0.06);
+  color: inherit;
+}
+
+.vet-cockpit-history__seg-btn--active .vet-cockpit-history__seg-count {
+  background: rgba(196, 92, 38, 0.12);
+}
+
+.vet-cockpit-history__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  flex: 1 1 240px;
+  justify-content: flex-end;
+  min-width: min(100%, 240px);
+}
+
 .vet-cockpit-history__search {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: min(100%, 240px);
   flex: 1 1 200px;
+  max-width: 320px;
+  min-width: 180px;
+  padding: 0 10px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--hc-text-muted, #a0856b);
+}
+
+.vet-cockpit-history__search:focus-within {
+  border-color: var(--hc-brand, #c45c26);
+  box-shadow: 0 0 0 3px rgba(196, 92, 38, 0.12);
 }
 
 .vet-cockpit-history__search input {
   width: 100%;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding-left: 0;
+  padding-right: 0;
 }
 
-.vet-cockpit-history__mine {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
+.vet-cockpit-history__mine-btn {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  background: #fff;
   color: var(--hc-text-secondary, #6b5a58);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.vet-cockpit-history__mine-btn:hover {
+  border-color: rgba(196, 92, 38, 0.35);
+  color: var(--hc-brand, #c45c26);
+}
+
+.vet-cockpit-history__mine-btn--active {
+  background: rgba(196, 92, 38, 0.1);
+  border-color: rgba(196, 92, 38, 0.35);
+  color: var(--hc-brand, #c45c26);
+}
+
+.vet-cockpit-history__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 4px 2px 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--hc-text-muted, #a0856b);
+}
+
+.vet-cockpit-history__meta-sep {
+  opacity: 0.55;
+}
+
+.vet-cockpit-history__table-wrap {
+  margin-top: 4px;
+}
+
+.vet-cockpit-history__table th,
+.vet-cockpit-history__table td {
+  vertical-align: middle;
+}
+
+.vet-cockpit-history__row {
+  cursor: pointer;
+}
+
+.vet-cockpit-history__row:hover td {
+  background: var(--hub-surface-muted, #f8f6f4);
+}
+
+.vet-cockpit-history__row:focus-visible {
+  outline: 2px solid var(--hc-brand, #c45c26);
+  outline-offset: -2px;
+}
+
+.vet-cockpit-history__when {
+  white-space: nowrap;
+}
+
+.vet-cockpit-history__when-date {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--hc-text, #3a2a20);
+  line-height: 1.25;
+}
+
+.vet-cockpit-history__when-time {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--hc-text-muted, #a0856b);
+}
+
+.vet-cockpit-history__title {
+  display: block;
+  max-width: 28rem;
+  font-size: 13px;
+  color: var(--hc-text, #3a2a20);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vet-cockpit-history__pet-link {
+  font-weight: 600;
 }
 
 .vet-cockpit-history__kind {
-  display: inline-block;
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .vet-cockpit-history__kind--encounter {
@@ -96,27 +281,126 @@
   color: #0e7490;
 }
 
-.hub-dayboard__status-filters {
+.vet-cockpit-history__status {
   display: inline-flex;
-  flex-wrap: wrap;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--hc-surface-2, #fdfaf8);
+  color: var(--hc-text-muted, #a0856b);
   border: 1px solid var(--hc-border, #e8ddd8);
-  border-radius: 8px;
-  overflow: hidden;
 }
 
-.hub-dayboard__toggle-btn {
-  padding: 5px 12px;
+.vet-cockpit-history__status--done {
+  background: #edf7f0;
+  color: #2f6f4e;
+  border-color: rgba(47, 111, 78, 0.28);
+}
+
+.vet-cockpit-history__status--cancelled {
+  background: #faf5f3;
+  color: #8a5a4f;
+  border-color: rgba(138, 90, 79, 0.28);
+}
+
+.vet-cockpit-history__status--death {
+  background: #fdecea;
+  color: #9b1c1c;
+  border-color: rgba(155, 28, 28, 0.25);
+}
+
+.vet-cockpit-history__status--transferred {
+  background: #ecfeff;
+  color: #0e7490;
+  border-color: rgba(14, 116, 144, 0.28);
+}
+
+.vet-cockpit-history__case-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--hc-brand, #c45c26);
+  background: rgba(196, 92, 38, 0.06);
+  border: 1px solid rgba(196, 92, 38, 0.28);
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.vet-cockpit-history__case-btn:hover {
+  color: var(--hc-brand, #c45c26);
+  border-color: rgba(196, 92, 38, 0.5);
+  background: rgba(196, 92, 38, 0.12);
+  text-decoration: none;
+}
+
+.vet-cockpit-history__no-case {
+  font-size: 12px;
+  color: var(--hc-text-muted, #a0856b);
+  white-space: nowrap;
+}
+
+.vet-cockpit-history__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 24px;
+  text-align: center;
+  border: 1px dashed var(--hc-border, #e8ddd8);
+  border-radius: 12px;
+  background: var(--hc-surface-2, #fdfaf8);
+}
+
+.vet-cockpit-history__empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(196, 92, 38, 0.08);
+  color: var(--hc-brand, #c45c26);
+  margin-bottom: 4px;
+}
+
+.vet-cockpit-history__empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--hc-text, #3a2a20);
+}
+
+.vet-cockpit-history__empty-text {
+  margin: 0;
+  max-width: 28rem;
   font-size: 13px;
-  font-weight: 500;
-  background: transparent;
-  border: none;
-  cursor: pointer;
+  line-height: 1.45;
   color: var(--hc-text-muted, #a0856b);
 }
 
-.hub-dayboard__toggle-btn--active {
-  background: var(--hc-brand, #c45c26);
-  color: #fff;
+@media (max-width: 720px) {
+  .vet-cockpit-history__tools {
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .vet-cockpit-history__search {
+    max-width: none;
+    flex: 1 1 100%;
+  }
+
+  .vet-cockpit-history__title {
+    max-width: 14rem;
+  }
 }
 
 .vet-cockpit-ops-sections {
@@ -189,7 +473,11 @@
 }
 
 .vet-cockpit-ops__body {
-  padding: 0 14px 14px;
+  padding: 0 16px 18px;
+}
+
+.vet-cockpit-ops > .vet-cockpit-ops__body:first-child {
+  padding-top: 16px;
 }
 
 .vet-cockpit-ops__body .vet-cockpit-summary {

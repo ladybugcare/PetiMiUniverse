@@ -8,10 +8,9 @@ import { hubGroomingApi, type GroomingDayBoardItem } from '../../api/hubGrooming
 import { hubAgendaApi } from '../../api/hubAgendaApi';
 import { dayRangeIsoLocal, loadAgendaPersistedFilters, isUuid } from '../agenda/agendaFilters';
 import { useMyStaffMember } from '../../hooks/useMyStaffMember';
-import { groomingOpenSessionStage, itemBoardKey } from './groomingStages';
+import { groomingOpenSessionStage, itemBoardKey, type GroomingQuickAction } from './groomingStages';
 import GroomingFloorView from './GroomingFloorView';
 import GroomingAppointmentDrawer from './GroomingAppointmentDrawer';
-import type { GroomingQuickAction } from './GroomingQueueBoard';
 import '../clinica/clinica-page.css';
 import '../clientes/clientes.css';
 import './grooming-page.css';

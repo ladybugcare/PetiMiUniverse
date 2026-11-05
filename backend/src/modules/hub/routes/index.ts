@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticateUser, requirePermission } from '../../../middleware/authMiddleware';
 import { authLimiter, hubApiLimiter } from '../../../middleware/rateLimiter.js';
 import { postHubSignup, postHubOnboardingClinic } from '../hubSignupController.js';
+import { getHubDayOpsSummary } from '../hubDayOpsSummaryController';
 import {
   previewHubInvitation,
   signupFromHubInvitation,
@@ -412,6 +413,21 @@ router.post('/invitations/accept', authenticateUser, acceptHubInvitation);
 router.post('/onboarding/clinic', authenticateUser, postHubOnboardingClinic);
 router.get('/session/context', authenticateUser, getHubSessionContext);
 router.get('/subscription/plans', authenticateUser, getHubSubscriptionPlans);
+
+router.get(
+  '/day-ops-summary',
+  authenticateUser,
+  requirePermission([
+    'hub.appointments.read',
+    'hub.clinic.read',
+    'grooming.queue.read',
+    'boarding.reservations.read',
+    'pickup.routes.read',
+    'hub.financial.read',
+    'hub.inventory.read',
+  ]),
+  getHubDayOpsSummary,
+);
 
 router.post('/profile/me/photo', authenticateUser, postHubUserProfilePhoto);
 router.post('/clinic/profile/photo', authenticateUser, postHubClinicProfilePhoto);

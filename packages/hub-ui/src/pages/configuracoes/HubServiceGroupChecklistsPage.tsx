@@ -192,9 +192,9 @@ const HubServiceGroupChecklistsPage: React.FC = () => {
       <header className="hub-cl__intro">
         <h2 className="hub-cl__intro-title">Checklists operacionais</h2>
         <p className="hub-cl__intro-text">
-          Personalize os itens usados durante o atendimento. Hoje, apenas Banho &amp; Tosa exibe
-          checklist na fila; os demais grupos ficam prontos para quando seus módulos forem
-          integrados.
+          Este é o checklist <strong>padrão do grupo</strong> da clínica. Em Banho &amp; Tosa, cada
+          tipo de serviço pode sobrescrever estes itens em Serviços → editar serviço. Os demais
+          grupos ficam prontos para quando seus módulos forem integrados.
         </p>
       </header>
 
@@ -251,6 +251,9 @@ const HubServiceGroupChecklistsPage: React.FC = () => {
               <p className="hub-cl__editor-sub">
                 {selectedGroup.is_custom ? 'Checklist personalizado da clínica' : 'Usando padrão do sistema'}
                 {selectedGroup.has_system_default ? ' · é possível restaurar o padrão' : ''}
+                {selectedGroup.slug === 'banho_tosa'
+                  ? ' · serviços individuais podem personalizar em Serviços'
+                  : ''}
               </p>
             </div>
           </div>

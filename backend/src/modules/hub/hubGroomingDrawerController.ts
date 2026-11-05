@@ -1,7 +1,12 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
-import { mergeGroomingChecklistState } from './groomingChecklistDefaults';
+import {
+  mergeGroomingChecklistState,
+  parseChecklistTemplateItems,
+  resolveSessionChecklistTemplate,
+  type ChecklistTemplateItem,
+} from './groomingChecklistDefaults';
 import { loadServiceGroupChecklistTemplateItems } from './hubServiceGroupChecklistController';
 import { buildGroomingDisplayTags } from './groomingPetTags';
 import { HUB_DAY_BOARD_PET_SELECT } from './hubDayBoardPets';
@@ -16,8 +21,44 @@ const SESSION_SELECT = `
   tutor_notes_snapshot, operational_notes, checklist, created_at, updated_at
 `;
 
-async function loadChecklistTemplateItems(clinicId: string): Promise<Awaited<ReturnType<typeof loadServiceGroupChecklistTemplateItems>>> {
+async function loadGroupChecklistTemplateItems(clinicId: string): Promise<ChecklistTemplateItem[]> {
   return loadServiceGroupChecklistTemplateItems(clinicId, GROOMING_SERVICE_GROUP);
+}
+
+async function loadServiceTypeChecklistOverrides(
+  clinicId: string,
+  serviceTypeIds: string[],
+): Promise<Array<ChecklistTemplateItem[] | null>> {
+  if (serviceTypeIds.length === 0) return [];
+  const { data, error } = await supabaseAdmin
+    .from('hub_service_types')
+    .select('id, checklist_items')
+    .eq('clinic_id', clinicId)
+    .in('id', serviceTypeIds)
+    .is('deleted_at', null);
+  if (error) {
+    // Coluna ausente (migração 116) → herda só o grupo.
+    if (String(error.message ?? '').includes('checklist_items')) return serviceTypeIds.map(() => null);
+    console.error('[grooming drawer] checklist_items', error);
+    return serviceTypeIds.map(() => null);
+  }
+  const byId = new Map(
+    (data ?? []).map((row) => {
+      const raw = (row as { checklist_items?: unknown }).checklist_items;
+      const parsed = raw == null ? null : parseChecklistTemplateItems(raw);
+      return [row.id as string, parsed] as const;
+    }),
+  );
+  return serviceTypeIds.map((id) => byId.get(id) ?? null);
+}
+
+async function resolveDrawerChecklistTemplate(
+  clinicId: string,
+  serviceTypeIds: string[],
+): Promise<ChecklistTemplateItem[]> {
+  const groupTemplate = await loadGroupChecklistTemplateItems(clinicId);
+  const overrides = await loadServiceTypeChecklistOverrides(clinicId, serviceTypeIds);
+  return resolveSessionChecklistTemplate({ groupTemplate, serviceTypeOverrides: overrides });
 }
 
 async function groomingParentTypeIdsForAppointment(
@@ -157,8 +198,7 @@ export const getHubGroomingSessionDrawer = async (req: Request, res: Response) =
     const petId = session.pet_id as string;
     const unitId = session.unit_id as string | null;
 
-    const [templateItems, groomingSet, petRes, flagsRes, lastVisitRes, extrasRes] = await Promise.all([
-      loadChecklistTemplateItems(clinic_id.data),
+    const [groomingSet, petRes, flagsRes, lastVisitRes, extrasRes] = await Promise.all([
       getGroomingTypeIdSet(clinic_id.data),
       supabaseAdmin
         .from('hub_pets')
@@ -198,11 +238,6 @@ export const getHubGroomingSessionDrawer = async (req: Request, res: Response) =
       (flagsRes.data ?? []) as Array<{ flag_key: string; label: string }>,
       (pet as { notes?: string; behavior_tags?: string[] | null } | null)?.notes,
       (pet as { behavior_tags?: string[] | null } | null)?.behavior_tags,
-    );
-
-    const checklist = mergeGroomingChecklistState(
-      session.checklist as Record<string, { done?: boolean }> | null,
-      templateItems,
     );
 
     let appointment_lines: Array<{
@@ -256,6 +291,16 @@ export const getHubGroomingSessionDrawer = async (req: Request, res: Response) =
         })
         .filter(Boolean) as typeof appointment_lines;
     }
+
+    const checklistTypeIds =
+      parentIds.length > 0
+        ? parentIds
+        : [...new Set(appointment_lines.map((l) => l.hub_service_type_id))];
+    const templateItems = await resolveDrawerChecklistTemplate(clinic_id.data, checklistTypeIds);
+    const checklist = mergeGroomingChecklistState(
+      session.checklist as Record<string, { done?: boolean }> | null,
+      templateItems,
+    );
 
     const available_addons = await listAvailableAddonsForParents(clinic_id.data, parentIds);
     const alreadyOnSession = [
@@ -316,13 +361,11 @@ export const postHubGroomingSessionExtra = async (req: Request, res: Response) =
       .eq('id', hub_service_type_id)
       .maybeSingle();
     if (aErr) return res.status(500).json({ error: aErr.message });
-    if (
-      !addonType ||
-      addonType.clinic_id !== clinic_id ||
-      addonType.deleted_at ||
-      addonType.is_addon !== true
-    ) {
+    if (!addonType || addonType.clinic_id !== clinic_id || addonType.deleted_at) {
       return res.status(400).json({ error: 'Tipo de serviço inválido para adicional' });
+    }
+    if (String(addonType.service_group) !== GROOMING_SERVICE_GROUP) {
+      return res.status(400).json({ error: 'Só serviços de Banho & Tosa podem ser lançados aqui' });
     }
 
     const groomingSet = await getGroomingTypeIdSet(clinic_id);
@@ -332,9 +375,15 @@ export const postHubGroomingSessionExtra = async (req: Request, res: Response) =
       parentIds = await groomingParentTypeIdsForAppointment(clinic_id, apptId, groomingSet);
     }
 
-    const available = await listAvailableAddonsForParents(clinic_id, parentIds);
-    if (!available.some((a) => a.id === hub_service_type_id)) {
-      return res.status(400).json({ error: 'Este adicional não está disponível para esta sessão' });
+    // Adicionais: precisam estar disponíveis para o(s) serviço(s) pai.
+    // Conversão de pedido (`extra_request`): qualquer tipo Banho & Tosa da clínica.
+    if (addonType.is_addon === true) {
+      const available = await listAvailableAddonsForParents(clinic_id, parentIds);
+      if (!available.some((a) => a.id === hub_service_type_id)) {
+        return res.status(400).json({ error: 'Este adicional não está disponível para esta sessão' });
+      }
+    } else if (!groomingSet.has(hub_service_type_id)) {
+      return res.status(400).json({ error: 'Tipo de serviço inválido para adicional' });
     }
 
     const saleSnap = addonType.sale_amount != null ? Number(addonType.sale_amount) : null;

@@ -5,7 +5,6 @@ import {
   createBrowserRouter,
   createRoutesFromElements,
   RouterProvider,
-  useParams,
 } from 'react-router-dom';
 import { AuthProvider } from '@petimi/web-core';
 import {
@@ -24,10 +23,7 @@ import {
   HubClinicRoutes,
   HubGroomingRoutes,
   HubBoardingRoutes,
-  HubPickupPage,
-  PickupDriverView,
-  PickupMyRoutePage,
-  PickupRouteMonitorPage,
+  HubPickupRoutes,
   HubCaixaPage,
   HubComandaPage,
   HubComandaFinancePage,
@@ -62,18 +58,6 @@ import PublicSpecialistReferralPage from './pages/PublicSpecialistReferralPage';
 import ValidateExamOrderPage from './pages/ValidateExamOrderPage';
 import ValidateSpecialistReferralPage from './pages/ValidateSpecialistReferralPage';
 import HubHomePage from './pages/HubHomePage';
-
-function PickupDriverViewPage() {
-  const { routeId } = useParams<{ routeId: string }>();
-  if (!routeId) return <p style={{ padding: '1rem' }}>ID de rota inválido.</p>;
-  return <PickupDriverView routeId={routeId} />;
-}
-
-function PickupRouteMonitorViewPage() {
-  const { routeId } = useParams<{ routeId: string }>();
-  if (!routeId) return <p style={{ padding: '1rem' }}>ID de rota inválido.</p>;
-  return <PickupRouteMonitorPage routeId={routeId} />;
-}
 
 /** Providers do hub autenticado — ficam fora do shell visual para o contexto sempre envolver o Outlet. */
 function HubAuthenticatedLayout() {
@@ -146,10 +130,7 @@ const router = createBrowserRouter(
         <Route path="clinica/*" element={<HubClinicRoutes />} />
         <Route path="hotel-creche/*" element={<HubBoardingRoutes />} />
         <Route path="banho-tosa/*" element={<HubGroomingRoutes />} />
-        <Route path="leva-e-traz" element={<HubPickupPage />} />
-        <Route path="leva-e-traz/minha-rota" element={<PickupMyRoutePage />} />
-        <Route path="leva-e-traz/motorista/:routeId" element={<PickupDriverViewPage />} />
-        <Route path="leva-e-traz/monitoramento/:routeId" element={<PickupRouteMonitorViewPage />} />
+        <Route path="leva-e-traz/*" element={<HubPickupRoutes />} />
         <Route path="estoque/*" element={<HubEstoqueRoutes />} />
         <Route path="equipe" element={<HubStaffPage />} />
         <Route path="relatorios" element={<HubRelatoriosPage />} />

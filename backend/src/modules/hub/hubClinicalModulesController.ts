@@ -1298,7 +1298,8 @@ export const listHubHospitalizations = async (req: Request, res: Response) => {
   if (hosp_pet_id?.success) q = q.eq('pet_id', hosp_pet_id.data);
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
-  return res.json({ hospitalizations: data ?? [] });
+  const hospitalizations = await attachClinicalCaseSummaries((data ?? []) as Record<string, unknown>[]);
+  return res.json({ hospitalizations });
 };
 
 export const createHubHospitalization = async (req: Request, res: Response) => {
@@ -1698,9 +1699,9 @@ export const createHubHospitalizationEvent = async (req: Request, res: Response)
   return res.status(201).json({ event: data });
 };
 
-// ── Surgeries ─────────────────────────────────────────────────────────────────
+// ── Clinical case summaries (hospitalizations & surgeries) ───────────────────
 
-async function attachSurgeryCaseSummaries(
+async function attachClinicalCaseSummaries(
   rows: Record<string, unknown>[],
 ): Promise<Record<string, unknown>[]> {
   const caseIds = [
@@ -1730,6 +1731,8 @@ async function attachSurgeryCaseSummaries(
   });
 }
 
+// ── Surgeries ─────────────────────────────────────────────────────────────────
+
 export const listHubSurgeries = async (req: Request, res: Response) => {
   const clinic_id = uuidStr.safeParse(req.query.clinic_id);
   if (!clinic_id.success) return res.status(400).json({ error: 'clinic_id obrigatório' });
@@ -1747,7 +1750,7 @@ export const listHubSurgeries = async (req: Request, res: Response) => {
   if (surg_pet_id?.success) q = q.eq('pet_id', surg_pet_id.data);
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
-  const surgeries = await attachSurgeryCaseSummaries((data ?? []) as Record<string, unknown>[]);
+  const surgeries = await attachClinicalCaseSummaries((data ?? []) as Record<string, unknown>[]);
   return res.json({ surgeries });
 };
 
@@ -1764,7 +1767,7 @@ export const getHubSurgery = async (req: Request, res: Response) => {
     .maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
   if (!data) return res.status(404).json({ error: 'Cirurgia não encontrada' });
-  const [surgery] = await attachSurgeryCaseSummaries([data as Record<string, unknown>]);
+  const [surgery] = await attachClinicalCaseSummaries([data as Record<string, unknown>]);
   const { payables } = await listPayablesForSurgery(clinic_id.data, id.data);
   return res.json({ surgery, payables });
 };
@@ -2105,7 +2108,7 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
     .eq('id', id.data)
     .eq('clinic_id', clinic_id)
     .maybeSingle();
-  const [responseRow] = await attachSurgeryCaseSummaries([
+  const [responseRow] = await attachClinicalCaseSummaries([
     (enriched ?? data) as Record<string, unknown>,
   ]);
 

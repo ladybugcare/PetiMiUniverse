@@ -7,10 +7,10 @@ Documento de arquitetura da **operação de transporte de pets (Leva e Traz)** (
 ## Decisões de produto
 
 - **WhatsApp removido** das telas operacionais (board e visão do motorista). Manter apenas `Ligar` (`tel:`) na visão do motorista e no drawer.
-- **Entrada por papel:**
-  - Sem `pickup.routes.manage` e com `pickup.stops.update` → `/hub/leva-e-traz` redireciona para **Minha rota de hoje**.
-  - Com `pickup.routes.manage` → abre o **board de recepção**; link "Minha rota" no header.
-- **Board de recepção:** 4 colunas baseadas no `status` da **parada** (`hub_pickup_stops`), não do agendamento.
+- **Entrada por papel** (shell com abas, como Banho & Tosa):
+  - Sem `pickup.routes.manage` e com `pickup.stops.update` → `/hub/leva-e-traz` redireciona para **Minha rota**; subnav oculta.
+  - Com `pickup.routes.manage` → **Rotas do dia** (planejamento); aba **Minha rota** disponível.
+- **Gestão = planejar rotas** (início/fim do dia): lista **A planejar** (pernas sem rota) + construtor; acompanhar status é apoio (seção colapsável + Monitorar), não Kanban na home.
 - **Concluir coleta não cria entrega.** Entrega nasce no agendamento.
 - **Modo L&T no agendamento:** seletor **Ida e volta** (default) | **Só busca** | **Só retorno**.
 
@@ -61,7 +61,8 @@ Quando a **coleta** (`direction=pickup`) ou o **desembarque** (`clinic_return`) 
 
 - **Não** abre `hub_encounters` automaticamente (consultório continua exigindo «Atender»).
 - **Não** regride se o pai já estiver em serviço / finalizado / cancelado.
-- Entrega (`delivery` → `completed`) **não** dispara este fluxo (pet saindo).
+- Entrega (`delivery` → `completed`) **não** dispara este fluxo (pet saindo) e **não** avança o estágio de Banho & Tosa (`delivered`/`closed` no salão são manuais / caminho operacional, não a parada do motorista).
+- No day-board de Banho & Tosa, badge/filtro L&T usa `has_pickup_legs` (existência de filhos `pickup_route`), não o `appointment_kind` do pai.
 - Notificações: `hub_pet_arrived` (banho/clínica/avulso) ou `hub_boarding_checkin` (hotel/creche). Em lote no `clinic_return`, uma notificação por pet.
 - Implementação: `backend/src/modules/hub/pickupArrival.ts` (chamado de `patchHubPickupStop` e `createOrUpdateLooseStop`).
 
@@ -81,29 +82,29 @@ Quando a **coleta** (`direction=pickup`) ou o **desembarque** (`clinic_return`) 
 
 ### 1. Minha rota de hoje (`/hub/leva-e-traz/minha-rota`)
 
-- Página principal para o motorista.
+- Página principal para o motorista (aba no shell; motorista puro não vê a subnav).
 - `GET /api/hub/pickup/my-route?clinic_id&date` → rota onde `driver_staff_id` = staff do usuário autenticado.
 - Componente: `PickupMyRoutePage` (usa `PickupDriverView` com o `routeId` encontrado).
 - Empty state: "Nenhuma rota atribuída a você hoje."
 - Sem botão WhatsApp; manter `Ligar` (`tel:`).
 - Redirect automático de `/hub/leva-e-traz` quando usuário tem `stops.update` mas não `routes.manage`.
 
-### 2. Board de recepção (`/hub/leva-e-traz`)
+### 2. Rotas do dia — gestão (`/hub/leva-e-traz`)
 
-Componentes: `HubPickupPage`, `PickupDayBoard`.
+Componentes: `HubPickupShell`, `HubPickupPage`, `PickupPlanningList`, `PickupRoutePanel`, `PickupRouteBuilder`.
 
-**Colunas (4):**
+Público: quem tem `pickup.routes.manage` (recepção / gestão). Fluxo típico: no início do dia (ou fim do anterior) ver pernas e montar rotas para motoristas.
 
-| # | Label | Status(es) da parada |
-|---|-------|----------------------|
-| 1 | A fazer | `pending` (ou perna solta sem stop ainda) |
-| 2 | Em deslocamento | `en_route` |
-| 3 | No local / a bordo | `arrived`, `in_transit` |
-| 4 | Concluídas | `completed` (falhas com pill) |
+**Layout (ordem):**
 
-- Botão de avanço com label por sentido (`A caminho`, `No endereço`, `Pet a bordo`, `Na clínica` / `Entregue`).
-- Badge de pareamento: mostra a perna irmã (mesmo `parent_appointment_id`, sentido oposto) com horário.
-- Link "Minha rota" no header.
+1. Toolbar — dia, busca, unidade, refresh, **Nova rota**, Agenda
+2. Chips — Todas / Coletas / Entregas
+3. Métricas clicáveis — Sem rota · Em rotas · Em deslocamento · Concluídas
+4. **A planejar** — lista densa das pernas **sem rota** (horário, pet/tutor, sentido, endereço); seleção múltipla + «Montar rota» / «Adicionar à rota»
+5. **Rotas do dia** — cards compactos (motorista, N paradas, status, Monitorar, editar, reordenar lotes)
+6. **Em andamento** (colapsável) — só paradas `en_route` / `arrived` / `in_transit`
+
+Status fino de execução fica na **Minha rota** (motorista), no **Monitorar** e no drawer de parada — não há Kanban de 4 colunas na home gerencial.
 
 ### 3. Drawer de parada (`PickupStopDrawer`)
 
@@ -121,7 +122,7 @@ Componentes: `HubPickupPage`, `PickupDayBoard`.
 
 - Rota: `/hub/leva-e-traz/monitoramento/:routeId`.
 - Permissão: `pickup.routes.manage` (quem monta a rota). Motorista puro não acessa.
-- Entrada: link **Monitorar** no painel de rotas e na timeline do dia.
+- Entrada: link **Monitorar** no painel de rotas.
 - **Sem GPS.** Posição do motorista no mapa é inferida pelos status das paradas:
   - rota planejada / todas `pending` → ponto de saída;
   - `en_route` → último ponto confirmado (ou saída), destino = parada ativa;
@@ -168,6 +169,8 @@ Componentes: `HubPickupPage`, `PickupDayBoard`.
 
 ## Arquivos-chave
 
+- `packages/hub-ui/src/pages/pickup/HubPickupRoutes.tsx` — shell + rotas (Rotas do dia / Minha rota)
+- `packages/hub-ui/src/pages/pickup/PickupPlanningList.tsx` — lista A planejar
 - `packages/hub-ui/src/pages/pickup/PickupRouteBuilder.tsx` — montagem de rota + sugerir lotes
 - `backend/src/modules/hub/hubPickupSuggestBatches.ts` — partição por janela/capacidade
 - `packages/hub-ui/src/pages/pickup/` — todos os componentes operacionais

@@ -6,6 +6,8 @@ export {
   mergeGroomingChecklistState,
   parseChecklistTemplateItems,
   resolveChecklistTemplateItems,
+  resolveSessionChecklistTemplate,
+  unionChecklistTemplateItems,
   hasSystemChecklistDefault,
   SERVICE_GROUP_CHECKLIST_DEFAULTS,
   type ChecklistTemplateItem,

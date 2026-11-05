@@ -559,7 +559,14 @@ const HubFinanceiroPage: React.FC = () => {
           </Link>
           <Link to="/hub/dashboard" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
             <LayoutDashboard size={15} strokeWidth={1.75} aria-hidden />
-            Dashboard
+            Hoje na unidade
+          </Link>
+          <Link
+            to="/hub/relatorios?relatorio=finance-overview"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+          >
+            <TrendingUp size={15} strokeWidth={1.75} aria-hidden />
+            Visão financeira
           </Link>
           <Link to="/hub/relatorios" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
             <Link2 size={15} strokeWidth={1.75} aria-hidden />

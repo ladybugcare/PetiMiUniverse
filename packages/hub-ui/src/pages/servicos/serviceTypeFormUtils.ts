@@ -41,6 +41,13 @@ export type PricingCategoryKind =
 /** Unidade do campo «duração padrão» no formulário (API continua em minutos inteiros). */
 export type DurationInputUnit = 'min' | 'h';
 
+export type ServiceChecklistDraftItem = {
+  draftKey: string;
+  key: string;
+  label: string;
+  default_checked?: boolean;
+};
+
 export type FormState = {
   name: string;
   service_group: string;
@@ -63,6 +70,9 @@ export type FormState = {
   price_max: string;
   internal_notes: string;
   code_locked: boolean;
+  /** Banho & Tosa: herdar checklist do grupo ou personalizar neste serviço. */
+  checklist_mode: 'inherit' | 'custom';
+  checklist_items: ServiceChecklistDraftItem[];
 };
 
 export const SERVICE_GROUP_HINTS: Record<string, string> = {
@@ -187,6 +197,8 @@ export function emptyForm(): FormState {
     price_max: '',
     internal_notes: '',
     code_locked: false,
+    checklist_mode: 'inherit',
+    checklist_items: [],
   };
 }
 
@@ -236,6 +248,15 @@ export function fromRow(t: HubServiceType): FormState {
         : '',
     internal_notes: t.internal_notes ?? '',
     code_locked: Boolean(t.code_locked),
+    checklist_mode: Array.isArray(t.checklist_items) ? 'custom' : 'inherit',
+    checklist_items: Array.isArray(t.checklist_items)
+      ? t.checklist_items.map((item, idx) => ({
+          draftKey: `${item.key || 'item'}_${idx}`,
+          key: item.key,
+          label: item.label,
+          default_checked: Boolean(item.default_checked),
+        }))
+      : [],
   };
 }
 
@@ -267,10 +288,16 @@ export function applySvcGroupChange(prev: FormState, newGroup: string): FormStat
     pricing_matrix = d;
   }
 
+  const checklistReset =
+    newGroup === 'banho_tosa'
+      ? {}
+      : { checklist_mode: 'inherit' as const, checklist_items: [] as FormState['checklist_items'] };
+
   if (pricing_mode === 'matrix' && pricing_matrix) {
     const ref = computeReferenceFromMatrix(pricing_matrix);
     return {
       ...prev,
+      ...checklistReset,
       service_group: newGroup,
       pricing_mode,
       pricing_matrix,
@@ -283,6 +310,7 @@ export function applySvcGroupChange(prev: FormState, newGroup: string): FormStat
 
   return {
     ...prev,
+    ...checklistReset,
     service_group: newGroup,
     pricing_mode,
     pricing_matrix,

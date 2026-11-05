@@ -46,6 +46,14 @@ function roundMoney2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+const checklistItemSchema = z
+  .object({
+    key: z.string().trim().regex(/^[a-z0-9_]{1,64}$/).optional(),
+    label: z.string().trim().min(1).max(200),
+    default_checked: z.boolean().optional(),
+  })
+  .strict();
+
 const createServiceTypeBodySchema = z
   .object({
     clinic_id: uuidStr,
@@ -68,6 +76,11 @@ const createServiceTypeBodySchema = z
     price_mode: z.enum(['fixed', 'variable']).optional(),
     price_min: moneyAmountSchema.optional().nullable(),
     price_max: moneyAmountSchema.optional().nullable(),
+    /**
+     * Override de checklist operacional (Banho & Tosa).
+     * `null` = herda o template do grupo; array = personalizado deste tipo.
+     */
+    checklist_items: z.array(checklistItemSchema).max(30).nullable().optional(),
     /** Legado / migração: se enviado, deve coincidir com o slug gerado ou ser único. Preferir omitir. */
     code: z
       .string()
@@ -102,6 +115,7 @@ const updateServiceTypeBodySchema = z
     price_mode: z.enum(['fixed', 'variable']).optional(),
     price_min: moneyAmountSchema.optional().nullable(),
     price_max: moneyAmountSchema.optional().nullable(),
+    checklist_items: z.array(checklistItemSchema).max(30).nullable().optional(),
     code_locked: z.boolean().optional(),
     active: z.boolean().optional(),
     archived: z.boolean().optional(),
@@ -114,7 +128,7 @@ const updateServiceTypeBodySchema = z
   });
 
 const SELECT_FIELDS =
-  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, price_mode, price_min, price_max, default_duration_minutes, active, allow_scheduling, is_addon, is_encounter_application, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, price_mode, price_min, price_max, checklist_items, default_duration_minutes, active, allow_scheduling, is_addon, is_encounter_application, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
 
 /** Sem `pickup_price_scope` — fallback se a migração 087 ainda não foi aplicada. */
 const SELECT_FIELDS_LEGACY =
@@ -144,6 +158,46 @@ function isMissingPriceModeColumn(error: { message?: string; code?: string } | n
     (msg.includes('price_mode') || msg.includes('price_min') || msg.includes('price_max')) &&
     (msg.includes('does not exist') || error?.code === '42703')
   );
+}
+
+function isMissingChecklistItemsColumn(error: { message?: string; code?: string } | null | undefined): boolean {
+  const msg = String(error?.message ?? '');
+  return msg.includes('checklist_items') && (msg.includes('does not exist') || error?.code === '42703');
+}
+
+/** SELECT sem `checklist_items` — fallback se a migração 116 ainda não foi aplicada. */
+const SELECT_FIELDS_NO_CHECKLIST =
+  'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, price_mode, price_min, price_max, default_duration_minutes, active, allow_scheduling, is_addon, is_encounter_application, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+
+function normalizeServiceTypeChecklistItems(
+  items: Array<{ key?: string; label: string; default_checked?: boolean }> | null | undefined,
+): Array<{ key: string; label: string; default_checked: boolean }> | null | undefined {
+  if (items === undefined) return undefined;
+  if (items === null) return null;
+  const usedKeys = new Set<string>();
+  const result: Array<{ key: string; label: string; default_checked: boolean }> = [];
+  for (const item of items) {
+    let key = item.key?.trim() ?? '';
+    if (!key) {
+      const base = slugifyServiceNameToCode(item.label);
+      key = base;
+      let n = 2;
+      while (usedKeys.has(key)) {
+        key = `${base}_${n}`;
+        n += 1;
+      }
+    }
+    if (usedKeys.has(key)) {
+      throw new Error(`Chave de checklist duplicada: ${key}`);
+    }
+    usedKeys.add(key);
+    result.push({
+      key,
+      label: item.label.trim(),
+      default_checked: Boolean(item.default_checked),
+    });
+  }
+  return result;
 }
 
 type ServiceTypeRow = Record<string, unknown> & {
@@ -291,6 +345,24 @@ export const listHubServiceTypes = async (req: Request, res: Response) => {
       error = first.error;
     }
 
+    if (error && isMissingChecklistItemsColumn(error)) {
+      console.warn(
+        '[hub_service_types] list: coluna checklist_items ausente — aplique a migração 116. Usando SELECT sem o campo.',
+      );
+      let qNoCl = supabaseAdmin
+        .from('hub_service_types')
+        .select(SELECT_FIELDS_NO_CHECKLIST)
+        .eq('clinic_id', clinic_id)
+        .eq('is_addon', addonsOnly)
+        .order('name', { ascending: true });
+      if (!includeArchived) {
+        qNoCl = qNoCl.is('deleted_at', null);
+      }
+      const noCl = await qNoCl;
+      data = (noCl.data as unknown[] | null) ?? null;
+      error = noCl.error;
+    }
+
     if (error && isMissingPickupPriceScopeColumn(error)) {
       console.warn(
         '[hub_service_types] list: coluna pickup_price_scope ausente — aplique a migração 087. Usando SELECT legado.',
@@ -389,7 +461,15 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       price_mode: price_mode_raw,
       price_min: price_min_raw,
       price_max: price_max_raw,
+      checklist_items: checklist_items_raw,
     } = body.data;
+
+    let checklist_items: ReturnType<typeof normalizeServiceTypeChecklistItems> = undefined;
+    try {
+      checklist_items = normalizeServiceTypeChecklistItems(checklist_items_raw);
+    } catch (e) {
+      return res.status(400).json({ error: (e as Error).message });
+    }
 
     const is_addon = is_addon_raw === true;
     const group = service_group;
@@ -485,6 +565,7 @@ export const createHubServiceType = async (req: Request, res: Response) => {
       code_locked: false,
       active: true,
       deleted_at: null,
+      ...(checklist_items !== undefined ? { checklist_items } : {}),
     };
 
     let data: Record<string, unknown> | null = null;
@@ -498,6 +579,20 @@ export const createHubServiceType = async (req: Request, res: Response) => {
         .single();
       data = (first.data as Record<string, unknown> | null) ?? null;
       error = first.error;
+    }
+
+    if (error && isMissingChecklistItemsColumn(error)) {
+      console.warn(
+        '[hub_service_types] create: coluna checklist_items ausente — aplique a migração 116. Inserindo sem o campo.',
+      );
+      const { checklist_items: _omitCl, ...rowNoCl } = row as typeof row & { checklist_items?: unknown };
+      const noCl = await supabaseAdmin
+        .from('hub_service_types')
+        .insert([rowNoCl])
+        .select(SELECT_FIELDS_NO_CHECKLIST)
+        .single();
+      data = (noCl.data as Record<string, unknown> | null) ?? null;
+      error = noCl.error;
     }
 
     if (error && isMissingPriceModeColumn(error)) {
@@ -607,7 +702,15 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       price_mode: price_mode_raw,
       price_min: price_min_raw,
       price_max: price_max_raw,
+      checklist_items: checklist_items_raw,
     } = body.data;
+
+    let checklist_items_patch: ReturnType<typeof normalizeServiceTypeChecklistItems> = undefined;
+    try {
+      checklist_items_patch = normalizeServiceTypeChecklistItems(checklist_items_raw);
+    } catch (e) {
+      return res.status(400).json({ error: (e as Error).message });
+    }
 
     if (
       name === undefined &&
@@ -627,7 +730,8 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       pickup_price_scope_raw === undefined &&
       price_mode_raw === undefined &&
       price_min_raw === undefined &&
-      price_max_raw === undefined
+      price_max_raw === undefined &&
+      checklist_items_patch === undefined
     ) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
     }
@@ -711,6 +815,10 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
       patch.price_max = null;
     }
 
+    if (checklist_items_patch !== undefined) {
+      patch.checklist_items = checklist_items_patch;
+    }
+
     if (pricing_matrix_raw !== undefined) {
       if (pricing_matrix_raw === null) {
         patch.pricing_matrix = null;
@@ -786,6 +894,23 @@ export const updateHubServiceType = async (req: Request, res: Response) => {
         .single();
       data = (first.data as Record<string, unknown> | null) ?? null;
       error = first.error;
+    }
+
+    if (error && isMissingChecklistItemsColumn(error)) {
+      console.warn(
+        '[hub_service_types] update: coluna checklist_items ausente — aplique a migração 116. Atualizando sem o campo.',
+      );
+      const patchNoCl = { ...patch };
+      delete patchNoCl.checklist_items;
+      const noCl = await supabaseAdmin
+        .from('hub_service_types')
+        .update(patchNoCl)
+        .eq('id', id)
+        .eq('clinic_id', clinic_id)
+        .select(SELECT_FIELDS_NO_CHECKLIST)
+        .single();
+      data = (noCl.data as Record<string, unknown> | null) ?? null;
+      error = noCl.error;
     }
 
     if (error && isMissingPickupPriceScopeColumn(error)) {

@@ -25,6 +25,32 @@ export const HISTORY_KIND_LABEL: Record<CockpitHistoryKind, string> = {
   hospitalization: 'Internação',
 };
 
+export const HISTORY_PERIOD_LABEL: Record<CockpitHistoryPeriod, string> = {
+  today: 'hoje',
+  '7d': 'últimos 7 dias',
+  '30d': 'últimos 30 dias',
+};
+
+/** Remove sufixo redundante com o nome do pet (ex.: "Castração — Luna"). */
+export function displayHistoryTitle(title: string, petName: string): string {
+  const t = title.trim();
+  const p = petName.trim();
+  if (!t || !p) return t || '—';
+  for (const sep of [` — ${p}`, ` – ${p}`, ` - ${p}`]) {
+    if (t.endsWith(sep)) return t.slice(0, -sep.length).trim() || t;
+  }
+  return t;
+}
+
+/** Classe de tom para badge de status no histórico. */
+export function historyStatusTone(status: string): string {
+  if (status === 'completed' || status === 'discharged') return 'done';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'death') return 'death';
+  if (status === 'transferred') return 'transferred';
+  return status;
+}
+
 const FINISHED_SURGERY = new Set(['completed', 'cancelled']);
 const FINISHED_HOSP = new Set(['discharged', 'death', 'transferred', 'cancelled']);
 

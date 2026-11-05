@@ -92,6 +92,7 @@ export { default as HubGroomingQueuePage } from './pages/grooming/HubGroomingQue
 export { default as HubGroomingFloorPage } from './pages/grooming/HubGroomingFloorPage';
 export { hubGroomingApi } from './api/hubGroomingApi';
 export type { GroomingDayBoardItem, GroomingDayBoardResponse } from './api/hubGroomingApi';
+export { default as HubPickupRoutes } from './pages/pickup/HubPickupRoutes';
 export { default as HubPickupPage } from './pages/pickup/HubPickupPage';
 export { default as PickupMyRoutePage } from './pages/pickup/PickupMyRoutePage';
 export { default as PickupRouteMonitorPage } from './pages/pickup/PickupRouteMonitorPage';
@@ -224,6 +225,8 @@ export type { HubChargeBundlePublicPayload, HubChargeBundlePublicViewProps } fro
 export { ChargeBundleHistorySection } from './pages/finance/ChargeBundleHistorySection';
 export { default as HubFinanceiroPage } from './pages/finance/HubFinanceiroPage';
 export { default as HubDashboardPage } from './pages/finance/HubDashboardPage';
+export { default as HubTodayDashboardPage } from './pages/dashboard/HubTodayDashboardPage';
+export type { HubDayOpsSummary } from './pages/dashboard/todayOpsTypes';
 export { default as HubRelatoriosPage } from './pages/finance/HubRelatoriosPage';
 export { maskTaxIdForList } from './utils/maskTaxId';
 export { buildWhatsappLink, normalizeBrPhone } from './utils/whatsappLink';

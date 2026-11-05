@@ -1,19 +1,21 @@
 # PetMi Hub — Plano em fases: tela operacional Banho & Tosa
 
-Plano de implementação da **fila operacional diária** de Banho & Tosa (`/hub/banho-tosa`), alinhado ao [modelo de domínio](./HUB_DOMAIN_MODEL.md), à fila clínica existente (`ClinicQueueBoard` + `GET /api/hub/encounters/day-board`) e ao requisito de produto (Kanban, drawer, poucos cliques).
+Plano de implementação da **fila operacional diária** de Banho & Tosa (`/hub/banho-tosa`), alinhado ao [modelo de domínio](./HUB_DOMAIN_MODEL.md), à fila clínica existente (`ClinicQueueBoard` + `GET /api/hub/encounters/day-board`) e ao requisito de produto (lista do dia + drawer, poucos cliques).
 
-**Estado atual (baseline):**
+> **Atualização (dia a dia):** a UI operacional é **lista do dia** + **Minha fila** (abas), não Kanban com DnD. O avanço rápido pula `finishing` e `delivered` (`in_service` → `ready` → `closed`). Check-in / chegada L&T entram em `queued`. `closed` espelha agenda `done` (não `paid`); `paid` na agenda só após quitação no caixa. Checklist: padrão por grupo da clínica + override opcional por tipo de serviço (`hub_service_types.checklist_items`). Badge/filtro L&T usa `has_pickup_legs` (filhos `pickup_route`), não o `appointment_kind` do pai. Pedido de serviço (`extra_request`) pode ser convertido em adicional na recepção.
+
+**Estado atual (baseline histórico do plano — várias linhas abaixo já foram entregues):**
 
 | Item | Situação |
 |------|----------|
-| Rota `/hub/banho-tosa` | Placeholder (`HubComingSoonPage`) |
+| Rota `/hub/banho-tosa` | Entregue (`HubGroomingQueuePage` / Minha fila) |
 | Agenda com grupo `banho_tosa` | Implementada (`HubAgendaPage`) |
 | Fila do dia (clínica) | `hubEncountersController.getHubEncountersDayBoard` + `HubClinicEncountersPage` |
 | `hub_encounters` | Modelo **clínico** (anamnese, SOAP) — **não** reutilizar para grooming |
-| `encounter_grooming` | Previsto no domínio; **ainda não existe** no banco |
-| Pagamentos / Realtime | Backlog ([HUB_MVP_EPICS](./HUB_MVP_EPICS.md) Epic 7) |
+| `hub_grooming_sessions` | Entregue (migration `031`+) |
+| Pagamentos / Realtime | Caixa/comandas integrados; Realtime ainda backlog |
 
-**Fora de escopo deste módulo:** integração WhatsApp (automática ou templates). Contato com tutor permanece apenas via telefone exibido no drawer, se cadastrado.
+**Fora de escopo deste módulo:** integração WhatsApp (automática ou templates). Contato com tutor permanece apenas via telefone/WhatsApp manual exibido no drawer, se cadastrado.
 
 ---
 
@@ -76,18 +78,18 @@ flowchart TB
 4. **Substituir placeholder** em `apps/hub-web/src/App.tsx`:
    - Rota `banho-tosa` → página real em `packages/hub-ui` (ex.: `HubGroomingQueuePage`).
 
-5. **Documentar estágios alvo** (enum fixo para Fase 2):
+5. **Documentar estágios** (enum no banco; caminho de avanço enxuto na UI):
 
-   | `grooming_stage` | Coluna Kanban (Fase 2+) | Descrição |
-   |------------------|-------------------------|-----------|
-   | `scheduled` | Confirmados | Agendado, sem check-in |
-   | `checked_in` | Confirmados → Aguardando | Pet na unidade |
-   | `queued` | Aguardando atendimento | Na fila interna |
-   | `in_service` | Em atendimento | Banho/tosa em andamento |
-   | `finishing` | Finalização | Secagem, perfume, foto, acessórios |
-   | `ready` | Finalização | Pronto para tutor / entrega |
-   | `delivered` | Finalizados | Entregue (incl. L&T concluído) |
-   | `closed` | Finalizados | Encerrado no sistema |
+   | `grooming_stage` | Uso no dia a dia | Descrição |
+   |------------------|------------------|-----------|
+   | `scheduled` | Slot na agenda | Agendado, sem sessão |
+   | `checked_in` | Legado / raro | Pet na unidade (preferir `queued`) |
+   | `queued` | Fila | Na fila interna (check-in ou chegada L&T) |
+   | `in_service` | Em serviço | Banho/tosa em andamento |
+   | `finishing` | Legado | Mantido no enum; avanço pula para `ready` |
+   | `ready` | Pronto | Pronto para tutor / montar entrega L&T; agenda `done` |
+   | `delivered` | Legado | Não é sync da entrega L&T; avanço pula para `closed` |
+   | `closed` | Encerrado | Pronto para sync final de comanda; agenda `done` (não `paid`) |
 
 ### Critérios de aceite
 

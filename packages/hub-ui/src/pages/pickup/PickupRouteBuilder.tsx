@@ -122,7 +122,10 @@ type Props = {
   dateYmd: string;
   unitId?: string;
   editingRoute?: PickupRoute | null;
-  /** Paradas já pertencentes à rota sendo editada (pré-popula o estado selected). */
+  /**
+   * Paradas pré-selecionadas: ao editar = stops da rota;
+   * ao criar = pernas escolhidas em «A planejar».
+   */
   editingStops?: (PickupDayBoardItem & { _direction: 'pickup' | 'delivery' })[];
   onClose: () => void;
   onSaved: () => void;

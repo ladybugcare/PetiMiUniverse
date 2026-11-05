@@ -15,11 +15,14 @@ test.describe('leva e traz', () => {
     await loginAs(page, creds.email, creds.password);
     await page.goto('/hub/leva-e-traz');
 
-    await expect(page.getByPlaceholder('Buscar pet ou tutor… (/)')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByPlaceholder(/Buscar pet/i)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('link', { name: 'Minha rota' })).toBeVisible();
     await expect(page.getByText('Carregando paradas…')).toBeHidden({ timeout: 20_000 });
     await expect(page.getByRole('heading', { name: 'Erro' })).toHaveCount(0);
     await expect(page.getByText(petName).first()).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page.getByText('A planejar').or(page.getByText(/Rotas do dia/i)).first(),
+    ).toBeVisible();
   });
 
   test('CSTAFF leva_traz cai em minha-rota', async ({ page }) => {

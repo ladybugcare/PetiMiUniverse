@@ -276,15 +276,94 @@ body {
 .hub-header-unit__option-name {
   font-size: 14px;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.25;
+  color: #4a3b3a;
 }
 
-.hub-header-unit__option-badge {
+.hub-header-unit__option-sub {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: #7a6865;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-header-unit__menu-hint {
+  margin: 0 0 6px;
+  padding: 8px 10px;
   font-size: 11px;
+  line-height: 1.4;
+  color: #7a6865;
+  background: #faf7f4;
+  border-radius: 8px;
+}
+
+.hub-header-unit__menu-hint strong {
   font-weight: 600;
-  color: #c86a4d;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: #5c4f4d;
+}
+
+.hub-header-unit__dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.hub-header-unit__dialog {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px 28px;
+  max-width: 380px;
+  width: 100%;
+  margin: 0 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.hub-header-unit__dialog-title {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.hub-header-unit__dialog-text {
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: #555;
+  line-height: 1.5;
+}
+
+.hub-header-unit__dialog-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.hub-header-unit__dialog-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.hub-header-unit__dialog-btn--ghost {
+  border: 1px solid #e5e5e5;
+  background: #f5f5f5;
+  color: #333;
+}
+
+.hub-header-unit__dialog-btn--primary {
+  border: none;
+  background: #c86a4d;
+  color: #fff;
 }
 
 .hub-top-header__right {
@@ -896,11 +975,11 @@ body {
 }
 
 .hub-sidebar--collapsed .hub-sidebar__logo-wrap {
-  width: 40px;
-  max-width: 40px;
-  height: 40px;
+  width: 52px;
+  max-width: 52px;
+  height: 52px;
   flex: none;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
 .hub-sidebar__logo {
@@ -911,11 +990,13 @@ body {
   object-position: center center;
 }
 
-.hub-sidebar--collapsed .hub-sidebar__logo {
-  object-position: left center;
-  width: 180%;
-  max-width: none;
-  margin-left: -8%;
+.hub-sidebar__logo--mark {
+  object-fit: contain;
+  object-position: center center;
+  background: transparent;
+  width: 112%;
+  height: 112%;
+  margin: -6%;
 }
 
 .hub-sidebar__collapse-btn {

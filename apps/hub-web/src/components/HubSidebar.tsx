@@ -27,6 +27,7 @@ import { useHubCashSession } from '../contexts/HubCashSessionContext';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const logoSrc = `${baseUrl}petmi-hub-logo.png`;
+const logoCollapsedSrc = `${baseUrl}favicon.png`;
 
 const EXPANDED_SECTIONS_KEY = 'hub.sidebar.expandedSections';
 
@@ -49,7 +50,23 @@ const navSections: NavSection[] = [
   {
     id: 'dashboard',
     title: 'Dashboard',
-    items: [{ to: '/hub/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true, permission: 'hub.financial.read' }],
+    items: [
+      {
+        to: '/hub/dashboard',
+        label: 'Dashboard',
+        icon: LayoutDashboard,
+        end: true,
+        permission: [
+          'hub.appointments.read',
+          'hub.clinic.read',
+          'grooming.queue.read',
+          'boarding.reservations.read',
+          'pickup.routes.read',
+          'hub.financial.read',
+          'hub.inventory.read',
+        ],
+      },
+    ],
   },
   {
     id: 'atendimento',
@@ -255,7 +272,17 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
     >
       <div className="hub-sidebar__brand">
         <div className="hub-sidebar__logo-wrap">
-          <img src={logoSrc} alt="PetMi Hub" className="hub-sidebar__logo" decoding="async" />
+          <img
+            src={collapsed && !isMobile ? logoCollapsedSrc : logoSrc}
+            alt="PetMi Hub"
+            className={[
+              'hub-sidebar__logo',
+              collapsed && !isMobile ? 'hub-sidebar__logo--mark' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            decoding="async"
+          />
         </div>
         {!isMobile && onToggleCollapsed && (
           <button

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { HubEncounter, HubHospitalization, HubSurgery } from '../../../api/hubClinicalApi';
-import { buildCockpitHistoryRows, filterCockpitHistoryRows } from './cockpitHistoryRows';
+import {
+  buildCockpitHistoryRows,
+  displayHistoryTitle,
+  filterCockpitHistoryRows,
+  historyStatusTone,
+} from './cockpitHistoryRows';
 
 const now = new Date('2026-09-07T15:00:00.000-03:00');
 
@@ -89,5 +94,21 @@ describe('filterCockpitHistoryRows', () => {
     expect(filterCockpitHistoryRows(rows, { kind: 'surgery', query: '', period: '30d', now })).toHaveLength(0);
     expect(filterCockpitHistoryRows(rows, { kind: 'encounter', query: 'luna', period: '7d', now })).toHaveLength(1);
     expect(filterCockpitHistoryRows(rows, { kind: 'all', query: 'tosse', period: 'today', now })).toHaveLength(1);
+  });
+});
+
+describe('displayHistoryTitle', () => {
+  it('remove sufixo com o nome do pet', () => {
+    expect(displayHistoryTitle('Castração Macho — Bruce Lindo', 'Bruce Lindo')).toBe('Castração Macho');
+    expect(displayHistoryTitle('Dores abdominais', 'Luna')).toBe('Dores abdominais');
+  });
+});
+
+describe('historyStatusTone', () => {
+  it('agrupa status concluídos e destaca cancelamento', () => {
+    expect(historyStatusTone('completed')).toBe('done');
+    expect(historyStatusTone('discharged')).toBe('done');
+    expect(historyStatusTone('cancelled')).toBe('cancelled');
+    expect(historyStatusTone('death')).toBe('death');
   });
 });

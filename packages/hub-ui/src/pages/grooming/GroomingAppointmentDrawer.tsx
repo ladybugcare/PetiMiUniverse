@@ -42,9 +42,9 @@ const ADVANCE_LABEL: Partial<Record<GroomingStage, string>> = {
   scheduled: 'Check-in',
   checked_in: 'Enviar para fila',
   queued: 'Iniciar atendimento',
-  in_service: 'Ir para finalização',
+  in_service: 'Marcar pronto',
   finishing: 'Marcar pronto',
-  ready: 'Registrar entrega',
+  ready: 'Encerrar',
   delivered: 'Encerrar',
 };
 
@@ -265,6 +265,36 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
     }
   };
 
+  const convertExtraRequest = async (ev: GroomingSessionEvent) => {
+    if (!clinicId || !item?.session_id || !canAddExtras) return;
+    const typeId =
+      typeof ev.payload?.hub_service_type_id === 'string' ? ev.payload.hub_service_type_id : null;
+    if (!typeId) {
+      showError('Este pedido não tem serviço vinculado. Lance o adicional manualmente.');
+      return;
+    }
+    const already = (drawer?.extras ?? []).some((ex) => ex.hub_service_type_id === typeId);
+    if (already) {
+      showSuccess('Este serviço já está lançado como adicional.');
+      return;
+    }
+    setExtraBusy(true);
+    try {
+      await hubGroomingApi.postSessionExtra(item.session_id, {
+        clinic_id: clinicId,
+        hub_service_type_id: typeId,
+        created_by_staff_id: auditStaffId,
+      });
+      await refreshDrawer();
+      onSessionUpdated?.();
+      showSuccess('Pedido convertido em adicional.');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao converter pedido em adicional');
+    } finally {
+      setExtraBusy(false);
+    }
+  };
+
   const tags = useMemo(() => {
     const fromDrawer = drawer?.clinical_tags ?? [];
     if (fromDrawer.length) return fromDrawer;
@@ -453,7 +483,7 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
                 <span className="hub-grooming-drawer__flag hub-grooming-drawer__flag--priority">Prioritário</span>
               ) : null}
               {item.is_walk_in ? <span className="hub-grooming-drawer__flag">Avulso</span> : null}
-              {item.appointment_kind === 'pickup_route' ? (
+              {item.has_pickup_legs || item.appointment_kind === 'pickup_route' ? (
                 <span className="hub-grooming-drawer__flag">Leva e traz</span>
               ) : null}
               {item.pet?.is_first_grooming_visit ? (
@@ -666,17 +696,42 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
               </p>
             ) : (
               <p className="hub-grooming-drawer__hint">
-                O salão pediu autorização do tutor para incluir serviço. Confirme e lance na Agenda.
+                O salão pediu autorização do tutor. Confirme e converta em adicional (ou lance na
+                Agenda se for outro tipo de serviço).
               </p>
             )}
             {extraRequests.length > 0 ? (
               <ul className="hub-grooming-drawer__request-list" aria-label="Pedidos à recepção">
-                {extraRequests.map((ev) => (
-                  <li key={ev.id}>
-                    <span className="hub-grooming-drawer__request-dot" aria-hidden />
-                    {ev.body?.trim() || ev.title}
-                  </li>
-                ))}
+                {extraRequests.map((ev) => {
+                  const typeId =
+                    typeof ev.payload?.hub_service_type_id === 'string'
+                      ? ev.payload.hub_service_type_id
+                      : null;
+                  const alreadyConverted =
+                    Boolean(typeId) &&
+                    (drawer?.extras ?? []).some((ex) => ex.hub_service_type_id === typeId);
+                  return (
+                    <li key={ev.id}>
+                      <span className="hub-grooming-drawer__request-dot" aria-hidden />
+                      <span style={{ flex: 1 }}>{ev.body?.trim() || ev.title}</span>
+                      {canAddExtras && typeId && !alreadyConverted ? (
+                        <button
+                          type="button"
+                          className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                          disabled={extraBusy}
+                          onClick={() => void convertExtraRequest(ev)}
+                        >
+                          Converter em adicional
+                        </button>
+                      ) : null}
+                      {canAddExtras && alreadyConverted ? (
+                        <span className="hub-grooming-drawer__hint" style={{ margin: 0 }}>
+                          Já lançado
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
             {canRequestServices && requestServiceOptions.length > 0 ? (

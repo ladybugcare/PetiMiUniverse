@@ -87,7 +87,7 @@ const ROUTES: RouteTitle[] = [
   { path: '/hub/orcamentos/novo', crumbs: [{ label: 'Orçamento', to: '/hub/orcamentos' }, { label: 'Novo' }] },
   { path: '/hub/orcamentos', crumbs: [{ label: 'Orçamento' }] },
   { path: '/orcamento', crumbs: [{ label: 'Orçamento (público)' }] },
-  { path: '/hub/dashboard', crumbs: [{ label: 'Dashboard' }] },
+  { path: '/hub/dashboard', crumbs: [{ label: 'Dashboard' }, { label: 'Hoje na unidade' }] },
   { path: '/hub/appointments', crumbs: [{ label: 'Agenda' }] },
   { path: '/hub/clientes', crumbs: [{ label: 'Clientes' }] },
   { path: '/hub/pets', crumbs: [{ label: 'Pets' }] },

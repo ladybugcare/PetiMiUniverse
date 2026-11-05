@@ -38,7 +38,18 @@ export interface HubServiceType {
   price_mode?: 'fixed' | 'variable';
   price_min?: number | null;
   price_max?: number | null;
+  /**
+   * Override de checklist operacional (Banho & Tosa). Migration 116.
+   * `null` / ausente = herda o template do grupo.
+   */
+  checklist_items?: Array<{ key: string; label: string; default_checked?: boolean }> | null;
 }
+
+export type HubServiceChecklistItem = {
+  key: string;
+  label: string;
+  default_checked?: boolean;
+};
 
 export type HubServiceGroup = HubServiceType['service_group'];
 
@@ -85,6 +96,7 @@ export const hubServiceTypesApi = {
     price_mode?: 'fixed' | 'variable';
     price_min?: number | null;
     price_max?: number | null;
+    checklist_items?: HubServiceChecklistItem[] | null;
   }): Promise<{ service_type: HubServiceType }> {
     return apiRequest(basePath, {
       method: 'POST',
@@ -114,6 +126,7 @@ export const hubServiceTypesApi = {
       price_mode?: 'fixed' | 'variable';
       price_min?: number | null;
       price_max?: number | null;
+      checklist_items?: HubServiceChecklistItem[] | null;
     }
   ): Promise<{
     service_type: HubServiceType;

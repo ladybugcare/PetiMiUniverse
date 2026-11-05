@@ -38,6 +38,7 @@ import {
   pricingVariantsEqual,
 } from './hubPackagesService';
 import { createSaleStockOut } from './hubInventoryStockUtils';
+import { markHubAppointmentPaidFromReceivable } from './appointmentPaidFromBilling';
 import type { HubQuotePricingVariantInput } from './hubPricingResolve';
 
 const uuidStr = z.string().uuid();
@@ -3028,6 +3029,9 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         let nextStatus = 'partially_paid';
         if (paid >= finalAmt - 0.009) nextStatus = 'paid';
         await supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', rid);
+        if (nextStatus === 'paid') {
+          void markHubAppointmentPaidFromReceivable({ clinicId: clinic_id, receivableId: rid });
+        }
       }
     }
 
@@ -4694,6 +4698,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
                 }
                 await supabaseAdmin.from('hub_receivables').update({ status: 'paid' }).eq('id', rid);
                 paidIds.push(rid);
+                void markHubAppointmentPaidFromReceivable({ clinicId: clinic_id, receivableId: rid });
               }
               if (payError) {
                 results.push({ comanda_id: comandaId, receivable_ids: paidIds, error: payError });
@@ -4797,6 +4802,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             payment_timing,
           });
           await supabaseAdmin.from('hub_receivables').update({ status: 'paid' }).eq('id', receivableId);
+          void markHubAppointmentPaidFromReceivable({ clinicId: clinic_id, receivableId });
         }
 
         if (action === 'leave_pending') {

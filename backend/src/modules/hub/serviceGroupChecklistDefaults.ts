@@ -5,10 +5,10 @@ export type ChecklistTemplateItem = {
   default_checked?: boolean;
 };
 
+/** Default enxuto do salão; higiene bucal fica só se a clínica incluir no template. */
 export const BANHO_TOSA_CHECKLIST_DEFAULT_ITEMS: ChecklistTemplateItem[] = [
   { key: 'nails', label: 'Unhas cortadas' },
   { key: 'ears', label: 'Ouvidos limpos' },
-  { key: 'teeth', label: 'Higiene bucal / dentes' },
   { key: 'dryer_ok', label: 'Secador / térmica ok' },
   { key: 'coat_brushed', label: 'Pelagem escovada / finalizada' },
 ];
@@ -62,4 +62,37 @@ export function parseChecklistTemplateItems(raw: unknown): ChecklistTemplateItem
       default_checked: Boolean(x.default_checked),
     }))
     .filter((x) => x.key && x.label);
+}
+
+/** União estável por `key` (primeira ocorrência preserva label/ordem). */
+export function unionChecklistTemplateItems(
+  lists: ChecklistTemplateItem[][],
+): ChecklistTemplateItem[] {
+  const seen = new Set<string>();
+  const result: ChecklistTemplateItem[] = [];
+  for (const list of lists) {
+    for (const item of list) {
+      if (!item.key || seen.has(item.key)) continue;
+      seen.add(item.key);
+      result.push(item);
+    }
+  }
+  return result;
+}
+
+/**
+ * Resolve checklist da sessão:
+ * - por tipo: `checklist_items` do tipo se não-null; senão herda o template do grupo;
+ * - união dos itens (dedupe por `key`);
+ * - sem tipos associados → só o template do grupo.
+ */
+export function resolveSessionChecklistTemplate(opts: {
+  groupTemplate: ChecklistTemplateItem[];
+  serviceTypeOverrides: Array<ChecklistTemplateItem[] | null | undefined>;
+}): ChecklistTemplateItem[] {
+  if (opts.serviceTypeOverrides.length === 0) return opts.groupTemplate;
+  const perService = opts.serviceTypeOverrides.map((items) =>
+    Array.isArray(items) ? items : opts.groupTemplate,
+  );
+  return unionChecklistTemplateItems(perService);
 }
