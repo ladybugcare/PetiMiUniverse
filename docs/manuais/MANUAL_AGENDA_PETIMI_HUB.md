@@ -371,7 +371,7 @@ Também é possível ir ao Caixa logo após criar o agendamento (**Ir ao Caixa**
 1. **Agendar não cobra automaticamente.** A cobrança exige ação explícita (comanda / Caixa), salvo fluxos específicos de fatura em série configurados.
 2. Se já existir comanda aberta para aquele agendamento, o sistema orienta a abrir a existente (não cria duplicata).
 3. Para abrir comanda, selecione uma **unidade** (filtro da Agenda ou cabeçalho). Sem unidade: *Selecione uma unidade…*
-4. Se o atendimento for cancelado depois de pagamento antecipado, pode surgir o badge **Ajuste financeiro pendente**. Resolva no **Caixa** (**Ver no Caixa**).
+4. Se o atendimento for cancelado depois de pagamento antecipado, pode surgir o badge **Ajuste financeiro pendente**. Resolva no **Financeiro**, aba **Ajustes** (**Ver no Financeiro**).
 
 ### 8.2 Fluxo sugerido no dia
 

@@ -560,7 +560,7 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
 
         <FinancialAdjustmentPendingBadge
           pending={Boolean(item.financial_adjustment_pending)}
-          showCaixaLink={canViewFinancial}
+          showFinanceLink={canViewFinancial}
         />
 
         {waitingDrawer ? (

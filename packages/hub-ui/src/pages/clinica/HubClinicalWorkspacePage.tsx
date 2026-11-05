@@ -584,7 +584,7 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                 {!hideFinancial && canViewFinancial ? (
                   <FinancialAdjustmentPendingBadge
                     pending={Boolean(encounter.financial_adjustment_pending)}
-                    showCaixaLink={canViewFinancial}
+                    showFinanceLink={canViewFinancial}
                   />
                 ) : null}
                 <p className="hub-cws-header__pet-line">

@@ -15,7 +15,6 @@ export type IniciarTurnoDrawerProps = {
   onClose: () => void;
   clinicId: string;
   unitId: string;
-  lastClosingBalance?: number | null;
   onOpened: () => void | Promise<void>;
 };
 
@@ -24,10 +23,10 @@ export const IniciarTurnoDrawer: React.FC<IniciarTurnoDrawerProps> = ({
   onClose,
   clinicId,
   unitId,
-  lastClosingBalance,
   onOpened,
 }) => {
   const [openBal, setOpenBal] = useState('0');
+  const [lastClosingBalance, setLastClosingBalance] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -35,12 +34,29 @@ export const IniciarTurnoDrawer: React.FC<IniciarTurnoDrawerProps> = ({
     if (!open) return;
     setErrorMsg(null);
     setBusy(false);
-    setOpenBal(
-      lastClosingBalance != null && Number.isFinite(lastClosingBalance)
-        ? toInputAmount(lastClosingBalance)
-        : '0',
-    );
-  }, [open, lastClosingBalance]);
+    setLastClosingBalance(null);
+    setOpenBal('0');
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await hubFinancialApi.listClosedCashSessions(clinicId, unitId, 1);
+        if (cancelled) return;
+        const raw = res.sessions[0]?.closing_balance;
+        const balance = raw != null ? Number(raw) : null;
+        const valid = balance != null && Number.isFinite(balance) ? balance : null;
+        setLastClosingBalance(valid);
+        setOpenBal(valid != null ? toInputAmount(valid) : '0');
+      } catch {
+        if (!cancelled) {
+          setLastClosingBalance(null);
+          setOpenBal('0');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, clinicId, unitId]);
 
   if (!open) return null;
 

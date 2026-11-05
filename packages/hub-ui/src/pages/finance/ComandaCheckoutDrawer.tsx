@@ -40,7 +40,6 @@ import {
 } from './checkoutDrawerParts';
 import '../clientes/clientes.css';
 import './hub-finance-page.css';
-import '../orcamentos/orcamentos-page.css';
 import {
   navigateToAgendaFromPackageSale,
   schedulePetLabel,
@@ -647,16 +646,16 @@ export function ComandaCheckoutDrawer({
     >
       <div className="hub-finance-page__card-panel hub-finance-page__card-panel--stack">
         {successState ? (
-          <section className="hub-orcamento-novo__card hub-quote-ready__message-card">
-            <p className="hub-orcamento-novo__topbar-subtitle">
+          <section className="hub-checkout-drawer__success">
+            <p className="hub-checkout-drawer__success-text">
               {successState.kind === 'leave_pending'
                 ? 'Cobrança pendente criada. Avise o tutor pelo WhatsApp ou compartilhe a comanda.'
                 : 'Pagamento registrado. Envie a confirmação ao tutor se desejar.'}
             </p>
-            <div className="hub-quote-ready__message-actions" style={{ marginTop: 12 }}>
+            <div className="hub-checkout-drawer__success-actions">
               <button
                 type="button"
-                className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary"
+                className="hub-clientes__btn hub-clientes__btn--primary"
                 disabled={shareBusy || !guardianPhone}
                 title={!guardianPhone ? 'Cadastre o telefone do tutor' : undefined}
                 onClick={() => void openSuccessWhatsApp()}
@@ -666,7 +665,7 @@ export function ComandaCheckoutDrawer({
               </button>
               <button
                 type="button"
-                className="hub-orcamento-novo__btn hub-orcamento-novo__btn--outline"
+                className="hub-clientes__btn hub-clientes__btn--ghost"
                 disabled={shareBusy}
                 onClick={() => void downloadSuccessPdf()}
               >
@@ -675,7 +674,7 @@ export function ComandaCheckoutDrawer({
               </button>
             </div>
             {!guardianPhone ? (
-              <p className="hub-quote-ready__wa-hint">
+              <p className="hub-checkout-drawer__success-hint">
                 Sem telefone no tutor — use o PDF ou copie a mensagem na ficha da comanda.
               </p>
             ) : null}

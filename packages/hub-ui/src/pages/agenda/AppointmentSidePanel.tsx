@@ -477,7 +477,7 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
         <div className="nam-form hub-agenda-appt-panel">
           <FinancialAdjustmentPendingBadge
             pending={Boolean(appt.financial_adjustment_pending)}
-            showCaixaLink={canViewFinancial}
+            showFinanceLink={canViewFinancial}
           />
 
           <div

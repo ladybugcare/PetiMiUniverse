@@ -273,6 +273,7 @@ import {
   postHubFinanceReceivable,
   postHubFinanceWaiveBilling,
   postHubFinanceReceivablePayment,
+  listHubFinancePayments,
   listHubFinanceReceivables,
   getHubFinanceReceivableDetail,
   getHubFinancePaymentReceipt,
@@ -1638,6 +1639,12 @@ router.get(
   authenticateUser,
   requirePermission('hub.financial.read'),
   getHubChargeBundlePdf
+);
+router.get(
+  '/finance/payments',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  listHubFinancePayments
 );
 router.post(
   '/finance/payments/:id/reverse',

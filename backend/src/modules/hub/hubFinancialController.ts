@@ -1447,6 +1447,15 @@ export const postHubFinancePaymentReverse = async (req: Request, res: Response) 
       .eq('id', paymentId.data)
       .maybeSingle();
     if (pErr || !payment || payment.clinic_id !== clinic_id) return res.status(404).json({ error: 'Pagamento não encontrado' });
+    const pendingCancellation = await paymentBelongsToPendingCancellation(
+      clinic_id,
+      payment.receivable_id as string,
+    );
+    if (pendingCancellation) {
+      return res.status(409).json({
+        error: 'Este pagamento está em um cancelamento pendente. Resolva em Cancelamentos.',
+      });
+    }
     let warning: string | null = null;
     if (payment.payment_method === 'cash' && payment.cash_session_id) {
       const { data: session, error: sErr } = await supabaseAdmin
@@ -1475,6 +1484,186 @@ export const postHubFinancePaymentReverse = async (req: Request, res: Response) 
     return res.json({ ok: true, receivable_status: status, warning });
   } catch (e: unknown) {
     console.error('postHubFinancePaymentReverse', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+const listPaymentsQuerySchema = z
+  .object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr,
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  .strict();
+
+function oneEmbed<T>(value: T | T[] | null | undefined): T | null {
+  if (value == null) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+type PaymentListRow = {
+  id: unknown;
+  amount: number;
+  payment_method: unknown;
+  installments: number;
+  payment_date: unknown;
+  notes: unknown;
+  cash_session_status: 'open' | 'closed' | null;
+  receivable: {
+    id: unknown;
+    status: unknown;
+    final_amount: number;
+    source_type: unknown;
+    comanda_id: string | null;
+    guardian_name: string | null;
+  } | null;
+};
+
+function mapPaymentListRow(row: Record<string, unknown>): PaymentListRow {
+  const receivable = oneEmbed(row.receivable as Record<string, unknown> | Record<string, unknown>[] | null);
+  const guardian = receivable
+    ? oneEmbed(receivable.guardian as { full_name?: string } | { full_name?: string }[] | null)
+    : null;
+  const session = oneEmbed(row.cash_session as { status?: string } | { status?: string }[] | null);
+  const sessionStatus = session?.status === 'open' || session?.status === 'closed' ? session.status : null;
+  return {
+    id: row.id,
+    amount: Number(row.amount ?? 0),
+    payment_method: row.payment_method,
+    installments: Number(row.installments ?? 1),
+    payment_date: row.payment_date,
+    notes: row.notes ?? null,
+    cash_session_status: sessionStatus,
+    receivable: receivable
+      ? {
+          id: receivable.id,
+          status: receivable.status,
+          final_amount: Number(receivable.final_amount ?? 0),
+          source_type: receivable.source_type,
+          comanda_id: receivable.comanda_id == null ? null : String(receivable.comanda_id),
+          guardian_name: guardian?.full_name ?? null,
+        }
+      : null,
+  };
+}
+
+/** Comandas com cancelamento operacional ainda sem decisão do financeiro. */
+async function comandaIdsWithPendingCancellation(clinicId: string, comandaIds: string[]): Promise<Set<string>> {
+  if (comandaIds.length === 0) return new Set();
+  const { data, error } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .in('id', comandaIds)
+    .not('cancellation_pending_at', 'is', null)
+    .is('cancellation_resolved_at', null)
+    .is('deleted_at', null);
+  if (error) {
+    if (String(error.message || '').includes('cancellation_pending')) return new Set();
+    throw new Error(error.message);
+  }
+  return new Set((data ?? []).map((row) => String(row.id)));
+}
+
+async function paymentBelongsToPendingCancellation(clinicId: string, receivableId: string): Promise<boolean> {
+  const { data: receivable, error } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('comanda_id')
+    .eq('id', receivableId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  if (error || !receivable?.comanda_id) return false;
+  const pending = await comandaIdsWithPendingCancellation(clinicId, [String(receivable.comanda_id)]);
+  return pending.has(String(receivable.comanda_id));
+}
+
+export const listHubFinancePayments = async (req: Request, res: Response) => {
+  try {
+    const parsed = listPaymentsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'clinic_id e unit_id obrigatórios' });
+    }
+    const { clinic_id, unit_id, from, to } = parsed.data;
+    const select = `
+      id, amount, payment_method, installments, payment_date, notes,
+      cash_session:hub_cash_sessions(status),
+      receivable:hub_receivables!inner(
+        id, unit_id, status, final_amount, source_type, comanda_id, deleted_at,
+        guardian:hub_guardians(full_name)
+      )
+    `;
+
+    const build = (matchNullUnit: boolean) => {
+      let q = supabaseAdmin
+        .from('hub_payments')
+        .select(select)
+        .eq('clinic_id', clinic_id)
+        .order('payment_date', { ascending: false })
+        .limit(300);
+      q = matchNullUnit
+        ? q.is('receivable.unit_id', null)
+        : q.eq('receivable.unit_id', unit_id);
+      if (from) q = q.gte('payment_date', `${from}T00:00:00.000-03:00`);
+      if (to) q = q.lte('payment_date', `${to}T23:59:59.999-03:00`);
+      return q;
+    };
+
+    const [byUnit, legacy] = await Promise.all([build(false), build(true)]);
+    let rawRows: Array<Record<string, unknown>> = [];
+    if (byUnit.error || legacy.error) {
+      let fallback = supabaseAdmin
+        .from('hub_payments')
+        .select(select)
+        .eq('clinic_id', clinic_id)
+        .order('payment_date', { ascending: false })
+        .limit(400);
+      if (from) fallback = fallback.gte('payment_date', `${from}T00:00:00.000-03:00`);
+      if (to) fallback = fallback.lte('payment_date', `${to}T23:59:59.999-03:00`);
+      const recovered = await fallback;
+      if (recovered.error) {
+        return res.status(500).json({ error: (byUnit.error ?? legacy.error ?? recovered.error).message });
+      }
+      rawRows = ((recovered.data ?? []) as Array<Record<string, unknown>>).filter((row) => {
+        const receivable = oneEmbed(row.receivable as Record<string, unknown> | Record<string, unknown>[] | null);
+        const rowUnit = receivable?.unit_id == null ? null : String(receivable.unit_id);
+        return rowUnit == null || rowUnit === unit_id;
+      });
+    } else {
+      rawRows = [...(byUnit.data ?? []), ...(legacy.data ?? [])] as Array<Record<string, unknown>>;
+    }
+
+    const seen = new Set<string>();
+    const payments = rawRows
+      .filter((row) => {
+        const id = String(row.id ?? '');
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        const receivable = oneEmbed(row.receivable as Record<string, unknown> | Record<string, unknown>[] | null);
+        return !receivable?.deleted_at;
+      })
+      .sort((a, b) => String(b.payment_date ?? '').localeCompare(String(a.payment_date ?? '')))
+      .map(mapPaymentListRow);
+
+    const comandaIds = [
+      ...new Set(
+        payments
+          .map((payment) => payment.receivable?.comanda_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const pendingComandaIds = await comandaIdsWithPendingCancellation(clinic_id, comandaIds);
+    const visiblePayments =
+      pendingComandaIds.size === 0
+        ? payments
+        : payments.filter((payment) => {
+            const comandaId = payment.receivable?.comanda_id;
+            return !comandaId || !pendingComandaIds.has(comandaId);
+          });
+
+    return res.json({ payments: visiblePayments });
+  } catch (e: unknown) {
+    console.error('listHubFinancePayments', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };

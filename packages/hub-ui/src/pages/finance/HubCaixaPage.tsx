@@ -97,6 +97,7 @@ const HubCaixaPage: React.FC = () => {
     clinicId && unitId ? `${clinicId}:${unitId}` : null,
   );
   const [cashOpen, setCashOpen] = useState<HubCashSession | null>(null);
+  const [cashChecked, setCashChecked] = useState(false);
   const [cashSummary, setCashSummary] = useState<HubCashSessionSummary | null>(null);
   const [movType, setMovType] = useState<'withdrawal' | 'deposit'>('withdrawal');
   const [movAmount, setMovAmount] = useState('');
@@ -159,26 +160,39 @@ const HubCaixaPage: React.FC = () => {
       finish();
       return;
     }
-    begin();
+    const refreshingNow = begin();
+    if (!refreshingNow) {
+      setCashOpen(null);
+      setCashChecked(false);
+    }
     try {
-      const [c, cash, comandasRes, dayBoard, closedRes] = await Promise.all([
+      const cash = await hubFinancialApi.getCashSessionOpen(clinicId, unitId);
+      const open = cash.cash_session ?? null;
+      setCashChecked(true);
+      if (!open?.id) {
+        setCashOpen(null);
+        setPending(0);
+        setOpenComandas([]);
+        setDayBoardItems([]);
+        setClosedSessions([]);
+        setCashSummary(null);
+        setAcceptedPaymentMethods([]);
+        succeed();
+        return;
+      }
+      setCashOpen(open);
+      const [c, comandasRes, dayBoard, closedRes, summary] = await Promise.all([
         hubFinancialApi.getPendingBillingCount(clinicId, unitId),
-        hubFinancialApi.getCashSessionOpen(clinicId, unitId),
         hubComandaApi.listComandas({ clinic_id: clinicId, unit_id: unitId, status: 'aberta', enrich: true }).catch(() => ({ comandas: [] })),
         hubFinancialApi.getDayBoard(clinicId, unitId, dayBoardDate).catch(() => [] as HubFinanceDayBoardItem[]),
         hubFinancialApi.listClosedCashSessions(clinicId, unitId, 10).catch(() => ({ sessions: [] })),
+        hubFinancialApi.getCashSessionSummary(open.id, clinicId),
       ]);
       setPending(c);
       setOpenComandas(comandasRes.comandas ?? []);
       setDayBoardItems(dayBoard);
       setClosedSessions(closedRes.sessions ?? []);
-      const open = cash.cash_session ?? null;
-      setCashOpen(open);
-      if (open?.id) {
-        setCashSummary(await hubFinancialApi.getCashSessionSummary(open.id, clinicId));
-      } else {
-        setCashSummary(null);
-      }
+      setCashSummary(summary);
       succeed();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao carregar caixa');
@@ -196,10 +210,10 @@ const HubCaixaPage: React.FC = () => {
     if (!dateParam || !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) return;
     if (dateParam === dayBoardDate) return;
     setDayBoardDate(dateParam);
-    if (clinicId && unitId) {
+    if (clinicId && unitId && cashOpen?.id) {
       void loadDayBoard(dateParam);
     }
-  }, [searchParams, clinicId, unitId, dayBoardDate, loadDayBoard]);
+  }, [searchParams, clinicId, unitId, dayBoardDate, loadDayBoard, cashOpen?.id]);
 
   useEffect(() => {
     const status = searchParams.get('status');
@@ -215,7 +229,7 @@ const HubCaixaPage: React.FC = () => {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!clinicId) return;
+    if (!clinicId || !cashOpen?.id) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -232,7 +246,7 @@ const HubCaixaPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [clinicId]);
+  }, [clinicId, cashOpen?.id]);
 
   const dayBoardFiltered = useMemo(() => {
     const searchTerm = normalizeText(dayBoardSearch.trim());
@@ -271,7 +285,6 @@ const HubCaixaPage: React.FC = () => {
   }, [openComandas, atendimentosStatusFilter]);
 
   const expectedBalance = cashSummary?.summary.expected_balance ?? Number(cashOpen?.opening_balance ?? 0);
-  const lastClosingBalance = closedSessions[0]?.closing_balance ?? null;
 
   const methodsEntries = useMemo(() => {
     const totals = cashSummary?.summary.totals_by_method ?? {};
@@ -317,6 +330,60 @@ const HubCaixaPage: React.FC = () => {
   if (!clinicId || !unitId) {
     return shell(
       <p className="hub-clientes__muted">Selecione uma unidade no cabeçalho para usar o Caixa.</p>,
+    );
+  }
+
+  if (!cashOpen) {
+    if (loading || !cashChecked) {
+      if (!loading && !cashChecked && !permLoading) {
+        return shell(
+          <div className="hub-caixa-page__closed">
+            <p className="hub-caixa-page__closed-text">Não foi possível verificar o caixa.</p>
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              onClick={() => void load()}
+            >
+              Tentar de novo
+            </button>
+          </div>,
+        );
+      }
+      return shell(<HubLoading variant="block" label="Verificando o caixa…" />);
+    }
+
+    return shell(
+      <>
+        <HubRefreshingBanner show={refreshing} label="Abrindo o caixa…" />
+        <div className="hub-caixa-page__closed">
+          <div className="hub-caixa-page__closed-icon" aria-hidden>
+            <Lock size={28} strokeWidth={1.75} />
+          </div>
+          <h2 className="hub-caixa-page__closed-title">Caixa fechado</h2>
+          <p className="hub-caixa-page__closed-text">Inicie o turno para operar o caixa.</p>
+          {hasPermission('hub.cash.session') && (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              onClick={() => setShowIniciarTurno(true)}
+            >
+              <Unlock size={15} strokeWidth={2} />
+              Iniciar turno
+            </button>
+          )}
+        </div>
+        <IniciarTurnoDrawer
+          open={showIniciarTurno}
+          onClose={() => setShowIniciarTurno(false)}
+          clinicId={clinicId}
+          unitId={unitId}
+          onOpened={async () => {
+            setShowIniciarTurno(false);
+            showSuccess('Turno iniciado.');
+            await load();
+          }}
+        />
+      </>,
     );
   }
 
@@ -1027,18 +1094,6 @@ const HubCaixaPage: React.FC = () => {
         onClose={() => setShowQuickSale(false)}
         onOpened={(comandaId) => {
           navigate(`/hub/caixa/comanda/${comandaId}`);
-        }}
-      />
-      <IniciarTurnoDrawer
-        open={showIniciarTurno}
-        onClose={() => setShowIniciarTurno(false)}
-        clinicId={clinicId}
-        unitId={unitId}
-        lastClosingBalance={lastClosingBalance}
-        onOpened={async () => {
-          setShowIniciarTurno(false);
-          showSuccess('Turno iniciado.');
-          await load();
         }}
       />
       {showEncerrarTurno && cashOpen && (

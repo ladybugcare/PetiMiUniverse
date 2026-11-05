@@ -185,7 +185,7 @@ export async function notifyHubCancellationPending(opts: {
     message: guardian
       ? `Atendimento de ${guardian} foi cancelado${valor}. Defina estorno, crédito ou cobrança.`
       : `Um atendimento foi cancelado${valor}. Defina estorno, crédito ou cobrança.`,
-    link: '/hub/financeiro',
+    link: '/hub/financeiro?tab=adjustments',
     entityType: 'comanda',
     entityId: opts.comandaId,
   });

@@ -101,6 +101,24 @@ export type HubFinancePayment = {
   created_at?: string;
 };
 
+export type HubFinancePaymentListItem = {
+  id: string;
+  amount: number;
+  payment_method: string;
+  installments: number;
+  payment_date: string;
+  notes: string | null;
+  cash_session_status: 'open' | 'closed' | null;
+  receivable: {
+    id: string;
+    status: string;
+    final_amount: number;
+    source_type: string;
+    comanda_id: string | null;
+    guardian_name: string | null;
+  } | null;
+};
+
 export type HubFinanceAdjustment = {
   id: string;
   adjustment_type: string;
@@ -842,6 +860,20 @@ export const hubFinancialApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }) as Promise<{ payment: Record<string, unknown>; receivable_status: string }>;
+  },
+
+  async listPayments(
+    clinicId: string,
+    unitId: string,
+    opts?: { from?: string; to?: string },
+  ): Promise<HubFinancePaymentListItem[]> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    const res = (await apiRequest(`${base}/payments?${q.toString()}`)) as {
+      payments?: HubFinancePaymentListItem[];
+    };
+    return res.payments ?? [];
   },
 
   async reversePayment(paymentId: string, body: { clinic_id: string; reason: string }): Promise<{ ok: boolean; receivable_status: string; warning?: string | null }> {

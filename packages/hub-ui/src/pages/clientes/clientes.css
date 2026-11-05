@@ -329,7 +329,7 @@ a.hub-clientes__btn:focus-visible {
   white-space: nowrap;
 }
 
-.hub-clientes__th-actions {
+.hub-clientes__table th.hub-clientes__th-actions {
   text-align: right;
 }
 
@@ -613,6 +613,9 @@ a.hub-clientes__btn:focus-visible {
 }
 
 .hub-clientes__detail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 10px;
   font-size: 13px;
   font-weight: 600;

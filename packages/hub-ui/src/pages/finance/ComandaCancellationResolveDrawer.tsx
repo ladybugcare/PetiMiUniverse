@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Undo2 } from 'lucide-react';
+import { HubCancelButton } from '../../components/HubCancelButton';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { hubComandaApi, type CancellationResolution } from '../../api/hubComandaApi';
 import { hubFinancialApi } from '../../api/hubFinancialApi';
+import { formatComandaOriginLabel } from './comandaListPreview';
 
 function formatBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -34,7 +37,9 @@ export function ComandaCancellationResolveDrawer({
   const paidTotal = Number(comanda?.paid_total ?? 0);
   const guardianName = (comanda?.guardian as { full_name?: string } | null)?.full_name ?? '—';
   const petName = (comanda?.pet as { name?: string } | null)?.name ?? '—';
-  const originType = String(comanda?.cancellation_operational_type ?? comanda?.origin_type ?? '—');
+  const originType = formatComandaOriginLabel(
+    comanda?.cancellation_operational_type ?? comanda?.origin_type ?? '',
+  );
   const cancelledAt = comanda?.cancellation_operational_at
     ? new Date(String(comanda.cancellation_operational_at)).toLocaleString('pt-BR')
     : '—';
@@ -91,23 +96,52 @@ export function ComandaCancellationResolveDrawer({
       open={open}
       onClose={onClose}
       title="Resolver cancelamento"
+      titleIcon={<Undo2 size={20} strokeWidth={1.75} aria-hidden />}
       subtitle="Escolha como tratar o pagamento já recebido na comanda."
+      contentKey={comandaId ?? 'empty'}
+      footer={
+        comanda ? (
+          <div className="hub-finance-page__drawer-footer">
+            <HubCancelButton onClick={onClose} disabled={busy} />
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              onClick={() => void onSubmit()}
+              disabled={busy || !comandaId || reason.trim().length < 3}
+            >
+              {busy ? 'Salvando…' : 'Confirmar resolução'}
+            </button>
+          </div>
+        ) : null
+      }
     >
       {comanda ? (
-        <div className="hub-finance-page__card-panel hub-finance-page__card-panel--stack">
-          <p className="hub-clientes__muted" style={{ margin: 0 }}>
-            <strong>{guardianName}</strong> · {petName}
-          </p>
-          <p className="hub-clientes__muted" style={{ margin: 0 }}>
-            Origem: {originType} · Cancelado em {cancelledAt}
-          </p>
-          <p style={{ margin: '8px 0 0' }}>
-            Valor pago na comanda: <strong>{formatBrl(paidTotal)}</strong>
+        <>
+          <div className="hub-adjustments__facts" aria-label="Comanda cancelada">
+            <div>
+              <span>Tutor</span>
+              <strong>{guardianName}</strong>
+            </div>
+            <div>
+              <span>Pet</span>
+              <strong>{petName}</strong>
+            </div>
+            <div>
+              <span>Origem</span>
+              <strong>{originType}</strong>
+            </div>
+            <div>
+              <span>Pago</span>
+              <strong>{formatBrl(paidTotal)}</strong>
+            </div>
+          </div>
+          <p className="hub-clientes__muted" style={{ marginTop: 0 }}>
+            Cancelado em {cancelledAt}
           </p>
 
           <fieldset className="hub-finance-page__resolve-options">
-            <legend className="hub-clientes__label">Resolução</legend>
-            <label className="hub-finance-page__resolve-option">
+            <legend className="hub-clientes__label">Como tratar o valor</legend>
+            <label className={`hub-finance-page__resolve-option${resolution === 'refund' ? ' hub-finance-page__resolve-option--active' : ''}`}>
               <input
                 type="radio"
                 name="cancellation-resolution"
@@ -115,9 +149,12 @@ export function ComandaCancellationResolveDrawer({
                 checked={resolution === 'refund'}
                 onChange={() => setResolution('refund')}
               />
-              Reembolso — estorna pagamentos nos recebíveis
+              <span>
+                <strong>Reembolso</strong>
+                <span>Estorna os pagamentos da cobrança.</span>
+              </span>
             </label>
-            <label className="hub-finance-page__resolve-option">
+            <label className={`hub-finance-page__resolve-option${resolution === 'customer_credit' ? ' hub-finance-page__resolve-option--active' : ''}`}>
               <input
                 type="radio"
                 name="cancellation-resolution"
@@ -125,9 +162,12 @@ export function ComandaCancellationResolveDrawer({
                 checked={resolution === 'customer_credit'}
                 onChange={() => setResolution('customer_credit')}
               />
-              Crédito para o tutor — estorna pagamentos e credita saldo de loja
+              <span>
+                <strong>Crédito para o tutor</strong>
+                <span>Estorna os pagamentos e deixa o valor como saldo na loja.</span>
+              </span>
             </label>
-            <label className="hub-finance-page__resolve-option">
+            <label className={`hub-finance-page__resolve-option${resolution === 'keep_billing' ? ' hub-finance-page__resolve-option--active' : ''}`}>
               <input
                 type="radio"
                 name="cancellation-resolution"
@@ -135,13 +175,16 @@ export function ComandaCancellationResolveDrawer({
                 checked={resolution === 'keep_billing'}
                 onChange={() => setResolution('keep_billing')}
               />
-              Manter cobrança — pagamentos permanecem (ex.: no-show cobrado)
+              <span>
+                <strong>Manter cobrança</strong>
+                <span>Os pagamentos continuam valendo, como em um no-show cobrado.</span>
+              </span>
             </label>
           </fieldset>
 
           <div className="hub-clientes__field">
             <label className="hub-clientes__label" htmlFor="resolve-reason">
-              Motivo (obrigatório)
+              Motivo
             </label>
             <textarea
               id="resolve-reason"
@@ -149,7 +192,7 @@ export function ComandaCancellationResolveDrawer({
               rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Descreva a decisão financeira"
+              placeholder="Descreva a decisão (mín. 3 caracteres)"
             />
           </div>
 
@@ -158,21 +201,7 @@ export function ComandaCancellationResolveDrawer({
               {error}
             </p>
           ) : null}
-
-          <div className="hub-finance-page__resolve-actions">
-            <button type="button" className="hub-clientes__btn" onClick={onClose} disabled={busy}>
-              Cancelar
-            </button>
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--primary"
-              onClick={() => void onSubmit()}
-              disabled={busy || !comandaId}
-            >
-              {busy ? 'Salvando…' : 'Confirmar resolução'}
-            </button>
-          </div>
-        </div>
+        </>
       ) : (
         <p className="hub-clientes__muted">Selecione uma comanda na fila.</p>
       )}

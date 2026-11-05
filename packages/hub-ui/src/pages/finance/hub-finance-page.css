@@ -960,6 +960,8 @@
   font-size: 14px;
 }
 
+.hub-clientes__table th.hub-finance-page__th-num,
+.hub-clientes__table td.hub-finance-page__td-num,
 .hub-finance-page__th-num,
 .hub-finance-page__td-num {
   text-align: right;
@@ -1873,9 +1875,82 @@
   font-weight: 600;
 }
 
+.hub-commissions__preview {
+  margin-top: 28px;
+}
+
+.hub-commissions__preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.hub-commissions__preview-field {
+  flex: 1 1 280px;
+  min-width: 0;
+  margin: 0;
+}
+
+.hub-commissions__preview-row .hub-clientes__btn {
+  min-height: 42px;
+}
+
+.hub-adjustments__tabs {
+  margin-bottom: 16px;
+}
+
+.hub-adjustments__facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--hc-border, #eadfd8);
+  border-radius: 12px;
+  background: var(--hc-surface, #fff);
+}
+
+.hub-adjustments__facts span {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hc-text-muted, #7a6e6a);
+}
+
+.hub-adjustments__facts strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-adjustments__warning {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff6e8;
+  color: #9a5b16;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.hub-adjustments__manual-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 12px;
+  font-size: 13px;
+  color: var(--hc-text-muted, #7a6e6a);
+}
+
 .hub-finance-page__resolve-options {
   border: none;
-  margin: 12px 0 0;
+  margin: 4px 0 14px;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -1885,9 +1960,45 @@
 .hub-finance-page__resolve-option {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hc-border, #eadfd8);
+  border-radius: 10px;
+  background: #fff;
   font-size: 14px;
   cursor: pointer;
+}
+
+.hub-finance-page__resolve-option input {
+  margin-top: 3px;
+}
+
+.hub-finance-page__resolve-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hub-finance-page__resolve-option span span {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--hc-text-muted, #7a6e6a);
+}
+
+.hub-finance-page__resolve-option--active {
+  border-color: #f0d9c8;
+  background: #fff8f4;
+}
+
+.hub-dayboard__action-btn--danger {
+  color: #9f3d32;
+}
+
+.hub-dayboard__action-btn--danger:hover {
+  color: #9f3d32;
+  border-color: #e7b2ab;
+  background: #fff5f3;
 }
 
 .hub-finance-page__resolve-actions {
@@ -3138,6 +3249,53 @@
 
 /* ── Caixa — layout unificado (3 colunas) ─────────────────────────────────── */
 
+.hub-caixa-page__closed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
+  min-height: 360px;
+  padding: 48px 24px;
+  border: 1px dashed var(--hc-border, #e5dcd6);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.hub-caixa-page__closed-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--hc-brand-light, #fff1e8);
+  color: var(--hc-brand, #f0642f);
+}
+
+.hub-caixa-page__closed-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-caixa-page__closed-text {
+  margin: 0;
+  max-width: 360px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--hc-text-muted, #7a6e6a);
+}
+
+.hub-caixa-page__closed .hub-clientes__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
 .hub-caixa-page__turno-bar {
   display: flex;
   justify-content: flex-end;
@@ -3799,6 +3957,51 @@ h3.hub-caixa-page__card-title {
   flex-direction: column;
   gap: 16px;
   width: 100%;
+}
+
+.hub-checkout-drawer__success {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  width: 100%;
+  padding: 16px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--hc-border, #e5dcd6);
+}
+
+.hub-checkout-drawer__success-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-checkout-drawer__success-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+}
+
+.hub-checkout-drawer__success-actions .hub-clientes__btn {
+  flex: 1 1 200px;
+  justify-content: center;
+  min-height: 42px;
+}
+
+.hub-checkout-drawer__success-actions .hub-clientes__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-checkout-drawer__success-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hc-text-muted, #8e6e67);
 }
 
 .hub-side-panel__main > .hub-finance-page__card-panel--stack {
