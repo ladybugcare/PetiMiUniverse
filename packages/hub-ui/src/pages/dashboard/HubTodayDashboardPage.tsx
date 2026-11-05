@@ -32,6 +32,12 @@ function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 }
 
+function payableAlertMeta(count: number, total: number, unconfirmed = 0, estimated = 0): string {
+  const titles = `${count} ${count === 1 ? 'título' : 'títulos'} · ${formatBrl(total)}`;
+  if (unconfirmed <= 0) return titles;
+  return `${titles} · ${unconfirmed} a confirmar (est. ${formatBrl(estimated)})`;
+}
+
 function formatDateLong(dateYmd: string): string {
   const [y, m, d] = dateYmd.split('-').map(Number);
   if (!y || !m || !d) return dateYmd;
@@ -414,8 +420,12 @@ const HubTodayDashboardPage: React.FC = () => {
                   <div>
                     <div className="hub-dash__alert-title">Contas a pagar vencidas</div>
                     <div className="hub-dash__alert-meta">
-                      {alerts?.overdue_payables_count} títulos ·{' '}
-                      {formatBrl(alerts?.overdue_payables_total ?? 0)}
+                      {payableAlertMeta(
+                        alerts?.overdue_payables_count ?? 0,
+                        alerts?.overdue_payables_total ?? 0,
+                        alerts?.overdue_payables_unconfirmed_count ?? 0,
+                        alerts?.overdue_payables_estimated_total ?? 0,
+                      )}
                     </div>
                   </div>
                   <Link className="hub-dash__alert-cta" to="/hub/financeiro?tab=payables">
@@ -428,8 +438,12 @@ const HubTodayDashboardPage: React.FC = () => {
                   <div>
                     <div className="hub-dash__alert-title">Contas a pagar de hoje</div>
                     <div className="hub-dash__alert-meta">
-                      {alerts?.due_today_payables_count} títulos ·{' '}
-                      {formatBrl(alerts?.due_today_payables_total ?? 0)}
+                      {payableAlertMeta(
+                        alerts?.due_today_payables_count ?? 0,
+                        alerts?.due_today_payables_total ?? 0,
+                        alerts?.due_today_payables_unconfirmed_count ?? 0,
+                        alerts?.due_today_payables_estimated_total ?? 0,
+                      )}
                     </div>
                   </div>
                   <Link className="hub-dash__alert-cta" to="/hub/financeiro?tab=payables">

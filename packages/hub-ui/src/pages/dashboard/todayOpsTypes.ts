@@ -49,7 +49,11 @@ export type HubDayOpsSummary = {
     overdue_receivables_total: number;
     overdue_payables_count?: number;
     overdue_payables_total?: number;
+    overdue_payables_unconfirmed_count?: number;
+    overdue_payables_estimated_total?: number;
     due_today_payables_count?: number;
     due_today_payables_total?: number;
+    due_today_payables_unconfirmed_count?: number;
+    due_today_payables_estimated_total?: number;
   };
 };

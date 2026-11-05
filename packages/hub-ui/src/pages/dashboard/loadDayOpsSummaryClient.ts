@@ -129,18 +129,33 @@ export async function loadDayOpsSummaryClient(
           }
           let overduePayablesCount = 0;
           let overduePayablesTotal = 0;
+          let overduePayablesUnconfirmedCount = 0;
+          let overduePayablesEstimatedTotal = 0;
           let dueTodayPayablesCount = 0;
           let dueTodayPayablesTotal = 0;
+          let dueTodayPayablesUnconfirmedCount = 0;
+          let dueTodayPayablesEstimatedTotal = 0;
           for (const row of pendingPayables) {
             const days = daysUntilDue(row.due_date);
             if (days == null) continue;
             const amt = Number(row.amount ?? 0);
+            const estimated = row.amount_confirmed === false;
             if (days < 0) {
               overduePayablesCount += 1;
-              overduePayablesTotal += amt;
+              if (estimated) {
+                overduePayablesUnconfirmedCount += 1;
+                overduePayablesEstimatedTotal += amt;
+              } else {
+                overduePayablesTotal += amt;
+              }
             } else if (days === 0) {
               dueTodayPayablesCount += 1;
-              dueTodayPayablesTotal += amt;
+              if (estimated) {
+                dueTodayPayablesUnconfirmedCount += 1;
+                dueTodayPayablesEstimatedTotal += amt;
+              } else {
+                dueTodayPayablesTotal += amt;
+              }
             }
           }
           summary.finance = {
@@ -156,8 +171,12 @@ export async function loadDayOpsSummaryClient(
             overdue_receivables_total: overdueTotal,
             overdue_payables_count: overduePayablesCount,
             overdue_payables_total: overduePayablesTotal,
+            overdue_payables_unconfirmed_count: overduePayablesUnconfirmedCount,
+            overdue_payables_estimated_total: overduePayablesEstimatedTotal,
             due_today_payables_count: dueTodayPayablesCount,
             due_today_payables_total: dueTodayPayablesTotal,
+            due_today_payables_unconfirmed_count: dueTodayPayablesUnconfirmedCount,
+            due_today_payables_estimated_total: dueTodayPayablesEstimatedTotal,
           };
         })
         .catch(() => undefined),
@@ -176,8 +195,12 @@ export async function loadDayOpsSummaryClient(
             overdue_receivables_total: summary.alerts?.overdue_receivables_total ?? 0,
             overdue_payables_count: summary.alerts?.overdue_payables_count ?? 0,
             overdue_payables_total: summary.alerts?.overdue_payables_total ?? 0,
+            overdue_payables_unconfirmed_count: summary.alerts?.overdue_payables_unconfirmed_count ?? 0,
+            overdue_payables_estimated_total: summary.alerts?.overdue_payables_estimated_total ?? 0,
             due_today_payables_count: summary.alerts?.due_today_payables_count ?? 0,
             due_today_payables_total: summary.alerts?.due_today_payables_total ?? 0,
+            due_today_payables_unconfirmed_count: summary.alerts?.due_today_payables_unconfirmed_count ?? 0,
+            due_today_payables_estimated_total: summary.alerts?.due_today_payables_estimated_total ?? 0,
           };
         })
         .catch(() => undefined),
@@ -196,8 +219,12 @@ export async function loadDayOpsSummaryClient(
             overdue_receivables_total: summary.alerts?.overdue_receivables_total ?? 0,
             overdue_payables_count: summary.alerts?.overdue_payables_count ?? 0,
             overdue_payables_total: summary.alerts?.overdue_payables_total ?? 0,
+            overdue_payables_unconfirmed_count: summary.alerts?.overdue_payables_unconfirmed_count ?? 0,
+            overdue_payables_estimated_total: summary.alerts?.overdue_payables_estimated_total ?? 0,
             due_today_payables_count: summary.alerts?.due_today_payables_count ?? 0,
             due_today_payables_total: summary.alerts?.due_today_payables_total ?? 0,
+            due_today_payables_unconfirmed_count: summary.alerts?.due_today_payables_unconfirmed_count ?? 0,
+            due_today_payables_estimated_total: summary.alerts?.due_today_payables_estimated_total ?? 0,
           };
         })
         .catch(() => undefined),

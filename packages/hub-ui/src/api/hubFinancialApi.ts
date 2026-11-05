@@ -176,9 +176,11 @@ export type HubFinanceDashboardSummary = {
   receivables_outstanding: number;
   payments_total_period: number;
   expenses_total_period: number;
-  /** Soma de contas a pagar pendentes (custo interno ainda não liquidado). */
+  /** Soma de contas a pagar pendentes já confirmadas (custo interno ainda não liquidado). */
   payables_outstanding?: number;
   payables_pending_count?: number;
+  payables_unconfirmed_count?: number;
+  payables_estimated_total?: number;
   net_operational_period: number;
   /** Pets distintos com agendamento no período (início do slot dentro do intervalo; exclui cancelados). */
   pets_attended_distinct?: number;
@@ -246,6 +248,8 @@ export type HubFinancePayable = {
   source_role?: string | null;
   source_label?: string;
   recurrence_detached?: boolean;
+  /** false = estimativa ainda sem fatura. Ausente = confirmado. */
+  amount_confirmed?: boolean;
   status: HubFinancePayableStatus;
   due_date?: string | null;
   paid_at?: string | null;
@@ -254,6 +258,7 @@ export type HubFinancePayable = {
 };
 
 export type HubPayableScheduleFrequency = 'weekly' | 'biweekly' | 'monthly';
+export type HubPayableScheduleAmountMode = 'fixed' | 'estimated';
 export type HubPayableScheduleStatus = 'active' | 'paused' | 'ended';
 
 export type HubPayableSchedule = {
@@ -261,6 +266,7 @@ export type HubPayableSchedule = {
   clinic_id: string;
   unit_id: string;
   amount: number;
+  amount_mode?: HubPayableScheduleAmountMode;
   category: HubFinancePayableCategory;
   description: string;
   notes?: string | null;
@@ -1192,7 +1198,7 @@ export const hubFinancialApi = {
 
   async payPayable(
     id: string,
-    body: { clinic_id: string; payment_method: string; paid_at?: string | null }
+    body: { clinic_id: string; payment_method: string; paid_at?: string | null; amount?: number }
   ): Promise<{ payable: HubFinancePayable }> {
     return apiRequest(`${base}/payables/${encodeURIComponent(id)}/pay`, {
       method: 'POST',
@@ -1223,6 +1229,7 @@ export const hubFinancialApi = {
     payee_staff_member_id?: string | null;
     payee_supplier_id?: string | null;
     payee_name?: string;
+    amount_mode?: HubPayableScheduleAmountMode;
     frequency: HubPayableScheduleFrequency;
     anchor_date: string;
     until_date?: string | null;
@@ -1243,6 +1250,7 @@ export const hubFinancialApi = {
       payee_staff_member_id?: string | null;
       payee_supplier_id?: string | null;
       payee_name?: string;
+      amount_mode?: HubPayableScheduleAmountMode;
       until_date?: string | null;
       status?: 'active' | 'paused';
     }

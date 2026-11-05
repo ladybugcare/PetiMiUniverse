@@ -497,7 +497,13 @@ const HubFinanceiroPage: React.FC = () => {
               {summaryLoading ? '—' : formatBrl(summary?.payables_outstanding ?? 0)}
             </span>
             <span className="hub-finance-page__summary-meta">
-              {summaryLoading ? '…' : `${summary?.payables_pending_count ?? 0} título(s)`}
+              {summaryLoading
+                ? '…'
+                : `${summary?.payables_pending_count ?? 0} título(s)${
+                    (summary?.payables_unconfirmed_count ?? 0) > 0
+                      ? ` · ${summary?.payables_unconfirmed_count} a confirmar`
+                      : ''
+                  }`}
             </span>
           </button>
 

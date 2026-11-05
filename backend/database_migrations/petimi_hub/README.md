@@ -250,3 +250,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 115. **`115_alter_hub_payables_supplier.sql`** — `payee_supplier_id` em `hub_payables` (fornecedor do estoque como credor). Executar depois dos itens 113 e 8.
 
 117. **`117_create_hub_payable_schedules.sql`** — contrato recorrente (`hub_payable_schedules`) e `source_type = recurrence` em `hub_payables`. Gera só o mês atual e o próximo. Executar depois dos itens 113 e 115.
+
+118. **`118_alter_hub_payables_estimated_amount.sql`** — `amount_mode` (`fixed` | `estimated`) em `hub_payable_schedules` e `amount_confirmed` em `hub_payables`. No modo estimado, a competência nasce como previsão até a fatura ser informada. Executar depois do item 117.

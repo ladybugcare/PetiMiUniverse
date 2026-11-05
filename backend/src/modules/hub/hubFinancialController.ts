@@ -37,11 +37,14 @@ import { markHubAppointmentPaidFromReceivable } from './appointmentPaidFromBilli
 import {
   PAYABLE_CATEGORIES,
   PAYABLE_PAYMENT_METHODS,
+  PAYABLE_SCHEDULE_AMOUNT_MODES,
   PAYABLE_SCHEDULE_FREQUENCIES,
+  applyConfirmedEstimateToSchedule,
   endPayableSchedule,
   ensurePayableScheduleHorizon,
   listPayableSchedules,
   propagatePayableSchedule,
+  summarizePayableDueAlerts,
   todayYmdSaoPaulo,
   sumPaidPayablesInPeriod,
   sumPendingPayables,
@@ -3445,6 +3448,8 @@ export const getHubFinanceDashboardSummary = async (req: Request, res: Response)
       expenses_total_period,
       payables_pending_count: pendingPayables.count,
       payables_outstanding: pendingPayables.total,
+      payables_unconfirmed_count: pendingPayables.unconfirmedCount,
+      payables_estimated_total: pendingPayables.estimatedTotal,
       net_operational_period: round2(payments_total_period - expenses_total_period),
       pets_attended_distinct,
     });
@@ -4588,6 +4593,21 @@ const missingPayableSchedulesTable = (msg: string) =>
     ? 'Recorrência de contas a pagar indisponível. Aplique a migração 117_create_hub_payable_schedules.sql.'
     : null;
 
+const missingEstimatedAmountColumns = (msg: string) =>
+  String(msg || '').includes('amount_confirmed') || String(msg || '').includes('amount_mode')
+    ? 'Valor estimado de contas a pagar indisponível. Aplique a migração 118_alter_hub_payables_estimated_amount.sql.'
+    : null;
+
+function payableWriteError(message: string, statusFallback: (error: string) => number = () => 500) {
+  const estimated = missingEstimatedAmountColumns(message);
+  if (estimated) return { status: 503, error: estimated };
+  const schedule = missingPayableSchedulesTable(message);
+  if (schedule) return { status: 503, error: schedule };
+  const table = missingPayablesTable(message);
+  if (table) return { status: 503, error: table };
+  return { status: statusFallback(message), error: message };
+}
+
 function payableSourceLabel(
   payable: HubPayableRow,
   surgeryMeta: Map<string, { title: string; pet_name?: string | null }>,
@@ -4931,8 +4951,10 @@ export const patchHubFinancePayable = async (req: Request, res: Response) => {
       return res.json({ payable: existing });
     }
 
+    const confirmingAmount = fields.amount != null && existing.source_type === 'recurrence';
     if (existing.source_type === 'recurrence') {
       update.recurrence_detached = true;
+      if (confirmingAmount) update.amount_confirmed = true;
     }
 
     const { data, error } = await supabaseAdmin
@@ -4948,6 +4970,8 @@ export const patchHubFinancePayable = async (req: Request, res: Response) => {
           error: 'Coluna payee_supplier_id ausente. Aplique a migração 115_alter_hub_payables_supplier.sql.',
         });
       }
+      const estimatedHint = missingEstimatedAmountColumns(error.message);
+      if (estimatedHint) return res.status(503).json({ error: estimatedHint });
       const scheduleHint = missingPayableSchedulesTable(error.message);
       if (scheduleHint) return res.status(503).json({ error: scheduleHint });
       if (error.code === '23505' || String(error.message || '').includes('uniq_hub_payables_recurrence_due')) {
@@ -4956,6 +4980,17 @@ export const patchHubFinancePayable = async (req: Request, res: Response) => {
       return res.status(500).json({ error: error.message });
     }
     if (!data) return res.status(404).json({ error: 'Conta a pagar não encontrada' });
+    if (confirmingAmount && existing.source_id) {
+      const synced = await applyConfirmedEstimateToSchedule({
+        clinicId: clinic_id,
+        scheduleId: String(existing.source_id),
+        amount: round2(fields.amount as number),
+      });
+      if (synced.error) {
+        const mapped = payableWriteError(synced.error);
+        return res.status(mapped.status).json({ error: mapped.error });
+      }
+    }
     return res.json({ payable: data });
   } catch (e: unknown) {
     console.error('patchHubFinancePayable', e);
@@ -4968,6 +5003,7 @@ const payPayableBodySchema = z
     clinic_id: uuidStr,
     payment_method: payablePaymentMethodSchema,
     paid_at: z.string().datetime({ offset: true }).optional().nullable(),
+    amount: z.number().positive().optional(),
   })
   .strict();
 
@@ -4978,7 +5014,7 @@ export const postHubFinancePayablePay = async (req: Request, res: Response) => {
     if (!id.success || !parsed.success) {
       return res.status(400).json({ error: 'Dados inválidos', details: parsed.success ? undefined : parsed.error.flatten() });
     }
-    const { clinic_id, payment_method, paid_at } = parsed.data;
+    const { clinic_id, payment_method, paid_at, amount } = parsed.data;
 
     const { data: existing, error: exErr } = await supabaseAdmin
       .from('hub_payables')
@@ -4997,19 +5033,56 @@ export const postHubFinancePayablePay = async (req: Request, res: Response) => {
       return res.status(409).json({ error: 'Só é possível pagar títulos pendentes' });
     }
 
+    const needsInvoice = existing.amount_confirmed === false;
+    if (needsInvoice && amount == null) {
+      return res.status(409).json({ error: 'Informe o valor da fatura' });
+    }
+    const invoiceAmount = needsInvoice ? round2(amount as number) : null;
+    if (invoiceAmount != null && existing.source_type === 'recurrence') {
+      const { error: confirmErr } = await supabaseAdmin
+        .from('hub_payables')
+        .update({
+          amount: invoiceAmount,
+          amount_confirmed: true,
+          recurrence_detached: true,
+        })
+        .eq('id', id.data)
+        .eq('clinic_id', clinic_id)
+        .eq('status', 'pending');
+      if (confirmErr) {
+        const mapped = payableWriteError(confirmErr.message);
+        return res.status(mapped.status).json({ error: mapped.error });
+      }
+      if (existing.source_id) {
+        const synced = await applyConfirmedEstimateToSchedule({
+          clinicId: clinic_id,
+          scheduleId: String(existing.source_id),
+          amount: invoiceAmount,
+        });
+        if (synced.error) {
+          const mapped = payableWriteError(synced.error);
+          return res.status(mapped.status).json({ error: mapped.error });
+        }
+      }
+    }
+
     const { data, error } = await supabaseAdmin
       .from('hub_payables')
       .update({
         status: 'paid',
         payment_method,
         paid_at: paid_at ?? new Date().toISOString(),
+        ...(invoiceAmount != null ? { amount: invoiceAmount, amount_confirmed: true } : {}),
       })
       .eq('id', id.data)
       .eq('clinic_id', clinic_id)
       .eq('status', 'pending')
       .select('*')
       .maybeSingle();
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      const mapped = payableWriteError(error.message);
+      return res.status(mapped.status).json({ error: mapped.error });
+    }
     if (!data) return res.status(409).json({ error: 'Título já não está pendente' });
     return res.json({ payable: data });
   } catch (e: unknown) {
@@ -5080,6 +5153,7 @@ const schedulePayeeSchema = z
     payee_staff_member_id: uuidStr.optional().nullable(),
     payee_supplier_id: uuidStr.optional().nullable(),
     payee_name: z.string().trim().min(1).max(200).optional(),
+    amount_mode: z.enum(PAYABLE_SCHEDULE_AMOUNT_MODES).optional(),
     frequency: payableScheduleFrequencySchema.optional(),
     anchor_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     until_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
@@ -5187,6 +5261,7 @@ export const postHubFinancePayableSchedule = async (req: Request, res: Response)
         payee_staff_member_id: payee.payeeStaffId,
         payee_supplier_id: payee.payeeSupplierId,
         payee_name: payee.payeeName,
+        amount_mode: b.amount_mode ?? 'fixed',
         frequency: b.frequency,
         anchor_date: b.anchor_date,
         until_date: b.until_date ?? null,
@@ -5196,9 +5271,8 @@ export const postHubFinancePayableSchedule = async (req: Request, res: Response)
       .select('*')
       .single();
     if (error) {
-      const hint = missingPayableSchedulesTable(error.message);
-      if (hint) return res.status(503).json({ error: hint });
-      return res.status(500).json({ error: error.message });
+      const mapped = payableWriteError(error.message);
+      return res.status(mapped.status).json({ error: mapped.error });
     }
     const schedule = data as HubPayableScheduleRow;
     const horizon = await ensurePayableScheduleHorizon({
@@ -5206,7 +5280,8 @@ export const postHubFinancePayableSchedule = async (req: Request, res: Response)
       unitId: b.unit_id,
     });
     if (horizon.error && !horizon.missingTable) {
-      return res.status(500).json({ error: horizon.error });
+      const mapped = payableWriteError(horizon.error);
+      return res.status(mapped.status).json({ error: mapped.error });
     }
     return res.status(201).json({
       schedule: {
@@ -5278,6 +5353,7 @@ export const patchHubFinancePayableSchedule = async (req: Request, res: Response
       payee_name: payee.payeeName,
     };
     if (b.amount != null) update.amount = round2(b.amount);
+    if (b.amount_mode != null) update.amount_mode = b.amount_mode;
     if (b.category != null) update.category = b.category;
     if (b.description != null) update.description = b.description;
     if (b.notes !== undefined) update.notes = b.notes;
@@ -5292,21 +5368,24 @@ export const patchHubFinancePayableSchedule = async (req: Request, res: Response
       .select('*')
       .maybeSingle();
     if (error) {
-      const hint = missingPayableSchedulesTable(error.message);
-      if (hint) return res.status(503).json({ error: hint });
-      return res.status(500).json({ error: error.message });
+      const mapped = payableWriteError(error.message);
+      return res.status(mapped.status).json({ error: mapped.error });
     }
     if (!data) return res.status(404).json({ error: 'Recorrência não encontrada' });
     const schedule = data as HubPayableScheduleRow;
     const propagated = await propagatePayableSchedule(schedule);
-    if (propagated.error) return res.status(500).json({ error: propagated.error });
+    if (propagated.error) {
+      const mapped = payableWriteError(propagated.error);
+      return res.status(mapped.status).json({ error: mapped.error });
+    }
     if (schedule.status === 'active') {
       const horizon = await ensurePayableScheduleHorizon({
         clinicId: schedule.clinic_id,
         unitId: schedule.unit_id,
       });
       if (horizon.error && !horizon.missingTable) {
-        return res.status(500).json({ error: horizon.error });
+        const mapped = payableWriteError(horizon.error);
+        return res.status(mapped.status).json({ error: mapped.error });
       }
     }
     return res.json({ schedule });

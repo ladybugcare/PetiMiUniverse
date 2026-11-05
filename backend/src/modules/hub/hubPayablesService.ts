@@ -50,6 +50,8 @@ export type HubPayableRow = {
   source_id?: string | null;
   source_role?: string | null;
   recurrence_detached?: boolean;
+  /** false = estimativa de recorrência, fora do total confirmado. Ausente = confirmado. */
+  amount_confirmed?: boolean;
   status: PayableStatus;
   due_date?: string | null;
   paid_at?: string | null;
@@ -351,27 +353,63 @@ export async function sumPaidPayablesInPeriod(params: {
 export async function sumPendingPayables(params: {
   clinicId: string;
   unitId: string;
-}): Promise<{ total: number; count: number; missingTable: boolean; error?: string }> {
-  const { data, error } = await supabaseAdmin
+}): Promise<{
+  total: number;
+  count: number;
+  unconfirmedCount: number;
+  estimatedTotal: number;
+  missingTable: boolean;
+  error?: string;
+}> {
+  const empty = { total: 0, count: 0, unconfirmedCount: 0, estimatedTotal: 0, missingTable: false };
+  type PendingAmountRow = { amount?: number | null; amount_confirmed?: boolean | null };
+  const first = await supabaseAdmin
     .from('hub_payables')
-    .select('amount')
+    .select('amount, amount_confirmed')
     .eq('clinic_id', params.clinicId)
     .eq('unit_id', params.unitId)
     .eq('status', 'pending')
     .is('deleted_at', null);
 
+  let rows: PendingAmountRow[] | null = (first.data ?? null) as PendingAmountRow[] | null;
+  let error = first.error;
+  if (error && String(error.message || '').includes('amount_confirmed')) {
+    const fallback = await supabaseAdmin
+      .from('hub_payables')
+      .select('amount')
+      .eq('clinic_id', params.clinicId)
+      .eq('unit_id', params.unitId)
+      .eq('status', 'pending')
+      .is('deleted_at', null);
+    rows = (fallback.data ?? null) as PendingAmountRow[] | null;
+    error = fallback.error;
+  }
+
   if (error) {
     if (String(error.message || '').includes('hub_payables')) {
-      return { total: 0, count: 0, missingTable: true };
+      return { ...empty, missingTable: true };
     }
-    return { total: 0, count: 0, missingTable: false, error: error.message };
+    return { ...empty, error: error.message };
   }
-  const total = round2((data ?? []).reduce((a, r) => a + Number(r.amount ?? 0), 0));
-  return { total, count: data?.length ?? 0, missingTable: false };
+  let total = 0;
+  let unconfirmedCount = 0;
+  let estimatedTotal = 0;
+  for (const row of rows ?? []) {
+    const amt = Number(row.amount ?? 0);
+    if (row.amount_confirmed === false) {
+      unconfirmedCount += 1;
+      estimatedTotal = round2(estimatedTotal + amt);
+    } else {
+      total = round2(total + amt);
+    }
+  }
+  return { total, count: rows?.length ?? 0, unconfirmedCount, estimatedTotal, missingTable: false };
 }
 
 export const PAYABLE_SCHEDULE_FREQUENCIES = ['weekly', 'biweekly', 'monthly'] as const;
 export type PayableScheduleFrequency = (typeof PAYABLE_SCHEDULE_FREQUENCIES)[number];
+export const PAYABLE_SCHEDULE_AMOUNT_MODES = ['fixed', 'estimated'] as const;
+export type PayableScheduleAmountMode = (typeof PAYABLE_SCHEDULE_AMOUNT_MODES)[number];
 export type PayableScheduleStatus = 'active' | 'paused' | 'ended';
 
 export type HubPayableScheduleRow = {
@@ -379,6 +417,8 @@ export type HubPayableScheduleRow = {
   clinic_id: string;
   unit_id: string;
   amount: number;
+  /** Ausente em bases antigas: tratar como fixed. */
+  amount_mode?: PayableScheduleAmountMode;
   category: PayableCategory;
   description: string;
   notes?: string | null;
@@ -505,6 +545,62 @@ export function payableOccurrenceDescription(
   return `${trimmed} · ${suffix}`.slice(0, 2000);
 }
 
+export function scheduleAmountIsEstimate(mode: string | null | undefined): boolean {
+  return mode === 'estimated';
+}
+
+export type PayableDueAlertSummary = {
+  overdue_payables_count: number;
+  overdue_payables_total: number;
+  overdue_payables_unconfirmed_count: number;
+  overdue_payables_estimated_total: number;
+  due_today_payables_count: number;
+  due_today_payables_total: number;
+  due_today_payables_unconfirmed_count: number;
+  due_today_payables_estimated_total: number;
+};
+
+/** Contagem inclui o que precisa de ação. O total em reais soma só o valor confirmado. */
+export function summarizePayableDueAlerts(
+  rows: Array<{ amount?: number | null; due_date?: string | null; amount_confirmed?: boolean | null }>,
+  dateYmd: string,
+): PayableDueAlertSummary {
+  const out: PayableDueAlertSummary = {
+    overdue_payables_count: 0,
+    overdue_payables_total: 0,
+    overdue_payables_unconfirmed_count: 0,
+    overdue_payables_estimated_total: 0,
+    due_today_payables_count: 0,
+    due_today_payables_total: 0,
+    due_today_payables_unconfirmed_count: 0,
+    due_today_payables_estimated_total: 0,
+  };
+  for (const row of rows) {
+    const due = row.due_date ? String(row.due_date).slice(0, 10) : '';
+    if (!due) continue;
+    const amt = Number(row.amount ?? 0);
+    const estimated = row.amount_confirmed === false;
+    if (due < dateYmd) {
+      out.overdue_payables_count += 1;
+      if (estimated) {
+        out.overdue_payables_unconfirmed_count += 1;
+        out.overdue_payables_estimated_total = round2(out.overdue_payables_estimated_total + amt);
+      } else {
+        out.overdue_payables_total = round2(out.overdue_payables_total + amt);
+      }
+    } else if (due === dateYmd) {
+      out.due_today_payables_count += 1;
+      if (estimated) {
+        out.due_today_payables_unconfirmed_count += 1;
+        out.due_today_payables_estimated_total = round2(out.due_today_payables_estimated_total + amt);
+      } else {
+        out.due_today_payables_total = round2(out.due_today_payables_total + amt);
+      }
+    }
+  }
+  return out;
+}
+
 export function nextPayableScheduleDueDate(
   schedule: Pick<HubPayableScheduleRow, 'frequency' | 'anchor_date' | 'until_date'>,
   todayYmd: string,
@@ -574,6 +670,7 @@ async function insertOccurrence(
     source_id: schedule.id,
     source_role: null,
     recurrence_detached: false,
+    amount_confirmed: !scheduleAmountIsEstimate(schedule.amount_mode),
     status: 'pending',
     due_date: dueYmd,
     paid_at: null,
@@ -677,10 +774,12 @@ export async function propagatePayableSchedule(
       if (cancelErr) return { error: cancelErr.message };
       continue;
     }
+    const estimated = scheduleAmountIsEstimate(schedule.amount_mode);
     const { error: updErr } = await supabaseAdmin
       .from('hub_payables')
       .update({
         amount: round2(Number(schedule.amount)),
+        amount_confirmed: !estimated,
         category: schedule.category,
         description: due
           ? payableOccurrenceDescription(schedule.description, schedule.frequency, due)
@@ -696,6 +795,37 @@ export async function propagatePayableSchedule(
     if (updErr) return { error: updErr.message };
   }
   return {};
+}
+
+/**
+ * A última fatura confirmada vira a estimativa do contrato e das competências
+ * pendentes que ainda seguem o contrato. Contrato de valor fixo não muda.
+ * O título confirmado precisa já estar desligado (`recurrence_detached`).
+ */
+export async function applyConfirmedEstimateToSchedule(params: {
+  clinicId: string;
+  scheduleId: string;
+  amount: number;
+}): Promise<{ error?: string }> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_payable_schedules')
+    .select('*')
+    .eq('id', params.scheduleId)
+    .eq('clinic_id', params.clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return {};
+  const schedule = data as HubPayableScheduleRow;
+  if (!scheduleAmountIsEstimate(schedule.amount_mode) || schedule.status === 'ended') return {};
+  const nextAmount = round2(params.amount);
+  const { error: updErr } = await supabaseAdmin
+    .from('hub_payable_schedules')
+    .update({ amount: nextAmount })
+    .eq('id', schedule.id)
+    .eq('clinic_id', params.clinicId);
+  if (updErr) return { error: updErr.message };
+  return propagatePayableSchedule({ ...schedule, amount: nextAmount });
 }
 
 /** Encerra o contrato e cancela pendentes com vencimento depois de hoje. */

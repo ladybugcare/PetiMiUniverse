@@ -4,7 +4,7 @@ import { supabaseAdmin } from '../../config/supabase';
 import { checkPermission } from '../../middleware/authMiddleware';
 import { dayBoundsFromYmdSaoPaulo } from './boardingOperational';
 import { computeBalances } from './hubInventoryController';
-import { ensurePayableScheduleHorizon } from './hubPayablesService';
+import { ensurePayableScheduleHorizon, summarizePayableDueAlerts } from './hubPayablesService';
 
 const uuidStr = z.string().uuid();
 const dateYmdStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -440,45 +440,49 @@ export const getHubDayOpsSummary = async (req: Request, res: Response) => {
             }
           }
 
-          let overduePayablesCount = 0;
-          let overduePayablesTotal = 0;
-          let dueTodayPayablesCount = 0;
-          let dueTodayPayablesTotal = 0;
+          let payableDueAlerts = summarizePayableDueAlerts([], dateYmd);
           try {
             await ensurePayableScheduleHorizon({
               clinicId: clinic_id,
               unitId: unit_id,
               todayYmd: dateYmd,
             });
-            const { data: pendingPayables, error: payablesErr } = await supabaseAdmin
+            const withFlag = await supabaseAdmin
               .from('hub_payables')
-              .select('amount, due_date')
+              .select('amount, due_date, amount_confirmed')
               .eq('clinic_id', clinic_id)
               .eq('unit_id', unit_id)
               .eq('status', 'pending')
               .is('deleted_at', null);
-            if (!payablesErr) {
-              for (const row of pendingPayables ?? []) {
-                const due = row.due_date ? String(row.due_date).slice(0, 10) : '';
-                if (!due) continue;
-                const amt = Number(row.amount ?? 0);
-                if (due < dateYmd) {
-                  overduePayablesCount += 1;
-                  overduePayablesTotal = round2(overduePayablesTotal + amt);
-                } else if (due === dateYmd) {
-                  dueTodayPayablesCount += 1;
-                  dueTodayPayablesTotal = round2(dueTodayPayablesTotal + amt);
-                }
-              }
+            let pendingRows: Array<{ amount?: number | null; due_date?: string | null; amount_confirmed?: boolean | null }> | null =
+              withFlag.error ? null : (withFlag.data ?? []);
+            let pendingErr = withFlag.error;
+            if (pendingErr && String(pendingErr.message || '').includes('amount_confirmed')) {
+              const plain = await supabaseAdmin
+                .from('hub_payables')
+                .select('amount, due_date')
+                .eq('clinic_id', clinic_id)
+                .eq('unit_id', unit_id)
+                .eq('status', 'pending')
+                .is('deleted_at', null);
+              pendingRows = plain.error ? null : (plain.data ?? []);
+              pendingErr = plain.error;
+            }
+            if (!pendingErr && pendingRows) {
+              payableDueAlerts = summarizePayableDueAlerts(pendingRows, dateYmd);
             }
           } catch {
             /* contas a pagar opcionais se a migração ainda não rodou */
           }
 
-          payableAlertPatch.overdue_payables_count = overduePayablesCount;
-          payableAlertPatch.overdue_payables_total = overduePayablesTotal;
-          payableAlertPatch.due_today_payables_count = dueTodayPayablesCount;
-          payableAlertPatch.due_today_payables_total = dueTodayPayablesTotal;
+          payableAlertPatch.overdue_payables_count = payableDueAlerts.overdue_payables_count;
+          payableAlertPatch.overdue_payables_total = payableDueAlerts.overdue_payables_total;
+          payableAlertPatch.overdue_payables_unconfirmed_count = payableDueAlerts.overdue_payables_unconfirmed_count;
+          payableAlertPatch.overdue_payables_estimated_total = payableDueAlerts.overdue_payables_estimated_total;
+          payableAlertPatch.due_today_payables_count = payableDueAlerts.due_today_payables_count;
+          payableAlertPatch.due_today_payables_total = payableDueAlerts.due_today_payables_total;
+          payableAlertPatch.due_today_payables_unconfirmed_count = payableDueAlerts.due_today_payables_unconfirmed_count;
+          payableAlertPatch.due_today_payables_estimated_total = payableDueAlerts.due_today_payables_estimated_total;
 
           out.finance = {
             received_today,
@@ -498,10 +502,14 @@ export const getHubDayOpsSummary = async (req: Request, res: Response) => {
             ...prevAlerts,
             overdue_receivables_count: overdueCount,
             overdue_receivables_total: overdueTotal,
-            overdue_payables_count: overduePayablesCount,
-            overdue_payables_total: overduePayablesTotal,
-            due_today_payables_count: dueTodayPayablesCount,
-            due_today_payables_total: dueTodayPayablesTotal,
+            overdue_payables_count: payableDueAlerts.overdue_payables_count,
+            overdue_payables_total: payableDueAlerts.overdue_payables_total,
+            overdue_payables_unconfirmed_count: payableDueAlerts.overdue_payables_unconfirmed_count,
+            overdue_payables_estimated_total: payableDueAlerts.overdue_payables_estimated_total,
+            due_today_payables_count: payableDueAlerts.due_today_payables_count,
+            due_today_payables_total: payableDueAlerts.due_today_payables_total,
+            due_today_payables_unconfirmed_count: payableDueAlerts.due_today_payables_unconfirmed_count,
+            due_today_payables_estimated_total: payableDueAlerts.due_today_payables_estimated_total,
           };
         })(),
       );

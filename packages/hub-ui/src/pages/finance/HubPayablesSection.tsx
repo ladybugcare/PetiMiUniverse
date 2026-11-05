@@ -12,6 +12,7 @@ import {
   type HubFinancePayable,
   type HubFinancePayableCategory,
   type HubPayableSchedule,
+  type HubPayableScheduleAmountMode,
   type HubPayableScheduleFrequency,
 } from '../../api/hubFinancialApi';
 import { hubInventoryApi, type HubSupplier } from '../../api/hubInventoryApi';
@@ -22,6 +23,24 @@ import { ReceivableDueBadge } from './ReceivableDueBadge';
 
 function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
+}
+
+/** Dígitos e um separador decimal. Letras e símbolos são descartados; centavos ficam em 2 casas. */
+function sanitizePayableAmount(raw: string): string {
+  const s = raw.replace(/[^\d,.]/g, '');
+  if (!s) return '';
+
+  const commas = (s.match(/,/g) ?? []).length;
+  const dots = (s.match(/\./g) ?? []).length;
+  if (commas === 0 && dots > 1) return s.replace(/\D/g, '');
+
+  const sepAt = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
+  if (sepAt < 0) return s;
+
+  const intPart = s.slice(0, sepAt).replace(/\D/g, '');
+  const frac = s.slice(sepAt + 1).replace(/\D/g, '').slice(0, 2);
+  if (s.endsWith(',') || s.endsWith('.')) return `${intPart},`;
+  return frac ? `${intPart},${frac}` : intPart;
 }
 
 function isLikelyUuid(s: string): boolean {
@@ -127,6 +146,7 @@ type EditDraft = {
   category: HubFinancePayableCategory;
   description: string;
   amount: string;
+  amountConfirmed: boolean;
   payeeKind: PayeeKind;
   payeeStaffId: string;
   payeeSupplierId: string;
@@ -139,6 +159,7 @@ type ScheduleDraft = EditDraft & {
   anchorDate: string;
   untilDate: string;
   status: 'active' | 'paused';
+  amountMode: HubPayableScheduleAmountMode;
 };
 
 const HubPayablesSection: React.FC<Props> = ({
@@ -175,12 +196,14 @@ const HubPayablesSection: React.FC<Props> = ({
   const [dueDate, setDueDate] = useState('');
   const [untilDate, setUntilDate] = useState('');
   const [recurring, setRecurring] = useState(false);
+  const [amountMode, setAmountMode] = useState<HubPayableScheduleAmountMode>('fixed');
   const [frequency, setFrequency] = useState<HubPayableScheduleFrequency>('monthly');
   const [createStatus, setCreateStatus] = useState<'pending' | 'paid'>('pending');
   const [paymentMethod, setPaymentMethod] = useState('pix');
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payMethodForRow, setPayMethodForRow] = useState('pix');
   const [payDateForRow, setPayDateForRow] = useState(todayIsoLocal);
+  const [payAmountForRow, setPayAmountForRow] = useState('');
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -217,9 +240,20 @@ const HubPayablesSection: React.FC<Props> = ({
   const staffById = useMemo(() => new Map(staff.map((s) => [s.id, s])), [staff]);
 
   const pendingTotal = useMemo(
-    () => rows.filter((r) => r.status === 'pending').reduce((acc, r) => acc + Number(r.amount || 0), 0),
+    () =>
+      rows
+        .filter((r) => r.status === 'pending' && r.amount_confirmed !== false)
+        .reduce((acc, r) => acc + Number(r.amount || 0), 0),
     [rows],
   );
+
+  const pendingEstimate = useMemo(() => {
+    const open = rows.filter((r) => r.status === 'pending' && r.amount_confirmed === false);
+    return {
+      count: open.length,
+      total: open.reduce((acc, r) => acc + Number(r.amount || 0), 0),
+    };
+  }, [rows]);
 
   const overdueCount = useMemo(
     () =>
@@ -272,6 +306,7 @@ const HubPayablesSection: React.FC<Props> = ({
     setDueDate('');
     setUntilDate('');
     setRecurring(false);
+    setAmountMode('fixed');
     setFrequency('monthly');
     setCreateStatus('pending');
     setPaymentMethod('pix');
@@ -380,11 +415,16 @@ const HubPayablesSection: React.FC<Props> = ({
           payee_staff_member_id: staffId,
           payee_supplier_id: supplierId,
           payee_name: name || undefined,
+          amount_mode: amountMode,
           frequency,
           anchor_date: dueDate,
           until_date: untilDate || null,
         });
-        showSuccess('Recorrência registrada. Os vencimentos deste mês e do próximo já estão na lista.');
+        showSuccess(
+          amountMode === 'estimated'
+            ? 'Recorrência registrada. Os vencimentos deste mês e do próximo já estão na lista, com valor a confirmar.'
+            : 'Recorrência registrada. Os vencimentos deste mês e do próximo já estão na lista.',
+        );
         resetCreateForm();
         setFormPanel(null);
         await load();
@@ -435,7 +475,8 @@ const HubPayablesSection: React.FC<Props> = ({
       id: p.id,
       category: p.category,
       description: p.description,
-      amount: String(p.amount),
+      amount: sanitizePayableAmount(String(p.amount)),
+      amountConfirmed: p.amount_confirmed !== false,
       payeeKind: payeeKindFromPayable(p),
       payeeStaffId: p.payee_staff_member_id || '',
       payeeSupplierId: p.payee_supplier_id || '',
@@ -497,7 +538,11 @@ const HubPayablesSection: React.FC<Props> = ({
         payee_name: name || undefined,
         due_date: editDraft.dueDate || null,
       });
-      showSuccess('Título atualizado.');
+      showSuccess(
+        editDraft.amountConfirmed
+          ? 'Título atualizado.'
+          : 'Fatura confirmada nesta competência.',
+      );
       setEditDraft(null);
       setFormPanel(null);
       await load();
@@ -509,18 +554,29 @@ const HubPayablesSection: React.FC<Props> = ({
     }
   };
 
-  const onMarkPaid = async (id: string) => {
+  const onMarkPaid = async (payable: HubFinancePayable) => {
     if (!canWrite) {
       showError('Sem permissão.');
       return;
     }
+    const needsInvoice = payable.amount_confirmed === false;
+    let invoiceAmount: number | undefined;
+    if (needsInvoice) {
+      const v = Number(String(payAmountForRow).replace(',', '.'));
+      if (Number.isNaN(v) || v <= 0) {
+        showError('Informe o valor da fatura.');
+        return;
+      }
+      invoiceAmount = v;
+    }
     try {
-      await hubFinancialApi.payPayable(id, {
+      await hubFinancialApi.payPayable(payable.id, {
         clinic_id: clinicId,
         payment_method: payMethodForRow || 'pix',
         paid_at: paidAtFromYmd(payDateForRow || todayIsoLocal()),
+        ...(invoiceAmount != null ? { amount: invoiceAmount } : {}),
       });
-      showSuccess('Conta marcada como paga.');
+      showSuccess(needsInvoice ? 'Fatura confirmada e conta marcada como paga.' : 'Conta marcada como paga.');
       setPayingId(null);
       await load();
       onChanged();
@@ -554,7 +610,9 @@ const HubPayablesSection: React.FC<Props> = ({
       id: schedule.id,
       category: schedule.category,
       description: schedule.description,
-      amount: String(schedule.amount),
+      amount: sanitizePayableAmount(String(schedule.amount)),
+      amountConfirmed: true,
+      amountMode: schedule.amount_mode === 'estimated' ? 'estimated' : 'fixed',
       payeeKind: schedule.payee_supplier_id ? 'supplier' : schedule.payee_staff_member_id ? 'staff' : 'other',
       payeeStaffId: schedule.payee_staff_member_id || '',
       payeeSupplierId: schedule.payee_supplier_id || '',
@@ -621,10 +679,15 @@ const HubPayablesSection: React.FC<Props> = ({
         payee_staff_member_id: staffId,
         payee_supplier_id: supplierId,
         payee_name: name || undefined,
+        amount_mode: scheduleDraft.amountMode,
         until_date: scheduleDraft.untilDate || null,
         status: scheduleDraft.status,
       });
-      showSuccess('Recorrência atualizada. Competências pendentes acompanham o contrato.');
+      showSuccess(
+        scheduleDraft.amountMode === 'estimated'
+          ? 'Recorrência atualizada. As competências pendentes do contrato ficam a confirmar.'
+          : 'Recorrência atualizada. Competências pendentes acompanham o contrato.',
+      );
       setScheduleDraft(null);
       setFormPanel(null);
       await load();
@@ -692,6 +755,43 @@ const HubPayablesSection: React.FC<Props> = ({
     });
   }, [sortedRows, statusFilter, dueQuick]);
 
+  const renderAmountModeFields = (
+    mode: HubPayableScheduleAmountMode,
+    onChange: (next: HubPayableScheduleAmountMode) => void,
+    idPrefix: string,
+  ) => (
+    <div className="hub-finance-page__field-span-6">
+      <span className="hub-clientes__label" id={`${idPrefix}-amount-mode-label`}>
+        Tipo de valor
+      </span>
+      <div className="hub-payables__kind-tabs" role="tablist" aria-labelledby={`${idPrefix}-amount-mode-label`}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'fixed'}
+          className={`hub-payables__kind-tab${mode === 'fixed' ? ' hub-payables__kind-tab--active' : ''}`}
+          onClick={() => onChange('fixed')}
+        >
+          Valor fixo
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'estimated'}
+          className={`hub-payables__kind-tab${mode === 'estimated' ? ' hub-payables__kind-tab--active' : ''}`}
+          onClick={() => onChange('estimated')}
+        >
+          Valor varia todo mês
+        </button>
+      </div>
+      <p className="hub-clientes__muted hub-payables__field-hint">
+        {mode === 'estimated'
+          ? 'Serve à previsão até a conta chegar. A fatura confirmada vira a estimativa do mês seguinte.'
+          : 'O mesmo valor se repete em cada competência.'}
+      </p>
+    </div>
+  );
+
   const renderCreateOrEditFields = (
     mode: 'create' | 'edit',
     draft?: EditDraft,
@@ -726,74 +826,6 @@ const HubPayablesSection: React.FC<Props> = ({
 
     return (
       <div className="hub-payables__sections">
-        {!isEdit ? (
-          <section className="hub-finance-page__form-card" aria-labelledby={`${idPrefix}-tipo`}>
-            <h3 id={`${idPrefix}-tipo`} className="hub-finance-page__form-card-title">
-              Tipo da conta
-            </h3>
-            <button
-            type="button"
-            className={`hub-payables__mode-toggle${recurring ? ' hub-payables__mode-toggle--on' : ''}`}
-            aria-pressed={recurring}
-            onClick={() => {
-              setRecurring((on) => {
-                if (!on) setCreateStatus('pending');
-                return !on;
-              });
-            }}
-          >
-            <span className="hub-payables__mode-toggle-copy">
-              <span className="hub-payables__mode-toggle-title">Recorrente</span>
-              <span className="hub-payables__mode-toggle-hint">
-                {recurring
-                  ? 'Cada competência nasce pendente. “Já pago” vale só para uma conta avulsa.'
-                  : 'Desligado: uma conta só, pendente ou já paga. Ligue para aluguel, energia ou folha fixa.'}
-              </span>
-            </span>
-            <span className="hub-payables__mode-toggle-switch" aria-hidden />
-          </button>
-          {recurring ? (
-            <div className="hub-finance-page__form-grid hub-payables__section-grid">
-              <div className="hub-clientes__field hub-finance-page__field-span-3">
-                <label className="hub-clientes__label" htmlFor={`${idPrefix}-freq`}>
-                  Frequência
-                </label>
-                <HubSearchableCombobox
-                  id={`${idPrefix}-freq`}
-                  options={FREQUENCY_OPTIONS}
-                  value={frequency}
-                  onChange={(v) => setFrequency((v || 'monthly') as HubPayableScheduleFrequency)}
-                  placeholder="Frequência…"
-                  searchPlaceholder="Buscar…"
-                  ariaLabel="Frequência"
-                  clearable={false}
-                />
-              </div>
-              <div className="hub-clientes__field hub-finance-page__field-span-3">
-                <HubDateField
-                  id={`${idPrefix}-first-due`}
-                  label="Primeiro vencimento"
-                  valueIso={due}
-                  onChangeIso={setDueDate}
-                  showTodayButton={false}
-                />
-              </div>
-              <div className="hub-clientes__field hub-finance-page__field-span-6">
-                <HubDateField
-                  id={`${idPrefix}-until`}
-                  label="Até (opcional)"
-                  valueIso={untilDate}
-                  onChangeIso={setUntilDate}
-                  showTodayButton={false}
-                />
-              </div>
-              <p className="hub-clientes__muted hub-payables__field-hint hub-finance-page__field-span-6">
-                {RECURRENCE_HORIZON_HINT}
-              </p>
-            </div>
-          ) : null}
-          </section>
-        ) : null}
         <section className="hub-finance-page__form-card" aria-labelledby={`${idPrefix}-credor`}>
           <h3 id={`${idPrefix}-credor`} className="hub-finance-page__form-card-title">
             Credor
@@ -948,20 +980,32 @@ const HubPayablesSection: React.FC<Props> = ({
             }
           />
         </div>
+        {!isEdit && recurring ? renderAmountModeFields(amountMode, setAmountMode, idPrefix) : null}
         <div className="hub-clientes__field hub-finance-page__field-span-2">
           <label className="hub-clientes__label" htmlFor={`${idPrefix}-amt`}>
-            Valor (R$)
+            {isEdit && draft?.amountConfirmed === false
+              ? 'Valor da fatura (R$)'
+              : !isEdit && recurring && amountMode === 'estimated'
+                ? 'Valor estimado (R$)'
+                : 'Valor (R$)'}
           </label>
           <input
             id={`${idPrefix}-amt`}
             className="hub-clientes__input"
             value={amt}
             onChange={(e) => {
-              if (isEdit) setEditDraft({ ...draft, amount: e.target.value });
-              else setAmount(e.target.value);
+              const next = sanitizePayableAmount(e.target.value);
+              if (isEdit) setEditDraft({ ...draft, amount: next });
+              else setAmount(next);
             }}
             inputMode="decimal"
+            autoComplete="off"
           />
+          {isEdit && draft?.amountConfirmed === false ? (
+            <p className="hub-clientes__muted hub-payables__field-hint">
+              Salvar confirma a fatura desta competência, sem marcar como paga.
+            </p>
+          ) : null}
         </div>
         {isEdit ? (
           <div className="hub-clientes__field hub-finance-page__field-span-6">
@@ -976,58 +1020,124 @@ const HubPayablesSection: React.FC<Props> = ({
         ) : null}
           </div>
         </section>
-        {!isEdit && !recurring ? (
+        {!isEdit ? (
           <section className="hub-finance-page__form-card" aria-labelledby={`${idPrefix}-pagamento`}>
             <h3 id={`${idPrefix}-pagamento`} className="hub-finance-page__form-card-title">
               Pagamento
             </h3>
+            <div className="hub-payables__kind-tabs" role="tablist" aria-label="Tipo da conta">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!recurring}
+                className={`hub-payables__kind-tab${!recurring ? ' hub-payables__kind-tab--active' : ''}`}
+                onClick={() => setRecurring(false)}
+              >
+                Avulsa
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={recurring}
+                className={`hub-payables__kind-tab${recurring ? ' hub-payables__kind-tab--active' : ''}`}
+                onClick={() => {
+                  setCreateStatus('pending');
+                  setRecurring(true);
+                }}
+              >
+                Recorrente
+              </button>
+            </div>
             <p className="hub-finance-page__form-card-sub">
-              Pendente fica em aberto até liquidar. Já pago entra no fluxo de caixa agora.
+              {recurring
+                ? 'Cada competência nasce pendente. Aluguel e folha usam valor fixo; água e luz podem variar todo mês.'
+                : 'Pendente fica em aberto até liquidar. Já pago entra no fluxo de caixa agora.'}
             </p>
-            <div className="hub-finance-page__form-grid">
-              <div className="hub-clientes__field hub-finance-page__field-span-3">
-                <label className="hub-clientes__label" htmlFor={`${idPrefix}-status`}>
-                  Situação
-                </label>
-                <HubSearchableCombobox
-                  id={`${idPrefix}-status`}
-                  options={CREATE_STATUS_OPTIONS}
-                  value={createStatus}
-                  onChange={(v) => setCreateStatus((v || 'pending') as 'pending' | 'paid')}
-                  placeholder="Situação…"
-                  searchPlaceholder="Buscar…"
-                  ariaLabel="Situação"
-                  clearable={false}
-                />
-              </div>
-              {createStatus === 'pending' ? (
+            {recurring ? (
+              <div className="hub-finance-page__form-grid">
+                <div className="hub-clientes__field hub-finance-page__field-span-3">
+                  <label className="hub-clientes__label" htmlFor={`${idPrefix}-freq`}>
+                    Frequência
+                  </label>
+                  <HubSearchableCombobox
+                    id={`${idPrefix}-freq`}
+                    options={FREQUENCY_OPTIONS}
+                    value={frequency}
+                    onChange={(v) => setFrequency((v || 'monthly') as HubPayableScheduleFrequency)}
+                    placeholder="Frequência…"
+                    searchPlaceholder="Buscar…"
+                    ariaLabel="Frequência"
+                    clearable={false}
+                  />
+                </div>
                 <div className="hub-clientes__field hub-finance-page__field-span-3">
                   <HubDateField
-                    id={`${idPrefix}-due`}
-                    label="Vencimento"
+                    id={`${idPrefix}-first-due`}
+                    label="Primeiro vencimento"
                     valueIso={due}
                     onChangeIso={setDueDate}
                     showTodayButton={false}
                   />
                 </div>
-              ) : (
+                <div className="hub-clientes__field hub-finance-page__field-span-6">
+                  <HubDateField
+                    id={`${idPrefix}-until`}
+                    label="Até (opcional)"
+                    valueIso={untilDate}
+                    onChangeIso={setUntilDate}
+                    showTodayButton={false}
+                  />
+                </div>
+                <p className="hub-clientes__muted hub-payables__field-hint hub-finance-page__field-span-6">
+                  {RECURRENCE_HORIZON_HINT}
+                </p>
+              </div>
+            ) : (
+              <div className="hub-finance-page__form-grid">
                 <div className="hub-clientes__field hub-finance-page__field-span-3">
-                  <label className="hub-clientes__label" htmlFor={`${idPrefix}-pay-method`}>
-                    Forma de pagamento
+                  <label className="hub-clientes__label" htmlFor={`${idPrefix}-status`}>
+                    Situação
                   </label>
                   <HubSearchableCombobox
-                    id={`${idPrefix}-pay-method`}
-                    options={PAYMENT_METHOD_OPTIONS}
-                    value={paymentMethod}
-                    onChange={(v) => setPaymentMethod(v || 'pix')}
-                    placeholder="Forma de pagamento…"
+                    id={`${idPrefix}-status`}
+                    options={CREATE_STATUS_OPTIONS}
+                    value={createStatus}
+                    onChange={(v) => setCreateStatus((v || 'pending') as 'pending' | 'paid')}
+                    placeholder="Situação…"
                     searchPlaceholder="Buscar…"
-                    ariaLabel="Forma de pagamento"
+                    ariaLabel="Situação"
                     clearable={false}
                   />
                 </div>
-              )}
-            </div>
+                {createStatus === 'pending' ? (
+                  <div className="hub-clientes__field hub-finance-page__field-span-3">
+                    <HubDateField
+                      id={`${idPrefix}-due`}
+                      label="Vencimento"
+                      valueIso={due}
+                      onChangeIso={setDueDate}
+                      showTodayButton={false}
+                    />
+                  </div>
+                ) : (
+                  <div className="hub-clientes__field hub-finance-page__field-span-3">
+                    <label className="hub-clientes__label" htmlFor={`${idPrefix}-pay-method`}>
+                      Forma de pagamento
+                    </label>
+                    <HubSearchableCombobox
+                      id={`${idPrefix}-pay-method`}
+                      options={PAYMENT_METHOD_OPTIONS}
+                      value={paymentMethod}
+                      onChange={(v) => setPaymentMethod(v || 'pix')}
+                      placeholder="Forma de pagamento…"
+                      searchPlaceholder="Buscar…"
+                      ariaLabel="Forma de pagamento"
+                      clearable={false}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         ) : null}
       </div>
@@ -1197,16 +1307,18 @@ const HubPayablesSection: React.FC<Props> = ({
             onChange={(e) => setScheduleDraft({ ...draft, description: e.target.value })}
           />
         </div>
+        {renderAmountModeFields(draft.amountMode, (next) => setScheduleDraft({ ...draft, amountMode: next }), idPrefix)}
         <div className="hub-clientes__field hub-finance-page__field-span-2">
           <label className="hub-clientes__label" htmlFor={`${idPrefix}-amt`}>
-            Valor (R$)
+            {draft.amountMode === 'estimated' ? 'Valor estimado (R$)' : 'Valor (R$)'}
           </label>
           <input
             id={`${idPrefix}-amt`}
             className="hub-clientes__input"
             value={draft.amount}
-            onChange={(e) => setScheduleDraft({ ...draft, amount: e.target.value })}
+            onChange={(e) => setScheduleDraft({ ...draft, amount: sanitizePayableAmount(e.target.value) })}
             inputMode="decimal"
+            autoComplete="off"
           />
         </div>
           </div>
@@ -1235,6 +1347,9 @@ const HubPayablesSection: React.FC<Props> = ({
             <div className="hub-payables__stat">
               <span className="hub-payables__stat-label">Em aberto</span>
               <span className="hub-payables__stat-value">{formatBrl(pendingTotal)}</span>
+              {pendingEstimate.count > 0 ? (
+                <span className="hub-payables__stat-estimate">A confirmar {formatBrl(pendingEstimate.total)}</span>
+              ) : null}
               {overdueCount > 0 ? (
                 <span className="hub-payables__stat-alert">{overdueCount} vencido(s)</span>
               ) : null}
@@ -1366,6 +1481,12 @@ const HubPayablesSection: React.FC<Props> = ({
                   </span>
                   <span className="hub-payables__schedule-meta">
                     {formatBrl(Number(schedule.amount))}
+                    {schedule.amount_mode === 'estimated' ? (
+                      <>
+                        {' '}
+                        <span className="hub-payables__chip hub-payables__chip--estimate">Estimativa</span>
+                      </>
+                    ) : null}
                     {' · '}
                     {schedule.next_due_date
                       ? `próximo ${formatDueDateShort(schedule.next_due_date).replace('venc. ', '')}`
@@ -1499,7 +1620,12 @@ const HubPayablesSection: React.FC<Props> = ({
                     </div>
                   </div>
                   <div className="hub-payables__card-amount">
-                    <span className="hub-payables__amount">{formatBrl(Number(p.amount))}</span>
+                    <div className="hub-payables__amount-row">
+                      <span className="hub-payables__amount">{formatBrl(Number(p.amount))}</span>
+                      {p.status === 'pending' && p.amount_confirmed === false ? (
+                        <span className="hub-payables__chip hub-payables__chip--estimate">A confirmar</span>
+                      ) : null}
+                    </div>
                     {p.status === 'pending' && canWrite && !isPaying ? (
                       <div className="hub-payables__actions">
                         <button
@@ -1511,6 +1637,7 @@ const HubPayablesSection: React.FC<Props> = ({
                             setPayingId(p.id);
                             setPayMethodForRow('pix');
                             setPayDateForRow(todayIsoLocal());
+                            setPayAmountForRow(sanitizePayableAmount(String(p.amount)));
                           }}
                         >
                           Pagar
@@ -1538,7 +1665,22 @@ const HubPayablesSection: React.FC<Props> = ({
                   <div className="hub-payables__panel">
                     <p className="hub-payables__panel-title">Confirmar pagamento</p>
                     <div className="hub-payables__panel-row">
-                      <div className="hub-clientes__field" style={{ margin: 0, minWidth: 200, flex: '1 1 200px' }}>
+                    {p.amount_confirmed === false ? (
+                      <div className="hub-clientes__field" style={{ margin: 0, minWidth: 160, flex: '0 1 180px' }}>
+                        <label className="hub-clientes__label" htmlFor={`fin-ap-pay-amt-${p.id}`}>
+                          Valor da fatura (R$)
+                        </label>
+                        <input
+                          id={`fin-ap-pay-amt-${p.id}`}
+                          className="hub-clientes__input"
+                          value={payAmountForRow}
+                          onChange={(e) => setPayAmountForRow(sanitizePayableAmount(e.target.value))}
+                          inputMode="decimal"
+                          autoComplete="off"
+                        />
+                      </div>
+                    ) : null}
+                    <div className="hub-clientes__field" style={{ margin: 0, minWidth: 200, flex: '1 1 200px' }}>
                         <label className="hub-clientes__label" htmlFor={`fin-ap-pay-${p.id}`}>
                           Forma de pagamento
                         </label>
@@ -1566,9 +1708,14 @@ const HubPayablesSection: React.FC<Props> = ({
                         <button
                           type="button"
                           className="hub-clientes__btn hub-clientes__btn--primary"
-                          onClick={() => void onMarkPaid(p.id)}
+                          onClick={() => void onMarkPaid(p)}
                         >
-                          Confirmar {formatBrl(Number(p.amount))}
+                          {p.amount_confirmed === false ? 'Confirmar e pagar' : 'Confirmar'}{' '}
+                          {formatBrl(
+                            p.amount_confirmed === false
+                              ? Number(String(payAmountForRow).replace(',', '.')) || 0
+                              : Number(p.amount),
+                          )}
                         </button>
                         <button
                           type="button"
@@ -1601,11 +1748,17 @@ const HubPayablesSection: React.FC<Props> = ({
           titleIcon={<Banknote size={20} strokeWidth={1.75} aria-hidden />}
           subtitle={
             formPanel === 'edit'
-              ? 'Atualize credor, valor ou vencimento deste título pendente. Se ele veio de uma recorrência, só esta competência muda.'
+              ? editDraft && !editDraft.amountConfirmed
+                ? 'Informe o valor da fatura. Salvar confirma só esta competência, sem marcar como paga.'
+                : 'Atualize credor, valor ou vencimento deste título pendente. Se ele veio de uma recorrência, só esta competência muda.'
               : formPanel === 'schedule'
-                ? 'O valor e o credor passam para as competências pendentes que ainda seguem o contrato.'
+                ? scheduleDraft?.amountMode === 'estimated'
+                  ? 'A estimativa passa para as competências pendentes que ainda seguem o contrato. Cada uma pede a fatura.'
+                  : 'O valor e o credor passam para as competências pendentes que ainda seguem o contrato.'
                 : recurring
-                  ? 'Contrato contínuo. As próximas contas nascem mês a mês, até a data final.'
+                  ? amountMode === 'estimated'
+                    ? 'Contrato contínuo. Cada mês nasce com a estimativa até a fatura ser informada.'
+                    : 'Contrato contínuo. As próximas contas nascem mês a mês, até a data final.'
                   : 'Título manual — profissional, fornecedor do estoque ou credor avulso. Cirurgias sincronizam sozinhas.'
           }
           contentKey={
@@ -1625,7 +1778,11 @@ const HubPayablesSection: React.FC<Props> = ({
                   disabled={formBusy}
                   onClick={() => void onSaveEdit()}
                 >
-                  {savingEdit ? 'Salvando…' : 'Salvar alterações'}
+                  {savingEdit
+                    ? 'Salvando…'
+                    : editDraft && !editDraft.amountConfirmed
+                      ? 'Confirmar fatura'
+                      : 'Salvar alterações'}
                 </button>
               ) : formPanel === 'schedule' ? (
                 <button
