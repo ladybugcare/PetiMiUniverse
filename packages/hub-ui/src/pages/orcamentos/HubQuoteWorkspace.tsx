@@ -23,11 +23,13 @@ import {
   type HubQuotePetInput,
   type HubQuotePricingVariant,
 } from '../../api/hubQuotesApi';
+import { hubGuardiansApi, type HubGuardianPet } from '../../api/hubGuardiansApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubDateField } from '../../components/HubDateField';
 import { COAT_TYPE_LABELS, COAT_TYPE_VALUES, coercePricingMatrixFromApi, type HubServicePricingMatrix } from '../../utils/hubServiceTypesPricingMatrix';
 import { useAlert } from '../../components/AlertProvider';
+import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { mergeBreedComboboxOptions, mergeSpeciesComboboxOptions } from '../pets/wizard/petSpeciesComboboxData';
 import { wizardBreedOptionsForSpecies } from '../pets/wizard/petSpeciesBreedOptions';
 import { defaultBodyPorteForBreed } from '../../data/breedDefaultSizeTier';
@@ -215,6 +217,9 @@ function fromApiQuotePet(p: HubQuotePet): QuotePetRow {
     breed: treatAsSrd ? '' : p.breed,
     size_tier: p.size_tier,
     coat_type: p.coat_type,
+    age_months: p.age_months ?? null,
+    sex: p.sex ?? null,
+    hub_pet_id: p.hub_pet_id ?? null,
   };
 }
 
@@ -309,9 +314,15 @@ type LineDraft = {
   hub_service_type_id: string;
   description: string;
   unitPricesByPetIndex: string[];
+  appliedPorteByPetIndex: Array<string | null>;
+  appliedCoatByPetIndex: Array<string | null>;
   /** Período, tipo de consulta ou faixa km (matrizes não banho/hotel). */
   pricing_variant: HubQuotePricingVariant | null;
 };
+
+function blankApplied(petCount: number): Array<string | null> {
+  return Array.from({ length: petCount }, () => null);
+}
 
 function newLineDraft(petCount: number): LineDraft {
   return {
@@ -319,6 +330,8 @@ function newLineDraft(petCount: number): LineDraft {
     hub_service_type_id: '',
     description: '',
     unitPricesByPetIndex: Array.from({ length: petCount }, () => '0'),
+    appliedPorteByPetIndex: blankApplied(petCount),
+    appliedCoatByPetIndex: blankApplied(petCount),
     pricing_variant: null,
   };
 }
@@ -367,6 +380,8 @@ export interface HubQuoteWorkspaceProps {
   serviceTypes: HubServiceType[];
   /** Obrigatório quando `persistedQuoteId` é null */
   createContext: HubQuoteCreateContext | null;
+  /** CPF/CNPJ do contato quando o orçamento ainda não foi salvo a partir de um contato existente. */
+  contactTaxId?: string | null;
   /** No detalhe (rascunho): envio fica no header; esconder “Gerar e enviar” duplicado. */
   hideGenerateAndSend?: boolean;
 }
@@ -380,6 +395,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
   onQuoteUpdated,
   serviceTypes,
   createContext,
+  contactTaxId = null,
   hideGenerateAndSend = false,
 }) => {
   const navigate = useNavigate();
@@ -401,17 +417,25 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
       .map((l) => {
         const prices = Array.from({ length: n }, () => '0');
+        const appliedPorte = blankApplied(n);
+        const appliedCoat = blankApplied(n);
         (l.line_pets ?? [])
           .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
           .forEach((lp) => {
             const idx = petIds.indexOf(lp.quote_pet_id);
-            if (idx >= 0) prices[idx] = String(lp.unit_price ?? 0);
+            if (idx >= 0) {
+              prices[idx] = String(lp.unit_price ?? 0);
+              appliedPorte[idx] = lp.applied_porte ?? null;
+              appliedCoat[idx] = lp.applied_coat_type ?? null;
+            }
           });
         return {
           key: `ln-${l.id}`,
           hub_service_type_id: l.hub_service_type_id ?? '',
           description: l.description ?? '',
           unitPricesByPetIndex: prices,
+          appliedPorteByPetIndex: appliedPorte,
+          appliedCoatByPetIndex: appliedCoat,
           pricing_variant: linePricingVariantFromQuote(l as HubQuoteLine, serviceTypes),
         };
       });
@@ -433,6 +457,43 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
   });
 
   const [saving, setSaving] = useState(false);
+  const [clientPets, setClientPets] = useState<HubGuardianPet[]>([]);
+
+  const contactTaxDigits = useMemo(() => {
+    const explicit = (contactTaxId ?? '').replace(/\D/g, '');
+    if (explicit.length === 11 || explicit.length === 14) return explicit;
+    const raw = quote?.prospect;
+    const embedded = Array.isArray(raw) ? raw[0] : raw;
+    const fromQuote = (embedded?.tax_id ?? '').replace(/\D/g, '');
+    if (fromQuote.length === 11 || fromQuote.length === 14) return fromQuote;
+    if (createContext?.kind === 'inline_prospect') {
+      return createContext.prospect.tax_id.replace(/\D/g, '');
+    }
+    return '';
+  }, [contactTaxId, quote?.prospect, createContext]);
+
+  useEffect(() => {
+    if (!clinicId || (contactTaxDigits.length !== 11 && contactTaxDigits.length !== 14)) {
+      setClientPets([]);
+      return;
+    }
+    let cancelled = false;
+    void hubGuardiansApi
+      .list(clinicId, false, { q: contactTaxDigits, status: 'active' })
+      .then((res) => {
+        if (cancelled) return;
+        const match = res.guardians.find(
+          (g) => (g.tax_id ?? '').replace(/\D/g, '') === contactTaxDigits,
+        );
+        setClientPets(match?.pets ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setClientPets([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, contactTaxDigits]);
 
   const hydratedKey = useRef<string | null>(null);
   useEffect(() => {
@@ -453,15 +514,23 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
         .map((l) => {
           const prices = Array.from({ length: n }, () => '0');
+          const appliedPorte = blankApplied(n);
+          const appliedCoat = blankApplied(n);
           (l.line_pets ?? []).forEach((lp) => {
             const idx = petIds.indexOf(lp.quote_pet_id);
-            if (idx >= 0) prices[idx] = String(lp.unit_price ?? 0);
+            if (idx >= 0) {
+              prices[idx] = String(lp.unit_price ?? 0);
+              appliedPorte[idx] = lp.applied_porte ?? null;
+              appliedCoat[idx] = lp.applied_coat_type ?? null;
+            }
           });
           return {
             key: `ln-${l.id}`,
             hub_service_type_id: l.hub_service_type_id ?? '',
             description: l.description ?? '',
             unitPricesByPetIndex: prices,
+            appliedPorteByPetIndex: appliedPorte,
+            appliedCoatByPetIndex: appliedCoat,
             pricing_variant: linePricingVariantFromQuote(l as HubQuoteLine, serviceTypes),
           };
         }),
@@ -484,7 +553,12 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       hubServiceTypeId: string,
       pet: QuotePetRow,
       pricingVariant: HubQuotePricingVariant | null,
-    ): Promise<{ unit_price: string; pricing_variant: HubQuotePricingVariant | null }> => {
+    ): Promise<{
+      unit_price: string;
+      pricing_variant: HubQuotePricingVariant | null;
+      applied_porte: string | null;
+      applied_coat_type: string | null;
+    }> => {
       try {
         const res = await hubQuotesApi.suggestPrice({
           clinic_id: clinicId,
@@ -499,9 +573,11 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         return {
           unit_price: String(res.unit_price ?? 0),
           pricing_variant: res.pricing_variant ?? pricingVariant,
+          applied_porte: res.applied_porte ?? null,
+          applied_coat_type: res.applied_coat_type ?? null,
         };
       } catch {
-        return { unit_price: '0', pricing_variant: pricingVariant };
+        return { unit_price: '0', pricing_variant: pricingVariant, applied_porte: null, applied_coat_type: null };
       }
     },
     [clinicId],
@@ -522,7 +598,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
               pet,
               ln.pricing_variant,
             );
-            return { key: ln.key, unit_price: suggested.unit_price };
+            return { key: ln.key, unit_price: suggested.unit_price, applied_porte: suggested.applied_porte, applied_coat_type: suggested.applied_coat_type };
           }),
         );
         setLines((prev) =>
@@ -534,7 +610,22 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
               (_, i) => row.unitPricesByPetIndex[i] ?? '0',
             );
             nextPrices[petIndex] = hit.unit_price;
-            return { ...row, unitPricesByPetIndex: nextPrices };
+            const nextPorte = Array.from(
+              { length: nextPrices.length },
+              (_, i) => row.appliedPorteByPetIndex?.[i] ?? null,
+            );
+            const nextCoat = Array.from(
+              { length: nextPrices.length },
+              (_, i) => row.appliedCoatByPetIndex?.[i] ?? null,
+            );
+            nextPorte[petIndex] = hit.applied_porte;
+            nextCoat[petIndex] = hit.applied_coat_type;
+            return {
+              ...row,
+              unitPricesByPetIndex: nextPrices,
+              appliedPorteByPetIndex: nextPorte,
+              appliedCoatByPetIndex: nextCoat,
+            };
           }),
         );
       })();
@@ -571,6 +662,8 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
     prev.map((ln) => ({
       ...ln,
       unitPricesByPetIndex: Array.from({ length: petCount }, (_, i) => ln.unitPricesByPetIndex[i] ?? '0'),
+      appliedPorteByPetIndex: Array.from({ length: petCount }, (_, i) => ln.appliedPorteByPetIndex?.[i] ?? null),
+      appliedCoatByPetIndex: Array.from({ length: petCount }, (_, i) => ln.appliedCoatByPetIndex?.[i] ?? null),
     }));
 
   const addPet = () => {
@@ -589,6 +682,8 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         ln.map((l) => ({
           ...l,
           unitPricesByPetIndex: l.unitPricesByPetIndex.filter((_, j) => j !== i),
+          appliedPorteByPetIndex: (l.appliedPorteByPetIndex ?? []).filter((_, j) => j !== i),
+          appliedCoatByPetIndex: (l.appliedCoatByPetIndex ?? []).filter((_, j) => j !== i),
         })),
         Math.max(pets.length - 1, 1),
       ),
@@ -653,7 +748,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       if (s) {
         rows.push({
           value: s.id,
-          label: `${s.name} (valor guardado)`,
+          label: `${s.name} (valor salvo)`,
         });
         seen.add(id);
       }
@@ -678,11 +773,15 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
           pricingVariant = defaultPricingVariant(matrix);
         }
         const nextPrices: string[] = [];
+        const nextPorte: Array<string | null> = [];
+        const nextCoat: Array<string | null> = [];
         let normalizedPv: HubQuotePricingVariant | null = pricingVariant;
         for (let pi = 0; pi < list.length; pi++) {
           const suggested = await suggestUnitPriceForPet(hubServiceTypeId, list[pi], pricingVariant);
           if (suggested.pricing_variant != null) normalizedPv = suggested.pricing_variant;
           nextPrices.push(suggested.unit_price);
+          nextPorte.push(suggested.applied_porte);
+          nextCoat.push(suggested.applied_coat_type);
         }
         setLines((prev) =>
           prev.map((row, j) =>
@@ -691,6 +790,8 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
                   ...row,
                   hub_service_type_id: hubServiceTypeId,
                   unitPricesByPetIndex: nextPrices,
+                  appliedPorteByPetIndex: nextPorte,
+                  appliedCoatByPetIndex: nextCoat,
                   pricing_variant: normalizedPv,
                 }
               : row,
@@ -711,15 +812,27 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       void (async () => {
         const list = petsRef.current;
         const nextPrices: string[] = [];
+        const nextPorte: Array<string | null> = [];
+        const nextCoat: Array<string | null> = [];
         let normalizedPv: HubQuotePricingVariant | null = parsed;
         for (let pi = 0; pi < list.length; pi++) {
           const suggested = await suggestUnitPriceForPet(row.hub_service_type_id, list[pi], parsed);
           if (suggested.pricing_variant != null) normalizedPv = suggested.pricing_variant;
           nextPrices.push(suggested.unit_price);
+          nextPorte.push(suggested.applied_porte);
+          nextCoat.push(suggested.applied_coat_type);
         }
         setLines((prev) =>
           prev.map((r, j) =>
-            j === lineIndex ? { ...r, unitPricesByPetIndex: nextPrices, pricing_variant: normalizedPv } : r,
+            j === lineIndex
+              ? {
+                  ...r,
+                  unitPricesByPetIndex: nextPrices,
+                  appliedPorteByPetIndex: nextPorte,
+                  appliedCoatByPetIndex: nextCoat,
+                  pricing_variant: normalizedPv,
+                }
+              : r,
           ),
         );
       })();
@@ -756,8 +869,8 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       line_pets: pets.map((_, pi) => ({
         pet_index: pi,
         unit_price: parseMoney(l.unitPricesByPetIndex[pi] ?? '0'),
-        applied_porte: null,
-        applied_coat_type: null,
+        applied_porte: l.appliedPorteByPetIndex?.[pi] ?? null,
+        applied_coat_type: l.appliedCoatByPetIndex?.[pi] ?? null,
       })),
     }));
 
@@ -768,8 +881,9 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
       breed: (p.breed?.trim() || 'SRD'),
       size_tier: p.size_tier,
       coat_type: p.coat_type?.trim() || null,
-      age_months: null,
-      sex: null,
+      age_months: p.age_months ?? null,
+      sex: p.sex ?? null,
+      hub_pet_id: p.hub_pet_id ?? null,
       sort_order: idx,
     }));
 
@@ -794,6 +908,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
 
     const base = {
       clinic_id: clinicId,
+      unit_id: getSelectedUnitId(),
       notes: notes.trim() || null,
       client_notes: clientNotes.trim() || null,
       discount_kind,
@@ -825,14 +940,20 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         if (!opts?.silentSuccess) showSuccess('Rascunho criado');
         return q;
       }
-      const { quote: q } = await hubQuotesApi.create({
+      const created = await hubQuotesApi.create({
         ...base,
         prospect: createContext.prospect,
       });
-      onPersistedQuoteId(q.id);
-      onQuoteUpdated(q);
-      if (!opts?.silentSuccess) showSuccess('Rascunho criado');
-      return q;
+      onPersistedQuoteId(created.quote.id);
+      onQuoteUpdated(created.quote);
+      if (!opts?.silentSuccess) {
+        showSuccess(
+          created.prospect_reused
+            ? 'Rascunho criado. Já existia um contato com este CPF e ele foi reutilizado.'
+            : 'Rascunho criado',
+        );
+      }
+      return created.quote;
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao salvar');
       return null;
@@ -931,7 +1052,7 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
               <div>
                 <h2 className="hub-orcamento-novo__card-title">Pets deste orçamento</h2>
                 <p className="hub-orcamento-novo__card-subtitle">
-                  Dados temporários só para precificação e envio ao cliente.
+                  Se o contato já for cliente, escolha o pet cadastrado. Pet sem essa escolha fica só neste orçamento.
                 </p>
               </div>
             </div>
@@ -953,6 +1074,58 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
                       <Trash2 size={16} />
                     </button>
                   </div>
+                  {clientPets.length > 0 ? (
+                    <div className="hub-orcamento-novo__field" style={{ marginBottom: 12 }}>
+                      <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-existing`}>
+                        Pet já cadastrado
+                      </label>
+                      <select
+                        id={`hub-quote-pet-${i}-existing`}
+                        className="hub-orcamento-novo__input"
+                        value={p.hub_pet_id ?? ''}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          if (!id) {
+                            updatePet(i, { hub_pet_id: null });
+                            return;
+                          }
+                          const existing = clientPets.find((pet) => pet.id === id);
+                          if (!existing) return;
+                          const breedRaw = (existing.breed ?? '').trim();
+                          const treatAsSrd = !breedRaw || /^srd$/i.test(breedRaw);
+                          const tierOk = SIZE_TIERS.some((t) => t.value === existing.size_tier);
+                          const sexOk = existing.sex === 'M' || existing.sex === 'F' || existing.sex === 'U';
+                          updatePet(i, {
+                            hub_pet_id: existing.id,
+                            display_name: existing.name,
+                            species: canonicalSpecies(existing.species || 'Cão'),
+                            breed: treatAsSrd ? '' : breedRaw,
+                            ...(tierOk ? { size_tier: existing.size_tier as HubQuotePetInput['size_tier'] } : {}),
+                            coat_type: existing.coat_type,
+                            sex: sexOk ? existing.sex : null,
+                          });
+                        }}
+                      >
+                        <option value="">Novo pet neste orçamento</option>
+                        {clientPets
+                          .filter((pet) => {
+                            if (pet.id === p.hub_pet_id) return true;
+                            return !pets.some((row, idx) => idx !== i && row.hub_pet_id === pet.id);
+                          })
+                          .map((pet) => (
+                            <option key={pet.id} value={pet.id}>
+                              {pet.name}
+                              {pet.species ? ` · ${pet.species}` : ''}
+                            </option>
+                          ))}
+                      </select>
+                      {p.hub_pet_id ? (
+                        <p className="hub-orcamento-novo__card-subtitle" style={{ marginTop: 6, marginBottom: 0 }}>
+                          Este pet já é do cliente e não será cadastrado de novo na conversão.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="hub-orcamento-novo__pet-row">
                     <div className="hub-orcamento-novo__field">
                       <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-name`}>
@@ -1024,6 +1197,25 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
                         clearable={false}
                         ariaLabel="Porte"
                       />
+                    </div>
+                    <div className="hub-orcamento-novo__field">
+                      <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-sex`}>
+                        Sexo
+                      </label>
+                      <select
+                        id={`hub-quote-pet-${i}-sex`}
+                        className="hub-orcamento-novo__input"
+                        value={p.sex ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          updatePet(i, { sex: v === 'M' || v === 'F' || v === 'U' ? v : null });
+                        }}
+                      >
+                        <option value="">Não informado</option>
+                        <option value="M">Macho</option>
+                        <option value="F">Fêmea</option>
+                        <option value="U">Não se aplica</option>
+                      </select>
                     </div>
                     <div className="hub-orcamento-novo__field">
                       <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-coat`}>

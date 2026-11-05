@@ -29,7 +29,8 @@
 
 .hub-finance-page__summary {
   display: flex;
-  flex: 1 1 420px;
+  flex: 1 1 100%;
+  width: 100%;
   flex-wrap: wrap;
   gap: 0;
   min-width: 0;
@@ -44,8 +45,8 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 1px;
-  flex: 1 1 120px;
-  min-width: 110px;
+  flex: 1 1 0;
+  min-width: 140px;
   margin: 0;
   padding: 10px 14px;
   border: none;
@@ -101,21 +102,6 @@
   font-size: 11px;
   line-height: 1.3;
   color: var(--hc-text-muted, #7a6e6a);
-}
-
-.hub-finance-page__topbar-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  align-self: center;
-}
-
-.hub-finance-page__topbar-actions .hub-clientes__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  text-decoration: none;
 }
 
 @media (max-width: 720px) {
@@ -525,13 +511,6 @@
   color: #9a5b16;
 }
 
-.hub-payables__amount-row {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-}
-
 .hub-payables__toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -616,80 +595,62 @@
   min-height: 34px;
 }
 
-.hub-payables__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.hub-clientes__table.hub-payables__table tr {
+  cursor: default;
 }
 
-.hub-payables__card {
-  margin: 0;
-  padding: 14px 16px;
-  background: #fff;
-  border: 1px solid var(--hc-border, #e5dcd6);
-  border-radius: 14px;
-  box-shadow: 0 1px 2px rgba(74, 59, 58, 0.04);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+.hub-payables__table tr.hub-payables__row--overdue td,
+.hub-payables__table tr.hub-payables__row--overdue:hover td {
+  background: #fffbfb;
 }
 
-.hub-payables__card--active {
-  border-color: #e8c4b0;
-  box-shadow: 0 0 0 1px rgba(200, 106, 77, 0.12);
+.hub-payables__table tr.hub-payables__row--soon td,
+.hub-payables__table tr.hub-payables__row--soon:hover td {
+  background: #fffdf5;
 }
 
-.hub-payables__card--overdue {
-  border-color: #fecaca;
-  background: linear-gradient(180deg, #fffbfb 0%, #fff 40%);
+.hub-payables__table tr.hub-payables__row--active td,
+.hub-payables__table tr.hub-payables__row--active:hover td {
+  background: #fff8f4;
 }
 
-.hub-payables__card--soon {
-  border-color: #fde68a;
-  background: linear-gradient(180deg, #fffdf5 0%, #fff 40%);
+.hub-payables__pay-row td {
+  background: #fdfaf8;
+  padding-top: 4px;
+  padding-bottom: 14px;
 }
 
-.hub-payables__card-main {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px 20px;
+.hub-payables__table .hub-payables__pay-row:hover td {
+  background: #fdfaf8;
 }
 
-.hub-payables__card-primary {
-  flex: 1 1 280px;
-  min-width: 0;
-}
-
-.hub-payables__card-title-row {
+.hub-payables__payee-cell {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 6px;
+  min-width: 140px;
 }
 
 .hub-payables__payee {
-  margin: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 650;
   color: var(--hc-text, #4a3b3a);
 }
 
 .hub-payables__desc {
-  margin: 0 0 8px;
+  display: block;
+  max-width: 280px;
   font-size: 13px;
   line-height: 1.4;
   color: var(--hc-text-muted, #7a6e6a);
 }
 
-.hub-payables__meta {
+.hub-payables__amount-cell {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
 
 .hub-payables__chip {
@@ -717,38 +678,17 @@
   text-decoration: underline;
 }
 
-.hub-payables__chip.muted {
-  color: var(--hc-text-muted, #7a6e6a);
-  font-weight: 550;
-}
-
-.hub-payables__due-hint {
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.hub-payables__due-hint--soon {
-  color: #9a5b16;
-}
-
-.hub-payables__due-hint--overdue {
-  color: #b91c1c;
-}
-
-.hub-payables__card-amount {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-
 .hub-payables__amount {
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--hc-text, #4a3b3a);
   line-height: 1.2;
+  white-space: nowrap;
+}
+
+.hub-payables__amount--estimate {
+  color: #9a5b16;
 }
 
 .hub-payables__actions {
@@ -759,9 +699,8 @@
 }
 
 .hub-payables__panel {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--hc-border, #e5dcd6);
+  margin: 0;
+  padding: 4px 2px 2px;
 }
 
 .hub-payables__panel-title {
@@ -785,11 +724,6 @@
 }
 
 @media (max-width: 720px) {
-  .hub-payables__card-amount {
-    align-items: flex-start;
-    width: 100%;
-  }
-
   .hub-payables__actions {
     justify-content: flex-start;
   }
@@ -807,6 +741,95 @@
 
   .hub-payables__stat {
     text-align: left;
+  }
+}
+
+.hub-expenses .hub-payables__head-aside {
+  margin-left: auto;
+}
+
+.hub-expenses__toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.hub-expenses__filters {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.hub-expenses__toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  width: 100%;
+}
+
+.hub-expenses__search {
+  flex: 1 1 200px;
+  max-width: 320px;
+  width: auto;
+}
+
+.hub-expenses__search .hub-dayboard__search {
+  min-height: 34px;
+}
+
+.hub-expenses__toolbar-row .hub-payables__period {
+  margin-left: auto;
+}
+
+.hub-expenses__toolbar-row .hub-payables__period .hub-date-field__control {
+  min-width: 156px;
+  max-width: 168px;
+}
+
+.hub-expenses__stat-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--hc-text-muted, #7a6e6a);
+}
+
+.hub-expenses__date {
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--hc-text, #4a3b3a);
+  white-space: nowrap;
+}
+
+.hub-expenses__notes {
+  display: block;
+  max-width: 280px;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--hc-text-muted, #7a6e6a);
+}
+
+@media (max-width: 900px) {
+  .hub-expenses .hub-expenses__search {
+    max-width: none;
+    width: auto;
+    flex: 1 1 220px;
+  }
+}
+
+@media (max-width: 720px) {
+  .hub-expenses__search {
+    max-width: none;
+    width: 100%;
+    flex: 1 1 100%;
+  }
+
+  .hub-expenses__toolbar-row .hub-payables__period {
+    margin-left: 0;
   }
 }
 

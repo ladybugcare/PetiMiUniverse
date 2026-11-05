@@ -436,6 +436,117 @@ describe('Matriz Caixa — open → checkout por origem', () => {
       const payments = getMockSupabaseClient()._state.tables.hub_payments ?? [];
       expect(payments[0]).toMatchObject({ amount: 90, cash_session_id: CASH_SESSION_ID });
     });
+
+    it('comanda e recebível usam o total com desconto percentual', async () => {
+      configureSupabaseMock({
+        tables: baseFinanceTables({
+          hub_quotes: [
+            {
+              id: QUOTE_ID,
+              clinic_id: TEST_CLINIC_ID,
+              unit_id: TEST_UNIT_ID,
+              guardian_id: TEST_GUARDIAN_ID,
+              status: 'accepted',
+              billing_state: 'awaiting_billing',
+              billing_waived_at: null,
+              client_notes: null,
+              discount_kind: 'percent',
+              discount_value: 10,
+              total_amount: 81,
+              deleted_at: null,
+            },
+          ],
+          hub_quote_lines: [
+            {
+              id: QUOTE_LINE_ID,
+              quote_id: QUOTE_ID,
+              hub_service_type_id: BATH_SERVICE_ID,
+              description: 'Banho orçado',
+              quantity: 1,
+              unit_price: 90,
+              discount_amount: 0,
+              line_total: 90,
+              sort_order: 0,
+            },
+          ],
+          hub_service_types: [serviceType(BATH_SERVICE_ID, 'banho_tosa', 'Banho')],
+        }),
+      });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'quote',
+        origin_id: QUOTE_ID,
+      });
+      expect(open.status).toBe(201);
+      expect(Number(open.body.comanda.subtotal_amount)).toBe(90);
+      expect(Number(open.body.comanda.discount_amount)).toBe(9);
+      expect(Number(open.body.comanda.total_amount)).toBe(81);
+
+      const rec = await request(app).post('/api/hub/finance/receivables').send({
+        clinic_id: TEST_CLINIC_ID,
+        source_type: 'quote',
+        source_id: QUOTE_ID,
+      });
+      expect(rec.status).toBe(201);
+      expect(Number(rec.body.receivable.original_amount)).toBe(90);
+      expect(Number(rec.body.receivable.final_amount)).toBe(81);
+    });
+
+    it('comanda e recebível usam o total com desconto fixo', async () => {
+      configureSupabaseMock({
+        tables: baseFinanceTables({
+          hub_quotes: [
+            {
+              id: QUOTE_ID,
+              clinic_id: TEST_CLINIC_ID,
+              unit_id: TEST_UNIT_ID,
+              guardian_id: TEST_GUARDIAN_ID,
+              status: 'accepted',
+              billing_state: 'awaiting_billing',
+              billing_waived_at: null,
+              client_notes: null,
+              discount_kind: 'fixed',
+              discount_value: 15,
+              total_amount: 75,
+              deleted_at: null,
+            },
+          ],
+          hub_quote_lines: [
+            {
+              id: QUOTE_LINE_ID,
+              quote_id: QUOTE_ID,
+              hub_service_type_id: BATH_SERVICE_ID,
+              description: 'Banho orçado',
+              quantity: 1,
+              unit_price: 90,
+              discount_amount: 0,
+              line_total: 90,
+              sort_order: 0,
+            },
+          ],
+          hub_service_types: [serviceType(BATH_SERVICE_ID, 'banho_tosa', 'Banho')],
+        }),
+      });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'quote',
+        origin_id: QUOTE_ID,
+      });
+      expect(open.status).toBe(201);
+      expect(Number(open.body.comanda.discount_amount)).toBe(15);
+      expect(Number(open.body.comanda.total_amount)).toBe(75);
+
+      const rec = await request(app).post('/api/hub/finance/receivables').send({
+        clinic_id: TEST_CLINIC_ID,
+        source_type: 'quote',
+        source_id: QUOTE_ID,
+      });
+      expect(rec.status).toBe(201);
+      expect(Number(rec.body.receivable.original_amount)).toBe(90);
+      expect(Number(rec.body.receivable.final_amount)).toBe(75);
+    });
   });
 
   describe('package', () => {

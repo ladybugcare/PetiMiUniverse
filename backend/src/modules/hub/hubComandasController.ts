@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { resolvePaymentCashSessionId } from './hubFinancialController';
 import { resolveServiceLinePricing, type PetPricingFields } from './hubPricingResolve';
+import { quoteDiscountAmount } from './hubQuoteDiscount';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
 import { streamComandaPdf } from './hubComandaPdf';
 import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
@@ -852,10 +853,13 @@ async function buildComandaItemsFromQuote(
   unit_id: string | null;
   guardian_id: string;
   client_notes: string | null;
+  discount_amount: number;
 }> {
   const { data: quote, error: qErr } = await supabaseAdmin
     .from('hub_quotes')
-    .select('id, clinic_id, unit_id, guardian_id, status, billing_state, billing_waived_at, client_notes')
+    .select(
+      'id, clinic_id, unit_id, guardian_id, status, billing_state, billing_waived_at, client_notes, discount_kind, discount_value'
+    )
     .eq('id', quoteId)
     .maybeSingle();
   if (qErr) throw new Error(qErr.message);
@@ -977,12 +981,23 @@ async function buildComandaItemsFromQuote(
   let unitId: string | null = (quote.unit_id as string | null) ?? null;
   if (!unitId) unitId = await resolveClinicDefaultUnitId(clinicId);
 
+  const subtotalRounded = round2(subtotal);
+  const headerDiscount =
+    items.length === 0
+      ? 0
+      : quoteDiscountAmount(
+          subtotalRounded,
+          (quote.discount_kind as 'percent' | 'fixed' | null) ?? null,
+          quote.discount_value as number | null
+        );
+
   return {
     items,
-    subtotal: round2(subtotal),
+    subtotal: subtotalRounded,
     unit_id: unitId,
     guardian_id: guardianId,
     client_notes: (quote.client_notes as string | null)?.trim() || null,
+    discount_amount: headerDiscount,
   };
 }
 
@@ -1786,7 +1801,10 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       built = await buildComandaItemsFromEncounter(clinic_id, effectiveOriginId, { allowIncomplete: true });
     }
 
-    const discount = 0;
+    const discount =
+      origin_type === 'quote' && 'discount_amount' in built
+        ? round2(Number((built as { discount_amount?: number }).discount_amount ?? 0))
+        : 0;
     const total = round2(Math.max(0, built.subtotal - discount));
 
     let resolvedEncounterId =
@@ -3137,7 +3155,10 @@ async function applySyncComandaFromOrigin(
     .maybeSingle();
   let sortBase = Number(maxSortRow?.sort_order ?? -1) + 1;
 
-  const discount = Number(comanda.discount_amount ?? 0);
+  const discount =
+    'discount_amount' in built
+      ? round2(Number((built as { discount_amount?: number }).discount_amount ?? 0))
+      : Number(comanda.discount_amount ?? 0);
   const insertRows = desiredFiltered.map((it) => comandaItemInsertRow(clinicId, comandaId, {
     ...it,
     sort_order: sortBase++,
@@ -3197,6 +3218,7 @@ async function applySyncComandaFromOrigin(
     .from('hub_comandas')
     .update({
       subtotal_amount: sumAll,
+      discount_amount: discount,
       total_amount: total,
       unit_id: built.unit_id ?? (comanda.unit_id as string | null),
     })

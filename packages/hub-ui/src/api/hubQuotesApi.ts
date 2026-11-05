@@ -43,6 +43,7 @@ export interface HubQuotePet {
   coat_type: string | null;
   age_months: number | null;
   sex: HubQuotePetSex | null;
+  hub_pet_id?: string | null;
   sort_order: number;
   created_at: string;
 }
@@ -121,6 +122,7 @@ export interface HubQuotePetInput {
   coat_type?: string | null;
   age_months?: number | null;
   sex?: HubQuotePetSex | null;
+  hub_pet_id?: string | null;
   sort_order?: number;
 }
 
@@ -185,11 +187,11 @@ export const hubQuotesApi = {
     expires_at?: string | null;
     pets?: HubQuotePetInput[];
     lines?: HubQuoteLineInput[];
-  }): Promise<{ quote: HubQuote }> {
+  }): Promise<{ quote: HubQuote; prospect_reused?: boolean; message?: string }> {
     return apiRequest(basePath, {
       method: 'POST',
       body: JSON.stringify(payload),
-    }) as Promise<{ quote: HubQuote }>;
+    }) as Promise<{ quote: HubQuote; prospect_reused?: boolean; message?: string }>;
   },
 
   async patch(
@@ -332,7 +334,7 @@ export async function openHubQuotePdf(quoteId: string, clinicId: string): Promis
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
 }
 
-/** Descarrega o PDF com nome de ficheiro sugerido (Bearer na API). */
+/** Baixa o PDF com o nome de arquivo sugerido (Bearer na API). */
 export async function downloadHubQuotePdf(quoteId: string, clinicId: string): Promise<void> {
   const blob = await fetchHubQuotePdfBlob(quoteId, clinicId);
   const objectUrl = URL.createObjectURL(blob);

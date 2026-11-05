@@ -238,7 +238,7 @@ const HubQuotesPage: React.FC = () => {
           <div className="hub-servicos__metric-card__text">
             <div className="hub-servicos__metric-label">Aprovados</div>
             <div className="hub-servicos__metric-value">{loading ? '—' : metrics.approved.toLocaleString('pt-BR')}</div>
-            <div className="hub-servicos__metric-sub">Convertíveis em cliente</div>
+            <div className="hub-servicos__metric-sub">Já convertidos em cliente</div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <BadgeCheck size={22} strokeWidth={1.75} />
@@ -295,8 +295,8 @@ const HubQuotesPage: React.FC = () => {
       <p className="hub-clientes__muted" style={{ marginTop: 0, marginBottom: 16 }}>
         A listagem reflete os filtros acima. As métricas consideram todos os orçamentos carregados.
         {canWrite
-          ? ' Rascunho: ícone de editar altera conteúdo; ícone de partilha gera o link público quando necessário.'
-          : ' Pode abrir a vista e o PDF; a partilha do link público requer permissão de edição.'}
+          ? ' Rascunho: o ícone de editar altera o conteúdo; o ícone de compartilhar gera o link público quando necessário.'
+          : ' Pode abrir a visualização e o PDF; compartilhar o link público requer permissão de edição.'}
       </p>
 
       {loading ? (

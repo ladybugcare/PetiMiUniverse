@@ -42,7 +42,7 @@ export interface HubQuotePublicViewProps {
   quote: HubQuote;
   /** `staff` mostra estado interno, datas de envio e notas internas. */
   audience?: HubQuotePublicAudience;
-  /** Conteúdo no topo da página (ex.: barra de ações da equipa). */
+  /** Conteúdo no topo da página (ex.: barra de ações da equipe). */
   leading?: React.ReactNode;
   /** Conteúdo no fim do documento, antes do rodapé opcional (ex.: converter em cliente). */
   trailing?: React.ReactNode;
@@ -71,10 +71,11 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
   const currency = quote.currency || 'BRL';
   const brl = (n: number) => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency });
 
+  const cancelled = quote.status === 'cancelled';
   const expired =
+    !cancelled &&
     quote.expires_at &&
     quote.status !== 'accepted' &&
-    quote.status !== 'cancelled' &&
     new Date(quote.expires_at).getTime() < Date.now();
 
   return (
@@ -93,7 +94,9 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
               ) : (
                 <h1 className="hub-public-quote__clinic hub-public-quote__clinic--solo">Orçamento</h1>
               )}
-              <p className="hub-public-quote__tagline">Proposta personalizada para o seu pet.</p>
+              <p className="hub-public-quote__tagline">
+                {cancelled ? 'Proposta cancelada.' : 'Proposta personalizada para o seu pet.'}
+              </p>
             </div>
           </div>
           <aside className="hub-public-quote__meta-card" aria-label="Resumo do documento">
@@ -131,14 +134,22 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
           </aside>
         </header>
 
+        {cancelled ? (
+          <div className="hub-public-quote__banner hub-public-quote__banner--warn" role="status">
+            <p className="hub-public-quote__banner-text">
+              Este orçamento foi cancelado e não está mais válido. Entre em contato com a clínica se precisar de uma nova proposta.
+            </p>
+          </div>
+        ) : null}
+
         {expired ? (
           <div className="hub-public-quote__banner hub-public-quote__banner--warn" role="status">
             <p className="hub-public-quote__banner-text">
-              A data de validade deste orçamento já passou. Entre em contacto com a clínica para confirmar valores e disponibilidade.
+              A data de validade deste orçamento já passou. Entre em contato com a clínica para confirmar valores e disponibilidade.
             </p>
             {isStaff ? (
               <p className="hub-public-quote__banner-text hub-public-quote__banner-text--staff-hint">
-                Equipa: use «Duplicar / Renovar» ou reabra como rascunho para ajustar valores antes de voltar a enviar.
+                Equipe: use «Duplicar / Renovar» ou reabra como rascunho para ajustar valores antes de voltar a enviar.
               </p>
             ) : null}
           </div>
@@ -296,7 +307,7 @@ export const HubQuotePublicView: React.FC<HubQuotePublicViewProps> = ({
           <p className="hub-public-quote__fineprint hub-public-quote__fineprint--staff">
             <Info size={16} strokeWidth={2} className="hub-public-quote__ic" aria-hidden />
             <span>
-              Vista da equipa: o link público segue o mesmo layout de proposta, sem as notas internas acima.
+              Visão da equipe: o link público segue o mesmo layout de proposta, sem as notas internas acima.
             </span>
           </p>
         ) : (

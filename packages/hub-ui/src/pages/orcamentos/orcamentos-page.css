@@ -946,7 +946,7 @@
   }
 }
 
-/* === Página pública (read-only) — link partilhável === */
+/* === Página pública (somente leitura) — link compartilhável === */
 
 .hub-public-quote {
   --pub-brand: #f0642f;
@@ -1559,7 +1559,7 @@
   text-align: right;
 }
 
-/* === Vista detalhe orçamento (equipa) — layout tipo mock PetMi Hub === */
+/* === Detalhe do orçamento (equipe) — layout tipo mock PetMi Hub === */
 .hub-quote-detail {
   --qd-card: #fff;
   --qd-border: var(--hc-border, #e5dcd6);

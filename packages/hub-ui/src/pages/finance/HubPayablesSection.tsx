@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Banknote, Plus, RefreshCw, Stethoscope } from 'lucide-react';
+import { Ban, Banknote, Pencil, Plus, RefreshCw, Stethoscope } from 'lucide-react';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import { HubDateField } from '../../components/HubDateField';
 import { HubLoading } from '../../components/HubLoading';
@@ -25,22 +25,60 @@ function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 }
 
-/** Dígitos e um separador decimal. Letras e símbolos são descartados; centavos ficam em 2 casas. */
-function sanitizePayableAmount(raw: string): string {
-  const s = raw.replace(/[^\d,.]/g, '');
+function groupThousands(digits: string): string {
+  const trimmed = digits.replace(/^0+(?=\d)/, '');
+  return trimmed.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function finishPayableAmount(intDigits: string, frac: string | null, trailingComma: boolean): string {
+  const grouped = groupThousands(intDigits || (frac !== null || trailingComma ? '0' : ''));
+  if (!grouped) return '';
+  if (trailingComma) return `${grouped},`;
+  if (frac !== null) return `${grouped},${frac}`;
+  return grouped;
+}
+
+/** Máscara pt-BR: 7000 vira 7.000; centavos ficam depois da vírgula (7.000,50). */
+function maskPayableAmount(raw: string, previous = ''): string {
+  let s = raw.replace(/R\$\s?/gi, '').replace(/[^\d,.]/g, '');
   if (!s) return '';
 
-  const commas = (s.match(/,/g) ?? []).length;
-  const dots = (s.match(/\./g) ?? []).length;
-  if (commas === 0 && dots > 1) return s.replace(/\D/g, '');
+  if (!s.includes(',') && s.endsWith('.')) {
+    s = `${s.slice(0, -1).replace(/\./g, '')},`;
+  }
 
-  const sepAt = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
-  if (sepAt < 0) return s;
+  if (s.includes(',')) {
+    const i = s.lastIndexOf(',');
+    const intDigits = s.slice(0, i).replace(/\D/g, '');
+    const fracDigits = s.slice(i + 1).replace(/\D/g, '').slice(0, 2);
+    return finishPayableAmount(intDigits, fracDigits, i === s.length - 1);
+  }
 
-  const intPart = s.slice(0, sepAt).replace(/\D/g, '');
-  const frac = s.slice(sepAt + 1).replace(/\D/g, '').slice(0, 2);
-  if (s.endsWith(',') || s.endsWith('.')) return `${intPart},`;
-  return frac ? `${intPart},${frac}` : intPart;
+  if (/^\d+\.\d{1,2}$/.test(s)) {
+    const digitsIfGrouped = s.replace(/\./g, '');
+    const prevDigits = previous.replace(/\D/g, '');
+    const deletedFromGrouped =
+      prevDigits.length === digitsIfGrouped.length + 1 && prevDigits.includes(digitsIfGrouped);
+    if (!deletedFromGrouped) {
+      const [intDigits, fracDigits] = s.split('.');
+      return finishPayableAmount(intDigits, fracDigits, false);
+    }
+  }
+
+  return finishPayableAmount(s.replace(/\D/g, ''), null, false);
+}
+
+function formatPayableAmountFromNumber(n: number): string {
+  if (!Number.isFinite(n)) return '';
+  const [intRaw, frac] = Math.abs(n).toFixed(2).split('.');
+  return frac === '00' ? groupThousands(intRaw) : `${groupThousands(intRaw)},${frac}`;
+}
+
+function parsePayableAmount(raw: string): number {
+  const masked = maskPayableAmount(raw);
+  if (!masked) return Number.NaN;
+  const n = Number(masked.replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(n) ? n : Number.NaN;
 }
 
 function isLikelyUuid(s: string): boolean {
@@ -56,14 +94,14 @@ function payeeKindFromPayable(p: HubFinancePayable): PayeeKind {
 }
 
 const PAYABLE_CATEGORY_LABELS: Record<HubFinancePayableCategory, string> = {
-  professional_fee: 'Honorário profissional',
-  supplies: 'Material / consumíveis',
-  services: 'Serviços terceiros',
-  utilities: 'Utilidades',
-  payroll: 'Pessoal',
+  professional_fee: 'Equipe e honorários',
+  supplies: 'Estoque e materiais',
+  services: 'Serviços de apoio',
+  utilities: 'Água, luz e internet',
+  payroll: 'Salários e encargos',
   rent: 'Aluguel',
-  marketing: 'Marketing',
-  other: 'Outro',
+  marketing: 'Divulgação',
+  other: 'Outros',
 };
 
 const PAYABLE_STATUS_LABELS: Record<string, string> = {
@@ -72,14 +110,28 @@ const PAYABLE_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelado',
 };
 
-const PAYABLE_CATEGORY_OPTIONS: HubComboboxOption[] = (
-  Object.keys(PAYABLE_CATEGORY_LABELS) as HubFinancePayableCategory[]
-).map((k) => ({ value: k, label: PAYABLE_CATEGORY_LABELS[k] }));
+/** Categorias que cabem em cada credor de um pet shop, clínica, banho ou hotel. */
+const PAYEE_CATEGORY_ORDER: Record<PayeeKind, HubFinancePayableCategory[]> = {
+  staff: ['professional_fee', 'payroll', 'other'],
+  supplier: ['supplies', 'services', 'other'],
+  other: ['rent', 'utilities', 'services', 'marketing', 'other'],
+};
+
+function categoryOptionsFor(kind: PayeeKind, current?: HubFinancePayableCategory): HubComboboxOption[] {
+  const keys = [...PAYEE_CATEGORY_ORDER[kind]];
+  if (current && !keys.includes(current)) keys.push(current);
+  return keys.map((value) => ({ value, label: PAYABLE_CATEGORY_LABELS[value] }));
+}
+
+function categoryForKind(kind: PayeeKind, current: HubFinancePayableCategory): HubFinancePayableCategory {
+  const allowed = PAYEE_CATEGORY_ORDER[kind];
+  return allowed.includes(current) ? current : allowed[0];
+}
 
 const PAYEE_KIND_OPTIONS: HubComboboxOption[] = [
-  { value: 'staff', label: 'Profissional' },
+  { value: 'staff', label: 'Equipe' },
   { value: 'supplier', label: 'Fornecedor' },
-  { value: 'other', label: 'Outro (nome livre)' },
+  { value: 'other', label: 'Conta ou serviço' },
 ];
 
 const CREATE_STATUS_OPTIONS: HubComboboxOption[] = [
@@ -186,11 +238,11 @@ const HubPayablesSection: React.FC<Props> = ({
   const [dueQuick, setDueQuick] = useState<DueQuick>('all');
   const [formPanel, setFormPanel] = useState<FormPanel | null>(null);
 
-  const [payeeKind, setPayeeKind] = useState<PayeeKind>('staff');
+  const [payeeKind, setPayeeKind] = useState<PayeeKind>('supplier');
   const [payeeStaffId, setPayeeStaffId] = useState('');
   const [payeeSupplierId, setPayeeSupplierId] = useState('');
   const [payeeName, setPayeeName] = useState('');
-  const [category, setCategory] = useState<HubFinancePayableCategory>('professional_fee');
+  const [category, setCategory] = useState<HubFinancePayableCategory>('supplies');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -299,7 +351,7 @@ const HubPayablesSection: React.FC<Props> = ({
   const resetCreateForm = () => {
     setDescription('');
     setAmount('');
-    setPayeeKind('staff');
+    setPayeeKind('supplier');
     setPayeeStaffId('');
     setPayeeSupplierId('');
     setPayeeName('');
@@ -310,7 +362,7 @@ const HubPayablesSection: React.FC<Props> = ({
     setFrequency('monthly');
     setCreateStatus('pending');
     setPaymentMethod('pix');
-    setCategory('professional_fee');
+    setCategory('supplies');
   };
 
   const openCreatePanel = () => {
@@ -357,7 +409,7 @@ const HubPayablesSection: React.FC<Props> = ({
       showError('Sem permissão para registrar contas a pagar.');
       return;
     }
-    const v = Number(String(amount).replace(',', '.'));
+    const v = parsePayableAmount(amount);
     if (!description.trim() || Number.isNaN(v) || v <= 0) {
       showError('Preencha descrição e valor válidos.');
       return;
@@ -475,7 +527,7 @@ const HubPayablesSection: React.FC<Props> = ({
       id: p.id,
       category: p.category,
       description: p.description,
-      amount: sanitizePayableAmount(String(p.amount)),
+      amount: formatPayableAmountFromNumber(Number(p.amount)),
       amountConfirmed: p.amount_confirmed !== false,
       payeeKind: payeeKindFromPayable(p),
       payeeStaffId: p.payee_staff_member_id || '',
@@ -487,7 +539,7 @@ const HubPayablesSection: React.FC<Props> = ({
 
   const onSaveEdit = async () => {
     if (!editDraft || !canWrite) return;
-    const v = Number(String(editDraft.amount).replace(',', '.'));
+    const v = parsePayableAmount(editDraft.amount);
     if (!editDraft.description.trim() || Number.isNaN(v) || v <= 0) {
       showError('Preencha descrição e valor válidos.');
       return;
@@ -562,7 +614,7 @@ const HubPayablesSection: React.FC<Props> = ({
     const needsInvoice = payable.amount_confirmed === false;
     let invoiceAmount: number | undefined;
     if (needsInvoice) {
-      const v = Number(String(payAmountForRow).replace(',', '.'));
+      const v = parsePayableAmount(payAmountForRow);
       if (Number.isNaN(v) || v <= 0) {
         showError('Informe o valor da fatura.');
         return;
@@ -610,7 +662,7 @@ const HubPayablesSection: React.FC<Props> = ({
       id: schedule.id,
       category: schedule.category,
       description: schedule.description,
-      amount: sanitizePayableAmount(String(schedule.amount)),
+      amount: formatPayableAmountFromNumber(Number(schedule.amount)),
       amountConfirmed: true,
       amountMode: schedule.amount_mode === 'estimated' ? 'estimated' : 'fixed',
       payeeKind: schedule.payee_supplier_id ? 'supplier' : schedule.payee_staff_member_id ? 'staff' : 'other',
@@ -627,7 +679,7 @@ const HubPayablesSection: React.FC<Props> = ({
 
   const onSaveSchedule = async () => {
     if (!scheduleDraft || !canWrite) return;
-    const v = Number(String(scheduleDraft.amount).replace(',', '.'));
+    const v = parsePayableAmount(scheduleDraft.amount);
     if (!scheduleDraft.description.trim() || Number.isNaN(v) || v <= 0) {
       showError('Preencha descrição e valor válidos.');
       return;
@@ -814,13 +866,13 @@ const HubPayablesSection: React.FC<Props> = ({
           payeeKind: next,
           payeeStaffId: next === 'staff' ? draft.payeeStaffId : '',
           payeeSupplierId: next === 'supplier' ? draft.payeeSupplierId : '',
+          category: categoryForKind(next, draft.category),
         });
       } else {
         setPayeeKind(next);
         if (next !== 'staff') setPayeeStaffId('');
         if (next !== 'supplier') setPayeeSupplierId('');
-        if (next === 'supplier' && category === 'professional_fee') setCategory('supplies');
-        if (next === 'staff' && category === 'supplies') setCategory('professional_fee');
+        setCategory((current) => categoryForKind(next, current));
       }
     };
 
@@ -849,7 +901,7 @@ const HubPayablesSection: React.FC<Props> = ({
         {kind === 'staff' ? (
           <div className="hub-clientes__field hub-finance-page__field-span-6">
             <label className="hub-clientes__label" htmlFor={`${idPrefix}-staff`}>
-              Profissional
+              Pessoa da equipe
             </label>
             <HubSearchableCombobox
               id={`${idPrefix}-staff`}
@@ -873,7 +925,7 @@ const HubPayablesSection: React.FC<Props> = ({
               }}
               placeholder="Da equipe…"
               searchPlaceholder="Buscar…"
-              ariaLabel="Profissional credor"
+              ariaLabel="Pessoa da equipe"
               clearable
             />
           </div>
@@ -928,10 +980,10 @@ const HubPayablesSection: React.FC<Props> = ({
             }}
             placeholder={
               kind === 'supplier'
-                ? 'Preenchido pelo fornecedor, se quiser ajuste'
+                ? 'Vem do fornecedor; ajuste se precisar'
                 : kind === 'staff'
-                  ? 'Se não estiver na equipe'
-                  : 'Nome livre do credor'
+                  ? 'Se a pessoa não estiver na equipe'
+                  : 'Ex.: imobiliária, concessionária, laboratório'
             }
           />
         </div>
@@ -948,7 +1000,7 @@ const HubPayablesSection: React.FC<Props> = ({
           </label>
           <HubSearchableCombobox
             id={`${idPrefix}-cat`}
-            options={PAYABLE_CATEGORY_OPTIONS}
+            options={categoryOptionsFor(kind, cat)}
             value={cat}
             onChange={(v) => {
               const next = (v || cat) as HubFinancePayableCategory;
@@ -975,8 +1027,10 @@ const HubPayablesSection: React.FC<Props> = ({
             }}
             placeholder={
               kind === 'supplier'
-                ? 'Ex.: Compra de medicação — nota 123'
-                : 'Ex.: Honorário anestesista — castração Luna'
+                ? 'Ex.: Ração, medicação ou shampoo — nota 123'
+                : kind === 'staff'
+                  ? 'Ex.: Plantão, comissão de tosa ou banho da semana'
+                  : 'Ex.: Aluguel da unidade, conta de luz, laboratório'
             }
           />
         </div>
@@ -994,7 +1048,7 @@ const HubPayablesSection: React.FC<Props> = ({
             className="hub-clientes__input"
             value={amt}
             onChange={(e) => {
-              const next = sanitizePayableAmount(e.target.value);
+              const next = maskPayableAmount(e.target.value, amt);
               if (isEdit) setEditDraft({ ...draft, amount: next });
               else setAmount(next);
             }}
@@ -1152,6 +1206,7 @@ const HubPayablesSection: React.FC<Props> = ({
         payeeKind: next,
         payeeStaffId: next === 'staff' ? draft.payeeStaffId : '',
         payeeSupplierId: next === 'supplier' ? draft.payeeSupplierId : '',
+        category: categoryForKind(next, draft.category),
       });
     };
     return (
@@ -1210,7 +1265,7 @@ const HubPayablesSection: React.FC<Props> = ({
         {draft.payeeKind === 'staff' ? (
           <div className="hub-clientes__field hub-finance-page__field-span-6">
             <label className="hub-clientes__label" htmlFor={`${idPrefix}-staff`}>
-              Profissional
+              Pessoa da equipe
             </label>
             <HubSearchableCombobox
               id={`${idPrefix}-staff`}
@@ -1227,7 +1282,7 @@ const HubPayablesSection: React.FC<Props> = ({
               }}
               placeholder="Da equipe…"
               searchPlaceholder="Buscar…"
-              ariaLabel="Profissional credor"
+              ariaLabel="Pessoa da equipe"
               clearable
             />
           </div>
@@ -1285,7 +1340,7 @@ const HubPayablesSection: React.FC<Props> = ({
           </label>
           <HubSearchableCombobox
             id={`${idPrefix}-cat`}
-            options={PAYABLE_CATEGORY_OPTIONS}
+            options={categoryOptionsFor(draft.payeeKind, draft.category)}
             value={draft.category}
             onChange={(v) =>
               setScheduleDraft({ ...draft, category: (v || draft.category) as HubFinancePayableCategory })
@@ -1316,7 +1371,9 @@ const HubPayablesSection: React.FC<Props> = ({
             id={`${idPrefix}-amt`}
             className="hub-clientes__input"
             value={draft.amount}
-            onChange={(e) => setScheduleDraft({ ...draft, amount: sanitizePayableAmount(e.target.value) })}
+            onChange={(e) =>
+              setScheduleDraft({ ...draft, amount: maskPayableAmount(e.target.value, draft.amount) })
+            }
             inputMode="decimal"
             autoComplete="off"
           />
@@ -1348,7 +1405,9 @@ const HubPayablesSection: React.FC<Props> = ({
               <span className="hub-payables__stat-label">Em aberto</span>
               <span className="hub-payables__stat-value">{formatBrl(pendingTotal)}</span>
               {pendingEstimate.count > 0 ? (
-                <span className="hub-payables__stat-estimate">A confirmar {formatBrl(pendingEstimate.total)}</span>
+                <span className="hub-payables__stat-estimate" title="Estimativa, ainda sem fatura">
+                  ~ {formatBrl(pendingEstimate.total)}
+                </span>
               ) : null}
               {overdueCount > 0 ? (
                 <span className="hub-payables__stat-alert">{overdueCount} vencido(s)</span>
@@ -1537,7 +1596,7 @@ const HubPayablesSection: React.FC<Props> = ({
           </p>
           <p className="hub-finance-page__empty-desc">
             {statusFilter === 'pending'
-              ? 'Honorários de cirurgia e títulos manuais pendentes aparecem aqui.'
+              ? 'Contas da equipe, do estoque e da casa aparecem aqui. Honorários de cirurgia entram sozinhos.'
               : 'Ajuste o período ou o filtro de status para ver outros títulos.'}
           </p>
           {canWrite && statusFilter === 'pending' ? (
@@ -1553,185 +1612,231 @@ const HubPayablesSection: React.FC<Props> = ({
           ) : null}
         </div>
       ) : (
-        <ul className="hub-payables__list">
-          {visibleRows.map((p) => {
-            const isEditing = formPanel === 'edit' && editDraft?.id === p.id;
-            const isPaying = payingId === p.id;
-            const dueInfo = resolveDueDateTone(p.due_date, { status: p.status });
-            const toneClass =
-              p.status === 'pending' && dueInfo.tone === 'overdue'
-                ? ' hub-payables__card--overdue'
-                : p.status === 'pending' && dueInfo.tone === 'soon'
-                  ? ' hub-payables__card--soon'
-                  : '';
-            const isGuest =
-              !!p.payee_staff_member_id &&
-              isGuestAffiliation(staffById.get(p.payee_staff_member_id)?.affiliation);
-            const isSupplier = !!p.payee_supplier_id;
+        <div className="hub-clientes__table-wrap">
+          <table className="hub-clientes__table hub-dayboard__table hub-payables__table">
+            <thead>
+              <tr>
+                <th>Credor</th>
+                <th>Descrição</th>
+                <th>Categoria</th>
+                <th>Origem</th>
+                <th title="Situação do título / vencimento">Vencimento</th>
+                <th>Status</th>
+                <th className="hub-finance-page__th-num">Valor</th>
+                <th className="hub-clientes__th-actions">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.map((p) => {
+                const isEditing = formPanel === 'edit' && editDraft?.id === p.id;
+                const isPaying = payingId === p.id;
+                const dueInfo = resolveDueDateTone(p.due_date, { status: p.status });
+                const toneClass =
+                  isEditing || isPaying
+                    ? ' hub-payables__row--active'
+                    : p.status === 'pending' && dueInfo.tone === 'overdue'
+                      ? ' hub-payables__row--overdue'
+                      : p.status === 'pending' && dueInfo.tone === 'soon'
+                        ? ' hub-payables__row--soon'
+                        : '';
+                const isGuest =
+                  !!p.payee_staff_member_id &&
+                  isGuestAffiliation(staffById.get(p.payee_staff_member_id)?.affiliation);
+                const isSupplier = !!p.payee_supplier_id;
+                const canAct = p.status === 'pending' && canWrite && !isPaying;
 
-            return (
-              <li
-                key={p.id}
-                className={`hub-payables__card${toneClass}${isEditing || isPaying ? ' hub-payables__card--active' : ''}`}
-              >
-                <div className="hub-payables__card-main">
-                  <div className="hub-payables__card-primary">
-                    <div className="hub-payables__card-title-row">
-                      <h3 className="hub-payables__payee">{p.payee_name}</h3>
-                      {isSupplier ? (
-                        <span className="hub-clientes__pill hub-payables__pill--supplier">Fornecedor</span>
-                      ) : null}
-                      {isGuest ? (
-                        <span className="hub-clientes__pill hub-equipe__pill--guest">{staffAffiliationLabel('guest')}</span>
-                      ) : null}
-                      <span
-                        className={`hub-finance-page__status-pill hub-finance-page__status-pill--${
-                          p.status === 'pending' ? 'pending' : p.status === 'paid' ? 'paid' : 'cancelled'
-                        }`}
-                      >
-                        {PAYABLE_STATUS_LABELS[p.status] ?? p.status}
-                      </span>
-                    </div>
-                    <p className="hub-payables__desc">{p.description}</p>
-                    <div className="hub-payables__meta">
-                      <span className="hub-payables__chip">
-                        {PAYABLE_CATEGORY_LABELS[p.category] ?? p.category}
-                      </span>
-                      {p.source_type === 'surgery' && p.source_id ? (
-                        <Link className="hub-payables__chip hub-payables__chip--link" to={`/hub/clinica/cirurgias/${p.source_id}`}>
-                          <Stethoscope size={12} strokeWidth={2} aria-hidden />
-                          {p.source_label || 'Cirurgia'}
-                        </Link>
-                      ) : (
-                        <span className={`hub-payables__chip${p.source_type === 'recurrence' ? ' hub-payables__chip--recurrence' : ''}`}>
-                          {p.source_label || 'Manual'}
+                return (
+                  <React.Fragment key={p.id}>
+                    <tr className={toneClass.trim() || undefined}>
+                      <td>
+                        <div className="hub-payables__payee-cell">
+                          <span className="hub-payables__payee">{p.payee_name}</span>
+                          {isSupplier ? (
+                            <span className="hub-clientes__pill hub-payables__pill--supplier">Fornecedor</span>
+                          ) : null}
+                          {isGuest ? (
+                            <span className="hub-clientes__pill hub-equipe__pill--guest">
+                              {staffAffiliationLabel('guest')}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td>
+                        <span className="hub-payables__desc" title={p.description}>
+                          {p.description}
                         </span>
-                      )}
-                      {p.status === 'pending' ? (
-                        <ReceivableDueBadge dueDate={p.due_date} status="pending" showDate />
-                      ) : p.due_date ? (
-                        <span className="hub-payables__chip muted">{formatDueDateShort(p.due_date)}</span>
-                      ) : null}
-                      {p.status === 'pending' && dueInfo.label && dueInfo.tone !== 'none' && dueInfo.tone !== 'ok' ? (
-                        <span className={`hub-payables__due-hint hub-payables__due-hint--${dueInfo.tone}`}>
-                          {dueInfo.label}
+                      </td>
+                      <td>{PAYABLE_CATEGORY_LABELS[p.category] ?? p.category}</td>
+                      <td>
+                        {p.source_type === 'surgery' && p.source_id ? (
+                          <Link
+                            className="hub-payables__chip hub-payables__chip--link"
+                            to={`/hub/clinica/cirurgias/${p.source_id}`}
+                          >
+                            <Stethoscope size={12} strokeWidth={2} aria-hidden />
+                            {p.source_label || 'Cirurgia'}
+                          </Link>
+                        ) : (
+                          <span
+                            className={`hub-payables__chip${
+                              p.source_type === 'recurrence' ? ' hub-payables__chip--recurrence' : ''
+                            }`}
+                          >
+                            {p.source_label || 'Manual'}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {p.status === 'pending' ? (
+                          <ReceivableDueBadge dueDate={p.due_date} status="pending" showDate />
+                        ) : p.due_date ? (
+                          <span className="hub-clientes__muted">{formatDueDateShort(p.due_date)}</span>
+                        ) : (
+                          <span className="hub-clientes__muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <span
+                          className={`hub-finance-page__status-pill hub-finance-page__status-pill--${
+                            p.status === 'pending' ? 'pending' : p.status === 'paid' ? 'paid' : 'cancelled'
+                          }`}
+                        >
+                          {PAYABLE_STATUS_LABELS[p.status] ?? p.status}
                         </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="hub-payables__card-amount">
-                    <div className="hub-payables__amount-row">
-                      <span className="hub-payables__amount">{formatBrl(Number(p.amount))}</span>
-                      {p.status === 'pending' && p.amount_confirmed === false ? (
-                        <span className="hub-payables__chip hub-payables__chip--estimate">A confirmar</span>
-                      ) : null}
-                    </div>
-                    {p.status === 'pending' && canWrite && !isPaying ? (
-                      <div className="hub-payables__actions">
-                        <button
-                          type="button"
-                          className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                          onClick={() => {
-                            setFormPanel(null);
-                            setEditDraft(null);
-                            setPayingId(p.id);
-                            setPayMethodForRow('pix');
-                            setPayDateForRow(todayIsoLocal());
-                            setPayAmountForRow(sanitizePayableAmount(String(p.amount)));
-                          }}
-                        >
-                          Pagar
-                        </button>
-                        <button
-                          type="button"
-                          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                          onClick={() => startEdit(p)}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                          onClick={() => void onCancel(p.id)}
-                        >
-                          Cancelar
-                        </button>
-                      </div>
+                      </td>
+                      <td className="hub-finance-page__td-num">
+                        {p.status === 'pending' && p.amount_confirmed === false ? (
+                          <span
+                            className="hub-payables__amount hub-payables__amount--estimate"
+                            title="Estimativa, ainda sem fatura"
+                            aria-label={`Estimativa ${formatBrl(Number(p.amount))}`}
+                          >
+                            ~ {formatBrl(Number(p.amount))}
+                          </span>
+                        ) : (
+                          <span className="hub-payables__amount">{formatBrl(Number(p.amount))}</span>
+                        )}
+                      </td>
+                      <td className="hub-clientes__td-actions">
+                        {canAct ? (
+                          <div className="hub-clientes__td-actions-inner hub-dayboard__actions">
+                            <button
+                              type="button"
+                              className="hub-dayboard__action-btn hub-dayboard__action-btn--primary"
+                              title="Pagar"
+                              aria-label={`Pagar ${p.payee_name}`}
+                              onClick={() => {
+                                setFormPanel(null);
+                                setEditDraft(null);
+                                setPayingId(p.id);
+                                setPayMethodForRow('pix');
+                                setPayDateForRow(todayIsoLocal());
+                                setPayAmountForRow(formatPayableAmountFromNumber(Number(p.amount)));
+                              }}
+                            >
+                              <Banknote size={15} strokeWidth={2} />
+                            </button>
+                            <button
+                              type="button"
+                              className="hub-dayboard__action-btn"
+                              title="Editar"
+                              aria-label={`Editar ${p.payee_name}`}
+                              onClick={() => startEdit(p)}
+                            >
+                              <Pencil size={15} strokeWidth={2} />
+                            </button>
+                            <button
+                              type="button"
+                              className="hub-dayboard__action-btn"
+                              title="Cancelar"
+                              aria-label={`Cancelar ${p.payee_name}`}
+                              onClick={() => void onCancel(p.id)}
+                            >
+                              <Ban size={15} strokeWidth={2} />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="hub-clientes__muted">—</span>
+                        )}
+                      </td>
+                    </tr>
+                    {isPaying ? (
+                      <tr className="hub-payables__pay-row">
+                        <td colSpan={8}>
+                          <div className="hub-payables__panel">
+                            <p className="hub-payables__panel-title">Confirmar pagamento</p>
+                            <div className="hub-payables__panel-row">
+                              {p.amount_confirmed === false ? (
+                                <div className="hub-clientes__field" style={{ margin: 0, minWidth: 160, flex: '0 1 180px' }}>
+                                  <label className="hub-clientes__label" htmlFor={`fin-ap-pay-amt-${p.id}`}>
+                                    Valor da fatura (R$)
+                                  </label>
+                                  <input
+                                    id={`fin-ap-pay-amt-${p.id}`}
+                                    className="hub-clientes__input"
+                                    value={payAmountForRow}
+                                    onChange={(e) => setPayAmountForRow(maskPayableAmount(e.target.value, payAmountForRow))}
+                                    inputMode="decimal"
+                                    autoComplete="off"
+                                  />
+                                </div>
+                              ) : null}
+                              <div className="hub-clientes__field" style={{ margin: 0, minWidth: 200, flex: '1 1 200px' }}>
+                                <label className="hub-clientes__label" htmlFor={`fin-ap-pay-${p.id}`}>
+                                  Forma de pagamento
+                                </label>
+                                <HubSearchableCombobox
+                                  id={`fin-ap-pay-${p.id}`}
+                                  options={PAYMENT_METHOD_OPTIONS}
+                                  value={payMethodForRow}
+                                  onChange={(v) => setPayMethodForRow(v || 'pix')}
+                                  placeholder="Forma de pagamento…"
+                                  searchPlaceholder="Buscar…"
+                                  ariaLabel="Forma de pagamento"
+                                  clearable={false}
+                                />
+                              </div>
+                              <div className="hub-clientes__field" style={{ margin: 0, minWidth: 160, flex: '0 1 180px' }}>
+                                <HubDateField
+                                  id={`fin-ap-pay-date-${p.id}`}
+                                  label="Data do pagamento"
+                                  valueIso={payDateForRow}
+                                  onChangeIso={setPayDateForRow}
+                                  showTodayButton={false}
+                                />
+                              </div>
+                              <div className="hub-payables__panel-actions">
+                                <button
+                                  type="button"
+                                  className="hub-clientes__btn hub-clientes__btn--primary"
+                                  onClick={() => void onMarkPaid(p)}
+                                >
+                                  {p.amount_confirmed === false ? 'Confirmar e pagar' : 'Confirmar'}{' '}
+                                  {formatBrl(
+                                    p.amount_confirmed === false
+                                      ? parsePayableAmount(payAmountForRow) || 0
+                                      : Number(p.amount),
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hub-clientes__btn hub-clientes__btn--ghost"
+                                  onClick={() => setPayingId(null)}
+                                >
+                                  Voltar
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     ) : null}
-                  </div>
-                </div>
-
-                {isPaying ? (
-                  <div className="hub-payables__panel">
-                    <p className="hub-payables__panel-title">Confirmar pagamento</p>
-                    <div className="hub-payables__panel-row">
-                    {p.amount_confirmed === false ? (
-                      <div className="hub-clientes__field" style={{ margin: 0, minWidth: 160, flex: '0 1 180px' }}>
-                        <label className="hub-clientes__label" htmlFor={`fin-ap-pay-amt-${p.id}`}>
-                          Valor da fatura (R$)
-                        </label>
-                        <input
-                          id={`fin-ap-pay-amt-${p.id}`}
-                          className="hub-clientes__input"
-                          value={payAmountForRow}
-                          onChange={(e) => setPayAmountForRow(sanitizePayableAmount(e.target.value))}
-                          inputMode="decimal"
-                          autoComplete="off"
-                        />
-                      </div>
-                    ) : null}
-                    <div className="hub-clientes__field" style={{ margin: 0, minWidth: 200, flex: '1 1 200px' }}>
-                        <label className="hub-clientes__label" htmlFor={`fin-ap-pay-${p.id}`}>
-                          Forma de pagamento
-                        </label>
-                        <HubSearchableCombobox
-                          id={`fin-ap-pay-${p.id}`}
-                          options={PAYMENT_METHOD_OPTIONS}
-                          value={payMethodForRow}
-                          onChange={(v) => setPayMethodForRow(v || 'pix')}
-                          placeholder="Forma de pagamento…"
-                          searchPlaceholder="Buscar…"
-                          ariaLabel="Forma de pagamento"
-                          clearable={false}
-                        />
-                      </div>
-                      <div className="hub-clientes__field" style={{ margin: 0, minWidth: 160, flex: '0 1 180px' }}>
-                        <HubDateField
-                          id={`fin-ap-pay-date-${p.id}`}
-                          label="Data do pagamento"
-                          valueIso={payDateForRow}
-                          onChangeIso={setPayDateForRow}
-                          showTodayButton={false}
-                        />
-                      </div>
-                      <div className="hub-payables__panel-actions">
-                        <button
-                          type="button"
-                          className="hub-clientes__btn hub-clientes__btn--primary"
-                          onClick={() => void onMarkPaid(p)}
-                        >
-                          {p.amount_confirmed === false ? 'Confirmar e pagar' : 'Confirmar'}{' '}
-                          {formatBrl(
-                            p.amount_confirmed === false
-                              ? Number(String(payAmountForRow).replace(',', '.')) || 0
-                              : Number(p.amount),
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          className="hub-clientes__btn hub-clientes__btn--ghost"
-                          onClick={() => setPayingId(null)}
-                        >
-                          Voltar
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {canWrite ? (
@@ -1759,7 +1864,7 @@ const HubPayablesSection: React.FC<Props> = ({
                   ? amountMode === 'estimated'
                     ? 'Contrato contínuo. Cada mês nasce com a estimativa até a fatura ser informada.'
                     : 'Contrato contínuo. As próximas contas nascem mês a mês, até a data final.'
-                  : 'Título manual — profissional, fornecedor do estoque ou credor avulso. Cirurgias sincronizam sozinhas.'
+                  : 'Conta da equipe, de um fornecedor ou de uma despesa da casa. Cirurgias entram sozinhas.'
           }
           contentKey={
             formPanel === 'edit'

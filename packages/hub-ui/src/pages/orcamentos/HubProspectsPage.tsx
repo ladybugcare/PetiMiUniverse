@@ -41,6 +41,7 @@ const HubProspectsPage: React.FC = () => {
   const [q, setQ] = useState('');
   const debouncedQ = useDebounced(q, 350);
   const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ full_name: '', tax_id: '', phone: '', email: '' });
 
   const accessAllowed = hasPermission('hub.prospects.read');
@@ -81,20 +82,62 @@ const HubProspectsPage: React.FC = () => {
     }
     setCreating(true);
     try {
-      await hubProspectsApi.create({
-        clinic_id: clinicId,
-        full_name,
-        tax_id,
-        phone,
-        email: form.email.trim() || null,
-      });
-      showSuccess('Contato criado');
+      if (editingId) {
+        await hubProspectsApi.patch(editingId, {
+          clinic_id: clinicId,
+          full_name,
+          tax_id,
+          phone,
+          email: form.email.trim() || null,
+        });
+        showSuccess('Contato atualizado');
+        setEditingId(null);
+      } else {
+        const created = await hubProspectsApi.create({
+          clinic_id: clinicId,
+          full_name,
+          tax_id,
+          phone,
+          email: form.email.trim() || null,
+        });
+        showSuccess(
+          created.reused
+            ? 'Já existia um contato com este CPF. O cadastro existente foi usado.'
+            : 'Contato criado',
+        );
+      }
       setForm({ full_name: '', tax_id: '', phone: '', email: '' });
       await load();
     } catch (err: unknown) {
-      showError((err as Error)?.message || 'Erro ao criar');
+      showError((err as Error)?.message || 'Erro ao salvar contato');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const startEdit = (p: HubProspect) => {
+    setEditingId(p.id);
+    setForm({
+      full_name: p.full_name,
+      tax_id: p.tax_id,
+      phone: p.phone,
+      email: p.email ?? '',
+    });
+  };
+
+  const handleArchive = async (p: HubProspect) => {
+    if (!clinicId || !canWrite) return;
+    if (!window.confirm(`Arquivar o contato ${p.full_name}?`)) return;
+    try {
+      await hubProspectsApi.patch(p.id, { clinic_id: clinicId, archived: true });
+      if (editingId === p.id) {
+        setEditingId(null);
+        setForm({ full_name: '', tax_id: '', phone: '', email: '' });
+      }
+      showSuccess('Contato arquivado');
+      await load();
+    } catch (err: unknown) {
+      showError((err as Error)?.message || 'Erro ao arquivar contato');
     }
   };
 
@@ -209,7 +252,7 @@ const HubProspectsPage: React.FC = () => {
 
       {canWrite ? (
         <form className="hub-orcamentos-contatos__form-panel" onSubmit={handleCreate}>
-          <h2 className="hub-orcamentos-contatos__form-title">Novo contato</h2>
+          <h2 className="hub-orcamentos-contatos__form-title">{editingId ? 'Editar contato' : 'Novo contato'}</h2>
           <div className="hub-orcamentos-contatos__form-grid">
             <div className="hub-clientes__field">
               <label className="hub-clientes__label">Nome *</label>
@@ -246,8 +289,21 @@ const HubProspectsPage: React.FC = () => {
           </div>
           <button type="submit" className="hub-servicos__btn-primary-icon hub-orcamentos-contatos__submit" disabled={creating}>
             <Plus size={20} strokeWidth={2.25} aria-hidden />
-            {creating ? 'Salvando…' : 'Adicionar contato'}
+            {creating ? 'Salvando…' : editingId ? 'Salvar contato' : 'Adicionar contato'}
           </button>
+          {editingId ? (
+            <button
+              type="button"
+              className="hub-clientes__link-btn"
+              style={{ marginLeft: 12 }}
+              onClick={() => {
+                setEditingId(null);
+                setForm({ full_name: '', tax_id: '', phone: '', email: '' });
+              }}
+            >
+              Cancelar edição
+            </button>
+          ) : null}
         </form>
       ) : null}
 
@@ -278,6 +334,11 @@ const HubProspectsPage: React.FC = () => {
                     <td>
                       <div className="hub-servicos__metric-card__text">
                         <div className="hub-servicos__svc-title">{p.full_name}</div>
+                        {p.matching_guardian_id ? (
+                          <Link to={`/hub/clientes/${p.matching_guardian_id}`} className="hub-orcamentos-contatos__row-link">
+                            Já é cliente
+                          </Link>
+                        ) : null}
                       </div>
                     </td>
                     <td className="hub-servicos__code-mono">{maskTaxIdForList(p.tax_id)}</td>
@@ -289,6 +350,16 @@ const HubProspectsPage: React.FC = () => {
                       >
                         Novo orçamento
                       </Link>
+                      {canWrite ? (
+                        <>
+                          <button type="button" className="hub-clientes__link-btn" onClick={() => startEdit(p)}>
+                            Editar
+                          </button>
+                          <button type="button" className="hub-clientes__link-btn" onClick={() => void handleArchive(p)}>
+                            Arquivar
+                          </button>
+                        </>
+                      ) : null}
                     </td>
                   </tr>
                 ))

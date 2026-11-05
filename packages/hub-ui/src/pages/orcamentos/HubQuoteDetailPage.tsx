@@ -36,7 +36,7 @@ function normTax(s: string): string {
 function viewerName(user: unknown): string {
   const u = user as { email?: string; user_metadata?: { full_name?: string; name?: string } } | null;
   if (!u) return '—';
-  return (u.user_metadata?.full_name || u.user_metadata?.name || u.email || 'Utilizador').trim();
+  return (u.user_metadata?.full_name || u.user_metadata?.name || u.email || 'Usuário').trim();
 }
 
 const HubQuoteDetailPage: React.FC = () => {
@@ -84,7 +84,11 @@ const HubQuoteDetailPage: React.FC = () => {
   const prospect = useMemo(() => embedOne(quote?.prospect), [quote]);
 
   const isDraft = quote?.status === 'draft';
-  const canConvert = Boolean(quote && (quote.status === 'sent' || quote.status === 'awaiting_return'));
+  const canConvert = Boolean(
+    quote &&
+      (quote.status === 'sent' || quote.status === 'awaiting_return') &&
+      (!quote.expires_at || new Date(quote.expires_at).getTime() >= Date.now()),
+  );
   const canReopenForEdit = Boolean(
     quote &&
       canWrite &&

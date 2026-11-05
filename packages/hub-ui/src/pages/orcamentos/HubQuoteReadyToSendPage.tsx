@@ -290,7 +290,7 @@ const HubQuoteReadyToSendPage: React.FC = () => {
             onClick={() => void handleDownloadPdf()}
           >
             <Download size={18} aria-hidden />
-            {pdfBusy ? 'A gerar…' : 'Baixar PDF'}
+            {pdfBusy ? 'Gerando…' : 'Baixar PDF'}
           </button>
           <a
             className="hub-orcamento-novo__btn hub-orcamento-novo__btn--primary"

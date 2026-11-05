@@ -49,8 +49,8 @@ const PublicQuotePage: React.FC = () => {
     return (
       <div className="hub-public-quote">
         <div className="hub-public-quote__state" role="status">
-          <p className="hub-public-quote__state-title">A carregar…</p>
-          <p className="hub-public-quote__state-text">Um momento enquanto obtemos o seu orçamento.</p>
+          <p className="hub-public-quote__state-title">Carregando…</p>
+          <p className="hub-public-quote__state-text">Um momento enquanto buscamos o seu orçamento.</p>
         </div>
       </div>
     );

@@ -297,6 +297,8 @@ import {
   getHubFinancePackagesReport,
   listHubFinanceExpenses,
   postHubFinanceExpense,
+  patchHubFinanceExpense,
+  deleteHubFinanceExpense,
   listHubFinancePayables,
   postHubFinancePayable,
   patchHubFinancePayable,
@@ -1762,6 +1764,18 @@ router.post(
   authenticateUser,
   requirePermission('hub.financial.write'),
   postHubFinanceExpense
+);
+router.patch(
+  '/finance/expenses/:id',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  patchHubFinanceExpense
+);
+router.delete(
+  '/finance/expenses/:id',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  deleteHubFinanceExpense
 );
 router.get(
   '/finance/payables',

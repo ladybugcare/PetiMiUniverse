@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { apiRequest } from '@petimi/web-core';
 import type { HubQuote, HubQuoteLine } from '../../api/hubQuotesApi';
 import type { HubGuardian } from '../../api/hubGuardiansApi';
 import { useAlert } from '../../components/AlertProvider';
@@ -36,6 +37,13 @@ import {
   User,
   Users,
 } from 'lucide-react';
+
+function billingLabel(quote: HubQuote): string {
+  if (quote.billing_waived_at) return 'Dispensada';
+  if (quote.billing_state === 'receivable_created') return 'Cobrança criada';
+  if (quote.status === 'accepted' || quote.billing_state === 'awaiting_billing') return 'Aguardando cobrança';
+  return 'Ainda sem cobrança';
+}
 
 function daysUntilExpiry(quote: HubQuote): string | null {
   if (!quote.expires_at) return null;
@@ -110,6 +118,30 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
   onCreateAppointmentFromQuote,
 }) => {
   const { showSuccess, showError } = useAlert();
+  const [unitLabel, setUnitLabel] = useState<string | null>(null);
+  useEffect(() => {
+    const unitId = quote.unit_id;
+    if (!unitId) {
+      setUnitLabel(null);
+      return;
+    }
+    let cancelled = false;
+    void (apiRequest(`/units/${encodeURIComponent(unitId)}`) as Promise<{
+      unit?: { name?: string | null; nickname?: string | null };
+    }>)
+      .then((res) => {
+        if (cancelled) return;
+        const nick = res.unit?.nickname?.trim();
+        const name = res.unit?.name?.trim();
+        setUnitLabel(nick || name || 'Unidade');
+      })
+      .catch(() => {
+        if (!cancelled) setUnitLabel('Unidade');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [quote.unit_id]);
   const prospect = embedOne(quote.prospect);
   const refShort = quote.id.slice(0, 8).toUpperCase();
   const pets = useMemo(
@@ -602,7 +634,7 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
 
             {quote.notes?.trim() ? (
               <section className="hub-quote-detail__card hub-quote-detail__card--internal">
-                <h2 className="hub-quote-detail__card-title">Notas internas (equipa)</h2>
+                <h2 className="hub-quote-detail__card-title">Notas internas (equipe)</h2>
                 <p className="hub-quote-detail__notes-body hub-quote-detail__notes-body--pre">{quote.notes.trim()}</p>
               </section>
             ) : null}
@@ -781,8 +813,18 @@ const HubQuoteDetailLayout: React.FC<HubQuoteDetailLayoutProps> = ({
                 </div>
                 <div>
                   <dt>Unidade</dt>
-                  <dd>{quote.unit_id ? quote.unit_id.slice(0, 8) + '…' : 'Unidade padrão / não atribuída'}</dd>
+                  <dd>{quote.unit_id ? (unitLabel ?? 'Carregando unidade…') : 'Unidade padrão'}</dd>
                 </div>
+                <div>
+                  <dt>Cobrança</dt>
+                  <dd>{billingLabel(quote)}</dd>
+                </div>
+                {quote.billing_waived_at ? (
+                  <div>
+                    <dt>Motivo da dispensa</dt>
+                    <dd>{quote.billing_waive_reason?.trim() || 'Sem motivo informado'}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt>ID do orçamento</dt>
                   <dd className="hub-quote-detail__info-id-row">

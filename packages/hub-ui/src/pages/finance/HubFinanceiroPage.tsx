@@ -1,27 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
-import {
-  Info,
-  LayoutDashboard,
-  Link2,
-  Plus,
-  Receipt,
-  Scale,
-  TrendingUp,
-  Wallet,
-} from 'lucide-react';
+import { Scale, TrendingUp } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
-import { HubCancelButton } from '../../components/HubCancelButton';
-import { HubDateField } from '../../components/HubDateField';
 import { HubLoading } from '../../components/HubLoading';
-import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubTabs } from '../../components/HubTabs';
 import {
   hubFinancialApi,
   type HubFinanceReceivable,
-  type HubFinanceExpense,
-  type HubFinanceExpenseCategory,
   type HubFinanceCashFlowDay,
   type HubFinanceDashboardSummary,
   type HubCommissionRule,
@@ -32,6 +18,7 @@ import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTyp
 import { hubComandaApi } from '../../api/hubComandaApi';
 import HubCancellationAdjustmentsPanel from './HubCancellationAdjustmentsPanel';
 import HubPaymentReversalPanel from './HubPaymentReversalPanel';
+import HubExpensesSection from './HubExpensesSection';
 import HubPayablesSection from './HubPayablesSection';
 import { FinanceDayBoardSection } from './FinanceDayBoardSection';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
@@ -63,16 +50,6 @@ function commissionRuleServiceLabel(rule: HubCommissionRule, types: HubServiceTy
 const COMMISSION_BASIS_LABELS: Record<HubCommissionBasis, string> = {
   percent_of_sale: '% sobre valor da linha',
   fixed_per_sale: 'Valor fixo por linha (até o total da linha)',
-};
-
-const EXPENSE_CATEGORY_LABELS: Record<HubFinanceExpenseCategory, string> = {
-  supplies: 'Material / consumíveis',
-  services: 'Serviços terceiros',
-  utilities: 'Utilidades',
-  payroll: 'Pessoal',
-  rent: 'Aluguel',
-  marketing: 'Marketing',
-  other: 'Outro',
 };
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
@@ -127,24 +104,9 @@ const HubFinanceiroPage: React.FC = () => {
   const [cancellationPendingCount, setCancellationPendingCount] = useState(0);
   const [summary, setSummary] = useState<HubFinanceDashboardSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
-  const [expenses, setExpenses] = useState<HubFinanceExpense[]>([]);
   const [flowDays, setFlowDays] = useState<HubFinanceCashFlowDay[]>([]);
   const [flowPeriod, setFlowPeriod] = useState<{ from: string; to: string } | null>(null);
-  const [expLoading, setExpLoading] = useState(false);
   const [flowLoading, setFlowLoading] = useState(false);
-
-  const [expCategory, setExpCategory] = useState<HubFinanceExpenseCategory>('other');
-  const [expDesc, setExpDesc] = useState('');
-  const [expAmount, setExpAmount] = useState('');
-  const [expDate, setExpDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [showExpensePanel, setShowExpensePanel] = useState(false);
-  const [creatingExpense, setCreatingExpense] = useState(false);
-  const [expListFrom, setExpListFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [expListTo, setExpListTo] = useState(() => new Date().toISOString().slice(0, 10));
 
   const [commissionRules, setCommissionRules] = useState<HubCommissionRule[]>([]);
   const [commissionServiceTypes, setCommissionServiceTypes] = useState<HubServiceType[]>([]);
@@ -229,22 +191,6 @@ const HubFinanceiroPage: React.FC = () => {
     [loadSummary],
   );
 
-  const loadExpenses = useCallback(async () => {
-    if (!clinicId || !unitId) return;
-    setExpLoading(true);
-    try {
-      const list = await hubFinancialApi.listExpenses(clinicId, unitId, {
-        from: expListFrom,
-        to: expListTo,
-      });
-      setExpenses(list);
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao carregar despesas');
-    } finally {
-      setExpLoading(false);
-    }
-  }, [clinicId, unitId, showError, expListFrom, expListTo]);
-
   const loadCashFlow = useCallback(async () => {
     if (!clinicId || !unitId) return;
     setFlowLoading(true);
@@ -289,10 +235,9 @@ const HubFinanceiroPage: React.FC = () => {
     if (!clinicId || !unitId) return;
     void loadSummary();
     void loadCancellationCount();
-    if (tab === 'expenses') void loadExpenses();
     if (tab === 'cashflow') void loadCashFlow();
     if (tab === 'commissions') void loadCommissions();
-  }, [permLoading, hasPermission, clinicId, unitId, tab, loadSummary, loadCancellationCount, loadExpenses, loadCashFlow, loadCommissions]);
+  }, [permLoading, hasPermission, clinicId, unitId, tab, loadSummary, loadCancellationCount, loadCashFlow, loadCommissions]);
 
   const switchTab = useCallback(
     (next: FinanceTab) => {
@@ -306,56 +251,6 @@ const HubFinanceiroPage: React.FC = () => {
     },
     [setSearchParams],
   );
-
-  const resetExpenseForm = () => {
-    setExpCategory('other');
-    setExpDesc('');
-    setExpAmount('');
-    setExpDate(new Date().toISOString().slice(0, 10));
-  };
-
-  const openExpensePanel = () => {
-    resetExpenseForm();
-    setShowExpensePanel(true);
-  };
-
-  const closeExpensePanel = () => {
-    if (creatingExpense) return;
-    setShowExpensePanel(false);
-    resetExpenseForm();
-  };
-
-  const onCreateExpense = async () => {
-    if (!clinicId || !unitId) return;
-    if (!hasPermission('hub.financial.write')) {
-      showError('Sem permissão para registrar despesas.');
-      return;
-    }
-    const v = Number(String(expAmount).replace(',', '.'));
-    if (!expDesc.trim() || Number.isNaN(v) || v <= 0) {
-      showError('Preencha descrição e valor válidos.');
-      return;
-    }
-    setCreatingExpense(true);
-    try {
-      await hubFinancialApi.createExpense({
-        clinic_id: clinicId,
-        unit_id: unitId,
-        amount: v,
-        category: expCategory,
-        description: expDesc.trim(),
-        expense_date: expDate,
-      });
-      showSuccess('Despesa registrada.');
-      resetExpenseForm();
-      setShowExpensePanel(false);
-      await Promise.all([loadExpenses(), loadSummary()]);
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao registrar');
-    } finally {
-      setCreatingExpense(false);
-    }
-  };
 
   const summaryNet = summary?.net_operational_period ?? 0;
 
@@ -557,28 +452,6 @@ const HubFinanceiroPage: React.FC = () => {
             </button>
           ) : null}
         </div>
-
-        <div className="hub-finance-page__topbar-actions">
-          <Link to="/hub/caixa" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
-            <Wallet size={15} strokeWidth={1.75} aria-hidden />
-            Caixa
-          </Link>
-          <Link to="/hub/dashboard" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
-            <LayoutDashboard size={15} strokeWidth={1.75} aria-hidden />
-            Hoje na unidade
-          </Link>
-          <Link
-            to="/hub/relatorios?relatorio=finance-overview"
-            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-          >
-            <TrendingUp size={15} strokeWidth={1.75} aria-hidden />
-            Visão financeira
-          </Link>
-          <Link to="/hub/relatorios" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
-            <Link2 size={15} strokeWidth={1.75} aria-hidden />
-            Relatórios
-          </Link>
-        </div>
       </div>
 
       <HubTabs
@@ -631,185 +504,15 @@ const HubFinanceiroPage: React.FC = () => {
         </section>
       ) : null}
 
-      {tab === 'expenses' ? (
-        <section className="hub-finance-page__section">
-          <div className="hub-finance-page__section-head">
-            <div>
-              <h2 className="hub-clientes__form-title">Despesas</h2>
-              <p className="hub-clientes__muted">
-                Saídas já liquidadas (caixa ou registro manual). Para obrigações pendentes — honorários,
-                fornecedores — use Contas a pagar.
-              </p>
-            </div>
-            {hasPermission('hub.financial.write') ? (
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--primary"
-                onClick={openExpensePanel}
-              >
-                <Plus size={16} strokeWidth={2} aria-hidden />
-                Nova despesa
-              </button>
-            ) : null}
-          </div>
-          <div className="hub-finance-page__callout hub-finance-page__callout--hint">
-            <Info className="hub-finance-page__callout-icon" size={18} strokeWidth={1.75} aria-hidden />
-            <span>
-              <strong>Despesa</strong> = já paga. <strong>Conta a pagar</strong> = ainda deve (ou acabou de
-              liquidar um título). Honorários de cirurgia sincronizam em Contas a pagar.
-            </span>
-          </div>
-          {!hasPermission('hub.financial.write') ? (
-            <p className="hub-clientes__muted">Apenas leitura — sem permissão para registrar despesas.</p>
-          ) : null}
-          <div className="hub-clientes__toolbar" style={{ marginTop: 8, marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
-            <div className="hub-clientes__field hub-finance-page__field-compact">
-              <HubDateField
-                id="fin-exp-list-from"
-                label="Listar de"
-                valueIso={expListFrom}
-                onChangeIso={setExpListFrom}
-                showTodayButton={false}
-              />
-            </div>
-            <div className="hub-clientes__field hub-finance-page__field-compact">
-              <HubDateField
-                id="fin-exp-list-to"
-                label="até"
-                valueIso={expListTo}
-                onChangeIso={setExpListTo}
-                showTodayButton={false}
-              />
-            </div>
-            <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => void loadExpenses()}>
-              Atualizar lista
-            </button>
-          </div>
-          {expLoading ? (
-            <HubLoading variant="block" label="Carregando despesas…" />
-          ) : expenses.length === 0 ? (
-            <div className="hub-finance-page__empty" role="status">
-              <span className="hub-finance-page__empty-icon" aria-hidden>
-                <Receipt size={24} strokeWidth={1.75} />
-              </span>
-              <p className="hub-finance-page__empty-title">Nenhuma despesa no período</p>
-              <p className="hub-finance-page__empty-desc">
-                Registre saídas já pagas aqui, ou confira Contas a pagar se ainda houver títulos em aberto.
-              </p>
-              {hasPermission('hub.financial.write') ? (
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--primary"
-                  style={{ marginTop: 12 }}
-                  onClick={openExpensePanel}
-                >
-                  <Plus size={16} strokeWidth={2} aria-hidden />
-                  Nova despesa
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            <div className="hub-clientes__table-wrap">
-              <table className="hub-clientes__table hub-finance-page__table">
-                <thead>
-                  <tr>
-                    <th>Data</th>
-                    <th>Categoria</th>
-                    <th>Descrição</th>
-                    <th className="hub-finance-page__th-num">Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expenses.map((ex) => (
-                    <tr key={ex.id}>
-                      <td>{ex.expense_date}</td>
-                      <td>{EXPENSE_CATEGORY_LABELS[ex.category] ?? ex.category}</td>
-                      <td>{ex.description}</td>
-                      <td className="hub-finance-page__td-num">{formatBrl(Number(ex.amount))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {hasPermission('hub.financial.write') ? (
-            <HubSidePanel
-              open={showExpensePanel}
-              onClose={closeExpensePanel}
-              title="Nova despesa"
-              titleIcon={<Receipt size={20} strokeWidth={1.75} aria-hidden />}
-              subtitle="Lança uma saída já realizada nesta unidade."
-              contentKey={showExpensePanel ? 'open' : 'closed'}
-              footer={
-                <div className="hub-finance-page__drawer-footer">
-                  <HubCancelButton onClick={closeExpensePanel} disabled={creatingExpense} />
-                  <button
-                    type="button"
-                    className="hub-clientes__btn hub-clientes__btn--primary"
-                    disabled={creatingExpense}
-                    onClick={() => void onCreateExpense()}
-                  >
-                    {creatingExpense ? 'Registrando…' : 'Registrar despesa'}
-                  </button>
-                </div>
-              }
-            >
-              <div className="hub-finance-page__form-grid">
-                <div className="hub-clientes__field hub-finance-page__field-span-6">
-                  <label className="hub-clientes__label" htmlFor="fin-exp-cat">
-                    Categoria
-                  </label>
-                  <select
-                    id="fin-exp-cat"
-                    className="hub-clientes__select-input"
-                    value={expCategory}
-                    onChange={(e) => setExpCategory(e.target.value as HubFinanceExpenseCategory)}
-                  >
-                    {(Object.keys(EXPENSE_CATEGORY_LABELS) as HubFinanceExpenseCategory[]).map((k) => (
-                      <option key={k} value={k}>
-                        {EXPENSE_CATEGORY_LABELS[k]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="hub-clientes__field hub-finance-page__field-span-6">
-                  <HubDateField
-                    id="fin-exp-date"
-                    label="Data"
-                    valueIso={expDate}
-                    onChangeIso={setExpDate}
-                    showTodayButton={false}
-                  />
-                </div>
-                <div className="hub-clientes__field hub-finance-page__field-span-6">
-                  <label className="hub-clientes__label" htmlFor="fin-exp-desc">
-                    Descrição
-                  </label>
-                  <input
-                    id="fin-exp-desc"
-                    className="hub-clientes__input"
-                    value={expDesc}
-                    onChange={(e) => setExpDesc(e.target.value)}
-                    placeholder="Ex.: Compra de shampoo"
-                  />
-                </div>
-                <div className="hub-clientes__field hub-finance-page__field-span-6">
-                  <label className="hub-clientes__label" htmlFor="fin-exp-amt">
-                    Valor (R$)
-                  </label>
-                  <input
-                    id="fin-exp-amt"
-                    className="hub-clientes__input"
-                    value={expAmount}
-                    onChange={(e) => setExpAmount(e.target.value)}
-                    inputMode="decimal"
-                  />
-                </div>
-              </div>
-            </HubSidePanel>
-          ) : null}
-        </section>
+      {tab === 'expenses' && clinicId && unitId ? (
+        <HubExpensesSection
+          clinicId={clinicId}
+          unitId={unitId}
+          canWrite={hasPermission('hub.financial.write')}
+          showError={showError}
+          showSuccess={showSuccess}
+          onChanged={() => void loadSummary()}
+        />
       ) : null}
 
       {tab === 'payables' && clinicId && unitId ? (

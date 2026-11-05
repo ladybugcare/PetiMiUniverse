@@ -7,8 +7,21 @@ const uuidStr = z.string().uuid();
 const PROSPECT_SELECT =
   'id, clinic_id, full_name, tax_id, phone, email, created_at, updated_at, deleted_at';
 
-function normalizeTaxId(raw: string): string {
-  return String(raw).replace(/\D/g, '');
+function normalizeTaxId(raw: string | null | undefined): string {
+  return String(raw ?? '').replace(/\D/g, '');
+}
+
+export async function findActiveProspectByTax(clinicId: string, taxNorm: string) {
+  if (!taxNorm) return null;
+  const { data, error } = await supabaseAdmin
+    .from('hub_prospects')
+    .select(PROSPECT_SELECT)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null);
+  if (error) throw new Error(error.message);
+  return (
+    (data ?? []).find((p) => normalizeTaxId(p.tax_id as string | null) === taxNorm) ?? null
+  );
 }
 
 const createProspectBodySchema = z
@@ -67,7 +80,26 @@ export const listHubProspects = async (req: Request, res: Response) => {
       console.error('[hub_prospects] list', error);
       return res.status(500).json({ error: 'Erro ao listar contatos' });
     }
-    return res.json({ prospects: data ?? [] });
+
+    const { data: guardians, error: gErr } = await supabaseAdmin
+      .from('hub_guardians')
+      .select('id, tax_id')
+      .eq('clinic_id', clinic_id)
+      .is('deleted_at', null);
+    if (gErr) {
+      console.error('[hub_prospects] list guardians', gErr);
+      return res.status(500).json({ error: 'Erro ao listar contatos' });
+    }
+    const guardianByTax = new Map<string, string>();
+    for (const g of guardians ?? []) {
+      const digits = normalizeTaxId(g.tax_id as string | null);
+      if (digits && !guardianByTax.has(digits)) guardianByTax.set(digits, g.id as string);
+    }
+    const prospects = (data ?? []).map((p) => ({
+      ...p,
+      matching_guardian_id: guardianByTax.get(normalizeTaxId(p.tax_id as string | null)) ?? null,
+    }));
+    return res.json({ prospects });
   } catch (e) {
     console.error('[hub_prospects] list', e);
     return res.status(500).json({ error: 'Erro interno' });
@@ -120,8 +152,17 @@ export const createHubProspect = async (req: Request, res: Response) => {
       email: email?.trim() || null,
       deleted_at: null,
     };
-    if (!row.tax_id) {
-      return res.status(400).json({ error: 'CPF/documento inválido (indique pelo menos os dígitos)' });
+    if (!row.tax_id || (row.tax_id.length !== 11 && row.tax_id.length !== 14)) {
+      return res.status(400).json({ error: 'CPF deve ter 11 dígitos ou CNPJ 14 dígitos' });
+    }
+
+    const existing = await findActiveProspectByTax(clinic_id, row.tax_id);
+    if (existing) {
+      return res.status(200).json({
+        prospect: existing,
+        reused: true,
+        message: 'Já existia um contato ativo com este CPF. O cadastro existente foi usado.',
+      });
     }
 
     const { data, error } = await supabaseAdmin
@@ -177,7 +218,13 @@ export const patchHubProspect = async (req: Request, res: Response) => {
     if (full_name !== undefined) patch.full_name = full_name.trim();
     if (tax_id !== undefined) {
       const n = normalizeTaxId(tax_id);
-      if (!n) return res.status(400).json({ error: 'CPF/documento inválido' });
+      if (!n || (n.length !== 11 && n.length !== 14)) {
+        return res.status(400).json({ error: 'CPF deve ter 11 dígitos ou CNPJ 14 dígitos' });
+      }
+      const other = await findActiveProspectByTax(clinic_id, n);
+      if (other && other.id !== idParsed.data) {
+        return res.status(409).json({ error: 'Já existe um contato ativo com este CPF.' });
+      }
       patch.tax_id = n;
     }
     if (phone !== undefined) patch.phone = phone.trim();

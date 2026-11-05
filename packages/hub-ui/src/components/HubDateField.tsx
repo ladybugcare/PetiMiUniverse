@@ -23,7 +23,7 @@ export type HubDateFieldProps = {
   className?: string;
 };
 
-type FloatingRect = { top: number; left: number; width: number };
+type FloatingRect = { top: number; left: number; width: number; maxHeight: number };
 
 function viewFromIso(iso: string): { year: number; month0: number } {
   const parsed = parseIsoYmd(iso);
@@ -104,16 +104,37 @@ export const HubDateField: React.FC<HubDateFieldProps> = ({
     if (!root) return;
     const rect = root.getBoundingClientRect();
     const margin = 8;
+    const gap = 4;
     const panelWidth = Math.max(rect.width, 280);
     let left = rect.left;
     const vw = window.innerWidth;
+    const vh = window.innerHeight;
     if (left + panelWidth > vw - margin) {
       left = Math.max(margin, vw - margin - panelWidth);
     }
-    setFloating({
-      top: rect.bottom + 4,
-      left,
-      width: panelWidth,
+
+    const panelHeight = panelRef.current?.scrollHeight ?? 0;
+    const spaceBelow = vh - rect.bottom - margin;
+    const spaceAbove = rect.top - margin;
+    const openUp = panelHeight > 0 && spaceBelow < panelHeight && spaceAbove > spaceBelow;
+    const available = Math.max(120, Math.floor(openUp ? spaceAbove : spaceBelow));
+    const top = Math.round(
+      openUp
+        ? Math.max(margin, rect.top - gap - Math.min(panelHeight || available, available))
+        : rect.bottom + gap,
+    );
+
+    setFloating((prev) => {
+      if (
+        prev &&
+        prev.top === top &&
+        prev.left === left &&
+        prev.width === panelWidth &&
+        prev.maxHeight === available
+      ) {
+        return prev;
+      }
+      return { top, left, width: panelWidth, maxHeight: available };
     });
   }, []);
 
@@ -123,14 +144,19 @@ export const HubDateField: React.FC<HubDateFieldProps> = ({
       return;
     }
     updateFloating();
+    const panel = panelRef.current;
+    const ro =
+      panel && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => updateFloating()) : null;
+    if (panel && ro) ro.observe(panel);
     const onWin = () => updateFloating();
     window.addEventListener('resize', onWin);
     window.addEventListener('scroll', onWin, true);
     return () => {
+      ro?.disconnect();
       window.removeEventListener('resize', onWin);
       window.removeEventListener('scroll', onWin, true);
     };
-  }, [open, updateFloating]);
+  }, [open, floating, updateFloating]);
 
   useEffect(() => {
     if (!open) return;
@@ -178,6 +204,8 @@ export const HubDateField: React.FC<HubDateFieldProps> = ({
               top: floating.top,
               left: floating.left,
               width: floating.width,
+              maxHeight: floating.maxHeight,
+              overflowY: 'auto',
               zIndex: 11000,
             }}
           >

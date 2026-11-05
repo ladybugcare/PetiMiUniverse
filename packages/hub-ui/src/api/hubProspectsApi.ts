@@ -12,6 +12,7 @@ export interface HubProspect {
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
+  matching_guardian_id?: string | null;
 }
 
 export const hubProspectsApi = {
@@ -32,11 +33,11 @@ export const hubProspectsApi = {
     tax_id: string;
     phone: string;
     email?: string | null;
-  }): Promise<{ prospect: HubProspect }> {
+  }): Promise<{ prospect: HubProspect; reused?: boolean; message?: string }> {
     return apiRequest(basePath, {
       method: 'POST',
       body: JSON.stringify(payload),
-    }) as Promise<{ prospect: HubProspect }>;
+    }) as Promise<{ prospect: HubProspect; reused?: boolean; message?: string }>;
   },
 
   async patch(

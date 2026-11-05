@@ -6,6 +6,7 @@ import { computeBalances } from './hubInventoryController';
 import { createSaleStockOut } from './hubInventoryStockUtils';
 import { streamPaymentReceiptPdf } from './hubPaymentReceiptPdf';
 import { fetchOpenComandaOriginKeysExported, tryAutoCloseComanda } from './hubComandasController';
+import { applyQuoteDiscount, quoteDiscountAmount } from './hubQuoteDiscount';
 import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
 import {
   assertPaymentMethodInList,
@@ -532,10 +533,19 @@ async function buildPreviewForAppointment(
 async function buildPreviewForQuote(
   clinicId: string,
   quoteId: string
-): Promise<{ lines: ReceivableLineInsert[]; subtotal: number; unit_id: string | null; guardian_id: string | null }> {
+): Promise<{
+  lines: ReceivableLineInsert[];
+  subtotal: number;
+  discount_amount: number;
+  final_amount: number;
+  unit_id: string | null;
+  guardian_id: string | null;
+}> {
   const { data: quote, error: qErr } = await supabaseAdmin
     .from('hub_quotes')
-    .select('id, clinic_id, unit_id, guardian_id, status, total_amount, billing_state, billing_waived_at')
+    .select(
+      'id, clinic_id, unit_id, guardian_id, status, total_amount, discount_kind, discount_value, billing_state, billing_waived_at'
+    )
     .eq('id', quoteId)
     .maybeSingle();
   if (qErr) throw new Error(qErr.message);
@@ -601,9 +611,19 @@ async function buildPreviewForQuote(
   if (!unitId) {
     unitId = await resolveClinicDefaultUnitId(clinicId);
   }
+  const subtotalRounded = round2(subtotal);
+  const usedFallbackTotal = (qLines ?? []).length === 0;
+  const discountKind = (quote.discount_kind as 'percent' | 'fixed' | null) ?? null;
+  const discountValue = quote.discount_value as number | null;
+  const discountAmount = usedFallbackTotal ? 0 : quoteDiscountAmount(subtotalRounded, discountKind, discountValue);
+  const finalAmount = usedFallbackTotal
+    ? subtotalRounded
+    : applyQuoteDiscount(subtotalRounded, discountKind, discountValue);
   return {
     lines,
-    subtotal: round2(subtotal),
+    subtotal: subtotalRounded,
+    discount_amount: discountAmount,
+    final_amount: finalAmount,
     unit_id: unitId,
     guardian_id: (quote.guardian_id as string) ?? null,
   };
@@ -665,7 +685,13 @@ export const getHubFinancePreview = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'clinic_id, source_type e source_id (UUID) são obrigatórios' });
     }
     const { clinic_id, source_type, source_id } = parsed.data;
-    let built: { lines: ReceivableLineInsert[]; subtotal: number; unit_id: string | null; guardian_id: string | null };
+    let built: {
+      lines: ReceivableLineInsert[];
+      subtotal: number;
+      final_amount?: number;
+      unit_id: string | null;
+      guardian_id: string | null;
+    };
     if (source_type === 'grooming_session') {
       built = await buildPreviewForGroomingSession(clinic_id, source_id);
     } else if (source_type === 'encounter') {
@@ -677,11 +703,13 @@ export const getHubFinancePreview = async (req: Request, res: Response) => {
     } else {
       built = await buildPreviewForQuote(clinic_id, source_id);
     }
+    const chargeAmount =
+      'final_amount' in built && typeof built.final_amount === 'number' ? built.final_amount : built.subtotal;
     return res.json({
       preview: {
         source_type,
         source_id,
-        estimated_amount: built.subtotal,
+        estimated_amount: chargeAmount,
         unit_id: built.unit_id,
         guardian_id: built.guardian_id,
         lines: built.lines.map((l) => ({
@@ -914,7 +942,13 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
       if (q.billing_waived_at) return res.status(409).json({ error: 'Orçamento marcado sem cobrança' });
     }
 
-    let built: { lines: ReceivableLineInsert[]; subtotal: number; unit_id: string | null; guardian_id: string | null };
+    let built: {
+      lines: ReceivableLineInsert[];
+      subtotal: number;
+      final_amount?: number;
+      unit_id: string | null;
+      guardian_id: string | null;
+    };
     if (source_type === 'grooming_session') {
       built = await buildPreviewForGroomingSession(clinic_id, source_id!);
     } else if (source_type === 'encounter') {
@@ -927,6 +961,8 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
       built = await buildPreviewForQuote(clinic_id, source_id!);
     }
 
+    const finalAmount =
+      'final_amount' in built && typeof built.final_amount === 'number' ? built.final_amount : built.subtotal;
     const { data: rec, error: rErr } = await supabaseAdmin
       .from('hub_receivables')
       .insert({
@@ -936,7 +972,7 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
         source_type,
         source_id: source_id!,
         original_amount: built.subtotal,
-        final_amount: built.subtotal,
+        final_amount: finalAmount,
         status: 'pending',
         notes: notes ?? null,
       })
@@ -2365,7 +2401,7 @@ async function collectUnbilledItems(
       guardian: guardianResolved,
       pet: null,
       staff: null,
-      estimated_amount: pv.subtotal,
+      estimated_amount: pv.final_amount,
       operational_status: String(row.billing_state ?? 'awaiting_billing'),
     });
   }
@@ -4527,6 +4563,84 @@ export const postHubFinanceExpense = async (req: Request, res: Response) => {
     return res.status(201).json({ expense: data });
   } catch (e: unknown) {
     console.error('postHubFinanceExpense', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+export const patchHubFinanceExpense = async (req: Request, res: Response) => {
+  try {
+    const id = uuidStr.safeParse(req.params.id);
+    const parsed = postExpenseBodySchema.safeParse(req.body);
+    if (!id.success || !parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: parsed.success ? undefined : parsed.error.flatten() });
+    }
+    const { clinic_id, unit_id, amount, category, description, expense_date, payment_method, notes } = parsed.data;
+    const { data, error } = await supabaseAdmin
+      .from('hub_expenses')
+      .update({
+        amount: round2(amount),
+        category,
+        description,
+        expense_date: expense_date ?? ymdTodayUtc(),
+        payment_method: payment_method ?? null,
+        notes: notes ?? null,
+      })
+      .eq('id', id.data)
+      .eq('clinic_id', clinic_id)
+      .eq('unit_id', unit_id)
+      .select('*')
+      .maybeSingle();
+    if (error) {
+      if (String(error.message || '').includes('hub_expenses')) {
+        return res.status(503).json({
+          error: 'Tabela hub_expenses não encontrada. Aplique a migração 037_create_hub_expenses.sql.',
+        });
+      }
+      return res.status(500).json({ error: error.message });
+    }
+    if (!data) return res.status(404).json({ error: 'Despesa não encontrada' });
+    return res.json({ expense: data });
+  } catch (e: unknown) {
+    console.error('patchHubFinanceExpense', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+const deleteExpenseQuerySchema = z
+  .object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr,
+  })
+  .strict();
+
+export const deleteHubFinanceExpense = async (req: Request, res: Response) => {
+  try {
+    const id = uuidStr.safeParse(req.params.id);
+    const parsed = deleteExpenseQuerySchema.safeParse(req.query);
+    if (!id.success || !parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos' });
+    }
+    const { clinic_id, unit_id } = parsed.data;
+    const { data, error } = await supabaseAdmin
+      .from('hub_expenses')
+      .delete()
+      .eq('id', id.data)
+      .eq('clinic_id', clinic_id)
+      .eq('unit_id', unit_id)
+      .select('id')
+      .maybeSingle();
+    if (error) {
+      if (String(error.message || '').includes('hub_expenses')) {
+        return res.status(503).json({
+          error: 'Tabela hub_expenses não encontrada. Aplique a migração 037_create_hub_expenses.sql.',
+        });
+      }
+      return res.status(500).json({ error: error.message });
+    }
+    if (!data) return res.status(404).json({ error: 'Despesa não encontrada' });
+    return res.json({ ok: true });
+  } catch (e: unknown) {
+    console.error('deleteHubFinanceExpense', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };

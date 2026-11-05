@@ -35,6 +35,7 @@ const HubQuoteNewPage: React.FC = () => {
   const [loadingProspect, setLoadingProspect] = useState(!!prospectIdParam);
   const [prospectLabel, setProspectLabel] = useState<string | null>(null);
   const [resolvedProspectId, setResolvedProspectId] = useState<string | null>(prospectIdParam || null);
+  const [prospectTaxId, setProspectTaxId] = useState<string | null>(null);
 
   const [inline, setInline] = useState({
     full_name: '',
@@ -57,10 +58,12 @@ const HubQuoteNewPage: React.FC = () => {
     try {
       const { prospect } = await hubProspectsApi.get(prospectIdParam, clinicId);
       setResolvedProspectId(prospect.id);
+      setProspectTaxId(prospect.tax_id ?? null);
       setProspectLabel(`${prospect.full_name} · ${formatBrPhoneDisplay(prospect.phone)}`);
     } catch {
       setProspectLabel(null);
       setResolvedProspectId(null);
+      setProspectTaxId(null);
       showError('Contato não encontrado.');
     } finally {
       setLoadingProspect(false);
@@ -230,6 +233,7 @@ const HubQuoteNewPage: React.FC = () => {
               onQuoteUpdated={setLastQuote}
               serviceTypes={serviceTypes}
               createContext={createContext}
+              contactTaxId={prospectTaxId ?? inline.tax_id}
             />
           ) : (
             <div className="hub-orcamento-novo__callout" role="status">

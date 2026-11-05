@@ -12,6 +12,11 @@ const clientKindSchema = z.enum(['individual', 'company']);
 const clientStatusSchema = z.enum(['active', 'inactive']);
 const sexSchema = z.enum(['M', 'F', 'U']).optional().nullable();
 
+function normalizeGuardianTaxId(raw: string | null | undefined): string {
+  if (!raw) return '';
+  return String(raw).replace(/\D/g, '');
+}
+
 const optionalTrimmed = (max: number) =>
   z
     .union([z.string(), z.null(), z.undefined()])
@@ -370,7 +375,28 @@ export const listHubGuardians = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Erro ao listar tutores' });
     }
 
-    const rows = data ?? [];
+    let rows = data ?? [];
+    const qDigits = qRaw.replace(/\D/g, '');
+    if (qDigits.length === 11 || qDigits.length === 14) {
+      const { data: taxRows, error: taxErr } = await supabaseAdmin
+        .from('hub_guardians')
+        .select(GUARDIAN_SELECT)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null);
+      if (taxErr) {
+        console.error('[hub_guardians] list tax match', taxErr);
+        return res.status(500).json({ error: 'Erro ao listar tutores' });
+      }
+      const seen = new Set(rows.map((r) => r.id as string));
+      for (const g of taxRows ?? []) {
+        if (seen.has(g.id as string)) continue;
+        if (normalizeGuardianTaxId(g.tax_id as string | null) !== qDigits) continue;
+        if (kind.success && kind.data && kind.data !== 'all' && g.client_kind !== kind.data) continue;
+        if (status.success && status.data && status.data !== 'all' && g.client_status !== status.data) continue;
+        rows.push(g);
+        seen.add(g.id as string);
+      }
+    }
     const ids = rows.map((r) => r.id);
     const petMap = await fetchPetsByGuardianIds(clinic_id, ids);
 

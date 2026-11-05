@@ -1137,6 +1137,30 @@ export const hubFinancialApi = {
     }>;
   },
 
+  async updateExpense(
+    expenseId: string,
+    body: {
+      clinic_id: string;
+      unit_id: string;
+      amount: number;
+      category: HubFinanceExpenseCategory;
+      description: string;
+      expense_date?: string;
+      payment_method?: string | null;
+      notes?: string | null;
+    }
+  ): Promise<{ expense: HubFinanceExpense }> {
+    return apiRequest(`${base}/expenses/${encodeURIComponent(expenseId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }) as Promise<{ expense: HubFinanceExpense }>;
+  },
+
+  async deleteExpense(expenseId: string, clinicId: string, unitId: string): Promise<void> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    await apiRequest(`${base}/expenses/${encodeURIComponent(expenseId)}?${q}`, { method: 'DELETE' });
+  },
+
   async listPayables(
     clinicId: string,
     unitId: string,
