@@ -15,6 +15,7 @@ import {
   resolveHubWebUrl,
 } from './hubInvitationUtils.js';
 import { sanitizeOperationalAreas } from '../../utils/operationalAreas.js';
+import { sendHubSignupConfirmationEmail } from './sendHubSignupConfirmation.js';
 
 const uuidStr = z.string().uuid();
 
@@ -162,6 +163,7 @@ export const signupFromHubInvitation = asyncHandler(async (req: Request, res: Re
   }
 
   const hubWebUrl = resolveHubWebUrlForSignup();
+  const emailRedirectTo = `${hubWebUrl}/email-confirmed`;
   const isLocalEnv = hubWebUrl.includes('localhost') || hubWebUrl.includes('127.0.0.1');
 
   const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -200,6 +202,10 @@ export const signupFromHubInvitation = asyncHandler(async (req: Request, res: Re
   }
 
   try {
+    if (!isLocalEnv) {
+      await sendHubSignupConfirmationEmail(email, emailRedirectTo);
+    }
+
     const { data: clinicUser, error: cuError } = await supabaseAdmin
       .from('clinic_users')
       .insert({

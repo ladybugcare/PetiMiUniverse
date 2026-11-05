@@ -8,6 +8,7 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 import { ValidationError } from '../../utils/errors.js';
 import { ensureDefaultGroupJobFunctions } from './hubServiceGroupsController.js';
 import { createBetaSubscription } from './hubSubscriptionService.js';
+import { sendHubSignupConfirmationEmail } from './sendHubSignupConfirmation.js';
 
 function resolveHubWebUrl(): string {
   const raw =
@@ -123,7 +124,17 @@ export const postHubSignup = asyncHandler(async (req: Request, res: Response) =>
   if (authError || !authData?.user) {
     const msg = authError?.message || 'Erro ao criar usuário';
     if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
-      return res.status(409).json({ error: 'Este e-mail já está registado.' });
+      if (!isLocalEnv) {
+        await sendHubSignupConfirmationEmail(email.trim().toLowerCase(), emailRedirectTo);
+        return res.status(200).json({
+          success: true,
+          message:
+            'Se a conta ainda não foi confirmada, enviamos um novo link. Confira a caixa de entrada e o spam.',
+          email_confirmed: false,
+          needs_onboarding: true,
+        });
+      }
+      return res.status(409).json({ error: 'Este e-mail já está registrado.' });
     }
     return res.status(400).json({ error: msg });
   }
@@ -132,12 +143,7 @@ export const postHubSignup = asyncHandler(async (req: Request, res: Response) =>
 
   try {
     if (!isLocalEnv) {
-      await supabaseAdmin.auth.admin.generateLink({
-        type: 'signup',
-        email: email.trim().toLowerCase(),
-        password,
-        options: { redirectTo: emailRedirectTo },
-      });
+      await sendHubSignupConfirmationEmail(email.trim().toLowerCase(), emailRedirectTo);
     }
 
     await ensureClinicUserForSignup(userId);
