@@ -106,7 +106,7 @@ app.get('/health/live', health_js_1.liveHealthHandler);
 const getAllowedOrigins = () => {
     const origins = [];
     // Origens padrão para desenvolvimento
-    // HUB_DEV_ONLY=true — não aceita PetMi Vet (3001); só Hub (3002) e API local (3000)
+    // HUB_DEV_ONLY=true — não aceita PetMi Shift (3001); só Hub (3002) e API local (3000)
     if (process.env.NODE_ENV === 'development') {
         origins.push('http://localhost:3000', 'http://localhost:3002');
         if (process.env.HUB_DEV_ONLY !== 'true') {
@@ -230,7 +230,7 @@ app.get('/', async (req, res) => {
         const { error: supabaseError } = await supabase_js_1.supabase.from('clinics').select('id').limit(1);
         const health = {
             status: 'healthy',
-            message: '🐾 PetMi Vet API is running!',
+            message: '🐾 PetMi Shift API is running!',
             timestamp: new Date().toISOString(),
             services: {
                 database: supabaseError ? 'unhealthy' : 'healthy',

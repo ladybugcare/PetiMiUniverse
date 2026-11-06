@@ -15,7 +15,7 @@ Referências: [HUB_DOMAIN_MODEL.md](./HUB_DOMAIN_MODEL.md), [HUB_GUARDIAN_CRM_VI
 
 ## Epic 0 — Preparação de repositório e boundaries
 
-**Objetivo**: preparar o solo sem mudar comportamento do PetMi Vet.
+**Objetivo**: preparar o solo sem mudar comportamento do PetMi Shift.
 
 **Entregas**
 
@@ -23,7 +23,7 @@ Referências: [HUB_DOMAIN_MODEL.md](./HUB_DOMAIN_MODEL.md), [HUB_GUARDIAN_CRM_VI
 2. Esqueleto de código (opcional neste epic, pode ser Epic 1):
    - `frontend/src/products/hub/` com `README.md`.
    - `backend/src/modules/hub/routes/index.ts` montado em `app.ts` como `/api/hub/health`.
-3. **Branding Hub** (antes ou junto da primeira UI Hub): documentar e preparar tokens e assets segundo [HUB_BRANDING.md](./HUB_BRANDING.md) — logo Hub, paleta própria (não o `colors.brand` do PetMi Vet), e local do arquivo `hubTheme.ts` quando a implementação começar.
+3. **Branding Hub** (antes ou junto da primeira UI Hub): documentar e preparar tokens e assets segundo [HUB_BRANDING.md](./HUB_BRANDING.md) — logo Hub, paleta própria (não o `colors.brand` do PetMi Shift), e local do arquivo `hubTheme.ts` quando a implementação começar.
 
 **Deps**: nenhum.
 
@@ -319,7 +319,7 @@ Decisão (jun/2026): os módulos abaixo **permanecem no MVP** e têm plano de im
 
 ## Backlog — cadastro Hub (pessoa admin + primeira unidade)
 
-**Não priorizado para a Foundation atual.** O signup do PetMi Vet concentra dados na **empresa** + credenciais; o admin principal fica sem um perfil de **pessoa** claro. Para o Hub, documentámos a intenção de um fluxo **em sequência**: primeiro **cadastro da pessoa como administrador** (dados humanos + role), em seguida **cadastro da primeira unidade**, antes de usar o produto.
+**Não priorizado para a Foundation atual.** O signup do PetMi Shift concentra dados na **empresa** + credenciais; o admin principal fica sem um perfil de **pessoa** claro. Para o Hub, documentámos a intenção de um fluxo **em sequência**: primeiro **cadastro da pessoa como administrador** (dados humanos + role), em seguida **cadastro da primeira unidade**, antes de usar o produto.
 
 Detalhe, decisões em aberto e critérios de aceite rascunho: [HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md](./HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md).
 

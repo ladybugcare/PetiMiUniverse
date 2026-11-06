@@ -2,9 +2,9 @@
 
 **Estado:** proposta documentada para implementação futura — **não** está em desenvolvimento ativo neste momento.
 
-## Contexto — PetMi Vet hoje
+## Contexto — PetMi Shift hoje
 
-No fluxo atual de **cadastro público de clínica** no PetMi Vet, o formulário recolhe sobretudo:
+No fluxo atual de **cadastro público de clínica** no PetMi Shift, o formulário recolhe sobretudo:
 
 - Dados da **empresa** / clínica (razão social, CNPJ, endereço, etc.).
 - **E-mail e senha** para criar a conta de autenticação (Supabase Auth).

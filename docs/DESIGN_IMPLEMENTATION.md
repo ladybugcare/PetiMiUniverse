@@ -1,11 +1,11 @@
-# 🎨 PetMi Vet - Purple Theme Implementation
+# 🎨 PetMi Shift - Purple Theme Implementation
 
 ## ✅ Successfully Implemented
 
 ### **1. Purple Gradient Hero Section**
 - ✅ Vibrant purple gradient (from #a855f7 to #9333ea)
 - ✅ Subtle dot pattern overlay for texture
-- ✅ Large, bold "PetMi Vet 🐾" heading
+- ✅ Large, bold "PetMi Shift 🐾" heading
 - ✅ Descriptive subtitle
 - ✅ Two prominent CTA buttons (Cadastrar Clínica & Cadastrar Veterinário)
 - ✅ Fully responsive design
@@ -41,7 +41,7 @@
 
 ### **5. Footer**
 - ✅ Three-column layout:
-  - Company info with purple PetMi Vet logo
+  - Company info with purple PetMi Shift logo
   - Quick links (Links Rápidos)
   - Contact information (Contato)
 - ✅ Bottom copyright section

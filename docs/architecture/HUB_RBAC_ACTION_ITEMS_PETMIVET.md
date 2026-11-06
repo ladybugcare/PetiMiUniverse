@@ -1,6 +1,6 @@
-# Action items — RBAC PetMiVet (quando o app voltar ao roadmap)
+# Action items — RBAC PetMi Shift (quando o app voltar ao roadmap)
 
-Este documento lista pendências de autorização e navegação no **PetMiVet** (`frontend/`), identificadas durante a implementação do RBAC do **PetMi Hub**. O Vet app não está em produção; trate estes itens como backlog de arquitetura.
+Este documento lista pendências de autorização e navegação no **PetMi Shift** (`frontend/`), identificadas durante a implementação do RBAC do **PetMi Hub**. O Vet app não está em produção; trate estes itens como backlog de arquitetura.
 
 Referências no Hub (já implementadas):
 

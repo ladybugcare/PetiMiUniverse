@@ -9,7 +9,7 @@ Este documento define **o que pertence a cada domínio**, quem é dono dos dados
 | Platform | `platform` | Auth, identidade de usuário, RBAC base, notificações transversais, auditoria, storage, billing base, analytics base |
 | PetMi ID | `petmi-id` | Identificadores estáveis e portáveis (pet, tutor, profissional, org), consentimento e compartilhamento de histórico |
 | PetMi Hub | `hub` | Operação do negócio pet: agenda, pets/tutores, atendimentos, multi-unidade, filas operacionais, financeiro simples, dashboard operacional |
-| PetMi Vet / Match (staffing) | `vet-match` | Demandas, posições, aplicações, convites, work proof, matching clínica ↔ profissional |
+| PetMi Shift / Match (staffing) | `vet-match` | Demandas, posições, aplicações, convites, work proof, matching clínica ↔ profissional |
 | Marketplace | `marketplace` | Listagens B2B/B2C de itens, mensagens de listing, reputação comercial ligada a transações (não prontuário) |
 | Admin da plataforma | `admin` | Moderação, aprovações globais, relatórios de sistema, suporte |
 
@@ -95,7 +95,7 @@ Produtos futuros (ex.: **PetMi Match adoção**, app **tutor**) consomem **platf
 
 ---
 
-## 4. PetMi Vet / Match — Staffing (`vet-match`)
+## 4. PetMi Shift / Match — Staffing (`vet-match`)
 
 ### Inclui
 

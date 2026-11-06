@@ -74,7 +74,7 @@ const HomePage: React.FC = () => {
               </h1>
 
               <p className="hero-lead animate-fade-in-up animate-delay-100">
-                O PetMi Vet é a plataforma que conecta clínicas veterinárias, veterinários, profissionais
+                O PetMi Shift é a plataforma que conecta clínicas veterinárias, veterinários, profissionais
                 freelancers e tutores. Tudo em um só lugar — simples, humano e com foco no bem-estar dos
                 pets.
               </p>
@@ -254,7 +254,7 @@ const HomePage: React.FC = () => {
             <span className="secondary-cta__eyebrow">Próximo passo</span>
             <h2>Converse com a equipe e conheça a plataforma de perto</h2>
             <p>
-              Agende uma demo e veja como o PetMi Vet pode acelerar a gestão da sua clínica, engajar a
+              Agende uma demo e veja como o PetMi Shift pode acelerar a gestão da sua clínica, engajar a
               equipe e colaborar com especialistas de confiança.
             </p>
             <div className="secondary-cta__benefits">
@@ -352,7 +352,7 @@ const HomePage: React.FC = () => {
             <div className="footer-brand">
               <div className="footer-brand-mark">
                 <img src="/just_logo.png" alt="" className="footer-logo-icon" width={52} height={52} decoding="async" />
-                <span className="footer-wordmark">PetMi Vet</span>
+                <span className="footer-wordmark">PetMi Shift</span>
               </div>
               <p>
                 Conectando clínicas, profissionais e tutores para levar cuidado, agilidade e amor aos pets.
@@ -402,7 +402,7 @@ const HomePage: React.FC = () => {
             <p className="footer-bottom__tagline">
               Feito com <IconWrapper icon={Heart} size={18} fill="currentColor" /> para pets e veterinários
             </p>
-            <p className="footer-bottom__copyright">© 2026 PetMi Vet. Todos os direitos reservados.</p>
+            <p className="footer-bottom__copyright">© 2026 PetMi Shift. Todos os direitos reservados.</p>
           </div>
         </div>
       </footer>

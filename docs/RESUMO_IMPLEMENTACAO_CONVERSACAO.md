@@ -221,7 +221,7 @@ Implementar sistema de histórico de conversação com múltiplas mensagens por 
 
 - **Desenvolvedor:** AI Assistant (Claude)
 - **Solicitante:** Beatriz Dias
-- **Projeto:** PetMi Vet
+- **Projeto:** PetMi Shift
 
 ## 📞 Suporte
 

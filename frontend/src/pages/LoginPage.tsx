@@ -93,14 +93,14 @@ const LoginPage: React.FC = () => {
             className="login-page-logo-img"
           />
           <div className="login-page-brand-block">
-            <span className="login-page-brand-name">PetMi Vet</span>
+            <span className="login-page-brand-name">PetMi Shift</span>
             <span className="login-page-tagline">CUIDADO QUE CONECTA</span>
           </div>
         </div>
 
         <h1 className="login-page-welcome">Bem-vindo de volta! 👋</h1>
         <p className="login-page-subwelcome">
-          Faça login para acessar sua conta PetMi Vet
+          Faça login para acessar sua conta PetMi Shift
         </p>
 
         <form onSubmit={handleLogin}>

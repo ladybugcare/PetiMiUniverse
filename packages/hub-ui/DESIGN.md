@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: PetMi Hub
-description: Identidade visual do produto Hub (distinta do PetMi Vet). Tokens alinhados a hubTheme.ts e HUB_BRANDING.md.
+description: Identidade visual do produto Hub (distinta do PetMi Shift). Tokens alinhados a hubTheme.ts e HUB_BRANDING.md.
 colors:
   primary: "#c86a4d"
   on-primary: "#ffffff"
@@ -152,7 +152,7 @@ components:
 
 ## Overview
 
-O **PetMi Hub** é o produto de operação clínica (tutores, pets, agenda, serviços, estoque, orçamentos). A interface deve transmitir **calor, organização e clareza operacional**, com paleta **terrosa e suave** — nunca confundir com o branding **PetMi Vet** (staffing).
+O **PetMi Hub** é o produto de operação clínica (tutores, pets, agenda, serviços, estoque, orçamentos). A interface deve transmitir **calor, organização e clareza operacional**, com paleta **terrosa e suave** — nunca confundir com o branding **PetMi Shift** (staffing).
 
 - **Fonte de verdade em código:** [`src/theme/hubTheme.ts`](src/theme/hubTheme.ts).
 - **Documentação complementar:** [`docs/architecture/HUB_BRANDING.md`](../../docs/architecture/HUB_BRANDING.md) (raiz do repositório).
@@ -252,8 +252,8 @@ Novos componentes devem **reutilizar** estes padrões antes de introduzir novas 
 
 **Não faça**
 
-- Usar a paleta **PetMi Vet** (`colors.brand` do frontend universal) como identidade principal em telas Hub.
-- Mostrar “PetMi Vet” no **shell** Hub como marca da área logada (ver critérios em HUB_BRANDING).
+- Usar a paleta **PetMi Shift** (`colors.brand` do frontend universal) como identidade principal em telas Hub.
+- Mostrar “PetMi Shift” no **shell** Hub como marca da área logada (ver critérios em HUB_BRANDING).
 - Espalhar **hex literais** quando já existe token equivalente em `hubTheme`.
 - Introduzir **acentos fora da paleta** (roxos/azuis genéricos de tailwind) sem atualizar este documento e o tema.
 

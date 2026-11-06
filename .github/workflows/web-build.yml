@@ -42,7 +42,7 @@ jobs:
             'VITE_SUPABASE_ANON_KEY=ci-placeholder-anon-key-min-length' \
             'VITE_API_URL=http://localhost:3000' >> apps/hub-web/.env
 
-      - name: Build PetMi Vet web (CRA)
+      - name: Build PetMi Shift web (CRA)
         run: npm run build:frontend
 
       - name: Build PetMi Hub web (Vite)

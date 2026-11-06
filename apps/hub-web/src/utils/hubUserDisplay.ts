@@ -1,4 +1,4 @@
-/** Metadados Supabase / sessão — alinhado ao helper do PetMi Vet. */
+/** Metadados Supabase / sessão — alinhado ao helper do PetMi Shift. */
 export type HubUserLike = {
   id?: string;
   email?: string;

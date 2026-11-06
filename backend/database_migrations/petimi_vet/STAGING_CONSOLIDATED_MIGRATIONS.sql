@@ -1,6 +1,6 @@
 -- ========================================
 -- MIGRAÇÕES CONSOLIDADAS PARA STAGING
--- PetMi Vet - Ambiente de Staging
+-- PetMi Shift - Ambiente de Staging
 -- Data: 2025-01-30
 -- ========================================
 --

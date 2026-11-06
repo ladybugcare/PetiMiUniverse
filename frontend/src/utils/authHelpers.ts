@@ -1,4 +1,4 @@
-// Tipos de role que o PetMi Vet usa hoje
+// Tipos de role que o PetMi Shift usa hoje
 export type Role = 'ADMIN' | 'CADMIN' | 'CMANAGER' | 'VET' | 'FREELANCER' | 'UNKNOWN';
 
 export function getUserRole(user: any): Role {

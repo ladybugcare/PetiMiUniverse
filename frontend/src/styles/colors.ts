@@ -1,4 +1,4 @@
-// PetiMi Design System - Paleta Oficial
+// PetMi Design System - Paleta Oficial
 // Rosa Queimado, Nude/Bege, Verde Sálvia, Azul Neblina, Neutros Quentes
 
 export const colors = {
@@ -93,7 +93,7 @@ export const colors = {
   darkGray: '#7F7A77',   // neutral.600
 };
 
-// Helper function for hover states (usando apenas cores PetiMi)
+// Helper function for hover states (usando apenas cores PetMi)
 export const getHoverColor = (baseColor: string): string => {
   const hoverMap: { [key: string]: string } = {
     [colors.brand.primary[500]]: colors.brand.primary[600],

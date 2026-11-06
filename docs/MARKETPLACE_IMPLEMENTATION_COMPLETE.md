@@ -335,7 +335,7 @@ Queries otimizadas com indexes no banco de dados.
 
 ## 🎉 Pronto para Usar!
 
-Você agora tem um **Marketplace completo e funcional** integrado ao seu sistema PetMi Vet!
+Você agora tem um **Marketplace completo e funcional** integrado ao seu sistema PetMi Shift!
 
 Os usuários podem:
 - ✅ Comprar e vender equipamentos
@@ -348,6 +348,6 @@ Os usuários podem:
 
 ---
 
-_Implementado com ❤️ para PetMi Vet_
+_Implementado com ❤️ para PetMi Shift_
 _Última atualização: ${new Date().toLocaleDateString('pt-BR')}_
 

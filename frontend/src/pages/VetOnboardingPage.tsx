@@ -788,7 +788,7 @@ const VetOnboardingPage: React.FC = () => {
                 Enquanto isso, pode explorar o marketplace, ver as oportunidades e conhecer melhor a plataforma.
               </p>
               <p style={styles.successFooter}>
-                É uma alegria ter você fazendo parte da PetMi Vet!
+                É uma alegria ter você fazendo parte da PetMi Shift!
               </p>
             </div>
             <button

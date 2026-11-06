@@ -1,13 +1,13 @@
 
-## 📋 **PETIVET - KNOWLEDGE BASE - REGRAS DE NEGÓCIO**
+## 📋 **PetMi Shift - KNOWLEDGE BASE - REGRAS DE NEGÓCIO**
 
 ```markdown
-# PetMi Vet - Knowledge Base & Business Rules
+# PetMi Shift - Knowledge Base & Business Rules
 
 ## 📌 **VISÃO GERAL DO PROJETO**
 
 ### **Descrição**
-PetMi Vet é uma plataforma que conecta clínicas veterinárias a profissionais veterinários qualificados, facilitando a contratação temporária e matching de demandas.
+PetMi Shift é uma plataforma que conecta clínicas veterinárias a profissionais veterinários qualificados, facilitando a contratação temporária e matching de demandas.
 
 ### **Propósito**
 Revolucionar o atendimento veterinário ao facilitar a conexão entre clínicas que precisam de profissionais e veterinários em busca de oportunidades.

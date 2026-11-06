@@ -32,7 +32,7 @@ anon public key: eyJhbGc... (chave longa)
 ### Passo 2: Configurar no Vercel
 
 1. Acesse: https://vercel.com
-2. Selecione o projeto **PetMi Vet**
+2. Selecione o projeto **PetMi Shift**
 3. Vá em **Settings** → **Environment Variables**
 
 #### Adicionar/Editar Variáveis:

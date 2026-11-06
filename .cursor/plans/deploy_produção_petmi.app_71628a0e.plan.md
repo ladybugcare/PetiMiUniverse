@@ -32,7 +32,7 @@ isProject: false
 
 | Destino | Plataforma |
 |---------|------------|
-| `https://petmi.app` | Vercel (PetMi Vet / site principal conforme projeto) |
+| `https://petmi.app` | Vercel (PetMi Shift / site principal conforme projeto) |
 | `https://hub.petmi.app` | Vercel (PetMi Hub) |
 | `https://shift.petmi.app` | Futuro Vercel (app ainda fora deste monorepo) |
 | `https://api.petmi.app` | Railway (Express API), **após** validação com URL temporária |

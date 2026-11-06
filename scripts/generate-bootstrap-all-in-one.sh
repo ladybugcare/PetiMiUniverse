@@ -23,7 +23,7 @@ files=(
 
 {
   echo "-- ============================================================================="
-  echo "-- PetMi Vet — bootstrap completo para NOVO projeto Supabase (banco vazio)"
+  echo "-- PetMi Shift — bootstrap completo para NOVO projeto Supabase (banco vazio)"
   echo "-- Execute no Dashboard: SQL Editor → colar este arquivo → Run"
   echo "-- Ordem: igual a scripts/bootstrap-new-supabase.sh"
   echo "--"

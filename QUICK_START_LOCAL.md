@@ -54,7 +54,7 @@ Deve retornar:
 ```json
 {
   "status": "healthy",
-  "message": "🐾 PetMi Vet API is running!",
+  "message": "🐾 PetMi Shift API is running!",
   "timestamp": "..."
 }
 ```
