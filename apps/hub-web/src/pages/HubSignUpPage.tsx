@@ -9,7 +9,7 @@ import HubOnboardingFooter from '../components/HubOnboardingFooter';
 import { hubSignupApi } from '../services/hubSignupApi';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
-const markSrc = `${baseUrl}hub-mark.svg`;
+const logoSrc = `${baseUrl}petmi-hub.svg`;
 
 const HubSignUpPage: React.FC = () => {
   const navigate = useNavigate();
@@ -78,12 +78,15 @@ const HubSignUpPage: React.FC = () => {
       </Link>
 
       <div className="hub-login-page-card hub-onboarding-wide-card">
-        <div className="hub-login-page-logo-row">
-          <img src={markSrc} alt="" className="hub-login-page-logo-img" width={48} height={48} />
-          <div className="hub-login-page-brand-block">
-            <span className="hub-login-page-brand-name">PetMi Hub</span>
-            <span className="hub-login-page-tagline">CRIAR ORGANIZAÇÃO</span>
-          </div>
+        <div className="hub-login-page-logo-row hub-login-page-logo-row--wordmark">
+          <img
+            src={logoSrc}
+            alt="PetMi Hub"
+            className="hub-login-page-logo-img hub-login-page-logo-img--wordmark"
+            width={206}
+            height={48}
+          />
+          <span className="hub-login-page-tagline">CRIAR ORGANIZAÇÃO</span>
         </div>
 
         <h1 className="hub-login-page-welcome">Criar conta da clínica</h1>

@@ -58,6 +58,7 @@ import PublicSpecialistReferralPage from './pages/PublicSpecialistReferralPage';
 import ValidateExamOrderPage from './pages/ValidateExamOrderPage';
 import ValidateSpecialistReferralPage from './pages/ValidateSpecialistReferralPage';
 import HubHomePage from './pages/HubHomePage';
+import HubPlansPage from './pages/HubPlansPage';
 import HubAssinaturaPage from './pages/HubAssinaturaPage';
 
 /** Providers do hub autenticado — ficam fora do shell visual para o contexto sempre envolver o Outlet. */
@@ -143,6 +144,7 @@ const router = createBrowserRouter(
         <Route path="configuracoes-sistema/*" element={<HubSystemSettingsRoutes />} />
         <Route path="assinatura" element={<HubAssinaturaPage />} />
       </Route>
+      <Route path="/planos" element={<HubPlansPage />} />
       <Route path="/" element={<HubHomePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </>,

@@ -10,7 +10,7 @@ const vetBase = (import.meta.env.VITE_VET_WEB_URL || '').replace(/\/$/, '');
 const REMEMBER_KEY = 'petimi_hub_login_remember';
 const REMEMBER_EMAIL_KEY = 'petimi_hub_login_email';
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
-const markSrc = `${baseUrl}hub-mark.svg`;
+const logoSrc = `${baseUrl}petmi-hub.svg`;
 
 function safeInternalRedirect(raw: string | null): string | null {
   if (!raw) return null;
@@ -121,12 +121,14 @@ const HubLoginPage: React.FC = () => {
       </Link>
 
       <div className="hub-login-page-card">
-        <div className="hub-login-page-logo-row">
-          <img src={markSrc} alt="" className="hub-login-page-logo-img" width={48} height={48} />
-          <div className="hub-login-page-brand-block">
-            <span className="hub-login-page-brand-name">PetMi Hub</span>
-            <span className="hub-login-page-tagline">OPERAÇÃO DO NEGÓCIO PET</span>
-          </div>
+        <div className="hub-login-page-logo-row hub-login-page-logo-row--wordmark">
+          <img
+            src={logoSrc}
+            alt="PetMi Hub"
+            className="hub-login-page-logo-img hub-login-page-logo-img--wordmark"
+            width={206}
+            height={48}
+          />
         </div>
 
         <h1 className="hub-login-page-welcome">Bem-vindo de volta! 👋</h1>
