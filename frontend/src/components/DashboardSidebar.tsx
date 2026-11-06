@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ChevronRight, ChevronDown } from 'lucide-react';
-import colors from '../styles/colors';
+import { ChevronDown, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { UnreadBadge } from './UnreadBadge';
-import Avatar from './Avatar';
-import { getUserPhotoUrl, getUserTypeForAvatar } from '../utils/userPhotoHelper';
+import UnitSelector from './UnitSelector';
+import { useAuth } from '../AuthContext';
 
 export interface MenuItem {
   id: string;
@@ -26,45 +25,57 @@ interface DashboardSidebarProps {
   isOpen: boolean;
   onClose: () => void;
   menuItems: MenuItem[];
-  userName: string;
-  userEmail: string;
+  userName?: string;
+  userEmail?: string;
   activeSection?: string;
   onSectionChange?: (sectionId: string) => void;
-  /** Se false, não mostra overlay semitransparente (ex.: menu fixo em desktop). */
+  /** Se false, não mostra overlay semitransparente (o layout desenha o backdrop). */
   showBackdrop?: boolean;
+  isMobile?: boolean;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+}
+
+const EXPANDED_ITEMS_KEY = 'sidebarExpandedItems';
+const EXPANDED_SECTIONS_KEY = 'shift.sidebar.expandedSections';
+/** Mesma ordem da sidebar anterior — grupos fora desta lista não aparecem. */
+const GROUP_ORDER = ['Principal', 'Gerenciamento', 'Operacional', 'Suporte', 'Perfil', 'Outros'];
+
+function loadExpandedSections(): Set<string> {
+  try {
+    const raw = localStorage.getItem(EXPANDED_SECTIONS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return new Set(parsed.filter((id): id is string => typeof id === 'string'));
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return new Set(GROUP_ORDER);
 }
 
 const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
   isOpen,
   onClose,
   menuItems,
-  userName,
-  userEmail,
   activeSection,
   onSectionChange,
-  showBackdrop = true,
+  isMobile = false,
+  collapsed = false,
+  onToggleCollapsed,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { role } = useAuth();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() =>
+    typeof window !== 'undefined' ? loadExpandedSections() : new Set(GROUP_ORDER)
+  );
 
-  // Get user from localStorage to access photo
-  const getUserFromStorage = () => {
-    try {
-      const userStr = localStorage.getItem('user');
-      if (!userStr) return null;
-      return JSON.parse(userStr);
-    } catch (error) {
-      console.warn('Failed to parse user from localStorage:', error);
-      return null;
-    }
-  };
-
-  const user = getUserFromStorage();
-
-  // Carregar estado de expansão do localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('sidebarExpandedItems');
+    const saved = localStorage.getItem(EXPANDED_ITEMS_KEY);
     if (saved) {
       try {
         setExpandedItems(new Set(JSON.parse(saved)));
@@ -74,108 +85,137 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
     }
   }, []);
 
-  // Salvar estado de expansão no localStorage
   useEffect(() => {
     if (expandedItems.size > 0) {
-      localStorage.setItem('sidebarExpandedItems', JSON.stringify(Array.from(expandedItems)));
+      localStorage.setItem(EXPANDED_ITEMS_KEY, JSON.stringify(Array.from(expandedItems)));
     }
   }, [expandedItems]);
 
-  // Expandir automaticamente itens que contêm a rota ativa
   useEffect(() => {
-    const activePath = location.pathname;
-    const newExpanded = new Set(expandedItems);
-    
-    menuItems.forEach(item => {
-      if (item.subItems) {
-        const hasActiveChild = item.subItems.some(subItem => 
-          subItem.path === activePath || 
-          (subItem.sectionId && subItem.sectionId === activeSection)
+    localStorage.setItem(EXPANDED_SECTIONS_KEY, JSON.stringify(Array.from(expandedSections)));
+  }, [expandedSections]);
+
+  const groupedItems = useMemo(() => {
+    return menuItems.reduce((acc, item) => {
+      const group = item.group || 'Outros';
+      if (!acc[group]) acc[group] = [];
+      acc[group].push(item);
+      return acc;
+    }, {} as Record<string, MenuItem[]>);
+  }, [menuItems]);
+
+  const groupNames = useMemo(
+    () => GROUP_ORDER.filter((name) => groupedItems[name]?.length),
+    [groupedItems]
+  );
+
+  const isItemActive = useCallback(
+    (item: MenuItem, checkChildren: boolean = true): boolean => {
+      if (checkChildren && item.subItems && item.subItems.length > 0) {
+        const hasChildWithSamePath = item.subItems.some(
+          (subItem) => subItem.path === item.path && subItem.path === location.pathname
         );
-        if (hasActiveChild) {
-          newExpanded.add(item.id);
-        }
+        if (hasChildWithSamePath) return false;
       }
+
+      if (item.path && location.pathname === item.path) return true;
+      if (item.sectionId && activeSection === item.sectionId) return true;
+      return false;
+    },
+    [location.pathname, activeSection]
+  );
+
+  const hasActiveChild = useCallback(
+    (item: MenuItem): boolean => {
+      if (!item.subItems) return false;
+      return item.subItems.some((subItem) => isItemActive(subItem, false) || hasActiveChild(subItem));
+    },
+    [isItemActive]
+  );
+
+  const activeGroup = useMemo(() => {
+    return (
+      groupNames.find((name) =>
+        (groupedItems[name] || []).some((item) => isItemActive(item) || hasActiveChild(item))
+      ) ?? null
+    );
+  }, [groupNames, groupedItems, isItemActive, hasActiveChild]);
+
+  useEffect(() => {
+    setExpandedItems((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      menuItems.forEach((item) => {
+        if (!item.subItems) return;
+        const childActive = item.subItems.some(
+          (subItem) =>
+            subItem.path === location.pathname || (subItem.sectionId && subItem.sectionId === activeSection)
+        );
+        if (childActive && !next.has(item.id)) {
+          next.add(item.id);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
     });
-    
-    if (newExpanded.size !== expandedItems.size) {
-      setExpandedItems(newExpanded);
-    }
   }, [location.pathname, activeSection, menuItems]);
 
+  useEffect(() => {
+    if (!activeGroup) return;
+    setExpandedSections((prev) => {
+      if (prev.has(activeGroup)) return prev;
+      const next = new Set(prev);
+      next.add(activeGroup);
+      return next;
+    });
+  }, [activeGroup]);
+
   const toggleExpanded = (itemId: string) => {
-    setExpandedItems(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(itemId)) {
-        newSet.delete(itemId);
-      } else {
-        newSet.add(itemId);
-      }
-      return newSet;
+    setExpandedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
     });
   };
 
-  const isItemActive = (item: MenuItem, checkChildren: boolean = true): boolean => {
-    // Se o item tem subitens e algum deles tem o mesmo path, não considerar o pai como ativo
-    if (checkChildren && item.subItems && item.subItems.length > 0) {
-      const hasChildWithSamePath = item.subItems.some(subItem => 
-        subItem.path === item.path && subItem.path === location.pathname
-      );
-      // Se um filho tem o mesmo path e está ativo, o pai não deve estar ativo
-      if (hasChildWithSamePath) {
-        return false;
-      }
-    }
-    
-    // Verificar se a rota atual corresponde ao path do item
-    if (item.path && location.pathname === item.path) {
-      return true;
-    }
-    
-    // Verificar se é uma seção ativa
-    if (item.sectionId && activeSection === item.sectionId) {
-      return true;
-    }
-    
-    return false;
+  const toggleSection = (sectionId: string) => {
+    if (sectionId === activeGroup) return;
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) next.delete(sectionId);
+      else next.add(sectionId);
+      return next;
+    });
   };
 
-  const hasActiveChild = (item: MenuItem): boolean => {
-    // Verificar se algum subitem está ativo (mas não o próprio item)
-    if (item.subItems) {
-      return item.subItems.some(subItem => {
-        // Verificar se o subitem está ativo (sem verificar filhos para evitar recursão)
-        const subItemActive = isItemActive(subItem, false);
-        // Verificar recursivamente se tem filhos ativos
-        return subItemActive || hasActiveChild(subItem);
-      });
-    }
-    return false;
-  };
-
-  const handleMenuItemClick = (item: MenuItem, e?: React.MouseEvent) => {
-    // Se tem subitens, toggle expansão ao invés de navegar
+  const handleMenuItemClick = (item: MenuItem) => {
     if (item.subItems && item.subItems.length > 0) {
-      e?.stopPropagation();
+      if (collapsed && !isMobile) {
+        onToggleCollapsed?.();
+        setExpandedItems((prev) => {
+          const next = new Set(prev);
+          next.add(item.id);
+          return next;
+        });
+        return;
+      }
       toggleExpanded(item.id);
       return;
     }
 
-    // Verificar se o item está desabilitado
-    if (item.disabled) {
-      return;
-    }
-    
+    if (item.disabled) return;
+
     if (item.action === 'navigate' && item.path) {
       if (/^https?:\/\//i.test(item.path)) {
         window.location.href = item.path;
       } else {
         navigate(item.path);
       }
-      onClose();
+      if (isMobile) onClose();
     } else if (item.action === 'section' && item.sectionId) {
       onSectionChange?.(item.sectionId);
-      onClose();
+      if (isMobile) onClose();
     } else if (item.action === 'logout') {
       localStorage.removeItem('user');
       localStorage.removeItem('session');
@@ -184,321 +224,202 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
   };
 
   const handleKeyDown = (item: MenuItem, e: React.KeyboardEvent) => {
-    // Se o item está desabilitado, não fazer nada
-    if (item.disabled) {
-      return;
-    }
+    if (item.disabled) return;
 
-    // Enter ou Space para ativar item
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      
-      // Se tem subitens, alternar expansão
-      if (item.subItems && item.subItems.length > 0) {
-        toggleExpanded(item.id);
-      } else {
-        // Simular clique
-        handleMenuItemClick(item);
-      }
+      handleMenuItemClick(item);
     }
-    
-    // ArrowRight para expandir subitens
+
     if (e.key === 'ArrowRight' && item.subItems && item.subItems.length > 0) {
       e.preventDefault();
-      if (!expandedItems.has(item.id)) {
-        toggleExpanded(item.id);
-      }
+      if (!expandedItems.has(item.id)) toggleExpanded(item.id);
     }
-    
-    // ArrowLeft para colapsar subitens
+
     if (e.key === 'ArrowLeft' && item.subItems && item.subItems.length > 0) {
       e.preventDefault();
-      if (expandedItems.has(item.id)) {
-        toggleExpanded(item.id);
-      }
+      if (expandedItems.has(item.id)) toggleExpanded(item.id);
     }
   };
+
+  const handleLogoClick = () => {
+    if (role === 'ADMIN') navigate('/admin-dashboard');
+    else if (role === 'CADMIN' || role === 'CMANAGER') navigate('/clinic-dashboard');
+    else if (role === 'VET') navigate('/vet-dashboard');
+    else navigate('/');
+  };
+
+  const showLabels = !collapsed || isMobile;
 
   const renderMenuItem = (item: MenuItem, level: number = 0): React.ReactNode => {
     const isExpanded = expandedItems.has(item.id);
     const isActive = isItemActive(item);
-    const hasSubItems = item.subItems && item.subItems.length > 0;
+    const hasSubItems = Boolean(item.subItems && item.subItems.length > 0);
     const isDisabled = item.disabled;
-    const hasActiveChildItem = hasActiveChild(item);
-    // Item pai tem estilo especial quando apenas um filho está ativo
-    const isParentWithActiveChild = level === 0 && hasActiveChildItem && !isActive;
+    const isParentWithActiveChild = level === 0 && hasActiveChild(item) && !isActive;
+
+    const className = [
+      'shift-sidebar__link',
+      level > 0 ? 'shift-sidebar__link--sub' : '',
+      isActive ? 'shift-sidebar__link--active' : '',
+      isParentWithActiveChild ? 'shift-sidebar__link--parent' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
 
     return (
-      <li key={item.id} style={styles.menuItem}>
+      <div key={item.id}>
         <button
-          onClick={(e) => handleMenuItemClick(item, e)}
+          type="button"
+          onClick={() => handleMenuItemClick(item)}
           onKeyDown={(e) => handleKeyDown(item, e)}
           disabled={isDisabled}
-          title={isDisabled && item.tooltip ? item.tooltip : item.tooltip || undefined}
+          title={!showLabels ? item.label : isDisabled && item.tooltip ? item.tooltip : item.tooltip || undefined}
           aria-label={item.label}
           aria-disabled={isDisabled}
-          aria-expanded={hasSubItems ? expandedItems.has(item.id) : undefined}
-          aria-describedby={isDisabled && item.tooltip ? `${item.id}-tooltip` : undefined}
-          role="menuitem"
-          tabIndex={isDisabled ? -1 : 0}
-          style={{
-            ...styles.menuButton,
-            ...(level > 0 ? styles.menuButtonSubItem : {}),
-            ...(isActive ? styles.menuButtonActive : {}),
-            ...(isParentWithActiveChild ? styles.menuButtonParentActive : {}),
-            ...(isDisabled ? styles.menuButtonDisabled : {}),
-            paddingLeft: isParentWithActiveChild 
-              ? `${13 + (level * 16)}px` // Ajustar para compensar a borda de 3px
-              : `${16 + (level * 16)}px`,
-          }}
+          aria-expanded={hasSubItems ? isExpanded : undefined}
+          aria-current={isActive ? 'page' : undefined}
+          className={className}
         >
-          <span style={styles.menuIcon}>{item.icon}</span>
-          <span style={styles.menuLabel}>{item.label}</span>
-          <span style={styles.menuRight}>
-            {typeof item.badge === 'number' && item.badge > 0 && (
-              <UnreadBadge count={item.badge} />
-            )}
-            {hasSubItems && (
-              <span style={styles.menuChevron}>
-                {isExpanded ? (
-                  <ChevronDown size={16} color={colors.brand.primary[500]} />
-                ) : (
-                  <ChevronRight size={16} color={colors.brand.primary[500]} />
-                )}
-              </span>
-            )}
-          </span>
+          <span className="shift-sidebar__icon">{item.icon}</span>
+          {showLabels && <span className="shift-sidebar__label">{item.label}</span>}
+          {showLabels && typeof item.badge === 'number' && item.badge > 0 && <UnreadBadge count={item.badge} />}
+          {showLabels && hasSubItems && (
+            <ChevronDown
+              size={14}
+              strokeWidth={2}
+              className={['shift-sidebar__chevron', isExpanded ? 'shift-sidebar__chevron--open' : '']
+                .filter(Boolean)
+                .join(' ')}
+              aria-hidden
+            />
+          )}
         </button>
-        {hasSubItems && isExpanded && (
-          <ul style={styles.subMenuList} role="menu" aria-label={`Submenu de ${item.label}`}>
-            {item.subItems!.map(subItem => renderMenuItem(subItem, level + 1))}
-          </ul>
+        {hasSubItems && isExpanded && showLabels && (
+          <div className="shift-sidebar__sub" role="group" aria-label={`Submenu de ${item.label}`}>
+            {item.subItems!.map((subItem) => renderMenuItem(subItem, level + 1))}
+          </div>
         )}
-      </li>
+      </div>
     );
   };
 
-  // Agrupar itens por grupo
-  const groupedItems = menuItems.reduce((acc, item) => {
-    const group = item.group || 'Outros';
-    if (!acc[group]) {
-      acc[group] = [];
-    }
-    acc[group].push(item);
-    return acc;
-  }, {} as Record<string, MenuItem[]>);
-
-  const groupOrder = ['Principal', 'Gerenciamento', 'Operacional', 'Suporte', 'Perfil', 'Outros'];
-
   return (
-    <>
-      {/* Overlay */}
-      {isOpen && showBackdrop && (
+    <aside
+      className={[
+        'shift-sidebar',
+        isOpen ? 'shift-sidebar--open' : '',
+        collapsed && !isMobile ? 'shift-sidebar--collapsed' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      aria-label="Navegação principal"
+      aria-hidden={isMobile && !isOpen ? true : undefined}
+    >
+      <div className="shift-sidebar__brand">
+        <button type="button" className="shift-sidebar__logo-btn" onClick={handleLogoClick} title="Ir para o painel">
+          <img
+            src={collapsed && !isMobile ? '/petmi-shift-mark.svg' : '/petmi-shift.svg'}
+            alt="PetMi Shift"
+            className={[
+              'shift-sidebar__logo',
+              collapsed && !isMobile ? 'shift-sidebar__logo--mark' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            decoding="async"
+          />
+          {showLabels && (
+            <p className="shift-sidebar__logo-tagline">
+              Cuidado que conecta <span aria-hidden="true">♥</span>
+            </p>
+          )}
+        </button>
+        {!isMobile && onToggleCollapsed && (
+          <button
+            type="button"
+            className="shift-sidebar__collapse-btn"
+            onClick={onToggleCollapsed}
+            aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+            title={collapsed ? 'Expandir menu' : 'Recolher menu'}
+          >
+            {collapsed ? (
+              <PanelLeft size={18} strokeWidth={1.75} aria-hidden />
+            ) : (
+              <PanelLeftClose size={18} strokeWidth={1.75} aria-hidden />
+            )}
+          </button>
+        )}
+      </div>
+
+      <div className="shift-sidebar__divider" />
+
+      <nav className="shift-sidebar__nav">
+        {groupNames.map((groupName) => {
+          const items = groupedItems[groupName];
+          if (!items || items.length === 0) return null;
+          const isExpanded = collapsed && !isMobile ? true : expandedSections.has(groupName);
+          const isActiveSection = groupName === activeGroup;
+          const panelId = `shift-sidebar-section-${groupName.replace(/\s+/g, '-').toLowerCase()}`;
+
+          return (
+            <div
+              key={groupName}
+              className={['shift-sidebar__section', isExpanded ? 'shift-sidebar__section--expanded' : '']
+                .filter(Boolean)
+                .join(' ')}
+            >
+              {showLabels && (
+                <button
+                  type="button"
+                  className="shift-sidebar__section-toggle"
+                  onClick={() => toggleSection(groupName)}
+                  aria-expanded={isExpanded}
+                  aria-controls={panelId}
+                  disabled={isActiveSection && isExpanded}
+                >
+                  <span className="shift-sidebar__section-title">{groupName}</span>
+                  <ChevronDown
+                    size={14}
+                    strokeWidth={2}
+                    className={[
+                      'shift-sidebar__section-chevron',
+                      isExpanded ? 'shift-sidebar__section-chevron--open' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    aria-hidden
+                  />
+                </button>
+              )}
+              <div
+                id={panelId}
+                className="shift-sidebar__section-items"
+                role="group"
+                aria-label={groupName}
+                hidden={!isExpanded}
+              >
+                {items.map((item) => renderMenuItem(item))}
+              </div>
+            </div>
+          );
+        })}
+      </nav>
+
+      {role !== 'CADMIN' && (
         <div
-          style={styles.overlay}
-          onClick={onClose}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        style={{
-          ...styles.sidebar,
-          transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
-        }}
-      >
-        {/* User Profile Section */}
-        <div style={styles.profileSection}>
-          <div style={styles.avatarContainer}>
-            <Avatar
-              src={getUserPhotoUrl(user)}
-              name={userName}
-              size={80}
-              userType={getUserTypeForAvatar(user)}
-            />
-          </div>
-          <div style={styles.userInfo}>
-            <h3 style={styles.userNameText}>{userName}</h3>
-            <p style={styles.userEmailText}>{userEmail}</p>
-          </div>
+          className={[
+            'shift-sidebar__footer',
+            collapsed && !isMobile ? 'shift-sidebar__footer--collapsed' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          <UnitSelector collapsed={collapsed && !isMobile} />
         </div>
-
-        {/* Divider */}
-        <div style={styles.divider} />
-
-        {/* Menu Items */}
-        <nav style={styles.menuNav} role="menu" aria-label="Menu de navegação principal">
-          {groupOrder.map((groupName, groupIndex) => {
-            const items = groupedItems[groupName];
-            if (!items || items.length === 0) return null;
-
-            return (
-              <React.Fragment key={groupName}>
-                {groupIndex > 0 && <div style={styles.groupSeparator} />}
-                <ul style={styles.menuList}>
-                  {items.map((item) => renderMenuItem(item))}
-                </ul>
-              </React.Fragment>
-            );
-          })}
-        </nav>
-      </aside>
-    </>
+      )}
+    </aside>
   );
 };
 
-const styles: { [key: string]: React.CSSProperties } = {
-  overlay: {
-    position: 'fixed',
-    top: '64px', // Start below the header
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 98,
-    transition: 'opacity 0.3s ease',
-  },
-  sidebar: {
-    position: 'fixed',
-    top: '64px', // Start below the header
-    left: 0,
-    bottom: 0,
-    width: '280px',
-    backgroundColor: '#ffffff',
-    borderRight: '1px solid #e5e5e5',
-    boxShadow: '2px 0 8px rgba(0, 0, 0, 0.1)',
-    zIndex: 99,
-    overflowY: 'auto',
-    transition: 'transform 0.3s ease',
-    paddingTop: '24px',
-  },
-  profileSection: {
-    padding: '0 24px',
-    marginBottom: '24px',
-  },
-  avatarContainer: {
-    display: 'flex',
-    justifyContent: 'center',
-    marginBottom: '16px',
-  },
-  userInfo: {
-    textAlign: 'center',
-  },
-  userNameText: {
-    fontFamily: 'Poppins, sans-serif',
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#262626',
-    margin: '0 0 4px 0',
-  },
-  userEmailText: {
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '14px',
-    color: '#737373',
-    margin: 0,
-    wordBreak: 'break-word',
-  },
-  divider: {
-    height: '1px',
-    backgroundColor: '#e5e5e5',
-    margin: '0 24px 16px 24px',
-  },
-  menuNav: {
-    padding: '0 16px',
-  },
-  menuList: {
-    listStyle: 'none',
-    padding: 0,
-    margin: 0,
-  },
-  menuItem: {
-    marginBottom: '4px',
-  },
-  menuButton: {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '12px 16px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    cursor: 'pointer',
-    borderRadius: '8px',
-    transition: 'background-color 0.2s ease',
-    textAlign: 'left',
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '15px',
-    color: '#404040',
-  },
-  menuButtonActive: {
-    backgroundColor: colors.brand.primary[100],
-    color: colors.brand.primary[500],
-    fontWeight: '500',
-  },
-  menuButtonParentActive: {
-    backgroundColor: 'transparent',
-    color: colors.brand.primary[500],
-    fontWeight: '500',
-    borderLeft: `3px solid ${colors.brand.primary[500]}`,
-  },
-  menuIcon: {
-    fontSize: '20px',
-    minWidth: '24px',
-    textAlign: 'center',
-  },
-  menuLabel: {
-    flex: 1,
-  },
-  menuRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  menuChevron: {
-    display: 'flex',
-    alignItems: 'center',
-    transition: 'transform 0.2s ease',
-  },
-  menuButtonSubItem: {
-    fontSize: '14px',
-    padding: '8px 16px',
-  },
-  menuButtonDisabled: {
-    opacity: 0.5,
-    cursor: 'not-allowed',
-  },
-  subMenuList: {
-    listStyle: 'none',
-    padding: 0,
-    margin: 0,
-    overflow: 'hidden',
-    animation: 'slideDown 0.2s ease',
-  },
-  groupSeparator: {
-    height: '1px',
-    backgroundColor: '#e5e5e5',
-    margin: '12px 16px',
-  },
-};
-
-// Adicionar animação CSS para subitens
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  @keyframes slideDown {
-    from {
-      max-height: 0;
-      opacity: 0;
-    }
-    to {
-      max-height: 500px;
-      opacity: 1;
-    }
-  }
-`;
-if (!document.head.querySelector('style[data-sidebar-animations]')) {
-  styleSheet.setAttribute('data-sidebar-animations', 'true');
-  document.head.appendChild(styleSheet);
-}
-
 export default DashboardSidebar;
-

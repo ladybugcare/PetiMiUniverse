@@ -1,61 +1,102 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown, Home } from 'lucide-react';
 import { useUnit } from '../contexts/UnitContext';
 
-const UnitSelector: React.FC = () => {
-  const { selectedUnit, units, setSelectedUnit, loading } = useUnit();
+type UnitSelectorProps = {
+  collapsed?: boolean;
+};
 
-  // Don't show if only 1 unit or loading
-  if (loading || units.length <= 1) return null;
+const UnitSelector: React.FC<UnitSelectorProps> = ({ collapsed = false }) => {
+  const { selectedUnit, units, setSelectedUnit, loading } = useUnit();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const hasMultiple = units.length > 1;
+  const unit = selectedUnit;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  if (loading || !unit) return null;
+
+  const subtitle = unit.is_main ? 'Matriz' : unit.city || 'Unidade';
+
+  const body = (
+    <>
+      <span className="shift-unit__icon" aria-hidden>
+        <Home size={18} strokeWidth={1.75} />
+      </span>
+      <span className="shift-unit__text">
+        <span className="shift-unit__name">{unit.name}</span>
+        <span className="shift-unit__sub">{subtitle}</span>
+      </span>
+      {hasMultiple && (
+        <ChevronDown
+          size={16}
+          strokeWidth={2}
+          className={`shift-unit__chevron${open ? ' shift-unit__chevron--open' : ''}`}
+          aria-hidden
+        />
+      )}
+    </>
+  );
 
   return (
-    <div style={styles.selector}>
-      <label style={styles.label}>Unidade:</label>
-      <select
-        value={selectedUnit?.id || ''}
-        onChange={(e) => {
-          const unit = units.find((u) => u.id === e.target.value);
-          if (unit) setSelectedUnit(unit);
-        }}
-        style={styles.select}
-      >
-        {units.map((unit) => (
-          <option key={unit.id} value={unit.id}>
-            {unit.is_main && '⭐ '}
-            {unit.name}
-          </option>
-        ))}
-      </select>
+    <div className="shift-unit" ref={wrapRef}>
+      {hasMultiple ? (
+        <button
+          type="button"
+          className="shift-unit__trigger"
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          aria-label={`Unidade: ${unit.name}. Escolher unidade`}
+          title={collapsed ? unit.name : undefined}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="shift-unit__trigger shift-unit__trigger--static" aria-label={`Unidade: ${unit.name}`}>
+          {body}
+        </div>
+      )}
+
+      {open && hasMultiple && (
+        <div className="shift-unit__menu" role="listbox" aria-label="Unidades">
+          {units.map((option) => {
+            const active = option.id === unit.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="option"
+                aria-selected={active}
+                className={['shift-unit__option', active ? 'shift-unit__option--active' : '']
+                  .filter(Boolean)
+                  .join(' ')}
+                onClick={() => {
+                  setSelectedUnit(option);
+                  setOpen(false);
+                }}
+              >
+                <span className="shift-unit__option-name">
+                  {option.is_main ? 'Matriz · ' : ''}
+                  {option.name}
+                </span>
+                {active && <Check size={16} strokeWidth={2.25} aria-hidden />}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
 
-const styles: { [key: string]: React.CSSProperties } = {
-  selector: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginRight: '16px',
-  },
-  label: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#525252',
-    fontFamily: 'Inter, sans-serif',
-  },
-  select: {
-    padding: '8px 12px',
-    borderRadius: '8px',
-    border: '1px solid #e5e5e5',
-    backgroundColor: '#ffffff',
-    fontSize: '14px',
-    fontFamily: 'Inter, sans-serif',
-    color: '#262626',
-    cursor: 'pointer',
-    outline: 'none',
-    transition: 'border-color 0.2s ease',
-    minWidth: '180px',
-  },
-};
-
 export default UnitSelector;
-
