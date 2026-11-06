@@ -27,8 +27,8 @@ import HubSidebarFooter from './HubSidebarFooter';
 import { useHubCashSession } from '../contexts/HubCashSessionContext';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
-const logoSrc = `${baseUrl}petmi-hub-logo.png`;
-const logoCollapsedSrc = `${baseUrl}favicon.png`;
+const logoSrc = `${baseUrl}petmi-hub.svg`;
+const logoCollapsedSrc = `${baseUrl}petmi-mark.svg`;
 
 const EXPANDED_SECTIONS_KEY = 'hub.sidebar.expandedSections';
 
@@ -290,6 +290,11 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
               .join(' ')}
             decoding="async"
           />
+          {showLabels ? (
+            <p className="hub-sidebar__logo-tagline">
+              Cuidado que conecta <span aria-hidden="true">♥</span>
+            </p>
+          ) : null}
         </div>
         {!isMobile && onToggleCollapsed && (
           <button

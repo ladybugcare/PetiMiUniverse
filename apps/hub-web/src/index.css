@@ -1021,41 +1021,55 @@ body {
   gap: 8px;
 }
 
-/* Corta o “excesso” vertical típico do PNG (área útil ao centro). */
 .hub-sidebar__logo-wrap {
+  position: relative;
   width: 100%;
-  max-width: 220px;
-  height: 44px;
-  margin: 0 auto;
-  overflow: hidden;
-  border-radius: 10px;
+  margin: 0;
+  overflow: visible;
   flex: 1;
   min-width: 0;
 }
 
 .hub-sidebar--collapsed .hub-sidebar__logo-wrap {
-  width: 52px;
-  max-width: 52px;
-  height: 52px;
+  width: 40px;
+  max-width: 40px;
+  height: 40px;
   flex: none;
-  border-radius: 12px;
 }
 
 .hub-sidebar__logo {
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center center;
+  height: auto;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .hub-sidebar__logo--mark {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   object-position: center center;
-  background: transparent;
-  width: 112%;
-  height: 112%;
-  margin: -6%;
+}
+
+.hub-sidebar__logo-tagline {
+  position: absolute;
+  left: 29%;
+  right: 0;
+  bottom: 1%;
+  margin: 0;
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: #6d615c;
+  white-space: nowrap;
+}
+
+.hub-sidebar__logo-tagline span {
+  color: #c47b62;
+  letter-spacing: 0;
 }
 
 .hub-sidebar__collapse-btn {
@@ -3787,15 +3801,65 @@ body {
 }
 
 .hub-landing-founders__text {
-  margin: 0 0 12px;
-  max-width: 38rem;
+  margin: 0;
+  max-width: 40rem;
   color: var(--hl-ink-muted);
   line-height: 1.65;
   font-size: 16px;
 }
 
+.hub-landing-founders__benefits {
+  list-style: none;
+  margin: 22px 0 22px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.hub-landing-founders__benefit {
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 249, 245, 0.92);
+  border: 1px solid var(--hl-line);
+}
+
+.hub-landing-founders__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: var(--hl-terra-soft);
+  color: var(--hl-terra-deep);
+}
+
+.hub-landing-founders__benefit h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  color: var(--hl-graphite);
+}
+
+.hub-landing-founders__benefit p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--hl-ink-muted);
+}
+
+.hub-landing-founders__note {
+  margin: 12px 0 0;
+  max-width: 28rem;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--hl-ink-muted);
+}
+
 .hub-landing-founders .hub-landing-btn {
-  margin-top: 10px;
+  margin-top: 4px;
 }
 
 .hub-landing-footer__inner {
@@ -3873,10 +3937,31 @@ body {
 }
 
 .hub-plans__card {
-  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 20px 18px 18px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.88);
   border: 1px solid var(--hl-line);
+}
+
+.hub-plans__card--emphasis {
+  border-color: rgba(200, 106, 77, 0.45);
+  background: #fff;
+  box-shadow: 0 14px 32px -22px rgba(200, 106, 77, 0.55);
+}
+
+.hub-plans__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: var(--hl-terra-soft);
+  color: var(--hl-terra-deep);
 }
 
 .hub-plans__card h2 {
@@ -3886,18 +3971,151 @@ body {
   color: var(--hl-graphite);
 }
 
-.hub-plans__card p {
-  margin: 0;
+.hub-plans__audience {
+  margin: 0 0 14px;
   color: var(--hl-ink-muted);
   font-size: 14px;
   line-height: 1.5;
 }
 
-.hub-plans__note {
-  margin: 0 0 22px;
-  max-width: 40rem;
+.hub-plans__limits {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hub-plans__limits li {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--hl-ink);
+}
+
+.hub-plans__price {
+  margin: auto 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--hl-graphite);
+}
+
+.hub-plans__price span {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hl-ink-soft);
+}
+
+.hub-plans__price span:last-child {
+  display: inline;
+  margin: 0 0 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--hl-ink-muted);
+}
+
+.hub-plans__conditions {
+  margin: 8px 0 36px;
+  padding: 18px 18px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--hl-line);
+  scroll-margin-top: 92px;
+}
+
+.hub-plans__conditions h2 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  color: var(--hl-graphite);
+}
+
+.hub-plans__conditions p {
+  margin: 0;
+  max-width: 42rem;
+  color: var(--hl-ink-muted);
+  font-size: 15px;
   line-height: 1.6;
+}
+
+.hub-plans-start h2 {
+  margin: 0 0 16px;
+  font-size: clamp(1.25rem, 2.4vw, 1.5rem);
+  letter-spacing: -0.03em;
+  color: var(--hl-graphite);
+}
+
+.hub-plans-start__steps {
+  list-style: none;
+  margin: 0 0 28px;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.hub-plans-start__steps li {
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--hl-line);
+}
+
+.hub-plans-start__steps span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--hl-terra);
+}
+
+.hub-plans-start__steps h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--hl-graphite);
+}
+
+.hub-plans-start__steps p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--hl-ink-muted);
+}
+
+.hub-plans__facts {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 40rem;
+}
+
+.hub-plans__facts li {
+  position: relative;
+  padding-left: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--hl-ink);
+}
+
+.hub-plans__facts li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--hl-terra);
 }
 
 @keyframes hub-landing-in {
@@ -3906,6 +4124,16 @@ body {
   }
   to {
     opacity: 1;
+  }
+}
+
+@media (min-width: 720px) {
+  .hub-landing-founders__benefits {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hub-plans-start__steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 

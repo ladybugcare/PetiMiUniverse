@@ -2,11 +2,13 @@ import React, { useEffect } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import {
   ArrowRight,
+  BadgeCheck,
   CheckCircle2,
   Headphones,
   Link2,
   ListChecks,
   PieChart,
+  Unlock,
   Users,
   Workflow,
 } from 'lucide-react';
@@ -84,8 +86,12 @@ const HubHomePage: React.FC = () => {
     };
     scroll();
     // O router reposiciona a página depois da navegação entre rotas.
-    const timer = window.setTimeout(scroll, 80);
-    return () => window.clearTimeout(timer);
+    const early = window.setTimeout(scroll, 80);
+    const late = window.setTimeout(scroll, 400);
+    return () => {
+      window.clearTimeout(early);
+      window.clearTimeout(late);
+    };
   }, [hash]);
 
   if (loading) {
@@ -130,7 +136,7 @@ const HubHomePage: React.FC = () => {
                     <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
                   </Link>
                   <Link to="/planos" className="hub-landing-btn hub-landing-btn--outline">
-                    Conhecer os planos
+                    Conhecer valores e condições
                   </Link>
                 </div>
                 <ul className="hub-landing-trust" aria-label="Destaques do produto">
@@ -214,20 +220,35 @@ const HubHomePage: React.FC = () => {
             <div className="hub-landing-founders">
               <p className="hub-landing-founders__seal">Programa de Fundadores</p>
               <h2 id="hub-landing-founders-title" className="hub-landing-founders__title">
-                Seu negócio pode crescer junto com o PetMi Hub.
+                Seja um dos primeiros a fazer parte do PetMi Hub.
               </h2>
               <p className="hub-landing-founders__text">
-                Estamos preparando o lançamento do PetMi Hub e queremos nossos primeiros profissionais e
-                estabelecimentos ao nosso lado.
+                Estamos construindo uma nova forma de gerenciar negócios pet. E quem chega primeiro pode fazer
+                parte dessa evolução com condições especiais.
               </p>
-              <p className="hub-landing-founders__text">
-                Conheça nossos planos e descubra as condições especiais reservadas para quem começar essa jornada
-                com a gente.
-              </p>
-              <Link to="/planos" className="hub-landing-btn hub-landing-btn--primary">
-                Conhecer planos e benefícios
+              <ul className="hub-landing-founders__benefits">
+                <li className="hub-landing-founders__benefit">
+                  <span className="hub-landing-founders__icon" aria-hidden>
+                    <BadgeCheck size={18} strokeWidth={2} />
+                  </span>
+                  <h3>Condições exclusivas</h3>
+                  <p>Uma proposta comercial especial, apresentada antes de qualquer cobrança.</p>
+                </li>
+                <li className="hub-landing-founders__benefit">
+                  <span className="hub-landing-founders__icon" aria-hidden>
+                    <Unlock size={18} strokeWidth={2} />
+                  </span>
+                  <h3>Acesso até o lançamento</h3>
+                  <p>Uso completo do Hub, sem cartão e sem mensalidade, até o lançamento oficial.</p>
+                </li>
+              </ul>
+              <Link to="/signup" className="hub-landing-btn hub-landing-btn--primary">
+                Quero ser um fundador
                 <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
               </Link>
+              <p className="hub-landing-founders__note">
+                Sem cobrança no cadastro. Você entra no programa ao configurar a organização.
+              </p>
             </div>
           </div>
         </section>
@@ -263,7 +284,7 @@ const HubHomePage: React.FC = () => {
                         <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
                       </Link>
                       <Link to="/planos" className="hub-landing-btn hub-landing-btn--outline hub-landing-btn--lg">
-                        Conhecer os planos
+                        Conhecer valores e condições
                       </Link>
                     </div>
                   </div>
