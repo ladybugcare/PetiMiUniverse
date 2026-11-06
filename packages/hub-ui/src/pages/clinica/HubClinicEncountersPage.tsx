@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { HubDayNav } from '../../components/HubDayNav';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
@@ -150,14 +151,6 @@ const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = 
     [navigate],
   );
 
-  const shiftDay = (delta: number) => {
-    setCursor((d) => {
-      const n = new Date(d);
-      n.setDate(n.getDate() + delta);
-      return n;
-    });
-  };
-
   const createWalkIn = async (payload: {
     petId?: string | null;
     guardianId?: string | null;
@@ -242,12 +235,6 @@ const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = 
     );
   }
 
-  const dateLabel = cursor.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
-
   return (
     <div className={`hub-clinic-atendimentos${embedded ? ' hub-clinic-atendimentos--embedded' : ''}`}>
       <ClinicAlertsBanner clinicId={clinicId!} />
@@ -265,27 +252,9 @@ const HubClinicEncountersPage: React.FC<{ embedded?: boolean }> = ({ embedded = 
       ) : null}
 
       <div className="hub-clientes__toolbar hub-clinic-atendimentos__toolbar">
-        <div className="hub-clinic-atendimentos__date-nav">
-          <button
-            type="button"
-            className="hub-clientes__icon-btn"
-            onClick={() => shiftDay(-1)}
-            aria-label="Dia anterior"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <span className="hub-clinic-atendimentos__date-label">{dateLabel}</span>
-          <button
-            type="button"
-            className="hub-clientes__icon-btn"
-            onClick={() => shiftDay(1)}
-            aria-label="Próximo dia"
-          >
-            <ChevronRight size={18} />
-          </button>
-        </div>
+        <HubDayNav dateFieldId="hub-clinic-encounters-date" value={cursor} onChange={setCursor} />
         <div className="hub-clientes__search hub-clinic-atendimentos__search">
-          <Search size={16} aria-hidden />
+          <Search size={16} className="hub-clientes__search-icon" aria-hidden />
           <input
             type="search"
             placeholder="Buscar pet ou tutor…"

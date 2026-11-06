@@ -335,12 +335,21 @@ export const hubPickupApi = {
     }>;
   },
 
-  /** Fila de rotas do dia do motorista autenticado. */
+  /** Fila de rotas do dia do motorista autenticado + rotas sem motorista. */
   myRoutes(clinicId: string, dateYmd: string) {
     const q = new URLSearchParams({ clinic_id: clinicId, date: dateYmd });
     return apiRequest(`${pickupBase}/my-routes?${q}`) as Promise<{
       routes: PickupRoute[];
       active_route_id: string | null;
+      available_routes?: PickupRoute[];
     }>;
+  },
+
+  /** Motorista autenticado assume rota ainda sem motorista. */
+  claimRoute(routeId: string, clinicId: string) {
+    return apiRequest(`${pickupBase}/routes/${encodeURIComponent(routeId)}/claim`, {
+      method: 'POST',
+      body: JSON.stringify({ clinic_id: clinicId }),
+    }) as Promise<{ route: PickupRoute; already_claimed?: boolean }>;
   },
 };

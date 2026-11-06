@@ -22,7 +22,7 @@ test.describe('relatórios', () => {
     await expect(page.getByRole('heading', { name: 'Visão financeira' })).toBeVisible({
       timeout: 20_000,
     });
-    await expect(page.getByText('Período')).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Período' })).toBeVisible();
     await expect(page.getByRole('button', { name: /Exportar CSV/i }).or(page.getByText(/Selecione uma unidade/i))).toBeVisible({
       timeout: 20_000,
     });

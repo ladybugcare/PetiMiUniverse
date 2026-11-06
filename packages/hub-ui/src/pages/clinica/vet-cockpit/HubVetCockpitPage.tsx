@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { useAlert } from '../../../components/AlertProvider';
 import { HubLoading } from '../../../components/HubLoading';
 import { useKeepContentLoad } from '../../../hooks/useKeepContentLoad';
-import { HubDateField } from '../../../components/HubDateField';
+import { HubDayNav } from '../../../components/HubDayNav';
 import { HubTabs } from '../../../components/HubTabs';
-import { formatYmd, parseIsoYmd } from '../../../utils/hubCalendar';
 import {
   hubEncountersApi,
   hubVetCockpitApi,
@@ -358,16 +356,6 @@ const HubVetCockpitPage: React.FC = () => {
 
   const summary = useMemo(() => computeTurnSummary(items, selected), [items, selected]);
 
-  const cursorIso = useMemo(() => formatYmd(cursor), [cursor]);
-
-  const shiftCursor = (delta: number) => {
-    setCursor((d) => {
-      const n = new Date(d);
-      n.setDate(n.getDate() + delta);
-      return n;
-    });
-  };
-
   const openAgendaForScheduling = useCallback(
     (initial: NewAppointmentInitial) => {
       setWalkInOpen(false);
@@ -449,35 +437,7 @@ const HubVetCockpitPage: React.FC = () => {
 
       <div className="hub-view-date-toolbar vet-cockpit-toolbar">
         {cockpitTab === 'hoje' ? (
-          <div className="hub-view-date-toolbar__nav-cluster">
-            <button
-              type="button"
-              className="hub-view-date-toolbar__icon-btn"
-              onClick={() => shiftCursor(-1)}
-              aria-label="Dia anterior"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <button
-              type="button"
-              className="hub-view-date-toolbar__icon-btn"
-              onClick={() => shiftCursor(1)}
-              aria-label="Próximo dia"
-            >
-              <ChevronRight size={18} />
-            </button>
-            <HubDateField
-              id="vet-cockpit-date"
-              className="hub-view-date-toolbar__date-field"
-              valueIso={cursorIso}
-              onChangeIso={(iso) => {
-                if (!iso) return;
-                const parsed = parseIsoYmd(iso);
-                if (parsed) setCursor(parsed);
-              }}
-              showTodayButton
-            />
-          </div>
+          <HubDayNav dateFieldId="vet-cockpit-date" value={cursor} onChange={setCursor} />
         ) : (
           <p className="hub-clientes__muted" style={{ margin: 0 }}>
             {cockpitTab === 'historico'

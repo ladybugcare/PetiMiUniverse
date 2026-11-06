@@ -9,67 +9,97 @@ type HubRelatoriosPeriodToolbarProps = {
   variant: 'standard' | 'absent' | 'lookahead';
   period: HubReportPeriod;
   onChange: (next: HubReportPeriod) => void;
+  /** Compacto ao lado do título do relatório. */
+  inline?: boolean;
+};
+
+type PresetOption = { days: number; label: string };
+
+const PRESETS: Record<HubRelatoriosPeriodToolbarProps['variant'], PresetOption[]> = {
+  standard: [
+    { days: 7, label: '7 dias' },
+    { days: 30, label: '30 dias' },
+    { days: 90, label: '90 dias' },
+  ],
+  absent: [
+    { days: 30, label: '30 dias' },
+    { days: 60, label: '60 dias' },
+    { days: 90, label: '90 dias' },
+    { days: 180, label: '180 dias' },
+  ],
+  lookahead: [
+    { days: 7, label: '7 dias' },
+    { days: 14, label: '14 dias' },
+    { days: 30, label: '30 dias' },
+    { days: 60, label: '60 dias' },
+  ],
 };
 
 export const HubRelatoriosPeriodToolbar: React.FC<HubRelatoriosPeriodToolbarProps> = ({
   variant,
   period,
   onChange,
+  inline = false,
 }) => {
-  const presetValue = period.mode === 'preset' ? String(period.days) : 'custom';
   const range = useMemo(() => {
     if (period.mode === 'range') return { from: period.from, to: period.to };
     return defaultRangeForPreset(period.days);
   }, [period]);
 
   const rangeError = range.from > range.to;
+  const isCustom = variant === 'standard' && period.mode === 'range';
 
   const label =
     variant === 'absent' ? 'Sem atividade há' : variant === 'lookahead' ? 'Próximos' : 'Período';
 
   return (
-    <div className="hub-clientes__toolbar hub-relatorios__period-toolbar">
-      <div className="hub-servicos__filter-field">
-        <span className="hub-clientes__label">{label}</span>
-        <select
-          className="hub-clientes__select-input"
-          value={presetValue}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === 'custom') {
-              onChange({ mode: 'range', from: range.from, to: range.to });
-              return;
-            }
-            onChange({ mode: 'preset', days: Number(v) });
-          }}
-        >
-          {variant === 'absent' ? (
-            <>
-              <option value={30}>30 dias</option>
-              <option value={60}>60 dias</option>
-              <option value={90}>90 dias</option>
-              <option value={180}>180 dias</option>
-            </>
-          ) : variant === 'lookahead' ? (
-            <>
-              <option value={7}>7 dias</option>
-              <option value={14}>14 dias</option>
-              <option value={30}>30 dias</option>
-              <option value={60}>60 dias</option>
-            </>
-          ) : (
-            <>
-              <option value={7}>Últimos 7 dias</option>
-              <option value={30}>Últimos 30 dias</option>
-              <option value={90}>Últimos 90 dias</option>
-            </>
-          )}
-          {variant === 'standard' ? <option value="custom">Personalizado…</option> : null}
-        </select>
+    <div
+      className={
+        inline
+          ? 'hub-relatorios__period-toolbar hub-relatorios__period-toolbar--inline'
+          : 'hub-clientes__toolbar hub-relatorios__period-toolbar'
+      }
+    >
+      <div className="hub-relatorios__period-group">
+        {inline ? null : <span className="hub-clientes__label">{label}</span>}
+        <div className="hub-relatorios__segmented" role="group" aria-label={label}>
+          {PRESETS[variant].map((opt) => {
+            const active = period.mode === 'preset' && period.days === opt.days;
+            return (
+              <button
+                key={opt.days}
+                type="button"
+                className={
+                  active
+                    ? 'hub-relatorios__segmented-btn hub-relatorios__segmented-btn--active'
+                    : 'hub-relatorios__segmented-btn'
+                }
+                aria-pressed={active}
+                onClick={() => onChange({ mode: 'preset', days: opt.days })}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+          {variant === 'standard' ? (
+            <button
+              type="button"
+              className={
+                isCustom
+                  ? 'hub-relatorios__segmented-btn hub-relatorios__segmented-btn--active'
+                  : 'hub-relatorios__segmented-btn'
+              }
+              aria-pressed={isCustom}
+              onClick={() => onChange({ mode: 'range', from: range.from, to: range.to })}
+            >
+              Personalizado
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      {variant === 'standard' && period.mode === 'range' ? (
-        <>
+      {isCustom ? (
+        <div className="hub-relatorios__period-custom">
           <HubDateField
             id="relatorios-from"
             label="De"
@@ -89,7 +119,7 @@ export const HubRelatoriosPeriodToolbar: React.FC<HubRelatoriosPeriodToolbarProp
           {rangeError ? (
             <p className="hub-relatorios__period-error">A data inicial não pode ser depois da final.</p>
           ) : null}
-        </>
+        </div>
       ) : null}
     </div>
   );

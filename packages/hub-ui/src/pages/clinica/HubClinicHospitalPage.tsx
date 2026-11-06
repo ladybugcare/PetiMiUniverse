@@ -20,6 +20,7 @@ import {
   petInitials,
 } from './hospital/hospDisplay';
 import HospBedAssignPanel from './hospital/HospBedAssignPanel';
+import HospDischargePanel from './hospital/HospDischargePanel';
 import HospAdmitForm, { type HospAdmitDraft } from './hospital/HospAdmitForm';
 
 export type HubClinicHospitalPageProps = {
@@ -78,9 +79,6 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
   const [submitting, setSubmitting] = useState(false);
 
   const [dischargeHosp, setDischargeHosp] = useState<HubHospitalization | null>(null);
-  const [dischargeStatus, setDischargeStatus] = useState<'discharged' | 'death' | 'transferred'>('discharged');
-  const [dischargeNotes, setDischargeNotes] = useState('');
-  const [dischargeSubmitting, setDischargeSubmitting] = useState(false);
 
   const [assignBedHosp, setAssignBedHosp] = useState<HubHospitalization | null>(null);
   const [linkCaseHosp, setLinkCaseHosp] = useState<HubHospitalization | null>(null);
@@ -199,27 +197,6 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
       showError((e as Error)?.message || 'Erro ao internar');
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const confirmDischarge = async () => {
-    if (!clinicId || !dischargeHosp) return;
-    setDischargeSubmitting(true);
-    try {
-      await hubClinicalApi.patchHospitalization(dischargeHosp.id, {
-        clinic_id: clinicId,
-        status: dischargeStatus,
-        discharge_notes: dischargeNotes.trim() || null,
-      });
-      setDischargeHosp(null);
-      setDischargeNotes('');
-      setDischargeStatus('discharged');
-      await reload();
-      showSuccess('Status atualizado');
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao atualizar internação');
-    } finally {
-      setDischargeSubmitting(false);
     }
   };
 
@@ -427,11 +404,7 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
                             className="hub-dayboard__action-btn"
                             title="Alta / encerrar"
                             aria-label="Alta / encerrar"
-                            onClick={() => {
-                              setDischargeHosp(h);
-                              setDischargeStatus('discharged');
-                              setDischargeNotes('');
-                            }}
+                            onClick={() => setDischargeHosp(h)}
                           >
                             <LogOut size={15} strokeWidth={2} />
                           </button>
@@ -543,44 +516,15 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
         </div>
       </HubSidePanel>
 
-      <HubSidePanel
-        open={!!dischargeHosp}
-        onClose={() => setDischargeHosp(null)}
-        title={`Encerrar internação — ${dischargeHosp?.hub_pets?.name || ''}`}
-        footer={
-          <div className="hub-clientes__panel-footer">
-            <HubCancelButton onClick={() => setDischargeHosp(null)} />
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--primary"
-              disabled={dischargeSubmitting}
-              onClick={() => void confirmDischarge()}
-            >
-              {dischargeSubmitting ? 'Salvando…' : 'Confirmar'}
-            </button>
-          </div>
-        }
-      >
-        <div className="hub-clientes__form-stack">
-          <span className="hub-clientes__label">Tipo de encerramento</span>
-          <select
-            className="hub-clientes__input"
-            value={dischargeStatus}
-            onChange={(e) => setDischargeStatus(e.target.value as typeof dischargeStatus)}
-          >
-            <option value="discharged">Alta</option>
-            <option value="death">Óbito</option>
-            <option value="transferred">Transferido</option>
-          </select>
-          <span className="hub-clientes__label">Observações</span>
-          <textarea
-            className="hub-clientes__textarea"
-            rows={3}
-            value={dischargeNotes}
-            onChange={(e) => setDischargeNotes(e.target.value)}
-          />
-        </div>
-      </HubSidePanel>
+      {clinicId ? (
+        <HospDischargePanel
+          open={!!dischargeHosp}
+          clinicId={clinicId}
+          hospitalization={dischargeHosp}
+          onClose={() => setDischargeHosp(null)}
+          onDischarged={() => reload()}
+        />
+      ) : null}
     </div>
   );
 };

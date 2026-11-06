@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarDays, ChevronLeft, ChevronRight, PlusCircle, RefreshCw, Search } from 'lucide-react';
+import { CalendarDays, PlusCircle, RefreshCw, Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, getSupabase, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
+import { HubDayNav } from '../../components/HubDayNav';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { hubBoardingApi, type BoardingDayBoardItem, type BoardingOccupancyResponse } from '../../api/hubBoardingApi';
@@ -265,14 +266,6 @@ const HubBoardingPage: React.FC = () => {
     return rows;
   }, [units, unitFilter]);
 
-  const shiftDay = (delta: number) => {
-    setCursor((d) => {
-      const n = new Date(d);
-      n.setDate(n.getDate() + delta);
-      return n;
-    });
-  };
-
   const metrics = useMemo(() => {
     const total = items.length;
     const hosting = items.filter((i) => {
@@ -298,12 +291,6 @@ const HubBoardingPage: React.FC = () => {
       </div>
     );
   }
-
-  const dateLabel = cursor.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
 
   const tabsConfig: { mode: BoardingMode; label: string }[] = [
     { mode: 'all', label: 'Todos' },
@@ -347,28 +334,10 @@ const HubBoardingPage: React.FC = () => {
       )}
 
       <div className="hub-clientes__toolbar hub-clinic-atendimentos__toolbar">
-        <div className="hub-clinic-atendimentos__date-nav">
-          <button
-            type="button"
-            className="hub-clientes__icon-btn"
-            onClick={() => shiftDay(-1)}
-            aria-label="Dia anterior"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <span className="hub-clinic-atendimentos__date-label">{dateLabel}</span>
-          <button
-            type="button"
-            className="hub-clientes__icon-btn"
-            onClick={() => shiftDay(1)}
-            aria-label="Próximo dia"
-          >
-            <ChevronRight size={18} />
-          </button>
-        </div>
+        <HubDayNav dateFieldId="hub-boarding-date" value={cursor} onChange={setCursor} />
 
         <div className="hub-clientes__search hub-clinic-atendimentos__search">
-          <Search size={16} aria-hidden />
+          <Search size={16} className="hub-clientes__search-icon" aria-hidden />
           <input
             ref={searchInputRef}
             type="search"

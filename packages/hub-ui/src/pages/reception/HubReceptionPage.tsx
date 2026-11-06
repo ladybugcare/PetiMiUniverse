@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, MessageCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { MessageCircle } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { HubDayNav } from '../../components/HubDayNav';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
+import { formatYmd } from '../../utils/hubCalendar';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
 import { renderTemplate } from '../../utils/hubMessageTemplates';
@@ -13,7 +16,10 @@ import {
   type ReceptionBoardItem,
   type ReceptionResolveAction,
 } from '../../api/hubReceptionApi';
+import ReceptionHandoffPanel from './ReceptionHandoffPanel';
+import { caixaSearchHref } from '../finance/hubRelatoriosLinks';
 import '../clientes/clientes.css';
+import '../clinica/clinica-page.css';
 import './hub-reception.css';
 
 const REFRESH_MS = 30_000;
@@ -27,23 +33,6 @@ function ymdSaoPaulo(date: Date): string {
   }).format(date);
 }
 
-function shiftYmd(ymd: string, days: number): string {
-  const [y, m, d] = ymd.split('-').map(Number);
-  const next = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
-  next.setUTCDate(next.getUTCDate() + days);
-  return next.toISOString().slice(0, 10);
-}
-
-function formatDay(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number);
-  if (!y || !m || !d) return ymd;
-  return new Date(y, m - 1, d).toLocaleDateString('pt-BR', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-  });
-}
-
 function waitLabel(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return '';
@@ -54,29 +43,89 @@ function waitLabel(iso: string): string {
   return `há ${h} h`;
 }
 
+function kindLabel(item: ReceptionBoardItem): string {
+  if (item.status === 'cancelled') return 'Cancelada';
+  if (item.status === 'done') return 'Concluída';
+  if (item.kind === 'chegada') return 'Chegada';
+  if (item.kind === 'autorizar_extra') return 'Extra';
+  if (item.kind === 'encaminhar') return 'Encaminhar';
+  if (item.kind === 'embarque') return 'Embarque';
+  return 'Retirada';
+}
+
+function pillClass(item: ReceptionBoardItem): string {
+  if (item.status === 'done') return 'hub-clientes__pill hub-clinic-queue__pill--done';
+  if (item.status === 'cancelled') return 'hub-clientes__pill hub-clinic-queue__pill--waiting';
+  if (item.kind === 'autorizar_extra' || item.kind === 'encaminhar') {
+    return 'hub-clientes__pill hub-clinic-queue__pill--waiting';
+  }
+  if (item.kind === 'retirada_balcao' || item.kind === 'embarque') {
+    return 'hub-clientes__pill hub-clinic-queue__pill--progress';
+  }
+  return 'hub-clientes__pill hub-clinic-queue__pill--waiting';
+}
+
 function primaryAction(item: ReceptionBoardItem): { action: ReceptionResolveAction; label: string } | null {
   if (item.status !== 'open') return null;
   if (item.kind === 'chegada') return { action: 'chegou', label: 'Chegou' };
   if (item.kind === 'retirada_balcao') return { action: 'entreguei', label: 'Entreguei' };
   if (item.kind === 'embarque') return { action: 'embarquei', label: 'Embarcou' };
-  if (item.kind === 'encaminhar') return { action: 'recebi', label: 'Recebi' };
   if (item.kind === 'autorizar_extra' && item.context?.hub_service_type_id) {
     return { action: 'autorizar', label: 'Autorizar' };
   }
   return null;
 }
 
+function scheduleDestinationPath(item: ReceptionBoardItem, day: string): {
+  pathname: string;
+  search: string;
+  state: {
+    walkInInitial: {
+      date: string;
+      pet_id: string | null;
+      pet_name: string | null;
+      guardian_id: string | null;
+      guardian_name: string | null;
+    };
+  };
+} {
+  const params = new URLSearchParams({
+    openWalkIn: '1',
+    date: day,
+  });
+  if (item.pet.id) params.set('petId', item.pet.id);
+  if (item.pet.name?.trim()) params.set('petName', item.pet.name.trim());
+  if (item.guardian?.id) params.set('guardianId', item.guardian.id);
+  if (item.guardian?.full_name?.trim()) params.set('guardianName', item.guardian.full_name.trim());
+  return {
+    pathname: '/hub/appointments',
+    search: `?${params.toString()}`,
+    state: {
+      walkInInitial: {
+        date: day,
+        pet_id: item.pet.id,
+        pet_name: item.pet.name,
+        guardian_id: item.guardian?.id ?? null,
+        guardian_name: item.guardian?.full_name ?? null,
+      },
+    },
+  };
+}
+
 const HubReceptionPage: React.FC = () => {
+  const navigate = useNavigate();
   const { hasPermission } = usePermissions();
   const canRead = hasPermission('reception.ops.read');
   const canManage = hasPermission('reception.ops.manage');
+  const canSeeChargeHint = hasPermission('hub.financial.read') || hasPermission('hub.cash.receive');
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
-  const { showError, showSuccess } = useAlert();
+  const { showError, showSuccess, showAlert } = useAlert();
   const templates = useMessageTemplates();
   const [day, setDay] = useState(() => ymdSaoPaulo(new Date()));
   const [items, setItems] = useState<ReceptionBoardItem[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<ReceptionBoardItem | null>(null);
   const loadKey = clinicId && unitId ? `${clinicId}|${unitId}|${day}` : null;
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(loadKey);
   const loadSeqRef = useRef(0);
@@ -129,6 +178,41 @@ const HubReceptionPage: React.FC = () => {
     try {
       await hubReceptionApi.resolve(item.id, clinicId, action);
       showSuccess('Tarefa concluída.');
+      if (canSeeChargeHint && (action === 'entreguei' || action === 'embarquei')) {
+        try {
+          const detail = await hubReceptionApi.detail(item.id, clinicId);
+          if (detail.charge_pending) {
+            const petName = (() => {
+              const candidates = [detail.pet?.name, item.pet.name];
+              for (const name of candidates) {
+                const trimmed = typeof name === 'string' ? name.trim() : '';
+                if (trimmed && trimmed.toLowerCase() !== 'pet' && trimmed.toLowerCase() !== 'sem nome') {
+                  return trimmed;
+                }
+              }
+              return detail.guardian?.full_name || item.guardian?.full_name || '';
+            })();
+            showAlert({
+              type: 'warning',
+              title: 'Caixa',
+              message: 'Há cobrança em aberto no Caixa para este pet.',
+              confirmText: 'OK',
+              secondaryText: 'Ir ao Caixa',
+              onSecondary: () => {
+                navigate(
+                  caixaSearchHref({
+                    q: petName || null,
+                    status: 'comanda_aberta',
+                  }),
+                );
+              },
+            });
+          }
+        } catch {
+          /* aviso de caixa é opcional */
+        }
+      }
+      setSelected(null);
       await load();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Não foi possível concluir a tarefa');
@@ -138,10 +222,18 @@ const HubReceptionPage: React.FC = () => {
   };
 
   if (!canRead) {
-    return <p className="hub-clientes__muted">Você não tem acesso à operação da recepção.</p>;
+    return (
+      <div className="hub-clientes hub-clinic-page hub-reception">
+        <p className="hub-clientes__muted">Você não tem acesso à operação da recepção.</p>
+      </div>
+    );
   }
   if (!unitId) {
-    return <p className="hub-clientes__muted">Selecione uma unidade no cabeçalho.</p>;
+    return (
+      <div className="hub-clientes hub-clinic-page hub-reception">
+        <p className="hub-clientes__muted">Selecione uma unidade no cabeçalho.</p>
+      </div>
+    );
   }
 
   const columns: { id: string; title: string; empty: string; rows: ReceptionBoardItem[] }[] = [
@@ -152,21 +244,14 @@ const HubReceptionPage: React.FC = () => {
   ];
 
   return (
-    <div className="hub-reception">
-      <div className="hub-reception__head">
+    <div className="hub-clientes hub-clinic-page hub-reception">
+      <div className="hub-reception__toolbar">
         <div className="hub-reception__date">
-          <button type="button" className="hub-clientes__icon-btn" aria-label="Dia anterior" onClick={() => setDay((d) => shiftYmd(d, -1))}>
-            <ChevronLeft size={18} />
-          </button>
-          <span className="hub-reception__date-label">{formatDay(day)}</span>
-          <button type="button" className="hub-clientes__icon-btn" aria-label="Próximo dia" onClick={() => setDay((d) => shiftYmd(d, 1))}>
-            <ChevronRight size={18} />
-          </button>
-          {day !== ymdSaoPaulo(new Date()) ? (
-            <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm" onClick={() => setDay(ymdSaoPaulo(new Date()))}>
-              Hoje
-            </button>
-          ) : null}
+          <HubDayNav
+            dateFieldId="hub-reception-date"
+            value={day}
+            onChange={(next) => setDay(formatYmd(next))}
+          />
         </div>
       </div>
 
@@ -175,64 +260,70 @@ const HubReceptionPage: React.FC = () => {
       {loading ? (
         <HubLoading variant="block" label="Carregando recepção…" />
       ) : (
-        <div className="hub-reception__groups">
+        <div className="hub-clinic-queue">
           {columns.map((col) => (
-            <section key={col.id} className="hub-reception__group" aria-label={col.title}>
-              <h2 className="hub-reception__group-title">
-                {col.title}
-                <span className="hub-reception__count">{col.rows.length}</span>
-              </h2>
-              {col.rows.length === 0 ? <p className="hub-clientes__muted hub-reception__empty">{col.empty}</p> : null}
-              {col.rows.map((item) => {
-                const action = primaryAction(item);
-                const late =
-                  item.kind === 'chegada' &&
-                  item.status === 'open' &&
-                  Boolean(item.context?.starts_at) &&
-                  new Date(item.context.starts_at as string).getTime() < Date.now();
-                const phone = item.guardian?.phone;
-                const wa =
-                  phone && (item.kind === 'retirada_balcao' || item.kind === 'embarque')
-                    ? buildWhatsappLink(
-                        phone,
-                        renderTemplate(
-                          'pet_ready',
-                          { tutor: item.guardian?.full_name || '', pet: item.pet.name },
-                          templates,
-                        ),
-                      )
-                    : null;
-                return (
-                  <article key={item.id} className={`hub-reception__card${late ? ' hub-reception__card--late' : ''}`}>
-                    <p className="hub-reception__pet">{item.pet.name}</p>
-                    <p className="hub-reception__meta">
-                      {item.guardian?.full_name || 'Sem tutor'}
-                      {' · '}
-                      {item.context?.label || 'Operação'}
-                    </p>
-                    {item.status === 'open' ? (
-                      <p className="hub-reception__wait">{waitLabel(item.opened_at)}</p>
-                    ) : (
-                      <p className="hub-reception__wait">{item.status === 'cancelled' ? 'Cancelada' : 'Concluída'}</p>
-                    )}
-                    {late ? (
-                      <div className="hub-reception__flags">
-                        <span className="hub-reception__flag">Atrasado</span>
+            <section key={col.id} className="hub-clinic-queue__col" aria-label={col.title}>
+              <h3 className="hub-clinic-queue__col-title">
+                {col.title} <span className="hub-clinic-queue__count">{col.rows.length}</span>
+              </h3>
+              <div className="hub-clinic-queue__cards">
+                {col.rows.length === 0 ? <p className="hub-clientes__muted hub-clinic-queue__empty">{col.empty}</p> : null}
+                {col.rows.map((item) => {
+                  const action = primaryAction(item);
+                  const late =
+                    item.kind === 'chegada' &&
+                    item.status === 'open' &&
+                    Boolean(item.context?.starts_at) &&
+                    new Date(item.context.starts_at as string).getTime() < Date.now();
+                  const phone = item.guardian?.phone;
+                  const wa =
+                    phone && (item.kind === 'retirada_balcao' || item.kind === 'embarque')
+                      ? buildWhatsappLink(
+                          phone,
+                          renderTemplate(
+                            'pet_ready',
+                            { tutor: item.guardian?.full_name || '', pet: item.pet.name },
+                            templates,
+                          ),
+                        )
+                      : null;
+                  const wait = item.status === 'open' ? waitLabel(item.opened_at) : '';
+                  return (
+                    <article key={item.id} className="hub-clinic-queue__card">
+                      <div className="hub-clinic-queue__card-top">
+                        <p className="hub-clinic-queue__pet">{item.pet.name}</p>
+                        <span className={pillClass(item)}>{kindLabel(item)}</span>
                       </div>
-                    ) : null}
-                    {item.status === 'open' && canManage ? (
-                      <div className="hub-reception__actions">
-                        {action ? (
+                      {late ? <p className="hub-clientes__pill hub-clinic-queue__pill--waiting" style={{ marginTop: 6, marginBottom: 0 }}>Atrasado</p> : null}
+                      <p className="hub-clientes__muted hub-clinic-queue__meta">{item.context?.label || 'Operação'}</p>
+                      <p className="hub-clientes__muted hub-clinic-queue__meta">
+                        {wait ? `${wait} · ` : ''}
+                        {item.guardian?.full_name || 'Sem tutor'}
+                      </p>
+                      <div className="hub-clinic-queue__actions">
+                        {item.status === 'open' && canManage && item.kind === 'encaminhar' ? (
+                          <button
+                            type="button"
+                            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                            onClick={() => {
+                              const dest = scheduleDestinationPath(item, day);
+                              navigate(`${dest.pathname}${dest.search}`, { state: dest.state });
+                            }}
+                          >
+                            Agendar destino
+                          </button>
+                        ) : null}
+                        {item.status === 'open' && canManage && action ? (
                           <button
                             type="button"
                             className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
                             disabled={busyId === item.id}
                             onClick={() => void run(item, action.action)}
                           >
-                            {action.label}
+                            {busyId === item.id ? 'Salvando…' : action.label}
                           </button>
                         ) : null}
-                        {item.kind === 'autorizar_extra' ? (
+                        {item.status === 'open' && canManage && item.kind === 'autorizar_extra' ? (
                           <button
                             type="button"
                             className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
@@ -242,20 +333,43 @@ const HubReceptionPage: React.FC = () => {
                             Dispensar
                           </button>
                         ) : null}
-                        {wa ? (
+                        {item.status === 'open' && canManage && wa ? (
                           <a className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm" href={wa} target="_blank" rel="noreferrer">
                             <MessageCircle size={14} aria-hidden /> Avisar
                           </a>
                         ) : null}
+                        <button
+                          type="button"
+                          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                          onClick={() => setSelected(item)}
+                        >
+                          Detalhes
+                        </button>
                       </div>
-                    ) : null}
-                  </article>
-                );
-              })}
+                    </article>
+                  );
+                })}
+              </div>
             </section>
           ))}
         </div>
       )}
+
+      {clinicId ? (
+        <ReceptionHandoffPanel
+          open={Boolean(selected)}
+          item={selected}
+          clinicId={clinicId}
+          canManage={canManage}
+          busy={Boolean(selected && busyId === selected.id)}
+          onClose={() => setSelected(null)}
+          onAction={(item, action) => void run(item, action)}
+          onScheduleDestination={(item) => {
+            const dest = scheduleDestinationPath(item, day);
+            navigate(`${dest.pathname}${dest.search}`, { state: dest.state });
+          }}
+        />
+      ) : null}
     </div>
   );
 };

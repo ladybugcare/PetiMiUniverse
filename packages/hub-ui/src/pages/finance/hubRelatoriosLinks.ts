@@ -42,3 +42,18 @@ export function caixaSemComandaHref(dateYmd?: string | null): string {
   if (dateYmd) q.set('date', dateYmd.slice(0, 10));
   return `/hub/caixa?${q}`;
 }
+
+/** Caixa com busca pré-preenchida (pet/tutor) e filtro de comanda aberta. */
+export function caixaSearchHref(opts: {
+  q?: string | null;
+  status?: 'sem_comanda' | 'comanda_aberta' | 'a_receber' | 'recebido' | 'all' | null;
+  dateYmd?: string | null;
+}): string {
+  const params = new URLSearchParams();
+  const term = opts.q?.trim();
+  if (term) params.set('q', term);
+  if (opts.status && opts.status !== 'all') params.set('status', opts.status);
+  if (opts.dateYmd) params.set('date', opts.dateYmd.slice(0, 10));
+  const qs = params.toString();
+  return qs ? `/hub/caixa?${qs}` : '/hub/caixa';
+}

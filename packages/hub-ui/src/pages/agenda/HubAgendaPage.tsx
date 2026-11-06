@@ -137,6 +137,9 @@ function quoteLineServiceName(line: HubQuoteLine): string | null {
   return svc?.name ?? line.description ?? null;
 }
 
+/** Evita reabrir o encaixe vazio no remount do Strict Mode (mesma location.key). */
+const consumedWalkInKeys = new Set<string>();
+
 const HubAgendaPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -496,23 +499,61 @@ const HubAgendaPage: React.FC = () => {
   );
 
   const openWalkInParam = searchParams.get('openWalkIn') === '1';
-  const consumedWalkInRef = useRef(false);
-
-  useEffect(() => {
-    if (!openWalkInParam) consumedWalkInRef.current = false;
-  }, [openWalkInParam]);
 
   useEffect(() => {
     if (!clinicId || !openWalkInParam || !canWrite) return;
-    if (consumedWalkInRef.current) return;
-    consumedWalkInRef.current = true;
+
     const st = location.state as { walkInInitial?: NewAppointmentInitial } | null;
-    openCreateModal(st?.walkInInitial ?? { date: toYmd(new Date()) }, 'walk_in');
+    const petIdParam = searchParams.get('petId');
+    const petNameParam = searchParams.get('petName');
+    const guardianIdParam = searchParams.get('guardianId');
+    const guardianNameParam = searchParams.get('guardianName');
+    const dateParam = searchParams.get('date');
+
+    const initial: NewAppointmentInitial = {
+      ...(st?.walkInInitial ?? {}),
+      date: st?.walkInInitial?.date ?? dateParam ?? toYmd(new Date()),
+      pet_id: st?.walkInInitial?.pet_id ?? petIdParam ?? null,
+      pet_name: st?.walkInInitial?.pet_name ?? petNameParam ?? null,
+      guardian_id: st?.walkInInitial?.guardian_id ?? guardianIdParam ?? null,
+      guardian_name: st?.walkInInitial?.guardian_name ?? guardianNameParam ?? null,
+    };
+
+    // Dedup por location.key — sobrevive ao remount do Strict Mode sem abrir de novo vazio.
+    const alreadyOpened = consumedWalkInKeys.has(location.key);
+    if (!alreadyOpened) {
+      consumedWalkInKeys.add(location.key);
+      if (initial.date) {
+        const date = parseYmd(initial.date);
+        if (date) {
+          setCursorDate(startOfDay(date));
+          setView('day');
+        }
+      }
+      openCreateModal(initial, 'walk_in');
+    }
+
     const next = new URLSearchParams(searchParams);
     next.delete('openWalkIn');
-    setSearchParams(next, { replace: true });
-    navigate(`${location.pathname}${next.toString() ? `?${next.toString()}` : ''}`, { replace: true, state: null });
-  }, [clinicId, openWalkInParam, canWrite, openCreateModal, searchParams, setSearchParams, location.pathname, location.state, navigate]);
+    next.delete('petId');
+    next.delete('petName');
+    next.delete('guardianId');
+    next.delete('guardianName');
+    navigate(`${location.pathname}${next.toString() ? `?${next.toString()}` : ''}`, {
+      replace: true,
+      state: null,
+    });
+  }, [
+    clinicId,
+    openWalkInParam,
+    canWrite,
+    openCreateModal,
+    searchParams,
+    location.pathname,
+    location.key,
+    location.state,
+    navigate,
+  ]);
 
   const fromQuoteParam = searchParams.get('fromQuote');
   const shouldOpenFromQuote = searchParams.get('openCreate') === '1';

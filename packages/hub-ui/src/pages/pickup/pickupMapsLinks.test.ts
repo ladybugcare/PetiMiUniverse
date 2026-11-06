@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildAppleMapsUrl,
+  buildExternalMapsLinks,
   buildGoogleMapsDirectionsUrl,
+  buildGoogleMapsRouteOrStopUrl,
   buildGoogleMapsSingleStopUrl,
+  buildWazeUrl,
   pointToMapsQuery,
   stopToMapPoint,
 } from './pickupMapsLinks';
@@ -114,6 +118,52 @@ describe('pickupMapsLinks', () => {
     });
   });
 
+  describe('buildGoogleMapsRouteOrStopUrl', () => {
+    it('com 1 ponto vira destino único', () => {
+      const r = buildGoogleMapsRouteOrStopUrl([{ address: 'Rua Só' }]);
+      expect(r?.url).toContain('destination=Rua+S%C3%B3');
+      expect(r?.truncated).toBe(false);
+    });
+
+    it('com 2+ pontos monta direções', () => {
+      const r = buildGoogleMapsRouteOrStopUrl([
+        { lat: 1, lng: 1 },
+        { lat: 2, lng: 2 },
+      ]);
+      expect(r).not.toBeNull();
+      const u = new URL(r!.url);
+      expect(u.searchParams.get('origin')).toBe('1,1');
+      expect(u.searchParams.get('destination')).toBe('2,2');
+    });
+  });
+
+  describe('buildWazeUrl / buildAppleMapsUrl', () => {
+    it('Waze com coords', () => {
+      expect(buildWazeUrl({ lat: -23.5, lng: -46.6 })).toBe(
+        'https://waze.com/ul?ll=-23.5%2C-46.6&navigate=yes',
+      );
+    });
+
+    it('Waze com endereço', () => {
+      expect(buildWazeUrl({ address: 'Rua A, 10' })).toBe(
+        'https://waze.com/ul?q=Rua%20A%2C%2010&navigate=yes',
+      );
+    });
+
+    it('Apple Maps com destino', () => {
+      const url = buildAppleMapsUrl({ lat: -23, lng: -46 });
+      expect(url).toContain('maps.apple.com');
+      expect(url).toContain('daddr=-23%2C-46');
+    });
+
+    it('buildExternalMapsLinks agrega os três', () => {
+      const links = buildExternalMapsLinks({ lat: -23, lng: -46 });
+      expect(links.google).toContain('google.com/maps');
+      expect(links.waze).toContain('waze.com');
+      expect(links.apple).toContain('maps.apple.com');
+    });
+  });
+
   describe('stopToMapPoint', () => {
     it('lê lat/lng e endereço do snapshot', () => {
       expect(
@@ -137,6 +187,23 @@ describe('pickupMapsLinks', () => {
       const p = stopToMapPoint({ address_snapshot: { lat: '-23.1', lng: '-46.2' } });
       expect(p.lat).toBe(-23.1);
       expect(p.lng).toBe(-46.2);
+    });
+
+    it('aceita latitude/longitude e monta rua com número', () => {
+      const p = stopToMapPoint({
+        address_snapshot: {
+          latitude: '-23.2',
+          longitude: '-46.3',
+          street: 'Rua Y',
+          street_number: '42',
+          district: 'Centro',
+          city: 'Campinas',
+          state: 'SP',
+        },
+      });
+      expect(p.lat).toBe(-23.2);
+      expect(p.lng).toBe(-46.3);
+      expect(p.address).toBe('Rua Y, 42, Centro, Campinas, SP');
     });
   });
 });

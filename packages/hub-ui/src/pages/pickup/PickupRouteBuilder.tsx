@@ -78,7 +78,9 @@ function SortableStopItem({
         {item._direction === 'pickup' ? 'Coleta' : 'Entrega'}
       </span>
       <div className="hub-pickup-builder__stop-info">
-        <span className="hub-pickup-builder__stop-pet">{item.pet?.name ?? '—'}</span>
+        <span className="hub-pickup-builder__stop-pet" title={item.pet?.name ?? undefined}>
+          {item.pet?.name ?? '—'}
+        </span>
         <span
           className="hub-pickup-builder__stop-meta"
           title={[item.guardian?.full_name, item.address, formatTime(item.starts_at)]
@@ -454,6 +456,23 @@ const PickupRouteBuilder: React.FC<Props> = ({
     [selectedVehicle],
   );
 
+  const cageOptions = useMemo(
+    () =>
+      availableCages.map((c) => ({
+        value: c.id,
+        label: c.capacity > 1 ? `${c.name} (${c.capacity})` : c.name,
+        searchText: c.name,
+        icon: c.color ? (
+          <span
+            className="hub-pb__cage-color-dot hub-pb__cage-color-dot--inline"
+            style={{ background: c.color }}
+            aria-hidden
+          />
+        ) : undefined,
+      })),
+    [availableCages],
+  );
+
   const handleSave = async () => {
     if (!clinicId) return;
     if (selected.length === 0) {
@@ -701,7 +720,7 @@ const PickupRouteBuilder: React.FC<Props> = ({
       title={editingRoute ? 'Editar rota' : 'Nova rota'}
       titleIcon={<Truck size={22} strokeWidth={2} aria-hidden />}
       subtitle={dateYmd}
-      size="wide"
+      size="xl"
       footer={
         <>
           <button
@@ -890,7 +909,7 @@ const PickupRouteBuilder: React.FC<Props> = ({
               >
                 {selected.map((item, idx) => (
                   <div key={item.appointment_id} className="hub-pb__stop-row">
-                    <div style={{ flex: 1, position: 'relative' }}>
+                    <div className="hub-pb__stop-row-main">
                       <SortableStopItem
                         item={item}
                         onRemove={removeItem}
@@ -902,20 +921,22 @@ const PickupRouteBuilder: React.FC<Props> = ({
                         className="hub-pickup-builder__dir-toggle"
                         onClick={() => toggleDirection(item.appointment_id)}
                         title="Inverter sentido (coleta/entrega)"
+                        aria-label="Inverter sentido (coleta/entrega)"
                       >
                         ⇄
                       </button>
                     </div>
                     {availableCages.length > 0 && (
                       <div className="hub-pb__cage-assign">
-                        <label className="hub-pb__cage-label">
-                          <Package size={12} /> Caixa
+                        <label className="hub-pb__cage-label" htmlFor={`hub-pb-cage-${item.appointment_id}`}>
+                          <Package size={12} aria-hidden /> Caixa
                         </label>
-                        <select
-                          className="hub-pb__cage-select"
+                        <HubSearchableCombobox
+                          id={`hub-pb-cage-${item.appointment_id}`}
+                          className="hub-combobox--clientes hub-pb__cage-combobox"
+                          options={cageOptions}
                           value={stopCages.get(item.appointment_id) ?? ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
+                          onChange={(val) => {
                             setStopCages((prev) => {
                               const next = new Map(prev);
                               if (val) next.set(item.appointment_id, val);
@@ -923,24 +944,13 @@ const PickupRouteBuilder: React.FC<Props> = ({
                               return next;
                             });
                           }}
-                        >
-                          <option value="">— sem caixa —</option>
-                          {availableCages.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}{c.capacity > 1 ? ` (${c.capacity})` : ''}
-                            </option>
-                          ))}
-                        </select>
-                        {stopCages.get(item.appointment_id) && (() => {
-                          const cage = availableCages.find((c) => c.id === stopCages.get(item.appointment_id));
-                          return cage?.color ? (
-                            <span
-                              className="hub-pb__cage-color-dot"
-                              style={{ background: cage.color }}
-                              title={cage.name}
-                            />
-                          ) : null;
-                        })()}
+                          placeholder="— sem caixa —"
+                          searchPlaceholder="Buscar caixa…"
+                          allowCreate={false}
+                          clearable
+                          emptyResultsLabel="Nenhuma caixa encontrada"
+                          ariaLabel={`Caixa da parada ${item.pet?.name ?? ''}`}
+                        />
                       </div>
                     )}
                   </div>

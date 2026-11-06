@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, Scissors, Search } from 'lucide-react';
+import { CalendarDays, RefreshCw, Scissors, Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { HubDayNav } from '../../components/HubDayNav';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
@@ -308,14 +309,6 @@ const HubGroomingQueuePage: React.FC = () => {
     [staff],
   );
 
-  const shiftDay = (delta: number) => {
-    setCursor((d) => {
-      const n = new Date(d);
-      n.setDate(n.getDate() + delta);
-      return n;
-    });
-  };
-
   const metrics = useMemo(() => {
     const waiting = itemsAfterChips.filter((i) => {
       const s = getItemBoardStage(i);
@@ -369,12 +362,6 @@ const HubGroomingQueuePage: React.FC = () => {
       </div>
     );
   }
-
-  const dateLabel = cursor.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
 
   const unitStaffFilters = (
     <>
@@ -430,27 +417,10 @@ const HubGroomingQueuePage: React.FC = () => {
         <p className="hub-clientes__muted hub-grooming-page__perm-banner">Visualização da fila (somente leitura).</p>
       ) : null}
 
-      <div className="hub-clientes__toolbar hub-clinic-atendimentos__toolbar">
-        <div className="hub-clinic-atendimentos__date-nav">
-          <button type="button" className="hub-clientes__icon-btn" onClick={() => shiftDay(-1)} aria-label="Dia anterior">
-            <ChevronLeft size={18} />
-          </button>
-          <span className="hub-clinic-atendimentos__date-label hub-grooming-page__date-label">{dateLabel}</span>
-          <button type="button" className="hub-clientes__icon-btn" onClick={() => shiftDay(1)} aria-label="Próximo dia">
-            <ChevronRight size={18} />
-          </button>
-          {!isToday ? (
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-              onClick={() => setCursor(new Date())}
-            >
-              Hoje
-            </button>
-          ) : null}
-        </div>
+      <div className="hub-clientes__toolbar hub-clinic-atendimentos__toolbar hub-grooming-page__toolbar">
+        <HubDayNav dateFieldId="hub-grooming-queue-date" value={cursor} onChange={setCursor} />
         <div className="hub-clientes__search hub-clinic-atendimentos__search">
-          <Search size={16} aria-hidden />
+          <Search size={16} className="hub-clientes__search-icon" aria-hidden />
           <input
             ref={searchInputRef}
             type="search"
@@ -460,24 +430,30 @@ const HubGroomingQueuePage: React.FC = () => {
           />
         </div>
         {!isNarrow ? unitStaffFilters : null}
-        <button
-          type="button"
-          className="hub-clientes__btn hub-clientes__btn--ghost"
-          onClick={() => void load()}
-          disabled={loading || refreshing}
-          aria-label="Atualizar fila"
-        >
-          <RefreshCw size={16} />
-        </button>
-        {canWrite ? (
-          <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={() => setWalkInOpen(true)}>
-            Avulso
+        <div className="hub-grooming-page__toolbar-actions" role="group" aria-label="Ações da fila">
+          <button
+            type="button"
+            className="hub-clientes__icon-btn"
+            onClick={() => void load()}
+            disabled={loading || refreshing}
+            aria-label="Atualizar fila"
+          >
+            <RefreshCw size={16} />
           </button>
-        ) : null}
-        <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--ghost">
-          <CalendarDays size={16} aria-hidden />
-          Agenda
-        </Link>
+          <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
+            <CalendarDays size={16} aria-hidden />
+            Agenda
+          </Link>
+          {canWrite ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+              onClick={() => setWalkInOpen(true)}
+            >
+              Avulso
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {isNarrow ? (
@@ -496,7 +472,7 @@ const HubGroomingQueuePage: React.FC = () => {
 
       {!dayIsEmpty ? (
         <div className="hub-grooming-page__filters" role="toolbar" aria-label="Filtros da fila">
-          <div className="hub-grooming-page__filters-porte">
+          <div className="hub-servicos__filter-field hub-clinic-atendimentos__staff-filter hub-grooming-page__filters-porte">
             <HubSearchableCombobox
               id="hub-grooming-porte-filter"
               className="hub-combobox--clientes"
@@ -553,10 +529,10 @@ const HubGroomingQueuePage: React.FC = () => {
             onClick={() => toggleMetricFocus('waiting')}
             aria-pressed={metricFocus === 'waiting'}
           >
-            <span className="hub-clientes__metric-label">Aguardando</span>
             <span className="hub-clientes__metric-value hub-grooming-page__metric-value--waiting">
               {metrics.waiting}
             </span>
+            <span className="hub-clientes__metric-label">Aguardando</span>
           </button>
           <button
             type="button"
@@ -564,10 +540,10 @@ const HubGroomingQueuePage: React.FC = () => {
             onClick={() => toggleMetricFocus('in_service')}
             aria-pressed={metricFocus === 'in_service'}
           >
-            <span className="hub-clientes__metric-label">Em atendimento</span>
             <span className="hub-clientes__metric-value hub-grooming-page__metric-value--service">
               {metrics.inService}
             </span>
+            <span className="hub-clientes__metric-label">Em atendimento</span>
           </button>
           <button
             type="button"
@@ -575,10 +551,10 @@ const HubGroomingQueuePage: React.FC = () => {
             onClick={() => toggleMetricFocus('ready')}
             aria-pressed={metricFocus === 'ready'}
           >
-            <span className="hub-clientes__metric-label">Prontos</span>
             <span className="hub-clientes__metric-value hub-grooming-page__metric-value--ready">
               {metrics.ready}
             </span>
+            <span className="hub-clientes__metric-label">Prontos</span>
           </button>
           <button
             type="button"
@@ -586,8 +562,8 @@ const HubGroomingQueuePage: React.FC = () => {
             onClick={() => toggleMetricFocus('late')}
             aria-pressed={metricFocus === 'late'}
           >
-            <span className="hub-clientes__metric-label">Atrasados</span>
             <span className="hub-clientes__metric-value">{metrics.late}</span>
+            <span className="hub-clientes__metric-label">Atrasados</span>
           </button>
         </div>
       ) : null}

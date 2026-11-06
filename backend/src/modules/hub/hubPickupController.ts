@@ -427,6 +427,42 @@ function formatAddress(gu: GuardianRow | null): string | null {
   return parts.filter(Boolean).join(', ') || null;
 }
 
+function readSnapshotCoord(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw))) {
+    return Number(raw);
+  }
+  return null;
+}
+
+function snapshotHasCoords(snap: Record<string, unknown> | null | undefined): boolean {
+  if (!snap) return false;
+  const lat = readSnapshotCoord(snap.lat) ?? readSnapshotCoord(snap.latitude);
+  const lng =
+    readSnapshotCoord(snap.lng) ?? readSnapshotCoord(snap.lon) ?? readSnapshotCoord(snap.longitude);
+  return lat != null && lng != null;
+}
+
+/** Monta query de geocode a partir do tutor (inclui número e Brasil). */
+function geocodeQueryFromGuardian(gu: Record<string, unknown> | GuardianRow | null | undefined): string | null {
+  if (!gu) return null;
+  const formatted = formatAddress(gu as GuardianRow);
+  if (!formatted || formatted.length < 5) return null;
+  return `${formatted}, Brasil`;
+}
+
+async function enrichSnapshotCoords(
+  snap: Record<string, unknown> | null,
+  gu: Record<string, unknown> | GuardianRow | null | undefined,
+): Promise<Record<string, unknown> | null> {
+  if (snapshotHasCoords(snap)) return snap;
+  const query = geocodeQueryFromGuardian(gu) ?? geocodeQueryFromGuardian(snap ?? undefined);
+  if (!query || query.length < 10) return snap;
+  const coords = await geocodeAddress(query);
+  if (!coords) return snap;
+  return { ...(snap ?? (gu as Record<string, unknown>) ?? {}), lat: coords.lat, lng: coords.lng };
+}
+
 // ─── GET /api/hub/pickup/day-board ────────────────────────────────────────
 
 /**
@@ -925,21 +961,25 @@ export const addHubPickupStops = async (req: Request, res: Response) => {
         .map((s) => [s.hub_appointment_id, s]),
     );
 
-    // Buscar snapshot de endereço dos tutores (só para pernas novas / soltas)
-    const needsGeocodeIds = apptIds.filter((aid) => !onThisRouteMap.has(aid));
-    const guardianIds = [
+    // Tutores: novas pernas + paradas da rota ainda sem lat/lng (backfill)
+    const needsGuardianIds = [
       ...new Set(
-        needsGeocodeIds
+        apptIds
+          .filter((aid) => {
+            const onRoute = onThisRouteMap.get(aid);
+            if (!onRoute) return true;
+            return !snapshotHasCoords(onRoute.address_snapshot);
+          })
           .map((aid) => apptMap.get(aid)?.guardian_id)
           .filter(Boolean) as string[],
       ),
     ];
     const guardianMap = new Map<string, Record<string, unknown>>();
-    if (guardianIds.length > 0) {
+    if (needsGuardianIds.length > 0) {
       const { data: guardians } = await supabaseAdmin
         .from('hub_guardians')
         .select('id, street, street_number, district, city, state, postal_code')
-        .in('id', guardianIds);
+        .in('id', needsGuardianIds);
       for (const g of (guardians ?? []) as Array<{ id: string } & Record<string, unknown>>) {
         guardianMap.set(g.id, g);
       }
@@ -962,13 +1002,29 @@ export const addHubPickupStops = async (req: Request, res: Response) => {
     const toUpdateOnRoute: Array<StopInsert & { stop_id: string }> = [];
     const toLinkOrInsert: StopInsert[] = [];
 
+    let geocodeCalls = 0;
+    const pauseIfNeeded = async () => {
+      if (geocodeCalls > 0) {
+        await new Promise<void>((r) => setTimeout(r, 1100));
+      }
+      geocodeCalls += 1;
+    };
+
     for (let idx = 0; idx < stops.length; idx++) {
       const s = stops[idx];
       const appt = apptMap.get(s.hub_appointment_id)!;
       const onRoute = onThisRouteMap.get(s.hub_appointment_id);
+      const gu = (appt.guardian_id ? guardianMap.get(appt.guardian_id) : null) as
+        | Record<string, unknown>
+        | undefined;
 
       if (onRoute) {
-        // Já está nesta rota: só atualiza ordem / direção / caixa (não reseta status).
+        // Já está nesta rota: atualiza ordem / direção / caixa; backfill de coords se faltar.
+        let addressSnapshot = onRoute.address_snapshot;
+        if (!snapshotHasCoords(addressSnapshot) && (gu || addressSnapshot)) {
+          await pauseIfNeeded();
+          addressSnapshot = await enrichSnapshotCoords(addressSnapshot, gu);
+        }
         toUpdateOnRoute.push({
           stop_id: onRoute.id,
           clinic_id,
@@ -977,7 +1033,7 @@ export const addHubPickupStops = async (req: Request, res: Response) => {
           pet_id: appt.pet_id ?? null,
           guardian_id: appt.guardian_id ?? null,
           direction: s.direction,
-          address_snapshot: onRoute.address_snapshot,
+          address_snapshot: addressSnapshot,
           sequence: s.sequence ?? idx,
           planned_at: s.planned_at ?? null,
           cage_id: s.cage_id ?? null,
@@ -986,25 +1042,10 @@ export const addHubPickupStops = async (req: Request, res: Response) => {
         continue;
       }
 
-      const gu = (appt.guardian_id ? guardianMap.get(appt.guardian_id) : null) as
-        | Record<string, unknown>
-        | undefined;
-
       let addressSnapshot: Record<string, unknown> | null = gu ?? null;
-
-      if (gu) {
-        const addrStr = [gu.street, gu.district, gu.city, gu.state, 'Brasil']
-          .filter(Boolean)
-          .join(', ');
-        if (addrStr.length > 10) {
-          const coords = await geocodeAddress(addrStr);
-          if (coords) {
-            addressSnapshot = { ...gu, lat: coords.lat, lng: coords.lng };
-          }
-          if (idx < stops.length - 1) {
-            await new Promise<void>((r) => setTimeout(r, 1100));
-          }
-        }
+      if (gu || addressSnapshot) {
+        await pauseIfNeeded();
+        addressSnapshot = await enrichSnapshotCoords(addressSnapshot, gu);
       }
 
       toLinkOrInsert.push({
@@ -1598,7 +1639,7 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
 
     const a = appt as { id: string; pet_id: string | null; guardian_id: string | null };
 
-    // Buscar endereço do tutor para snapshot
+    // Buscar endereço do tutor para snapshot (+ geocode para o mapa)
     let addressSnapshot: Record<string, unknown> | null = null;
     if (a.guardian_id) {
       const { data: gu } = await supabaseAdmin
@@ -1606,7 +1647,9 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
         .select('id, street, street_number, district, city, state, postal_code')
         .eq('id', a.guardian_id)
         .maybeSingle();
-      if (gu) addressSnapshot = gu as Record<string, unknown>;
+      if (gu) {
+        addressSnapshot = await enrichSnapshotCoords(gu as Record<string, unknown>, gu as GuardianRow);
+      }
     }
 
     // Verificar se já existe parada solta para este agendamento
@@ -1875,8 +1918,39 @@ export const getMyPickupRoute = async (req: Request, res: Response) => {
   }
 };
 
+async function withStopCounts<T extends { id: string }>(
+  routeRows: T[],
+): Promise<Array<T & { stops_count: number }>> {
+  return Promise.all(
+    routeRows.map(async (r) => {
+      const { count } = await supabaseAdmin
+        .from('hub_pickup_stops')
+        .select('id', { count: 'exact', head: true })
+        .eq('hub_pickup_route_id', r.id);
+      return { ...r, stops_count: count ?? 0 };
+    }),
+  );
+}
+
+/** Rotas do dia ainda sem motorista (podem ser assumidas). */
+async function loadUnassignedRoutesForDate(clinicId: string, dateYmd: string) {
+  const { data: routes, error } = await supabaseAdmin
+    .from('hub_pickup_routes')
+    .select(ROUTE_SELECT)
+    .eq('clinic_id', clinicId)
+    .eq('route_date', dateYmd)
+    .is('driver_staff_id', null)
+    .in('status', ['planned', 'in_progress'])
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return withStopCounts((routes ?? []) as RouteRow[]);
+}
+
 /**
- * Retorna todas as rotas do dia do motorista autenticado (fila do dia).
+ * Retorna todas as rotas do dia do motorista autenticado (fila do dia)
+ * e as rotas do dia ainda sem motorista (para autoatribuição).
  */
 export const getMyPickupRoutes = async (req: Request, res: Response) => {
   try {
@@ -1889,7 +1963,12 @@ export const getMyPickupRoutes = async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ error: 'Não autenticado.' });
 
     const staffId = await resolveDriverStaffIdForUser(clinic_id, userId);
-    if (!staffId) return res.json({ routes: [], active_route_id: null });
+    const availablePromise = loadUnassignedRoutesForDate(clinic_id, dateYmd);
+
+    if (!staffId) {
+      const available_routes = await availablePromise;
+      return res.json({ routes: [], active_route_id: null, available_routes });
+    }
 
     const { data: routes, error: routeErr } = await supabaseAdmin
       .from('hub_pickup_routes')
@@ -1906,24 +1985,104 @@ export const getMyPickupRoutes = async (req: Request, res: Response) => {
 
     const routeRows = (routes ?? []) as RouteRow[];
     const active = pickActiveRoute(routeRows);
-
-    const withCounts = await Promise.all(
-      routeRows.map(async (r) => {
-        const { count } = await supabaseAdmin
-          .from('hub_pickup_stops')
-          .select('id', { count: 'exact', head: true })
-          .eq('hub_pickup_route_id', r.id);
-        return { ...r, stops_count: count ?? 0 };
-      }),
-    );
+    const [withCounts, available_routes] = await Promise.all([
+      withStopCounts(routeRows),
+      availablePromise,
+    ]);
 
     return res.json({
       routes: withCounts,
       active_route_id: active?.id ?? null,
+      available_routes,
     });
   } catch (e) {
     console.error('[hubPickupController] getMyPickupRoutes', e);
     return res.status(500).json({ error: 'Erro ao buscar minhas rotas.' });
+  }
+};
+
+const claimRouteSchema = z
+  .object({
+    clinic_id: uuidStr,
+  })
+  .strict();
+
+/**
+ * Motorista autenticado assume uma rota do dia que ainda está sem motorista.
+ * Não exige pickup.routes.manage — só leitura + vínculo de staff.
+ */
+export const claimHubPickupRoute = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) return res.status(400).json({ error: 'ID de rota inválido' });
+
+    const parsed = claimRouteSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { clinic_id } = parsed.data;
+
+    const userId = (req as Request & { user?: { id: string } }).user?.id;
+    if (!userId) return res.status(401).json({ error: 'Não autenticado.' });
+
+    const staffId = await resolveDriverStaffIdForUser(clinic_id, userId);
+    if (!staffId) {
+      return res.status(403).json({
+        error: 'Seu usuário não está vinculado a um perfil de equipe. Peça à gestão para cadastrar o motorista.',
+      });
+    }
+
+    const { data: current, error: fetchErr } = await supabaseAdmin
+      .from('hub_pickup_routes')
+      .select('id, status, driver_staff_id, route_date')
+      .eq('id', id)
+      .eq('clinic_id', clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (fetchErr) return res.status(500).json({ error: fetchErr.message });
+    if (!current) return res.status(404).json({ error: 'Rota não encontrada' });
+
+    const row = current as {
+      id: string;
+      status: string;
+      driver_staff_id: string | null;
+      route_date: string;
+    };
+
+    if (row.driver_staff_id) {
+      if (row.driver_staff_id === staffId) {
+        const { data: already } = await supabaseAdmin
+          .from('hub_pickup_routes')
+          .select(ROUTE_SELECT)
+          .eq('id', id)
+          .maybeSingle();
+        return res.json({ route: already, already_claimed: true });
+      }
+      return res.status(409).json({ error: 'Esta rota já foi atribuída a outro motorista.' });
+    }
+
+    if (row.status !== 'planned' && row.status !== 'in_progress') {
+      return res.status(422).json({ error: 'Só é possível assumir rotas planejadas ou em andamento.' });
+    }
+
+    const { data: claimed, error: claimErr } = await supabaseAdmin
+      .from('hub_pickup_routes')
+      .update({ driver_staff_id: staffId })
+      .eq('id', id)
+      .eq('clinic_id', clinic_id)
+      .is('driver_staff_id', null)
+      .is('deleted_at', null)
+      .in('status', ['planned', 'in_progress'])
+      .select(ROUTE_SELECT)
+      .maybeSingle();
+
+    if (claimErr) return res.status(500).json({ error: claimErr.message });
+    if (!claimed) {
+      return res.status(409).json({ error: 'Esta rota acabou de ser atribuída a outro motorista.' });
+    }
+
+    return res.json({ route: claimed, already_claimed: false });
+  } catch (e) {
+    console.error('[hubPickupController] claimHubPickupRoute', e);
+    return res.status(500).json({ error: 'Erro ao assumir rota.' });
   }
 };
 

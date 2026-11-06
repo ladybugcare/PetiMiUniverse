@@ -27,8 +27,19 @@ export const GroomingResourceDialog: React.FC<GroomingResourceDialogProps> = ({
   const label = availability.field_label;
 
   return (
-    <div className="grooming-resource-dialog" role="presentation">
-      <div className="grooming-resource-dialog__card" role="dialog" aria-modal="true" aria-labelledby="grooming-resource-title">
+    <div
+      className="grooming-resource-dialog"
+      role="presentation"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div
+        className="grooming-resource-dialog__card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="grooming-resource-title"
+      >
         <h2 id="grooming-resource-title">Escolher {label.toLowerCase()}</h2>
         {busyName ? (
           <p className="grooming-resource-dialog__warn">
@@ -48,8 +59,7 @@ export const GroomingResourceDialog: React.FC<GroomingResourceDialogProps> = ({
               {!required ? <option value="">Definir sem alocar</option> : null}
               {availability.resources.map((r) => (
                 <option key={r.id} value={r.id} disabled={r.busy}>
-                  {r.kind_name !== label ? `${r.kind_name} · ` : ''}
-                  {r.name}
+                  {r.kind_name ? `${r.kind_name} · ${r.name}` : r.name}
                   {r.busy ? ' (em uso)' : ''}
                 </option>
               ))}
@@ -61,7 +71,11 @@ export const GroomingResourceDialog: React.FC<GroomingResourceDialogProps> = ({
             Voltar
           </button>
           {!required ? (
-            <button type="button" className="grooming-resource-dialog__ghost" onClick={() => onConfirm({ hubResourceId: null, skipResource: true })}>
+            <button
+              type="button"
+              className="grooming-resource-dialog__ghost"
+              onClick={() => onConfirm({ hubResourceId: null, skipResource: true })}
+            >
               Seguir sem alocar
             </button>
           ) : null}

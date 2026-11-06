@@ -4,8 +4,6 @@ import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import {
   AlertCircle,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   HelpCircle,
   Coins,
@@ -20,7 +18,9 @@ import {
 } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
+import { HubDayNav } from '../../components/HubDayNav';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
+import { formatYmd } from '../../utils/hubCalendar';
 import {
   hubFinancialApi,
   type HubFinanceDayBoardItem,
@@ -46,7 +46,6 @@ import { QuickSaleDrawer } from './QuickSaleDrawer';
 import { EncerrarTurnoDrawer } from './EncerrarTurnoDrawer';
 import { IniciarTurnoDrawer } from './IniciarTurnoDrawer';
 import type { PackageSaleScheduleContext } from './packageSaleScheduleUtils';
-import { HubDateField } from '../../components/HubDateField';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { filterEnabledPaymentMethods } from '../../utils/hubPaymentMethods';
 import {
@@ -64,12 +63,6 @@ function formatBrl(n: number): string {
 
 function ymdToday(): string {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function addDays(ymd: string, days: number): string {
-  const d = new Date(`${ymd}T12:00:00`);
-  d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -118,7 +111,7 @@ const HubCaixaPage: React.FC = () => {
     }
     return 'all';
   });
-  const [dayBoardSearch, setDayBoardSearch] = useState('');
+  const [dayBoardSearch, setDayBoardSearch] = useState(() => searchParams.get('q')?.trim() ?? '');
 
   // Drawers
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
@@ -229,6 +222,12 @@ const HubCaixaPage: React.FC = () => {
   }, [searchParams]);
 
   useEffect(() => {
+    const q = searchParams.get('q');
+    if (q == null) return;
+    setDayBoardSearch(q.trim());
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!clinicId || !cashOpen?.id) return;
     let cancelled = false;
     void (async () => {
@@ -281,8 +280,16 @@ const HubCaixaPage: React.FC = () => {
   const extraComandas = useMemo(() => {
     if (atendimentosStatusFilter !== 'all' && atendimentosStatusFilter !== 'comanda_aberta') return [];
     const today = ymdToday();
-    return openComandas.filter((c) => isCaixaCarryoverPendingComanda(c, today));
-  }, [openComandas, atendimentosStatusFilter]);
+    const searchTerm = normalizeText(dayBoardSearch.trim());
+    return openComandas.filter((c) => {
+      if (!isCaixaCarryoverPendingComanda(c, today)) return false;
+      if (!searchTerm) return true;
+      const guardian = normalizeText((c.guardian as { full_name?: string } | null)?.full_name ?? '');
+      const pet = normalizeText((c.pet as { name?: string } | null)?.name ?? '');
+      const title = normalizeText(formatComandaListTitle(c));
+      return guardian.includes(searchTerm) || pet.includes(searchTerm) || title.includes(searchTerm);
+    });
+  }, [openComandas, atendimentosStatusFilter, dayBoardSearch]);
 
   const expectedBalance = cashSummary?.summary.expected_balance ?? Number(cashOpen?.opening_balance ?? 0);
 
@@ -704,42 +711,17 @@ const HubCaixaPage: React.FC = () => {
       <section className="hub-finance-page__section">
         <h2 className="hub-clientes__form-title">Ações pendentes do caixa</h2>
         <div className="hub-dayboard__toolbar">
-          <div className="hub-dayboard__date-nav">
-            <button
-              type="button"
-              className="hub-dayboard__nav-btn"
-              aria-label="Dia anterior"
-              disabled={dayBoardBusy}
-              onClick={() => {
-                const prev = addDays(dayBoardDate, -1);
-                setDayBoardDate(prev);
-                void loadDayBoard(prev);
-              }}
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <HubDateField
-              id="dayboard-date"
-              valueIso={dayBoardDate}
-              onChangeIso={(d) => {
-                setDayBoardDate(d);
-                void loadDayBoard(d);
-              }}
-            />
-            <button
-              type="button"
-              className="hub-dayboard__nav-btn"
-              aria-label="Próximo dia"
-              disabled={dayBoardBusy}
-              onClick={() => {
-                const next = addDays(dayBoardDate, 1);
-                setDayBoardDate(next);
-                void loadDayBoard(next);
-              }}
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
+          <HubDayNav
+            dateFieldId="dayboard-date"
+            className="hub-dayboard__date-nav"
+            value={dayBoardDate}
+            disabled={dayBoardBusy}
+            onChange={(next) => {
+              const iso = formatYmd(next);
+              setDayBoardDate(iso);
+              void loadDayBoard(iso);
+            }}
+          />
           {dayBoardDate !== ymdToday() && (
             <span className="hub-dayboard__date-badge">
               {dayBoardDate < ymdToday() ? 'Data passada' : 'Data futura'}

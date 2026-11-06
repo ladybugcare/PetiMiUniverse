@@ -41,10 +41,48 @@ export type ReceptionBoardItem = {
   guardian: { id: string | null; full_name: string; phone: string | null } | null;
 };
 
+export type ReceptionCue = {
+  key: string;
+  label: string;
+  detail?: string;
+};
+
+export type ReceptionHandoffDetail = Omit<ReceptionBoardItem, 'pet' | 'guardian'> & {
+  unit_id: string | null;
+  unit_name: string | null;
+  pet: {
+    id: string | null;
+    name: string;
+    species: string | null;
+    breed: string | null;
+    size_tier: string | null;
+    birth_date: string | null;
+    coat_type: string | null;
+    avatar_url: string | null;
+    notes: string | null;
+  };
+  guardian: {
+    id: string | null;
+    full_name: string;
+    phone: string | null;
+    email: string | null;
+  } | null;
+  origin: { key: string; label: string; href: string };
+  cues: ReceptionCue[];
+  next_step: string | null;
+  is_late: boolean;
+  /** `null` = usuário sem acesso ao caixa/financeiro; não mostrar aviso. */
+  charge_pending: boolean | null;
+};
+
 export const hubReceptionApi = {
   board(clinicId: string, unitId: string, dateYmd: string) {
     const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId, date: dateYmd });
     return apiRequest(`/api/hub/reception/board?${q}`) as Promise<{ date: string; items: ReceptionBoardItem[] }>;
+  },
+  detail(id: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`/api/hub/reception/handoffs/${encodeURIComponent(id)}?${q}`) as Promise<ReceptionHandoffDetail>;
   },
   resolve(id: string, clinicId: string, action: ReceptionResolveAction) {
     return apiRequest(`/api/hub/reception/handoffs/${encodeURIComponent(id)}/resolve`, {

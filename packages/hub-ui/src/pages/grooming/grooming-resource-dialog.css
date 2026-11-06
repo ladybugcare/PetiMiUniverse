@@ -1,32 +1,40 @@
+/* Bottom sheet — mesmo padrão de EncerrarTurnoDrawer (fechar o caixa) */
+
 .grooming-resource-dialog {
   position: fixed;
   inset: 0;
   z-index: 80;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  padding: 24px;
-  background: rgba(42, 28, 26, 0.45);
+  padding: 0;
+  background: rgba(0, 0, 0, 0.45);
 }
 
 .grooming-resource-dialog__card {
-  width: min(440px, 100%);
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
   background: var(--hc-surface, #fff);
   color: var(--hc-text, #3d2c2a);
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 16px 40px rgba(42, 28, 26, 0.18);
+  border-radius: 20px 20px 0 0;
+  padding: 28px 24px calc(28px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.14);
 }
 
 .grooming-resource-dialog__card h2 {
   margin: 0 0 8px;
   font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
 }
 
 .grooming-resource-dialog__card p {
-  margin: 0 0 12px;
+  margin: 0 0 16px;
   font-size: 14px;
   line-height: 1.4;
+  color: #5c4a48;
 }
 
 .grooming-resource-dialog__warn {
@@ -35,39 +43,52 @@
 
 .grooming-resource-dialog__field {
   display: grid;
-  gap: 6px;
-  margin-bottom: 16px;
+  gap: 8px;
+  margin-bottom: 20px;
   font-size: 13px;
   font-weight: 600;
+  color: #3d2c2a;
 }
 
 .grooming-resource-dialog__field select {
   font: inherit;
   font-weight: 500;
-  padding: 8px 10px;
-  border-radius: 10px;
+  font-size: 15px;
+  padding: 12px 14px;
+  border-radius: 12px;
   border: 1px solid var(--hc-border, #e4d5cf);
   background: var(--hc-surface, #fff);
+  color: inherit;
+  min-height: 48px;
+  width: 100%;
+  appearance: auto;
 }
 
 .grooming-resource-dialog__actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  justify-content: stretch;
+  align-items: stretch;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .grooming-resource-dialog__ghost,
 .grooming-resource-dialog__primary {
   border-radius: 999px;
-  padding: 8px 14px;
+  padding: 12px 16px;
   font: inherit;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
+  flex: 1 1 auto;
+  min-height: 44px;
+  white-space: nowrap;
 }
 
 .grooming-resource-dialog__ghost {
-  background: transparent;
-  border: 1px solid var(--hc-border, #e4d5cf);
+  background: #fff;
+  border: 1px solid #cfc4bf;
+  color: #1a1a1a;
 }
 
 .grooming-resource-dialog__primary {
@@ -79,4 +100,16 @@
 .grooming-resource-dialog__primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@media (max-width: 420px) {
+  .grooming-resource-dialog__actions {
+    flex-direction: column;
+  }
+
+  .grooming-resource-dialog__ghost,
+  .grooming-resource-dialog__primary {
+    width: 100%;
+    white-space: normal;
+  }
 }

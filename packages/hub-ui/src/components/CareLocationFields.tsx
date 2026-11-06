@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   hubPartnerClinicsApi,
   type CareLocationKind,
   type HubPartnerClinic,
 } from '../api/hubPartnerClinicsApi';
+import { HubSearchableCombobox } from './HubSearchableCombobox';
+import type { HubComboboxOption } from './HubSearchableCombobox';
 import './CareLocationFields.css';
 
 export type CareLocationValue = {
@@ -53,71 +55,90 @@ export const CareLocationFields: React.FC<Props> = ({
     };
   }, [clinicId]);
 
+  const partnerOptions: HubComboboxOption[] = useMemo(
+    () =>
+      partners.map((p) => ({
+        value: p.id,
+        label: p.city ? `${p.name} (${p.city})` : p.name,
+        searchText: [p.name, p.city, p.district, p.street, p.address_line]
+          .filter(Boolean)
+          .join(' '),
+      })),
+    [partners],
+  );
+
   return (
     <div className="hub-care-loc">
-      <span className="nam-label">Local do atendimento</span>
-      <div className="hub-care-loc__kinds" role="radiogroup" aria-label="Local do atendimento">
-        <label className="hub-care-loc__radio">
-          <input
-            type="radio"
-            name={`${idPrefix}-kind`}
-            checked={value.care_location_kind === 'own_unit'}
-            disabled={disabled}
-            onChange={() =>
-              onChange({ care_location_kind: 'own_unit', hub_partner_clinic_id: null })
-            }
-          />
+      <span className="nam-label hub-care-loc__label" id={`${idPrefix}-kind-label`}>
+        Local do atendimento
+      </span>
+      <div
+        className="hub-care-loc__seg"
+        role="radiogroup"
+        aria-labelledby={`${idPrefix}-kind-label`}
+      >
+        <button
+          type="button"
+          role="radio"
+          aria-checked={value.care_location_kind === 'own_unit'}
+          className={
+            value.care_location_kind === 'own_unit' ? 'hub-care-loc__seg-btn hub-care-loc__seg-btn--on' : 'hub-care-loc__seg-btn'
+          }
+          disabled={disabled}
+          onClick={() => onChange({ care_location_kind: 'own_unit', hub_partner_clinic_id: null })}
+        >
           Unidade própria
-        </label>
-        <label className="hub-care-loc__radio">
-          <input
-            type="radio"
-            name={`${idPrefix}-kind`}
-            checked={value.care_location_kind === 'partner_clinic'}
-            disabled={disabled}
-            onChange={() =>
-              onChange({
-                care_location_kind: 'partner_clinic',
-                hub_partner_clinic_id: value.hub_partner_clinic_id,
-              })
-            }
-          />
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={value.care_location_kind === 'partner_clinic'}
+          className={
+            value.care_location_kind === 'partner_clinic'
+              ? 'hub-care-loc__seg-btn hub-care-loc__seg-btn--on'
+              : 'hub-care-loc__seg-btn'
+          }
+          disabled={disabled}
+          onClick={() =>
+            onChange({
+              care_location_kind: 'partner_clinic',
+              hub_partner_clinic_id: value.hub_partner_clinic_id,
+            })
+          }
+        >
           Clínica parceira
-        </label>
+        </button>
       </div>
 
       {value.care_location_kind === 'partner_clinic' ? (
-        <>
-          <label className="nam-label" htmlFor={`${idPrefix}-partner`}>
+        <div className="hub-care-loc__partner">
+          <label className="nam-label hub-care-loc__label" htmlFor={`${idPrefix}-partner`}>
             Parceira
           </label>
-          <select
+          <HubSearchableCombobox
             id={`${idPrefix}-partner`}
-            className="nam-input"
-            disabled={disabled || loading}
+            className="hub-combobox--clientes"
+            options={partnerOptions}
             value={value.hub_partner_clinic_id ?? ''}
-            onChange={(e) =>
+            onChange={(v) =>
               onChange({
                 care_location_kind: 'partner_clinic',
-                hub_partner_clinic_id: e.target.value || null,
+                hub_partner_clinic_id: v || null,
               })
             }
-            required
-          >
-            <option value="">{loading ? 'Carregando…' : 'Selecione…'}</option>
-            {partners.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-                {p.city ? ` (${p.city})` : ''}
-              </option>
-            ))}
-          </select>
+            placeholder={loading ? 'Carregando…' : 'Selecionar parceira'}
+            searchPlaceholder="Buscar parceira…"
+            allowCreate={false}
+            disabled={disabled || loading}
+            clearable={false}
+            emptyResultsLabel="Nenhuma parceira encontrada"
+          />
           {!loading && partners.length === 0 ? (
             <p className="hub-care-loc__hint">
               Nenhuma parceira ativa. Cadastre em Configurações → Clínicas parceiras.
             </p>
           ) : null}
-        </>
+        </div>
       ) : (
         <p className="hub-care-loc__hint">Usa a unidade selecionada no cabeçalho.</p>
       )}

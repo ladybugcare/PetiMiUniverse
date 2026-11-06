@@ -85,34 +85,95 @@ export function buildGoogleMapsSingleStopUrl(point: MapPoint): string | null {
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
+/**
+ * Google Maps para 1 destino ou rota multi-parada.
+ * Útil quando a saída da clínica não tem coords, mas há ao menos uma parada.
+ */
+export function buildGoogleMapsRouteOrStopUrl(
+  points: MapPoint[],
+): GoogleMapsDirectionsResult | null {
+  const valid = points.filter(isValidMapPoint);
+  if (valid.length >= 2) return buildGoogleMapsDirectionsUrl(valid);
+  if (valid.length === 1) {
+    const url = buildGoogleMapsSingleStopUrl(valid[0]);
+    return url ? { url, truncated: false } : null;
+  }
+  return null;
+}
+
+/** Waze — navegação até um destino (app ou web). */
+export function buildWazeUrl(point: MapPoint): string | null {
+  const lat = typeof point.lat === 'number' && Number.isFinite(point.lat) ? point.lat : null;
+  const lng = typeof point.lng === 'number' && Number.isFinite(point.lng) ? point.lng : null;
+  if (lat != null && lng != null) {
+    return `https://waze.com/ul?ll=${lat}%2C${lng}&navigate=yes`;
+  }
+  const addr = String(point.address ?? '').trim();
+  if (!addr) return null;
+  return `https://waze.com/ul?q=${encodeURIComponent(addr)}&navigate=yes`;
+}
+
+/** Apple Maps — navegação até um destino. */
+export function buildAppleMapsUrl(point: MapPoint): string | null {
+  const q = pointToMapsQuery(point);
+  if (!q) return null;
+  return `https://maps.apple.com/?daddr=${encodeURIComponent(q)}&dirflg=d`;
+}
+
+export type ExternalMapsLinks = {
+  google: string | null;
+  waze: string | null;
+  apple: string | null;
+};
+
+/** Pacote de links de navegação para uma parada. */
+export function buildExternalMapsLinks(point: MapPoint): ExternalMapsLinks {
+  return {
+    google: buildGoogleMapsSingleStopUrl(point),
+    waze: buildWazeUrl(point),
+    apple: buildAppleMapsUrl(point),
+  };
+}
+
+function readCoord(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw))) {
+    return Number(raw);
+  }
+  return null;
+}
+
 /** Extrai ponto de um stop com address_snapshot (lat/lng e/ou campos de endereço). */
 export function stopToMapPoint(stop: {
   address_snapshot?: Record<string, unknown> | null;
 }): MapPoint {
   const snap = stop.address_snapshot ?? null;
-  const latRaw = snap?.lat;
-  const lngRaw = snap?.lng;
   const lat =
-    typeof latRaw === 'number' && Number.isFinite(latRaw)
-      ? latRaw
-      : typeof latRaw === 'string' && latRaw.trim() !== '' && Number.isFinite(Number(latRaw))
-        ? Number(latRaw)
-        : null;
+    readCoord(snap?.lat) ??
+    readCoord(snap?.latitude) ??
+    null;
   const lng =
-    typeof lngRaw === 'number' && Number.isFinite(lngRaw)
-      ? lngRaw
-      : typeof lngRaw === 'string' && lngRaw.trim() !== '' && Number.isFinite(Number(lngRaw))
-        ? Number(lngRaw)
-        : null;
+    readCoord(snap?.lng) ??
+    readCoord(snap?.lon) ??
+    readCoord(snap?.longitude) ??
+    null;
+
+  const street = snap?.street == null ? '' : String(snap.street).trim();
+  const streetNumber = snap?.street_number == null ? '' : String(snap.street_number).trim();
+  const streetLine =
+    street && streetNumber
+      ? `${street}, ${streetNumber}`
+      : street || (snap?.address_street == null ? '' : String(snap.address_street).trim());
+
   const address =
     [
       snap?.address,
-      snap?.address_street,
-      snap?.street,
+      streetLine || null,
       snap?.address_neighborhood,
       snap?.district,
       snap?.address_city,
       snap?.city,
+      snap?.state,
     ]
       .map((x) => (x == null ? '' : String(x).trim()))
       .filter(Boolean)

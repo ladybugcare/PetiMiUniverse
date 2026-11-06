@@ -14,8 +14,79 @@
   font-size: 14px;
 }
 
+.hub-grooming-page__toolbar {
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Mesma altura visual da Clínica: data, busca, filtros e ações no mesmo eixo. */
+.hub-grooming-page__toolbar .hub-view-date-toolbar__nav-cluster {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.hub-grooming-page__toolbar .hub-view-date-toolbar__icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+
+.hub-grooming-page__toolbar .hub-date-field__control,
+.hub-grooming-page__toolbar .hub-date-field__today {
+  min-height: 40px;
+}
+
+.hub-grooming-page__toolbar .hub-clinic-atendimentos__search {
+  align-self: center;
+  min-width: 200px;
+  max-width: 280px;
+}
+
+.hub-grooming-page__toolbar .hub-clinic-atendimentos__search input {
+  height: 40px;
+  min-height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
+
+.hub-grooming-page__toolbar .hub-clinic-atendimentos__staff-filter {
+  flex: 0 1 200px;
+  min-width: 180px;
+  max-width: 220px;
+}
+
+.hub-grooming-page__toolbar .hub-combobox__trigger {
+  min-height: 40px;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+.hub-grooming-page__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.hub-grooming-page__toolbar-actions .hub-clientes__btn--sm {
+  min-height: 40px;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+.hub-grooming-page__toolbar-actions .hub-clientes__icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+
 .hub-grooming-page__metrics-grid {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   gap: 10px;
 }
 
@@ -24,10 +95,10 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: 0;
   width: 100%;
   margin: 0;
-  padding: 10px 12px;
+  padding: 12px;
   text-align: left;
   cursor: pointer;
   font: inherit;
@@ -36,13 +107,17 @@
 }
 
 .hub-grooming-page .hub-grooming-page__metrics-grid .hub-clientes__metric-value {
-  font-size: 1.25rem;
-  line-height: 1.2;
+  font-size: 1.35rem;
+  line-height: 1.15;
+  margin-bottom: 2px;
+}
+
+.hub-grooming-page .hub-grooming-page__metrics-grid .hub-clientes__metric-label {
+  margin-bottom: 0;
 }
 
 .hub-grooming-page .hub-grooming-queue-page > .hub-clientes__toolbar {
-  margin-bottom: 10px;
-  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .hub-grooming-page__metric-btn:hover {
@@ -151,11 +226,6 @@
   margin: 0;
 }
 
-.hub-grooming-page__filters-porte {
-  min-width: 160px;
-  max-width: 200px;
-}
-
 .hub-grooming-page__perm-banner {
   margin: 0 0 12px;
 }
@@ -262,8 +332,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   align-items: center;
+}
+
+.hub-grooming-page__filters-porte {
+  min-width: 160px;
+  max-width: 200px;
 }
 
 .hub-grooming-page__filters-label {
@@ -276,7 +351,39 @@
 }
 
 .hub-grooming-page__filters-clear {
-  margin-left: 4px;
+  margin-left: auto;
+}
+
+@media (max-width: 900px) {
+  .hub-grooming-page__toolbar .hub-view-date-toolbar__nav-cluster {
+    width: 100%;
+  }
+
+  .hub-grooming-page__toolbar .hub-clinic-atendimentos__search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .hub-grooming-page__toolbar-actions {
+    margin-left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .hub-grooming-page__toolbar-actions .hub-clientes__btn--primary {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .hub-grooming-page__filters-porte {
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 100%;
+  }
+
+  .hub-grooming-page__filters-clear {
+    margin-left: 0;
+  }
 }
 
 .hub-grooming-queue__badge--first {

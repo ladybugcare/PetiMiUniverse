@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ChevronLeft, ChevronRight, MapPin, PlusCircle, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, MapPin, PlusCircle, RefreshCw, Search } from 'lucide-react';
 import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
+import { HubDayNav } from '../../components/HubDayNav';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { hubPickupApi, type PickupDayBoardItem, type PickupRoute } from '../../api/hubPickupApi';
@@ -252,16 +253,6 @@ const HubPickupPage: React.FC = () => {
     return rows;
   }, [units, unitFilter]);
 
-  const shiftDay = (delta: number) => {
-    setCursor((d) => {
-      const n = new Date(d);
-      n.setDate(n.getDate() + delta);
-      return n;
-    });
-  };
-
-  const goToday = () => setCursor(new Date());
-
   const metrics = useMemo(() => {
     const loose = items.filter((i) => !i.route_id).length;
     const active = items.filter(isActiveItem).length;
@@ -328,14 +319,7 @@ const HubPickupPage: React.FC = () => {
     );
   }
 
-  const dateLabel = cursor.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
-
   const dateYmd = dayRange.dateYmd;
-  const isToday = dayRangeIsoLocal(new Date()).dateYmd === dateYmd;
 
   return (
     <div className="hub-pickup-page hub-pickup-page--planning">
@@ -346,36 +330,9 @@ const HubPickupPage: React.FC = () => {
       ) : null}
 
       <div className="hub-clientes__toolbar hub-clinic-atendimentos__toolbar">
-        <div className="hub-clinic-atendimentos__date-nav">
-          <button
-            type="button"
-            className="hub-clientes__icon-btn"
-            onClick={() => shiftDay(-1)}
-            aria-label="Dia anterior"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <span className="hub-clinic-atendimentos__date-label">{dateLabel}</span>
-          <button
-            type="button"
-            className="hub-clientes__icon-btn"
-            onClick={() => shiftDay(1)}
-            aria-label="Próximo dia"
-          >
-            <ChevronRight size={18} />
-          </button>
-          {!isToday ? (
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-              onClick={goToday}
-            >
-              Hoje
-            </button>
-          ) : null}
-        </div>
+        <HubDayNav dateFieldId="hub-pickup-date" value={cursor} onChange={setCursor} />
         <div className="hub-clientes__search hub-clinic-atendimentos__search">
-          <Search size={16} aria-hidden />
+          <Search size={16} className="hub-clientes__search-icon" aria-hidden />
           <input
             ref={searchInputRef}
             type="search"

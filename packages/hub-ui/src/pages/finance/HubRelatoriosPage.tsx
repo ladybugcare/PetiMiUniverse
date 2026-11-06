@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Building2 } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { HubRelatoriosCatalog } from './HubRelatoriosCatalog';
 import { HubRelatoriosEmailSchedules } from './HubRelatoriosEmailSchedules';
@@ -26,6 +26,7 @@ import { HubRelatoriosVaccinesDue } from './HubRelatoriosVaccinesDue';
 import { HubRelatoriosExams } from './HubRelatoriosExams';
 import { HubRelatoriosPeriodToolbar } from './HubRelatoriosPeriodToolbar';
 import {
+  HUB_REPORT_CATEGORIES,
   HUB_REPORTS,
   parseHubReportId,
   reportAllowed,
@@ -162,20 +163,35 @@ const HubRelatoriosPage: React.FC = () => {
   return (
     <div className="hub-clientes hub-servicos-page hub-finance-page hub-relatorios-page">
       <div className="hub-clientes__main">
-        <div className="hub-clientes__title-block">
-          {activeReport ? (
+        {activeReport ? (
+          <div className="hub-clientes__title-block hub-relatorios__title-block">
             <button type="button" className="hub-relatorios__back" onClick={() => setReport(null)}>
               <ArrowLeft size={18} aria-hidden />
               Voltar ao catálogo
             </button>
-          ) : null}
-          <h1 className="hub-clientes__title">{activeReport ? activeReport.title : 'Relatórios'}</h1>
-          <p className="hub-clientes__subtitle">
-            {activeReport
-              ? activeReport.description
-              : 'Central de relatórios: financeiro, estoque, clientes e operação.'}
-          </p>
-        </div>
+            <div className="hub-relatorios__title-head">
+              <div className="hub-relatorios__title-main">
+                <div className="hub-relatorios__title-row">
+                  <h1 className="hub-clientes__title">{activeReport.title}</h1>
+                  <span
+                    className={`hub-relatorios__meta-pill hub-relatorios__meta-pill--${activeReport.category}`}
+                  >
+                    {HUB_REPORT_CATEGORIES[activeReport.category]}
+                  </span>
+                </div>
+                <p className="hub-clientes__subtitle">{activeReport.description}</p>
+              </div>
+              {periodFilter ? (
+                <HubRelatoriosPeriodToolbar
+                  variant={periodFilter}
+                  period={period}
+                  onChange={setPeriod}
+                  inline
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {!activeReport ? (
           <>
@@ -186,20 +202,28 @@ const HubRelatoriosPage: React.FC = () => {
           </>
         ) : (
           <>
-            {periodFilter ? (
-              <HubRelatoriosPeriodToolbar
-                variant={periodFilter}
-                period={period}
-                onChange={setPeriod}
-              />
-            ) : null}
-
             {needsUnit && !unitId ? (
-              <p className="hub-clientes__muted">Selecione uma unidade no cabeçalho para ver este relatório.</p>
+              <div className="hub-finance-page__callout hub-finance-page__callout--hint" role="status">
+                <Building2 size={18} className="hub-finance-page__callout-icon" aria-hidden />
+                <div>
+                  <strong>Selecione uma unidade</strong>
+                  <p className="hub-relatorios__callout-text">
+                    Este relatório depende da unidade ativa no cabeçalho para carregar os dados.
+                  </p>
+                </div>
+              </div>
             ) : null}
 
             {periodInvalid ? (
-              <p className="hub-clientes__muted">Ajuste o intervalo de datas para carregar o relatório.</p>
+              <div className="hub-finance-page__callout hub-finance-page__callout--hint" role="alert">
+                <AlertCircle size={18} className="hub-finance-page__callout-icon" aria-hidden />
+                <div>
+                  <strong>Intervalo inválido</strong>
+                  <p className="hub-relatorios__callout-text">
+                    Ajuste as datas do período para carregar o relatório.
+                  </p>
+                </div>
+              </div>
             ) : null}
 
             {!periodInvalid && activeReport.id === 'finance-overview' && unitId ? (

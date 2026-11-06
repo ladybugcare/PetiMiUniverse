@@ -133,7 +133,11 @@ import {
   listHubGroomingSessionEvents,
   postHubGroomingSessionEvent,
 } from '../hubGroomingController';
-import { getHubReceptionBoard, postHubReceptionResolve } from '../hubReceptionController';
+import {
+  getHubReceptionBoard,
+  getHubReceptionHandoffDetail,
+  postHubReceptionResolve,
+} from '../hubReceptionController';
 import {
   getHubPickupDayBoard,
   createHubPickupRoute,
@@ -145,6 +149,7 @@ import {
   createOrUpdateLooseStop,
   getMyPickupRoute,
   getMyPickupRoutes,
+  claimHubPickupRoute,
   splitHubPickupRoute,
   addClinicReturnStop,
   getHubPickupDriverDay,
@@ -1078,6 +1083,12 @@ router.get(
   requirePermission('pickup.routes.read'),
   getMyPickupRoutes,
 );
+router.post(
+  '/pickup/routes/:id/claim',
+  authenticateUser,
+  requirePermission('pickup.routes.read'),
+  claimHubPickupRoute,
+);
 
 /* --- Leva e Traz — Veículos e caixas de transporte --- */
 router.get(
@@ -1185,6 +1196,12 @@ router.get(
   authenticateUser,
   requirePermission('reception.ops.read'),
   getHubReceptionBoard,
+);
+router.get(
+  '/reception/handoffs/:id',
+  authenticateUser,
+  requirePermission('reception.ops.read'),
+  getHubReceptionHandoffDetail,
 );
 router.post(
   '/reception/handoffs/:id/resolve',

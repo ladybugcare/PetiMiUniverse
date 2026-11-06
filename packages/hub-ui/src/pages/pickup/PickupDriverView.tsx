@@ -1,14 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle, ExternalLink, Loader, MapPin, Navigation, Phone } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
-import { hubPickupApi, type PickupRouteDetailResponse, type PickupStop, type PickupStopStatus } from '../../api/hubPickupApi';
+import {
+  hubPickupApi,
+  type PickupDayBoardPet,
+  type PickupRoute,
+  type PickupRouteDetailResponse,
+  type PickupStop,
+  type PickupStopStatus,
+} from '../../api/hubPickupApi';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
 import {
-  buildGoogleMapsDirectionsUrl,
-  buildGoogleMapsSingleStopUrl,
+  PORTE_LABELS,
+  type PetBodyPorteValue,
+} from '../../utils/hubServiceTypesPricingMatrix';
+import {
+  buildExternalMapsLinks,
+  buildGoogleMapsRouteOrStopUrl,
+  isValidMapPoint,
   openGoogleMapsUrl,
   stopToMapPoint,
+  type MapPoint,
 } from './pickupMapsLinks';
 import './pickup-page.css';
 
@@ -53,6 +66,22 @@ function directionLabel(direction: string | undefined): string {
   return 'Parada';
 }
 
+function directionServiceLabel(direction: string | undefined): string {
+  if (direction === 'pickup') return 'Coleta no tutor';
+  if (direction === 'delivery') return 'Entrega ao tutor';
+  if (direction === 'clinic_return') return 'Retorno à unidade';
+  return 'Parada da rota';
+}
+
+const STOP_STATUS_CARD_LABELS: Record<PickupStopStatus, string> = {
+  pending: 'A fazer',
+  en_route: 'A caminho',
+  arrived: 'No endereço',
+  in_transit: 'Pet a bordo',
+  completed: 'Concluída',
+  failed: 'Falhou',
+};
+
 const DONE_STATUSES: PickupStopStatus[] = ['completed', 'failed'];
 
 function formatTime(iso?: string | null): string {
@@ -60,6 +89,41 @@ function formatTime(iso?: string | null): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function porteLabel(tier?: string | null): string | null {
+  if (!tier) return null;
+  return PORTE_LABELS[tier as PetBodyPorteValue] ?? tier;
+}
+
+/** Horário e perfil do pet — mesma hierarquia da Minha fila do Banho & Tosa. */
+function scheduleAndPetLabel(
+  pet: PickupDayBoardPet | null | undefined,
+  plannedAt?: string | null,
+): string | null {
+  const time = plannedAt ? formatTime(plannedAt) : null;
+  const parts = [
+    time && time !== '—' ? time : null,
+    pet?.breed?.trim() || pet?.species?.trim() || null,
+    porteLabel(pet?.size_tier),
+  ].filter((part): part is string => Boolean(part));
+  return parts.length ? parts.join(' · ') : null;
+}
+
+function routeStartPoint(route: PickupRoute): MapPoint {
+  return {
+    lat: route.start_lat ?? null,
+    lng: route.start_lng ?? null,
+    address: route.start_address ?? null,
+  };
+}
+
+/** Ponto navegável da parada; retorno à clínica usa a saída da rota. */
+function stopNavPoint(stop: PickupStop, route: PickupRoute): MapPoint {
+  const p = stopToMapPoint(stop);
+  if (isValidMapPoint(p)) return p;
+  if (stop.direction === 'clinic_return') return routeStartPoint(route);
+  return p;
 }
 
 type Props = {
@@ -114,20 +178,41 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
   const fullRouteMaps = useMemo(() => {
     if (!data) return null;
     const ordered = data.stops.slice().sort((a, b) => a.sequence - b.sequence);
-    return buildGoogleMapsDirectionsUrl([
-      {
-        lat: data.route.start_lat ?? null,
-        lng: data.route.start_lng ?? null,
-        address: data.route.start_address ?? null,
-      },
-      ...ordered.map(stopToMapPoint),
+    return buildGoogleMapsRouteOrStopUrl([
+      routeStartPoint(data.route),
+      ...ordered.map((s) => stopNavPoint(s, data.route)),
     ]);
   }, [data]);
 
-  const nextStopMapsUrl = useMemo(() => {
-    if (!nextStop) return null;
-    return buildGoogleMapsSingleStopUrl(stopToMapPoint(nextStop));
-  }, [nextStop]);
+  /** Rota restante do lote: saída/última concluída → paradas ainda abertas. */
+  const remainingRouteMaps = useMemo(() => {
+    if (!data || !nextStop) return null;
+    const ordered = data.stops.slice().sort((a, b) => a.sequence - b.sequence);
+    const remaining = ordered.filter((s) => !DONE_STATUSES.includes(s.status));
+    if (remaining.length === 0) return null;
+
+    const completedBefore = ordered.filter(
+      (s) => DONE_STATUSES.includes(s.status) && s.sequence < nextStop.sequence,
+    );
+    const lastDone = completedBefore[completedBefore.length - 1];
+    const origin = lastDone
+      ? stopNavPoint(lastDone, data.route)
+      : routeStartPoint(data.route);
+
+    return buildGoogleMapsRouteOrStopUrl([
+      origin,
+      ...remaining.map((s) => stopNavPoint(s, data.route)),
+    ]);
+  }, [data, nextStop]);
+
+  const nextStopMaps = useMemo(() => {
+    if (!data || !nextStop) return null;
+    const links = buildExternalMapsLinks(stopNavPoint(nextStop, data.route));
+    if (!links.google && !links.waze && !links.apple) return null;
+    return links;
+  }, [data, nextStop]);
+
+  const batchMaps = remainingRouteMaps ?? fullRouteMaps;
 
   const handleAdvance = async () => {
     if (!nextStop || !clinicId) return;
@@ -194,16 +279,16 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
   const isClinicReturn = nextStop?.direction === 'clinic_return';
 
   const phone = !isClinicReturn && nextStop?.guardian
-    ? (nextStop.guardian as { phone?: string | null }).phone ?? null
+    ? nextStop.guardian.phone ?? null
     : null;
   const guardianName = !isClinicReturn && nextStop?.guardian
-    ? (nextStop.guardian as { full_name?: string }).full_name ?? ''
+    ? nextStop.guardian.full_name ?? ''
     : '';
+  const pet = isClinicReturn ? null : nextStop?.pet ?? null;
   const petName = isClinicReturn
     ? 'Retorno à clínica'
-    : nextStop?.pet
-      ? (nextStop.pet as { name?: string }).name ?? '—'
-      : '—';
+    : pet?.name?.trim() || 'Sem pet';
+  const petAvatar = pet?.avatar_url?.trim() || null;
 
   const address = formatStopAddress(nextStop?.address_snapshot as Record<string, unknown> | null);
 
@@ -217,6 +302,12 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
   const routeTitle =
     route.label?.trim() ||
     (route.vehicle_label ? route.vehicle_label : 'Rota do motorista');
+  const statusLabel = nextStop
+    ? STOP_STATUS_CARD_LABELS[nextStop.status] ?? nextStop.status
+    : null;
+  const schedulePetLine = nextStop
+    ? scheduleAndPetLabel(pet, nextStop.planned_at)
+    : null;
 
   return (
     <div className="hub-pickup-driver-view">
@@ -227,62 +318,121 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
         </span>
       </div>
 
-      {fullRouteMaps ? (
-        <div className="hub-pickup-driver-view__maps-bar">
-          <button
-            type="button"
-            className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--maps"
-            onClick={() => {
-              openGoogleMapsUrl(fullRouteMaps.url);
-              if (fullRouteMaps.truncated) {
-                showError(
-                  'A rota tem muitas paradas: o Google Maps abre as primeiras + a última.',
-                );
-              }
-            }}
-          >
-            <ExternalLink size={16} aria-hidden />
-            Abrir rota no Maps
-          </button>
+      {batchMaps || nextStopMaps ? (
+        <div className="hub-pickup-driver-view__nav-panel" aria-label="Navegação no mapa">
+          <p className="hub-pickup-driver-view__nav-title">Como chegar</p>
+          <div className="hub-pickup-driver-view__nav-grid">
+            {batchMaps ? (
+              <button
+                type="button"
+                className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--maps hub-pickup-driver-view__action-btn--nav-batch"
+                onClick={() => {
+                  openGoogleMapsUrl(batchMaps.url);
+                  if (batchMaps.truncated) {
+                    showError(
+                      'A rota tem muitas paradas: o Google Maps abre as primeiras + a última.',
+                    );
+                  }
+                }}
+              >
+                <ExternalLink size={16} aria-hidden />
+                {remainingRouteMaps ? 'Rota restante no Google Maps' : 'Rota do lote no Google Maps'}
+              </button>
+            ) : null}
+            {nextStopMaps?.google ? (
+              <button
+                type="button"
+                className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--maps"
+                onClick={() => openGoogleMapsUrl(nextStopMaps.google!)}
+              >
+                <Navigation size={16} aria-hidden />
+                Google Maps · parada
+              </button>
+            ) : null}
+            {nextStopMaps?.waze ? (
+              <button
+                type="button"
+                className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--waze"
+                onClick={() => openGoogleMapsUrl(nextStopMaps.waze!)}
+              >
+                <Navigation size={16} aria-hidden />
+                Waze · parada
+              </button>
+            ) : null}
+            {nextStopMaps?.apple ? (
+              <button
+                type="button"
+                className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--apple"
+                onClick={() => openGoogleMapsUrl(nextStopMaps.apple!)}
+              >
+                <MapPin size={16} aria-hidden />
+                Apple Maps · parada
+              </button>
+            ) : null}
+          </div>
+          <p className="hub-pickup-driver-view__nav-hint">
+            Abre no app ou no navegador. A rota do lote mostra o caminho completo; Waze, Google e Apple
+            Maps levam só até a próxima coleta ou entrega.
+          </p>
         </div>
+      ) : nextStop && !allDone ? (
+        <p className="hub-pickup-driver-view__nav-missing" role="status">
+          Sem endereço cadastrado para abrir no mapa. Peça à recepção para completar o endereço do tutor.
+        </p>
       ) : null}
 
-      {/* Card da próxima parada */}
+      {/* Card da próxima parada — hierarquia alinhada à Minha fila do Banho & Tosa */}
       {allDone ? (
-        <div className={`hub-pickup-driver-view__card hub-pickup-driver-view__card--empty`}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#16a34a' }}>
-            <CheckCircle size={20} />
-            <span style={{ fontWeight: 700 }}>Todas as paradas concluídas!</span>
+        <div className="hub-pickup-driver-view__card hub-pickup-driver-view__card--empty">
+          <div className="hub-pickup-driver-view__all-done">
+            <CheckCircle size={20} aria-hidden />
+            <span>Todas as paradas concluídas!</span>
           </div>
         </div>
       ) : nextStop ? (
         <div className="hub-pickup-driver-view__card">
           <span className="hub-pickup-driver-view__stop-label">
             {directionLabel(nextStop.direction)} · Parada {nextStop.sequence + 1}
+            {statusLabel ? ` · ${statusLabel}` : ''}
           </span>
-          <span className="hub-pickup-driver-view__stop-pet">{petName}</span>
-          {!isClinicReturn ? (
-            <span className="hub-pickup-driver-view__stop-meta">
-              Tutor: {guardianName}
-            </span>
-          ) : (
-            <span className="hub-pickup-driver-view__stop-meta">
-              Desembarque na unidade
-            </span>
-          )}
+
+          <div className="hub-pickup-driver-view__pet-row">
+            {petAvatar ? (
+              <img src={petAvatar} alt="" className="hub-pickup-driver-view__avatar" />
+            ) : null}
+            <span className="hub-pickup-driver-view__stop-pet">{petName}</span>
+          </div>
+
+          <p className="hub-pickup-driver-view__stop-meta">
+            {directionServiceLabel(nextStop.direction)}
+          </p>
+          {schedulePetLine ? (
+            <p className="hub-pickup-driver-view__stop-meta">{schedulePetLine}</p>
+          ) : null}
+          {!isClinicReturn && guardianName ? (
+            <p className="hub-pickup-driver-view__stop-meta">Tutor: {guardianName}</p>
+          ) : isClinicReturn ? (
+            <p className="hub-pickup-driver-view__stop-meta">Desembarque na unidade</p>
+          ) : null}
 
           {address ? (
             <div className="hub-pickup-driver-view__stop-address">
-              <MapPin size={16} style={{ flexShrink: 0, marginTop: '2px' }} aria-hidden />
+              <MapPin size={16} aria-hidden />
               <span>{address}</span>
             </div>
           ) : null}
 
-          <span className="hub-pickup-driver-view__stop-time">
-            Previsto: {formatTime(nextStop.planned_at)}
-          </span>
+          {(nextStop.cage_id || nextStop.notes?.trim()) ? (
+            <div className="hub-pickup-driver-view__badges">
+              {nextStop.cage_id ? (
+                <span className="hub-pickup-driver-view__badge">Com gaiola</span>
+              ) : null}
+              {nextStop.notes?.trim() ? (
+                <span className="hub-pickup-driver-view__badge">Com observação</span>
+              ) : null}
+            </div>
+          ) : null}
 
-          {/* Ações */}
           {!showFailForm ? (
             <div className="hub-pickup-driver-view__actions">
               {phone ? (
@@ -294,14 +444,14 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
                   Ligar
                 </a>
               ) : null}
-              {nextStopMapsUrl ? (
+              {nextStopMaps?.google ? (
                 <button
                   type="button"
                   className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--maps"
-                  onClick={() => openGoogleMapsUrl(nextStopMapsUrl)}
+                  onClick={() => openGoogleMapsUrl(nextStopMaps.google!)}
                 >
                   <Navigation size={18} aria-hidden />
-                  Navegar até aqui
+                  Navegar
                 </button>
               ) : null}
               {canAdvance ? (
@@ -318,8 +468,7 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
               {['pending', 'en_route', 'arrived', 'in_transit'].includes(nextStop.status) ? (
                 <button
                   type="button"
-                  className="hub-pickup-driver-view__action-btn"
-                  style={{ background: '#fee2e2', color: '#dc2626', gridColumn: 'span 2' }}
+                  className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--fail"
                   onClick={() => setShowFailForm(true)}
                   disabled={busy}
                 >
@@ -328,31 +477,28 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
               ) : null}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div className="hub-pickup-driver-view__fail-form">
               <textarea
-                className="hub-clientes__input"
+                className="hub-clientes__input hub-pickup-driver-view__fail-input"
                 placeholder="Motivo da falha (obrigatório)…"
                 value={failureReason}
                 onChange={(e) => setFailureReason(e.target.value)}
                 rows={2}
                 maxLength={1000}
-                style={{ fontSize: '1rem' }}
               />
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div className="hub-pickup-driver-view__fail-actions">
                 <button
                   type="button"
-                  className="hub-pickup-driver-view__action-btn"
-                  style={{ flex: 1, background: '#dc2626', color: '#fff' }}
+                  className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--fail-confirm"
                   onClick={() => void handleFail()}
                   disabled={busy || !failureReason.trim()}
                 >
-                  {busy ? <Loader size={16} className="spin" /> : null}
+                  {busy ? <Loader size={16} className="spin" aria-hidden /> : null}
                   Confirmar falha
                 </button>
                 <button
                   type="button"
-                  className="hub-pickup-driver-view__action-btn"
-                  style={{ flex: 1, background: '#f1f5f9', color: '#334155' }}
+                  className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--ghost"
                   onClick={() => setShowFailForm(false)}
                   disabled={busy}
                 >
@@ -363,8 +509,8 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
           )}
         </div>
       ) : (
-        <div className={`hub-pickup-driver-view__card hub-pickup-driver-view__card--empty`}>
-          <p className="hub-clientes__muted" style={{ fontSize: '0.9375rem' }}>
+        <div className="hub-pickup-driver-view__card hub-pickup-driver-view__card--empty">
+          <p className="hub-pickup-driver-view__empty-copy">
             Nenhuma parada pendente.
           </p>
         </div>
@@ -383,25 +529,41 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
               const isReturn = stop.direction === 'clinic_return';
               const stopPet = isReturn
                 ? 'Retorno à clínica'
-                : (stop.pet as { name?: string } | null)?.name ?? '—';
+                : stop.pet?.name?.trim() || '—';
               const stopGuardian = isReturn
                 ? ''
-                : (stop.guardian as { full_name?: string } | null)?.full_name ?? '';
+                : stop.guardian?.full_name?.trim() || '';
               const dirIcon =
                 stop.direction === 'pickup' ? '↓' : stop.direction === 'delivery' ? '↑' : '↩';
+              const stopMaps = !isDone
+                ? buildExternalMapsLinks(stopNavPoint(stop, route))
+                : null;
               return (
                 <div
                   key={stop.id}
-                  className={`hub-pickup-driver-view__queue-item${isDone ? ' hub-pickup-driver-view__queue-item--done' : ''}`}
-                  style={isCurrent ? { borderColor: 'var(--hub-primary, #4f46e5)', fontWeight: 600 } : {}}
+                  className={`hub-pickup-driver-view__queue-item${isDone ? ' hub-pickup-driver-view__queue-item--done' : ''}${isCurrent ? ' hub-pickup-driver-view__queue-item--current' : ''}`}
                 >
-                  <span style={{ minWidth: '1.25rem', textAlign: 'center', fontWeight: 700 }}>
+                  <span className="hub-pickup-driver-view__queue-seq">
                     {stop.sequence + 1}
                   </span>
-                  <span style={{ fontSize: '0.75rem' }}>{dirIcon}</span>
-                  <span style={{ flex: 1 }}>{stopPet}</span>
-                  <span className="hub-clientes__muted" style={{ fontSize: '0.75rem' }}>{stopGuardian}</span>
+                  <span className="hub-pickup-driver-view__queue-dir" aria-hidden>
+                    {dirIcon}
+                  </span>
+                  <span className="hub-pickup-driver-view__queue-pet">{stopPet}</span>
+                  {stopGuardian ? (
+                    <span className="hub-pickup-driver-view__queue-guardian">{stopGuardian}</span>
+                  ) : null}
                   {isDone ? <CheckCircle size={14} color="#16a34a" aria-hidden /> : null}
+                  {stopMaps?.google ? (
+                    <button
+                      type="button"
+                      className="hub-pickup-driver-view__queue-nav"
+                      aria-label={`Abrir ${stopPet} no Google Maps`}
+                      onClick={() => openGoogleMapsUrl(stopMaps.google!)}
+                    >
+                      <Navigation size={14} aria-hidden />
+                    </button>
+                  ) : null}
                 </div>
               );
             })}
